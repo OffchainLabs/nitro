@@ -29,113 +29,113 @@ var (
 	_ = abi.ConvertType
 )
 
-// BaseModuleGuardMetaData contains all meta data concerning the BaseModuleGuard contract.
-var BaseModuleGuardMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"txHash\",\"type\":\"bytes32\"},{\"internalType\":\"bool\",\"name\":\"success\",\"type\":\"bool\"}],\"name\":\"checkAfterModuleExecution\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"},{\"internalType\":\"enumEnum.Operation\",\"name\":\"operation\",\"type\":\"uint8\"},{\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"checkModuleTransaction\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"moduleTxHash\",\"type\":\"bytes32\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+// BaseGuardMetaData contains all meta data concerning the BaseGuard contract.
+var BaseGuardMetaData = &bind.MetaData{
+	ABI: "[{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"txHash\",\"type\":\"bytes32\"},{\"internalType\":\"bool\",\"name\":\"success\",\"type\":\"bool\"}],\"name\":\"checkAfterExecution\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"},{\"internalType\":\"enumEnum.Operation\",\"name\":\"operation\",\"type\":\"uint8\"},{\"internalType\":\"uint256\",\"name\":\"safeTxGas\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"baseGas\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"gasPrice\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"gasToken\",\"type\":\"address\"},{\"internalType\":\"addresspayable\",\"name\":\"refundReceiver\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"signatures\",\"type\":\"bytes\"},{\"internalType\":\"address\",\"name\":\"msgSender\",\"type\":\"address\"}],\"name\":\"checkTransaction\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
 }
 
-// BaseModuleGuardABI is the input ABI used to generate the binding from.
-// Deprecated: Use BaseModuleGuardMetaData.ABI instead.
-var BaseModuleGuardABI = BaseModuleGuardMetaData.ABI
+// BaseGuardABI is the input ABI used to generate the binding from.
+// Deprecated: Use BaseGuardMetaData.ABI instead.
+var BaseGuardABI = BaseGuardMetaData.ABI
 
-// BaseModuleGuard is an auto generated Go binding around an Ethereum contract.
-type BaseModuleGuard struct {
-	BaseModuleGuardCaller     // Read-only binding to the contract
-	BaseModuleGuardTransactor // Write-only binding to the contract
-	BaseModuleGuardFilterer   // Log filterer for contract events
+// BaseGuard is an auto generated Go binding around an Ethereum contract.
+type BaseGuard struct {
+	BaseGuardCaller     // Read-only binding to the contract
+	BaseGuardTransactor // Write-only binding to the contract
+	BaseGuardFilterer   // Log filterer for contract events
 }
 
-// BaseModuleGuardCaller is an auto generated read-only Go binding around an Ethereum contract.
-type BaseModuleGuardCaller struct {
+// BaseGuardCaller is an auto generated read-only Go binding around an Ethereum contract.
+type BaseGuardCaller struct {
 	contract *bind.BoundContract // Generic contract wrapper for the low level calls
 }
 
-// BaseModuleGuardTransactor is an auto generated write-only Go binding around an Ethereum contract.
-type BaseModuleGuardTransactor struct {
+// BaseGuardTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type BaseGuardTransactor struct {
 	contract *bind.BoundContract // Generic contract wrapper for the low level calls
 }
 
-// BaseModuleGuardFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
-type BaseModuleGuardFilterer struct {
+// BaseGuardFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type BaseGuardFilterer struct {
 	contract *bind.BoundContract // Generic contract wrapper for the low level calls
 }
 
-// BaseModuleGuardSession is an auto generated Go binding around an Ethereum contract,
+// BaseGuardSession is an auto generated Go binding around an Ethereum contract,
 // with pre-set call and transact options.
-type BaseModuleGuardSession struct {
-	Contract     *BaseModuleGuard  // Generic contract binding to set the session for
+type BaseGuardSession struct {
+	Contract     *BaseGuard        // Generic contract binding to set the session for
 	CallOpts     bind.CallOpts     // Call options to use throughout this session
 	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
 }
 
-// BaseModuleGuardCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// BaseGuardCallerSession is an auto generated read-only Go binding around an Ethereum contract,
 // with pre-set call options.
-type BaseModuleGuardCallerSession struct {
-	Contract *BaseModuleGuardCaller // Generic contract caller binding to set the session for
-	CallOpts bind.CallOpts          // Call options to use throughout this session
+type BaseGuardCallerSession struct {
+	Contract *BaseGuardCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts    // Call options to use throughout this session
 }
 
-// BaseModuleGuardTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// BaseGuardTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
 // with pre-set transact options.
-type BaseModuleGuardTransactorSession struct {
-	Contract     *BaseModuleGuardTransactor // Generic contract transactor binding to set the session for
-	TransactOpts bind.TransactOpts          // Transaction auth options to use throughout this session
+type BaseGuardTransactorSession struct {
+	Contract     *BaseGuardTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts    // Transaction auth options to use throughout this session
 }
 
-// BaseModuleGuardRaw is an auto generated low-level Go binding around an Ethereum contract.
-type BaseModuleGuardRaw struct {
-	Contract *BaseModuleGuard // Generic contract binding to access the raw methods on
+// BaseGuardRaw is an auto generated low-level Go binding around an Ethereum contract.
+type BaseGuardRaw struct {
+	Contract *BaseGuard // Generic contract binding to access the raw methods on
 }
 
-// BaseModuleGuardCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
-type BaseModuleGuardCallerRaw struct {
-	Contract *BaseModuleGuardCaller // Generic read-only contract binding to access the raw methods on
+// BaseGuardCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type BaseGuardCallerRaw struct {
+	Contract *BaseGuardCaller // Generic read-only contract binding to access the raw methods on
 }
 
-// BaseModuleGuardTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
-type BaseModuleGuardTransactorRaw struct {
-	Contract *BaseModuleGuardTransactor // Generic write-only contract binding to access the raw methods on
+// BaseGuardTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type BaseGuardTransactorRaw struct {
+	Contract *BaseGuardTransactor // Generic write-only contract binding to access the raw methods on
 }
 
-// NewBaseModuleGuard creates a new instance of BaseModuleGuard, bound to a specific deployed contract.
-func NewBaseModuleGuard(address common.Address, backend bind.ContractBackend) (*BaseModuleGuard, error) {
-	contract, err := bindBaseModuleGuard(address, backend, backend, backend)
+// NewBaseGuard creates a new instance of BaseGuard, bound to a specific deployed contract.
+func NewBaseGuard(address common.Address, backend bind.ContractBackend) (*BaseGuard, error) {
+	contract, err := bindBaseGuard(address, backend, backend, backend)
 	if err != nil {
 		return nil, err
 	}
-	return &BaseModuleGuard{BaseModuleGuardCaller: BaseModuleGuardCaller{contract: contract}, BaseModuleGuardTransactor: BaseModuleGuardTransactor{contract: contract}, BaseModuleGuardFilterer: BaseModuleGuardFilterer{contract: contract}}, nil
+	return &BaseGuard{BaseGuardCaller: BaseGuardCaller{contract: contract}, BaseGuardTransactor: BaseGuardTransactor{contract: contract}, BaseGuardFilterer: BaseGuardFilterer{contract: contract}}, nil
 }
 
-// NewBaseModuleGuardCaller creates a new read-only instance of BaseModuleGuard, bound to a specific deployed contract.
-func NewBaseModuleGuardCaller(address common.Address, caller bind.ContractCaller) (*BaseModuleGuardCaller, error) {
-	contract, err := bindBaseModuleGuard(address, caller, nil, nil)
+// NewBaseGuardCaller creates a new read-only instance of BaseGuard, bound to a specific deployed contract.
+func NewBaseGuardCaller(address common.Address, caller bind.ContractCaller) (*BaseGuardCaller, error) {
+	contract, err := bindBaseGuard(address, caller, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &BaseModuleGuardCaller{contract: contract}, nil
+	return &BaseGuardCaller{contract: contract}, nil
 }
 
-// NewBaseModuleGuardTransactor creates a new write-only instance of BaseModuleGuard, bound to a specific deployed contract.
-func NewBaseModuleGuardTransactor(address common.Address, transactor bind.ContractTransactor) (*BaseModuleGuardTransactor, error) {
-	contract, err := bindBaseModuleGuard(address, nil, transactor, nil)
+// NewBaseGuardTransactor creates a new write-only instance of BaseGuard, bound to a specific deployed contract.
+func NewBaseGuardTransactor(address common.Address, transactor bind.ContractTransactor) (*BaseGuardTransactor, error) {
+	contract, err := bindBaseGuard(address, nil, transactor, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &BaseModuleGuardTransactor{contract: contract}, nil
+	return &BaseGuardTransactor{contract: contract}, nil
 }
 
-// NewBaseModuleGuardFilterer creates a new log filterer instance of BaseModuleGuard, bound to a specific deployed contract.
-func NewBaseModuleGuardFilterer(address common.Address, filterer bind.ContractFilterer) (*BaseModuleGuardFilterer, error) {
-	contract, err := bindBaseModuleGuard(address, nil, nil, filterer)
+// NewBaseGuardFilterer creates a new log filterer instance of BaseGuard, bound to a specific deployed contract.
+func NewBaseGuardFilterer(address common.Address, filterer bind.ContractFilterer) (*BaseGuardFilterer, error) {
+	contract, err := bindBaseGuard(address, nil, nil, filterer)
 	if err != nil {
 		return nil, err
 	}
-	return &BaseModuleGuardFilterer{contract: contract}, nil
+	return &BaseGuardFilterer{contract: contract}, nil
 }
 
-// bindBaseModuleGuard binds a generic wrapper to an already deployed contract.
-func bindBaseModuleGuard(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := BaseModuleGuardMetaData.GetAbi()
+// bindBaseGuard binds a generic wrapper to an already deployed contract.
+func bindBaseGuard(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := BaseGuardMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
@@ -146,46 +146,46 @@ func bindBaseModuleGuard(address common.Address, caller bind.ContractCaller, tra
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_BaseModuleGuard *BaseModuleGuardRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
-	return _BaseModuleGuard.Contract.BaseModuleGuardCaller.contract.Call(opts, result, method, params...)
+func (_BaseGuard *BaseGuardRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _BaseGuard.Contract.BaseGuardCaller.contract.Call(opts, result, method, params...)
 }
 
 // Transfer initiates a plain transaction to move funds to the contract, calling
 // its default method if one is available.
-func (_BaseModuleGuard *BaseModuleGuardRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _BaseModuleGuard.Contract.BaseModuleGuardTransactor.contract.Transfer(opts)
+func (_BaseGuard *BaseGuardRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _BaseGuard.Contract.BaseGuardTransactor.contract.Transfer(opts)
 }
 
 // Transact invokes the (paid) contract method with params as input values.
-func (_BaseModuleGuard *BaseModuleGuardRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
-	return _BaseModuleGuard.Contract.BaseModuleGuardTransactor.contract.Transact(opts, method, params...)
+func (_BaseGuard *BaseGuardRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _BaseGuard.Contract.BaseGuardTransactor.contract.Transact(opts, method, params...)
 }
 
 // Call invokes the (constant) contract method with params as input values and
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_BaseModuleGuard *BaseModuleGuardCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
-	return _BaseModuleGuard.Contract.contract.Call(opts, result, method, params...)
+func (_BaseGuard *BaseGuardCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _BaseGuard.Contract.contract.Call(opts, result, method, params...)
 }
 
 // Transfer initiates a plain transaction to move funds to the contract, calling
 // its default method if one is available.
-func (_BaseModuleGuard *BaseModuleGuardTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _BaseModuleGuard.Contract.contract.Transfer(opts)
+func (_BaseGuard *BaseGuardTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _BaseGuard.Contract.contract.Transfer(opts)
 }
 
 // Transact invokes the (paid) contract method with params as input values.
-func (_BaseModuleGuard *BaseModuleGuardTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
-	return _BaseModuleGuard.Contract.contract.Transact(opts, method, params...)
+func (_BaseGuard *BaseGuardTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _BaseGuard.Contract.contract.Transact(opts, method, params...)
 }
 
 // SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
 //
 // Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_BaseModuleGuard *BaseModuleGuardCaller) SupportsInterface(opts *bind.CallOpts, interfaceId [4]byte) (bool, error) {
+func (_BaseGuard *BaseGuardCaller) SupportsInterface(opts *bind.CallOpts, interfaceId [4]byte) (bool, error) {
 	var out []interface{}
-	err := _BaseModuleGuard.contract.Call(opts, &out, "supportsInterface", interfaceId)
+	err := _BaseGuard.contract.Call(opts, &out, "supportsInterface", interfaceId)
 
 	if err != nil {
 		return *new(bool), err
@@ -200,281 +200,57 @@ func (_BaseModuleGuard *BaseModuleGuardCaller) SupportsInterface(opts *bind.Call
 // SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
 //
 // Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_BaseModuleGuard *BaseModuleGuardSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
-	return _BaseModuleGuard.Contract.SupportsInterface(&_BaseModuleGuard.CallOpts, interfaceId)
+func (_BaseGuard *BaseGuardSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
+	return _BaseGuard.Contract.SupportsInterface(&_BaseGuard.CallOpts, interfaceId)
 }
 
 // SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
 //
 // Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_BaseModuleGuard *BaseModuleGuardCallerSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
-	return _BaseModuleGuard.Contract.SupportsInterface(&_BaseModuleGuard.CallOpts, interfaceId)
-}
-
-// CheckAfterModuleExecution is a paid mutator transaction binding the contract method 0x2acc37aa.
-//
-// Solidity: function checkAfterModuleExecution(bytes32 txHash, bool success) returns()
-func (_BaseModuleGuard *BaseModuleGuardTransactor) CheckAfterModuleExecution(opts *bind.TransactOpts, txHash [32]byte, success bool) (*types.Transaction, error) {
-	return _BaseModuleGuard.contract.Transact(opts, "checkAfterModuleExecution", txHash, success)
-}
-
-// CheckAfterModuleExecution is a paid mutator transaction binding the contract method 0x2acc37aa.
-//
-// Solidity: function checkAfterModuleExecution(bytes32 txHash, bool success) returns()
-func (_BaseModuleGuard *BaseModuleGuardSession) CheckAfterModuleExecution(txHash [32]byte, success bool) (*types.Transaction, error) {
-	return _BaseModuleGuard.Contract.CheckAfterModuleExecution(&_BaseModuleGuard.TransactOpts, txHash, success)
-}
-
-// CheckAfterModuleExecution is a paid mutator transaction binding the contract method 0x2acc37aa.
-//
-// Solidity: function checkAfterModuleExecution(bytes32 txHash, bool success) returns()
-func (_BaseModuleGuard *BaseModuleGuardTransactorSession) CheckAfterModuleExecution(txHash [32]byte, success bool) (*types.Transaction, error) {
-	return _BaseModuleGuard.Contract.CheckAfterModuleExecution(&_BaseModuleGuard.TransactOpts, txHash, success)
-}
-
-// CheckModuleTransaction is a paid mutator transaction binding the contract method 0x728c2972.
-//
-// Solidity: function checkModuleTransaction(address to, uint256 value, bytes data, uint8 operation, address module) returns(bytes32 moduleTxHash)
-func (_BaseModuleGuard *BaseModuleGuardTransactor) CheckModuleTransaction(opts *bind.TransactOpts, to common.Address, value *big.Int, data []byte, operation uint8, module common.Address) (*types.Transaction, error) {
-	return _BaseModuleGuard.contract.Transact(opts, "checkModuleTransaction", to, value, data, operation, module)
-}
-
-// CheckModuleTransaction is a paid mutator transaction binding the contract method 0x728c2972.
-//
-// Solidity: function checkModuleTransaction(address to, uint256 value, bytes data, uint8 operation, address module) returns(bytes32 moduleTxHash)
-func (_BaseModuleGuard *BaseModuleGuardSession) CheckModuleTransaction(to common.Address, value *big.Int, data []byte, operation uint8, module common.Address) (*types.Transaction, error) {
-	return _BaseModuleGuard.Contract.CheckModuleTransaction(&_BaseModuleGuard.TransactOpts, to, value, data, operation, module)
-}
-
-// CheckModuleTransaction is a paid mutator transaction binding the contract method 0x728c2972.
-//
-// Solidity: function checkModuleTransaction(address to, uint256 value, bytes data, uint8 operation, address module) returns(bytes32 moduleTxHash)
-func (_BaseModuleGuard *BaseModuleGuardTransactorSession) CheckModuleTransaction(to common.Address, value *big.Int, data []byte, operation uint8, module common.Address) (*types.Transaction, error) {
-	return _BaseModuleGuard.Contract.CheckModuleTransaction(&_BaseModuleGuard.TransactOpts, to, value, data, operation, module)
-}
-
-// BaseTransactionGuardMetaData contains all meta data concerning the BaseTransactionGuard contract.
-var BaseTransactionGuardMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"hash\",\"type\":\"bytes32\"},{\"internalType\":\"bool\",\"name\":\"success\",\"type\":\"bool\"}],\"name\":\"checkAfterExecution\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"},{\"internalType\":\"enumEnum.Operation\",\"name\":\"operation\",\"type\":\"uint8\"},{\"internalType\":\"uint256\",\"name\":\"safeTxGas\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"baseGas\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"gasPrice\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"gasToken\",\"type\":\"address\"},{\"internalType\":\"addresspayable\",\"name\":\"refundReceiver\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"signatures\",\"type\":\"bytes\"},{\"internalType\":\"address\",\"name\":\"msgSender\",\"type\":\"address\"}],\"name\":\"checkTransaction\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
-}
-
-// BaseTransactionGuardABI is the input ABI used to generate the binding from.
-// Deprecated: Use BaseTransactionGuardMetaData.ABI instead.
-var BaseTransactionGuardABI = BaseTransactionGuardMetaData.ABI
-
-// BaseTransactionGuard is an auto generated Go binding around an Ethereum contract.
-type BaseTransactionGuard struct {
-	BaseTransactionGuardCaller     // Read-only binding to the contract
-	BaseTransactionGuardTransactor // Write-only binding to the contract
-	BaseTransactionGuardFilterer   // Log filterer for contract events
-}
-
-// BaseTransactionGuardCaller is an auto generated read-only Go binding around an Ethereum contract.
-type BaseTransactionGuardCaller struct {
-	contract *bind.BoundContract // Generic contract wrapper for the low level calls
-}
-
-// BaseTransactionGuardTransactor is an auto generated write-only Go binding around an Ethereum contract.
-type BaseTransactionGuardTransactor struct {
-	contract *bind.BoundContract // Generic contract wrapper for the low level calls
-}
-
-// BaseTransactionGuardFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
-type BaseTransactionGuardFilterer struct {
-	contract *bind.BoundContract // Generic contract wrapper for the low level calls
-}
-
-// BaseTransactionGuardSession is an auto generated Go binding around an Ethereum contract,
-// with pre-set call and transact options.
-type BaseTransactionGuardSession struct {
-	Contract     *BaseTransactionGuard // Generic contract binding to set the session for
-	CallOpts     bind.CallOpts         // Call options to use throughout this session
-	TransactOpts bind.TransactOpts     // Transaction auth options to use throughout this session
-}
-
-// BaseTransactionGuardCallerSession is an auto generated read-only Go binding around an Ethereum contract,
-// with pre-set call options.
-type BaseTransactionGuardCallerSession struct {
-	Contract *BaseTransactionGuardCaller // Generic contract caller binding to set the session for
-	CallOpts bind.CallOpts               // Call options to use throughout this session
-}
-
-// BaseTransactionGuardTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
-// with pre-set transact options.
-type BaseTransactionGuardTransactorSession struct {
-	Contract     *BaseTransactionGuardTransactor // Generic contract transactor binding to set the session for
-	TransactOpts bind.TransactOpts               // Transaction auth options to use throughout this session
-}
-
-// BaseTransactionGuardRaw is an auto generated low-level Go binding around an Ethereum contract.
-type BaseTransactionGuardRaw struct {
-	Contract *BaseTransactionGuard // Generic contract binding to access the raw methods on
-}
-
-// BaseTransactionGuardCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
-type BaseTransactionGuardCallerRaw struct {
-	Contract *BaseTransactionGuardCaller // Generic read-only contract binding to access the raw methods on
-}
-
-// BaseTransactionGuardTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
-type BaseTransactionGuardTransactorRaw struct {
-	Contract *BaseTransactionGuardTransactor // Generic write-only contract binding to access the raw methods on
-}
-
-// NewBaseTransactionGuard creates a new instance of BaseTransactionGuard, bound to a specific deployed contract.
-func NewBaseTransactionGuard(address common.Address, backend bind.ContractBackend) (*BaseTransactionGuard, error) {
-	contract, err := bindBaseTransactionGuard(address, backend, backend, backend)
-	if err != nil {
-		return nil, err
-	}
-	return &BaseTransactionGuard{BaseTransactionGuardCaller: BaseTransactionGuardCaller{contract: contract}, BaseTransactionGuardTransactor: BaseTransactionGuardTransactor{contract: contract}, BaseTransactionGuardFilterer: BaseTransactionGuardFilterer{contract: contract}}, nil
-}
-
-// NewBaseTransactionGuardCaller creates a new read-only instance of BaseTransactionGuard, bound to a specific deployed contract.
-func NewBaseTransactionGuardCaller(address common.Address, caller bind.ContractCaller) (*BaseTransactionGuardCaller, error) {
-	contract, err := bindBaseTransactionGuard(address, caller, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &BaseTransactionGuardCaller{contract: contract}, nil
-}
-
-// NewBaseTransactionGuardTransactor creates a new write-only instance of BaseTransactionGuard, bound to a specific deployed contract.
-func NewBaseTransactionGuardTransactor(address common.Address, transactor bind.ContractTransactor) (*BaseTransactionGuardTransactor, error) {
-	contract, err := bindBaseTransactionGuard(address, nil, transactor, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &BaseTransactionGuardTransactor{contract: contract}, nil
-}
-
-// NewBaseTransactionGuardFilterer creates a new log filterer instance of BaseTransactionGuard, bound to a specific deployed contract.
-func NewBaseTransactionGuardFilterer(address common.Address, filterer bind.ContractFilterer) (*BaseTransactionGuardFilterer, error) {
-	contract, err := bindBaseTransactionGuard(address, nil, nil, filterer)
-	if err != nil {
-		return nil, err
-	}
-	return &BaseTransactionGuardFilterer{contract: contract}, nil
-}
-
-// bindBaseTransactionGuard binds a generic wrapper to an already deployed contract.
-func bindBaseTransactionGuard(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := BaseTransactionGuardMetaData.GetAbi()
-	if err != nil {
-		return nil, err
-	}
-	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
-}
-
-// Call invokes the (constant) contract method with params as input values and
-// sets the output to result. The result type might be a single field for simple
-// returns, a slice of interfaces for anonymous returns and a struct for named
-// returns.
-func (_BaseTransactionGuard *BaseTransactionGuardRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
-	return _BaseTransactionGuard.Contract.BaseTransactionGuardCaller.contract.Call(opts, result, method, params...)
-}
-
-// Transfer initiates a plain transaction to move funds to the contract, calling
-// its default method if one is available.
-func (_BaseTransactionGuard *BaseTransactionGuardRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _BaseTransactionGuard.Contract.BaseTransactionGuardTransactor.contract.Transfer(opts)
-}
-
-// Transact invokes the (paid) contract method with params as input values.
-func (_BaseTransactionGuard *BaseTransactionGuardRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
-	return _BaseTransactionGuard.Contract.BaseTransactionGuardTransactor.contract.Transact(opts, method, params...)
-}
-
-// Call invokes the (constant) contract method with params as input values and
-// sets the output to result. The result type might be a single field for simple
-// returns, a slice of interfaces for anonymous returns and a struct for named
-// returns.
-func (_BaseTransactionGuard *BaseTransactionGuardCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
-	return _BaseTransactionGuard.Contract.contract.Call(opts, result, method, params...)
-}
-
-// Transfer initiates a plain transaction to move funds to the contract, calling
-// its default method if one is available.
-func (_BaseTransactionGuard *BaseTransactionGuardTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _BaseTransactionGuard.Contract.contract.Transfer(opts)
-}
-
-// Transact invokes the (paid) contract method with params as input values.
-func (_BaseTransactionGuard *BaseTransactionGuardTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
-	return _BaseTransactionGuard.Contract.contract.Transact(opts, method, params...)
-}
-
-// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
-//
-// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_BaseTransactionGuard *BaseTransactionGuardCaller) SupportsInterface(opts *bind.CallOpts, interfaceId [4]byte) (bool, error) {
-	var out []interface{}
-	err := _BaseTransactionGuard.contract.Call(opts, &out, "supportsInterface", interfaceId)
-
-	if err != nil {
-		return *new(bool), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
-
-	return out0, err
-
-}
-
-// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
-//
-// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_BaseTransactionGuard *BaseTransactionGuardSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
-	return _BaseTransactionGuard.Contract.SupportsInterface(&_BaseTransactionGuard.CallOpts, interfaceId)
-}
-
-// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
-//
-// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_BaseTransactionGuard *BaseTransactionGuardCallerSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
-	return _BaseTransactionGuard.Contract.SupportsInterface(&_BaseTransactionGuard.CallOpts, interfaceId)
+func (_BaseGuard *BaseGuardCallerSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
+	return _BaseGuard.Contract.SupportsInterface(&_BaseGuard.CallOpts, interfaceId)
 }
 
 // CheckAfterExecution is a paid mutator transaction binding the contract method 0x93271368.
 //
-// Solidity: function checkAfterExecution(bytes32 hash, bool success) returns()
-func (_BaseTransactionGuard *BaseTransactionGuardTransactor) CheckAfterExecution(opts *bind.TransactOpts, hash [32]byte, success bool) (*types.Transaction, error) {
-	return _BaseTransactionGuard.contract.Transact(opts, "checkAfterExecution", hash, success)
+// Solidity: function checkAfterExecution(bytes32 txHash, bool success) returns()
+func (_BaseGuard *BaseGuardTransactor) CheckAfterExecution(opts *bind.TransactOpts, txHash [32]byte, success bool) (*types.Transaction, error) {
+	return _BaseGuard.contract.Transact(opts, "checkAfterExecution", txHash, success)
 }
 
 // CheckAfterExecution is a paid mutator transaction binding the contract method 0x93271368.
 //
-// Solidity: function checkAfterExecution(bytes32 hash, bool success) returns()
-func (_BaseTransactionGuard *BaseTransactionGuardSession) CheckAfterExecution(hash [32]byte, success bool) (*types.Transaction, error) {
-	return _BaseTransactionGuard.Contract.CheckAfterExecution(&_BaseTransactionGuard.TransactOpts, hash, success)
+// Solidity: function checkAfterExecution(bytes32 txHash, bool success) returns()
+func (_BaseGuard *BaseGuardSession) CheckAfterExecution(txHash [32]byte, success bool) (*types.Transaction, error) {
+	return _BaseGuard.Contract.CheckAfterExecution(&_BaseGuard.TransactOpts, txHash, success)
 }
 
 // CheckAfterExecution is a paid mutator transaction binding the contract method 0x93271368.
 //
-// Solidity: function checkAfterExecution(bytes32 hash, bool success) returns()
-func (_BaseTransactionGuard *BaseTransactionGuardTransactorSession) CheckAfterExecution(hash [32]byte, success bool) (*types.Transaction, error) {
-	return _BaseTransactionGuard.Contract.CheckAfterExecution(&_BaseTransactionGuard.TransactOpts, hash, success)
+// Solidity: function checkAfterExecution(bytes32 txHash, bool success) returns()
+func (_BaseGuard *BaseGuardTransactorSession) CheckAfterExecution(txHash [32]byte, success bool) (*types.Transaction, error) {
+	return _BaseGuard.Contract.CheckAfterExecution(&_BaseGuard.TransactOpts, txHash, success)
 }
 
 // CheckTransaction is a paid mutator transaction binding the contract method 0x75f0bb52.
 //
 // Solidity: function checkTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures, address msgSender) returns()
-func (_BaseTransactionGuard *BaseTransactionGuardTransactor) CheckTransaction(opts *bind.TransactOpts, to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
-	return _BaseTransactionGuard.contract.Transact(opts, "checkTransaction", to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
+func (_BaseGuard *BaseGuardTransactor) CheckTransaction(opts *bind.TransactOpts, to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
+	return _BaseGuard.contract.Transact(opts, "checkTransaction", to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
 }
 
 // CheckTransaction is a paid mutator transaction binding the contract method 0x75f0bb52.
 //
 // Solidity: function checkTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures, address msgSender) returns()
-func (_BaseTransactionGuard *BaseTransactionGuardSession) CheckTransaction(to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
-	return _BaseTransactionGuard.Contract.CheckTransaction(&_BaseTransactionGuard.TransactOpts, to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
+func (_BaseGuard *BaseGuardSession) CheckTransaction(to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
+	return _BaseGuard.Contract.CheckTransaction(&_BaseGuard.TransactOpts, to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
 }
 
 // CheckTransaction is a paid mutator transaction binding the contract method 0x75f0bb52.
 //
 // Solidity: function checkTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures, address msgSender) returns()
-func (_BaseTransactionGuard *BaseTransactionGuardTransactorSession) CheckTransaction(to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
-	return _BaseTransactionGuard.Contract.CheckTransaction(&_BaseTransactionGuard.TransactOpts, to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
+func (_BaseGuard *BaseGuardTransactorSession) CheckTransaction(to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
+	return _BaseGuard.Contract.CheckTransaction(&_BaseGuard.TransactOpts, to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
 }
 
 // ExecutorMetaData contains all meta data concerning the Executor contract.
@@ -965,6 +741,230 @@ func (_FallbackManager *FallbackManagerFilterer) ParseChangedFallbackHandler(log
 	return event, nil
 }
 
+// GuardMetaData contains all meta data concerning the Guard contract.
+var GuardMetaData = &bind.MetaData{
+	ABI: "[{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"txHash\",\"type\":\"bytes32\"},{\"internalType\":\"bool\",\"name\":\"success\",\"type\":\"bool\"}],\"name\":\"checkAfterExecution\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"},{\"internalType\":\"enumEnum.Operation\",\"name\":\"operation\",\"type\":\"uint8\"},{\"internalType\":\"uint256\",\"name\":\"safeTxGas\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"baseGas\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"gasPrice\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"gasToken\",\"type\":\"address\"},{\"internalType\":\"addresspayable\",\"name\":\"refundReceiver\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"signatures\",\"type\":\"bytes\"},{\"internalType\":\"address\",\"name\":\"msgSender\",\"type\":\"address\"}],\"name\":\"checkTransaction\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+}
+
+// GuardABI is the input ABI used to generate the binding from.
+// Deprecated: Use GuardMetaData.ABI instead.
+var GuardABI = GuardMetaData.ABI
+
+// Guard is an auto generated Go binding around an Ethereum contract.
+type Guard struct {
+	GuardCaller     // Read-only binding to the contract
+	GuardTransactor // Write-only binding to the contract
+	GuardFilterer   // Log filterer for contract events
+}
+
+// GuardCaller is an auto generated read-only Go binding around an Ethereum contract.
+type GuardCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// GuardTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type GuardTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// GuardFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type GuardFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// GuardSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type GuardSession struct {
+	Contract     *Guard            // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// GuardCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type GuardCallerSession struct {
+	Contract *GuardCaller  // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts // Call options to use throughout this session
+}
+
+// GuardTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type GuardTransactorSession struct {
+	Contract     *GuardTransactor  // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// GuardRaw is an auto generated low-level Go binding around an Ethereum contract.
+type GuardRaw struct {
+	Contract *Guard // Generic contract binding to access the raw methods on
+}
+
+// GuardCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type GuardCallerRaw struct {
+	Contract *GuardCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// GuardTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type GuardTransactorRaw struct {
+	Contract *GuardTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewGuard creates a new instance of Guard, bound to a specific deployed contract.
+func NewGuard(address common.Address, backend bind.ContractBackend) (*Guard, error) {
+	contract, err := bindGuard(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &Guard{GuardCaller: GuardCaller{contract: contract}, GuardTransactor: GuardTransactor{contract: contract}, GuardFilterer: GuardFilterer{contract: contract}}, nil
+}
+
+// NewGuardCaller creates a new read-only instance of Guard, bound to a specific deployed contract.
+func NewGuardCaller(address common.Address, caller bind.ContractCaller) (*GuardCaller, error) {
+	contract, err := bindGuard(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &GuardCaller{contract: contract}, nil
+}
+
+// NewGuardTransactor creates a new write-only instance of Guard, bound to a specific deployed contract.
+func NewGuardTransactor(address common.Address, transactor bind.ContractTransactor) (*GuardTransactor, error) {
+	contract, err := bindGuard(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &GuardTransactor{contract: contract}, nil
+}
+
+// NewGuardFilterer creates a new log filterer instance of Guard, bound to a specific deployed contract.
+func NewGuardFilterer(address common.Address, filterer bind.ContractFilterer) (*GuardFilterer, error) {
+	contract, err := bindGuard(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &GuardFilterer{contract: contract}, nil
+}
+
+// bindGuard binds a generic wrapper to an already deployed contract.
+func bindGuard(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := GuardMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_Guard *GuardRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _Guard.Contract.GuardCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_Guard *GuardRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _Guard.Contract.GuardTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_Guard *GuardRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _Guard.Contract.GuardTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_Guard *GuardCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _Guard.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_Guard *GuardTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _Guard.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_Guard *GuardTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _Guard.Contract.contract.Transact(opts, method, params...)
+}
+
+// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
+//
+// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
+func (_Guard *GuardCaller) SupportsInterface(opts *bind.CallOpts, interfaceId [4]byte) (bool, error) {
+	var out []interface{}
+	err := _Guard.contract.Call(opts, &out, "supportsInterface", interfaceId)
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
+}
+
+// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
+//
+// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
+func (_Guard *GuardSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
+	return _Guard.Contract.SupportsInterface(&_Guard.CallOpts, interfaceId)
+}
+
+// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
+//
+// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
+func (_Guard *GuardCallerSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
+	return _Guard.Contract.SupportsInterface(&_Guard.CallOpts, interfaceId)
+}
+
+// CheckAfterExecution is a paid mutator transaction binding the contract method 0x93271368.
+//
+// Solidity: function checkAfterExecution(bytes32 txHash, bool success) returns()
+func (_Guard *GuardTransactor) CheckAfterExecution(opts *bind.TransactOpts, txHash [32]byte, success bool) (*types.Transaction, error) {
+	return _Guard.contract.Transact(opts, "checkAfterExecution", txHash, success)
+}
+
+// CheckAfterExecution is a paid mutator transaction binding the contract method 0x93271368.
+//
+// Solidity: function checkAfterExecution(bytes32 txHash, bool success) returns()
+func (_Guard *GuardSession) CheckAfterExecution(txHash [32]byte, success bool) (*types.Transaction, error) {
+	return _Guard.Contract.CheckAfterExecution(&_Guard.TransactOpts, txHash, success)
+}
+
+// CheckAfterExecution is a paid mutator transaction binding the contract method 0x93271368.
+//
+// Solidity: function checkAfterExecution(bytes32 txHash, bool success) returns()
+func (_Guard *GuardTransactorSession) CheckAfterExecution(txHash [32]byte, success bool) (*types.Transaction, error) {
+	return _Guard.Contract.CheckAfterExecution(&_Guard.TransactOpts, txHash, success)
+}
+
+// CheckTransaction is a paid mutator transaction binding the contract method 0x75f0bb52.
+//
+// Solidity: function checkTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures, address msgSender) returns()
+func (_Guard *GuardTransactor) CheckTransaction(opts *bind.TransactOpts, to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
+	return _Guard.contract.Transact(opts, "checkTransaction", to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
+}
+
+// CheckTransaction is a paid mutator transaction binding the contract method 0x75f0bb52.
+//
+// Solidity: function checkTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures, address msgSender) returns()
+func (_Guard *GuardSession) CheckTransaction(to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
+	return _Guard.Contract.CheckTransaction(&_Guard.TransactOpts, to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
+}
+
+// CheckTransaction is a paid mutator transaction binding the contract method 0x75f0bb52.
+//
+// Solidity: function checkTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures, address msgSender) returns()
+func (_Guard *GuardTransactorSession) CheckTransaction(to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
+	return _Guard.Contract.CheckTransaction(&_Guard.TransactOpts, to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
+}
+
 // GuardManagerMetaData contains all meta data concerning the GuardManager contract.
 var GuardManagerMetaData = &bind.MetaData{
 	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"guard\",\"type\":\"address\"}],\"name\":\"ChangedGuard\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"guard\",\"type\":\"address\"}],\"name\":\"setGuard\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
@@ -1281,457 +1281,9 @@ func (_GuardManager *GuardManagerFilterer) ParseChangedGuard(log types.Log) (*Gu
 	return event, nil
 }
 
-// IModuleGuardMetaData contains all meta data concerning the IModuleGuard contract.
-var IModuleGuardMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"txHash\",\"type\":\"bytes32\"},{\"internalType\":\"bool\",\"name\":\"success\",\"type\":\"bool\"}],\"name\":\"checkAfterModuleExecution\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"},{\"internalType\":\"enumEnum.Operation\",\"name\":\"operation\",\"type\":\"uint8\"},{\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"checkModuleTransaction\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"moduleTxHash\",\"type\":\"bytes32\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
-}
-
-// IModuleGuardABI is the input ABI used to generate the binding from.
-// Deprecated: Use IModuleGuardMetaData.ABI instead.
-var IModuleGuardABI = IModuleGuardMetaData.ABI
-
-// IModuleGuard is an auto generated Go binding around an Ethereum contract.
-type IModuleGuard struct {
-	IModuleGuardCaller     // Read-only binding to the contract
-	IModuleGuardTransactor // Write-only binding to the contract
-	IModuleGuardFilterer   // Log filterer for contract events
-}
-
-// IModuleGuardCaller is an auto generated read-only Go binding around an Ethereum contract.
-type IModuleGuardCaller struct {
-	contract *bind.BoundContract // Generic contract wrapper for the low level calls
-}
-
-// IModuleGuardTransactor is an auto generated write-only Go binding around an Ethereum contract.
-type IModuleGuardTransactor struct {
-	contract *bind.BoundContract // Generic contract wrapper for the low level calls
-}
-
-// IModuleGuardFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
-type IModuleGuardFilterer struct {
-	contract *bind.BoundContract // Generic contract wrapper for the low level calls
-}
-
-// IModuleGuardSession is an auto generated Go binding around an Ethereum contract,
-// with pre-set call and transact options.
-type IModuleGuardSession struct {
-	Contract     *IModuleGuard     // Generic contract binding to set the session for
-	CallOpts     bind.CallOpts     // Call options to use throughout this session
-	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
-}
-
-// IModuleGuardCallerSession is an auto generated read-only Go binding around an Ethereum contract,
-// with pre-set call options.
-type IModuleGuardCallerSession struct {
-	Contract *IModuleGuardCaller // Generic contract caller binding to set the session for
-	CallOpts bind.CallOpts       // Call options to use throughout this session
-}
-
-// IModuleGuardTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
-// with pre-set transact options.
-type IModuleGuardTransactorSession struct {
-	Contract     *IModuleGuardTransactor // Generic contract transactor binding to set the session for
-	TransactOpts bind.TransactOpts       // Transaction auth options to use throughout this session
-}
-
-// IModuleGuardRaw is an auto generated low-level Go binding around an Ethereum contract.
-type IModuleGuardRaw struct {
-	Contract *IModuleGuard // Generic contract binding to access the raw methods on
-}
-
-// IModuleGuardCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
-type IModuleGuardCallerRaw struct {
-	Contract *IModuleGuardCaller // Generic read-only contract binding to access the raw methods on
-}
-
-// IModuleGuardTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
-type IModuleGuardTransactorRaw struct {
-	Contract *IModuleGuardTransactor // Generic write-only contract binding to access the raw methods on
-}
-
-// NewIModuleGuard creates a new instance of IModuleGuard, bound to a specific deployed contract.
-func NewIModuleGuard(address common.Address, backend bind.ContractBackend) (*IModuleGuard, error) {
-	contract, err := bindIModuleGuard(address, backend, backend, backend)
-	if err != nil {
-		return nil, err
-	}
-	return &IModuleGuard{IModuleGuardCaller: IModuleGuardCaller{contract: contract}, IModuleGuardTransactor: IModuleGuardTransactor{contract: contract}, IModuleGuardFilterer: IModuleGuardFilterer{contract: contract}}, nil
-}
-
-// NewIModuleGuardCaller creates a new read-only instance of IModuleGuard, bound to a specific deployed contract.
-func NewIModuleGuardCaller(address common.Address, caller bind.ContractCaller) (*IModuleGuardCaller, error) {
-	contract, err := bindIModuleGuard(address, caller, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &IModuleGuardCaller{contract: contract}, nil
-}
-
-// NewIModuleGuardTransactor creates a new write-only instance of IModuleGuard, bound to a specific deployed contract.
-func NewIModuleGuardTransactor(address common.Address, transactor bind.ContractTransactor) (*IModuleGuardTransactor, error) {
-	contract, err := bindIModuleGuard(address, nil, transactor, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &IModuleGuardTransactor{contract: contract}, nil
-}
-
-// NewIModuleGuardFilterer creates a new log filterer instance of IModuleGuard, bound to a specific deployed contract.
-func NewIModuleGuardFilterer(address common.Address, filterer bind.ContractFilterer) (*IModuleGuardFilterer, error) {
-	contract, err := bindIModuleGuard(address, nil, nil, filterer)
-	if err != nil {
-		return nil, err
-	}
-	return &IModuleGuardFilterer{contract: contract}, nil
-}
-
-// bindIModuleGuard binds a generic wrapper to an already deployed contract.
-func bindIModuleGuard(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := IModuleGuardMetaData.GetAbi()
-	if err != nil {
-		return nil, err
-	}
-	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
-}
-
-// Call invokes the (constant) contract method with params as input values and
-// sets the output to result. The result type might be a single field for simple
-// returns, a slice of interfaces for anonymous returns and a struct for named
-// returns.
-func (_IModuleGuard *IModuleGuardRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
-	return _IModuleGuard.Contract.IModuleGuardCaller.contract.Call(opts, result, method, params...)
-}
-
-// Transfer initiates a plain transaction to move funds to the contract, calling
-// its default method if one is available.
-func (_IModuleGuard *IModuleGuardRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _IModuleGuard.Contract.IModuleGuardTransactor.contract.Transfer(opts)
-}
-
-// Transact invokes the (paid) contract method with params as input values.
-func (_IModuleGuard *IModuleGuardRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
-	return _IModuleGuard.Contract.IModuleGuardTransactor.contract.Transact(opts, method, params...)
-}
-
-// Call invokes the (constant) contract method with params as input values and
-// sets the output to result. The result type might be a single field for simple
-// returns, a slice of interfaces for anonymous returns and a struct for named
-// returns.
-func (_IModuleGuard *IModuleGuardCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
-	return _IModuleGuard.Contract.contract.Call(opts, result, method, params...)
-}
-
-// Transfer initiates a plain transaction to move funds to the contract, calling
-// its default method if one is available.
-func (_IModuleGuard *IModuleGuardTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _IModuleGuard.Contract.contract.Transfer(opts)
-}
-
-// Transact invokes the (paid) contract method with params as input values.
-func (_IModuleGuard *IModuleGuardTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
-	return _IModuleGuard.Contract.contract.Transact(opts, method, params...)
-}
-
-// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
-//
-// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_IModuleGuard *IModuleGuardCaller) SupportsInterface(opts *bind.CallOpts, interfaceId [4]byte) (bool, error) {
-	var out []interface{}
-	err := _IModuleGuard.contract.Call(opts, &out, "supportsInterface", interfaceId)
-
-	if err != nil {
-		return *new(bool), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
-
-	return out0, err
-
-}
-
-// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
-//
-// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_IModuleGuard *IModuleGuardSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
-	return _IModuleGuard.Contract.SupportsInterface(&_IModuleGuard.CallOpts, interfaceId)
-}
-
-// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
-//
-// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_IModuleGuard *IModuleGuardCallerSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
-	return _IModuleGuard.Contract.SupportsInterface(&_IModuleGuard.CallOpts, interfaceId)
-}
-
-// CheckAfterModuleExecution is a paid mutator transaction binding the contract method 0x2acc37aa.
-//
-// Solidity: function checkAfterModuleExecution(bytes32 txHash, bool success) returns()
-func (_IModuleGuard *IModuleGuardTransactor) CheckAfterModuleExecution(opts *bind.TransactOpts, txHash [32]byte, success bool) (*types.Transaction, error) {
-	return _IModuleGuard.contract.Transact(opts, "checkAfterModuleExecution", txHash, success)
-}
-
-// CheckAfterModuleExecution is a paid mutator transaction binding the contract method 0x2acc37aa.
-//
-// Solidity: function checkAfterModuleExecution(bytes32 txHash, bool success) returns()
-func (_IModuleGuard *IModuleGuardSession) CheckAfterModuleExecution(txHash [32]byte, success bool) (*types.Transaction, error) {
-	return _IModuleGuard.Contract.CheckAfterModuleExecution(&_IModuleGuard.TransactOpts, txHash, success)
-}
-
-// CheckAfterModuleExecution is a paid mutator transaction binding the contract method 0x2acc37aa.
-//
-// Solidity: function checkAfterModuleExecution(bytes32 txHash, bool success) returns()
-func (_IModuleGuard *IModuleGuardTransactorSession) CheckAfterModuleExecution(txHash [32]byte, success bool) (*types.Transaction, error) {
-	return _IModuleGuard.Contract.CheckAfterModuleExecution(&_IModuleGuard.TransactOpts, txHash, success)
-}
-
-// CheckModuleTransaction is a paid mutator transaction binding the contract method 0x728c2972.
-//
-// Solidity: function checkModuleTransaction(address to, uint256 value, bytes data, uint8 operation, address module) returns(bytes32 moduleTxHash)
-func (_IModuleGuard *IModuleGuardTransactor) CheckModuleTransaction(opts *bind.TransactOpts, to common.Address, value *big.Int, data []byte, operation uint8, module common.Address) (*types.Transaction, error) {
-	return _IModuleGuard.contract.Transact(opts, "checkModuleTransaction", to, value, data, operation, module)
-}
-
-// CheckModuleTransaction is a paid mutator transaction binding the contract method 0x728c2972.
-//
-// Solidity: function checkModuleTransaction(address to, uint256 value, bytes data, uint8 operation, address module) returns(bytes32 moduleTxHash)
-func (_IModuleGuard *IModuleGuardSession) CheckModuleTransaction(to common.Address, value *big.Int, data []byte, operation uint8, module common.Address) (*types.Transaction, error) {
-	return _IModuleGuard.Contract.CheckModuleTransaction(&_IModuleGuard.TransactOpts, to, value, data, operation, module)
-}
-
-// CheckModuleTransaction is a paid mutator transaction binding the contract method 0x728c2972.
-//
-// Solidity: function checkModuleTransaction(address to, uint256 value, bytes data, uint8 operation, address module) returns(bytes32 moduleTxHash)
-func (_IModuleGuard *IModuleGuardTransactorSession) CheckModuleTransaction(to common.Address, value *big.Int, data []byte, operation uint8, module common.Address) (*types.Transaction, error) {
-	return _IModuleGuard.Contract.CheckModuleTransaction(&_IModuleGuard.TransactOpts, to, value, data, operation, module)
-}
-
-// ITransactionGuardMetaData contains all meta data concerning the ITransactionGuard contract.
-var ITransactionGuardMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"hash\",\"type\":\"bytes32\"},{\"internalType\":\"bool\",\"name\":\"success\",\"type\":\"bool\"}],\"name\":\"checkAfterExecution\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"},{\"internalType\":\"enumEnum.Operation\",\"name\":\"operation\",\"type\":\"uint8\"},{\"internalType\":\"uint256\",\"name\":\"safeTxGas\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"baseGas\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"gasPrice\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"gasToken\",\"type\":\"address\"},{\"internalType\":\"addresspayable\",\"name\":\"refundReceiver\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"signatures\",\"type\":\"bytes\"},{\"internalType\":\"address\",\"name\":\"msgSender\",\"type\":\"address\"}],\"name\":\"checkTransaction\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
-}
-
-// ITransactionGuardABI is the input ABI used to generate the binding from.
-// Deprecated: Use ITransactionGuardMetaData.ABI instead.
-var ITransactionGuardABI = ITransactionGuardMetaData.ABI
-
-// ITransactionGuard is an auto generated Go binding around an Ethereum contract.
-type ITransactionGuard struct {
-	ITransactionGuardCaller     // Read-only binding to the contract
-	ITransactionGuardTransactor // Write-only binding to the contract
-	ITransactionGuardFilterer   // Log filterer for contract events
-}
-
-// ITransactionGuardCaller is an auto generated read-only Go binding around an Ethereum contract.
-type ITransactionGuardCaller struct {
-	contract *bind.BoundContract // Generic contract wrapper for the low level calls
-}
-
-// ITransactionGuardTransactor is an auto generated write-only Go binding around an Ethereum contract.
-type ITransactionGuardTransactor struct {
-	contract *bind.BoundContract // Generic contract wrapper for the low level calls
-}
-
-// ITransactionGuardFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
-type ITransactionGuardFilterer struct {
-	contract *bind.BoundContract // Generic contract wrapper for the low level calls
-}
-
-// ITransactionGuardSession is an auto generated Go binding around an Ethereum contract,
-// with pre-set call and transact options.
-type ITransactionGuardSession struct {
-	Contract     *ITransactionGuard // Generic contract binding to set the session for
-	CallOpts     bind.CallOpts      // Call options to use throughout this session
-	TransactOpts bind.TransactOpts  // Transaction auth options to use throughout this session
-}
-
-// ITransactionGuardCallerSession is an auto generated read-only Go binding around an Ethereum contract,
-// with pre-set call options.
-type ITransactionGuardCallerSession struct {
-	Contract *ITransactionGuardCaller // Generic contract caller binding to set the session for
-	CallOpts bind.CallOpts            // Call options to use throughout this session
-}
-
-// ITransactionGuardTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
-// with pre-set transact options.
-type ITransactionGuardTransactorSession struct {
-	Contract     *ITransactionGuardTransactor // Generic contract transactor binding to set the session for
-	TransactOpts bind.TransactOpts            // Transaction auth options to use throughout this session
-}
-
-// ITransactionGuardRaw is an auto generated low-level Go binding around an Ethereum contract.
-type ITransactionGuardRaw struct {
-	Contract *ITransactionGuard // Generic contract binding to access the raw methods on
-}
-
-// ITransactionGuardCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
-type ITransactionGuardCallerRaw struct {
-	Contract *ITransactionGuardCaller // Generic read-only contract binding to access the raw methods on
-}
-
-// ITransactionGuardTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
-type ITransactionGuardTransactorRaw struct {
-	Contract *ITransactionGuardTransactor // Generic write-only contract binding to access the raw methods on
-}
-
-// NewITransactionGuard creates a new instance of ITransactionGuard, bound to a specific deployed contract.
-func NewITransactionGuard(address common.Address, backend bind.ContractBackend) (*ITransactionGuard, error) {
-	contract, err := bindITransactionGuard(address, backend, backend, backend)
-	if err != nil {
-		return nil, err
-	}
-	return &ITransactionGuard{ITransactionGuardCaller: ITransactionGuardCaller{contract: contract}, ITransactionGuardTransactor: ITransactionGuardTransactor{contract: contract}, ITransactionGuardFilterer: ITransactionGuardFilterer{contract: contract}}, nil
-}
-
-// NewITransactionGuardCaller creates a new read-only instance of ITransactionGuard, bound to a specific deployed contract.
-func NewITransactionGuardCaller(address common.Address, caller bind.ContractCaller) (*ITransactionGuardCaller, error) {
-	contract, err := bindITransactionGuard(address, caller, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &ITransactionGuardCaller{contract: contract}, nil
-}
-
-// NewITransactionGuardTransactor creates a new write-only instance of ITransactionGuard, bound to a specific deployed contract.
-func NewITransactionGuardTransactor(address common.Address, transactor bind.ContractTransactor) (*ITransactionGuardTransactor, error) {
-	contract, err := bindITransactionGuard(address, nil, transactor, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &ITransactionGuardTransactor{contract: contract}, nil
-}
-
-// NewITransactionGuardFilterer creates a new log filterer instance of ITransactionGuard, bound to a specific deployed contract.
-func NewITransactionGuardFilterer(address common.Address, filterer bind.ContractFilterer) (*ITransactionGuardFilterer, error) {
-	contract, err := bindITransactionGuard(address, nil, nil, filterer)
-	if err != nil {
-		return nil, err
-	}
-	return &ITransactionGuardFilterer{contract: contract}, nil
-}
-
-// bindITransactionGuard binds a generic wrapper to an already deployed contract.
-func bindITransactionGuard(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := ITransactionGuardMetaData.GetAbi()
-	if err != nil {
-		return nil, err
-	}
-	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
-}
-
-// Call invokes the (constant) contract method with params as input values and
-// sets the output to result. The result type might be a single field for simple
-// returns, a slice of interfaces for anonymous returns and a struct for named
-// returns.
-func (_ITransactionGuard *ITransactionGuardRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
-	return _ITransactionGuard.Contract.ITransactionGuardCaller.contract.Call(opts, result, method, params...)
-}
-
-// Transfer initiates a plain transaction to move funds to the contract, calling
-// its default method if one is available.
-func (_ITransactionGuard *ITransactionGuardRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _ITransactionGuard.Contract.ITransactionGuardTransactor.contract.Transfer(opts)
-}
-
-// Transact invokes the (paid) contract method with params as input values.
-func (_ITransactionGuard *ITransactionGuardRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
-	return _ITransactionGuard.Contract.ITransactionGuardTransactor.contract.Transact(opts, method, params...)
-}
-
-// Call invokes the (constant) contract method with params as input values and
-// sets the output to result. The result type might be a single field for simple
-// returns, a slice of interfaces for anonymous returns and a struct for named
-// returns.
-func (_ITransactionGuard *ITransactionGuardCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
-	return _ITransactionGuard.Contract.contract.Call(opts, result, method, params...)
-}
-
-// Transfer initiates a plain transaction to move funds to the contract, calling
-// its default method if one is available.
-func (_ITransactionGuard *ITransactionGuardTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _ITransactionGuard.Contract.contract.Transfer(opts)
-}
-
-// Transact invokes the (paid) contract method with params as input values.
-func (_ITransactionGuard *ITransactionGuardTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
-	return _ITransactionGuard.Contract.contract.Transact(opts, method, params...)
-}
-
-// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
-//
-// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_ITransactionGuard *ITransactionGuardCaller) SupportsInterface(opts *bind.CallOpts, interfaceId [4]byte) (bool, error) {
-	var out []interface{}
-	err := _ITransactionGuard.contract.Call(opts, &out, "supportsInterface", interfaceId)
-
-	if err != nil {
-		return *new(bool), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
-
-	return out0, err
-
-}
-
-// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
-//
-// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_ITransactionGuard *ITransactionGuardSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
-	return _ITransactionGuard.Contract.SupportsInterface(&_ITransactionGuard.CallOpts, interfaceId)
-}
-
-// SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
-//
-// Solidity: function supportsInterface(bytes4 interfaceId) view returns(bool)
-func (_ITransactionGuard *ITransactionGuardCallerSession) SupportsInterface(interfaceId [4]byte) (bool, error) {
-	return _ITransactionGuard.Contract.SupportsInterface(&_ITransactionGuard.CallOpts, interfaceId)
-}
-
-// CheckAfterExecution is a paid mutator transaction binding the contract method 0x93271368.
-//
-// Solidity: function checkAfterExecution(bytes32 hash, bool success) returns()
-func (_ITransactionGuard *ITransactionGuardTransactor) CheckAfterExecution(opts *bind.TransactOpts, hash [32]byte, success bool) (*types.Transaction, error) {
-	return _ITransactionGuard.contract.Transact(opts, "checkAfterExecution", hash, success)
-}
-
-// CheckAfterExecution is a paid mutator transaction binding the contract method 0x93271368.
-//
-// Solidity: function checkAfterExecution(bytes32 hash, bool success) returns()
-func (_ITransactionGuard *ITransactionGuardSession) CheckAfterExecution(hash [32]byte, success bool) (*types.Transaction, error) {
-	return _ITransactionGuard.Contract.CheckAfterExecution(&_ITransactionGuard.TransactOpts, hash, success)
-}
-
-// CheckAfterExecution is a paid mutator transaction binding the contract method 0x93271368.
-//
-// Solidity: function checkAfterExecution(bytes32 hash, bool success) returns()
-func (_ITransactionGuard *ITransactionGuardTransactorSession) CheckAfterExecution(hash [32]byte, success bool) (*types.Transaction, error) {
-	return _ITransactionGuard.Contract.CheckAfterExecution(&_ITransactionGuard.TransactOpts, hash, success)
-}
-
-// CheckTransaction is a paid mutator transaction binding the contract method 0x75f0bb52.
-//
-// Solidity: function checkTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures, address msgSender) returns()
-func (_ITransactionGuard *ITransactionGuardTransactor) CheckTransaction(opts *bind.TransactOpts, to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
-	return _ITransactionGuard.contract.Transact(opts, "checkTransaction", to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
-}
-
-// CheckTransaction is a paid mutator transaction binding the contract method 0x75f0bb52.
-//
-// Solidity: function checkTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures, address msgSender) returns()
-func (_ITransactionGuard *ITransactionGuardSession) CheckTransaction(to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
-	return _ITransactionGuard.Contract.CheckTransaction(&_ITransactionGuard.TransactOpts, to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
-}
-
-// CheckTransaction is a paid mutator transaction binding the contract method 0x75f0bb52.
-//
-// Solidity: function checkTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures, address msgSender) returns()
-func (_ITransactionGuard *ITransactionGuardTransactorSession) CheckTransaction(to common.Address, value *big.Int, data []byte, operation uint8, safeTxGas *big.Int, baseGas *big.Int, gasPrice *big.Int, gasToken common.Address, refundReceiver common.Address, signatures []byte, msgSender common.Address) (*types.Transaction, error) {
-	return _ITransactionGuard.Contract.CheckTransaction(&_ITransactionGuard.TransactOpts, to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures, msgSender)
-}
-
 // ModuleManagerMetaData contains all meta data concerning the ModuleManager contract.
 var ModuleManagerMetaData = &bind.MetaData{
-	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"moduleGuard\",\"type\":\"address\"}],\"name\":\"ChangedModuleGuard\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"DisabledModule\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"EnabledModule\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"ExecutionFromModuleFailure\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"ExecutionFromModuleSuccess\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"prevModule\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"disableModule\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"enableModule\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"},{\"internalType\":\"enumEnum.Operation\",\"name\":\"operation\",\"type\":\"uint8\"}],\"name\":\"execTransactionFromModule\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"success\",\"type\":\"bool\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"},{\"internalType\":\"enumEnum.Operation\",\"name\":\"operation\",\"type\":\"uint8\"}],\"name\":\"execTransactionFromModuleReturnData\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"success\",\"type\":\"bool\"},{\"internalType\":\"bytes\",\"name\":\"returnData\",\"type\":\"bytes\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"start\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"pageSize\",\"type\":\"uint256\"}],\"name\":\"getModulesPaginated\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"array\",\"type\":\"address[]\"},{\"internalType\":\"address\",\"name\":\"next\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"isModuleEnabled\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"moduleGuard\",\"type\":\"address\"}],\"name\":\"setModuleGuard\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"DisabledModule\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"EnabledModule\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"ExecutionFromModuleFailure\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"ExecutionFromModuleSuccess\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"prevModule\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"disableModule\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"enableModule\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"},{\"internalType\":\"enumEnum.Operation\",\"name\":\"operation\",\"type\":\"uint8\"}],\"name\":\"execTransactionFromModule\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"success\",\"type\":\"bool\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"},{\"internalType\":\"enumEnum.Operation\",\"name\":\"operation\",\"type\":\"uint8\"}],\"name\":\"execTransactionFromModuleReturnData\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"success\",\"type\":\"bool\"},{\"internalType\":\"bytes\",\"name\":\"returnData\",\"type\":\"bytes\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"start\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"pageSize\",\"type\":\"uint256\"}],\"name\":\"getModulesPaginated\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"array\",\"type\":\"address[]\"},{\"internalType\":\"address\",\"name\":\"next\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"module\",\"type\":\"address\"}],\"name\":\"isModuleEnabled\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
 }
 
 // ModuleManagerABI is the input ABI used to generate the binding from.
@@ -2038,171 +1590,6 @@ func (_ModuleManager *ModuleManagerSession) ExecTransactionFromModuleReturnData(
 // Solidity: function execTransactionFromModuleReturnData(address to, uint256 value, bytes data, uint8 operation) returns(bool success, bytes returnData)
 func (_ModuleManager *ModuleManagerTransactorSession) ExecTransactionFromModuleReturnData(to common.Address, value *big.Int, data []byte, operation uint8) (*types.Transaction, error) {
 	return _ModuleManager.Contract.ExecTransactionFromModuleReturnData(&_ModuleManager.TransactOpts, to, value, data, operation)
-}
-
-// SetModuleGuard is a paid mutator transaction binding the contract method 0xe068df37.
-//
-// Solidity: function setModuleGuard(address moduleGuard) returns()
-func (_ModuleManager *ModuleManagerTransactor) SetModuleGuard(opts *bind.TransactOpts, moduleGuard common.Address) (*types.Transaction, error) {
-	return _ModuleManager.contract.Transact(opts, "setModuleGuard", moduleGuard)
-}
-
-// SetModuleGuard is a paid mutator transaction binding the contract method 0xe068df37.
-//
-// Solidity: function setModuleGuard(address moduleGuard) returns()
-func (_ModuleManager *ModuleManagerSession) SetModuleGuard(moduleGuard common.Address) (*types.Transaction, error) {
-	return _ModuleManager.Contract.SetModuleGuard(&_ModuleManager.TransactOpts, moduleGuard)
-}
-
-// SetModuleGuard is a paid mutator transaction binding the contract method 0xe068df37.
-//
-// Solidity: function setModuleGuard(address moduleGuard) returns()
-func (_ModuleManager *ModuleManagerTransactorSession) SetModuleGuard(moduleGuard common.Address) (*types.Transaction, error) {
-	return _ModuleManager.Contract.SetModuleGuard(&_ModuleManager.TransactOpts, moduleGuard)
-}
-
-// ModuleManagerChangedModuleGuardIterator is returned from FilterChangedModuleGuard and is used to iterate over the raw logs and unpacked data for ChangedModuleGuard events raised by the ModuleManager contract.
-type ModuleManagerChangedModuleGuardIterator struct {
-	Event *ModuleManagerChangedModuleGuard // Event containing the contract specifics and raw log
-
-	contract *bind.BoundContract // Generic contract to use for unpacking event data
-	event    string              // Event name to use for unpacking event data
-
-	logs chan types.Log        // Log channel receiving the found contract events
-	sub  ethereum.Subscription // Subscription for errors, completion and termination
-	done bool                  // Whether the subscription completed delivering logs
-	fail error                 // Occurred error to stop iteration
-}
-
-// Next advances the iterator to the subsequent event, returning whether there
-// are any more events found. In case of a retrieval or parsing error, false is
-// returned and Error() can be queried for the exact failure.
-func (it *ModuleManagerChangedModuleGuardIterator) Next() bool {
-	// If the iterator failed, stop iterating
-	if it.fail != nil {
-		return false
-	}
-	// If the iterator completed, deliver directly whatever's available
-	if it.done {
-		select {
-		case log := <-it.logs:
-			it.Event = new(ModuleManagerChangedModuleGuard)
-			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
-				it.fail = err
-				return false
-			}
-			it.Event.Raw = log
-			return true
-
-		default:
-			return false
-		}
-	}
-	// Iterator still in progress, wait for either a data or an error event
-	select {
-	case log := <-it.logs:
-		it.Event = new(ModuleManagerChangedModuleGuard)
-		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
-			it.fail = err
-			return false
-		}
-		it.Event.Raw = log
-		return true
-
-	case err := <-it.sub.Err():
-		it.done = true
-		it.fail = err
-		return it.Next()
-	}
-}
-
-// Error returns any retrieval or parsing error occurred during filtering.
-func (it *ModuleManagerChangedModuleGuardIterator) Error() error {
-	return it.fail
-}
-
-// Close terminates the iteration process, releasing any pending underlying
-// resources.
-func (it *ModuleManagerChangedModuleGuardIterator) Close() error {
-	it.sub.Unsubscribe()
-	return nil
-}
-
-// ModuleManagerChangedModuleGuard represents a ChangedModuleGuard event raised by the ModuleManager contract.
-type ModuleManagerChangedModuleGuard struct {
-	ModuleGuard common.Address
-	Raw         types.Log // Blockchain specific contextual infos
-}
-
-// FilterChangedModuleGuard is a free log retrieval operation binding the contract event 0xcd1966d6be16bc0c030cc741a06c6e0efaf8d00de2c8b6a9e11827e125de8bb8.
-//
-// Solidity: event ChangedModuleGuard(address indexed moduleGuard)
-func (_ModuleManager *ModuleManagerFilterer) FilterChangedModuleGuard(opts *bind.FilterOpts, moduleGuard []common.Address) (*ModuleManagerChangedModuleGuardIterator, error) {
-
-	var moduleGuardRule []interface{}
-	for _, moduleGuardItem := range moduleGuard {
-		moduleGuardRule = append(moduleGuardRule, moduleGuardItem)
-	}
-
-	logs, sub, err := _ModuleManager.contract.FilterLogs(opts, "ChangedModuleGuard", moduleGuardRule)
-	if err != nil {
-		return nil, err
-	}
-	return &ModuleManagerChangedModuleGuardIterator{contract: _ModuleManager.contract, event: "ChangedModuleGuard", logs: logs, sub: sub}, nil
-}
-
-// WatchChangedModuleGuard is a free log subscription operation binding the contract event 0xcd1966d6be16bc0c030cc741a06c6e0efaf8d00de2c8b6a9e11827e125de8bb8.
-//
-// Solidity: event ChangedModuleGuard(address indexed moduleGuard)
-func (_ModuleManager *ModuleManagerFilterer) WatchChangedModuleGuard(opts *bind.WatchOpts, sink chan<- *ModuleManagerChangedModuleGuard, moduleGuard []common.Address) (event.Subscription, error) {
-
-	var moduleGuardRule []interface{}
-	for _, moduleGuardItem := range moduleGuard {
-		moduleGuardRule = append(moduleGuardRule, moduleGuardItem)
-	}
-
-	logs, sub, err := _ModuleManager.contract.WatchLogs(opts, "ChangedModuleGuard", moduleGuardRule)
-	if err != nil {
-		return nil, err
-	}
-	return event.NewSubscription(func(quit <-chan struct{}) error {
-		defer sub.Unsubscribe()
-		for {
-			select {
-			case log := <-logs:
-				// New log arrived, parse the event and forward to the user
-				event := new(ModuleManagerChangedModuleGuard)
-				if err := _ModuleManager.contract.UnpackLog(event, "ChangedModuleGuard", log); err != nil {
-					return err
-				}
-				event.Raw = log
-
-				select {
-				case sink <- event:
-				case err := <-sub.Err():
-					return err
-				case <-quit:
-					return nil
-				}
-			case err := <-sub.Err():
-				return err
-			case <-quit:
-				return nil
-			}
-		}
-	}), nil
-}
-
-// ParseChangedModuleGuard is a log parse operation binding the contract event 0xcd1966d6be16bc0c030cc741a06c6e0efaf8d00de2c8b6a9e11827e125de8bb8.
-//
-// Solidity: event ChangedModuleGuard(address indexed moduleGuard)
-func (_ModuleManager *ModuleManagerFilterer) ParseChangedModuleGuard(log types.Log) (*ModuleManagerChangedModuleGuard, error) {
-	event := new(ModuleManagerChangedModuleGuard)
-	if err := _ModuleManager.contract.UnpackLog(event, "ChangedModuleGuard", log); err != nil {
-		return nil, err
-	}
-	event.Raw = log
-	return event, nil
 }
 
 // ModuleManagerDisabledModuleIterator is returned from FilterDisabledModule and is used to iterate over the raw logs and unpacked data for DisabledModule events raised by the ModuleManager contract.

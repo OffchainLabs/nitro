@@ -1157,6 +1157,365 @@ func (_ArbitrumChecker *ArbitrumCheckerTransactorRaw) Transact(opts *bind.Transa
 	return _ArbitrumChecker.Contract.contract.Transact(opts, method, params...)
 }
 
+// CreateCallMetaData contains all meta data concerning the CreateCall contract.
+var CreateCallMetaData = &bind.MetaData{
+	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newContract\",\"type\":\"address\"}],\"name\":\"ContractCreation\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"deploymentData\",\"type\":\"bytes\"}],\"name\":\"performCreate\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"newContract\",\"type\":\"address\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"deploymentData\",\"type\":\"bytes\"},{\"internalType\":\"bytes32\",\"name\":\"salt\",\"type\":\"bytes32\"}],\"name\":\"performCreate2\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"newContract\",\"type\":\"address\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	Bin: "0x608060405234801561001057600080fd5b5061044b806100206000396000f3fe608060405234801561001057600080fd5b50600436106100365760003560e01c80634847be6f1461003b5780634c8c9ea114610134575b600080fd5b6101086004803603606081101561005157600080fd5b81019080803590602001909291908035906020019064010000000081111561007857600080fd5b82018360208201111561008a57600080fd5b803590602001918460018302840111640100000000831117156100ac57600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f82011690508083019250505050505050919291929080359060200190929190505050610223565b604051808273ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390f35b6101f76004803603604081101561014a57600080fd5b81019080803590602001909291908035906020019064010000000081111561017157600080fd5b82018360208201111561018357600080fd5b803590602001918460018302840111640100000000831117156101a557600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f82011690508083019250505050505050919291929050505061031d565b604051808273ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390f35b60008183518460200186f59050600073ffffffffffffffffffffffffffffffffffffffff168173ffffffffffffffffffffffffffffffffffffffff1614156102d3576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004018080602001828103825260198152602001807f436f756c64206e6f74206465706c6f7920636f6e74726163740000000000000081525060200191505060405180910390fd5b8073ffffffffffffffffffffffffffffffffffffffff167f4db17dd5e4732fb6da34a148104a592783ca119a1e7bb8829eba6cbadef0b51160405160405180910390a29392505050565b600081516020830184f09050600073ffffffffffffffffffffffffffffffffffffffff168173ffffffffffffffffffffffffffffffffffffffff1614156103cc576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004018080602001828103825260198152602001807f436f756c64206e6f74206465706c6f7920636f6e74726163740000000000000081525060200191505060405180910390fd5b8073ffffffffffffffffffffffffffffffffffffffff167f4db17dd5e4732fb6da34a148104a592783ca119a1e7bb8829eba6cbadef0b51160405160405180910390a29291505056fea26469706673582212204f5b682b785a4bde69d22ce13d07ddd6c58ec565b71a1a95733b0ee584b5e47864736f6c63430007060033",
+}
+
+// CreateCallABI is the input ABI used to generate the binding from.
+// Deprecated: Use CreateCallMetaData.ABI instead.
+var CreateCallABI = CreateCallMetaData.ABI
+
+// CreateCallBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use CreateCallMetaData.Bin instead.
+var CreateCallBin = CreateCallMetaData.Bin
+
+// DeployCreateCall deploys a new Ethereum contract, binding an instance of CreateCall to it.
+func DeployCreateCall(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *CreateCall, error) {
+	parsed, err := CreateCallMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(CreateCallBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &CreateCall{CreateCallCaller: CreateCallCaller{contract: contract}, CreateCallTransactor: CreateCallTransactor{contract: contract}, CreateCallFilterer: CreateCallFilterer{contract: contract}}, nil
+}
+
+// CreateCall is an auto generated Go binding around an Ethereum contract.
+type CreateCall struct {
+	CreateCallCaller     // Read-only binding to the contract
+	CreateCallTransactor // Write-only binding to the contract
+	CreateCallFilterer   // Log filterer for contract events
+}
+
+// CreateCallCaller is an auto generated read-only Go binding around an Ethereum contract.
+type CreateCallCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// CreateCallTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type CreateCallTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// CreateCallFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type CreateCallFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// CreateCallSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type CreateCallSession struct {
+	Contract     *CreateCall       // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// CreateCallCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type CreateCallCallerSession struct {
+	Contract *CreateCallCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts     // Call options to use throughout this session
+}
+
+// CreateCallTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type CreateCallTransactorSession struct {
+	Contract     *CreateCallTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts     // Transaction auth options to use throughout this session
+}
+
+// CreateCallRaw is an auto generated low-level Go binding around an Ethereum contract.
+type CreateCallRaw struct {
+	Contract *CreateCall // Generic contract binding to access the raw methods on
+}
+
+// CreateCallCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type CreateCallCallerRaw struct {
+	Contract *CreateCallCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// CreateCallTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type CreateCallTransactorRaw struct {
+	Contract *CreateCallTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewCreateCall creates a new instance of CreateCall, bound to a specific deployed contract.
+func NewCreateCall(address common.Address, backend bind.ContractBackend) (*CreateCall, error) {
+	contract, err := bindCreateCall(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateCall{CreateCallCaller: CreateCallCaller{contract: contract}, CreateCallTransactor: CreateCallTransactor{contract: contract}, CreateCallFilterer: CreateCallFilterer{contract: contract}}, nil
+}
+
+// NewCreateCallCaller creates a new read-only instance of CreateCall, bound to a specific deployed contract.
+func NewCreateCallCaller(address common.Address, caller bind.ContractCaller) (*CreateCallCaller, error) {
+	contract, err := bindCreateCall(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateCallCaller{contract: contract}, nil
+}
+
+// NewCreateCallTransactor creates a new write-only instance of CreateCall, bound to a specific deployed contract.
+func NewCreateCallTransactor(address common.Address, transactor bind.ContractTransactor) (*CreateCallTransactor, error) {
+	contract, err := bindCreateCall(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateCallTransactor{contract: contract}, nil
+}
+
+// NewCreateCallFilterer creates a new log filterer instance of CreateCall, bound to a specific deployed contract.
+func NewCreateCallFilterer(address common.Address, filterer bind.ContractFilterer) (*CreateCallFilterer, error) {
+	contract, err := bindCreateCall(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateCallFilterer{contract: contract}, nil
+}
+
+// bindCreateCall binds a generic wrapper to an already deployed contract.
+func bindCreateCall(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := CreateCallMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_CreateCall *CreateCallRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _CreateCall.Contract.CreateCallCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_CreateCall *CreateCallRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _CreateCall.Contract.CreateCallTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_CreateCall *CreateCallRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _CreateCall.Contract.CreateCallTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_CreateCall *CreateCallCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _CreateCall.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_CreateCall *CreateCallTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _CreateCall.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_CreateCall *CreateCallTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _CreateCall.Contract.contract.Transact(opts, method, params...)
+}
+
+// PerformCreate is a paid mutator transaction binding the contract method 0x4c8c9ea1.
+//
+// Solidity: function performCreate(uint256 value, bytes deploymentData) returns(address newContract)
+func (_CreateCall *CreateCallTransactor) PerformCreate(opts *bind.TransactOpts, value *big.Int, deploymentData []byte) (*types.Transaction, error) {
+	return _CreateCall.contract.Transact(opts, "performCreate", value, deploymentData)
+}
+
+// PerformCreate is a paid mutator transaction binding the contract method 0x4c8c9ea1.
+//
+// Solidity: function performCreate(uint256 value, bytes deploymentData) returns(address newContract)
+func (_CreateCall *CreateCallSession) PerformCreate(value *big.Int, deploymentData []byte) (*types.Transaction, error) {
+	return _CreateCall.Contract.PerformCreate(&_CreateCall.TransactOpts, value, deploymentData)
+}
+
+// PerformCreate is a paid mutator transaction binding the contract method 0x4c8c9ea1.
+//
+// Solidity: function performCreate(uint256 value, bytes deploymentData) returns(address newContract)
+func (_CreateCall *CreateCallTransactorSession) PerformCreate(value *big.Int, deploymentData []byte) (*types.Transaction, error) {
+	return _CreateCall.Contract.PerformCreate(&_CreateCall.TransactOpts, value, deploymentData)
+}
+
+// PerformCreate2 is a paid mutator transaction binding the contract method 0x4847be6f.
+//
+// Solidity: function performCreate2(uint256 value, bytes deploymentData, bytes32 salt) returns(address newContract)
+func (_CreateCall *CreateCallTransactor) PerformCreate2(opts *bind.TransactOpts, value *big.Int, deploymentData []byte, salt [32]byte) (*types.Transaction, error) {
+	return _CreateCall.contract.Transact(opts, "performCreate2", value, deploymentData, salt)
+}
+
+// PerformCreate2 is a paid mutator transaction binding the contract method 0x4847be6f.
+//
+// Solidity: function performCreate2(uint256 value, bytes deploymentData, bytes32 salt) returns(address newContract)
+func (_CreateCall *CreateCallSession) PerformCreate2(value *big.Int, deploymentData []byte, salt [32]byte) (*types.Transaction, error) {
+	return _CreateCall.Contract.PerformCreate2(&_CreateCall.TransactOpts, value, deploymentData, salt)
+}
+
+// PerformCreate2 is a paid mutator transaction binding the contract method 0x4847be6f.
+//
+// Solidity: function performCreate2(uint256 value, bytes deploymentData, bytes32 salt) returns(address newContract)
+func (_CreateCall *CreateCallTransactorSession) PerformCreate2(value *big.Int, deploymentData []byte, salt [32]byte) (*types.Transaction, error) {
+	return _CreateCall.Contract.PerformCreate2(&_CreateCall.TransactOpts, value, deploymentData, salt)
+}
+
+// CreateCallContractCreationIterator is returned from FilterContractCreation and is used to iterate over the raw logs and unpacked data for ContractCreation events raised by the CreateCall contract.
+type CreateCallContractCreationIterator struct {
+	Event *CreateCallContractCreation // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *CreateCallContractCreationIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(CreateCallContractCreation)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(CreateCallContractCreation)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *CreateCallContractCreationIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *CreateCallContractCreationIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// CreateCallContractCreation represents a ContractCreation event raised by the CreateCall contract.
+type CreateCallContractCreation struct {
+	NewContract common.Address
+	Raw         types.Log // Blockchain specific contextual infos
+}
+
+// FilterContractCreation is a free log retrieval operation binding the contract event 0x4db17dd5e4732fb6da34a148104a592783ca119a1e7bb8829eba6cbadef0b511.
+//
+// Solidity: event ContractCreation(address indexed newContract)
+func (_CreateCall *CreateCallFilterer) FilterContractCreation(opts *bind.FilterOpts, newContract []common.Address) (*CreateCallContractCreationIterator, error) {
+
+	var newContractRule []interface{}
+	for _, newContractItem := range newContract {
+		newContractRule = append(newContractRule, newContractItem)
+	}
+
+	logs, sub, err := _CreateCall.contract.FilterLogs(opts, "ContractCreation", newContractRule)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateCallContractCreationIterator{contract: _CreateCall.contract, event: "ContractCreation", logs: logs, sub: sub}, nil
+}
+
+// WatchContractCreation is a free log subscription operation binding the contract event 0x4db17dd5e4732fb6da34a148104a592783ca119a1e7bb8829eba6cbadef0b511.
+//
+// Solidity: event ContractCreation(address indexed newContract)
+func (_CreateCall *CreateCallFilterer) WatchContractCreation(opts *bind.WatchOpts, sink chan<- *CreateCallContractCreation, newContract []common.Address) (event.Subscription, error) {
+
+	var newContractRule []interface{}
+	for _, newContractItem := range newContract {
+		newContractRule = append(newContractRule, newContractItem)
+	}
+
+	logs, sub, err := _CreateCall.contract.WatchLogs(opts, "ContractCreation", newContractRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(CreateCallContractCreation)
+				if err := _CreateCall.contract.UnpackLog(event, "ContractCreation", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseContractCreation is a log parse operation binding the contract event 0x4db17dd5e4732fb6da34a148104a592783ca119a1e7bb8829eba6cbadef0b511.
+//
+// Solidity: event ContractCreation(address indexed newContract)
+func (_CreateCall *CreateCallFilterer) ParseContractCreation(log types.Log) (*CreateCallContractCreation, error) {
+	event := new(CreateCallContractCreation)
+	if err := _CreateCall.contract.UnpackLog(event, "ContractCreation", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
 // CryptographyPrimitivesMetaData contains all meta data concerning the CryptographyPrimitives contract.
 var CryptographyPrimitivesMetaData = &bind.MetaData{
 	ABI: "[]",
@@ -3739,6 +4098,936 @@ func (_MerkleLib *MerkleLibTransactorRaw) Transfer(opts *bind.TransactOpts) (*ty
 // Transact invokes the (paid) contract method with params as input values.
 func (_MerkleLib *MerkleLibTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
 	return _MerkleLib.Contract.contract.Transact(opts, method, params...)
+}
+
+// MultiSendMetaData contains all meta data concerning the MultiSend contract.
+var MultiSendMetaData = &bind.MetaData{
+	ABI: "[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"transactions\",\"type\":\"bytes\"}],\"name\":\"multiSend\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"}]",
+	Bin: "0x60a060405234801561001057600080fd5b503073ffffffffffffffffffffffffffffffffffffffff1660808173ffffffffffffffffffffffffffffffffffffffff1660601b8152505060805160601c6102756100646000398060e052506102756000f3fe60806040526004361061001e5760003560e01c80638d80ff0a14610023575b600080fd5b6100dc6004803603602081101561003957600080fd5b810190808035906020019064010000000081111561005657600080fd5b82018360208201111561006857600080fd5b8035906020019184600183028401116401000000008311171561008a57600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f8201169050808301925050505050505091929192905050506100de565b005b7f000000000000000000000000000000000000000000000000000000000000000073ffffffffffffffffffffffffffffffffffffffff163073ffffffffffffffffffffffffffffffffffffffff161415610183576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004018080602001828103825260308152602001806102106030913960400191505060405180910390fd5b805160205b8181101561020a578083015160f81c6001820184015160601c6015830185015160358401860151605585018701600085600081146101cd57600181146101dd576101e8565b6000808585888a5af191506101e8565b6000808585895af491505b5060008114156101f757600080fd5b8260550187019650505050505050610188565b50505056fe4d756c746953656e642073686f756c64206f6e6c792062652063616c6c6564207669612064656c656761746563616c6ca264697066735822122021102e6d5bc1da75411b41fe2792a1748bf5c49c794e51e81405ccd2399da13564736f6c63430007060033",
+}
+
+// MultiSendABI is the input ABI used to generate the binding from.
+// Deprecated: Use MultiSendMetaData.ABI instead.
+var MultiSendABI = MultiSendMetaData.ABI
+
+// MultiSendBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use MultiSendMetaData.Bin instead.
+var MultiSendBin = MultiSendMetaData.Bin
+
+// DeployMultiSend deploys a new Ethereum contract, binding an instance of MultiSend to it.
+func DeployMultiSend(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *MultiSend, error) {
+	parsed, err := MultiSendMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(MultiSendBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &MultiSend{MultiSendCaller: MultiSendCaller{contract: contract}, MultiSendTransactor: MultiSendTransactor{contract: contract}, MultiSendFilterer: MultiSendFilterer{contract: contract}}, nil
+}
+
+// MultiSend is an auto generated Go binding around an Ethereum contract.
+type MultiSend struct {
+	MultiSendCaller     // Read-only binding to the contract
+	MultiSendTransactor // Write-only binding to the contract
+	MultiSendFilterer   // Log filterer for contract events
+}
+
+// MultiSendCaller is an auto generated read-only Go binding around an Ethereum contract.
+type MultiSendCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// MultiSendTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type MultiSendTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// MultiSendFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type MultiSendFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// MultiSendSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type MultiSendSession struct {
+	Contract     *MultiSend        // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// MultiSendCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type MultiSendCallerSession struct {
+	Contract *MultiSendCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts    // Call options to use throughout this session
+}
+
+// MultiSendTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type MultiSendTransactorSession struct {
+	Contract     *MultiSendTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts    // Transaction auth options to use throughout this session
+}
+
+// MultiSendRaw is an auto generated low-level Go binding around an Ethereum contract.
+type MultiSendRaw struct {
+	Contract *MultiSend // Generic contract binding to access the raw methods on
+}
+
+// MultiSendCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type MultiSendCallerRaw struct {
+	Contract *MultiSendCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// MultiSendTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type MultiSendTransactorRaw struct {
+	Contract *MultiSendTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewMultiSend creates a new instance of MultiSend, bound to a specific deployed contract.
+func NewMultiSend(address common.Address, backend bind.ContractBackend) (*MultiSend, error) {
+	contract, err := bindMultiSend(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &MultiSend{MultiSendCaller: MultiSendCaller{contract: contract}, MultiSendTransactor: MultiSendTransactor{contract: contract}, MultiSendFilterer: MultiSendFilterer{contract: contract}}, nil
+}
+
+// NewMultiSendCaller creates a new read-only instance of MultiSend, bound to a specific deployed contract.
+func NewMultiSendCaller(address common.Address, caller bind.ContractCaller) (*MultiSendCaller, error) {
+	contract, err := bindMultiSend(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &MultiSendCaller{contract: contract}, nil
+}
+
+// NewMultiSendTransactor creates a new write-only instance of MultiSend, bound to a specific deployed contract.
+func NewMultiSendTransactor(address common.Address, transactor bind.ContractTransactor) (*MultiSendTransactor, error) {
+	contract, err := bindMultiSend(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &MultiSendTransactor{contract: contract}, nil
+}
+
+// NewMultiSendFilterer creates a new log filterer instance of MultiSend, bound to a specific deployed contract.
+func NewMultiSendFilterer(address common.Address, filterer bind.ContractFilterer) (*MultiSendFilterer, error) {
+	contract, err := bindMultiSend(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &MultiSendFilterer{contract: contract}, nil
+}
+
+// bindMultiSend binds a generic wrapper to an already deployed contract.
+func bindMultiSend(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := MultiSendMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_MultiSend *MultiSendRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _MultiSend.Contract.MultiSendCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_MultiSend *MultiSendRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _MultiSend.Contract.MultiSendTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_MultiSend *MultiSendRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _MultiSend.Contract.MultiSendTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_MultiSend *MultiSendCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _MultiSend.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_MultiSend *MultiSendTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _MultiSend.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_MultiSend *MultiSendTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _MultiSend.Contract.contract.Transact(opts, method, params...)
+}
+
+// MultiSend is a paid mutator transaction binding the contract method 0x8d80ff0a.
+//
+// Solidity: function multiSend(bytes transactions) payable returns()
+func (_MultiSend *MultiSendTransactor) MultiSend(opts *bind.TransactOpts, transactions []byte) (*types.Transaction, error) {
+	return _MultiSend.contract.Transact(opts, "multiSend", transactions)
+}
+
+// MultiSend is a paid mutator transaction binding the contract method 0x8d80ff0a.
+//
+// Solidity: function multiSend(bytes transactions) payable returns()
+func (_MultiSend *MultiSendSession) MultiSend(transactions []byte) (*types.Transaction, error) {
+	return _MultiSend.Contract.MultiSend(&_MultiSend.TransactOpts, transactions)
+}
+
+// MultiSend is a paid mutator transaction binding the contract method 0x8d80ff0a.
+//
+// Solidity: function multiSend(bytes transactions) payable returns()
+func (_MultiSend *MultiSendTransactorSession) MultiSend(transactions []byte) (*types.Transaction, error) {
+	return _MultiSend.Contract.MultiSend(&_MultiSend.TransactOpts, transactions)
+}
+
+// MultiSendCallOnlyMetaData contains all meta data concerning the MultiSendCallOnly contract.
+var MultiSendCallOnlyMetaData = &bind.MetaData{
+	ABI: "[{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"transactions\",\"type\":\"bytes\"}],\"name\":\"multiSend\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"}]",
+	Bin: "0x608060405234801561001057600080fd5b5061019a806100206000396000f3fe60806040526004361061001e5760003560e01c80638d80ff0a14610023575b600080fd5b6100dc6004803603602081101561003957600080fd5b810190808035906020019064010000000081111561005657600080fd5b82018360208201111561006857600080fd5b8035906020019184600183028401116401000000008311171561008a57600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f8201169050808301925050505050505091929192905050506100de565b005b805160205b8181101561015f578083015160f81c6001820184015160601c60158301850151603584018601516055850187016000856000811461012857600181146101385761013d565b6000808585888a5af1915061013d565b600080fd5b50600081141561014c57600080fd5b82605501870196505050505050506100e3565b50505056fea26469706673582212208d297bb003abee230b5dfb38774688f37a6fbb97a82a21728e8049b2acb9b73564736f6c63430007060033",
+}
+
+// MultiSendCallOnlyABI is the input ABI used to generate the binding from.
+// Deprecated: Use MultiSendCallOnlyMetaData.ABI instead.
+var MultiSendCallOnlyABI = MultiSendCallOnlyMetaData.ABI
+
+// MultiSendCallOnlyBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use MultiSendCallOnlyMetaData.Bin instead.
+var MultiSendCallOnlyBin = MultiSendCallOnlyMetaData.Bin
+
+// DeployMultiSendCallOnly deploys a new Ethereum contract, binding an instance of MultiSendCallOnly to it.
+func DeployMultiSendCallOnly(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *MultiSendCallOnly, error) {
+	parsed, err := MultiSendCallOnlyMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(MultiSendCallOnlyBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &MultiSendCallOnly{MultiSendCallOnlyCaller: MultiSendCallOnlyCaller{contract: contract}, MultiSendCallOnlyTransactor: MultiSendCallOnlyTransactor{contract: contract}, MultiSendCallOnlyFilterer: MultiSendCallOnlyFilterer{contract: contract}}, nil
+}
+
+// MultiSendCallOnly is an auto generated Go binding around an Ethereum contract.
+type MultiSendCallOnly struct {
+	MultiSendCallOnlyCaller     // Read-only binding to the contract
+	MultiSendCallOnlyTransactor // Write-only binding to the contract
+	MultiSendCallOnlyFilterer   // Log filterer for contract events
+}
+
+// MultiSendCallOnlyCaller is an auto generated read-only Go binding around an Ethereum contract.
+type MultiSendCallOnlyCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// MultiSendCallOnlyTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type MultiSendCallOnlyTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// MultiSendCallOnlyFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type MultiSendCallOnlyFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// MultiSendCallOnlySession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type MultiSendCallOnlySession struct {
+	Contract     *MultiSendCallOnly // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts      // Call options to use throughout this session
+	TransactOpts bind.TransactOpts  // Transaction auth options to use throughout this session
+}
+
+// MultiSendCallOnlyCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type MultiSendCallOnlyCallerSession struct {
+	Contract *MultiSendCallOnlyCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts            // Call options to use throughout this session
+}
+
+// MultiSendCallOnlyTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type MultiSendCallOnlyTransactorSession struct {
+	Contract     *MultiSendCallOnlyTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts            // Transaction auth options to use throughout this session
+}
+
+// MultiSendCallOnlyRaw is an auto generated low-level Go binding around an Ethereum contract.
+type MultiSendCallOnlyRaw struct {
+	Contract *MultiSendCallOnly // Generic contract binding to access the raw methods on
+}
+
+// MultiSendCallOnlyCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type MultiSendCallOnlyCallerRaw struct {
+	Contract *MultiSendCallOnlyCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// MultiSendCallOnlyTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type MultiSendCallOnlyTransactorRaw struct {
+	Contract *MultiSendCallOnlyTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewMultiSendCallOnly creates a new instance of MultiSendCallOnly, bound to a specific deployed contract.
+func NewMultiSendCallOnly(address common.Address, backend bind.ContractBackend) (*MultiSendCallOnly, error) {
+	contract, err := bindMultiSendCallOnly(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &MultiSendCallOnly{MultiSendCallOnlyCaller: MultiSendCallOnlyCaller{contract: contract}, MultiSendCallOnlyTransactor: MultiSendCallOnlyTransactor{contract: contract}, MultiSendCallOnlyFilterer: MultiSendCallOnlyFilterer{contract: contract}}, nil
+}
+
+// NewMultiSendCallOnlyCaller creates a new read-only instance of MultiSendCallOnly, bound to a specific deployed contract.
+func NewMultiSendCallOnlyCaller(address common.Address, caller bind.ContractCaller) (*MultiSendCallOnlyCaller, error) {
+	contract, err := bindMultiSendCallOnly(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &MultiSendCallOnlyCaller{contract: contract}, nil
+}
+
+// NewMultiSendCallOnlyTransactor creates a new write-only instance of MultiSendCallOnly, bound to a specific deployed contract.
+func NewMultiSendCallOnlyTransactor(address common.Address, transactor bind.ContractTransactor) (*MultiSendCallOnlyTransactor, error) {
+	contract, err := bindMultiSendCallOnly(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &MultiSendCallOnlyTransactor{contract: contract}, nil
+}
+
+// NewMultiSendCallOnlyFilterer creates a new log filterer instance of MultiSendCallOnly, bound to a specific deployed contract.
+func NewMultiSendCallOnlyFilterer(address common.Address, filterer bind.ContractFilterer) (*MultiSendCallOnlyFilterer, error) {
+	contract, err := bindMultiSendCallOnly(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &MultiSendCallOnlyFilterer{contract: contract}, nil
+}
+
+// bindMultiSendCallOnly binds a generic wrapper to an already deployed contract.
+func bindMultiSendCallOnly(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := MultiSendCallOnlyMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_MultiSendCallOnly *MultiSendCallOnlyRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _MultiSendCallOnly.Contract.MultiSendCallOnlyCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_MultiSendCallOnly *MultiSendCallOnlyRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _MultiSendCallOnly.Contract.MultiSendCallOnlyTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_MultiSendCallOnly *MultiSendCallOnlyRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _MultiSendCallOnly.Contract.MultiSendCallOnlyTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_MultiSendCallOnly *MultiSendCallOnlyCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _MultiSendCallOnly.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_MultiSendCallOnly *MultiSendCallOnlyTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _MultiSendCallOnly.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_MultiSendCallOnly *MultiSendCallOnlyTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _MultiSendCallOnly.Contract.contract.Transact(opts, method, params...)
+}
+
+// MultiSend is a paid mutator transaction binding the contract method 0x8d80ff0a.
+//
+// Solidity: function multiSend(bytes transactions) payable returns()
+func (_MultiSendCallOnly *MultiSendCallOnlyTransactor) MultiSend(opts *bind.TransactOpts, transactions []byte) (*types.Transaction, error) {
+	return _MultiSendCallOnly.contract.Transact(opts, "multiSend", transactions)
+}
+
+// MultiSend is a paid mutator transaction binding the contract method 0x8d80ff0a.
+//
+// Solidity: function multiSend(bytes transactions) payable returns()
+func (_MultiSendCallOnly *MultiSendCallOnlySession) MultiSend(transactions []byte) (*types.Transaction, error) {
+	return _MultiSendCallOnly.Contract.MultiSend(&_MultiSendCallOnly.TransactOpts, transactions)
+}
+
+// MultiSend is a paid mutator transaction binding the contract method 0x8d80ff0a.
+//
+// Solidity: function multiSend(bytes transactions) payable returns()
+func (_MultiSendCallOnly *MultiSendCallOnlyTransactorSession) MultiSend(transactions []byte) (*types.Transaction, error) {
+	return _MultiSendCallOnly.Contract.MultiSend(&_MultiSendCallOnly.TransactOpts, transactions)
+}
+
+// SafeStorageMetaData contains all meta data concerning the SafeStorage contract.
+var SafeStorageMetaData = &bind.MetaData{
+	ABI: "[]",
+	Bin: "0x6080604052348015600f57600080fd5b50603f80601d6000396000f3fe6080604052600080fdfea26469706673582212209ec6de94c8c0bf27bb9fc3808dbfb950a38cc157640c5ec8ed4f5c0b2ae6aa1a64736f6c63430007060033",
+}
+
+// SafeStorageABI is the input ABI used to generate the binding from.
+// Deprecated: Use SafeStorageMetaData.ABI instead.
+var SafeStorageABI = SafeStorageMetaData.ABI
+
+// SafeStorageBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use SafeStorageMetaData.Bin instead.
+var SafeStorageBin = SafeStorageMetaData.Bin
+
+// DeploySafeStorage deploys a new Ethereum contract, binding an instance of SafeStorage to it.
+func DeploySafeStorage(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *SafeStorage, error) {
+	parsed, err := SafeStorageMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(SafeStorageBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &SafeStorage{SafeStorageCaller: SafeStorageCaller{contract: contract}, SafeStorageTransactor: SafeStorageTransactor{contract: contract}, SafeStorageFilterer: SafeStorageFilterer{contract: contract}}, nil
+}
+
+// SafeStorage is an auto generated Go binding around an Ethereum contract.
+type SafeStorage struct {
+	SafeStorageCaller     // Read-only binding to the contract
+	SafeStorageTransactor // Write-only binding to the contract
+	SafeStorageFilterer   // Log filterer for contract events
+}
+
+// SafeStorageCaller is an auto generated read-only Go binding around an Ethereum contract.
+type SafeStorageCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// SafeStorageTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type SafeStorageTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// SafeStorageFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type SafeStorageFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// SafeStorageSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type SafeStorageSession struct {
+	Contract     *SafeStorage      // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// SafeStorageCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type SafeStorageCallerSession struct {
+	Contract *SafeStorageCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts      // Call options to use throughout this session
+}
+
+// SafeStorageTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type SafeStorageTransactorSession struct {
+	Contract     *SafeStorageTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts      // Transaction auth options to use throughout this session
+}
+
+// SafeStorageRaw is an auto generated low-level Go binding around an Ethereum contract.
+type SafeStorageRaw struct {
+	Contract *SafeStorage // Generic contract binding to access the raw methods on
+}
+
+// SafeStorageCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type SafeStorageCallerRaw struct {
+	Contract *SafeStorageCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// SafeStorageTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type SafeStorageTransactorRaw struct {
+	Contract *SafeStorageTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewSafeStorage creates a new instance of SafeStorage, bound to a specific deployed contract.
+func NewSafeStorage(address common.Address, backend bind.ContractBackend) (*SafeStorage, error) {
+	contract, err := bindSafeStorage(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &SafeStorage{SafeStorageCaller: SafeStorageCaller{contract: contract}, SafeStorageTransactor: SafeStorageTransactor{contract: contract}, SafeStorageFilterer: SafeStorageFilterer{contract: contract}}, nil
+}
+
+// NewSafeStorageCaller creates a new read-only instance of SafeStorage, bound to a specific deployed contract.
+func NewSafeStorageCaller(address common.Address, caller bind.ContractCaller) (*SafeStorageCaller, error) {
+	contract, err := bindSafeStorage(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &SafeStorageCaller{contract: contract}, nil
+}
+
+// NewSafeStorageTransactor creates a new write-only instance of SafeStorage, bound to a specific deployed contract.
+func NewSafeStorageTransactor(address common.Address, transactor bind.ContractTransactor) (*SafeStorageTransactor, error) {
+	contract, err := bindSafeStorage(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &SafeStorageTransactor{contract: contract}, nil
+}
+
+// NewSafeStorageFilterer creates a new log filterer instance of SafeStorage, bound to a specific deployed contract.
+func NewSafeStorageFilterer(address common.Address, filterer bind.ContractFilterer) (*SafeStorageFilterer, error) {
+	contract, err := bindSafeStorage(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &SafeStorageFilterer{contract: contract}, nil
+}
+
+// bindSafeStorage binds a generic wrapper to an already deployed contract.
+func bindSafeStorage(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := SafeStorageMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_SafeStorage *SafeStorageRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _SafeStorage.Contract.SafeStorageCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_SafeStorage *SafeStorageRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _SafeStorage.Contract.SafeStorageTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_SafeStorage *SafeStorageRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _SafeStorage.Contract.SafeStorageTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_SafeStorage *SafeStorageCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _SafeStorage.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_SafeStorage *SafeStorageTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _SafeStorage.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_SafeStorage *SafeStorageTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _SafeStorage.Contract.contract.Transact(opts, method, params...)
+}
+
+// SignMessageLibMetaData contains all meta data concerning the SignMessageLib contract.
+var SignMessageLibMetaData = &bind.MetaData{
+	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"msgHash\",\"type\":\"bytes32\"}],\"name\":\"SignMsg\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"message\",\"type\":\"bytes\"}],\"name\":\"getMessageHash\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"_data\",\"type\":\"bytes\"}],\"name\":\"signMessage\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	Bin: "0x608060405234801561001057600080fd5b506103c6806100206000396000f3fe608060405234801561001057600080fd5b50600436106100365760003560e01c80630a1028c41461003b57806385a5affe1461010a575b600080fd5b6100f46004803603602081101561005157600080fd5b810190808035906020019064010000000081111561006e57600080fd5b82018360208201111561008057600080fd5b803590602001918460018302840111640100000000831117156100a257600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f820116905080830192505050505050509192919290505050610183565b6040518082815260200191505060405180910390f35b6101816004803603602081101561012057600080fd5b810190808035906020019064010000000081111561013d57600080fd5b82018360208201111561014f57600080fd5b8035906020019184600183028401116401000000008311171561017157600080fd5b90919293919293905050506102f4565b005b6000807f60b3cbf8b4a223d68d641b3b6ddf9a298e7f33710cf3d3a9d1146b5a6150fbca60001b83805190602001206040516020018083815260200182815260200192505050604051602081830303815290604052805190602001209050601960f81b600160f81b3073ffffffffffffffffffffffffffffffffffffffff1663f698da256040518163ffffffff1660e01b815260040160206040518083038186803b15801561023157600080fd5b505afa158015610245573d6000803e3d6000fd5b505050506040513d602081101561025b57600080fd5b81019080805190602001909291905050508360405160200180857effffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff19168152600101847effffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff1916815260010183815260200182815260200194505050505060405160208183030381529060405280519060200120915050919050565b600061034383838080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f82011690508083019250505050505050610183565b905060016007600083815260200190815260200160002081905550807fe7f4675038f4f6034dfcbbb24c4dc08e4ebf10eb9d257d3d02c0f38d122ac6e460405160405180910390a250505056fea2646970667358221220b6edbb5eb57b87c6371f0f7b62449c6a356d2bbc694eefa3b35338ca1d8fbc3564736f6c63430007060033",
+}
+
+// SignMessageLibABI is the input ABI used to generate the binding from.
+// Deprecated: Use SignMessageLibMetaData.ABI instead.
+var SignMessageLibABI = SignMessageLibMetaData.ABI
+
+// SignMessageLibBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use SignMessageLibMetaData.Bin instead.
+var SignMessageLibBin = SignMessageLibMetaData.Bin
+
+// DeploySignMessageLib deploys a new Ethereum contract, binding an instance of SignMessageLib to it.
+func DeploySignMessageLib(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *SignMessageLib, error) {
+	parsed, err := SignMessageLibMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(SignMessageLibBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &SignMessageLib{SignMessageLibCaller: SignMessageLibCaller{contract: contract}, SignMessageLibTransactor: SignMessageLibTransactor{contract: contract}, SignMessageLibFilterer: SignMessageLibFilterer{contract: contract}}, nil
+}
+
+// SignMessageLib is an auto generated Go binding around an Ethereum contract.
+type SignMessageLib struct {
+	SignMessageLibCaller     // Read-only binding to the contract
+	SignMessageLibTransactor // Write-only binding to the contract
+	SignMessageLibFilterer   // Log filterer for contract events
+}
+
+// SignMessageLibCaller is an auto generated read-only Go binding around an Ethereum contract.
+type SignMessageLibCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// SignMessageLibTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type SignMessageLibTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// SignMessageLibFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type SignMessageLibFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// SignMessageLibSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type SignMessageLibSession struct {
+	Contract     *SignMessageLib   // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// SignMessageLibCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type SignMessageLibCallerSession struct {
+	Contract *SignMessageLibCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts         // Call options to use throughout this session
+}
+
+// SignMessageLibTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type SignMessageLibTransactorSession struct {
+	Contract     *SignMessageLibTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts         // Transaction auth options to use throughout this session
+}
+
+// SignMessageLibRaw is an auto generated low-level Go binding around an Ethereum contract.
+type SignMessageLibRaw struct {
+	Contract *SignMessageLib // Generic contract binding to access the raw methods on
+}
+
+// SignMessageLibCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type SignMessageLibCallerRaw struct {
+	Contract *SignMessageLibCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// SignMessageLibTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type SignMessageLibTransactorRaw struct {
+	Contract *SignMessageLibTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewSignMessageLib creates a new instance of SignMessageLib, bound to a specific deployed contract.
+func NewSignMessageLib(address common.Address, backend bind.ContractBackend) (*SignMessageLib, error) {
+	contract, err := bindSignMessageLib(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &SignMessageLib{SignMessageLibCaller: SignMessageLibCaller{contract: contract}, SignMessageLibTransactor: SignMessageLibTransactor{contract: contract}, SignMessageLibFilterer: SignMessageLibFilterer{contract: contract}}, nil
+}
+
+// NewSignMessageLibCaller creates a new read-only instance of SignMessageLib, bound to a specific deployed contract.
+func NewSignMessageLibCaller(address common.Address, caller bind.ContractCaller) (*SignMessageLibCaller, error) {
+	contract, err := bindSignMessageLib(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &SignMessageLibCaller{contract: contract}, nil
+}
+
+// NewSignMessageLibTransactor creates a new write-only instance of SignMessageLib, bound to a specific deployed contract.
+func NewSignMessageLibTransactor(address common.Address, transactor bind.ContractTransactor) (*SignMessageLibTransactor, error) {
+	contract, err := bindSignMessageLib(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &SignMessageLibTransactor{contract: contract}, nil
+}
+
+// NewSignMessageLibFilterer creates a new log filterer instance of SignMessageLib, bound to a specific deployed contract.
+func NewSignMessageLibFilterer(address common.Address, filterer bind.ContractFilterer) (*SignMessageLibFilterer, error) {
+	contract, err := bindSignMessageLib(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &SignMessageLibFilterer{contract: contract}, nil
+}
+
+// bindSignMessageLib binds a generic wrapper to an already deployed contract.
+func bindSignMessageLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := SignMessageLibMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_SignMessageLib *SignMessageLibRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _SignMessageLib.Contract.SignMessageLibCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_SignMessageLib *SignMessageLibRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _SignMessageLib.Contract.SignMessageLibTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_SignMessageLib *SignMessageLibRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _SignMessageLib.Contract.SignMessageLibTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_SignMessageLib *SignMessageLibCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _SignMessageLib.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_SignMessageLib *SignMessageLibTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _SignMessageLib.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_SignMessageLib *SignMessageLibTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _SignMessageLib.Contract.contract.Transact(opts, method, params...)
+}
+
+// GetMessageHash is a free data retrieval call binding the contract method 0x0a1028c4.
+//
+// Solidity: function getMessageHash(bytes message) view returns(bytes32)
+func (_SignMessageLib *SignMessageLibCaller) GetMessageHash(opts *bind.CallOpts, message []byte) ([32]byte, error) {
+	var out []interface{}
+	err := _SignMessageLib.contract.Call(opts, &out, "getMessageHash", message)
+
+	if err != nil {
+		return *new([32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+
+	return out0, err
+
+}
+
+// GetMessageHash is a free data retrieval call binding the contract method 0x0a1028c4.
+//
+// Solidity: function getMessageHash(bytes message) view returns(bytes32)
+func (_SignMessageLib *SignMessageLibSession) GetMessageHash(message []byte) ([32]byte, error) {
+	return _SignMessageLib.Contract.GetMessageHash(&_SignMessageLib.CallOpts, message)
+}
+
+// GetMessageHash is a free data retrieval call binding the contract method 0x0a1028c4.
+//
+// Solidity: function getMessageHash(bytes message) view returns(bytes32)
+func (_SignMessageLib *SignMessageLibCallerSession) GetMessageHash(message []byte) ([32]byte, error) {
+	return _SignMessageLib.Contract.GetMessageHash(&_SignMessageLib.CallOpts, message)
+}
+
+// SignMessage is a paid mutator transaction binding the contract method 0x85a5affe.
+//
+// Solidity: function signMessage(bytes _data) returns()
+func (_SignMessageLib *SignMessageLibTransactor) SignMessage(opts *bind.TransactOpts, _data []byte) (*types.Transaction, error) {
+	return _SignMessageLib.contract.Transact(opts, "signMessage", _data)
+}
+
+// SignMessage is a paid mutator transaction binding the contract method 0x85a5affe.
+//
+// Solidity: function signMessage(bytes _data) returns()
+func (_SignMessageLib *SignMessageLibSession) SignMessage(_data []byte) (*types.Transaction, error) {
+	return _SignMessageLib.Contract.SignMessage(&_SignMessageLib.TransactOpts, _data)
+}
+
+// SignMessage is a paid mutator transaction binding the contract method 0x85a5affe.
+//
+// Solidity: function signMessage(bytes _data) returns()
+func (_SignMessageLib *SignMessageLibTransactorSession) SignMessage(_data []byte) (*types.Transaction, error) {
+	return _SignMessageLib.Contract.SignMessage(&_SignMessageLib.TransactOpts, _data)
+}
+
+// SignMessageLibSignMsgIterator is returned from FilterSignMsg and is used to iterate over the raw logs and unpacked data for SignMsg events raised by the SignMessageLib contract.
+type SignMessageLibSignMsgIterator struct {
+	Event *SignMessageLibSignMsg // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *SignMessageLibSignMsgIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(SignMessageLibSignMsg)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(SignMessageLibSignMsg)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *SignMessageLibSignMsgIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *SignMessageLibSignMsgIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// SignMessageLibSignMsg represents a SignMsg event raised by the SignMessageLib contract.
+type SignMessageLibSignMsg struct {
+	MsgHash [32]byte
+	Raw     types.Log // Blockchain specific contextual infos
+}
+
+// FilterSignMsg is a free log retrieval operation binding the contract event 0xe7f4675038f4f6034dfcbbb24c4dc08e4ebf10eb9d257d3d02c0f38d122ac6e4.
+//
+// Solidity: event SignMsg(bytes32 indexed msgHash)
+func (_SignMessageLib *SignMessageLibFilterer) FilterSignMsg(opts *bind.FilterOpts, msgHash [][32]byte) (*SignMessageLibSignMsgIterator, error) {
+
+	var msgHashRule []interface{}
+	for _, msgHashItem := range msgHash {
+		msgHashRule = append(msgHashRule, msgHashItem)
+	}
+
+	logs, sub, err := _SignMessageLib.contract.FilterLogs(opts, "SignMsg", msgHashRule)
+	if err != nil {
+		return nil, err
+	}
+	return &SignMessageLibSignMsgIterator{contract: _SignMessageLib.contract, event: "SignMsg", logs: logs, sub: sub}, nil
+}
+
+// WatchSignMsg is a free log subscription operation binding the contract event 0xe7f4675038f4f6034dfcbbb24c4dc08e4ebf10eb9d257d3d02c0f38d122ac6e4.
+//
+// Solidity: event SignMsg(bytes32 indexed msgHash)
+func (_SignMessageLib *SignMessageLibFilterer) WatchSignMsg(opts *bind.WatchOpts, sink chan<- *SignMessageLibSignMsg, msgHash [][32]byte) (event.Subscription, error) {
+
+	var msgHashRule []interface{}
+	for _, msgHashItem := range msgHash {
+		msgHashRule = append(msgHashRule, msgHashItem)
+	}
+
+	logs, sub, err := _SignMessageLib.contract.WatchLogs(opts, "SignMsg", msgHashRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(SignMessageLibSignMsg)
+				if err := _SignMessageLib.contract.UnpackLog(event, "SignMsg", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseSignMsg is a log parse operation binding the contract event 0xe7f4675038f4f6034dfcbbb24c4dc08e4ebf10eb9d257d3d02c0f38d122ac6e4.
+//
+// Solidity: event SignMsg(bytes32 indexed msgHash)
+func (_SignMessageLib *SignMessageLibFilterer) ParseSignMsg(log types.Log) (*SignMessageLibSignMsg, error) {
+	event := new(SignMessageLibSignMsg)
+	if err := _SignMessageLib.contract.UnpackLog(event, "SignMsg", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
 }
 
 // UUPSNotUpgradeableMetaData contains all meta data concerning the UUPSNotUpgradeable contract.

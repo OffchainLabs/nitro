@@ -29,6 +29,157 @@ var (
 	_ = abi.ConvertType
 )
 
+// EnumMetaData contains all meta data concerning the Enum contract.
+var EnumMetaData = &bind.MetaData{
+	ABI: "[]",
+}
+
+// EnumABI is the input ABI used to generate the binding from.
+// Deprecated: Use EnumMetaData.ABI instead.
+var EnumABI = EnumMetaData.ABI
+
+// Enum is an auto generated Go binding around an Ethereum contract.
+type Enum struct {
+	EnumCaller     // Read-only binding to the contract
+	EnumTransactor // Write-only binding to the contract
+	EnumFilterer   // Log filterer for contract events
+}
+
+// EnumCaller is an auto generated read-only Go binding around an Ethereum contract.
+type EnumCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EnumTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type EnumTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EnumFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type EnumFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EnumSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type EnumSession struct {
+	Contract     *Enum             // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// EnumCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type EnumCallerSession struct {
+	Contract *EnumCaller   // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts // Call options to use throughout this session
+}
+
+// EnumTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type EnumTransactorSession struct {
+	Contract     *EnumTransactor   // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// EnumRaw is an auto generated low-level Go binding around an Ethereum contract.
+type EnumRaw struct {
+	Contract *Enum // Generic contract binding to access the raw methods on
+}
+
+// EnumCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type EnumCallerRaw struct {
+	Contract *EnumCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// EnumTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type EnumTransactorRaw struct {
+	Contract *EnumTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewEnum creates a new instance of Enum, bound to a specific deployed contract.
+func NewEnum(address common.Address, backend bind.ContractBackend) (*Enum, error) {
+	contract, err := bindEnum(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &Enum{EnumCaller: EnumCaller{contract: contract}, EnumTransactor: EnumTransactor{contract: contract}, EnumFilterer: EnumFilterer{contract: contract}}, nil
+}
+
+// NewEnumCaller creates a new read-only instance of Enum, bound to a specific deployed contract.
+func NewEnumCaller(address common.Address, caller bind.ContractCaller) (*EnumCaller, error) {
+	contract, err := bindEnum(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &EnumCaller{contract: contract}, nil
+}
+
+// NewEnumTransactor creates a new write-only instance of Enum, bound to a specific deployed contract.
+func NewEnumTransactor(address common.Address, transactor bind.ContractTransactor) (*EnumTransactor, error) {
+	contract, err := bindEnum(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &EnumTransactor{contract: contract}, nil
+}
+
+// NewEnumFilterer creates a new log filterer instance of Enum, bound to a specific deployed contract.
+func NewEnumFilterer(address common.Address, filterer bind.ContractFilterer) (*EnumFilterer, error) {
+	contract, err := bindEnum(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &EnumFilterer{contract: contract}, nil
+}
+
+// bindEnum binds a generic wrapper to an already deployed contract.
+func bindEnum(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := EnumMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_Enum *EnumRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _Enum.Contract.EnumCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_Enum *EnumRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _Enum.Contract.EnumTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_Enum *EnumRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _Enum.Contract.EnumTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_Enum *EnumCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _Enum.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_Enum *EnumTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _Enum.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_Enum *EnumTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _Enum.Contract.contract.Transact(opts, method, params...)
+}
+
 // NativeCurrencyPaymentFallbackMetaData contains all meta data concerning the NativeCurrencyPaymentFallback contract.
 var NativeCurrencyPaymentFallbackMetaData = &bind.MetaData{
 	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"}],\"name\":\"SafeReceived\",\"type\":\"event\"},{\"stateMutability\":\"payable\",\"type\":\"receive\"}]",
