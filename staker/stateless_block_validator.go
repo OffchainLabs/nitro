@@ -192,9 +192,8 @@ func newValidationEntry(
 			return nil, err
 		}
 		valBatches = append(valBatches, validator.BatchInfo{
-			Number:    batchNum,
-			BlockHash: fullBatchInfo.BlockHash,
-			Data:      fullBatchInfo.PostedData,
+			Number: batchNum,
+			Data:   fullBatchInfo.PostedData,
 		})
 		clonePreimagesInto(preimages, fullBatchInfo.Preimages)
 		return fullBatchInfo.PostedData, nil
