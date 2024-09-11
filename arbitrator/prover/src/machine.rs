@@ -334,7 +334,7 @@ lazy_static! {
     static ref USER_IMPORTS: HashMap<String, AvailableImport> = {
         let mut imports = HashMap::default();
 
-        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+        let forward = include_bytes!(concat!(env!("OUT_DIR"), "/forwarder_stub.wasm"));
         let forward = binary::parse(forward, Path::new("forward")).unwrap();
 
         for (name, &(export, kind)) in &forward.exports {
@@ -352,13 +352,12 @@ lazy_static! {
 }
 
 impl Module {
-    const FORWARDING_PREFIX: &'static str = "arbitrator_forward__";
-
     fn from_binary(
         bin: &WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
+        is_forwarder: bool,
         debug_funcs: bool,
         stylus_data: Option<StylusData>,
     ) -> Result<Module> {
@@ -371,16 +370,11 @@ impl Module {
         for import in &bin.imports {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];
-            let (forward, import_name) = match import.name.strip_prefix(Module::FORWARDING_PREFIX) {
-                Some(name) => (true, name),
-                None => (false, import.name),
-            };
 
-            let mut qualified_name = format!("{module}__{import_name}");
-            qualified_name = qualified_name.replace(&['/', '.', '-'] as &[char], "_");
+            let qualified_name = format!("{module}__{}", import.name);
 
             let func = if let Some(import) = available_imports.get(&qualified_name) {
-                let call = match forward {
+                let call = match is_forwarder {
                     true => Opcode::CrossModuleForward,
                     false => Opcode::CrossModuleCall,
                 };
@@ -393,18 +387,18 @@ impl Module {
                     Instruction::simple(Opcode::Return),
                 ];
                 Function::new_from_wavm(wavm, import.ty.clone(), vec![])
-            } else if let Ok((hostio, debug)) = host::get_impl(import.module, import_name) {
+            } else if let Ok((hostio, debug)) = host::get_impl(import.module, import.name) {
                 ensure!(
                     (debug && debug_funcs) || (!debug && allow_hostapi),
                     "Host func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi} debug={debug}",
-                    import_name.red(),
+                    import.name.red(),
                     import.module.red(),
                 );
                 hostio
             } else {
                 bail!(
                     "No such import {} in {} for {}",
-                    import_name.red(),
+                    import.name.red(),
                     import.module.red(),
                     bin_name.red()
                 )
@@ -412,12 +406,12 @@ impl Module {
             ensure!(
                 &func.ty == have_ty,
                 "Import {} for {} has different function signature than export.\nexpected {} in {}\nbut have {}",
-                import_name.red(), bin_name.red(), func.ty.red(), module.red(), have_ty.red(),
+                import.name.red(), bin_name.red(), func.ty.red(), module.red(), have_ty.red(),
             );
 
             func_type_idxs.push(import.offset);
             code.push(func);
-            host_call_hooks.push(Some((import.module.into(), import_name.into())));
+            host_call_hooks.push(Some((import.module.into(), import.name.into())));
         }
         func_type_idxs.extend(bin.functions.iter());
 
@@ -615,6 +609,7 @@ impl Module {
             bin,
             &USER_IMPORTS,
             &HashMap::default(),
+            false,
             false,
             debug_funcs,
             stylus_data,
@@ -1227,6 +1222,7 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
+        with_forwarder: bool,
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source, binary_path)
@@ -1252,6 +1248,7 @@ impl Machine {
             inbox_contents,
             preimage_resolver,
             None,
+            with_forwarder,
         )
     }
 
@@ -1281,6 +1278,7 @@ impl Machine {
             HashMap::default(),
             Arc::new(|_, _, _| panic!("tried to read preimage")),
             Some(stylus_data),
+            false,
         )?;
 
         let footprint: u32 = stylus_data.footprint.into();
@@ -1328,6 +1326,7 @@ impl Machine {
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
         stylus_data: Option<StylusData>,
+        with_forwarder: bool,
     ) -> Result<Machine> {
         use ArbValueType::*;
 
@@ -1336,6 +1335,17 @@ impl Machine {
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
         let main_module_index = u32::try_from(modules.len() + libraries.len())?;
+
+        let forwarder_wasm = include_bytes!(concat!(env!("OUT_DIR"), "/forwarder.wasm"));
+        let mut libs_vec = vec![];
+
+        let libraries = if with_forwarder {
+            libs_vec.push(parse(forwarder_wasm.as_ref(), Path::new("forwarder"))?);
+            libs_vec.extend_from_slice(libraries);
+            &libs_vec
+        } else {
+            libraries
+        };
 
         // make the main module's exports available to libraries
         for (name, &(export, kind)) in &bin.exports {
@@ -1367,12 +1377,13 @@ impl Machine {
             }
         }
 
-        for lib in libraries {
+        for (index, lib) in libraries.iter().enumerate() {
             let module = Module::from_binary(
                 lib,
                 &available_imports,
                 &floating_point_impls,
                 true,
+                with_forwarder && (index == 0),
                 debug_funcs,
                 None,
             )?;
@@ -1408,6 +1419,7 @@ impl Machine {
             &available_imports,
             &floating_point_impls,
             allow_hostapi_from_main,
+            false,
             debug_funcs,
             stylus_data,
         )?);

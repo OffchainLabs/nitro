@@ -47,6 +47,9 @@ enum-iterator = "2.0.1"
 criterion = { version = "0.5.0", features = ["html_reports"] }
 rand = "0.8.4"
 
+[build-dependencies]
+wasmer = { path = "../tools/wasmer/lib/api" }
+
 [[bench]]
 name = "merkle_bench"
 harness = false

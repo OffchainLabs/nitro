@@ -1,12 +1,8 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
-
-use eyre::Result;
-use std::{fs::File, io::Write, path::PathBuf};
-use structopt::StructOpt;
+use core::str;
+use std::{env, fmt::Write, fs, path::Path};
 
 /// order matters!
-const HOSTIOS: [[&str; 3]; 42] = [
+pub const HOSTIOS: [[&str; 3]; 42] = [
     ["read_args", "i32", ""],
     ["write_result", "i32 i32", ""],
     ["exit_early", "i32", ""],
@@ -51,44 +47,16 @@ const HOSTIOS: [[&str; 3]; 42] = [
     ["pay_for_memory_grow", "i32", ""],
 ];
 
-#[derive(StructOpt)]
-#[structopt(name = "arbitrator-prover")]
-struct Opts {
-    #[structopt(long)]
-    path: PathBuf,
-    #[structopt(long)]
-    stub: bool,
-}
-
-fn main() -> Result<()> {
-    let opts = Opts::from_args();
-    let file = &mut File::options()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(opts.path)?;
-
-    match opts.stub {
-        true => forward_stub(file),
-        false => forward(file),
-    }
-}
-
-fn forward(file: &mut File) -> Result<()> {
+pub fn gen_forwarder(out_path: &Path) {
+    let mut wat = String::new();
     macro_rules! wln {
         ($($text:tt)*) => {
-            writeln!(file, $($text)*)?;
+            writeln!(wat, $($text)*).unwrap();
         };
     }
     let s = "    ";
 
-    wln!(
-        ";; Copyright 2022-2023, Offchain Labs, Inc.\n\
-         ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE\n\
-         ;; This file is auto-generated.\n\
-         \n\
-         (module"
-    );
+    wln!("(module");
 
     macro_rules! group {
         ($list:expr, $kind:expr) => {
@@ -102,9 +70,7 @@ fn forward(file: &mut File) -> Result<()> {
     for [name, ins, outs] in HOSTIOS {
         let params = group!(ins, "param");
         let result = group!(outs, "result");
-        wln!(
-            r#"{s}(import "user_host" "arbitrator_forward__{name}" (func ${name}{params}{result}))"#
-        );
+        wln!(r#"{s}(import "user_host" "{name}" (func $_{name}{params}{result}))"#);
     }
     wln!();
 
@@ -139,20 +105,25 @@ fn forward(file: &mut File) -> Result<()> {
         }
 
         wln!(
-            "{s}{s}call ${name}\n\
+            "{s}{s}call $_{name}\n\
              {s}{s}call $check\n\
              {s})"
         );
     }
 
     wln!(")");
-    Ok(())
+
+    let wasm = wasmer::wat2wasm(wat.as_bytes()).unwrap();
+
+    fs::write(out_path, wasm.as_ref()).unwrap();
 }
 
-fn forward_stub(file: &mut File) -> Result<()> {
+pub fn gen_forwarder_stub(out_path: &Path) {
+    let mut wat = String::new();
+
     macro_rules! wln {
         ($($text:tt)*) => {
-            writeln!(file, $($text)*)?;
+            writeln!(wat, $($text)*).unwrap();
         };
     }
     let s = "    ";
@@ -202,5 +173,16 @@ fn forward_stub(file: &mut File) -> Result<()> {
     }
 
     wln!(")");
-    Ok(())
+
+    let wasm = wasmer::wat2wasm(wat.as_bytes()).unwrap();
+
+    fs::write(out_path, wasm.as_ref()).unwrap();
+}
+
+fn main() {
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let forwarder_path = Path::new(&out_dir).join("forwarder.wasm");
+    let forwarder_stub_path = Path::new(&out_dir).join("forwarder_stub.wasm");
+    gen_forwarder(&forwarder_path);
+    gen_forwarder_stub(&forwarder_stub_path);
 }
