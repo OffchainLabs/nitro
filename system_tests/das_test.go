@@ -44,18 +44,13 @@ func startLocalDASServer(
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 
-	config := das.DataAvailabilityConfig{
-		Enable: true,
-		Key: das.KeyConfig{
-			KeyDir: keyDir,
-		},
-		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:  true,
-			DataDir: dataDir,
-		},
-		ParentChainNodeURL: "none",
-		RequestTimeout:     5 * time.Second,
-	}
+	config := das.DefaultDataAvailabilityConfig
+	config.Enable = true
+	config.Key = das.KeyConfig{KeyDir: keyDir}
+	config.ParentChainNodeURL = "none"
+	config.LocalFileStorage = das.DefaultLocalFileStorageConfig
+	config.LocalFileStorage.Enable = true
+	config.LocalFileStorage.DataDir = dataDir
 
 	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
