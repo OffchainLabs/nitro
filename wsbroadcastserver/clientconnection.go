@@ -135,6 +135,7 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 
 		msgs := prevSegment.Messages()
 		if isFirstSegment && prevSegment.Contains(uint64(cc.requestedSeqNum)) {
+			// #nosec G115
 			requestedIdx := int(cc.requestedSeqNum) - int(prevSegment.Start())
 			// This might be false if messages were added after we fetched the segment's messages
 			if len(msgs) >= requestedIdx {
@@ -193,6 +194,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			t := time.NewTimer(cc.delay)
 			select {
 			case <-ctx.Done():
+				t.Stop()
 				return
 			case <-t.C:
 			}
@@ -222,8 +224,10 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 		timer := time.NewTimer(5 * time.Second)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		case <-cc.registered:
+			timer.Stop()
 			log.Debug("ClientConnection registered with ClientManager", "client", cc.Name)
 		case <-timer.C:
 			log.Error("timed out waiting for ClientConnection to register with ClientManager", "client", cc.Name)

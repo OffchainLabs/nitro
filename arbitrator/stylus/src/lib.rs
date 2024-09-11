@@ -18,6 +18,7 @@ use native::NativeInstance;
 use prover::programs::{prelude::*, StylusData};
 use run::RunProgram;
 use std::{marker::PhantomData, mem, ptr};
+use target_cache::{target_cache_get, target_cache_set};
 
 pub use brotli;
 pub use prover;
@@ -29,6 +30,7 @@ pub mod run;
 
 mod cache;
 mod evm_api;
+mod target_cache;
 mod util;
 
 #[cfg(test)]
@@ -122,9 +124,9 @@ impl RustBytes {
     }
 }
 
-/// Instruments and "activates" a user wasm.
+/// "activates" a user wasm.
 ///
-/// The `output` is either the serialized asm & module pair or an error string.
+/// The `output` is either the module or an error string.
 /// Returns consensus info such as the module hash and footprint on success.
 ///
 /// Note that this operation costs gas and is limited by the amount supplied via the `gas` pointer.
@@ -140,7 +142,6 @@ pub unsafe extern "C" fn stylus_activate(
     version: u16,
     debug: bool,
     output: *mut RustBytes,
-    asm_len: *mut usize,
     codehash: *const Bytes32,
     module_hash: *mut Bytes32,
     stylus_data: *mut StylusData,
@@ -152,18 +153,97 @@ pub unsafe extern "C" fn stylus_activate(
     let codehash = &*codehash;
     let gas = &mut *gas;
 
-    let (asm, module, info) =
-        match native::activate(wasm, codehash, version, page_limit, debug, gas) {
-            Ok(val) => val,
-            Err(err) => return output.write_err(err),
-        };
-    *asm_len = asm.len();
+    let (module, info) = match native::activate(wasm, codehash, version, page_limit, debug, gas) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err),
+    };
+
     *module_hash = module.hash();
     *stylus_data = info;
 
-    let mut data = asm;
-    data.extend(&*module.into_bytes());
-    output.write(data);
+    output.write(module.into_bytes());
+    UserOutcomeKind::Success
+}
+
+/// "compiles" a user wasm.
+///
+/// The `output` is either the asm or an error string.
+/// Returns consensus info such as the module hash and footprint on success.
+///
+/// # Safety
+///
+/// `output` must not be null.
+#[no_mangle]
+pub unsafe extern "C" fn stylus_compile(
+    wasm: GoSliceData,
+    version: u16,
+    debug: bool,
+    name: GoSliceData,
+    output: *mut RustBytes,
+) -> UserOutcomeKind {
+    let wasm = wasm.slice();
+    let output = &mut *output;
+    let name = match String::from_utf8(name.slice().to_vec()) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err.into()),
+    };
+    let target = match target_cache_get(&name) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err),
+    };
+
+    let asm = match native::compile(wasm, version, debug, target) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err),
+    };
+
+    output.write(asm);
+    UserOutcomeKind::Success
+}
+
+#[no_mangle]
+/// # Safety
+///
+/// `output` must not be null.
+pub unsafe extern "C" fn wat_to_wasm(wat: GoSliceData, output: *mut RustBytes) -> UserOutcomeKind {
+    let output = &mut *output;
+    let wasm = match wasmer::wat2wasm(wat.slice()) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err.into()),
+    };
+    output.write(wasm.into_owned());
+    UserOutcomeKind::Success
+}
+
+/// sets target index to a string
+///
+/// String format is: Triple+CpuFeature+CpuFeature..
+///
+/// # Safety
+///
+/// `output` must not be null.
+#[no_mangle]
+pub unsafe extern "C" fn stylus_target_set(
+    name: GoSliceData,
+    description: GoSliceData,
+    output: *mut RustBytes,
+    native: bool,
+) -> UserOutcomeKind {
+    let output = &mut *output;
+    let name = match String::from_utf8(name.slice().to_vec()) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err.into()),
+    };
+
+    let desc_str = match String::from_utf8(description.slice().to_vec()) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err.into()),
+    };
+
+    if let Err(err) = target_cache_set(name, desc_str, native) {
+        return output.write_err(err);
+    };
+
     UserOutcomeKind::Success
 }
 

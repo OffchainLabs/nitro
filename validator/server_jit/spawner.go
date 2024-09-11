@@ -9,6 +9,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -69,6 +70,10 @@ func (v *JitSpawner) Start(ctx_in context.Context) error {
 
 func (v *JitSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return v.locator.ModuleRoots(), nil
+}
+
+func (v *JitSpawner) StylusArchs() []rawdb.Target {
+	return []rawdb.Target{rawdb.LocalTarget()}
 }
 
 func (v *JitSpawner) execute(

@@ -149,7 +149,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, staker.WithoutFinalizedBatchChecks())
+	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
@@ -342,7 +342,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	})
 }
 
-func setupBoldStateProvider(t *testing.T, ctx context.Context, opts ...staker.BOLDStateProviderOpt) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *staker.BOLDStateProvider, *staker.BlockValidator) {
+func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *staker.BOLDStateProvider, *staker.BlockValidator) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := params.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
@@ -387,14 +387,12 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, opts ...staker.BO
 	stateManager, err := staker.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
-		"",
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		l2stateprovider.Height(blockChallengeLeafHeight),
+		&staker.StateProviderConfig{
+			ValidatorName:          "",
+			MachineLeavesCachePath: "",
+			CheckBatchFinality:     false,
 		},
-		"",
-		opts...,
 	)
 	Require(t, err)
 

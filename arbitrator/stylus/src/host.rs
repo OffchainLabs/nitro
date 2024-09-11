@@ -64,7 +64,7 @@ where
         unsafe {
             data.set_len(len);
             self.view().read_uninit(ptr.into(), &mut data)?;
-            Ok(mem::transmute(data))
+            Ok(mem::transmute::<Vec<MaybeUninit<u8>>, Vec<u8>>(data))
         }
     }
 

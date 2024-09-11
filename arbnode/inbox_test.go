@@ -19,6 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -59,7 +60,8 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	bc, err := gethexec.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbostypes.TestInitMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
+	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, gethexec.ConfigDefault.TxLookupLimit, 0)
 
 	if err != nil {
 		Fail(t, err)
@@ -70,7 +72,9 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	if err != nil {
 		Fail(t, err)
 	}
-	execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCache)
+	if err := execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCache, &gethexec.DefaultStylusTargetConfig); err != nil {
+		Fail(t, err)
+	}
 	execSeq := &execClientWrapper{execEngine, t}
 	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
 	if err != nil {

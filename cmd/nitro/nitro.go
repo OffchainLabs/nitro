@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
@@ -40,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
@@ -60,6 +62,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -235,6 +238,10 @@ func mainImpl() int {
 	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
+	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
+		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
+		return 1
+	}
 
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
@@ -364,6 +371,7 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
+		// #nosec G115
 		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
 		if err != nil {
 			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOptsValidator.From.Hex())
@@ -492,6 +500,10 @@ func mainImpl() int {
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
 		return 1
 	}
+	if err := dbutil.UnfinishedConversionCheck(arbDb); err != nil {
+		log.Error("arbitrumdata unfinished conversion check error", "err", err)
+		return 1
+	}
 
 	fatalErrChan := make(chan error, 10)
 
@@ -512,7 +524,7 @@ func mainImpl() int {
 		}
 	}
 
-	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToMessage < 0 {
+	if nodeConfig.Init.ThenQuit && !nodeConfig.Init.IsReorgRequested() {
 		return 0
 	}
 
@@ -571,7 +583,7 @@ func mainImpl() int {
 		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
-		big.NewInt(int64(nodeConfig.ParentChain.ID)),
+		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
 	)
 	if err != nil {
@@ -668,29 +680,34 @@ func mainImpl() int {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
-	exitCode := 0
-
-	if err == nil && nodeConfig.Init.ResetToMessage > 0 {
-		err = currentNode.TxStreamer.ReorgTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMessage))
+	if err == nil && nodeConfig.Init.IsReorgRequested() {
+		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, currentNode.InboxTracker)
 		if err != nil {
-			fatalErrChan <- fmt.Errorf("error reseting message: %w", err)
-			exitCode = 1
-		}
-		if nodeConfig.Init.ThenQuit {
-			return exitCode
+			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
+		} else if nodeConfig.Init.ThenQuit {
+			return 0
 		}
 	}
 
+	err = nil
 	select {
-	case err := <-fatalErrChan:
+	case err = <-fatalErrChan:
+	case <-sigint:
+		// If there was both a sigint and a fatal error, we want to log the fatal error
+		select {
+		case err = <-fatalErrChan:
+		default:
+			log.Info("shutting down because of sigint")
+		}
+	}
+
+	if err != nil {
 		log.Error("shutting down due to fatal error", "err", err)
 		defer log.Error("shut down due to fatal error", "err", err)
-		exitCode = 1
-	case <-sigint:
-		log.Info("shutting down because of sigint")
+		return 1
 	}
 
-	return exitCode
+	return 0
 }
 
 type NodeConfig struct {
@@ -836,6 +853,9 @@ func (c *NodeConfig) Validate() error {
 	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
 	}
+	if c.Node.ValidatorRequired() && (c.Execution.Caching.StateScheme == rawdb.PathScheme) {
+		return errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
+	}
 	return c.Persistent.Validate()
 }
 
@@ -881,10 +901,12 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"parent-chain.wallet.password":    "",
-			"parent-chain.wallet.private-key": "",
-			"chain.dev-wallet.password":       "",
-			"chain.dev-wallet.private-key":    "",
+			"node.batch-poster.parent-chain-wallet.password":    "",
+			"node.batch-poster.parent-chain-wallet.private-key": "",
+			"node.staker.parent-chain-wallet.password":          "",
+			"node.staker.parent-chain-wallet.private-key":       "",
+			"chain.dev-wallet.password":                         "",
+			"chain.dev-wallet.private-key":                      "",
 		})
 		if err != nil {
 			return nil, nil, err
@@ -997,6 +1019,39 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		return err
 	}
 	return nil
+}
+
+func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
+	var batchCount uint64
+	if initConfig.ReorgToBatch >= 0 {
+		batchCount = uint64(initConfig.ReorgToBatch) + 1
+	} else {
+		var messageIndex arbutil.MessageIndex
+		if initConfig.ReorgToMessageBatch >= 0 {
+			messageIndex = arbutil.MessageIndex(initConfig.ReorgToMessageBatch)
+		} else if initConfig.ReorgToBlockBatch > 0 {
+			genesis := chainConfig.ArbitrumChainParams.GenesisBlockNum
+			blockNum := uint64(initConfig.ReorgToBlockBatch)
+			if blockNum < genesis {
+				return fmt.Errorf("ReorgToBlockBatch %d before genesis %d", blockNum, genesis)
+			}
+			messageIndex = arbutil.MessageIndex(blockNum - genesis)
+		} else {
+			log.Warn("Tried to do init reorg, but no init reorg options specified")
+			return nil
+		}
+		// Reorg out the batch containing the next message
+		var missing bool
+		var err error
+		batchCount, missing, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		if err != nil {
+			return err
+		}
+		if missing {
+			return fmt.Errorf("cannot reorg to unknown message index %v", messageIndex)
+		}
+	}
+	return inboxTracker.ReorgBatchesTo(batchCount)
 }
 
 type NodeConfigFetcher struct {

@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"runtime/debug"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -66,7 +65,7 @@ type SequencerConfig struct {
 	MaxBlockSpeed                time.Duration   `koanf:"max-block-speed" reload:"hot"`
 	MaxRevertGasReject           uint64          `koanf:"max-revert-gas-reject" reload:"hot"`
 	MaxAcceptableTimestampDelta  time.Duration   `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist              string          `koanf:"sender-whitelist"`
+	SenderWhitelist              []string        `koanf:"sender-whitelist"`
 	Forwarder                    ForwarderConfig `koanf:"forwarder"`
 	QueueSize                    int             `koanf:"queue-size"`
 	QueueTimeout                 time.Duration   `koanf:"queue-timeout" reload:"hot"`
@@ -82,8 +81,7 @@ type SequencerConfig struct {
 }
 
 func (c *SequencerConfig) Validate() error {
-	entries := strings.Split(c.SenderWhitelist, ",")
-	for _, address := range entries {
+	for _, address := range c.SenderWhitelist {
 		if len(address) == 0 {
 			continue
 		}
@@ -118,6 +116,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxBlockSpeed:               time.Millisecond * 250,
 	MaxRevertGasReject:          0,
 	MaxAcceptableTimestampDelta: time.Hour,
+	SenderWhitelist:             []string{},
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
 	QueueTimeout:                time.Second * 12,
@@ -132,30 +131,12 @@ var DefaultSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 }
 
-var TestSequencerConfig = SequencerConfig{
-	Enable:                       true,
-	MaxBlockSpeed:                time.Millisecond * 10,
-	MaxRevertGasReject:           params.TxGas + 10000,
-	MaxAcceptableTimestampDelta:  time.Hour,
-	SenderWhitelist:              "",
-	Forwarder:                    DefaultTestForwarderConfig,
-	QueueSize:                    128,
-	QueueTimeout:                 time.Second * 5,
-	NonceCacheSize:               4,
-	MaxTxDataSize:                95000,
-	NonceFailureCacheSize:        1024,
-	NonceFailureCacheExpiry:      time.Second,
-	ExpectedSurplusSoftThreshold: "default",
-	ExpectedSurplusHardThreshold: "default",
-	EnableProfiling:              false,
-}
-
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
-	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
+	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
@@ -342,8 +323,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		return nil, err
 	}
 	senderWhitelist := make(map[common.Address]struct{})
-	entries := strings.Split(config.SenderWhitelist, ",")
-	for _, address := range entries {
+	for _, address := range config.SenderWhitelist {
 		if len(address) == 0 {
 			continue
 		}
@@ -907,6 +887,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		for _, queueItem := range queueItems {
 			s.txRetryQueue.Push(queueItem)
 		}
+		// #nosec G115
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
@@ -1057,10 +1038,14 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error encountered getting l1 pricing surplus while updating expectedSurplus: %w", err)
 	}
+	// #nosec G115
 	backlogL1GasCharged := int64(s.execEngine.backlogL1GasCharged())
+	// #nosec G115
 	backlogCallDataUnits := int64(s.execEngine.backlogCallDataUnits())
+	// #nosec G115
 	expectedSurplus := int64(surplus) + backlogL1GasCharged - backlogCallDataUnits*int64(l1GasPrice)
 	// update metrics
+	// #nosec G115
 	l1GasPriceGauge.Update(int64(l1GasPrice))
 	callDataUnitsBacklogGauge.Update(backlogCallDataUnits)
 	unusedL1GasChargeGauge.Update(backlogL1GasCharged)

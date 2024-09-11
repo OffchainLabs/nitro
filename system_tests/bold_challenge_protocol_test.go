@@ -25,7 +25,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	challenge_testing "github.com/OffchainLabs/bold/testing"
+	challengetesting "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -51,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -184,32 +185,24 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	stateManager, err := staker.NewBOLDStateProvider(
 		blockValidatorA,
 		statelessA,
-		"/tmp/good",
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		l2stateprovider.Height(blockChallengeLeafHeight),
+		&staker.StateProviderConfig{
+			ValidatorName:          "good",
+			MachineLeavesCachePath: "/tmp/good",
+			CheckBatchFinality:     false,
 		},
-		"good",
-		staker.WithoutFinalizedBatchChecks(),
 	)
 	Require(t, err)
 
 	stateManagerB, err := staker.NewBOLDStateProvider(
 		blockValidatorB,
 		statelessB,
-		"/tmp/evil",
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		l2stateprovider.Height(blockChallengeLeafHeight),
+		&staker.StateProviderConfig{
+			ValidatorName:          "evil",
+			MachineLeavesCachePath: "/tmp/evil",
+			CheckBatchFinality:     false,
 		},
-		"evil",
-		staker.WithoutFinalizedBatchChecks(),
 	)
 	Require(t, err)
 
@@ -284,16 +277,16 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	numMessagesPerBatch := int64(5)
 	divergeAt := int64(-1)
 	makeBoldBatch(t, l2nodeA, l2info, l1client, &sequencerTxOpts, honestSeqInboxBinding, honestSeqInbox, numMessagesPerBatch, divergeAt)
-	l2info.Accounts["Owner"].Nonce = 0
+	l2info.Accounts["Owner"].Nonce.Store(0)
 	makeBoldBatch(t, l2nodeB, l2info, l1client, &sequencerTxOpts, evilSeqInboxBinding, evilSeqInbox, numMessagesPerBatch, divergeAt)
 	totalMessagesPosted += numMessagesPerBatch
 
 	// Next, we post another batch, this time containing more messages.
 	// We diverge at message index 5 within the evil node's batch.
-	l2info.Accounts["Owner"].Nonce = 5
+	l2info.Accounts["Owner"].Nonce.Store(5)
 	numMessagesPerBatch = int64(10)
 	makeBoldBatch(t, l2nodeA, l2info, l1client, &sequencerTxOpts, honestSeqInboxBinding, honestSeqInbox, numMessagesPerBatch, divergeAt)
-	l2info.Accounts["Owner"].Nonce = 5
+	l2info.Accounts["Owner"].Nonce.Store(5)
 	divergeAt = int64(5)
 	makeBoldBatch(t, l2nodeB, l2info, l1client, &sequencerTxOpts, evilSeqInboxBinding, evilSeqInbox, numMessagesPerBatch, divergeAt)
 	totalMessagesPosted += numMessagesPerBatch
@@ -478,7 +471,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
 	stackConfig *node.Config,
-	l2info_in info,
+	l2infoIn info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
@@ -497,7 +490,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
-	l2info = l2info_in
+	l2info = l2infoIn
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
@@ -549,7 +542,9 @@ func createTestNodeOnL1ForBoldProtocol(
 	l1info.SetContract("Rollup", addresses.Rollup)
 	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, nil)
+	cacheConfig := TestCachingConfig
+	cacheConfig.StateScheme = rawdb.HashScheme
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, &cacheConfig)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -563,10 +558,11 @@ func createTestNodeOnL1ForBoldProtocol(
 		nodeConfig.DelayedSequencer.Enable = false
 	}
 
-	AddDefaultValNode(t, ctx, nodeConfig, true, "")
+	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
-	execConfig := gethexec.ConfigDefaultTest()
+	execConfig := ExecConfigDefaultNonSequencerTest()
 	Require(t, execConfig.Validate())
+	execConfig.Caching.StateScheme = rawdb.HashScheme
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
@@ -631,7 +627,7 @@ func deployContractsOnly(
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
 	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2), big.NewInt(1)}
-	cfg := challenge_testing.GenerateRollupConfig(
+	cfg := challengetesting.GenerateRollupConfig(
 		false,
 		wasmModuleRoot,
 		l1TransactionOpts.From,
@@ -642,13 +638,13 @@ func deployContractsOnly(
 		genesisExecutionState,
 		genesisInboxCount,
 		anyTrustFastConfirmer,
-		challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+		challengetesting.WithLayerZeroHeights(&protocol.LayerZeroHeights{
 			BlockChallengeHeight:     blockChallengeLeafHeight,
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
+		challengetesting.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
+		challengetesting.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	Require(t, err)
@@ -660,7 +656,7 @@ func deployContractsOnly(
 		l1info.GetAddress("Sequencer"),
 		cfg,
 		false, // do not use mock bridge.
-		false, // do not use a mock one step prover
+		false, // do not use a mock one-step prover
 	)
 	Require(t, err)
 
@@ -751,7 +747,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	if stackConfig == nil {
-		stackConfig = createStackConfigForTest(t.TempDir())
+		stackConfig = testhelpers.CreateStackConfigForTest(t.TempDir())
 	}
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
@@ -761,7 +757,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2arbDb, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
 
-	AddDefaultValNode(t, ctx, nodeConfig, true, "")
+	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
@@ -769,10 +765,11 @@ func create2ndNodeWithConfigForBoldProtocol(
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
 
-	execConfig := gethexec.ConfigDefaultTest()
+	execConfig := ExecConfigDefaultNonSequencerTest()
 	Require(t, execConfig.Validate())
-
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, execConfig.TxLookupLimit, 0)
+	execConfig.Caching.StateScheme = rawdb.HashScheme
+	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, execConfig.TxLookupLimit, 0)
 	Require(t, err)
 
 	execConfigFetcher := func() *gethexec.Config { return execConfig }

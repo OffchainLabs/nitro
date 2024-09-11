@@ -35,15 +35,6 @@ type ForwarderConfig struct {
 	RetryInterval         time.Duration `koanf:"retry-interval"`
 }
 
-var DefaultTestForwarderConfig = ForwarderConfig{
-	ConnectionTimeout:     2 * time.Second,
-	IdleConnectionTimeout: 2 * time.Second,
-	MaxIdleConnections:    1,
-	RedisUrl:              "",
-	UpdateInterval:        time.Millisecond * 10,
-	RetryInterval:         time.Millisecond * 3,
-}
-
 var DefaultNodeForwarderConfig = ForwarderConfig{
 	ConnectionTimeout:     30 * time.Second,
 	IdleConnectionTimeout: 15 * time.Second,

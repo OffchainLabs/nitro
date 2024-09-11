@@ -76,6 +76,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		transferGas,
 	)
 
+	// For now validation only works with HashScheme set
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	cleanupA := builder.Build(t)
 	defer cleanupA()
@@ -163,7 +166,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	validatorUtils, err := rollupgen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, builder.L1.Client)
 	Require(t, err)
 
-	valConfig := staker.TestL1ValidatorConfig
+	valConfigA := staker.TestL1ValidatorConfig
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
@@ -179,12 +182,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
+	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfigA.ExtraGas })
 	Require(t, err)
 	if honestStakerInactive {
-		valConfig.Strategy = "Defensive"
+		valConfigA.Strategy = "Defensive"
 	} else {
-		valConfig.Strategy = "MakeNodes"
+		valConfigA.Strategy = "MakeNodes"
 	}
 
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
@@ -207,13 +210,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.L1Reader,
 		valWalletA,
 		bind.CallOpts{},
-		valConfig,
+		func() *staker.L1ValidatorConfig { return &valConfigA },
 		nil,
 		statelessA,
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
-		l2nodeA.DeployInfo.Bridge,
 		nil,
 	)
 	Require(t, err)
@@ -242,7 +244,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
-	valConfig.Strategy = "MakeNodes"
+	valConfigB := staker.TestL1ValidatorConfig
+	valConfigB.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
@@ -260,13 +263,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.L1Reader,
 		valWalletB,
 		bind.CallOpts{},
-		valConfig,
+		func() *staker.L1ValidatorConfig { return &valConfigB },
 		nil,
 		statelessB,
 		nil,
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
-		l2nodeB.DeployInfo.Bridge,
 		nil,
 	)
 	Require(t, err)
@@ -277,18 +279,18 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		Require(t, err)
 	}
 	valWalletC := validatorwallet.NewNoOp(builder.L1.Client, l2nodeA.DeployInfo.Rollup)
-	valConfig.Strategy = "Watchtower"
+	valConfigC := staker.TestL1ValidatorConfig
+	valConfigC.Strategy = "Watchtower"
 	stakerC, err := staker.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletC,
 		bind.CallOpts{},
-		valConfig,
+		func() *staker.L1ValidatorConfig { return &valConfigC },
 		nil,
 		statelessA,
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
-		l2nodeA.DeployInfo.Bridge,
 		nil,
 	)
 	Require(t, err)

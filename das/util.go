@@ -13,11 +13,13 @@ import (
 
 func logPut(store string, data []byte, timeout uint64, reader daprovider.DASReader, more ...interface{}) {
 	if len(more) == 0 {
+		// #nosec G115
 		log.Trace(
 			store, "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0),
 			"this", reader,
 		)
 	} else {
+		// #nosec G115
 		log.Trace(
 			store, "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0),
 			"this", reader, more,

@@ -38,6 +38,8 @@ type CachingConfig struct {
 	MaxNumberOfBlocksToSkipStateSaving uint32        `koanf:"max-number-of-blocks-to-skip-state-saving"`
 	MaxAmountOfGasToSkipStateSaving    uint64        `koanf:"max-amount-of-gas-to-skip-state-saving"`
 	StylusLRUCache                     uint32        `koanf:"stylus-lru-cache"`
+	StateScheme                        string        `koanf:"state-scheme"`
+	StateHistory                       uint64        `koanf:"state-history"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -53,6 +55,12 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint32(prefix+".max-number-of-blocks-to-skip-state-saving", DefaultCachingConfig.MaxNumberOfBlocksToSkipStateSaving, "maximum number of blocks to skip state saving to persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint64(prefix+".max-amount-of-gas-to-skip-state-saving", DefaultCachingConfig.MaxAmountOfGasToSkipStateSaving, "maximum amount of gas in blocks to skip saving state to Persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint32(prefix+".stylus-lru-cache", DefaultCachingConfig.StylusLRUCache, "initialized stylus programs to keep in LRU cache")
+	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hash, path)")
+	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
+}
+
+func getStateHistory(maxBlockSpeed time.Duration) uint64 {
+	return uint64(24 * time.Hour / maxBlockSpeed)
 }
 
 var DefaultCachingConfig = CachingConfig{
@@ -68,21 +76,8 @@ var DefaultCachingConfig = CachingConfig{
 	MaxNumberOfBlocksToSkipStateSaving: 0,
 	MaxAmountOfGasToSkipStateSaving:    0,
 	StylusLRUCache:                     256,
-}
-
-var TestCachingConfig = CachingConfig{
-	Archive:                            false,
-	BlockCount:                         128,
-	BlockAge:                           30 * time.Minute,
-	TrieTimeLimit:                      time.Hour,
-	TrieDirtyCache:                     1024,
-	TrieCleanCache:                     600,
-	SnapshotCache:                      400,
-	DatabaseCache:                      2048,
-	SnapshotRestoreGasLimit:            300_000_000_000,
-	MaxNumberOfBlocksToSkipStateSaving: 0,
-	MaxAmountOfGasToSkipStateSaving:    0,
-	StylusLRUCache:                     0,
+	StateScheme:                        rawdb.HashScheme,
+	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 }
 
 // TODO remove stack from parameters as it is no longer needed here
@@ -105,10 +100,29 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		SnapshotRestoreMaxGas:              cachingConfig.SnapshotRestoreGasLimit,
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
+		StateScheme:                        cachingConfig.StateScheme,
+		StateHistory:                       cachingConfig.StateHistory,
 	}
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
+func (c *CachingConfig) validateStateScheme() error {
+	switch c.StateScheme {
+	case rawdb.HashScheme:
+	case rawdb.PathScheme:
+		if c.Archive {
+			return errors.New("archive cannot be set when using path as the state-scheme")
+		}
+	default:
+		return errors.New("Invalid StateScheme")
+	}
+	return nil
+}
+
+func (c *CachingConfig) Validate() error {
+	return c.validateStateScheme()
+}
+
+func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	prevDifficulty := big.NewInt(0)
@@ -129,7 +143,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData, chainConfig, initMessage, timestamp, accountsPerSync)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, cacheConfig, initData, chainConfig, initMessage, timestamp, accountsPerSync)
 	if err != nil {
 		return err
 	}
@@ -197,7 +211,15 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 }
 
 func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, txLookupLimit uint64, accountsPerSync uint) (*core.BlockChain, error) {
-	err := WriteOrTestGenblock(chainDb, initData, chainConfig, initMessage, accountsPerSync)
+	emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil
+	if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) {
+		// When using path scheme, and the stored state trie is not empty,
+		// WriteOrTestGenBlock is not able to recover EmptyRootHash state trie node.
+		// In that case Nitro doesn't test genblock, but just returns the BlockChain.
+		return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit)
+	}
+
+	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, initMessage, accountsPerSync)
 	if err != nil {
 		return nil, err
 	}
