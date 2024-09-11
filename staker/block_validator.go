@@ -1027,6 +1027,9 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 		v.nextCreateStartGS = globalState
 		v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 		v.nextCreateBatchReread = true
+		if v.nextCreateBatch != nil {
+			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch
+		}
 		v.createdA.Store(countUint64)
 	}
 	// under the reorg mutex we don't need atomic access
@@ -1053,6 +1056,7 @@ func (v *BlockValidator) ReorgToBatchCount(count uint64) {
 	defer v.reorgMutex.Unlock()
 	if v.nextCreateStartGS.Batch >= count {
 		v.nextCreateBatchReread = true
+		v.prevBatchCache = make(map[uint64]*FullBatchInfo)
 	}
 }
 
@@ -1093,6 +1097,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	v.nextCreateStartGS = buildGlobalState(*res, endPosition)
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	v.nextCreateBatchReread = true
+	v.prevBatchCache = make(map[uint64]*FullBatchInfo)
 	countUint64 := uint64(count)
 	v.createdA.Store(countUint64)
 	// under the reorg mutex we don't need atomic access
