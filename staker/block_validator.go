@@ -614,7 +614,9 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		if batchNum == v.nextCreateBatch.Number {
 			return v.nextCreateBatch, nil
 		}
+		// only batch-posting-reports will get here, and there's only one per batch
 		if entry, found := v.prevBatchCache[batchNum]; found {
+			delete(v.prevBatchCache, batchNum)
 			return entry, nil
 		}
 		found, entry, err := v.readBatch(ctx, batchNum)
