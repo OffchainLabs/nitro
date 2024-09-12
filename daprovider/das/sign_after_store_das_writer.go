@@ -105,6 +105,7 @@ func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConf
 }
 
 func (d *SignAfterStoreDASWriter) Store(ctx context.Context, message []byte, timeout uint64) (c *dasutil.DataAvailabilityCertificate, err error) {
+	// #nosec G115
 	log.Trace("das.SignAfterStoreDASWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", d)
 	c = &dasutil.DataAvailabilityCertificate{
 		Timeout:     timeout,

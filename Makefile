@@ -31,6 +31,14 @@ ifneq ($(origin GOLANG_LDFLAGS),undefined)
  GOLANG_PARAMS = -ldflags="-extldflags '-ldl' $(GOLANG_LDFLAGS)"
 endif
 
+UNAME_S := $(shell uname -s)
+
+# In Mac OSX, there are a lot of warnings emitted if these environment variables aren't set.
+ifeq ($(UNAME_S), Darwin)
+  export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion)
+  export CGO_LDFLAGS := -Wl,-no_warn_duplicate_libraries
+endif
+
 precompile_names = AddressTable Aggregator BLS Debug FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
 precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 
@@ -157,7 +165,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver datool seq-coordinator-invalidate nitro-val seq-coordinator-manager)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver datool seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -312,6 +320,9 @@ $(output_root)/bin/nitro-val: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/seq-coordinator-manager: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/seq-coordinator-manager"
+
+$(output_root)/bin/dbconv: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/dbconv"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen

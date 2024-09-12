@@ -121,6 +121,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		if currentNum < config.FinalizeDistance {
 			return nil
 		}
+		// #nosec G115
 		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
@@ -189,6 +190,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
 		}
 		for i, msg := range messages {
+			// #nosec G115
 			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
 			if err != nil {
 				return err

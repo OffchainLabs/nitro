@@ -61,12 +61,13 @@ func RecordHash(record func(bytes32, []byte, arbutil.PreimageType), preimage ...
 		return arbmath.FlipBit(keccord(prepend(LeafByte, keccord([]byte{}).Bytes())), 0)
 	}
 
-	length := uint32(len(unrolled))
+	length := len(unrolled)
 	leaves := []node{}
-	for bin := uint32(0); bin < length; bin += BinSize {
+	for bin := 0; bin < length; bin += BinSize {
 		end := arbmath.MinInt(bin+BinSize, length)
 		hash := keccord(prepend(LeafByte, keccord(unrolled[bin:end]).Bytes()))
-		leaves = append(leaves, node{hash, end - bin})
+		// #nosec G115
+		leaves = append(leaves, node{hash, uint32(end - bin)})
 	}
 
 	layer := leaves
@@ -186,7 +187,9 @@ func Content(root bytes32, oracle func(bytes32) ([]byte, error)) ([]byte, error)
 			leaves = append(leaves, leaf)
 		case NodeByte:
 			count := binary.BigEndian.Uint32(data[64:])
-			power := uint32(arbmath.NextOrCurrentPowerOf2(uint64(count)))
+			power := arbmath.NextOrCurrentPowerOf2(uint64(count))
+			// #nosec G115
+			halfPower := uint32(power / 2)
 
 			if place.size != count {
 				return nil, fmt.Errorf("invalid size data: %v vs %v for %v", count, place.size, data)
@@ -194,11 +197,11 @@ func Content(root bytes32, oracle func(bytes32) ([]byte, error)) ([]byte, error)
 
 			prior := node{
 				hash: common.BytesToHash(data[:32]),
-				size: power / 2,
+				size: halfPower,
 			}
 			after := node{
 				hash: common.BytesToHash(data[32:64]),
-				size: count - power/2,
+				size: count - halfPower,
 			}
 
 			// we want to expand leftward so we reverse their order

@@ -7,8 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -136,7 +134,7 @@ type validationEntry struct {
 	DelayedMsg []byte
 }
 
-func (e *validationEntry) ToInput(stylusArchs []string) (*validator.ValidationInput, error) {
+func (e *validationEntry) ToInput(stylusArchs []ethdb.WasmTarget) (*validator.ValidationInput, error) {
 	if e.Stage != Ready {
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
@@ -145,21 +143,22 @@ func (e *validationEntry) ToInput(stylusArchs []string) (*validator.ValidationIn
 		HasDelayedMsg: e.HasDelayedMsg,
 		DelayedMsgNr:  e.DelayedMsgNr,
 		Preimages:     e.Preimages,
-		UserWasms:     make(map[string]map[common.Hash][]byte, len(e.UserWasms)),
+		UserWasms:     make(map[ethdb.WasmTarget]map[common.Hash][]byte, len(e.UserWasms)),
 		BatchInfo:     e.BatchInfo,
 		DelayedMsg:    e.DelayedMsg,
 		StartState:    e.Start,
 		DebugChain:    e.ChainConfig.DebugMode(),
 	}
+	if len(stylusArchs) == 0 && len(e.UserWasms) > 0 {
+		return nil, fmt.Errorf("stylus support is required")
+	}
 	for _, stylusArch := range stylusArchs {
 		res.UserWasms[stylusArch] = make(map[common.Hash][]byte)
 	}
-	for hash, info := range e.UserWasms {
+	for hash, asmMap := range e.UserWasms {
 		for _, stylusArch := range stylusArchs {
-			if stylusArch == "wavm" {
-				res.UserWasms[stylusArch][hash] = info.Module
-			} else if stylusArch == runtime.GOARCH {
-				res.UserWasms[stylusArch][hash] = info.Asm
+			if asm, exists := asmMap[stylusArch]; exists {
+				res.UserWasms[stylusArch][hash] = asm
 			} else {
 				return nil, fmt.Errorf("stylusArch not supported by block validator: %v", stylusArch)
 			}
@@ -492,13 +491,8 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			return fmt.Errorf("starting execution spawner: %w", err)
 		}
 	}
-	for i, spawner := range v.execSpawners {
+	for _, spawner := range v.execSpawners {
 		if err := spawner.Start(ctx_in); err != nil {
-			if u, parseErr := url.Parse(v.config.ValidationServerConfigs[i].URL); parseErr == nil {
-				if u.Scheme != "ws" && u.Scheme != "wss" {
-					return fmt.Errorf("validation server's url scheme is unsupported, it should either be ws or wss, url:%s err: %w", v.config.ValidationServerConfigs[i].URL, err)
-				}
-			}
 			return err
 		}
 	}

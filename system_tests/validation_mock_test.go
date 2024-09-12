@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -61,8 +62,8 @@ func (s *mockSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return mockWasmModuleRoots, nil
 }
 
-func (s *mockSpawner) StylusArchs() []string {
-	return []string{"mock"}
+func (s *mockSpawner) StylusArchs() []ethdb.WasmTarget {
+	return []ethdb.WasmTarget{"mock"}
 }
 
 func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {

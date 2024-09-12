@@ -17,6 +17,7 @@ const NumServices = 3
 
 func TestRedundantStorageService(t *testing.T) {
 	ctx := context.Background()
+	// #nosec G115
 	timeout := uint64(time.Now().Add(time.Hour).Unix())
 	services := []StorageService{}
 	for i := 0; i < NumServices; i++ {

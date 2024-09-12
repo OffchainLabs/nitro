@@ -60,6 +60,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -213,6 +214,10 @@ func mainImpl() int {
 	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
+	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
+		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
+		return 1
+	}
 
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
@@ -342,7 +347,21 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
-		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
+
+		dataPoster, err := arbnode.DataposterOnlyUsedToCreateValidatorWalletContract(
+			ctx,
+			l1Reader,
+			l1TransactionOptsValidator,
+			&nodeConfig.Node.Staker.DataPoster,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+		)
+		if err != nil {
+			log.Crit("error creating data poster to create validator wallet contract", "err", err)
+		}
+		getExtraGas := func() uint64 { return nodeConfig.Node.Staker.ExtraGas }
+
+		// #nosec G115
+		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1Reader, true, dataPoster, getExtraGas)
 		if err != nil {
 			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOptsValidator.From.Hex())
 		}
@@ -458,7 +477,7 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Persistent, l1Client, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -474,6 +493,10 @@ func mainImpl() int {
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
+		return 1
+	}
+	if err := dbutil.UnfinishedConversionCheck(arbDb); err != nil {
+		log.Error("arbitrumdata unfinished conversion check error", "err", err)
 		return 1
 	}
 
@@ -555,7 +578,7 @@ func mainImpl() int {
 		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
-		big.NewInt(int64(nodeConfig.ParentChain.ID)),
+		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
 	)
 	if err != nil {
@@ -851,6 +874,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainInfoIpfsDownloadPath := k.String("chain.info-ipfs-download-path")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
+	// #nosec G115
 	err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return nil, nil, err
@@ -873,10 +897,12 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"parent-chain.wallet.password":    "",
-			"parent-chain.wallet.private-key": "",
-			"chain.dev-wallet.password":       "",
-			"chain.dev-wallet.private-key":    "",
+			"node.batch-poster.parent-chain-wallet.password":    "",
+			"node.batch-poster.parent-chain-wallet.private-key": "",
+			"node.staker.parent-chain-wallet.password":          "",
+			"node.staker.parent-chain-wallet.private-key":       "",
+			"chain.dev-wallet.password":                         "",
+			"chain.dev-wallet.private-key":                      "",
 		})
 		if err != nil {
 			return nil, nil, err
@@ -983,13 +1009,16 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
 	var batchCount uint64
 	if initConfig.ReorgToBatch >= 0 {
+		// #nosec G115
 		batchCount = uint64(initConfig.ReorgToBatch) + 1
 	} else {
 		var messageIndex arbutil.MessageIndex
 		if initConfig.ReorgToMessageBatch >= 0 {
+			// #nosec G115
 			messageIndex = arbutil.MessageIndex(initConfig.ReorgToMessageBatch)
 		} else if initConfig.ReorgToBlockBatch > 0 {
 			genesis := chainConfig.ArbitrumChainParams.GenesisBlockNum
+			// #nosec G115
 			blockNum := uint64(initConfig.ReorgToBlockBatch)
 			if blockNum < genesis {
 				return fmt.Errorf("ReorgToBlockBatch %d before genesis %d", blockNum, genesis)

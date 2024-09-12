@@ -78,6 +78,7 @@ func TestMigrationNoExpiry(t *testing.T) {
 	Require(t, err)
 	s.enableLegacyLayout = true
 
+	// #nosec G115
 	now := uint64(time.Now().Unix())
 
 	err = s.Put(ctx, []byte("a"), now+1)
@@ -99,6 +100,7 @@ func TestMigrationNoExpiry(t *testing.T) {
 	getByHashAndCheck(t, s, "a", "b", "c", "d")
 
 	// Can still iterate by timestamp even if expiry disabled
+	// #nosec G115
 	countTimestampEntries(t, &s.layout, time.Unix(int64(now+11), 0), 4)
 
 }
@@ -120,14 +122,19 @@ func TestMigrationExpiry(t *testing.T) {
 	now := time.Now()
 
 	// Use increments of expiry divisor in order to span multiple by-expiry-timestamp dirs
+	// #nosec G115
 	err = s.Put(ctx, []byte("a"), uint64(now.Add(-2*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = s.Put(ctx, []byte("b"), uint64(now.Add(-1*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = s.Put(ctx, []byte("c"), uint64(now.Add(time.Second*expiryDivisor).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = s.Put(ctx, []byte("d"), uint64(now.Add(time.Second*expiryDivisor).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = s.Put(ctx, []byte("e"), uint64(now.Add(2*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
 
@@ -170,19 +177,26 @@ func TestExpiryDuplicates(t *testing.T) {
 	now := time.Now()
 
 	// Use increments of expiry divisor in order to span multiple by-expiry-timestamp dirs
+	// #nosec G115
 	err = s.Put(ctx, []byte("a"), uint64(now.Add(-2*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = s.Put(ctx, []byte("a"), uint64(now.Add(-1*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = s.Put(ctx, []byte("a"), uint64(now.Add(time.Second*expiryDivisor).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = s.Put(ctx, []byte("d"), uint64(now.Add(time.Second*expiryDivisor).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = s.Put(ctx, []byte("e"), uint64(now.Add(2*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = s.Put(ctx, []byte("f"), uint64(now.Add(3*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
 	// Put the same entry and expiry again, should have no effect
+	// #nosec G115
 	err = s.Put(ctx, []byte("f"), uint64(now.Add(3*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
 

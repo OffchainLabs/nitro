@@ -2,6 +2,7 @@ package validator
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
@@ -16,7 +17,7 @@ type ValidationInput struct {
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
 	Preimages     daprovider.PreimagesMap
-	UserWasms     map[string]map[common.Hash][]byte
+	UserWasms     map[ethdb.WasmTarget]map[common.Hash][]byte
 	BatchInfo     []BatchInfo
 	DelayedMsg    []byte
 	StartState    GoGlobalState

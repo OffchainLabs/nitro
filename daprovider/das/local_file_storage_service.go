@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -133,6 +134,10 @@ func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry uint64) error {
 	logPut("das.LocalFileStorageService.Store", data, expiry, s)
+	if expiry > math.MaxInt64 {
+		return fmt.Errorf("request expiry time (%v) exceeds max int64", expiry)
+	}
+	// #nosec G115
 	expiryTime := time.Unix(int64(expiry), 0)
 	currentTimePlusRetention := time.Now().Add(s.config.MaxRetention)
 	if expiryTime.After(currentTimePlusRetention) {
@@ -182,6 +187,7 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 	// new flat layout files, set their modification time accordingly.
 	if s.enableLegacyLayout {
 		tv := syscall.Timeval{
+			// #nosec G115
 			Sec:  int64(expiry - uint64(s.legacyLayout.retention.Seconds())),
 			Usec: 0,
 		}
@@ -371,6 +377,7 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 				return err
 			}
 
+			// #nosec G115
 			expiryPath := tl.expiryPath(batch.key, uint64(batch.expiry.Unix()))
 			if err = createHardLink(newPath, expiryPath); err != nil {
 				return err

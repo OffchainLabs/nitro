@@ -33,10 +33,13 @@ func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
 	server3, port3, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage3)
 	Require(t, err)
 
+	// #nosec G115
 	err = storage1.Put(ctx, data1, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = storage2.Put(ctx, data1, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
+	// #nosec G115
 	err = storage3.Put(ctx, data1, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
 
@@ -67,6 +70,7 @@ func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
 	data2 := []byte("Testing data that is only on the last REST endpoint.")
 	dataHash2 := dastree.Hash(data2)
 
+	// #nosec G115
 	err = storage3.Put(ctx, data2, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
 

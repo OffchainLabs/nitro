@@ -109,6 +109,7 @@ func pseudorandomAccountInitInfoForTesting(prand *testhelpers.PseudoRandomDataSo
 }
 
 func pseudorandomHashHashMapForTesting(prand *testhelpers.PseudoRandomDataSource, maxItems uint64) map[common.Hash]common.Hash {
+	// #nosec G115
 	size := int(prand.GetUint64() % maxItems)
 	ret := make(map[common.Hash]common.Hash)
 	for i := 0; i < size; i++ {
@@ -125,6 +126,7 @@ func checkAddressTable(arbState *ArbosState, addrTable []common.Address, t *test
 		Fail(t)
 	}
 	for i, addr := range addrTable {
+		// #nosec G115
 		res, exists, err := atab.LookupIndex(uint64(i))
 		Require(t, err)
 		if !exists {

@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -64,7 +65,7 @@ type InputJSON struct {
 	BatchInfo     []BatchInfoJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
-	UserWasms     map[string]map[common.Hash]string
+	UserWasms     map[ethdb.WasmTarget]map[common.Hash]string
 	DebugChain    bool
 }
 
@@ -96,14 +97,14 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
 		PreimagesB64:  jsonPreimagesMap,
-		UserWasms:     make(map[string]map[common.Hash]string),
+		UserWasms:     make(map[ethdb.WasmTarget]map[common.Hash]string),
 		DebugChain:    entry.DebugChain,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
 	}
-	for arch, wasms := range entry.UserWasms {
+	for target, wasms := range entry.UserWasms {
 		archWasms := make(map[common.Hash]string)
 		for moduleHash, data := range wasms {
 			compressed, err := arbcompress.CompressLevel(data, 1)
@@ -112,7 +113,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 			}
 			archWasms[moduleHash] = base64.StdEncoding.EncodeToString(compressed)
 		}
-		res.UserWasms[arch] = archWasms
+		res.UserWasms[target] = archWasms
 	}
 	return res
 }
@@ -128,7 +129,7 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
 		Preimages:     preimages,
-		UserWasms:     make(map[string]map[common.Hash][]byte),
+		UserWasms:     make(map[ethdb.WasmTarget]map[common.Hash][]byte),
 		DebugChain:    entry.DebugChain,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
@@ -147,7 +148,7 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}
-	for arch, wasms := range entry.UserWasms {
+	for target, wasms := range entry.UserWasms {
 		archWasms := make(map[common.Hash][]byte)
 		for moduleHash, encoded := range wasms {
 			decoded, err := base64.StdEncoding.DecodeString(encoded)
@@ -172,7 +173,7 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 			}
 			archWasms[moduleHash] = uncompressed
 		}
-		valInput.UserWasms[arch] = archWasms
+		valInput.UserWasms[target] = archWasms
 	}
 	return valInput, nil
 }

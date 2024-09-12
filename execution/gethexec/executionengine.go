@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -137,7 +138,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	defer s.cachedL1PriceData.mutex.Unlock()
 
 	if to < s.cachedL1PriceData.startOfL1PriceDataCache {
-		log.Info("trying to trim older cache which doesnt exist anymore")
+		log.Debug("trying to trim older L1 price data cache which doesnt exist anymore")
 	} else if to >= s.cachedL1PriceData.endOfL1PriceDataCache {
 		s.cachedL1PriceData.startOfL1PriceDataCache = 0
 		s.cachedL1PriceData.endOfL1PriceDataCache = 0
@@ -149,10 +150,46 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheSize uint32) {
+func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
+	localTarget := rawdb.LocalTarget()
+	targets := targetConfig.WasmTargets()
+	var nativeSet bool
+	for _, target := range targets {
+		var effectiveStylusTarget string
+		switch target {
+		case rawdb.TargetWavm:
+			// skip wavm target
+			continue
+		case rawdb.TargetArm64:
+			effectiveStylusTarget = targetConfig.Arm64
+		case rawdb.TargetAmd64:
+			effectiveStylusTarget = targetConfig.Amd64
+		case rawdb.TargetHost:
+			effectiveStylusTarget = targetConfig.Host
+		default:
+			return fmt.Errorf("unsupported stylus target: %v", target)
+		}
+		isNative := target == localTarget
+		err := programs.SetTarget(target, effectiveStylusTarget, isNative)
+		if err != nil {
+			return fmt.Errorf("failed to set stylus target: %w", err)
+		}
+		nativeSet = nativeSet || isNative
+	}
+	if !nativeSet {
+		return fmt.Errorf("local target %v missing in list of archs %v", localTarget, targets)
+	}
+	return nil
+}
+
+func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
 	if rustCacheSize != 0 {
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
+	if err := populateStylusTargetCache(targetConfig); err != nil {
+		return fmt.Errorf("error populating stylus target cache: %w", err)
+	}
+	return nil
 }
 
 func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {

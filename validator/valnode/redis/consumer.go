@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -22,8 +23,9 @@ type ValidationServer struct {
 	spawner validator.ValidationSpawner
 
 	// consumers stores moduleRoot to consumer mapping.
-	consumers     map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState]
-	streamTimeout time.Duration
+	consumers map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState]
+
+	config *ValidationServerConfig
 }
 
 func NewValidationServer(cfg *ValidationServerConfig, spawner validator.ValidationSpawner) (*ValidationServer, error) {
@@ -44,9 +46,9 @@ func NewValidationServer(cfg *ValidationServerConfig, spawner validator.Validati
 		consumers[mr] = c
 	}
 	return &ValidationServer{
-		consumers:     consumers,
-		spawner:       spawner,
-		streamTimeout: cfg.StreamTimeout,
+		consumers: consumers,
+		spawner:   spawner,
+		config:    cfg,
 	}, nil
 }
 
@@ -54,6 +56,23 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 	// Channel that all consumers use to indicate their readiness.
 	readyStreams := make(chan struct{}, len(s.consumers))
+	type workUnit struct {
+		req        *pubsub.Message[*validator.ValidationInput]
+		moduleRoot common.Hash
+	}
+	workers := s.config.Workers
+	if workers == 0 {
+		workers = runtime.NumCPU()
+	}
+	workQueue := make(chan workUnit, workers)
+	tokensCount := workers
+	if s.config.BufferReads {
+		tokensCount += workers
+	}
+	requestTokenQueue := make(chan struct{}, tokensCount)
+	for i := 0; i < tokensCount; i++ {
+		requestTokenQueue <- struct{}{}
+	}
 	for moduleRoot, c := range s.consumers {
 		c := c
 		moduleRoot := moduleRoot
@@ -84,26 +103,27 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			case <-ready: // Wait until the stream exists and start consuming iteratively.
 			}
 			s.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+				select {
+				case <-ctx.Done():
+					return 0
+				case <-requestTokenQueue:
+				}
 				req, err := c.Consume(ctx)
 				if err != nil {
 					log.Error("Consuming request", "error", err)
+					requestTokenQueue <- struct{}{}
 					return 0
 				}
 				if req == nil {
-					// There's nothing in the queue.
+					// There's nothing in the queue
+					requestTokenQueue <- struct{}{}
 					return time.Second
 				}
-				valRun := s.spawner.Launch(req.Value, moduleRoot)
-				res, err := valRun.Await(ctx)
-				if err != nil {
-					log.Error("Error validating", "request value", req.Value, "error", err)
-					return 0
+				select {
+				case <-ctx.Done():
+				case workQueue <- workUnit{req, moduleRoot}:
 				}
-				if err := c.SetResult(ctx, req.ID, res); err != nil {
-					log.Error("Error setting result for request", "id", req.ID, "result", res, "error", err)
-					return 0
-				}
-				return time.Second
+				return 0
 			})
 		})
 	}
@@ -113,7 +133,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			case <-readyStreams:
 				log.Trace("At least one stream is ready")
 				return // Don't block Start if at least one of the stream is ready.
-			case <-time.After(s.streamTimeout):
+			case <-time.After(s.config.StreamTimeout):
 				log.Error("Waiting for redis streams timed out")
 			case <-ctx.Done():
 				log.Info("Context done while waiting redis streams to be ready, failed to start")
@@ -121,6 +141,32 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			}
 		}
 	})
+	for i := 0; i < workers; i++ {
+		s.StopWaiter.LaunchThread(func(ctx context.Context) {
+			for {
+				var work workUnit
+				select {
+				case <-ctx.Done():
+					return
+				case work = <-workQueue:
+				}
+				valRun := s.spawner.Launch(work.req.Value, work.moduleRoot)
+				res, err := valRun.Await(ctx)
+				if err != nil {
+					log.Error("Error validating", "request value", work.req.Value, "error", err)
+				} else {
+					if err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res); err != nil {
+						log.Error("Error setting result for request", "id", work.req.ID, "result", res, "error", err)
+					}
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case requestTokenQueue <- struct{}{}:
+				}
+			}
+		})
+	}
 }
 
 type ValidationServerConfig struct {
@@ -131,6 +177,8 @@ type ValidationServerConfig struct {
 	// Timeout on polling for existence of each redis stream.
 	StreamTimeout time.Duration `koanf:"stream-timeout"`
 	StreamPrefix  string        `koanf:"stream-prefix"`
+	Workers       int           `koanf:"workers"`
+	BufferReads   bool          `koanf:"buffer-reads"`
 }
 
 var DefaultValidationServerConfig = ValidationServerConfig{
@@ -139,6 +187,8 @@ var DefaultValidationServerConfig = ValidationServerConfig{
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
 	ModuleRoots:    []string{},
 	StreamTimeout:  10 * time.Minute,
+	Workers:        0,
+	BufferReads:    true,
 }
 
 var TestValidationServerConfig = ValidationServerConfig{
@@ -147,6 +197,8 @@ var TestValidationServerConfig = ValidationServerConfig{
 	ConsumerConfig: pubsub.TestConsumerConfig,
 	ModuleRoots:    []string{},
 	StreamTimeout:  time.Minute,
+	Workers:        1,
+	BufferReads:    true,
 }
 
 func ValidationServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -155,6 +207,8 @@ func ValidationServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultValidationServerConfig.RedisURL, "url of redis server")
 	f.String(prefix+".stream-prefix", DefaultValidationServerConfig.StreamPrefix, "prefix for stream name")
 	f.Duration(prefix+".stream-timeout", DefaultValidationServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
+	f.Int(prefix+".workers", DefaultValidationServerConfig.Workers, "number of validation threads (0 to use number of CPUs)")
+	f.Bool(prefix+".buffer-reads", DefaultValidationServerConfig.BufferReads, "buffer reads (read next while working)")
 }
 
 func (cfg *ValidationServerConfig) Enabled() bool {

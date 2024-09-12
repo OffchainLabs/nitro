@@ -347,6 +347,29 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
+func DataposterOnlyUsedToCreateValidatorWalletContract(
+	ctx context.Context,
+	l1Reader *headerreader.HeaderReader,
+	transactOpts *bind.TransactOpts,
+	cfg *dataposter.DataPosterConfig,
+	parentChainID *big.Int,
+) (*dataposter.DataPoster, error) {
+	cfg.UseNoOpStorage = true
+	return dataposter.NewDataPoster(ctx,
+		&dataposter.DataPosterOpts{
+			HeaderReader: l1Reader,
+			Auth:         transactOpts,
+			Config: func() *dataposter.DataPosterConfig {
+				return cfg
+			},
+			MetadataRetriever: func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
+				return nil, nil
+			},
+			ParentChainID: parentChainID,
+		},
+	)
+}
+
 func StakerDataposter(
 	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
@@ -522,6 +545,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
+	// #nosec G115
 	sequencerInbox, err := NewSequencerInbox(l1client, deployInfo.SequencerInbox, int64(deployInfo.DeployedAt))
 	if err != nil {
 		return nil, err
@@ -672,6 +696,7 @@ func createNodeImpl(
 					tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 					existingWalletAddress = &tmpAddress
 				}
+				// #nosec G115
 				wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
 				if err != nil {
 					return nil, err
@@ -693,7 +718,7 @@ func createNodeImpl(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, func() *staker.L1ValidatorConfig { return &configFetcher.Get().Staker }, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}

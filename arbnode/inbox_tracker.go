@@ -804,6 +804,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	if len(messages) > 0 {
 		latestTimestamp = messages[len(messages)-1].Message.Header.Timestamp
 	}
+	// #nosec G115
 	log.Info(
 		"InboxTracker",
 		"sequencerBatchCount", pos,
@@ -811,7 +812,9 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		"l1Block", latestL1Block,
 		"l1Timestamp", time.Unix(int64(latestTimestamp), 0),
 	)
+	// #nosec G115
 	inboxLatestBatchGauge.Update(int64(pos))
+	// #nosec G115
 	inboxLatestBatchMessageGauge.Update(int64(newMessageCount))
 
 	if t.validator != nil {

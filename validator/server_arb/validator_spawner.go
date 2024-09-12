@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -21,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 )
@@ -88,8 +90,8 @@ func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return s.locator.ModuleRoots(), nil
 }
 
-func (s *ArbitratorSpawner) StylusArchs() []string {
-	return []string{"wavm"}
+func (s *ArbitratorSpawner) StylusArchs() []ethdb.WasmTarget {
+	return []ethdb.WasmTarget{rawdb.TargetWavm}
 }
 
 func (s *ArbitratorSpawner) Name() string {
@@ -122,14 +124,14 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 			return fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
 		}
 	}
-	if len(entry.UserWasms["wavm"]) == 0 {
+	if len(entry.UserWasms[rawdb.TargetWavm]) == 0 {
 		for stylusArch, wasms := range entry.UserWasms {
 			if len(wasms) > 0 {
 				return fmt.Errorf("bad stylus arch loaded to machine. Expected wavm. Got: %s", stylusArch)
 			}
 		}
 	}
-	for moduleHash, module := range entry.UserWasms["wavm"] {
+	for moduleHash, module := range entry.UserWasms[rawdb.TargetWavm] {
 		err = mach.AddUserWasm(moduleHash, module)
 		if err != nil {
 			log.Error(
@@ -178,7 +180,10 @@ func (v *ArbitratorSpawner) execute(
 		}
 		steps += count
 	}
+
+	// #nosec G115
 	arbitratorValidationSteps.Update(int64(mach.GetStepCount()))
+
 	if mach.IsErrored() {
 		log.Error("machine entered errored state during attempted validation", "block", entry.Id)
 		return validator.GoGlobalState{}, errors.New("machine entered errored state during attempted validation")
