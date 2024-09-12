@@ -375,7 +375,9 @@ trait ImportResolver: for<'a, 'b> Fn(&'a str, &'b str) -> Result<Function> + Siz
 impl<F: for<'a, 'b> Fn(&'a str, &'b str) -> Result<Function>> ImportResolver for F {}
 
 impl Module {
-    fn make_imports_resolver(import_map: &HashMap<String, AvailableImport>) -> impl ImportResolver + '_ {
+    fn make_imports_resolver(
+        import_map: &HashMap<String, AvailableImport>,
+    ) -> impl ImportResolver + '_ {
         move |module, name| {
             let qualified_name = format!("{module}__{name}");
 
@@ -394,7 +396,9 @@ impl Module {
         }
     }
 
-    fn make_forward_resolver(import_map: &HashMap<String, AvailableImport>) -> impl ImportResolver + '_ {
+    fn make_forward_resolver(
+        import_map: &HashMap<String, AvailableImport>,
+    ) -> impl ImportResolver + '_ {
         move |module, name| {
             let qualified_name = format!("{module}__{name}");
 
