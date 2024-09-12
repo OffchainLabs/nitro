@@ -49,12 +49,12 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	seqInboxTemplateEthBased, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844, false)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: %w", err)
+		return common.Address{}, fmt.Errorf("sequencer inbox eth based deploy error: %w", err)
 	}
 	seqInboxTemplateERC20Based, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844, true)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: %w", err)
+		return common.Address{}, fmt.Errorf("sequencer inbox erc20 based deploy error: %w", err)
 	}
 
 	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, client, maxDataSize)
