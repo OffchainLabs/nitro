@@ -329,6 +329,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 		gascost := func(args []reflect.Value) []reflect.Value {
 
 			cost := params.LogGas
+			// #nosec G115
 			cost += params.LogTopicGas * uint64(1+len(topicInputs))
 
 			var dataValues []interface{}
@@ -712,6 +713,8 @@ func (p *Precompile) Call(
 		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
 	}
 
+	// len(input) must be at least 4 because of the check near the start of this function
+	// #nosec G115
 	argsCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(input)-4))
 	if err := callerCtx.Burn(argsCost); err != nil {
 		// user cannot afford the argument data supplied

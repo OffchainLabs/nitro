@@ -306,6 +306,7 @@ func (machine *JitMachine) prove(
 			if err != nil {
 				return state, fmt.Errorf("failed to read memory usage from Jit machine: %w", err)
 			}
+			// #nosec G115
 			if memoryUsed > uint64(machine.wasmMemoryUsageLimit) {
 				log.Warn("memory used by jit wasm exceeds the wasm memory usage limit", "limit", machine.wasmMemoryUsageLimit, "memoryUsed", memoryUsed)
 			}
