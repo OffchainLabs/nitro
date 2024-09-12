@@ -346,14 +346,95 @@ lazy_static! {
     };
 }
 
+trait ImportResolver: for<'a, 'b> Fn(&'a str, &'b str) -> Result<Function> + Sized {
+    fn compose(self, other: impl ImportResolver) -> impl ImportResolver {
+        move |module, name| {
+            self(module, name).or_else(|original_err| {
+                let mut result = other(module, name);
+                if result.is_err() {
+                    for err_layer in original_err.chain().rev() {
+                        result = result.wrap_err(format!("{err_layer}"));
+                    }
+                }
+                result
+            })
+        }
+    }
+
+    fn condition(self, condition: bool) -> impl ImportResolver {
+        move |module, name| {
+            if condition {
+                self(module, name)
+            } else {
+                bail!("resolver disabled")
+            }
+        }
+    }
+}
+
+impl<F: for<'a, 'b> Fn(&'a str, &'b str) -> Result<Function>> ImportResolver for F {}
+
 impl Module {
-    fn from_binary(
+    fn make_imports_resolver(import_map: &HashMap<String, AvailableImport>) -> impl ImportResolver + '_ {
+        move |module, name| {
+            let qualified_name = format!("{module}__{name}");
+
+            let Some(import) = import_map.get(&qualified_name) else {
+                bail!("func not found {module} {name}")
+            };
+            let wavm = vec![
+                Instruction::simple(Opcode::InitFrame),
+                Instruction::with_data(
+                    Opcode::CrossModuleCall,
+                    pack_cross_module_call(import.module, import.func),
+                ),
+                Instruction::simple(Opcode::Return),
+            ];
+            Ok(Function::new_from_wavm(wavm, import.ty.clone(), vec![]))
+        }
+    }
+
+    fn make_forward_resolver(import_map: &HashMap<String, AvailableImport>) -> impl ImportResolver + '_ {
+        move |module, name| {
+            let qualified_name = format!("{module}__{name}");
+
+            let Some(import) = import_map.get(&qualified_name) else {
+                bail!("func not found {module} {name}")
+            };
+            let wavm = vec![
+                Instruction::simple(Opcode::InitFrame),
+                Instruction::with_data(
+                    Opcode::CrossModuleForward,
+                    pack_cross_module_call(import.module, import.func),
+                ),
+                Instruction::simple(Opcode::Return),
+            ];
+            Ok(Function::new_from_wavm(wavm, import.ty.clone(), vec![]))
+        }
+    }
+
+    fn hostio_resolver(module: &str, name: &str) -> Result<Function> {
+        if host::hostio_module_is_debug(module) {
+            return Self::notfound_resolver(module, name);
+        }
+        host::get_impl(module, name)
+    }
+
+    fn debug_resolver(module: &str, name: &str) -> Result<Function> {
+        if !host::hostio_module_is_debug(module) {
+            return Self::notfound_resolver(module, name);
+        }
+        host::get_impl(module, name)
+    }
+
+    fn notfound_resolver(module: &str, name: &str) -> Result<Function> {
+        bail!("import not found {module} {name}")
+    }
+
+    fn from_binary<R: ImportResolver>(
         bin: &WasmBinary,
-        available_imports: &HashMap<String, AvailableImport>,
+        import_resolver: R,
         floating_point_impls: &FloatingPointImpls,
-        allow_hostapi: bool,
-        is_forwarder: bool,
-        debug_funcs: bool,
         stylus_data: Option<StylusData>,
     ) -> Result<Module> {
         let mut code = Vec::new();
@@ -366,38 +447,8 @@ impl Module {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];
 
-            let qualified_name = format!("{module}__{}", import.name);
+            let func = import_resolver(import.module, import.name)?;
 
-            let func = if let Some(import) = available_imports.get(&qualified_name) {
-                let call = match is_forwarder {
-                    true => Opcode::CrossModuleForward,
-                    false => Opcode::CrossModuleCall,
-                };
-                let wavm = vec![
-                    Instruction::simple(Opcode::InitFrame),
-                    Instruction::with_data(
-                        call,
-                        pack_cross_module_call(import.module, import.func),
-                    ),
-                    Instruction::simple(Opcode::Return),
-                ];
-                Function::new_from_wavm(wavm, import.ty.clone(), vec![])
-            } else if let Ok((hostio, debug)) = host::get_impl(import.module, import.name) {
-                ensure!(
-                    (debug && debug_funcs) || (!debug && allow_hostapi),
-                    "Host func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi} debug={debug}",
-                    import.name.red(),
-                    import.module.red(),
-                );
-                hostio
-            } else {
-                bail!(
-                    "No such import {} in {} for {}",
-                    import.name.red(),
-                    import.module.red(),
-                    bin_name.red()
-                )
-            };
             ensure!(
                 &func.ty == have_ty,
                 "Import {} for {} has different function signature than export.\nexpected {} in {}\nbut have {}",
@@ -602,11 +653,9 @@ impl Module {
     ) -> Result<Module> {
         Self::from_binary(
             bin,
-            &USER_IMPORTS,
+            Module::make_imports_resolver(&USER_IMPORTS)
+                .compose(Module::debug_resolver.condition(debug_funcs)),
             &HashMap::default(),
-            false,
-            false,
-            debug_funcs,
             stylus_data,
         )
     }
@@ -1377,11 +1426,8 @@ impl Machine {
         if let Some(lib) = forwarder {
             modules.push(Module::from_binary(
                 &lib,
-                &available_imports,
+                Module::make_forward_resolver(&available_imports),
                 &floating_point_impls,
-                true,
-                true,
-                debug_funcs,
                 None,
             )?);
         }
@@ -1389,22 +1435,20 @@ impl Machine {
         for lib in libraries.iter() {
             modules.push(Module::from_binary(
                 lib,
-                &available_imports,
+                Module::hostio_resolver
+                    .compose(Module::debug_resolver.condition(debug_funcs))
+                    .compose(Module::make_imports_resolver(&available_imports)),
                 &floating_point_impls,
-                true,
-                false,
-                debug_funcs,
                 None,
             )?);
         }
 
         modules.push(Module::from_binary(
             &bin,
-            &available_imports,
+            Module::make_imports_resolver(&available_imports)
+                .compose(Module::hostio_resolver.condition(allow_hostapi_from_main))
+                .compose(Module::debug_resolver.condition(debug_funcs)),
             &floating_point_impls,
-            allow_hostapi_from_main,
-            false,
-            debug_funcs,
             stylus_data,
         )?);
 
