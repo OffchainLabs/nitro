@@ -671,7 +671,7 @@ func l2MessageBatchDataFromTxes(txes types.Transactions) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
+		binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes))+1)
 		l2Message = append(l2Message, sizeBuf...)
 		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
 		l2Message = append(l2Message, txBytes...)

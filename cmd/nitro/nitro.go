@@ -892,6 +892,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainInfoIpfsDownloadPath := k.String("chain.info-ipfs-download-path")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
+	// #nosec G115
 	err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return nil, nil, err
@@ -1037,13 +1038,16 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
 	var batchCount uint64
 	if initConfig.ReorgToBatch >= 0 {
+		// #nosec G115
 		batchCount = uint64(initConfig.ReorgToBatch) + 1
 	} else {
 		var messageIndex arbutil.MessageIndex
 		if initConfig.ReorgToMessageBatch >= 0 {
+			// #nosec G115
 			messageIndex = arbutil.MessageIndex(initConfig.ReorgToMessageBatch)
 		} else if initConfig.ReorgToBlockBatch > 0 {
 			genesis := chainConfig.ArbitrumChainParams.GenesisBlockNum
+			// #nosec G115
 			blockNum := uint64(initConfig.ReorgToBlockBatch)
 			if blockNum < genesis {
 				return fmt.Errorf("ReorgToBlockBatch %d before genesis %d", blockNum, genesis)
