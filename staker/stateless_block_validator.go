@@ -195,7 +195,7 @@ func newValidationEntry(
 			Number: batchNum,
 			Data:   fullBatchInfo.PostedData,
 		})
-		clonePreimagesInto(preimages, fullBatchInfo.Preimages)
+		copyPreimagesInto(preimages, fullBatchInfo.Preimages)
 		return fullBatchInfo.PostedData, nil
 	}
 
@@ -326,10 +326,10 @@ func (v *StatelessBlockValidator) readBatch(ctx context.Context, batchNum uint64
 	return true, &fullInfo, nil
 }
 
-func clonePreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]byte) {
+func copyPreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]byte) {
 	for piType, piMap := range source {
 		if dest[piType] == nil {
-			dest[piType] = make(map[common.Hash][]byte, len(source[piType]))
+			dest[piType] = make(map[common.Hash][]byte, len(piMap))
 		}
 		for hash, preimage := range piMap {
 			dest[piType][hash] = preimage
@@ -350,9 +350,10 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
 		}
 		if recording.Preimages != nil {
-			recordingPreimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
-			recordingPreimages[arbutil.Keccak256PreimageType] = recording.Preimages
-			clonePreimagesInto(e.Preimages, recordingPreimages)
+			recordingPreimages := map[arbutil.PreimageType]map[common.Hash][]byte{
+				arbutil.Keccak256PreimageType: recording.Preimages,
+			}
+			copyPreimagesInto(e.Preimages, recordingPreimages)
 		}
 		e.UserWasms = recording.UserWasms
 	}
