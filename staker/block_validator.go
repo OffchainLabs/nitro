@@ -58,7 +58,7 @@ type BlockValidator struct {
 	// can only be accessed from creation thread or if holding reorg-write
 	nextCreateBatch       *FullBatchInfo
 	nextCreateBatchReread bool
-	prevBatchCache        map[uint64]*FullBatchInfo
+	prevBatchCache        map[uint64][]byte
 
 	nextCreateStartGS     validator.GoGlobalState
 	nextCreatePrevDelayed uint64
@@ -275,7 +275,7 @@ func NewBlockValidator(
 		progressValidationsChan: make(chan struct{}, 1),
 		config:                  config,
 		fatalErr:                fatalErr,
-		prevBatchCache:          make(map[uint64]*FullBatchInfo),
+		prevBatchCache:          make(map[uint64][]byte),
 	}
 	if !config().Dangerous.ResetBlockValidation {
 		validated, err := ret.ReadLastValidatedInfo()
@@ -576,12 +576,12 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	}
 	if v.nextCreateStartGS.PosInBatch == 0 || v.nextCreateBatchReread {
 		// new batch
-		found, fullBatchInfo, err := v.readBatch(ctx, v.nextCreateStartGS.Batch)
+		found, fullBatchInfo, err := v.readFullBatch(ctx, v.nextCreateStartGS.Batch)
 		if !found {
 			return false, err
 		}
 		if v.nextCreateBatch != nil {
-			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch
+			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch.PostedData
 		}
 		v.nextCreateBatch = fullBatchInfo
 		// #nosec G115
@@ -589,7 +589,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		batchCacheLimit := v.config().BatchCacheLimit
 		if len(v.prevBatchCache) > int(batchCacheLimit) {
 			for num := range v.prevBatchCache {
-				if num < v.nextCreateStartGS.Batch-uint64(batchCacheLimit) {
+				if num+uint64(batchCacheLimit) < v.nextCreateStartGS.Batch {
 					delete(v.prevBatchCache, num)
 				}
 			}
@@ -610,26 +610,29 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatch.MsgCount, pos, endGS.Batch)
 	}
 	chainConfig := v.streamer.ChainConfig()
-	batchReader := func(batchNum uint64) (*FullBatchInfo, error) {
-		if batchNum == v.nextCreateBatch.Number {
-			return v.nextCreateBatch, nil
-		}
-		// only batch-posting-reports will get here, and there's only one per batch
-		if entry, found := v.prevBatchCache[batchNum]; found {
+	prevBatchNums, err := msg.Message.PastBatchesRequired()
+	if err != nil {
+		return false, err
+	}
+	prevBatches := make([]validator.BatchInfo, 0, len(prevBatchNums))
+	// prevBatchNums are only used for batch reports, each is only used once
+	for _, batchNum := range prevBatchNums {
+		data, found := v.prevBatchCache[batchNum]
+		if found {
 			delete(v.prevBatchCache, batchNum)
-			return entry, nil
+		} else {
+			data, err = v.readPostedBatch(ctx, batchNum)
+			if err != nil {
+				return false, err
+			}
 		}
-		found, entry, err := v.readBatch(ctx, batchNum)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			return nil, fmt.Errorf("batch %d not found", batchNum)
-		}
-		return entry, nil
+		prevBatches = append(prevBatches, validator.BatchInfo{
+			Number: batchNum,
+			Data:   data,
+		})
 	}
 	entry, err := newValidationEntry(
-		pos, v.nextCreateStartGS, endGS, msg, batchReader, v.nextCreatePrevDelayed, chainConfig,
+		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, prevBatches, v.nextCreatePrevDelayed, chainConfig,
 	)
 	if err != nil {
 		return false, err
@@ -1030,7 +1033,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 		v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 		v.nextCreateBatchReread = true
 		if v.nextCreateBatch != nil {
-			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch
+			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch.PostedData
 		}
 		v.createdA.Store(countUint64)
 	}
@@ -1058,7 +1061,7 @@ func (v *BlockValidator) ReorgToBatchCount(count uint64) {
 	defer v.reorgMutex.Unlock()
 	if v.nextCreateStartGS.Batch >= count {
 		v.nextCreateBatchReread = true
-		v.prevBatchCache = make(map[uint64]*FullBatchInfo)
+		v.prevBatchCache = make(map[uint64][]byte)
 	}
 }
 
@@ -1099,7 +1102,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	v.nextCreateStartGS = buildGlobalState(*res, endPosition)
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	v.nextCreateBatchReread = true
-	v.prevBatchCache = make(map[uint64]*FullBatchInfo)
+	v.prevBatchCache = make(map[uint64][]byte)
 	countUint64 := uint64(count)
 	v.createdA.Store(countUint64)
 	// under the reorg mutex we don't need atomic access

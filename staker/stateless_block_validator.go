@@ -116,7 +116,6 @@ const (
 
 type FullBatchInfo struct {
 	Number     uint64
-	BlockHash  common.Hash
 	PostedData []byte
 	MsgCount   arbutil.MessageIndex
 	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
@@ -179,25 +178,27 @@ func newValidationEntry(
 	start validator.GoGlobalState,
 	end validator.GoGlobalState,
 	msg *arbostypes.MessageWithMetadata,
-	fullBatchFetcher func(uint64) (*FullBatchInfo, error),
+	fullBatchInfo *FullBatchInfo,
+	prevBatches []validator.BatchInfo,
 	prevDelayed uint64,
 	chainConfig *params.ChainConfig,
 ) (*validationEntry, error) {
 	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
-	valBatches := make([]validator.BatchInfo, 0)
-
-	valBatchFetcher := func(batchNum uint64) ([]byte, error) {
-		fullBatchInfo, err := fullBatchFetcher(batchNum)
-		if err != nil {
-			return nil, err
-		}
-		valBatches = append(valBatches, validator.BatchInfo{
-			Number: batchNum,
-			Data:   fullBatchInfo.PostedData,
-		})
-		copyPreimagesInto(preimages, fullBatchInfo.Preimages)
-		return fullBatchInfo.PostedData, nil
+	if fullBatchInfo == nil {
+		return nil, fmt.Errorf("fullbatchInfo cannot be nil")
 	}
+	if fullBatchInfo.Number != start.Batch {
+		return nil, fmt.Errorf("got wrong batch expected: %d got: %d", start.Batch, fullBatchInfo.Number)
+	}
+	valBatches := []validator.BatchInfo{
+		{
+			Number: fullBatchInfo.Number,
+			Data:   fullBatchInfo.PostedData,
+		},
+	}
+	valBatches = append(valBatches, prevBatches...)
+
+	copyPreimagesInto(preimages, fullBatchInfo.Preimages)
 
 	hasDelayed := false
 	var delayedNum uint64
@@ -206,14 +207,6 @@ func newValidationEntry(
 		delayedNum = prevDelayed
 	} else if msg.DelayedMessagesRead != prevDelayed {
 		return nil, fmt.Errorf("illegal validation entry delayedMessage %d, previous %d", msg.DelayedMessagesRead, prevDelayed)
-	}
-
-	if _, err := valBatchFetcher(start.Batch); err != nil {
-		return nil, err
-	}
-	msg.Message.BatchGasCost = nil
-	if err := msg.Message.FillInBatchGasCost(valBatchFetcher); err != nil {
-		return nil, err
 	}
 
 	return &validationEntry{
@@ -274,7 +267,19 @@ func NewStatelessBlockValidator(
 	}, nil
 }
 
-func (v *StatelessBlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, *FullBatchInfo, error) {
+func (v *StatelessBlockValidator) readPostedBatch(ctx context.Context, batchNum uint64) ([]byte, error) {
+	batchCount, err := v.inboxTracker.GetBatchCount()
+	if err != nil {
+		return nil, err
+	}
+	if batchCount <= batchNum {
+		return nil, fmt.Errorf("batch not found: %d", batchNum)
+	}
+	postedData, _, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+	return postedData, err
+}
+
+func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum uint64) (bool, *FullBatchInfo, error) {
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
 		return false, nil, err
@@ -318,7 +323,6 @@ func (v *StatelessBlockValidator) readBatch(ctx context.Context, batchNum uint64
 	}
 	fullInfo := FullBatchInfo{
 		Number:     batchNum,
-		BlockHash:  batchBlockHash,
 		PostedData: postedData,
 		MsgCount:   batchMsgCount,
 		Preimages:  preimages,
@@ -427,17 +431,30 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	}
 	start := buildGlobalState(*prevResult, startPos)
 	end := buildGlobalState(*result, endPos)
-	fullBatchReader := func(batchNum uint64) (*FullBatchInfo, error) {
-		found, fullBlockInfo, err := v.readBatch(ctx, batchNum)
+	found, fullBatchInfo, err := v.readFullBatch(ctx, start.Batch)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("batch %d not found", startPos.BatchNumber)
+	}
+
+	prevBatchNums, err := msg.Message.PastBatchesRequired()
+	if err != nil {
+		return nil, err
+	}
+	prevBatches := make([]validator.BatchInfo, 0, len(prevBatchNums))
+	for _, batchNum := range prevBatchNums {
+		data, err := v.readPostedBatch(ctx, batchNum)
 		if err != nil {
 			return nil, err
 		}
-		if !found {
-			return nil, fmt.Errorf("batch %d not found", startPos.BatchNumber)
-		}
-		return fullBlockInfo, nil
+		prevBatches = append(prevBatches, validator.BatchInfo{
+			Number: batchNum,
+			Data:   data,
+		})
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, fullBatchReader, prevDelayed, v.streamer.ChainConfig())
+	entry, err := newValidationEntry(pos, start, end, msg, fullBatchInfo, prevBatches, prevDelayed, v.streamer.ChainConfig())
 	if err != nil {
 		return nil, err
 	}
