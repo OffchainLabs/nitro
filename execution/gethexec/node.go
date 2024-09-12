@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"sync/atomic"
 	"testing"
 
@@ -59,6 +60,11 @@ func (c *StylusTargetConfig) Validate() error {
 	for target := range targetsSet {
 		targets = append(targets, target)
 	}
+	sort.Slice(
+		targets,
+		func(i, j int) bool {
+			return targets[i] < targets[j]
+		})
 	c.wasmTargets = targets
 	return nil
 }
