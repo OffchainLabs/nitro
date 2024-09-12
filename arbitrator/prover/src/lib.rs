@@ -73,8 +73,13 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     with_forwarder: bool,
 ) -> *mut Machine {
     let debug_chain = debug_chain != 0;
-    match arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size, debug_chain, with_forwarder)
-    {
+    match arbitrator_load_machine_impl(
+        binary_path,
+        library_paths,
+        library_paths_size,
+        debug_chain,
+        with_forwarder,
+    ) {
         Ok(mach) => mach,
         Err(err) => {
             eprintln!("Error loading binary: {:?}", err);
