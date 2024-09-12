@@ -103,11 +103,13 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			case <-ready: // Wait until the stream exists and start consuming iteratively.
 			}
 			s.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+				log.Trace("waiting for request token", "cid", c.Id())
 				select {
 				case <-ctx.Done():
 					return 0
 				case <-requestTokenQueue:
 				}
+				log.Trace("got request token", "cid", c.Id())
 				req, err := c.Consume(ctx)
 				if err != nil {
 					log.Error("Consuming request", "error", err)
@@ -115,10 +117,12 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 					return 0
 				}
 				if req == nil {
+					log.Trace("consumed nil", "cid", c.Id())
 					// There's nothing in the queue
 					requestTokenQueue <- struct{}{}
 					return time.Second
 				}
+				log.Trace("forwarding work", "cid", c.Id(), "workid", req.ID)
 				select {
 				case <-ctx.Done():
 				case workQueue <- workUnit{req, moduleRoot}:
@@ -144,20 +148,24 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	for i := 0; i < workers; i++ {
 		s.StopWaiter.LaunchThread(func(ctx context.Context) {
 			for {
+				log.Trace("waiting for work", "thread", i)
 				var work workUnit
 				select {
 				case <-ctx.Done():
 					return
 				case work = <-workQueue:
 				}
+				log.Trace("got work", "thread", i, "workid", work.req.ID)
 				valRun := s.spawner.Launch(work.req.Value, work.moduleRoot)
 				res, err := valRun.Await(ctx)
 				if err != nil {
 					log.Error("Error validating", "request value", work.req.Value, "error", err)
 				} else {
+					log.Trace("done work", "thread", i, "workid", work.req.ID)
 					if err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res); err != nil {
 						log.Error("Error setting result for request", "id", work.req.ID, "result", res, "error", err)
 					}
+					log.Trace("set result", "thread", i, "workid", work.req.ID)
 				}
 				select {
 				case <-ctx.Done():
