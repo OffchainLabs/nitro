@@ -168,12 +168,12 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID s
 	if err != nil {
 		return fmt.Errorf("marshaling result: %w", err)
 	}
-	log.Trace("consumer: setting result", "cid", c.id, "messageId", messageID)
+	log.Debug("consumer: setting result", "cid", c.id, "messageId", messageID)
 	acquired, err := c.client.SetNX(ctx, messageID, resp, c.cfg.ResponseEntryTimeout).Result()
 	if err != nil || !acquired {
 		return fmt.Errorf("setting result for  message: %v, error: %w", messageID, err)
 	}
-	log.Trace("consumer: xack", "cid", c.id, "messageId", messageID)
+	log.Debug("consumer: xack", "cid", c.id, "messageId", messageID)
 	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {
 		return fmt.Errorf("acking message: %v, error: %w", messageID, err)
 	}
