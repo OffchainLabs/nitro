@@ -228,6 +228,26 @@ func (r *InboxReader) CaughtUp() chan struct{} {
 	return r.caughtUpChan
 }
 
+type lazyHashLogging struct {
+	f func() common.Hash
+}
+
+func (l lazyHashLogging) String() string {
+	return l.f().String()
+}
+
+func (l lazyHashLogging) TerminalString() string {
+	return l.f().TerminalString()
+}
+
+func (l lazyHashLogging) MarshalText() ([]byte, error) {
+	return l.f().MarshalText()
+}
+
+func (l lazyHashLogging) Format(s fmt.State, c rune) {
+	l.f().Format(s, c)
+}
+
 func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	readMode := r.config().ReadMode
 	from, err := r.getNextBlockToRead(ctx)
@@ -508,9 +528,9 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				}
 				log.Trace(
 					"Found sequencer batches",
+					"firstSequenceNumber", firstBatch.SequenceNumber,
 					"newBatchesCount", len(sequencerBatches),
 					"duplicateBatches", duplicateBatches,
-					"firstSequenceNumber", firstBatch.SequenceNumber,
 					"reorgingSequencer", reorgingSequencer,
 					"readBeforeAcc", firstBatch.BeforeInboxAcc,
 					"haveBeforeAcc", havePrevAcc,
@@ -546,12 +566,15 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				}
 				log.Trace(
 					"Found delayed messages",
-					"count", len(delayedMessages),
 					"firstSequenceNumber", beforeCount,
+					"count", len(delayedMessages),
 					"reorgingDelayed", reorgingDelayed,
 					"readBeforeAcc", beforeAcc,
 					"haveBeforeAcc", havePrevAcc,
-					"readLastAcc", delayedMessages[len(delayedMessages)-1].AfterInboxAcc,
+					"readLastAcc", lazyHashLogging{func() common.Hash {
+						// Only compute this if we need to log it, as it's expensive
+						return delayedMessages[len(delayedMessages)-1].AfterInboxAcc()
+					}},
 				)
 			} else if missingDelayed && to.Cmp(currentHeight) >= 0 {
 				log.Trace("Didn't find expected delayed messages", "from", from, "to", to, "currentHeight", currentHeight)
