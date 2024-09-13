@@ -79,6 +79,7 @@ func (as *AddressSet) AllMembers(maxNumToReturn uint64) ([]common.Address, error
 	}
 	ret := make([]common.Address, size)
 	for i := range ret {
+		// #nosec G115
 		sba := as.backingStorage.OpenStorageBackedAddress(uint64(i + 1))
 		ret[i], err = sba.Get()
 		if err != nil {
