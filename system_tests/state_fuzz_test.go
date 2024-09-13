@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )

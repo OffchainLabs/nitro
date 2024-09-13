@@ -7,9 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/daprovider"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -128,7 +129,7 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
+	Preimages  daprovider.PreimagesMap
 	UserWasms  state.UserWasms
 	DelayedMsg []byte
 }
@@ -269,7 +270,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
-	e.Preimages = make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	e.Preimages = make(daprovider.PreimagesMap)
 	if e.Pos != 0 {
 		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg)
 		if err != nil {
@@ -322,17 +323,20 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		foundDA := false
 		for _, dapReader := range v.dapReaders {
-			if dapReader != nil && dapReader.IsValidHeaderByte(batch.Data[40]) {
-				preimageRecorder := daprovider.RecordPreimagesTo(e.Preimages)
-				_, err := dapReader.RecoverPayloadFromBatch(ctx, batch.Number, batch.BlockHash, batch.Data, preimageRecorder, true)
+			if dapReader != nil && dapReader.IsValidHeaderByte(ctx, batch.Data[40]) {
+				var err error
+				var preimages daprovider.PreimagesMap
+				_, preimages, err = dapReader.RecoverPayloadFromBatch(ctx, batch.Number, batch.BlockHash, batch.Data, e.Preimages, true)
 				if err != nil {
 					// Matches the way keyset validation was done inside DAS readers i.e logging the error
 					//  But other daproviders might just want to return the error
-					if errors.Is(err, daprovider.ErrSeqMsgValidation) && daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
+					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
 						log.Error(err.Error())
 					} else {
 						return err
 					}
+				} else {
+					e.Preimages = preimages
 				}
 				foundDA = true
 				break

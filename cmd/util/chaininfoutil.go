@@ -27,3 +27,14 @@ func GetL2ChainInfoIpfsFile(ctx context.Context, l2ChainInfoIpfsUrl string, l2Ch
 	}
 	return l2ChainInfoFile, nil
 }
+
+func AggregateL2ChainInfoFiles(ctx context.Context, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) []string {
+	if l2ChainInfoIpfsUrl != "" {
+		l2ChainInfoIpfsFile, err := GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+		if err != nil {
+			log.Error("error getting l2 chain info file from ipfs", "err", err)
+		}
+		l2ChainInfoFiles = append(l2ChainInfoFiles, l2ChainInfoIpfsFile)
+	}
+	return l2ChainInfoFiles
+}

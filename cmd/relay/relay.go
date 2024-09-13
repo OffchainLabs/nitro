@@ -14,10 +14,9 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/relay"
 )
@@ -31,28 +30,6 @@ func main() {
 func printSampleUsage(progname string) {
 	fmt.Printf("\n")
 	fmt.Printf("Sample usage:                  %s --node.feed.input.url=<L1 RPC> --chain.id=<L2 chain id> \n", progname)
-}
-
-// Checks metrics and PProf flag, runs them if enabled.
-// Note: they are separate so one can enable/disable them as they wish, the only
-// requirement is that they can't run on the same address and port.
-func startMetrics(cfg *relay.Config) error {
-	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
-	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
-	if cfg.Metrics && !metrics.Enabled {
-		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
-	}
-	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
-		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
-	}
-	if cfg.Metrics {
-		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
-		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
-	}
-	if cfg.PProf {
-		genericconf.StartPprof(pAddr)
-	}
-	return nil
 }
 
 func startup() error {
@@ -91,7 +68,13 @@ func startup() error {
 		return err
 	}
 
-	if err := startMetrics(relayConfig); err != nil {
+	err = util.StartMetricsAndPProf(&util.MetricsPProfOpts{
+		Metrics:       relayConfig.Metrics,
+		MetricsServer: relayConfig.MetricsServer,
+		PProf:         relayConfig.PProf,
+		PprofCfg:      relayConfig.PprofCfg,
+	})
+	if err != nil {
 		return err
 	}
 
