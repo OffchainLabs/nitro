@@ -210,6 +210,7 @@ func (p Programs) CallProgram(
 	defer statedb.SetStylusPagesOpen(open)
 
 	evmData := &evmData{
+		arbosVersion:    evm.Context.ArbOSVersion,
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
 		chainId:         evm.ChainConfig().ChainID.Uint64(),
 		blockCoinbase:   evm.Context.Coinbase,
@@ -492,6 +493,7 @@ func (p Programs) goParams(version uint16, debug bool, params *StylusParams) *go
 }
 
 type evmData struct {
+	arbosVersion    uint64
 	blockBasefee    common.Hash
 	chainId         uint64
 	blockCoinbase   common.Address

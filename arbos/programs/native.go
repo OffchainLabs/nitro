@@ -244,6 +244,7 @@ func (params *goParams) encode() C.StylusConfig {
 
 func (data *evmData) encode() C.EvmData {
 	return C.EvmData{
+		arbos_version:    u64(data.arbosVersion),
 		block_basefee:    hashToBytes32(data.blockBasefee),
 		chainid:          u64(data.chainId),
 		block_coinbase:   addressToBytes20(data.blockCoinbase),

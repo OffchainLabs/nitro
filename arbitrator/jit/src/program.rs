@@ -225,6 +225,7 @@ pub fn create_stylus_config(
 /// Creates an `EvmData` handler from its component parts.
 pub fn create_evm_data(
     mut env: WasmEnvMut,
+    arbos_version: u64,
     block_basefee_ptr: GuestPtr,
     chainid: u64,
     block_coinbase_ptr: GuestPtr,
@@ -243,6 +244,7 @@ pub fn create_evm_data(
     let (mut mem, _) = env.jit_env();
 
     let evm_data = EvmData {
+        arbos_version,
         block_basefee: mem.read_bytes32(block_basefee_ptr),
         cached: cached != 0,
         chainid,
