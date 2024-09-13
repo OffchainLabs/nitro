@@ -146,6 +146,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 		}
 	})
 	for i := 0; i < workers; i++ {
+		i := i
 		s.StopWaiter.LaunchThread(func(ctx context.Context) {
 			for {
 				log.Debug("waiting for work", "thread", i)
