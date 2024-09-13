@@ -39,7 +39,6 @@ pub mod prelude;
 pub mod start;
 
 pub const STYLUS_ENTRY_POINT: &str = "user_entrypoint";
-pub const ARBOS_VERSION_STYLUS_CHARGING_FIXES: u64 = 32;
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;
