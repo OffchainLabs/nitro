@@ -316,6 +316,9 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
+	l1PricerRewards, _ := paymentForRewards.Float64()
+	l1PricerFundsPoolRewardsCounter.Inc(1)
+	l1PricerFundsPoolRewardsDistribution.Update(l1PricerRewards)
 	availableFunds = am.BigSub(availableFunds, paymentForRewards)
 
 	// settle up our batch poster payments owed, as much as possible
@@ -347,6 +350,9 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 			if err != nil {
 				return err
 			}
+			l1PricerDue, _ := balanceToTransfer.Float64()
+			l1PricerFundsPoolDueCounter.Inc(1)
+			l1PricerFundsPoolDueDistribution.Update(l1PricerDue)
 			availableFunds = am.BigSub(availableFunds, balanceToTransfer)
 			balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
 			err = poster.SetFundsDue(balanceDueToPoster)
