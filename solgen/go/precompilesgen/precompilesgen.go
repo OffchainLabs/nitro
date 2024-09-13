@@ -8062,7 +8062,7 @@ func (_ArbWasm *ArbWasmFilterer) ParseProgramLifetimeExtended(log types.Log) (*A
 
 // ArbWasmCacheMetaData contains all meta data concerning the ArbWasmCache contract.
 var ArbWasmCacheMetaData = &bind.MetaData{
-	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"manager\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"bool\",\"name\":\"cached\",\"type\":\"bool\"}],\"name\":\"UpdateProgramCache\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"allCacheManagers\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"managers\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"cacheCodehash\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"codehashIsCached\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"evictCodehash\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"manager\",\"type\":\"address\"}],\"name\":\"isCacheManager\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"manager\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"bool\",\"name\":\"cached\",\"type\":\"bool\"}],\"name\":\"UpdateProgramCache\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"allCacheManagers\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"managers\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"cacheCodehash\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"cacheProgram\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"codehashIsCached\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"evictCodehash\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"manager\",\"type\":\"address\"}],\"name\":\"isCacheManager\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
 }
 
 // ArbWasmCacheABI is the input ABI used to generate the binding from.
@@ -8323,6 +8323,27 @@ func (_ArbWasmCache *ArbWasmCacheSession) CacheCodehash(codehash [32]byte) (*typ
 // Solidity: function cacheCodehash(bytes32 codehash) returns()
 func (_ArbWasmCache *ArbWasmCacheTransactorSession) CacheCodehash(codehash [32]byte) (*types.Transaction, error) {
 	return _ArbWasmCache.Contract.CacheCodehash(&_ArbWasmCache.TransactOpts, codehash)
+}
+
+// CacheProgram is a paid mutator transaction binding the contract method 0xe73ac9f2.
+//
+// Solidity: function cacheProgram(address addr) returns()
+func (_ArbWasmCache *ArbWasmCacheTransactor) CacheProgram(opts *bind.TransactOpts, addr common.Address) (*types.Transaction, error) {
+	return _ArbWasmCache.contract.Transact(opts, "cacheProgram", addr)
+}
+
+// CacheProgram is a paid mutator transaction binding the contract method 0xe73ac9f2.
+//
+// Solidity: function cacheProgram(address addr) returns()
+func (_ArbWasmCache *ArbWasmCacheSession) CacheProgram(addr common.Address) (*types.Transaction, error) {
+	return _ArbWasmCache.Contract.CacheProgram(&_ArbWasmCache.TransactOpts, addr)
+}
+
+// CacheProgram is a paid mutator transaction binding the contract method 0xe73ac9f2.
+//
+// Solidity: function cacheProgram(address addr) returns()
+func (_ArbWasmCache *ArbWasmCacheTransactorSession) CacheProgram(addr common.Address) (*types.Transaction, error) {
+	return _ArbWasmCache.Contract.CacheProgram(&_ArbWasmCache.TransactOpts, addr)
 }
 
 // EvictCodehash is a paid mutator transaction binding the contract method 0xce972013.

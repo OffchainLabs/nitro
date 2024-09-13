@@ -62,11 +62,13 @@ jobs:
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v2
+        with:
+          submodules: true
 
       - name: Setup node/yarn
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           cache: "yarn"
           cache-dependency-path: "**/contracts/yarn.lock"
 
@@ -113,6 +115,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
+
       - uses: bazelbuild/setup-bazelisk@v2
       - name: Mount bazel cache
         uses: actions/cache@v3
@@ -137,112 +142,3 @@ jobs:
         uses: codecov/codecov-action@v3
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-  sol-test:
-    name: Solidity tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./contracts
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: recursive
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
-
-      - name: Setup node/yarn
-        uses: actions/setup-node@v3
-        with:
-          node-version: 16
-          cache: "yarn"
-          cache-dependency-path: "**/yarn.lock"
-
-      - name: Install packages
-        run: yarn
-
-      - name: Build
-        run: yarn build:all
-
-      - name: Run foundry tests
-        run: forge test
-
-      - name: Run hardhat tests
-        run: yarn hardhat compile && yarn hardhat --network hardhat test test/contract/*.spec.ts
-
-  sol-test-size:
-    name: Solidity contract size, storage, 4bytes
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./contracts
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: recursive
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
-
-      - name: Setup node/yarn
-        uses: actions/setup-node@v3
-        with:
-          node-version: 16
-          cache: "yarn"
-          cache-dependency-path: "**/yarn.lock"
-
-      - name: Install packages
-        run: yarn
-
-      - name: Build contracts
-        run: yarn build
-
-      - name: Test size
-        run: yarn contract:size
-
-      - name: Test storage
-        run: yarn test:storage
-
-      - name: Test 4bytes
-        run: yarn test:signatures
-
-  bold-upgrade:
-    name: BOLD upgrade test
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./contracts
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: recursive
-        
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
-
-      - name: Setup node/yarn
-        uses: actions/setup-node@v3
-        with:
-          node-version: 16
-          cache: "yarn"
-          cache-dependency-path: "**/yarn.lock"
-
-      - name: Install packages
-        run: yarn
-
-      - name: Compile contracts
-        run: yarn build:all
-
-      - name: Copy .env
-        run: |
-          cp ./.env-sample ./.env
-
-      - name: Test upgrade
-        run: L1_RPC=${{ secrets.L1_RPC }} yarn test:upgrade
