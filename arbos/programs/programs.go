@@ -222,6 +222,7 @@ func (p Programs) CallProgram(
 	}
 
 	evmData := &EvmData{
+		arbosVersion:    evm.Context.ArbOSVersion,
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
 		chainId:         evm.ChainConfig().ChainID.Uint64(),
 		blockCoinbase:   evm.Context.Coinbase,
@@ -516,7 +517,9 @@ func (p Programs) progParams(version uint16, debug bool, params *StylusParams) *
 	}
 }
 
+// lint:require-exhaustive-initialization
 type EvmData struct {
+	arbosVersion    uint64
 	blockBasefee    common.Hash
 	chainId         uint64
 	blockCoinbase   common.Address
@@ -532,6 +535,25 @@ type EvmData struct {
 	reentrant       uint32
 	cached          bool
 	tracing         bool
+}
+
+var EmptyEvmData EvmData = EvmData{
+	arbosVersion:    0,
+	blockBasefee:    common.Hash{},
+	chainId:         0,
+	blockCoinbase:   common.Address{},
+	blockGasLimit:   0,
+	blockNumber:     0,
+	blockTimestamp:  0,
+	contractAddress: common.Address{},
+	moduleHash:      common.Hash{},
+	msgSender:       common.Address{},
+	msgValue:        common.Hash{},
+	txGasPrice:      common.Hash{},
+	txOrigin:        common.Address{},
+	reentrant:       0,
+	cached:          false,
+	tracing:         false,
 }
 
 type activationInfo struct {

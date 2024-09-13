@@ -222,7 +222,7 @@ func testCompileLoad() error {
 
 	calldata := []byte{}
 
-	evmData := EvmData{}
+	evmData := EmptyEvmData
 	progParams := ProgParams{
 		MaxDepth:  10000,
 		InkPrice:  1,
