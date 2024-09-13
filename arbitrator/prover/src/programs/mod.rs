@@ -8,7 +8,7 @@ use crate::{
     programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
-use arbutil::{math::SaturatingSum, Bytes32, Color};
+use arbutil::{math::SaturatingSum, Bytes32, Color, evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES};
 use eyre::{bail, eyre, Report, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
