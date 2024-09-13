@@ -1107,6 +1107,7 @@ func testFlatCallTracer(t *testing.T, ctx context.Context, client rpc.ClientInte
 	var blockNumber hexutil.Uint64
 	err := client.CallContext(ctx, &blockNumber, "eth_blockNumber")
 	Require(t, err)
+	// #nosec G115
 	for i := int64(0); i < int64(blockNumber); i++ {
 		flatCallTracer := "flatCallTracer"
 		var result interface{}
