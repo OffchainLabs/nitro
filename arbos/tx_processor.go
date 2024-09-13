@@ -6,6 +6,7 @@ package arbos
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/metrics"
 	"math/big"
 
 	"github.com/holiman/uint256"
@@ -25,6 +26,13 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	glog "github.com/ethereum/go-ethereum/log"
+)
+
+var (
+	infraFeeDistributionCounter   = metrics.NewRegisteredCounter("arbos/infra_fee/counter", nil)
+	infraFeeDistribution          = metrics.NewRegisteredGaugeFloat64("arbos/infra_fee/distribution", nil)
+	networkFeeDistributionCounter = metrics.NewRegisteredCounter("arbos/network_fee/counter", nil)
+	networkFeeDistribution        = metrics.NewRegisteredGaugeFloat64("arbos/network_fee/distribution", nil)
 )
 
 var arbosAddress = types.ArbosAddress
@@ -571,9 +579,15 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 				infraRefund := arbmath.BigMulByUint(infraFee, gasLeft)
 				infraRefund = takeFunds(networkRefund, infraRefund)
 				refund(infraFeeAccount, infraRefund)
+				infraFeeDistributionCounter.Inc(1)
+				infraFeeDistributed, _ := infraRefund.Float64()
+				infraFeeDistribution.Update(infraFeeDistributed)
 			}
 		}
 		refund(networkFeeAccount, networkRefund)
+		networkFeeDistributed, _ := networkRefund.Float64()
+		networkFeeDistributionCounter.Inc(1)
+		networkFeeDistribution.Update(networkFeeDistributed)
 
 		if success {
 			// we don't want to charge for this
