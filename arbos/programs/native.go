@@ -119,7 +119,7 @@ func activateProgramInternal(
 				output := &rustBytes{}
 				status_asm := C.stylus_compile(
 					goSlice(wasm),
-					u16(version),
+					u16(stylusVersion),
 					cbool(debug),
 					goSlice([]byte(target)),
 					output,
