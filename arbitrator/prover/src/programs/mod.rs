@@ -28,8 +28,6 @@ use {
     wasmer_types::{MemoryIndex, ModuleInfo},
 };
 
-const ARBOS_VERSION_CHARGE_WASM_LEN: u64 = 32;
-
 pub mod config;
 pub mod counter;
 pub mod depth;
@@ -453,7 +451,7 @@ impl Module {
             }
 
             // pay for wasm
-            if arbos_version_for_gas >= ARBOS_VERSION_CHARGE_WASM_LEN {
+            if arbos_version_for_gas >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
                 let wasm_len = wasm.len() as u64;
                 pay!(wasm_len.saturating_mul(31_733) / 100_000);
             }
