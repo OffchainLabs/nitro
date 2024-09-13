@@ -51,8 +51,9 @@ type Consumer[Request any, Response any] struct {
 }
 
 type Message[Request any] struct {
-	ID    string
-	Value Request
+	ID          string
+	Value       Request
+	AckNotifier chan struct{}
 }
 
 func NewConsumer[Request any, Response any](client redis.UniversalClient, streamName string, cfg *ConsumerConfig) (*Consumer[Request, Response], error) {
@@ -103,7 +104,7 @@ func decrementMsgIdByOne(msgId string) string {
 
 // Consumer first checks it there exists pending message that is claimed by
 // unresponsive consumer, if not then reads from the stream.
-func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Request], chan struct{}, error) {
+func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Request], error) {
 	// First try to XAUTOCLAIM, with start as a random messageID from PEL with MinIdle as IdletimeToAutoclaim
 	// this prioritizes processing PEL messages that have been waiting for more than IdletimeToAutoclaim duration
 	var messages []redis.XMessage
@@ -133,7 +134,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 		}
 	}
 	if len(messages) == 0 {
-		// Fallback to reading new messages
+		// If we fail to autoclaim then we do not retry but instead fallback to reading new messages
 		res, err := c.client.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    c.redisGroup,
 			Consumer: c.id,
@@ -144,13 +145,13 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 			Block:   time.Millisecond, // 0 seems to block the read instead of immediately returning
 		}).Result()
 		if errors.Is(err, redis.Nil) {
-			return nil, nil, nil
+			return nil, nil
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("reading message for consumer: %q: %w", c.id, err)
+			return nil, fmt.Errorf("reading message for consumer: %q: %w", c.id, err)
 		}
 		if len(res) != 1 || len(res[0].Messages) != 1 {
-			return nil, nil, fmt.Errorf("redis returned entries: %+v, for querying single message", res)
+			return nil, fmt.Errorf("redis returned entries: %+v, for querying single message", res)
 		}
 		messages = res[0].Messages
 	}
@@ -160,11 +161,11 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 		data, ok = (value).(string)
 	)
 	if !ok {
-		return nil, nil, errors.New("error casting request to string")
+		return nil, errors.New("error casting request to string")
 	}
 	var req Request
 	if err := json.Unmarshal([]byte(data), &req); err != nil {
-		return nil, nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
+		return nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
 	}
 	ackNotifier := make(chan struct{})
 	c.StopWaiter.LaunchThread(func(ctx context.Context) {
@@ -179,14 +180,22 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 				Messages: []string{messages[0].ID},
 			}).Result(); err != nil {
 				log.Error("Error claiming message, it might be possible that other consumers might pick this request", "msgID", messages[0].ID)
-			} else if len(ids) != 1 {
+			} else if len(ids) == 0 {
 				log.Warn("XClaimJustID returned empty response when indicating hearbeat", "msgID", messages[0].ID)
+			} else if len(ids) > 1 {
+				log.Error("XClaimJustID returned response with more than entry", "msgIDs", ids)
 			}
 			select {
 			case <-ackNotifier:
 				return
 			case <-ctx.Done():
-				log.Info("Context done while claiming message to indicate hearbeat", "error", ctx.Err().Error())
+				log.Info("Context done while claiming message to indicate hearbeat", "messageID", messages[0].ID, "error", ctx.Err().Error())
+				if c.StopWaiter.GetParentContext().Err() == nil {
+					// Proceeding to set the Idle time of message to IdletimeToAutoclaim to allow it to be picked by other consumers
+					if err := c.client.Do(c.StopWaiter.GetParentContext(), "XCLAIM", c.redisStream, c.redisGroup, c.id, 0, messages[0].ID, "IDLE", c.cfg.IdletimeToAutoclaim.Milliseconds()).Err(); err != nil {
+						log.Error("error when trying to set the idle time of currently worked on message to IdletimeToAutoclaim", "messageID", messages[0].ID, "err", err)
+					}
+				}
 				return
 			case <-time.After(c.cfg.IdletimeToAutoclaim / 10):
 			}
@@ -194,9 +203,10 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	})
 	log.Debug("Redis stream consuming", "consumer_id", c.id, "message_id", messages[0].ID)
 	return &Message[Request]{
-		ID:    messages[0].ID,
-		Value: req,
-	}, ackNotifier, nil
+		ID:          messages[0].ID,
+		Value:       req,
+		AckNotifier: ackNotifier,
+	}, nil
 }
 
 func (c *Consumer[Request, Response]) SetResult(ctx context.Context, id string, messageID string, result Response) error {

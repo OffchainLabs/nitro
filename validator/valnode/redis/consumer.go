@@ -57,9 +57,8 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	// Channel that all consumers use to indicate their readiness.
 	readyStreams := make(chan struct{}, len(s.consumers))
 	type workUnit struct {
-		req         *pubsub.Message[*validator.ValidationInput]
-		moduleRoot  common.Hash
-		ackNotifier chan struct{}
+		req        *pubsub.Message[*validator.ValidationInput]
+		moduleRoot common.Hash
 	}
 	workers := s.config.Workers
 	if workers == 0 {
@@ -109,7 +108,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 					return 0
 				case <-requestTokenQueue:
 				}
-				req, ackNotifier, err := c.Consume(ctx)
+				req, err := c.Consume(ctx)
 				if err != nil {
 					log.Error("Consuming request", "error", err)
 					requestTokenQueue <- struct{}{}
@@ -122,7 +121,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				}
 				select {
 				case <-ctx.Done():
-				case workQueue <- workUnit{req, moduleRoot, ackNotifier}:
+				case workQueue <- workUnit{req, moduleRoot}:
 				}
 				return 0
 			})
@@ -155,11 +154,11 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				res, err := valRun.Await(ctx)
 				if err != nil {
 					log.Error("Error validating", "request value", work.req.Value, "error", err)
-					close(work.ackNotifier)
+					close(work.req.AckNotifier)
 				} else {
 					err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.Value.SelfHash, work.req.ID, res)
 					// Even in error we close ackNotifier as there's no retry mechanism here and closing it will alow other consumers to autoclaim
-					close(work.ackNotifier)
+					close(work.req.AckNotifier)
 					if err != nil {
 						log.Error("Error setting result for request", "id", work.req.ID, "result", res, "error", err)
 					}

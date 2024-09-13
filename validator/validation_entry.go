@@ -34,7 +34,7 @@ type ValidationInput struct {
 // SetSelfHash should be only called once. In the context of redis streams- by the producer, before submitting a request
 func (v *ValidationInput) SetSelfHash() {
 	if v.SelfHash != "" {
-		log.Error("SetSelfHash called more then once")
+		log.Warn("SetSelfHash called more then once")
 		return // exiting early as hash has already been set
 	}
 	jsonData, err := json.Marshal(v)

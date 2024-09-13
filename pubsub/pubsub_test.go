@@ -138,16 +138,14 @@ func flatten(responses [][]string) []string {
 	return ret
 }
 
-func produceMessages(ctx context.Context, msgs []string, producer *Producer[testRequest, testResponse], useUniqueIdentifier, withInvalidEntries bool) ([]*containers.Promise[testResponse], error) {
+func produceMessages(ctx context.Context, msgs []string, producer *Producer[testRequest, testResponse], withInvalidEntries bool) ([]*containers.Promise[testResponse], error) {
 	var promises []*containers.Promise[testResponse]
 	for i := 0; i < len(msgs); i++ {
 		req := testRequest{Request: msgs[i]}
 		if withInvalidEntries && i%50 == 0 {
 			req.IsInvalid = true
 		}
-		if useUniqueIdentifier {
-			req.SetSelfHash()
-		}
+		req.SetSelfHash()
 		promise, err := producer.Produce(ctx, req.SelfHash, req)
 		if err != nil {
 			return nil, err
@@ -187,7 +185,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 			func(ctx context.Context) {
 				for {
 
-					res, ackNotifier, err := c.Consume(ctx)
+					res, err := c.Consume(ctx)
 					if err != nil {
 						if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 							t.Errorf("Consume() unexpected error: %v", err)
@@ -206,7 +204,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 						}
 						wantResponses[idx] = append(wantResponses[idx], resp)
 					}
-					close(ackNotifier)
+					close(res.AckNotifier)
 				}
 			})
 	}
@@ -291,7 +289,7 @@ func TestRedisProduceComplex(t *testing.T) {
 
 			var promises [][]*containers.Promise[testResponse]
 			for i := 0; i < tc.numProducers; i++ {
-				prs, err := produceMessages(ctx, entries[i], producers[i], tc.numProducers == 2, tc.withInvalidEntries)
+				prs, err := produceMessages(ctx, entries[i], producers[i], tc.withInvalidEntries)
 				if err != nil {
 					t.Fatalf("Error producing messages from producer%d: %v", i, err)
 				}
@@ -304,7 +302,7 @@ func TestRedisProduceComplex(t *testing.T) {
 				// that other consumers will claim ownership on those messages.
 				for i := 0; i < len(consumers); i += 3 {
 					consumers[i].Start(ctx)
-					req, _, err := consumers[i].Consume(ctx)
+					req, err := consumers[i].Consume(ctx)
 					if err != nil {
 						t.Errorf("Error consuming message: %v", err)
 					}
