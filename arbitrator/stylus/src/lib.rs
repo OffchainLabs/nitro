@@ -154,7 +154,15 @@ pub unsafe extern "C" fn stylus_activate(
     let codehash = &*codehash;
     let gas = &mut *gas;
 
-    let (module, info) = match native::activate(wasm, codehash, stylus_version, arbos_version_for_gas, page_limit, debug, gas) {
+    let (module, info) = match native::activate(
+        wasm,
+        codehash,
+        stylus_version,
+        arbos_version_for_gas,
+        page_limit,
+        debug,
+        gas,
+    ) {
         Ok(val) => val,
         Err(err) => return output.write_err(err),
     };

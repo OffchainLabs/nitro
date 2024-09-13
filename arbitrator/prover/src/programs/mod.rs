@@ -427,37 +427,37 @@ impl Module {
         debug: bool,
         gas: &mut u64,
     ) -> Result<(Self, StylusData)> {
-        // converts a number of microseconds to gas
-        // TODO: collapse to a single value after finalizing factors
-        let us_to_gas = |us: u64| {
-            let fudge = 2;
-            let sync_rate = 1_000_000 / 2;
-            let speed = 7_000_000;
-            us.saturating_mul(fudge * speed) / sync_rate
-        };
-
-        macro_rules! pay {
-            ($us:expr) => {
-                let amount = us_to_gas($us);
-                if *gas < amount {
-                    *gas = 0;
-                    bail!("out of gas");
-                }
-                *gas -= amount;
-            };
-        }
-
         let compile = CompileConfig::version(stylus_version, debug);
         let (bin, stylus_data) = WasmBinary::parse_user(wasm, page_limit, &compile, codehash)
             .wrap_err("failed to parse wasm")?;
 
-        // pay for wasm
-        if arbos_version_for_gas >= ARBOS_VERSION_CHARGE_WASM_LEN {
-            let wasm_len = wasm.len() as u64;
-            pay!(wasm_len.saturating_mul(31_733) / 100_000);
-        }
-
         if arbos_version_for_gas > 0 {
+            // converts a number of microseconds to gas
+            // TODO: collapse to a single value after finalizing factors
+            let us_to_gas = |us: u64| {
+                let fudge = 2;
+                let sync_rate = 1_000_000 / 2;
+                let speed = 7_000_000;
+                us.saturating_mul(fudge * speed) / sync_rate
+            };
+
+            macro_rules! pay {
+                ($us:expr) => {
+                    let amount = us_to_gas($us);
+                    if *gas < amount {
+                        *gas = 0;
+                        bail!("out of gas");
+                    }
+                    *gas -= amount;
+                };
+            }
+
+            // pay for wasm
+            if arbos_version_for_gas >= ARBOS_VERSION_CHARGE_WASM_LEN {
+                let wasm_len = wasm.len() as u64;
+                pay!(wasm_len.saturating_mul(31_733) / 100_000);
+            }
+
             // pay for funcs
             let funcs = bin.functions.len() as u64;
             pay!(funcs.saturating_mul(17_263) / 100_000);

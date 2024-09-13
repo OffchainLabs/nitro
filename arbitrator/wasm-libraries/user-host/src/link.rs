@@ -59,7 +59,15 @@ pub unsafe extern "C" fn programs__activate(
 
     let page_limit = STATIC_MEM.read_u16(pages_ptr);
     let gas_left = &mut STATIC_MEM.read_u64(gas_ptr);
-    match Module::activate(&wasm, codehash, stylus_version, arbos_version_for_gas, page_limit, debug, gas_left) {
+    match Module::activate(
+        &wasm,
+        codehash,
+        stylus_version,
+        arbos_version_for_gas,
+        page_limit,
+        debug,
+        gas_left,
+    ) {
         Ok((module, data)) => {
             STATIC_MEM.write_u64(gas_ptr, *gas_left);
             STATIC_MEM.write_u16(pages_ptr, data.footprint);

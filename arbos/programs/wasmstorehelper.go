@@ -56,12 +56,13 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
 	}
 
-	// nothing is charged, so gas and arbosVersion don't matter
-	unlimitedGas := uint64(0xffffffffffff)
+	// don't charge gas
+	zeroArbosVersion := uint64(0)
+	zeroGas := uint64(0)
 
 	// We know program is activated, so it must be in correct version and not use too much memory
 	// Empty program address is supplied because we dont have access to this during rebuilding of wasm store
-	info, asmMap, err := activateProgramInternal(statedb, common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, 0, debugMode, &unlimitedGas)
+	info, asmMap, err := activateProgramInternal(statedb, common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas)
 	if err != nil {
 		log.Error("failed to reactivate program while rebuilding wasm store", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
