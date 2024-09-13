@@ -234,6 +234,7 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 			promise.Produce(resp)
 			responded++
 		}
+		p.client.Del(ctx, id)
 		delete(p.promises, id)
 	}
 	var trimmed int64
