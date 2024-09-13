@@ -14,8 +14,10 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
+	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
@@ -414,10 +416,10 @@ func TestFastConfirmation(t *testing.T) {
 	require.Equal(t, true, posted.IsSome())
 	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(posted.Unwrap().AfterState))
 
-	<-time.After(10 * time.Millisecond)
-	status, err := aliceChain.AssertionStatus(ctx, protocol.AssertionHash{Hash: posted.Unwrap().AssertionHash})
-	require.NoError(t, err)
-	require.Equal(t, protocol.AssertionConfirmed, status)
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	hash := protocol.AssertionHash{Hash: posted.Unwrap().AssertionHash}
+	expectAssertionConfirmed(t, ctx, setup.Backend, aliceChain.RollupAddress(), hash)
 }
 
 func TestFastConfirmationWithSafe(t *testing.T) {
@@ -538,11 +540,11 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 
 	assertionManagerBob.Start(ctx)
 
-	<-time.After(time.Second)
-	status, err = aliceChain.AssertionStatus(ctx, protocol.AssertionHash{Hash: posted.Unwrap().AssertionHash})
-	require.NoError(t, err)
 	// Only after both Alice and Bob confirm the assertion, it should be confirmed.
-	require.Equal(t, protocol.AssertionConfirmed, status)
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	hash := protocol.AssertionHash{Hash: posted.Unwrap().AssertionHash}
+	expectAssertionConfirmed(t, ctx, setup.Backend, aliceChain.RollupAddress(), hash)
 }
 
 type seqMessage struct {
@@ -581,4 +583,38 @@ func enqueueSequencerMessageAsExecutor(
 	_, err = execBindings.ExecuteCall(opts, bridge, data)
 	require.NoError(t, err)
 	backend.Commit()
+}
+
+func expectAssertionConfirmed(
+	t *testing.T,
+	ctx context.Context,
+	backend protocol.ChainBackend,
+	rollupAddr common.Address,
+	hash protocol.AssertionHash,
+) {
+	rc, err := rollupgen.NewRollupCore(rollupAddr, backend)
+	require.NoError(t, err)
+	var confirmed bool
+	for ctx.Err() == nil && !confirmed {
+		i, err := retry.UntilSucceeds(ctx, func() (*rollupgen.RollupCoreAssertionConfirmedIterator, error) {
+			return rc.FilterAssertionConfirmed(nil, nil)
+		})
+		require.NoError(t, err)
+		for i.Next() {
+			assertionNode, err := retry.UntilSucceeds(ctx, func() (rollupgen.AssertionNode, error) {
+				return rc.GetAssertion(&bind.CallOpts{Context: ctx}, i.Event.AssertionHash)
+			})
+			require.NoError(t, err)
+			if assertionNode.Status != uint8(protocol.AssertionConfirmed) {
+				t.Fatal("Confirmed assertion with unfinished state")
+			}
+			confirmed = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if !confirmed {
+		t.Fatal("assertion was not confirmed")
+	}
 }

@@ -45,6 +45,7 @@ go_test(
         "//challenge-manager",
         "//challenge-manager/types",
         "//containers/threadsafe",
+        "//runtime",
         "//solgen/go/bridgegen",
         "//solgen/go/mocksgen",
         "//solgen/go/rollupgen",
