@@ -437,61 +437,9 @@ func mainImpl() int {
 
 	// Check that node is compatible with on-chain WASM module root on startup and before any ArbOS upgrades take effect to prevent divergences
 	if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
-		// Fetch current on-chain WASM module root
-		rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
+		err := checkWasmModuleRootCompatibility(ctx, nodeConfig.Validation.Wasm, l1Client, rollupAddrs)
 		if err != nil {
-			log.Error("failed to create rollupUserLogic", "err", err)
-			return 1
-		}
-		moduleRoot, err := rollupUserLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
-		if err != nil {
-			log.Error("failed to get on-chain WASM module root", "err", err)
-			return 1
-		}
-		if (moduleRoot == common.Hash{}) {
-			log.Error("on-chain WASM module root is zero")
-			return 1
-		}
-		// Check if the on-chain WASM module root belongs to the set of allowed module roots
-		allowedWasmModuleRoots := nodeConfig.Validation.Wasm.AllowedWasmModuleRoots
-		if len(allowedWasmModuleRoots) > 0 {
-			moduleRootMatched := false
-			for _, root := range allowedWasmModuleRoots {
-				bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
-				if err == nil {
-					if common.HexToHash(root) == common.BytesToHash(bytes) {
-						moduleRootMatched = true
-						break
-					}
-					continue
-				}
-				locator, locatorErr := server_common.NewMachineLocator(root)
-				if locatorErr != nil {
-					log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
-					continue
-				}
-				path := locator.GetMachinePath(moduleRoot)
-				if _, err := os.Stat(path); err == nil {
-					moduleRootMatched = true
-					break
-				}
-			}
-			if !moduleRootMatched {
-				log.Error("on-chain WASM module root did not match with any of the allowed WASM module roots")
-				return 1
-			}
-		} else {
-			// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
-			locator, err := server_common.NewMachineLocator(nodeConfig.Validation.Wasm.RootPath)
-			if err != nil {
-				log.Warn("failed to create machine locator. Skipping the check for compatibility with on-chain WASM module root", "err", err)
-			} else {
-				path := locator.GetMachinePath(moduleRoot)
-				if _, err := os.Stat(path); err != nil {
-					log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
-					return 1
-				}
-			}
+			log.Warn("failed to check if node is compatible with on-chain WASM module root", "err", err)
 		}
 	}
 
@@ -1077,4 +1025,58 @@ type NodeConfigFetcher struct {
 
 func (f *NodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveConfig.Get().Node
+}
+
+func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {
+	// Fetch current on-chain WASM module root
+	rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
+	if err != nil {
+		return fmt.Errorf("failed to create RollupUserLogic: %w", err)
+	}
+	moduleRoot, err := rollupUserLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return fmt.Errorf("failed to get on-chain WASM module root: %w", err)
+	}
+	if (moduleRoot == common.Hash{}) {
+		return errors.New("on-chain WASM module root is zero")
+	}
+	// Check if the on-chain WASM module root belongs to the set of allowed module roots
+	allowedWasmModuleRoots := wasmConfig.AllowedWasmModuleRoots
+	if len(allowedWasmModuleRoots) > 0 {
+		moduleRootMatched := false
+		for _, root := range allowedWasmModuleRoots {
+			bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
+			if err == nil {
+				if common.HexToHash(root) == common.BytesToHash(bytes) {
+					moduleRootMatched = true
+					break
+				}
+				continue
+			}
+			locator, locatorErr := server_common.NewMachineLocator(root)
+			if locatorErr != nil {
+				log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
+				continue
+			}
+			path := locator.GetMachinePath(moduleRoot)
+			if _, err := os.Stat(path); err == nil {
+				moduleRootMatched = true
+				break
+			}
+		}
+		if !moduleRootMatched {
+			return errors.New("on-chain WASM module root did not match with any of the allowed WASM module roots")
+		}
+	} else {
+		// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
+		locator, err := server_common.NewMachineLocator(wasmConfig.RootPath)
+		if err != nil {
+			return fmt.Errorf("failed to create machine locator: %w", err)
+		}
+		path := locator.GetMachinePath(moduleRoot)
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("unable to find validator machine directory for the on-chain WASM module root: %w", err)
+		}
+	}
+	return nil
 }
