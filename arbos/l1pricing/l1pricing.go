@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/metrics"
 	"math/big"
 	"sync/atomic"
 
@@ -54,6 +55,13 @@ var (
 	L1PricerFundsPoolAddress = common.HexToAddress("0xA4B00000000000000000000000000000000000f6")
 
 	ErrInvalidTime = errors.New("invalid timestamp")
+)
+
+var (
+	batchPosterRewardsCounter      = metrics.NewRegisteredCounter("arbos/batch_poster/rewards_counter", nil)
+	batchPosterRewardsDistribution = metrics.NewRegisteredGaugeFloat64("arbos/batch_poster/rewards_distribution", nil)
+	batchPosterRefundCounter       = metrics.NewRegisteredCounter("arbos/batch_poster/refund_counter", nil)
+	batchPosterRefundDistribution  = metrics.NewRegisteredGaugeFloat64("arbos/batch_poster/refund_distribution", nil)
 )
 
 const (
@@ -414,6 +422,9 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
+	batchPosterRewards, _ := paymentForRewards.Float64()
+	batchPosterRewardsCounter.Inc(1)
+	batchPosterRewardsDistribution.Update(batchPosterRewards)
 
 	// settle up payments owed to the batch poster, as much as possible
 	balanceDueToPoster, err := posterState.FundsDue()
@@ -435,6 +446,9 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
+		batchPosterRefunds, _ := balanceToTransfer.Float64()
+		batchPosterRefundCounter.Inc(1)
+		batchPosterRefundDistribution.Update(batchPosterRefunds)
 		balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
 		err = posterState.SetFundsDue(balanceDueToPoster)
 		if err != nil {
