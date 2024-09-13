@@ -534,14 +534,6 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					storeSeenBatchCount()
 				}
 			}
-			if reorgingDelayed || reorgingSequencer {
-				from, err = r.getPrevBlockForReorg(from)
-				if err != nil {
-					return err
-				}
-			} else {
-				from = arbmath.BigAddByUint(to, 1)
-			}
 			// #nosec G115
 			haveMessages := uint64(len(delayedMessages) + len(sequencerBatches))
 			if haveMessages <= (config.TargetMessagesRead / 2) {
@@ -554,6 +546,14 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				blocksToFetch = 1
 			} else if blocksToFetch > config.MaxBlocksToRead {
 				blocksToFetch = config.MaxBlocksToRead
+			}
+			if reorgingDelayed || reorgingSequencer {
+				from, err = r.getPrevBlockForReorg(from, blocksToFetch)
+				if err != nil {
+					return err
+				}
+			} else {
+				from = arbmath.BigAddByUint(to, 1)
 			}
 		}
 
@@ -578,11 +578,11 @@ func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*Seque
 	return false, nil
 }
 
-func (r *InboxReader) getPrevBlockForReorg(from *big.Int) (*big.Int, error) {
+func (r *InboxReader) getPrevBlockForReorg(from *big.Int, maxBlocksBackwards uint64) (*big.Int, error) {
 	if from.Cmp(r.firstMessageBlock) <= 0 {
 		return nil, errors.New("can't get older messages")
 	}
-	newFrom := arbmath.BigSub(from, big.NewInt(10))
+	newFrom := arbmath.BigSub(from, new(big.Int).SetUint64(maxBlocksBackwards))
 	if newFrom.Cmp(r.firstMessageBlock) < 0 {
 		newFrom = new(big.Int).Set(r.firstMessageBlock)
 	}
