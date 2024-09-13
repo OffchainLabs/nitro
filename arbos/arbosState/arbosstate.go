@@ -63,7 +63,7 @@ type ArbosState struct {
 }
 
 const MaxArbosVersionSupported uint64 = params.ArbosVersion_StylusFixes
-const MaxDebugArbosVersionSupported uint64 = params.ArbosVersion_StylusFixes
+const MaxDebugArbosVersionSupported uint64 = params.ArbosVersion_StylusChargingFixes
 
 var ErrUninitializedArbOS = errors.New("ArbOS uninitialized")
 var ErrAlreadyInitialized = errors.New("ArbOS is already initialized")
@@ -330,6 +330,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(err)
 			ensure(params.UpgradeToVersion(2))
 			ensure(params.Save())
+
+		case 32:
+			// no change state needed
 
 		default:
 			return fmt.Errorf(
