@@ -4,7 +4,6 @@
 package l1pricing
 
 import (
-	"github.com/ethereum/go-ethereum/metrics"
 	"math"
 	"math/big"
 
@@ -12,13 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/util"
 	am "github.com/offchainlabs/nitro/util/arbmath"
-)
-
-var (
-	l1PricerFundsPoolRewardsCounter      = metrics.NewRegisteredCounter("arbos/l1price_funds/rewards_counter", nil)
-	l1PricerFundsPoolRewardsDistribution = metrics.NewRegisteredGaugeFloat64("arbos/l1price_funds/rewards_distribution", nil)
-	l1PricerFundsPoolDueCounter          = metrics.NewRegisteredCounter("arbos/l1price_funds/due_counter", nil)
-	l1PricerFundsPoolDueDistribution     = metrics.NewRegisteredGaugeFloat64("arbos/l1price_funds/due_distribution", nil)
 )
 
 func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
@@ -131,9 +123,8 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	l1PricerRewards, _ := paymentForRewards.Float64()
-	l1PricerFundsPoolRewardsCounter.Inc(1)
-	l1PricerFundsPoolRewardsDistribution.Update(l1PricerRewards)
+	l1RewardsDistributionCounter.Inc(1)
+	l1RewardsDistribution.Inc(paymentForRewards.Int64())
 	availableFunds = statedb.GetBalance(L1PricerFundsPoolAddress)
 
 	// settle up payments owed to the batch poster, as much as possible
@@ -156,9 +147,8 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		l1PricerDue, _ := balanceToTransfer.Float64()
-		l1PricerFundsPoolDueCounter.Inc(1)
-		l1PricerFundsPoolDueDistribution.Update(l1PricerDue)
+		l1BaseFeeDueDistributionCounter.Inc(1)
+		l1BaseFeeDueDistribution.Inc(balanceToTransfer.Int64())
 		balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
 		err = posterState.SetFundsDue(balanceDueToPoster)
 		if err != nil {
@@ -316,9 +306,8 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	l1PricerRewards, _ := paymentForRewards.Float64()
-	l1PricerFundsPoolRewardsCounter.Inc(1)
-	l1PricerFundsPoolRewardsDistribution.Update(l1PricerRewards)
+	l1RewardsDistributionCounter.Inc(1)
+	l1RewardsDistribution.Inc(paymentForRewards.Int64())
 	availableFunds = am.BigSub(availableFunds, paymentForRewards)
 
 	// settle up our batch poster payments owed, as much as possible
@@ -350,9 +339,8 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 			if err != nil {
 				return err
 			}
-			l1PricerDue, _ := balanceToTransfer.Float64()
-			l1PricerFundsPoolDueCounter.Inc(1)
-			l1PricerFundsPoolDueDistribution.Update(l1PricerDue)
+			l1BaseFeeDueDistributionCounter.Inc(1)
+			l1BaseFeeDueDistribution.Inc(balanceToTransfer.Int64())
 			availableFunds = am.BigSub(availableFunds, balanceToTransfer)
 			balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
 			err = poster.SetFundsDue(balanceDueToPoster)

@@ -58,10 +58,11 @@ var (
 )
 
 var (
-	batchPosterRewardsCounter      = metrics.NewRegisteredCounter("arbos/batch_poster/rewards_counter", nil)
-	batchPosterRewardsDistribution = metrics.NewRegisteredGaugeFloat64("arbos/batch_poster/rewards_distribution", nil)
-	batchPosterRefundCounter       = metrics.NewRegisteredCounter("arbos/batch_poster/refund_counter", nil)
-	batchPosterRefundDistribution  = metrics.NewRegisteredGaugeFloat64("arbos/batch_poster/refund_distribution", nil)
+	l1RewardsDistributionCounter    = metrics.NewRegisteredCounter("arbos/l1_rewards_recipient/rewards_counter", nil)
+	l1RewardsDistribution           = metrics.NewRegisteredCounter("arbos/l1_rewards_recipient/rewards_distribution", nil)
+	l1BaseFeeDueDistributionCounter = metrics.NewRegisteredCounter("arbos/batchposter_fee_collector/due_counter", nil)
+	l1BaseFeeDueDistribution        = metrics.NewRegisteredCounter("arbos/batchposter_fee_collector/due_distribution", nil)
+	l1PricerFundsPoolBalance        = metrics.NewRegisteredGaugeFloat64("arbos/l1_pricer_funds_pool_balance", nil)
 )
 
 const (
@@ -422,9 +423,9 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	batchPosterRewards, _ := paymentForRewards.Float64()
-	batchPosterRewardsCounter.Inc(1)
-	batchPosterRewardsDistribution.Update(batchPosterRewards)
+	l1RewardsDistributionCounter.Inc(1)
+	l1RewardsDistribution.Inc(paymentForRewards.Int64())
+	l1PricerFundsPoolBalance.Update(arbmath.BalancePerEther())
 
 	// settle up payments owed to the batch poster, as much as possible
 	balanceDueToPoster, err := posterState.FundsDue()
@@ -446,9 +447,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		batchPosterRefunds, _ := balanceToTransfer.Float64()
-		batchPosterRefundCounter.Inc(1)
-		batchPosterRefundDistribution.Update(batchPosterRefunds)
+		l1BaseFeeDueDistributionCounter.Inc(1)
+		l1BaseFeeDueDistribution.Inc(balanceToTransfer.Int64())
 		balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
 		err = posterState.SetFundsDue(balanceDueToPoster)
 		if err != nil {
