@@ -63,6 +63,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	builder.L2Info.GenerateAccount("ErrorTxSender")
 
 	builder.L2.SendWaitTestTransactions(t, []*types.Transaction{
+		// #nosec G115
 		builder.L2Info.PrepareTx("Faucet", "ErrorTxSender", builder.L2Info.TransferGas, big.NewInt(l2pricing.InitialBaseFeeWei*int64(builder.L2Info.TransferGas)), nil),
 	})
 

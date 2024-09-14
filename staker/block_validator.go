@@ -106,6 +106,7 @@ type BlockValidatorConfig struct {
 	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
 	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
 	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
+	RecordingIterLimit          uint64                        `koanf:"recording-iter-limit"`
 	ForwardBlocks               uint64                        `koanf:"forward-blocks" reload:"hot"`
 	CurrentModuleRoot           string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
 	PendingUpgradeModuleRoot    string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
@@ -174,6 +175,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
+	f.Uint64(prefix+".recording-iter-limit", DefaultBlockValidatorConfig.RecordingIterLimit, "limit on block recordings sent per iteration")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
@@ -197,6 +199,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	FailureIsFatal:              true,
 	Dangerous:                   DefaultBlockValidatorDangerousConfig,
 	MemoryFreeLimit:             "default",
+	RecordingIterLimit:          20,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -207,6 +210,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	ValidationPoll:              100 * time.Millisecond,
 	ForwardBlocks:               128,
 	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	RecordingIterLimit:          20,
 	CurrentModuleRoot:           "latest",
 	PendingUpgradeModuleRoot:    "latest",
 	FailureIsFatal:              true,
@@ -315,6 +319,7 @@ func NewBlockValidator(
 
 func atomicStorePos(addr *atomic.Uint64, val arbutil.MessageIndex, metr metrics.Gauge) {
 	addr.Store(uint64(val))
+	// #nosec G115
 	metr.Update(int64(val))
 }
 
@@ -499,7 +504,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
-	input, err := validationEntry.ToInput([]rawdb.Target{rawdb.TargetWavm})
+	input, err := validationEntry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
 	if err != nil {
 		return err
 	}
@@ -573,6 +578,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		v.nextCreateBatch = batch
 		v.nextCreateBatchBlockHash = batchBlockHash
 		v.nextCreateBatchMsgCount = count
+		// #nosec G115
 		validatorMsgCountCurrentBatch.Update(int64(count))
 		v.nextCreateBatchReread = false
 	}
@@ -650,6 +656,10 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	if recordUntil < pos {
 		return false, nil
 	}
+	recordUntilLimit := pos + arbutil.MessageIndex(v.config().RecordingIterLimit)
+	if recordUntil > recordUntilLimit {
+		recordUntil = recordUntilLimit
+	}
 	log.Trace("preparing to record", "pos", pos, "until", recordUntil)
 	// prepare could take a long time so we do it without a lock
 	err := v.recorder.PrepareForRecord(ctx, pos, recordUntil)
@@ -723,6 +733,7 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	if err != nil {
 		printedCount = -1
 	} else {
+		// #nosec G115
 		printedCount = int64(batchMsgs) + int64(validated.GlobalState.PosInBatch)
 	}
 	log.Info("validated execution", "messageCount", printedCount, "globalstate", validated.GlobalState, "WasmRoots", validated.WasmRoots)
@@ -992,8 +1003,10 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	if v.recordSentA.Load() < countUint64 {
 		v.recordSentA.Store(countUint64)
 	}
+	// #nosec G115
 	v.validatedA.Store(countUint64)
 	v.valLoopPos = count
+	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
 	err = v.writeLastValidated(globalState, nil) // we don't know which wasm roots were validated
 	if err != nil {
@@ -1058,6 +1071,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	}
 	if v.validatedA.Load() > countUint64 {
 		v.validatedA.Store(countUint64)
+		// #nosec G115
 		validatorMsgCountValidatedGauge.Update(int64(countUint64))
 		err := v.writeLastValidated(v.nextCreateStartGS, nil) // we don't know which wasm roots were validated
 		if err != nil {
@@ -1249,6 +1263,7 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	atomicStorePos(&v.createdA, count, validatorMsgCountCreatedGauge)
 	atomicStorePos(&v.recordSentA, count, validatorMsgCountRecordSentGauge)
 	atomicStorePos(&v.validatedA, count, validatorMsgCountValidatedGauge)
+	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(count))
 	v.chainCaughtUp = true
 	return true, nil

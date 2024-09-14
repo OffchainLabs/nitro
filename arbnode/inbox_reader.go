@@ -437,8 +437,8 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			}
 			delayedMessages, err := r.delayedBridge.LookupMessagesInRange(ctx, from, to, func(batchNum uint64) ([]byte, error) {
 				if len(sequencerBatches) > 0 && batchNum >= sequencerBatches[0].SequenceNumber {
-					idx := int(batchNum - sequencerBatches[0].SequenceNumber)
-					if idx < len(sequencerBatches) {
+					idx := batchNum - sequencerBatches[0].SequenceNumber
+					if idx < uint64(len(sequencerBatches)) {
 						return sequencerBatches[idx].Serialize(ctx, r.l1Reader.Client())
 					}
 					log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
@@ -542,6 +542,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			} else {
 				from = arbmath.BigAddByUint(to, 1)
 			}
+			// #nosec G115
 			haveMessages := uint64(len(delayedMessages) + len(sequencerBatches))
 			if haveMessages <= (config.TargetMessagesRead / 2) {
 				blocksToFetch += (blocksToFetch + 4) / 5

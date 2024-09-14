@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -89,8 +90,8 @@ func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return s.locator.ModuleRoots(), nil
 }
 
-func (s *ArbitratorSpawner) StylusArchs() []rawdb.Target {
-	return []rawdb.Target{rawdb.TargetWavm}
+func (s *ArbitratorSpawner) StylusArchs() []ethdb.WasmTarget {
+	return []ethdb.WasmTarget{rawdb.TargetWavm}
 }
 
 func (s *ArbitratorSpawner) Name() string {
@@ -179,7 +180,10 @@ func (v *ArbitratorSpawner) execute(
 		}
 		steps += count
 	}
+
+	// #nosec G115
 	arbitratorValidationSteps.Update(int64(mach.GetStepCount()))
+
 	if mach.IsErrored() {
 		log.Error("machine entered errored state during attempted validation", "block", entry.Id)
 		return validator.GoGlobalState{}, errors.New("machine entered errored state during attempted validation")
