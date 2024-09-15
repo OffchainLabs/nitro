@@ -1,5 +1,5 @@
 #!/bin/bash
-
+echo "testing here"
 declare -Ar exceptions=(
 	[contracts]=origin/develop
 	[nitro-testnode]=origin/master
