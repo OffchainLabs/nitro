@@ -348,7 +348,7 @@ func TestDASBatchPosterFallback(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
 	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
-	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true // Disable DAS fallback
+	builder.nodeConfig.BatchPoster.EnableDapFallbackStoreDataOnChain = false // Disable DAS fallback
 	builder.nodeConfig.BatchPoster.ErrorDelay = time.Millisecond * 250       // Increase error delay because we expect errors
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
 	builder.L2Info.GenerateAccount("User2")
@@ -388,7 +388,7 @@ func TestDASBatchPosterFallback(t *testing.T) {
 
 	// Enable the DAP fallback and check the transaction on the second node.
 	// (We don't need to restart the node because of the hot-reload.)
-	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
+	builder.nodeConfig.BatchPoster.EnableDapFallbackStoreDataOnChain = true
 	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Second*3)
 	Require(t, err)
 	l2balance, err := l2B.Client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
