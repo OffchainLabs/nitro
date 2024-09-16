@@ -7,6 +7,5 @@ members = [
         "user-host-trait",
 	"user-test",
 	"program-exec",
-        "forward",
 ]
 resolver = "2"
