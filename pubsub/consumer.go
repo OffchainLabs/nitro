@@ -113,7 +113,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 		Group:  c.redisGroup,
 		Start:  "-",
 		End:    "+",
-		Count:  math.MaxInt64,
+		Count:  50,
 		Idle:   c.cfg.IdletimeToAutoclaim,
 	}).Result(); err != nil {
 		if !errors.Is(err, redis.Nil) {
@@ -130,7 +130,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 			Count:    1,
 		}).Result()
 		if err != nil {
-			log.Error("error from xautoclaim", "err", err)
+			log.Info("error from xautoclaim", "err", err)
 		}
 	}
 	if len(messages) == 0 {
@@ -209,18 +209,14 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	}, nil
 }
 
-func (c *Consumer[Request, Response]) SetResult(ctx context.Context, id string, messageID string, result Response) error {
-	if id == "" {
-		log.Info("Request doesn't have a unique identifier (SelfHash field is not set), defaulting to using redis stream messageId", "msgId", messageID)
-		id = messageID
-	}
+func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID string, result Response) error {
 	resp, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("marshaling result: %w", err)
 	}
-	acquired, err := c.client.SetNX(ctx, MessageKeyFor(c.StreamName(), id), resp, c.cfg.ResponseEntryTimeout).Result()
+	acquired, err := c.client.SetNX(ctx, MessageKeyFor(c.StreamName(), messageID), resp, c.cfg.ResponseEntryTimeout).Result()
 	if err != nil || !acquired {
-		return fmt.Errorf("setting result for message with message-id in stream: %v, unique request identifier: %v, error: %w", messageID, id, err)
+		return fmt.Errorf("setting result for message with message-id in stream: %v, error: %w", messageID, err)
 	}
 	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {
 		return fmt.Errorf("acking message: %v, error: %w", messageID, err)

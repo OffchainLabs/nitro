@@ -156,7 +156,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 					log.Error("Error validating", "request value", work.req.Value, "error", err)
 					close(work.req.AckNotifier)
 				} else {
-					err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.Value.SelfHash, work.req.ID, res)
+					err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res)
 					// Even in error we close ackNotifier as there's no retry mechanism here and closing it will alow other consumers to autoclaim
 					close(work.req.AckNotifier)
 					if err != nil {

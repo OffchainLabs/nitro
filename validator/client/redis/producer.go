@@ -136,8 +136,7 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 		errPromise := containers.NewReadyPromise(validator.GoGlobalState{}, fmt.Errorf("no validation is configured for wasm root %v", moduleRoot))
 		return server_common.NewValRun(errPromise, moduleRoot)
 	}
-	entry.SetSelfHash()
-	promise, err := producer.Produce(c.GetContext(), entry.SelfHash, entry)
+	promise, err := producer.Produce(c.GetContext(), entry)
 	if err != nil {
 		errPromise := containers.NewReadyPromise(validator.GoGlobalState{}, fmt.Errorf("error producing input: %w", err))
 		return server_common.NewValRun(errPromise, moduleRoot)

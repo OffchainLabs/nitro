@@ -31,11 +31,6 @@ const (
 	defaultGroup = "default_consumer_group"
 )
 
-type MsgIdAndPromise[Response any] struct {
-	msgID   string
-	promise *containers.Promise[Response]
-}
-
 type Producer[Request any, Response any] struct {
 	stopwaiter.StopWaiter
 	id          string
@@ -45,7 +40,7 @@ type Producer[Request any, Response any] struct {
 	cfg         *ProducerConfig
 
 	promisesLock sync.RWMutex
-	promises     map[string]*MsgIdAndPromise[Response]
+	promises     map[string]*containers.Promise[Response]
 
 	// Used for checking responses from consumers iteratively
 	// For the first time when Produce is called.
@@ -92,7 +87,7 @@ func NewProducer[Request any, Response any](client redis.UniversalClient, stream
 		redisStream: streamName,
 		redisGroup:  streamName, // There is 1-1 mapping of redis stream and consumer group.
 		cfg:         cfg,
-		promises:    make(map[string]*MsgIdAndPromise[Response]),
+		promises:    make(map[string]*containers.Promise[Response]),
 	}, nil
 }
 
@@ -142,18 +137,11 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 	if err != nil {
 		log.Error("error getting PEL data from xpending, xtrimming is disabled", "err", err)
 	}
-	deletePromise := func(id string) {
-		// Try deleting UNIQUEID_MSGID_MAP_KEY corresponding to this id from redis
-		if err := p.client.Del(ctx, MessageKeyFor(p.redisStream, id)+UNIQUEID_MSGID_MAP_KEY).Err(); err != nil {
-			log.Error("Error deleting key from redis that flags that a request is being processed", "err", err)
-		}
-		delete(p.promises, id)
-	}
 	p.promisesLock.Lock()
 	defer p.promisesLock.Unlock()
 	responded := 0
 	errored := 0
-	for id, msgIDAndPromise := range p.promises {
+	for id, promise := range p.promises {
 		if ctx.Err() != nil {
 			return 0
 		}
@@ -169,25 +157,25 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 				if pelData != nil && pelData.Lower != "" {
 					allowedOldestID = pelData.Lower
 				}
-				if cmpMsgId(msgIDAndPromise.msgID, allowedOldestID) == -1 {
-					msgIDAndPromise.promise.ProduceError(errors.New("error getting response, request has been waiting for too long"))
+				if cmpMsgId(id, allowedOldestID) == -1 {
+					promise.ProduceError(errors.New("error getting response, request has been waiting for too long"))
 					log.Error("error getting response, request has been waiting past its TTL")
 					errored++
-					deletePromise(id)
+					delete(p.promises, id)
 				}
 			}
 			continue
 		}
 		var resp Response
 		if err := json.Unmarshal([]byte(res), &resp); err != nil {
-			msgIDAndPromise.promise.ProduceError(fmt.Errorf("error unmarshalling: %w", err))
+			promise.ProduceError(fmt.Errorf("error unmarshalling: %w", err))
 			log.Error("Error unmarshaling", "value", res, "error", err)
 			errored++
 		} else {
-			msgIDAndPromise.promise.Produce(resp)
+			promise.Produce(resp)
 			responded++
 		}
-		deletePromise(id)
+		delete(p.promises, id)
 	}
 	// XDEL on consumer side already deletes acked messages (mark as deleted) but doesnt claim the memory back, XTRIM helps in claiming this memory in normal conditions
 	// pelData might be outdated when we do the xtrim, but thats ok as the messages are also being trimmed by other producers
@@ -230,39 +218,7 @@ func (p *Producer[Request, Response]) promisesLen() int {
 	return len(p.promises)
 }
 
-func (p *Producer[Request, Response]) produce(ctx context.Context, id string, value Request) (*containers.Promise[Response], error) {
-	if id != "" {
-		msgKey := MessageKeyFor(p.redisStream, id)
-
-		// If the request has already been solved by a consumer
-		if res, err := p.client.Get(ctx, msgKey).Result(); err == nil {
-			var resp Response
-			if err := json.Unmarshal([]byte(res), &resp); err != nil {
-				log.Error("Error unmarshaling", "value", res, "error", err)
-				return nil, fmt.Errorf("error unmarshalling: %w", err)
-			} else {
-				pr := containers.NewPromise[Response](nil)
-				pr.Produce(resp)
-				return &pr, nil
-			}
-		} else if !errors.Is(err, redis.Nil) {
-			log.Error("error while checking for response to a request in redis", "err", err)
-		}
-
-		// Check for duplicate unsolved request messages in stream
-		if res, err := p.client.Get(ctx, msgKey+UNIQUEID_MSGID_MAP_KEY).Result(); err == nil {
-			log.Info("Request already submitted by another producer", "msgId", res, "requestUniqueId", id)
-			p.promisesLock.Lock()
-			defer p.promisesLock.Unlock()
-			pr := containers.NewPromise[Response](nil)
-			p.promises[id] = &MsgIdAndPromise[Response]{
-				msgID:   res,
-				promise: &pr,
-			}
-			return &pr, nil
-		}
-	}
-
+func (p *Producer[Request, Response]) produce(ctx context.Context, value Request) (*containers.Promise[Response], error) {
 	val, err := json.Marshal(value)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling value: %w", err)
@@ -277,30 +233,15 @@ func (p *Producer[Request, Response]) produce(ctx context.Context, id string, va
 	if err != nil {
 		return nil, fmt.Errorf("adding values to redis: %w", err)
 	}
-
-	if id == "" {
-		// If unique id doesn't exist, use the newly created msgId as unique id and follow the same steps as before
-		log.Info("Request doesn't have a unique identifier (SelfHash field set), defaulting to using redis stream messageId", "msgId", msgId)
-		id = msgId
-	}
-
-	// Try adding key that flags that request is being processed
-	if err := p.client.Set(ctx, MessageKeyFor(p.redisStream, id)+UNIQUEID_MSGID_MAP_KEY, msgId, p.cfg.ResponseEntryTimeout).Err(); err != nil {
-		log.Error("Error adding key to redis that flags that a request is being processed, stream may encounter duplicate requests", "err", err)
-	}
-
-	pr := containers.NewPromise[Response](nil)
-	p.promises[id] = &MsgIdAndPromise[Response]{
-		msgID:   msgId,
-		promise: &pr,
-	}
-	return &pr, nil
+	promise := containers.NewPromise[Response](nil)
+	p.promises[msgId] = &promise
+	return &promise, nil
 }
 
-func (p *Producer[Request, Response]) Produce(ctx context.Context, id string, value Request) (*containers.Promise[Response], error) {
+func (p *Producer[Request, Response]) Produce(ctx context.Context, value Request) (*containers.Promise[Response], error) {
 	log.Debug("Redis stream producing", "value", value)
 	p.once.Do(func() {
 		p.StopWaiter.CallIteratively(p.checkResponses)
 	})
-	return p.produce(ctx, id, value)
+	return p.produce(ctx, value)
 }
