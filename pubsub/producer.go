@@ -137,19 +137,22 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 	if err != nil {
 		log.Error("error getting PEL data from xpending, xtrimming is disabled", "err", err)
 	}
+	log.Debug("redis producer: check responses starting")
 	p.promisesLock.Lock()
 	defer p.promisesLock.Unlock()
 	responded := 0
 	errored := 0
+	checked := 0
 	for id, promise := range p.promises {
 		if ctx.Err() != nil {
 			return 0
 		}
+		checked++
 		msgKey := MessageKeyFor(p.redisStream, id)
 		res, err := p.client.Get(ctx, msgKey).Result()
 		if err != nil {
 			if !errors.Is(err, redis.Nil) {
-				log.Error("Error reading value in redis", "key", id, "error", err)
+				log.Error("Error reading value in redis", "key", msgKey, "error", err)
 			} else {
 				// The request this producer is waiting for has been past its TTL or is older than current PEL's lower,
 				// so safe to error and stop tracking this promise
@@ -169,19 +172,20 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 		var resp Response
 		if err := json.Unmarshal([]byte(res), &resp); err != nil {
 			promise.ProduceError(fmt.Errorf("error unmarshalling: %w", err))
-			log.Error("Error unmarshaling", "value", res, "error", err)
+			log.Error("redis producer: Error unmarshaling", "value", res, "error", err)
 			errored++
 		} else {
 			promise.Produce(resp)
 			responded++
 		}
+		p.client.Del(ctx, msgKey)
 		delete(p.promises, id)
 	}
 	// XDEL on consumer side already deletes acked messages (mark as deleted) but doesnt claim the memory back, XTRIM helps in claiming this memory in normal conditions
 	// pelData might be outdated when we do the xtrim, but thats ok as the messages are also being trimmed by other producers
 	if pelData != nil && pelData.Lower != "" {
 		trimmed, trimErr := p.client.XTrimMinID(ctx, p.redisStream, pelData.Lower).Result()
-		log.Trace("trimming", "xTrimMinID", pelData.Lower, "trimmed", trimmed, "responded", responded, "errored", errored, "trim-err", trimErr)
+		log.Debug("trimming", "xTrimMinID", pelData.Lower, "trimmed", trimmed, "responded", responded, "errored", errored, "trim-err", trimErr, "checked", checked)
 		// Check if pelData.Lower has been past its TTL and if it is then ack it to remove from PEL and delete it, once
 		// its taken out from PEL the producer that sent this request will handle the corresponding promise accordingly (if PEL is non-empty)
 		allowedOldestID := fmt.Sprintf("%d-0", time.Now().Add(-p.cfg.RequestTimeout).UnixMilli())

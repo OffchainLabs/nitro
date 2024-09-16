@@ -74,6 +74,10 @@ func (c *Consumer[Request, Response]) Start(ctx context.Context) {
 	c.StopWaiter.Start(ctx, c)
 }
 
+func (c *Consumer[Request, Response]) Id() string {
+	return c.id
+}
+
 func (c *Consumer[Request, Response]) StopAndWait() {
 	c.StopWaiter.StopAndWait()
 }
@@ -214,10 +218,13 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID s
 	if err != nil {
 		return fmt.Errorf("marshaling result: %w", err)
 	}
-	acquired, err := c.client.SetNX(ctx, MessageKeyFor(c.StreamName(), messageID), resp, c.cfg.ResponseEntryTimeout).Result()
+	msgKey := MessageKeyFor(c.StreamName(), messageID)
+	log.Debug("consumer: setting result", "cid", c.id, "msgIdInStream", messageID, "msgKeyInRedis", msgKey)
+	acquired, err := c.client.SetNX(ctx, msgKey, resp, c.cfg.ResponseEntryTimeout).Result()
 	if err != nil || !acquired {
 		return fmt.Errorf("setting result for message with message-id in stream: %v, error: %w", messageID, err)
 	}
+	log.Debug("consumer: xack", "cid", c.id, "messageId", messageID)
 	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {
 		return fmt.Errorf("acking message: %v, error: %w", messageID, err)
 	}
