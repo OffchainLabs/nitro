@@ -28,4 +28,5 @@ go_test(
     ],
     embed = [":threadsafe"],
     deps = ["@com_github_stretchr_testify//require"],
+    size = "small",
 )

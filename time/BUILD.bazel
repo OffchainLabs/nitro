@@ -11,4 +11,5 @@ go_test(
     name = "time_test",
     srcs = ["time_reference_test.go"],
     embed = [":time"],
+    size = "small",
 )

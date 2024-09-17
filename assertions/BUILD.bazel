@@ -57,4 +57,5 @@ go_test(
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_stretchr_testify//require",
     ],
+    size = "small",
 )

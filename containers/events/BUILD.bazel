@@ -12,4 +12,5 @@ go_test(
     srcs = ["producer_test.go"],
     embed = [":events"],
     deps = ["@com_github_stretchr_testify//require"],
+    size = "small",
 )

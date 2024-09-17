@@ -32,4 +32,5 @@ go_test(
         "@com_github_mattn_go_sqlite3//:go-sqlite3",
         "@com_github_stretchr_testify//require",
     ],
+    size = "small",
 )

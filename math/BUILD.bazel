@@ -12,4 +12,5 @@ go_test(
     srcs = ["math_test.go"],
     embed = [":math"],
     deps = ["@com_github_stretchr_testify//require"],
+    size = "small",
 )
