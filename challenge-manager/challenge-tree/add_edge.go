@@ -94,7 +94,7 @@ func (ht *RoyalChallengeTree) checkAssertionHash(ctx context.Context, id protoco
 	return nil
 }
 
-func (ht *RoyalChallengeTree) claimedAssertionHash(ctx context.Context, eg protocol.SpecEdge) (protocol.AssertionHash, error) {
+func (ht *RoyalChallengeTree) claimedAssertionHash(_ context.Context, eg protocol.SpecEdge) (protocol.AssertionHash, error) {
 	challengeLevel := eg.GetChallengeLevel()
 	// If this is a root challege level zero edge.
 	if challengeLevel == protocol.NewBlockChallengeLevel() && !eg.ClaimId().IsNone() {

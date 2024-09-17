@@ -27,7 +27,6 @@ func setupChallengeManager(
 	rollup common.Address,
 	sm l2stateprovider.Provider,
 	txOpts *bind.TransactOpts,
-	name string,
 	opts ...challengemanager.Opt,
 ) *challengemanager.Manager {
 	assertionChainBinding, err := rollupgen.NewRollupUserLogic(

@@ -282,7 +282,7 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 		challengemanager.WithName(name),
 	)
 	honestManager := setupChallengeManager(
-		t, ctx, bk.Client(), rollupAddr.Rollup, honestStateManager, txOpts, name, honestOpts...,
+		t, ctx, bk.Client(), rollupAddr.Rollup, honestStateManager, txOpts, honestOpts...,
 	)
 	if !api.IsNil(honestManager.Database()) {
 		honestStateManager.UpdateAPIDatabase(honestManager.Database())
@@ -318,7 +318,7 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 			challengemanager.WithName(name),
 		)
 		evilManager := setupChallengeManager(
-			t, ctx, bk.Client(), rollupAddr.Rollup, evilStateManager, txOpts, name, evilOpts...,
+			t, ctx, bk.Client(), rollupAddr.Rollup, evilStateManager, txOpts, evilOpts...,
 		)
 		evilChallengeManagers[i] = evilManager
 	}

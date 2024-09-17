@@ -418,8 +418,7 @@ func TestFastConfirmation(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	hash := protocol.AssertionHash{Hash: posted.Unwrap().AssertionHash}
-	expectAssertionConfirmed(t, ctx, setup.Backend, aliceChain.RollupAddress(), hash)
+	expectAssertionConfirmed(t, ctx, setup.Backend, aliceChain.RollupAddress())
 }
 
 func TestFastConfirmationWithSafe(t *testing.T) {
@@ -543,8 +542,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	// Only after both Alice and Bob confirm the assertion, it should be confirmed.
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	hash := protocol.AssertionHash{Hash: posted.Unwrap().AssertionHash}
-	expectAssertionConfirmed(t, ctx, setup.Backend, aliceChain.RollupAddress(), hash)
+	expectAssertionConfirmed(t, ctx, setup.Backend, aliceChain.RollupAddress())
 }
 
 type seqMessage struct {
@@ -590,7 +588,6 @@ func expectAssertionConfirmed(
 	ctx context.Context,
 	backend protocol.ChainBackend,
 	rollupAddr common.Address,
-	hash protocol.AssertionHash,
 ) {
 	rc, err := rollupgen.NewRollupCore(rollupAddr, backend)
 	require.NoError(t, err)
