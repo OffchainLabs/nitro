@@ -1,6 +1,11 @@
+"""
+Auto-gneerated deps file managed by gazelle.
+"""
+
 load("@bazel_gazelle//:deps.bzl", "go_repository")
 
 def go_dependencies():
+    "Auto-generated dependencies function."
     go_repository(
         name = "co_honnef_go_tools",
         importpath = "honnef.co/go/tools",

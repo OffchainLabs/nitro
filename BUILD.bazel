@@ -1,5 +1,6 @@
 # gazelle:ignore
 load("@bazel_gazelle//:def.bzl", "gazelle")
+load("@io_bazel_rules_go//go:def.bzl", "TOOLS_NOGO", "nogo")
 
 # gazelle:prefix github.com/OffchainLabs/bold
 gazelle(name = "gazelle")
@@ -13,8 +14,6 @@ gazelle(
     ],
     command = "update-repos",
 )
-
-load("@io_bazel_rules_go//go:def.bzl", "TOOLS_NOGO", "go_binary", "go_library", "nogo")
 
 nogo(
     name = "nogo",
