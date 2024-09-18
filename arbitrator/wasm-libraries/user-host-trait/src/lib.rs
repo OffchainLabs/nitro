@@ -194,7 +194,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
 
         let gas_left = self.gas_left()?;
-        self.evm_api().flush_storage_cache(clear, gas_left)?;
+        let gas_cost = self.evm_api().flush_storage_cache(clear, gas_left)?;
+        if self.evm_data().arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+            self.buy_gas(gas_cost)?;
+        }
         trace!("storage_flush_cache", self, [be!(clear as u8)], &[])
     }
 
