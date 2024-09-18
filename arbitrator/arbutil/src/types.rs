@@ -109,22 +109,6 @@ impl FromStr for Bytes32 {
         Ok(Bytes32(b))
     }
 }
-/*
-impl FromStr for Bytes32 {
-    type Err = hex::FromHexError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let trimmed = match s.strip_prefix("0x") {
-            Some(t) => t,
-            None => s,
-        };
-        let bytes = hex::decode(trimmed)?;
-        let mut b = [0u8; 32];
-        b.copy_from_slice(&bytes);
-        Ok(Self(b))
-    }
-}
-*/
 
 impl TryFrom<&[u8]> for Bytes32 {
     type Error = std::array::TryFromSliceError;
