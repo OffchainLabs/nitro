@@ -471,10 +471,14 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         let export = export.rsplit("__").take(1);
         exports.extend(export);
     }
-    for import in &binary.imports {
-        let name = import.name;
-        if exports.contains(name) {
-            bail!("binary exports an import with the same name {}", name.red());
+    // forwarder is allowed to re-export the same name
+    // TODO: is there a real problem if import_name == export_name but module names don't?
+    if path != Path::new("forwarder") {
+        for import in &binary.imports {
+            let name = import.name;
+            if exports.contains(name) {
+                bail!("binary exports an import with the same name {}", name.red());
+            }
         }
     }
 
