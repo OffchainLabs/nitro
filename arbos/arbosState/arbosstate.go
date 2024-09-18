@@ -58,7 +58,7 @@ type ArbosState struct {
 	Burner                 burn.Burner
 }
 
-const MaxArbosVersionSupported uint64 = params.ArbosVersion_StylusFixes
+const MaxArbosVersionSupported uint64 = params.ArbosVersion_StylusChargingFixes
 const MaxDebugArbosVersionSupported uint64 = params.ArbosVersion_StylusChargingFixes
 
 var ErrUninitializedArbOS = errors.New("ArbOS uninitialized")
