@@ -377,6 +377,7 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 				return err
 			}
 
+			// #nosec G115
 			expiryPath := tl.expiryPath(batch.key, uint64(batch.expiry.Unix()))
 			if err = createHardLink(newPath, expiryPath); err != nil {
 				return err

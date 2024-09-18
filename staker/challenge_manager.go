@@ -566,6 +566,7 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 			nextMovePos,
 		)
 	}
+	// #nosec G115
 	err = m.createExecutionBackend(ctx, uint64(nextMovePos))
 	if err != nil {
 		return nil, fmt.Errorf("error creating execution backend: %w", err)

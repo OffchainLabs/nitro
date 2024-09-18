@@ -672,7 +672,7 @@ func l2MessageBatchDataFromTxes(txes types.Transactions) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
+		binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes))+1)
 		l2Message = append(l2Message, sizeBuf...)
 		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
 		l2Message = append(l2Message, txBytes...)
@@ -1041,7 +1041,6 @@ func DeployOnTestL1(
 		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 		nativeToken,
 		maxDataSize,
-		false,
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)

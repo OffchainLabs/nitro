@@ -58,12 +58,12 @@ type BlockValidator struct {
 	chainCaughtUp bool
 
 	// can only be accessed from creation thread or if holding reorg-write
-	nextCreateBatch          []byte
-	nextCreateBatchBlockHash common.Hash
-	nextCreateBatchMsgCount  arbutil.MessageIndex
-	nextCreateBatchReread    bool
-	nextCreateStartGS        validator.GoGlobalState
-	nextCreatePrevDelayed    uint64
+	nextCreateBatch       *FullBatchInfo
+	nextCreateBatchReread bool
+	prevBatchCache        map[uint64][]byte
+
+	nextCreateStartGS     validator.GoGlobalState
+	nextCreatePrevDelayed uint64
 
 	// can only be accessed from from validation thread or if holding reorg-write
 	lastValidGS     validator.GoGlobalState
@@ -113,6 +113,7 @@ type BlockValidatorConfig struct {
 	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	RecordingIterLimit          uint64                        `koanf:"recording-iter-limit"`
 	ForwardBlocks               uint64                        `koanf:"forward-blocks" reload:"hot"`
+	BatchCacheLimit             uint32                        `koanf:"batch-cache-limit"`
 	CurrentModuleRoot           string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
 	PendingUpgradeModuleRoot    string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	FailureIsFatal              bool                          `koanf:"failure-is-fatal" reload:"hot"`
@@ -180,8 +181,9 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	redis.ValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of execution rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
-	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
+	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (stores batch-copy per block)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
+	f.Uint32(prefix+".batch-cache-limit", DefaultBlockValidatorConfig.BatchCacheLimit, "limit number of old batches to keep in block-validator")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.Uint64(prefix+".recording-iter-limit", DefaultBlockValidatorConfig.RecordingIterLimit, "limit on block recordings sent per iteration")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
@@ -201,8 +203,9 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	ValidationServer:            rpcclient.DefaultClientConfig,
 	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
 	ValidationPoll:              time.Second,
-	ForwardBlocks:               1024,
+	ForwardBlocks:               128,
 	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	BatchCacheLimit:             20,
 	CurrentModuleRoot:           "current",
 	PendingUpgradeModuleRoot:    "latest",
 	FailureIsFatal:              true,
@@ -219,6 +222,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	RedisValidationClientConfig: redis.TestValidationClientConfig,
 	ValidationPoll:              100 * time.Millisecond,
 	ForwardBlocks:               128,
+	BatchCacheLimit:             20,
 	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
 	RecordingIterLimit:          20,
 	CurrentModuleRoot:           "latest",
@@ -282,6 +286,7 @@ func NewBlockValidator(
 		progressValidationsChan: make(chan struct{}, 1),
 		config:                  config,
 		fatalErr:                fatalErr,
+		prevBatchCache:          make(map[uint64][]byte),
 	}
 	valInputsWriter, err := inputs.NewWriter()
 	if err != nil {
@@ -585,33 +590,63 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	}
 	if v.nextCreateStartGS.PosInBatch == 0 || v.nextCreateBatchReread {
 		// new batch
-		found, batch, batchBlockHash, count, err := v.readBatch(ctx, v.nextCreateStartGS.Batch)
+		found, fullBatchInfo, err := v.readFullBatch(ctx, v.nextCreateStartGS.Batch)
 		if !found {
 			return false, err
 		}
-		v.nextCreateBatch = batch
-		v.nextCreateBatchBlockHash = batchBlockHash
-		v.nextCreateBatchMsgCount = count
+		if v.nextCreateBatch != nil {
+			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch.PostedData
+		}
+		v.nextCreateBatch = fullBatchInfo
 		// #nosec G115
-		validatorMsgCountCurrentBatch.Update(int64(count))
+		validatorMsgCountCurrentBatch.Update(int64(fullBatchInfo.MsgCount))
+		batchCacheLimit := v.config().BatchCacheLimit
+		if len(v.prevBatchCache) > int(batchCacheLimit) {
+			for num := range v.prevBatchCache {
+				if num+uint64(batchCacheLimit) < v.nextCreateStartGS.Batch {
+					delete(v.prevBatchCache, num)
+				}
+			}
+		}
 		v.nextCreateBatchReread = false
 	}
 	endGS := validator.GoGlobalState{
 		BlockHash: endRes.BlockHash,
 		SendRoot:  endRes.SendRoot,
 	}
-	if pos+1 < v.nextCreateBatchMsgCount {
+	if pos+1 < v.nextCreateBatch.MsgCount {
 		endGS.Batch = v.nextCreateStartGS.Batch
 		endGS.PosInBatch = v.nextCreateStartGS.PosInBatch + 1
-	} else if pos+1 == v.nextCreateBatchMsgCount {
+	} else if pos+1 == v.nextCreateBatch.MsgCount {
 		endGS.Batch = v.nextCreateStartGS.Batch + 1
 		endGS.PosInBatch = 0
 	} else {
-		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
+		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatch.MsgCount, pos, endGS.Batch)
 	}
 	chainConfig := v.streamer.ChainConfig()
+	prevBatchNums, err := msg.Message.PastBatchesRequired()
+	if err != nil {
+		return false, err
+	}
+	prevBatches := make([]validator.BatchInfo, 0, len(prevBatchNums))
+	// prevBatchNums are only used for batch reports, each is only used once
+	for _, batchNum := range prevBatchNums {
+		data, found := v.prevBatchCache[batchNum]
+		if found {
+			delete(v.prevBatchCache, batchNum)
+		} else {
+			data, err = v.readPostedBatch(ctx, batchNum)
+			if err != nil {
+				return false, err
+			}
+		}
+		prevBatches = append(prevBatches, validator.BatchInfo{
+			Number: batchNum,
+			Data:   data,
+		})
+	}
 	entry, err := newValidationEntry(
-		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, chainConfig,
+		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, prevBatches, v.nextCreatePrevDelayed, chainConfig,
 	)
 	if err != nil {
 		return false, err
@@ -1011,6 +1046,9 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 		v.nextCreateStartGS = globalState
 		v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 		v.nextCreateBatchReread = true
+		if v.nextCreateBatch != nil {
+			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch.PostedData
+		}
 		v.createdA.Store(countUint64)
 	}
 	// under the reorg mutex we don't need atomic access
@@ -1037,6 +1075,7 @@ func (v *BlockValidator) ReorgToBatchCount(count uint64) {
 	defer v.reorgMutex.Unlock()
 	if v.nextCreateStartGS.Batch >= count {
 		v.nextCreateBatchReread = true
+		v.prevBatchCache = make(map[uint64][]byte)
 	}
 }
 
@@ -1077,6 +1116,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	v.nextCreateStartGS = buildGlobalState(*res, endPosition)
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	v.nextCreateBatchReread = true
+	v.prevBatchCache = make(map[uint64][]byte)
 	countUint64 := uint64(count)
 	v.createdA.Store(countUint64)
 	// under the reorg mutex we don't need atomic access

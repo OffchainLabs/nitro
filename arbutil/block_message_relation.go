@@ -11,6 +11,7 @@ func BlockNumberToMessageCount(blockNumber uint64, genesisBlockNumber uint64) Me
 
 // Block number must correspond to a message count, meaning it may not be less than -1
 func SignedBlockNumberToMessageCount(blockNumber int64, genesisBlockNumber uint64) MessageIndex {
+	// #nosec G115
 	return MessageIndex(uint64(blockNumber+1) - genesisBlockNumber)
 }
 
