@@ -86,7 +86,8 @@ func looksLikeNoNodeError(err error) bool {
 	if strings.Contains(err.Error(), noNodeErr) {
 		return true
 	}
-	errWithData, ok := err.(rpc.DataError)
+	var errWithData rpc.DataError
+	ok := errors.As(err, &errWithData)
 	if !ok {
 		return false
 	}
