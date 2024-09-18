@@ -42,7 +42,6 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
 
     for (arch, wasm) in data.user_wasms.iter() {
         if arch != "wavm" {
-            println! {"Unsupported arch: {}. Skipping UserWasm(s).", arch};
             continue;
         }
         for (id, wasm) in wasm.iter() {

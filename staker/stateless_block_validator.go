@@ -12,7 +12,6 @@ import (
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -510,12 +509,12 @@ func (v *StatelessBlockValidator) ValidateResult(
 	return true, &entry.End, nil
 }
 
-func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, moduleRoot common.Hash) (server_api.InputJSON, error) {
+func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, target ethdb.WasmTarget) (server_api.InputJSON, error) {
 	entry, err := v.CreateReadyValidationEntry(ctx, pos)
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}
-	input, err := entry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
+	input, err := entry.ToInput([]ethdb.WasmTarget{target})
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}

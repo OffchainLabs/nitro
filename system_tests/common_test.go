@@ -1469,7 +1469,6 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 	t.Helper()
 	ctx := builder.ctx
-	wasmModuleRoot := currentRootModule(t)
 	inboxPos := arbutil.MessageIndex(block)
 	for {
 		time.Sleep(250 * time.Millisecond)
@@ -1484,7 +1483,7 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 	validationInputsWriter, err := inputs.NewWriter()
 	Require(t, err)
 	validationInputsWriter.SetSlug(t.Name())
-	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, wasmModuleRoot)
+	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.TargetWavm)
 	if err != nil {
 		Fatal(t, "failed to get validation inputs", block, err)
 	}
