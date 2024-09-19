@@ -563,54 +563,55 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, targetConfig *gethexec.StylusTargetConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, config.Persistent.Ancient, "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
-			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
-				readOnlyDb.Close()
-				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
-					return nil, nil, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
-				}
-				chainData, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "l2chaindata/", false, persistentConfig.Pebble.ExtraOptions("l2chaindata"))
-				if err != nil {
-					return nil, nil, err
-				}
-				if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
-					return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
-				}
-				wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
-				if err != nil {
-					return nil, nil, err
-				}
-				if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
-					return nil, nil, err
-				}
-				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
-					return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
-				}
-				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1, targetConfig.WasmTargets())
-				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
-				if err != nil {
-					return nil, nil, err
-				}
-				err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
-				if err != nil {
-					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
-				}
-				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
-				if err != nil {
-					return chainDb, nil, err
-				}
-				err = validateBlockChain(l2BlockChain, chainConfig)
-				if err != nil {
-					return chainDb, l2BlockChain, err
-				}
-				if config.Init.RecreateMissingStateFrom > 0 {
-					err = staterecovery.RecreateMissingStates(chainDb, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
-					if err != nil {
-						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
-					}
-				}
-				return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
-			}
+			chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb)
 			readOnlyDb.Close()
+			if chainConfig == nil {
+				return nil, nil, fmt.Errorf("database is corrupt; delete it and try again (missing chain config)")
+			}
+			if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
+				return nil, nil, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
+			}
+			chainData, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "l2chaindata/", false, persistentConfig.Pebble.ExtraOptions("l2chaindata"))
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
+				return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
+			}
+			wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
+				return nil, nil, err
+			}
+			if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
+				return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
+			}
+			chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1, targetConfig.WasmTargets())
+			_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
+			if err != nil {
+				return nil, nil, err
+			}
+			err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
+			if err != nil {
+				return chainDb, nil, fmt.Errorf("error pruning: %w", err)
+			}
+			l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
+			if err != nil {
+				return chainDb, nil, err
+			}
+			err = validateBlockChain(l2BlockChain, chainConfig)
+			if err != nil {
+				return chainDb, l2BlockChain, err
+			}
+			if config.Init.RecreateMissingStateFrom > 0 {
+				err = staterecovery.RecreateMissingStates(chainDb, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
+				if err != nil {
+					return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
+				}
+			}
+			return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
 		} else if !dbutil.IsNotExistError(err) {
 			// we only want to continue if the database does not exist
 			return nil, nil, fmt.Errorf("Failed to open database: %w", err)
