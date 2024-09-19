@@ -30,7 +30,7 @@ type JitSpawnerConfigFecher func() *JitSpawnerConfig
 var DefaultJitSpawnerConfig = JitSpawnerConfig{
 	Workers:              0,
 	Cranelift:            true,
-	WasmMemoryUsageLimit: 4294967296, // 2^32 WASM memeory limit
+	WasmMemoryUsageLimit: 4294967296, // 2^32 WASM memory limit
 }
 
 func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -82,7 +82,7 @@ func (v *JitSpawner) execute(
 ) (validator.GoGlobalState, error) {
 	machine, err := v.machineLoader.GetMachine(ctx, moduleRoot)
 	if err != nil {
-		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
+		return validator.GoGlobalState{}, fmt.Errorf("unable to get WASM machine: %w", err)
 	}
 
 	state, err := machine.prove(ctx, entry)
