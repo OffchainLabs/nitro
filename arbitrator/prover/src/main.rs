@@ -86,6 +86,8 @@ struct Opts {
     skip_until_host_io: bool,
     #[structopt(long)]
     max_steps: Option<u64>,
+    #[structopt(short, long)]
+    with_forwarder: bool,
 }
 
 fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
@@ -211,6 +213,7 @@ fn main() -> Result<()> {
         global_state,
         inbox_contents,
         preimage_resolver,
+        opts.with_forwarder,
     )?;
 
     for path in &opts.stylus_modules {
