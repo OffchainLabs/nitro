@@ -222,6 +222,7 @@ func (p Programs) CallProgram(
 	}
 
 	evmData := &EvmData{
+		arbosVersion:    evm.Context.ArbOSVersion,
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
 		chainId:         evm.ChainConfig().ChainID.Uint64(),
 		blockCoinbase:   evm.Context.Coinbase,
@@ -517,6 +518,7 @@ func (p Programs) progParams(version uint16, debug bool, params *StylusParams) *
 }
 
 type EvmData struct {
+	arbosVersion    uint64
 	blockBasefee    common.Hash
 	chainId         uint64
 	blockCoinbase   common.Address
