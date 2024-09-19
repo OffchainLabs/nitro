@@ -329,11 +329,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 
 		case 35:
 			// Espresso marketplace compatible ArbOS version.
-			chainConfig.ArbitrumChainParams.EnableEspresso = true
 
 		case 36, 37, 38, 39:
 			// these versions are left to Orbit chains for custom upgrades.
-
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
