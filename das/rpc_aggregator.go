@@ -119,7 +119,7 @@ func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]
 			return nil, err
 		}
 
-		d, err := NewServiceDetails(service, *pubKey, 1<<uint64(i), metricName)
+		d, err := NewServiceDetails(service, *pubKey, 1<<i, metricName)
 		if err != nil {
 			return nil, err
 		}

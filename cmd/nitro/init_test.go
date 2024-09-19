@@ -4,18 +4,21 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/google/go-cmp/cmp"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -350,6 +354,12 @@ func TestEmptyDatabaseDir(t *testing.T) {
 	}
 }
 
+func defaultStylusTargetConfigForTest(t *testing.T) *gethexec.StylusTargetConfig {
+	targetConfig := gethexec.DefaultStylusTargetConfig
+	Require(t, targetConfig.Validate())
+	return &targetConfig
+}
+
 func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	t.Parallel()
 
@@ -377,6 +387,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		defaultStylusTargetConfigForTest(t),
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
@@ -393,6 +404,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		defaultStylusTargetConfigForTest(t),
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
@@ -410,6 +422,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		defaultStylusTargetConfigForTest(t),
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
@@ -545,6 +558,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		defaultStylusTargetConfigForTest(t),
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
@@ -553,4 +567,153 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 	blockchain.Stop()
 	err = chainDb.Close()
 	Require(t, err)
+}
+
+func TestExtractSnapshot(t *testing.T) {
+	testCases := []struct {
+		name         string
+		archiveFiles []string
+		importWasm   bool
+		wantFiles    []string
+	}{
+		{
+			name:       "extractAll",
+			importWasm: true,
+			archiveFiles: []string{
+				"arbitrumdata/000001.ldb",
+				"l2chaindata/000001.ldb",
+				"l2chaindata/ancients/000001.ldb",
+				"nodes/000001.ldb",
+				"wasm/000001.ldb",
+			},
+			wantFiles: []string{
+				"arbitrumdata/000001.ldb",
+				"l2chaindata/000001.ldb",
+				"l2chaindata/ancients/000001.ldb",
+				"nodes/000001.ldb",
+				"wasm/000001.ldb",
+			},
+		},
+		{
+			name:       "extractAllButWasm",
+			importWasm: false,
+			archiveFiles: []string{
+				"arbitrumdata/000001.ldb",
+				"l2chaindata/000001.ldb",
+				"nodes/000001.ldb",
+				"wasm/000001.ldb",
+			},
+			wantFiles: []string{
+				"arbitrumdata/000001.ldb",
+				"l2chaindata/000001.ldb",
+				"nodes/000001.ldb",
+			},
+		},
+		{
+			name:       "extractAllButWasmWithPrefixDot",
+			importWasm: false,
+			archiveFiles: []string{
+				"./arbitrumdata/000001.ldb",
+				"./l2chaindata/000001.ldb",
+				"./nodes/000001.ldb",
+				"./wasm/000001.ldb",
+			},
+			wantFiles: []string{
+				"arbitrumdata/000001.ldb",
+				"l2chaindata/000001.ldb",
+				"nodes/000001.ldb",
+			},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			// Create archive with dummy files
+			archiveDir := t.TempDir()
+			archivePath := path.Join(archiveDir, "archive.tar")
+			{
+				// Create context to close the file handlers
+				archiveFile, err := os.Create(archivePath)
+				Require(t, err)
+				defer archiveFile.Close()
+				tarWriter := tar.NewWriter(archiveFile)
+				defer tarWriter.Close()
+				for _, relativePath := range testCase.archiveFiles {
+					filePath := path.Join(archiveDir, relativePath)
+					dir := filepath.Dir(filePath)
+					const dirPerm = 0700
+					err := os.MkdirAll(dir, dirPerm)
+					Require(t, err)
+					const filePerm = 0600
+					err = os.WriteFile(filePath, []byte{0xbe, 0xef}, filePerm)
+					Require(t, err)
+					file, err := os.Open(filePath)
+					Require(t, err)
+					info, err := file.Stat()
+					Require(t, err)
+					header, err := tar.FileInfoHeader(info, "")
+					Require(t, err)
+					header.Name = relativePath
+					err = tarWriter.WriteHeader(header)
+					Require(t, err)
+					_, err = io.Copy(tarWriter, file)
+					Require(t, err)
+				}
+			}
+
+			// Extract archive and compare contents
+			targetDir := t.TempDir()
+			err := extractSnapshot(archivePath, targetDir, testCase.importWasm)
+			Require(t, err, "failed to extract snapshot")
+			gotFiles := []string{}
+			err = filepath.WalkDir(targetDir, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if !d.IsDir() {
+					gotFiles = append(gotFiles, path)
+				}
+				return nil
+			})
+			Require(t, err)
+			slices.Sort(gotFiles)
+			for i, f := range testCase.wantFiles {
+				testCase.wantFiles[i] = path.Join(targetDir, f)
+			}
+			if diff := cmp.Diff(gotFiles, testCase.wantFiles); diff != "" {
+				t.Fatal("extracted files don't match", diff)
+			}
+		})
+	}
+}
+
+func TestIsWasmDb(t *testing.T) {
+	testCases := []struct {
+		path string
+		want bool
+	}{
+		{"wasm", true},
+		{"wasm/", true},
+		{"wasm/something", true},
+		{"/wasm", true},
+		{"./wasm", true},
+		{"././wasm", true},
+		{"/./wasm", true},
+		{"WASM", true},
+		{"wAsM", true},
+		{"nitro/../wasm", true},
+		{"/nitro/../wasm", true},
+		{".//nitro/.//../wasm", true},
+		{"not-wasm", false},
+		{"l2chaindata/example@@", false},
+		{"somedir/wasm", false},
+	}
+	for _, testCase := range testCases {
+		name := fmt.Sprintf("%q", testCase.path)
+		t.Run(name, func(t *testing.T) {
+			got := isWasmDb(testCase.path)
+			if testCase.want != got {
+				t.Fatalf("want %v, but got %v", testCase.want, got)
+			}
+		})
+	}
 }
