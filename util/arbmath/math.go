@@ -29,6 +29,7 @@ func NextOrCurrentPowerOf2(value uint64) uint64 {
 
 // Log2ceil the log2 of the int, rounded up
 func Log2ceil(value uint64) uint64 {
+	// #nosec G115
 	return uint64(64 - bits.LeadingZeros64(value))
 }
 
@@ -228,8 +229,8 @@ func BigMulByFrac(value *big.Int, numerator, denominator int64) *big.Int {
 	return value
 }
 
-// BigMulByUfrac multiply a huge by a rational whose components are non-negative
-func BigMulByUfrac(value *big.Int, numerator, denominator uint64) *big.Int {
+// BigMulByUFrac multiply a huge by a rational whose components are non-negative
+func BigMulByUFrac(value *big.Int, numerator, denominator uint64) *big.Int {
 	value = new(big.Int).Set(value)
 	value.Mul(value, new(big.Int).SetUint64(numerator))
 	value.Div(value, new(big.Int).SetUint64(denominator))
@@ -407,6 +408,8 @@ func ApproxExpBasisPoints(value Bips, accuracy uint64) Bips {
 	if negative {
 		input = -value
 	}
+	// This cast is safe because input is always positive
+	// #nosec G115
 	x := uint64(input)
 	bips := uint64(OneInBips)
 

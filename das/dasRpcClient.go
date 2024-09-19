@@ -58,6 +58,7 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 }
 
 func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
+	// #nosec G115
 	timestamp := uint64(time.Now().Unix())
 	nChunks := uint64(len(message)) / c.chunkSize
 	lastChunkSize := uint64(len(message)) % c.chunkSize

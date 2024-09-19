@@ -103,6 +103,7 @@ func (atab *AddressTable) Decompress(buf []byte) (common.Address, uint64, error)
 		return common.Address{}, 0, err
 	}
 	if len(input) == 20 {
+		// #nosec G115
 		numBytesRead := uint64(rd.Size() - int64(rd.Len()))
 		return common.BytesToAddress(input), numBytesRead, nil
 	} else {

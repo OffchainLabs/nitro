@@ -362,12 +362,14 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	Require(t, err)
 
 	l2info.GenerateAccount("User2")
+	// #nosec G115
 	for i := genesis; i < uint64(txCount)+genesis; i++ {
 		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, common.Big1, nil)
 		err := client.SendTransaction(ctx, tx)
 		Require(t, err)
 		receipt, err := EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
+		// #nosec G115
 		if have, want := receipt.BlockNumber.Uint64(), uint64(i)+1; have != want {
 			Fatal(t, "internal test error - tx got included in unexpected block number, have:", have, "want:", want)
 		}
@@ -378,6 +380,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 		Fatal(t, "missing current block")
 	}
 	lastBlock := currentHeader.Number.Uint64()
+	// #nosec G115
 	if want := genesis + uint64(txCount); lastBlock < want {
 		Fatal(t, "internal test error - not enough blocks produced during preparation, want:", want, "have:", lastBlock)
 	}
@@ -391,6 +394,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	bc = builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 	gas := skipGas
 	blocks := skipBlocks
+	// #nosec G115
 	for i := genesis; i <= genesis+uint64(txCount); i++ {
 		block := bc.GetBlockByNumber(i)
 		if block == nil {
@@ -423,6 +427,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 			}
 		}
 	}
+	// #nosec G115
 	for i := genesis + 1; i <= genesis+uint64(txCount); i += i % 10 {
 		_, err = client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(i))
 		if err != nil {
