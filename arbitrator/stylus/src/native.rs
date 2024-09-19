@@ -33,7 +33,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 use wasmer::{
-    AsStoreMut, Function, FunctionEnv, Imports, Instance, Memory, Module, Pages, Store, Target,
+    imports, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages, Store, Target,
     TypedFunction, Value, WasmTypeList,
 };
 use wasmer_vm::VMExtern;
@@ -151,58 +151,68 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
     fn from_module(module: Module, mut store: Store, env: WasmEnv<D, E>) -> Result<Self> {
         let debug_funcs = env.compile.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
-        let mut imports = Imports::new();
         macro_rules! func {
-            ($rust_mod:path, $func:ident) => {{
-                use $rust_mod as rust_mod;
-                Function::new_typed_with_env(&mut store, &func_env, rust_mod::$func)
-            }};
-        }
-        macro_rules! define_imports {
-            ($($wasm_mod:literal => $rust_mod:path { $( $import:ident ),* $(,)? },)* $(,)?) => {
-                $(
-                    $(
-                        define_imports!(@@imports $wasm_mod, func!($rust_mod, $import), $import, "arbitrator_forward__");
-                    )*
-                )*
-            };
-            (@@imports $wasm_mod:literal, $func:expr, $import:ident, $($p:expr),*) => {
-                define_imports!(@imports $wasm_mod, $func, $import, $($p),*, "");
-            };
-            (@imports $wasm_mod:literal, $func:expr, $import:ident, $($p:expr),*) => {
-                $(
-                    imports.define($wasm_mod, concat!($p, stringify!($import)), $func);
-                )*
+            ($func:expr) => {
+                Function::new_typed_with_env(&mut store, &func_env, $func)
             };
         }
-        define_imports!(
-            "vm_hooks" => host {
-                read_args, write_result, exit_early,
-                storage_load_bytes32, storage_cache_bytes32, storage_flush_cache, transient_load_bytes32, transient_store_bytes32,
-                call_contract, delegate_call_contract, static_call_contract, create1, create2, read_return_data, return_data_size,
-                emit_log,
-                account_balance, account_code, account_codehash, account_code_size,
-                evm_gas_left, evm_ink_left,
-                block_basefee, chainid, block_coinbase, block_gas_limit, block_number, block_timestamp,
-                contract_address,
-                math_div, math_mod, math_pow, math_add_mod, math_mul_mod,
-                msg_reentrant, msg_sender, msg_value,
-                tx_gas_price, tx_ink_price, tx_origin,
-                pay_for_memory_grow,
-                native_keccak256,
+        let mut imports = imports! {
+            "vm_hooks" => {
+                "read_args" => func!(host::read_args),
+                "write_result" => func!(host::write_result),
+                "exit_early" => func!(host::exit_early),
+                "storage_load_bytes32" => func!(host::storage_load_bytes32),
+                "storage_cache_bytes32" => func!(host::storage_cache_bytes32),
+                "storage_flush_cache" => func!(host::storage_flush_cache),
+                "transient_load_bytes32" => func!(host::transient_load_bytes32),
+                "transient_store_bytes32" => func!(host::transient_store_bytes32),
+                "call_contract" => func!(host::call_contract),
+                "delegate_call_contract" => func!(host::delegate_call_contract),
+                "static_call_contract" => func!(host::static_call_contract),
+                "create1" => func!(host::create1),
+                "create2" => func!(host::create2),
+                "read_return_data" => func!(host::read_return_data),
+                "return_data_size" => func!(host::return_data_size),
+                "emit_log" => func!(host::emit_log),
+                "account_balance" => func!(host::account_balance),
+                "account_code" => func!(host::account_code),
+                "account_codehash" => func!(host::account_codehash),
+                "account_code_size" => func!(host::account_code_size),
+                "evm_gas_left" => func!(host::evm_gas_left),
+                "evm_ink_left" => func!(host::evm_ink_left),
+                "block_basefee" => func!(host::block_basefee),
+                "chainid" => func!(host::chainid),
+                "block_coinbase" => func!(host::block_coinbase),
+                "block_gas_limit" => func!(host::block_gas_limit),
+                "block_number" => func!(host::block_number),
+                "block_timestamp" => func!(host::block_timestamp),
+                "contract_address" => func!(host::contract_address),
+                "math_div" => func!(host::math_div),
+                "math_mod" => func!(host::math_mod),
+                "math_pow" => func!(host::math_pow),
+                "math_add_mod" => func!(host::math_add_mod),
+                "math_mul_mod" => func!(host::math_mul_mod),
+                "msg_reentrant" => func!(host::msg_reentrant),
+                "msg_sender" => func!(host::msg_sender),
+                "msg_value" => func!(host::msg_value),
+                "tx_gas_price" => func!(host::tx_gas_price),
+                "tx_ink_price" => func!(host::tx_ink_price),
+                "tx_origin" => func!(host::tx_origin),
+                "pay_for_memory_grow" => func!(host::pay_for_memory_grow),
+                "native_keccak256" => func!(host::native_keccak256),
             },
-        );
+        };
         if debug_funcs {
-            define_imports!(
-                "console" => host::console {
-                    log_txt,
-                    log_i32, log_i64, log_f32, log_f64,
-                    tee_i32, tee_i64, tee_f32, tee_f64,
-                },
-                "debug" => host::debug {
-                    null_host,
-                },
-            );
+            imports.define("console", "log_txt", func!(host::console_log_text));
+            imports.define("console", "log_i32", func!(host::console_log::<D, E, u32>));
+            imports.define("console", "log_i64", func!(host::console_log::<D, E, u64>));
+            imports.define("console", "log_f32", func!(host::console_log::<D, E, f32>));
+            imports.define("console", "log_f64", func!(host::console_log::<D, E, f64>));
+            imports.define("console", "tee_i32", func!(host::console_tee::<D, E, u32>));
+            imports.define("console", "tee_i64", func!(host::console_tee::<D, E, u64>));
+            imports.define("console", "tee_f32", func!(host::console_tee::<D, E, f32>));
+            imports.define("console", "tee_f64", func!(host::console_tee::<D, E, f64>));
+            imports.define("debug", "null_host", func!(host::null_host));
         }
         let instance = Instance::new(&mut store, &module, &imports)?;
         let exports = &instance.exports;
@@ -341,8 +351,86 @@ impl<D: DataReader, E: EvmApi<D>> StartlessMachine for NativeInstance<D, E> {
 }
 
 pub fn module(wasm: &[u8], compile: CompileConfig, target: Target) -> Result<Vec<u8>> {
-    let store = compile.store(target);
+    let mut store = compile.store(target);
     let module = Module::new(&store, wasm)?;
+    macro_rules! stub {
+        (u8 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> u8 { panic!("incomplete import") })
+        };
+        (u32 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> u32 { panic!("incomplete import") })
+        };
+        (u64 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> u64 { panic!("incomplete import") })
+        };
+        (f32 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> f32 { panic!("incomplete import") })
+        };
+        (f64 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> f64 { panic!("incomplete import") })
+        };
+        ($($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> () { panic!("incomplete import") })
+        };
+    }
+    let mut imports = imports! {
+        "vm_hooks" => {
+            "read_args" => stub!(|_: u32|),
+            "write_result" => stub!(|_: u32, _: u32|),
+            "exit_early" => stub!(|_: u32|),
+            "storage_load_bytes32" => stub!(|_: u32, _: u32|),
+            "storage_cache_bytes32" => stub!(|_: u32, _: u32|),
+            "storage_flush_cache" => stub!(|_: u32|),
+            "transient_load_bytes32" => stub!(|_: u32, _: u32|),
+            "transient_store_bytes32" => stub!(|_: u32, _: u32|),
+            "call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),
+            "delegate_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
+            "static_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
+            "create1" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32|),
+            "create2" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32, _: u32|),
+            "read_return_data" => stub!(u32 <- |_: u32, _: u32, _: u32|),
+            "return_data_size" => stub!(u32 <- ||),
+            "emit_log" => stub!(|_: u32, _: u32, _: u32|),
+            "account_balance" => stub!(|_: u32, _: u32|),
+            "account_code" => stub!(u32 <- |_: u32, _: u32, _: u32, _: u32|),
+            "account_codehash" => stub!(|_: u32, _: u32|),
+            "account_code_size" => stub!(u32 <- |_: u32|),
+            "evm_gas_left" => stub!(u64 <- ||),
+            "evm_ink_left" => stub!(u64 <- ||),
+            "block_basefee" => stub!(|_: u32|),
+            "chainid" => stub!(u64 <- ||),
+            "block_coinbase" => stub!(|_: u32|),
+            "block_gas_limit" => stub!(u64 <- ||),
+            "block_number" => stub!(u64 <- ||),
+            "block_timestamp" => stub!(u64 <- ||),
+            "contract_address" => stub!(|_: u32|),
+            "math_div" => stub!(|_: u32, _: u32|),
+            "math_mod" => stub!(|_: u32, _: u32|),
+            "math_pow" => stub!(|_: u32, _: u32|),
+            "math_add_mod" => stub!(|_: u32, _: u32, _: u32|),
+            "math_mul_mod" => stub!(|_: u32, _: u32, _: u32|),
+            "msg_reentrant" => stub!(u32 <- ||),
+            "msg_sender" => stub!(|_: u32|),
+            "msg_value" => stub!(|_: u32|),
+            "tx_gas_price" => stub!(|_: u32|),
+            "tx_ink_price" => stub!(u32 <- ||),
+            "tx_origin" => stub!(|_: u32|),
+            "pay_for_memory_grow" => stub!(|_: u16|),
+            "native_keccak256" => stub!(|_: u32, _: u32, _: u32|),
+        },
+    };
+    if compile.debug.debug_funcs {
+        imports.define("console", "log_txt", stub!(|_: u32, _: u32|));
+        imports.define("console", "log_i32", stub!(|_: u32|));
+        imports.define("console", "log_i64", stub!(|_: u64|));
+        imports.define("console", "log_f32", stub!(|_: f32|));
+        imports.define("console", "log_f64", stub!(|_: f64|));
+        imports.define("console", "tee_i32", stub!(u32 <- |_: u32|));
+        imports.define("console", "tee_i64", stub!(u64 <- |_: u64|));
+        imports.define("console", "tee_f32", stub!(f32 <- |_: f32|));
+        imports.define("console", "tee_f64", stub!(f64 <- |_: f64|));
+        imports.define("debug", "null_host", stub!(||));
+    }
 
     let module = module.serialize()?;
     Ok(module.to_vec())
