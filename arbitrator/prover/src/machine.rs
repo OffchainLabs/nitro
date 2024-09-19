@@ -19,7 +19,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{crypto, hostios::HOSTIOS, math, Bytes32, Color, DebugColor, PreimageType};
+use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
 use brotli::Dictionary;
 #[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
@@ -330,115 +330,36 @@ pub struct Module {
     pub(crate) extra_hash: Arc<Bytes32>,
 }
 
-#[cfg(feature = "native")]
-static FORWARDER_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/forwarder.wasm"));
-
 lazy_static! {
     static ref USER_IMPORTS: HashMap<String, AvailableImport> = {
         let mut imports = HashMap::default();
 
-        // 0-513 are internal
-        for (index, (name, ins, outs)) in HOSTIOS.iter().enumerate() {
-            let import = AvailableImport::new(FunctionType::new(ins.iter().map(|x|x.into()).collect::<Vec<_>>(), outs.iter().map(|x|x.into()).collect::<Vec<_>>()), 1, (index + 514).try_into().unwrap());
-            imports.insert(format!("vm_hooks__{name}"), import);
+        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+        let forward = binary::parse(forward, Path::new("forward")).unwrap();
+
+        for (name, &(export, kind)) in &forward.exports {
+            if kind == ExportKind::Func {
+                let ty = match forward.get_function(FunctionIndex::from_u32(export)) {
+                    Ok(ty) => ty,
+                    Err(error) => panic!("failed to read export {name}: {error:?}"),
+                };
+                let import = AvailableImport::new(ty, 1, export);
+                imports.insert(name.to_owned(), import);
+            }
         }
         imports
     };
 }
 
-trait ImportResolver: for<'a, 'b> Fn(&'a str, &'b str) -> Result<Function> + Sized {
-    fn compose(self, other: impl ImportResolver) -> impl ImportResolver {
-        move |module, name| {
-            self(module, name).or_else(|original_err| {
-                let mut result = other(module, name);
-                if result.is_err() {
-                    for err_layer in original_err.chain().rev() {
-                        result = result.wrap_err(format!("{err_layer}"));
-                    }
-                }
-                result
-            })
-        }
-    }
-
-    fn condition(self, condition: bool) -> impl ImportResolver {
-        move |module, name| {
-            if condition {
-                self(module, name)
-            } else {
-                bail!("resolver disabled")
-            }
-        }
-    }
-}
-
-impl<F: for<'a, 'b> Fn(&'a str, &'b str) -> Result<Function>> ImportResolver for F {}
-
 impl Module {
-    fn make_imports_resolver(
-        import_map: &HashMap<String, AvailableImport>,
-    ) -> impl ImportResolver + '_ {
-        move |module, name| {
-            let qualified_name = format!("{module}__{name}");
+    const FORWARDING_PREFIX: &'static str = "arbitrator_forward__";
 
-            let Some(import) = import_map.get(&qualified_name) else {
-                bail!("func not found {module} {name}")
-            };
-            let wavm = vec![
-                Instruction::simple(Opcode::InitFrame),
-                Instruction::with_data(
-                    Opcode::CrossModuleCall,
-                    pack_cross_module_call(import.module, import.func),
-                ),
-                Instruction::simple(Opcode::Return),
-            ];
-            Ok(Function::new_from_wavm(wavm, import.ty.clone(), vec![]))
-        }
-    }
-
-    fn make_forward_resolver(
-        import_map: &HashMap<String, AvailableImport>,
-    ) -> impl ImportResolver + '_ {
-        move |module, name| {
-            let qualified_name = format!("{module}__{name}");
-
-            let Some(import) = import_map.get(&qualified_name) else {
-                bail!("func not found {module} {name}")
-            };
-            let wavm = vec![
-                Instruction::simple(Opcode::InitFrame),
-                Instruction::with_data(
-                    Opcode::CrossModuleForward,
-                    pack_cross_module_call(import.module, import.func),
-                ),
-                Instruction::simple(Opcode::Return),
-            ];
-            Ok(Function::new_from_wavm(wavm, import.ty.clone(), vec![]))
-        }
-    }
-
-    fn hostio_resolver(module: &str, name: &str) -> Result<Function> {
-        if host::hostio_module_is_debug(module) {
-            return Self::notfound_resolver(module, name);
-        }
-        host::get_impl(module, name)
-    }
-
-    fn debug_resolver(module: &str, name: &str) -> Result<Function> {
-        if !host::hostio_module_is_debug(module) {
-            return Self::notfound_resolver(module, name);
-        }
-        host::get_impl(module, name)
-    }
-
-    fn notfound_resolver(module: &str, name: &str) -> Result<Function> {
-        bail!("import not found {module} {name}")
-    }
-
-    fn from_binary<R: ImportResolver>(
+    fn from_binary(
         bin: &WasmBinary,
-        import_resolver: R,
+        available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
+        allow_hostapi: bool,
+        debug_funcs: bool,
         stylus_data: Option<StylusData>,
     ) -> Result<Module> {
         let mut code = Vec::new();
@@ -450,18 +371,53 @@ impl Module {
         for import in &bin.imports {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];
+            let (forward, import_name) = match import.name.strip_prefix(Module::FORWARDING_PREFIX) {
+                Some(name) => (true, name),
+                None => (false, import.name),
+            };
 
-            let func = import_resolver(import.module, import.name)?;
+            let mut qualified_name = format!("{module}__{import_name}");
+            qualified_name = qualified_name.replace(&['/', '.', '-'] as &[char], "_");
 
+            let func = if let Some(import) = available_imports.get(&qualified_name) {
+                let call = match forward {
+                    true => Opcode::CrossModuleForward,
+                    false => Opcode::CrossModuleCall,
+                };
+                let wavm = vec![
+                    Instruction::simple(Opcode::InitFrame),
+                    Instruction::with_data(
+                        call,
+                        pack_cross_module_call(import.module, import.func),
+                    ),
+                    Instruction::simple(Opcode::Return),
+                ];
+                Function::new_from_wavm(wavm, import.ty.clone(), vec![])
+            } else if let Ok((hostio, debug)) = host::get_impl(import.module, import_name) {
+                ensure!(
+                    (debug && debug_funcs) || (!debug && allow_hostapi),
+                    "Host func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi} debug={debug}",
+                    import_name.red(),
+                    import.module.red(),
+                );
+                hostio
+            } else {
+                bail!(
+                    "No such import {} in {} for {}",
+                    import_name.red(),
+                    import.module.red(),
+                    bin_name.red()
+                )
+            };
             ensure!(
                 &func.ty == have_ty,
                 "Import {} for {} has different function signature than export.\nexpected {} in {}\nbut have {}",
-                import.name.red(), bin_name.red(), func.ty.red(), module.red(), have_ty.red(),
+                import_name.red(), bin_name.red(), func.ty.red(), module.red(), have_ty.red(),
             );
 
             func_type_idxs.push(import.offset);
             code.push(func);
-            host_call_hooks.push(Some((import.module.into(), import.name.into())));
+            host_call_hooks.push(Some((import.module.into(), import_name.into())));
         }
         func_type_idxs.extend(bin.functions.iter());
 
@@ -657,9 +613,10 @@ impl Module {
     ) -> Result<Module> {
         Self::from_binary(
             bin,
-            Module::make_imports_resolver(&USER_IMPORTS)
-                .compose(Module::debug_resolver.condition(debug_funcs)),
+            &USER_IMPORTS,
             &HashMap::default(),
+            false,
+            debug_funcs,
             stylus_data,
         )
     }
@@ -1270,7 +1227,6 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
-        with_forwarder: bool,
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source, binary_path)
@@ -1296,7 +1252,6 @@ impl Machine {
             inbox_contents,
             preimage_resolver,
             None,
-            with_forwarder,
         )
     }
 
@@ -1326,7 +1281,6 @@ impl Machine {
             HashMap::default(),
             Arc::new(|_, _, _| panic!("tried to read preimage")),
             Some(stylus_data),
-            false,
         )?;
 
         let footprint: u32 = stylus_data.footprint.into();
@@ -1374,7 +1328,6 @@ impl Machine {
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
         stylus_data: Option<StylusData>,
-        with_forwarder: bool,
     ) -> Result<Machine> {
         use ArbValueType::*;
 
@@ -1382,19 +1335,25 @@ impl Machine {
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
+        let main_module_index = u32::try_from(modules.len() + libraries.len())?;
 
-        let forwarder = if with_forwarder {
-            #[cfg(not(feature = "native"))]
-            bail!("forwarder not supported without native");
-
-            #[cfg(feature = "native")]
-            Some(parse(FORWARDER_WASM, Path::new("forwarder"))?)
-        } else {
-            None
-        };
+        // make the main module's exports available to libraries
+        for (name, &(export, kind)) in &bin.exports {
+            if kind == ExportKind::Func {
+                let index: usize = export.try_into()?;
+                if let Some(index) = index.checked_sub(bin.imports.len()) {
+                    let ty: usize = bin.functions[index].try_into()?;
+                    let ty = bin.types[ty].clone();
+                    available_imports.insert(
+                        format!("env__wavm_guest_call__{name}"),
+                        AvailableImport::new(ty, main_module_index, export),
+                    );
+                }
+            }
+        }
 
         // collect all the library exports in advance so they can use each other's
-        for (index, lib) in forwarder.iter().chain(libraries.iter()).enumerate() {
+        for (index, lib) in libraries.iter().enumerate() {
             let module = 1 + index as u32; // off by one due to the entry point
             for (name, &(export, kind)) in &lib.exports {
                 if kind == ExportKind::Func {
@@ -1402,57 +1361,54 @@ impl Machine {
                         Ok(ty) => ty,
                         Err(error) => bail!("failed to read export {name}: {error}"),
                     };
-                    let import = AvailableImport::new(ty.clone(), module, export);
+                    let import = AvailableImport::new(ty, module, export);
                     available_imports.insert(name.to_owned(), import);
-                    if let Ok(op) = name.parse::<FloatInstruction>() {
-                        let mut sig = op.signature();
-                        // wavm codegen takes care of effecting this type change at callsites
-                        for ty in sig.inputs.iter_mut().chain(sig.outputs.iter_mut()) {
-                            if *ty == F32 {
-                                *ty = I32;
-                            } else if *ty == F64 {
-                                *ty = I64;
-                            }
-                        }
-                        ensure!(
-                            ty == sig,
-                            "Wrong type for floating point impl {} expecting {} but got {}",
-                            name.red(),
-                            sig.red(),
-                            ty.red()
-                        );
-                        floating_point_impls.insert(op, (module, export));
-                    }
                 }
             }
         }
 
-        if let Some(lib) = forwarder {
-            modules.push(Module::from_binary(
-                &lib,
-                Module::make_forward_resolver(&available_imports),
-                &floating_point_impls,
-                None,
-            )?);
-        }
-
-        for lib in libraries.iter() {
-            modules.push(Module::from_binary(
+        for lib in libraries {
+            let module = Module::from_binary(
                 lib,
-                Module::hostio_resolver
-                    .compose(Module::debug_resolver.condition(debug_funcs))
-                    .compose(Module::make_imports_resolver(&available_imports)),
+                &available_imports,
                 &floating_point_impls,
+                true,
+                debug_funcs,
                 None,
-            )?);
+            )?;
+            for (name, &func) in &*module.func_exports {
+                let ty = module.func_types[func as usize].clone();
+                if let Ok(op) = name.parse::<FloatInstruction>() {
+                    let mut sig = op.signature();
+                    // wavm codegen takes care of effecting this type change at callsites
+                    for ty in sig.inputs.iter_mut().chain(sig.outputs.iter_mut()) {
+                        if *ty == F32 {
+                            *ty = I32;
+                        } else if *ty == F64 {
+                            *ty = I64;
+                        }
+                    }
+                    ensure!(
+                        ty == sig,
+                        "Wrong type for floating point impl {} expecting {} but got {}",
+                        name.red(),
+                        sig.red(),
+                        ty.red()
+                    );
+                    floating_point_impls.insert(op, (modules.len() as u32, func));
+                }
+            }
+            modules.push(module);
         }
 
+        // Shouldn't be necessary, but to be safe, don't allow the main binary to import its own guest calls
+        available_imports.retain(|_, i| i.module as usize != modules.len());
         modules.push(Module::from_binary(
             &bin,
-            Module::make_imports_resolver(&available_imports)
-                .compose(Module::hostio_resolver.condition(allow_hostapi_from_main))
-                .compose(Module::debug_resolver.condition(debug_funcs)),
+            &available_imports,
             &floating_point_impls,
+            allow_hostapi_from_main,
+            debug_funcs,
             stylus_data,
         )?);
 
