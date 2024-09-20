@@ -425,8 +425,9 @@ impl Module {
         gas: &mut u64,
     ) -> Result<(Self, StylusData)> {
         let compile = CompileConfig::version(stylus_version, debug);
-        let (bin, stylus_data) = WasmBinary::parse_user(wasm, page_limit, &compile, codehash)
-            .wrap_err("failed to parse wasm")?;
+        let (bin, stylus_data) =
+            WasmBinary::parse_user(wasm, arbos_version_for_gas, page_limit, &compile, codehash)
+                .wrap_err("failed to parse wasm")?;
 
         if arbos_version_for_gas > 0 {
             // converts a number of microseconds to gas
