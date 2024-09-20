@@ -22,6 +22,7 @@ type evmDataHandler uint64
 
 //go:wasmimport programs create_evm_data
 func createEvmData(
+	arbosVersion uint64,
 	blockBaseFee unsafe.Pointer,
 	chainid uint64,
 	blockCoinbase unsafe.Pointer,
@@ -45,6 +46,7 @@ func (params *ProgParams) createHandler() stylusConfigHandler {
 
 func (data *EvmData) createHandler() evmDataHandler {
 	return createEvmData(
+		data.arbosVersion,
 		arbutil.SliceToUnsafePointer(data.blockBasefee[:]),
 		data.chainId,
 		arbutil.SliceToUnsafePointer(data.blockCoinbase[:]),

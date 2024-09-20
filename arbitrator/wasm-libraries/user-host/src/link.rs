@@ -243,6 +243,7 @@ pub unsafe extern "C" fn programs__create_stylus_config(
 ///
 #[no_mangle]
 pub unsafe extern "C" fn programs__create_evm_data(
+    arbos_version: u64,
     block_basefee_ptr: GuestPtr,
     chainid: u64,
     block_coinbase_ptr: GuestPtr,
@@ -259,6 +260,7 @@ pub unsafe extern "C" fn programs__create_evm_data(
     reentrant: u32,
 ) -> u64 {
     let evm_data = EvmData {
+        arbos_version,
         block_basefee: read_bytes32(block_basefee_ptr),
         cached: cached != 0,
         chainid,
