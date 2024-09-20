@@ -34,7 +34,23 @@ pub fn activate(
     err_buf: GuestPtr,
     err_buf_len: u32,
 ) -> Result<u32, Escape> {
-    activate_v2(env, wasm_ptr, wasm_size, pages_ptr, asm_estimate_ptr, init_cost_ptr, cached_init_cost_ptr, stylus_version, DEFAULT_STYLUS_ARBOS_VERSION, debug, codehash, module_hash_ptr, gas_ptr, err_buf, err_buf_len)
+    activate_v2(
+        env,
+        wasm_ptr,
+        wasm_size,
+        pages_ptr,
+        asm_estimate_ptr,
+        init_cost_ptr,
+        cached_init_cost_ptr,
+        stylus_version,
+        DEFAULT_STYLUS_ARBOS_VERSION,
+        debug,
+        codehash,
+        module_hash_ptr,
+        gas_ptr,
+        err_buf,
+        err_buf_len,
+    )
 }
 
 /// activates a user program
