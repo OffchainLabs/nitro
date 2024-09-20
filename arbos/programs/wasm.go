@@ -36,7 +36,7 @@ type rustConfig byte
 type rustModule byte
 type rustEvmData byte
 
-//go:wasmimport programs activate
+//go:wasmimport programs activate_v2
 func programActivate(
 	wasm_ptr unsafe.Pointer,
 	wasm_size uint32,
