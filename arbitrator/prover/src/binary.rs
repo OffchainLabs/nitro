@@ -681,7 +681,7 @@ impl<'a> WasmBinary<'a> {
             limit!(65536, code.expr.len(), "opcodes in func body");
         }
 
-        if arbos_version_for_gas > ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+        if arbos_version_for_gas >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
             limit!(513, bin.imports.len(), "imports")
         }
 
