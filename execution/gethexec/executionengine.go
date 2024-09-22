@@ -150,7 +150,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
+func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	localTarget := rawdb.LocalTarget()
 	targets := targetConfig.WasmTargets()
 	var nativeSet bool
@@ -186,7 +186,7 @@ func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusT
 	if rustCacheSize != 0 {
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
-	if err := populateStylusTargetCache(targetConfig); err != nil {
+	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 	return nil
