@@ -103,6 +103,7 @@ func activateProgramInternal(
 		}
 		return nil, nil, err
 	}
+	hash := moduleHash.toHash()
 	targets := db.Database().WasmTargets()
 	type result struct {
 		target ethdb.WasmTarget
@@ -143,10 +144,17 @@ func activateProgramInternal(
 		}
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("compilation failed for one or more targets: %w", err)
+		log.Error(
+			"Compilation failed for one or more targets despite activation succeeding",
+			"address", addressForLogging,
+			"codeHash", codeHash,
+			"moduleHash", hash,
+			"targets", targets,
+			"err", err,
+		)
+		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding: %v", addressForLogging, err))
 	}
 
-	hash := moduleHash.toHash()
 	info := &activationInfo{
 		moduleHash:    hash,
 		initGas:       uint16(stylusData.init_cost),
