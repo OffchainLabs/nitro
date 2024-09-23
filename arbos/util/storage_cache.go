@@ -4,7 +4,9 @@
 package util
 
 import (
+	"bytes"
 	"github.com/ethereum/go-ethereum/common"
+	"slices"
 )
 
 type storageCacheEntry struct {
@@ -67,6 +69,10 @@ func (s *storageCache) Flush() []storageCacheStores {
 			})
 		}
 	}
+	sortFunc := func(a, b storageCacheStores) int {
+		return bytes.Compare(a.Key.Bytes(), b.Key.Bytes())
+	}
+	slices.SortFunc(stores, sortFunc)
 	return stores
 }
 
