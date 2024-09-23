@@ -423,6 +423,7 @@ func extractSnapshot(archive string, location string, importWasm bool) error {
 	if err != nil {
 		return fmt.Errorf("couln't open init '%v' archive: %w", archive, err)
 	}
+	defer reader.Close()
 	stat, err := reader.Stat()
 	if err != nil {
 		return err
@@ -559,7 +560,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 	return chainDb, l2BlockChain, nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, targetConfig *gethexec.StylusTargetConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, config.Persistent.Ancient, "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
@@ -584,7 +585,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
 					return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 				}
-				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
+				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1, targetConfig.WasmTargets())
 				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
 				if err != nil {
 					return nil, nil, err
@@ -659,7 +660,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
 		return nil, nil, err
 	}
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1, targetConfig.WasmTargets())
 	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
 	if err != nil {
 		return nil, nil, err
@@ -875,6 +876,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 		localWg.Add(1)
 		go func() {
 			batch := chainDb.NewBatch()
+			// #nosec G115
 			for blockNum := uint64(thread); blockNum <= lastBlock; blockNum += uint64(threads) {
 				blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
 				block := rawdb.ReadBlock(chainDb, blockHash, blockNum)

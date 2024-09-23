@@ -265,6 +265,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			for j := 0; j < numMessages; j++ {
 				sourceNum := rand.Int() % len(state.accounts)
 				source := state.accounts[sourceNum]
+				// #nosec G115
 				amount := new(big.Int).SetUint64(uint64(rand.Int()) % state.balances[source].Uint64())
 				reserveAmount := new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei * 100000000)
 				if state.balances[source].Cmp(new(big.Int).Add(amount, reserveAmount)) < 0 {
@@ -314,6 +315,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			for j := 0; ; j++ {
 				haveNonce, err := builder.L1.Client.PendingNonceAt(ctx, seqOpts.From)
 				Require(t, err)
+				// #nosec G115
 				if haveNonce == uint64(seqNonce) {
 					break
 				}
@@ -380,6 +382,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				t.Errorf("Transaction: %v was not refunded, balance diff: %v, cost: %v", tx.Hash(), diff, txCost)
 			}
 
+			// #nosec G115
 			state.l2BlockNumber += uint64(numMessages)
 			state.l1BlockNumber = txRes.BlockNumber.Uint64()
 			blockStates = append(blockStates, state)

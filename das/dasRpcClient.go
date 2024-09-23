@@ -82,6 +82,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		rpcClientStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
+	// #nosec G115
 	timestamp := uint64(start.Unix())
 	nChunks := uint64(len(message)) / c.chunkSize
 	lastChunkSize := uint64(len(message)) % c.chunkSize
