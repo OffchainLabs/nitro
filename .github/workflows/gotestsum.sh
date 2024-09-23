@@ -12,7 +12,6 @@ tags=""
 run=""
 race=false
 cover=false
-write_full_log=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -39,10 +38,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cover)
       cover=true
-      shift
-      ;;
-    --write-full-log)
-      write_full_log=true
       shift
       ;;
     *)
