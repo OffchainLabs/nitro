@@ -76,9 +76,7 @@ for package in $packages; do
     cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
   fi
 
-  if [ "$write_full_log" == true ]; then
-    cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
-  fi
+  cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
 
   echo ""
   echo running tests for "$package"

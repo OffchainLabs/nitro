@@ -144,35 +144,43 @@ jobs:
         if: matrix.test-mode == 'defaults'
         env:
           TEST_STATE_SCHEME: path
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m --cover --write-full-log
+        run: |
+          echo "Running tests with Path Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m --cover
 
       - name: run tests without race detection and hash state scheme
         if: matrix.test-mode == 'defaults'
         env:
           TEST_STATE_SCHEME: hash
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m
+        run: |
+          echo "Running tests with Hash Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m
 
       - name: run tests with race detection and hash state scheme
         if: matrix.test-mode == 'race'
         env:
           TEST_STATE_SCHEME: hash
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m
+        run: |
+          echo "Running tests with Hash Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: |
+          echo "Running redis tests" >> full.log
+          TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --cover --write-full-log
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --cover
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramArbitrator --timeout 60m --cover --write-full-log
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
 
       - name: run long stylus tests
         if: matrix.test-mode == 'long'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover --write-full-log
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v3
