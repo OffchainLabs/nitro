@@ -103,6 +103,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		rpcClientStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
+	// #nosec G115
 	timestamp := uint64(start.Unix())
 	nChunks := uint64(len(message)) / c.chunkSize
 	lastChunkSize := uint64(len(message)) % c.chunkSize
@@ -189,6 +190,7 @@ func (c *DASRPCClient) sendChunk(ctx context.Context, batchId, i uint64, chunk [
 }
 
 func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
+	// #nosec G115
 	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
 
 	reqSig, err := applyDasSigner(c.signer, message, timeout)

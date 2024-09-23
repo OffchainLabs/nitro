@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -71,7 +72,7 @@ func activateProgramInternal(
 	version uint16,
 	debug bool,
 	gasLeft *uint64,
-) (*activationInfo, map[rawdb.Target][]byte, error) {
+) (*activationInfo, map[ethdb.WasmTarget][]byte, error) {
 	output := &rustBytes{}
 	moduleHash := &bytes32{}
 	stylusData := &C.StylusData{}
@@ -99,25 +100,50 @@ func activateProgramInternal(
 		}
 		return nil, nil, err
 	}
-	target := rawdb.LocalTarget()
-	status_asm := C.stylus_compile(
-		goSlice(wasm),
-		u16(version),
-		cbool(debug),
-		goSlice([]byte(target)),
-		output,
-	)
-	asm := output.intoBytes()
-	if status_asm != 0 {
-		return nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
+	targets := db.Database().WasmTargets()
+	type result struct {
+		target ethdb.WasmTarget
+		asm    []byte
+		err    error
 	}
-	asmMap := map[rawdb.Target][]byte{
-		rawdb.TargetWavm: module,
-		target:           asm,
+	results := make(chan result, len(targets))
+	for _, target := range targets {
+		target := target
+		if target == rawdb.TargetWavm {
+			results <- result{target, module, nil}
+		} else {
+			go func() {
+				output := &rustBytes{}
+				status_asm := C.stylus_compile(
+					goSlice(wasm),
+					u16(version),
+					cbool(debug),
+					goSlice([]byte(target)),
+					output,
+				)
+				asm := output.intoBytes()
+				if status_asm != 0 {
+					results <- result{target, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))}
+					return
+				}
+				results <- result{target, asm, nil}
+			}()
+		}
+	}
+	asmMap := make(map[ethdb.WasmTarget][]byte, len(targets))
+	for range targets {
+		res := <-results
+		if res.err != nil {
+			err = errors.Join(res.err, err)
+		} else {
+			asmMap[res.target] = res.asm
+		}
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("compilation failed for one or more targets: %w", err)
 	}
 
 	hash := moduleHash.toHash()
-
 	info := &activationInfo{
 		moduleHash:    hash,
 		initGas:       uint16(stylusData.init_cost),
@@ -171,7 +197,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 	}
 	asm, exists := asmMap[localTarget]
 	if !exists {
-		var availableTargets []rawdb.Target
+		var availableTargets []ethdb.WasmTarget
 		for target := range asmMap {
 			availableTargets = append(availableTargets, target)
 		}
@@ -202,12 +228,8 @@ func callProgram(
 		panic("missing asm")
 	}
 
-	if db, ok := db.(*state.StateDB); ok {
-		targets := []rawdb.Target{
-			rawdb.TargetWavm,
-			rawdb.LocalTarget(),
-		}
-		db.RecordProgram(targets, moduleHash)
+	if stateDb, ok := db.(*state.StateDB); ok {
+		stateDb.RecordProgram(db.Database().WasmTargets(), moduleHash)
 	}
 
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
@@ -289,9 +311,9 @@ func ResizeWasmLruCache(size uint32) {
 }
 
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
-const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2"
+const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2+lzcnt+bmi"
 
-func SetTarget(name rawdb.Target, description string, native bool) error {
+func SetTarget(name ethdb.WasmTarget, description string, native bool) error {
 	output := &rustBytes{}
 	status := userStatus(C.stylus_target_set(
 		goSlice([]byte(name)),

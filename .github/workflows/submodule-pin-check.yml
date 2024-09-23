@@ -1,21 +1,69 @@
-name: Submodule Pin Check
+name: Merge Checks
 
 on:
-  pull_request:
+  pull_request_target:
     branches: [ master ]
     types: [synchronize, opened, reopened]
 
+permissions:
+  statuses: write
+
 jobs:
   submodule-pin-check:
-    name: Submodule Pin Check
+    name: Check Submodule Pin
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: recursive
+          submodules: true
+          ref: "${{ github.event.pull_request.merge_commit_sha }}"
 
       - name: Check all submodules are ancestors of origin/HEAD or configured branch
-        run: ${{ github.workspace }}/.github/workflows/submodule-pin-check.sh
+        run: |
+          status_state="pending"
+          declare -Ar exceptions=(
+            [contracts]=origin/develop
+            [nitro-testnode]=origin/master
+            
+            #TODO Rachel to check these are the intended branches.
+            [arbitrator/langs/c]=origin/vm-storage-cache
+            [arbitrator/tools/wasmer]=origin/adopt-v4.2.8
+          )
+          divergent=0
+          for mod in `git submodule --quiet foreach 'echo $name'`; do
+            branch=origin/HEAD
+            if [[ -v exceptions[$mod] ]]; then
+              branch=${exceptions[$mod]}
+            fi
+            
+            if ! git -C $mod merge-base --is-ancestor HEAD $branch; then
+              echo $mod diverges from $branch
+              divergent=1
+            fi
+          done
+          if [ $divergent -eq 0 ]; then
+            status_state="success"
+          else
+            resp="$(curl -sSL --fail-with-body \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/${{ github.event.pull_request.head.sha }}/statuses")"
 
+            if ! jq -e '.[] | select(.context == "Submodule Pin Check")' > /dev/null <<< "$resp"; then
+              # Submodule pin check is failling and no status exists
+              # Keep it without a status to keep the green checkmark appearing
+              # Otherwise, the commit and PR's CI will appear to be indefinitely pending
+              # Merging will still be blocked until the required status appears
+              exit 0
+            fi
+          fi
+          curl -sSL --fail-with-body \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/${{ github.event.pull_request.head.sha }}" \
+            -d '{"context":"Submodule Pin Check","state":"'"$status_state"'"}'

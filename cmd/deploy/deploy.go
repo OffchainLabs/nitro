@@ -61,7 +61,6 @@ func main() {
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
-	isUsingFeeToken := flag.Bool("isUsingFeeToken", false, "true if the chain uses custom fee token")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	maxDataSize := new(big.Int).SetUint64(*maxDataSizeUint)
@@ -190,7 +189,6 @@ func main() {
 		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 		nativeToken,
 		maxDataSize,
-		*isUsingFeeToken,
 	)
 	if err != nil {
 		flag.Usage()

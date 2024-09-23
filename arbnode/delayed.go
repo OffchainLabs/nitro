@@ -215,7 +215,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 	}
 
 	messages := make([]*DelayedInboxMessage, 0, len(logs))
-	var lastParentChainBlockNumber uint64
+	var lastParentChainBlockHash common.Hash
 	var lastL1BlockNumber uint64
 	for _, parsedLog := range parsedLogs {
 		msgKey := common.BigToHash(parsedLog.MessageIndex)
@@ -228,17 +228,17 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		}
 
 		requestId := common.BigToHash(parsedLog.MessageIndex)
-		parentChainBlockNumber := parsedLog.Raw.BlockNumber
+		parentChainBlockHash := parsedLog.Raw.BlockHash
 		var l1BlockNumber uint64
-		if lastParentChainBlockNumber == parentChainBlockNumber && lastParentChainBlockNumber > 0 {
+		if lastParentChainBlockHash == parentChainBlockHash && lastParentChainBlockHash != (common.Hash{}) {
 			l1BlockNumber = lastL1BlockNumber
 		} else {
-			var err error
-			l1BlockNumber, err = arbutil.CorrespondingL1BlockNumber(ctx, b.client, parentChainBlockNumber)
+			parentChainHeader, err := b.client.HeaderByHash(ctx, parentChainBlockHash)
 			if err != nil {
 				return nil, err
 			}
-			lastParentChainBlockNumber = parentChainBlockNumber
+			l1BlockNumber = arbutil.ParentHeaderToL1BlockNumber(parentChainHeader)
+			lastParentChainBlockHash = parentChainBlockHash
 			lastL1BlockNumber = l1BlockNumber
 		}
 		msg := &DelayedInboxMessage{

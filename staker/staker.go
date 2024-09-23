@@ -268,7 +268,6 @@ type Staker struct {
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
 	fatalErr                chan<- error
-	enableFastConfirmation  bool
 	fastConfirmSafe         *FastConfirmSafe
 }
 
@@ -352,6 +351,7 @@ func (s *Staker) Initialize(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		// #nosec G115
 		stakerLatestStakedNodeGauge.Update(int64(latestStaked))
 		if latestStaked == 0 {
 			return nil
@@ -362,7 +362,10 @@ func (s *Staker) Initialize(ctx context.Context) error {
 			return err
 		}
 
-		return s.blockValidator.InitAssumeValid(stakedInfo.AfterState().GlobalState)
+		err = s.blockValidator.InitAssumeValid(stakedInfo.AfterState().GlobalState)
+		if err != nil {
+			return err
+		}
 	}
 	return s.setupFastConfirmation(ctx)
 }
@@ -389,9 +392,9 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("getting rollup fast confirmer address: %w", err)
 	}
+	log.Info("Setting up fast confirmation", "wallet", walletAddress, "fastConfirmer", fastConfirmer)
 	if fastConfirmer == walletAddress {
 		// We can directly fast confirm nodes
-		s.enableFastConfirmation = true
 		return nil
 	} else if fastConfirmer == (common.Address{}) {
 		// No fast confirmer enabled
@@ -418,13 +421,12 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 	if !isOwner {
 		return fmt.Errorf("staker wallet address %v is not an owner of the fast confirm safe %v", walletAddress, fastConfirmer)
 	}
-	s.enableFastConfirmation = true
 	s.fastConfirmSafe = fastConfirmSafe
 	return nil
 }
 
 func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint64, hash common.Hash) error {
-	if !s.enableFastConfirmation {
+	if !s.config().EnableFastConfirmation {
 		return nil
 	}
 	nodeInfo, err := s.rollup.LookupNode(ctx, number)
@@ -435,7 +437,7 @@ func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint6
 }
 
 func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash, nodeHash common.Hash) error {
-	if !s.enableFastConfirmation {
+	if !s.config().EnableFastConfirmation {
 		return nil
 	}
 	if s.fastConfirmSafe != nil {
@@ -445,6 +447,7 @@ func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash,
 	if err != nil {
 		return err
 	}
+	log.Info("Fast confirming node with wallet", "wallet", auth.From, "nodeHash", nodeHash)
 	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
 	return err
 }
@@ -570,6 +573,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		if err != nil && ctx.Err() == nil {
 			log.Error("staker: error checking latest staked", "err", err)
 		}
+		// #nosec G115
 		stakerLatestStakedNodeGauge.Update(int64(staked))
 		if stakedGlobalState != nil {
 			for _, notifier := range s.stakedNotifiers {
@@ -585,6 +589,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 				log.Error("staker: error checking latest confirmed", "err", err)
 			}
 		}
+		// #nosec G115
 		stakerLatestConfirmedNodeGauge.Update(int64(confirmed))
 		if confirmedGlobalState != nil {
 			for _, notifier := range s.confirmedNotifiers {
@@ -726,6 +731,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting latest staked node of own wallet %v: %w", walletAddressOrZero, err)
 	}
+	// #nosec G115
 	stakerLatestStakedNodeGauge.Update(int64(latestStakedNodeNum))
 	if rawInfo != nil {
 		rawInfo.LatestStakedNode = latestStakedNodeNum
@@ -798,13 +804,13 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				confirmedCorrect = stakedOnNode
 			}
 			if confirmedCorrect {
+				log.Info("trying to fast confirm previous node", "node", firstUnresolvedNode, "nodeHash", nodeInfo.NodeHash)
 				err = s.tryFastConfirmationNodeNumber(ctx, firstUnresolvedNode, nodeInfo.NodeHash)
 				if err != nil {
 					return nil, err
 				}
 				if s.builder.BuildingTransactionCount() > 0 {
 					// Try to fast confirm previous nodes before working on new ones
-					log.Info("fast confirming previous node", "node", firstUnresolvedNode)
 					return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.gasRefunder)
 				}
 			}

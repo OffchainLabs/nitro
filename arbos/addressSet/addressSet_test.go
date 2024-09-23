@@ -316,6 +316,7 @@ func checkIfRectifyMappingWorks(t *testing.T, aset *AddressSet, owners []common.
 			Fail(t, "RectifyMapping did not fix the mismatch")
 		}
 
+		// #nosec G115
 		if clearList && int(size(t, aset)) != index+1 {
 			Fail(t, "RectifyMapping did not fix the mismatch")
 		}
