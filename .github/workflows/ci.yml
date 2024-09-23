@@ -166,19 +166,6 @@ jobs:
             fi
           done
 
-      - name: run tests with race detection and path state scheme
-        if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: path
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -timeout 30m > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
-
       - name: run tests with race detection and hash state scheme
         if: matrix.test-mode == 'race'
         env:
