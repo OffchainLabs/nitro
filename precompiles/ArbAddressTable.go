@@ -13,7 +13,6 @@ type ArbAddressTable struct {
 	Address addr // 0x66
 }
 
-// TODO: add test
 // AddressExists checks if an address exists in the table
 func (con ArbAddressTable) AddressExists(c ctx, evm mech, addr addr) (bool, error) {
 	return c.State.AddressTable().AddressExists(addr)
