@@ -18,9 +18,10 @@ type MessageWithMetadata struct {
 	DelayedMessagesRead uint64             `json:"delayedMessagesRead"`
 }
 
-type MessageWithMetadataAndBlockHash struct {
+type MessageWithMetadataAndBlockInfo struct {
 	MessageWithMeta MessageWithMetadata
 	BlockHash       *common.Hash
+	TimeBoosted     []byte
 }
 
 var EmptyTestMessageWithMetadata = MessageWithMetadata{

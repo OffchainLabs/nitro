@@ -7,7 +7,8 @@ import (
 )
 
 const (
-	V1 = 1
+	V1                 = 1
+	TimeboostedVersion = byte(0)
 )
 
 // BroadcastMessage is the base message type for messages to send over the network.
@@ -36,6 +37,7 @@ type BroadcastFeedMessage struct {
 	Message        arbostypes.MessageWithMetadata `json:"message"`
 	BlockHash      *common.Hash                   `json:"blockHash,omitempty"`
 	Signature      []byte                         `json:"signature"`
+	Timeboosted    []byte                         `json:"timeboosted"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`
 }
@@ -50,6 +52,16 @@ func (m *BroadcastFeedMessage) UpdateCumulativeSumMsgSize(val uint64) {
 
 func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {
 	return m.Message.Hash(m.SequenceNumber, chainId)
+}
+
+// IsTxTimeboosted given a tx's index in the block returns whether the tx was timeboosted or not.
+// Currently used in testing
+func (m *BroadcastFeedMessage) IsTxTimeboosted(txIndex int) bool {
+	maxTxCount := (len(m.Timeboosted) - 1) * 8
+	if txIndex >= maxTxCount {
+		return false
+	}
+	return m.Timeboosted[1+(txIndex/8)]&(1<<(txIndex%8)) != 0
 }
 
 type ConfirmedSequenceNumberMessage struct {

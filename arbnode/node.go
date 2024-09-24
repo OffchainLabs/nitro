@@ -1020,8 +1020,8 @@ func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, 
 	return n.InboxReader.GetFinalizedMsgCount(ctx)
 }
 
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult) error {
-	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult)
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, timeboosted []byte) error {
+	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, timeboosted)
 }
 
 func (n *Node) ExpectChosenSequencer() error {

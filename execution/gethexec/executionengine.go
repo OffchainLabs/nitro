@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -215,7 +216,7 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	if count == 0 {
 		return nil, errors.New("cannot reorg out genesis")
 	}
@@ -378,7 +379,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 		}
 		hooks := arbos.NoopSequencingHooks()
 		hooks.DiscardInvalidTxsEarly = true
-		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, txes, hooks)
+		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, txes, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
@@ -415,17 +416,17 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 	}
 }
 
-func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]bool) (*types.Block, error) {
 	return s.sequencerWrapper(func() (*types.Block, error) {
 		hooks.TxErrors = nil
-		return s.sequenceTransactionsWithBlockMutex(header, txes, hooks)
+		return s.sequenceTransactionsWithBlockMutex(header, txes, hooks, timeboostedTxs)
 	})
 }
 
 // SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
 // CPU profiling enabled. If the block creation takes longer than 2 seconds, it
 // keeps both and prints out filenames in an error log line.
-func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]bool) (*types.Block, error) {
 	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
 	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
 		log.Error("Starting CPU profiling", "error", err)
@@ -434,7 +435,7 @@ func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L
 		log.Error("Starting tracing", "error", err)
 	}
 	start := time.Now()
-	res, err := s.SequenceTransactions(header, txes, hooks)
+	res, err := s.SequenceTransactions(header, txes, hooks, timeboostedTxs)
 	elapsed := time.Since(start)
 	pprof.StopCPUProfile()
 	trace.Stop()
@@ -460,7 +461,7 @@ func writeAndLog(pprof, trace *bytes.Buffer) {
 	log.Info("Transactions sequencing took longer than 2 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
-func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]bool) (*types.Block, error) {
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err
@@ -527,7 +528,8 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult)
+	timeboosted := s.timeboostedFromBlock(block, timeboostedTxs)
+	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult, timeboosted)
 	if err != nil {
 		return nil, err
 	}
@@ -541,6 +543,34 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	s.cacheL1PriceDataOfMsg(pos, receipts, block, false)
 
 	return block, nil
+}
+
+// timeboostedFromBlock returns timeboosted byte array which says whether a transaction in the block was timeboosted
+// or not. The first byte of timeboosted byte array is reserved to indicate the version,
+// starting from the second byte, (N)th bit would represent if (N)th tx is timeboosted or not, 1 means yes and 0 means no
+// timeboosted[index / 8 + 1] & (1 << (index % 8)) != 0; where index = (N - 1), implies whether (N)th tx in a block is timeboosted
+// note that number of txs in a block will always lag behind (len(timeboosted) - 1) * 8 but it wont lag more than a value of 7
+func (s *ExecutionEngine) timeboostedFromBlock(block *types.Block, timeboostedTxs map[common.Hash]bool) []byte {
+	timeboosted := []byte{}
+	if len(timeboostedTxs) == 0 {
+		timeboosted = append(timeboosted, byte(0)) // first byte represents version, for now its 0
+		for i := 0; i < len(block.Transactions()); i += 8 {
+			timeboosted = append(timeboosted, byte(0))
+		}
+		return timeboosted
+	}
+	curr := byte(0) // first byte represents version, for now its 0
+	for idx, tx := range block.Transactions() {
+		posInCurr := idx % 8
+		if posInCurr == 0 {
+			timeboosted = append(timeboosted, curr)
+			curr = byte(0)
+		}
+		if _, ok := timeboostedTxs[tx.Hash()]; ok {
+			curr |= (1 << posInCurr)
+		}
+	}
+	return append(timeboosted, curr)
 }
 
 func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
@@ -584,7 +614,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult)
+	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult, nil)
 	if err != nil {
 		return nil, err
 	}

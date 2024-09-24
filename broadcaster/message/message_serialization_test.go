@@ -34,8 +34,9 @@ func ExampleBroadcastMessage_broadcastfeedmessageWithBlockHash() {
 					},
 					DelayedMessagesRead: 3333,
 				},
-				BlockHash: &common.Hash{0: 0xff},
-				Signature: nil,
+				BlockHash:   &common.Hash{0: 0xff},
+				Signature:   nil,
+				Timeboosted: nil,
 			},
 		},
 	}
@@ -43,7 +44,7 @@ func ExampleBroadcastMessage_broadcastfeedmessageWithBlockHash() {
 	encoder := json.NewEncoder(&buf)
 	_ = encoder.Encode(msg)
 	fmt.Println(buf.String())
-	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333},"blockHash":"0xff00000000000000000000000000000000000000000000000000000000000000","signature":null}]}
+	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333},"blockHash":"0xff00000000000000000000000000000000000000000000000000000000000000","signature":null,"timeboosted":null}]}
 }
 
 func ExampleBroadcastMessage_broadcastfeedmessageWithoutBlockHash() {
@@ -67,7 +68,8 @@ func ExampleBroadcastMessage_broadcastfeedmessageWithoutBlockHash() {
 					},
 					DelayedMessagesRead: 3333,
 				},
-				Signature: nil,
+				Signature:   nil,
+				Timeboosted: nil,
 			},
 		},
 	}
@@ -75,7 +77,7 @@ func ExampleBroadcastMessage_broadcastfeedmessageWithoutBlockHash() {
 	encoder := json.NewEncoder(&buf)
 	_ = encoder.Encode(msg)
 	fmt.Println(buf.String())
-	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333},"signature":null}]}
+	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333},"signature":null,"timeboosted":null}]}
 }
 
 func ExampleBroadcastMessage_emptymessage() {

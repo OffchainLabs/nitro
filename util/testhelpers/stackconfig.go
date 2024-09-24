@@ -9,6 +9,7 @@ func CreateStackConfigForTest(dataDir string) *node.Config {
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = dataDir
 	stackConf.UseLightweightKDF = true
+	stackConf.AuthPort = 0
 	stackConf.WSPort = 0
 	stackConf.WSModules = append(stackConf.WSModules, "eth", "debug")
 	stackConf.HTTPPort = 0
