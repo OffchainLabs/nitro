@@ -1,0 +1,30 @@
+name: ShellCheck CI
+run-name: ShellCheck CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
+
+on:
+  workflow_dispatch:
+  merge_group:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  shellcheck:
+    name: Run ShellCheck
+    runs-on: ubuntu-8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          ignore_paths: >-
+            ./fastcache/**
+            ./contracts/**
+            ./safe-smart-account/**
+            ./go-ethereum/**
+            ./nitro-testnode/**
+            ./brotli/**
+            ./arbitrator/**
