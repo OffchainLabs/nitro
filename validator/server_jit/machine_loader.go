@@ -13,15 +13,17 @@ import (
 )
 
 type JitMachineConfig struct {
-	ProverBinPath        string
-	JitCranelift         bool
-	WasmMemoryUsageLimit int
+	ProverBinPath             string
+	JitCranelift              bool
+	WasmMemoryUsageLimit      int
+	MaxExecutionTimeInSeconds int
 }
 
 var DefaultJitMachineConfig = JitMachineConfig{
-	JitCranelift:         true,
-	ProverBinPath:        "replay.wasm",
-	WasmMemoryUsageLimit: 4294967296,
+	JitCranelift:              true,
+	ProverBinPath:             "replay.wasm",
+	WasmMemoryUsageLimit:      4294967296,
+	MaxExecutionTimeInSeconds: 60,
 }
 
 func getJitPath() (string, error) {
@@ -59,7 +61,7 @@ func NewJitMachineLoader(config *JitMachineConfig, locator *server_common.Machin
 	}
 	createMachineThreadFunc := func(ctx context.Context, moduleRoot common.Hash) (*JitMachine, error) {
 		binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.ProverBinPath)
-		return createJitMachine(jitPath, binPath, config.JitCranelift, config.WasmMemoryUsageLimit, moduleRoot, fatalErrChan)
+		return createJitMachine(jitPath, binPath, config.JitCranelift, config.WasmMemoryUsageLimit, config.MaxExecutionTimeInSeconds, moduleRoot, fatalErrChan)
 	}
 	return &JitMachineLoader{
 		MachineLoader: *server_common.NewMachineLoader[JitMachine](locator, createMachineThreadFunc),
