@@ -39,7 +39,7 @@ func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".workers", DefaultJitSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 	f.Int(prefix+".wasm-memory-usage-limit", DefaultJitSpawnerConfig.WasmMemoryUsageLimit, "if memory used by a jit wasm exceeds this limit, a warning is logged")
-	f.Duration(prefix+"max-execution-time", DefaultJitSpawnerConfig.MaxExecutionTime, "if execution time used by a jit wasm exceeds this limit, a rpc error is returned")
+	f.Duration(prefix+".max-execution-time", DefaultJitSpawnerConfig.MaxExecutionTime, "if execution time used by a jit wasm exceeds this limit, a rpc error is returned")
 }
 
 type JitSpawner struct {
