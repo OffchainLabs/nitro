@@ -139,6 +139,7 @@ func main() {
 		if err := json.Unmarshal(data, &artifact); err != nil {
 			log.Fatal("failed to parse contract", name, err)
 		}
+		fmt.Printf("Contract name: %v\n", name)
 		yulModInfo.addArtifact(HardHatArtifact{
 			ContractName: name,
 			Abi:          artifact.Abi,
