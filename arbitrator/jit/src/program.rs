@@ -16,8 +16,45 @@ use prover::{
     programs::{config::PricingParams, prelude::*},
 };
 
-/// activates a user program
+const DEFAULT_STYLUS_ARBOS_VERSION: u64 = 31;
+
 pub fn activate(
+    env: WasmEnvMut,
+    wasm_ptr: GuestPtr,
+    wasm_size: u32,
+    pages_ptr: GuestPtr,
+    asm_estimate_ptr: GuestPtr,
+    init_cost_ptr: GuestPtr,
+    cached_init_cost_ptr: GuestPtr,
+    stylus_version: u16,
+    debug: u32,
+    codehash: GuestPtr,
+    module_hash_ptr: GuestPtr,
+    gas_ptr: GuestPtr,
+    err_buf: GuestPtr,
+    err_buf_len: u32,
+) -> Result<u32, Escape> {
+    activate_v2(
+        env,
+        wasm_ptr,
+        wasm_size,
+        pages_ptr,
+        asm_estimate_ptr,
+        init_cost_ptr,
+        cached_init_cost_ptr,
+        stylus_version,
+        DEFAULT_STYLUS_ARBOS_VERSION,
+        debug,
+        codehash,
+        module_hash_ptr,
+        gas_ptr,
+        err_buf,
+        err_buf_len,
+    )
+}
+
+/// activates a user program
+pub fn activate_v2(
     mut env: WasmEnvMut,
     wasm_ptr: GuestPtr,
     wasm_size: u32,
@@ -25,7 +62,8 @@ pub fn activate(
     asm_estimate_ptr: GuestPtr,
     init_cost_ptr: GuestPtr,
     cached_init_cost_ptr: GuestPtr,
-    version: u16,
+    stylus_version: u16,
+    arbos_version_for_gas: u64,
     debug: u32,
     codehash: GuestPtr,
     module_hash_ptr: GuestPtr,
@@ -40,7 +78,15 @@ pub fn activate(
 
     let page_limit = mem.read_u16(pages_ptr);
     let gas_left = &mut mem.read_u64(gas_ptr);
-    match Module::activate(&wasm, codehash, version, page_limit, debug, gas_left) {
+    match Module::activate(
+        &wasm,
+        codehash,
+        stylus_version,
+        arbos_version_for_gas,
+        page_limit,
+        debug,
+        gas_left,
+    ) {
         Ok((module, data)) => {
             mem.write_u64(gas_ptr, *gas_left);
             mem.write_u16(pages_ptr, data.footprint);
@@ -222,9 +268,47 @@ pub fn create_stylus_config(
     Ok(res as u64)
 }
 
-/// Creates an `EvmData` handler from its component parts.
 pub fn create_evm_data(
+    env: WasmEnvMut,
+    block_basefee_ptr: GuestPtr,
+    chainid: u64,
+    block_coinbase_ptr: GuestPtr,
+    block_gas_limit: u64,
+    block_number: u64,
+    block_timestamp: u64,
+    contract_address_ptr: GuestPtr,
+    module_hash_ptr: GuestPtr,
+    msg_sender_ptr: GuestPtr,
+    msg_value_ptr: GuestPtr,
+    tx_gas_price_ptr: GuestPtr,
+    tx_origin_ptr: GuestPtr,
+    cached: u32,
+    reentrant: u32,
+) -> Result<u64, Escape> {
+    create_evm_data_v2(
+        env,
+        DEFAULT_STYLUS_ARBOS_VERSION,
+        block_basefee_ptr,
+        chainid,
+        block_coinbase_ptr,
+        block_gas_limit,
+        block_number,
+        block_timestamp,
+        contract_address_ptr,
+        module_hash_ptr,
+        msg_sender_ptr,
+        msg_value_ptr,
+        tx_gas_price_ptr,
+        tx_origin_ptr,
+        cached,
+        reentrant,
+    )
+}
+
+/// Creates an `EvmData` handler from its component parts.
+pub fn create_evm_data_v2(
     mut env: WasmEnvMut,
+    arbos_version: u64,
     block_basefee_ptr: GuestPtr,
     chainid: u64,
     block_coinbase_ptr: GuestPtr,
@@ -243,6 +327,7 @@ pub fn create_evm_data(
     let (mut mem, _) = env.jit_env();
 
     let evm_data = EvmData {
+        arbos_version,
         block_basefee: mem.read_bytes32(block_basefee_ptr),
         cached: cached != 0,
         chainid,

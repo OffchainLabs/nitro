@@ -8,7 +8,7 @@ use arbutil::{
         api::{DataReader, EvmApi},
         storage::StorageCache,
         user::UserOutcomeKind,
-        EvmData,
+        EvmData, ARBOS_VERSION_STYLUS_CHARGING_FIXES,
     },
     pricing::{self, EVM_API_INK, HOSTIO_INK, PTR_INK},
     Bytes20, Bytes32,
@@ -143,11 +143,20 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// [`SLOAD`]: https://www.evm.codes/#54
     fn storage_load_bytes32(&mut self, key: GuestPtr, dest: GuestPtr) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK)?;
-        self.require_gas(evm::COLD_SLOAD_GAS + EVM_API_INK + StorageCache::REQUIRED_ACCESS_GAS)?; // cache-miss case
+        let arbos_version = self.evm_data().arbos_version;
 
+        // require for cache-miss case, preserve wrong behavior for old arbos
+        let evm_api_gas_to_use = if arbos_version < ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+            EVM_API_INK
+        } else {
+            self.pricing().ink_to_gas(EVM_API_INK)
+        };
+        self.require_gas(
+            evm::COLD_SLOAD_GAS + StorageCache::REQUIRED_ACCESS_GAS + evm_api_gas_to_use,
+        )?;
         let key = self.read_bytes32(key)?;
 
-        let (value, gas_cost) = self.evm_api().get_bytes32(key);
+        let (value, gas_cost) = self.evm_api().get_bytes32(key, evm_api_gas_to_use);
         self.buy_gas(gas_cost)?;
         self.write_bytes32(dest, value)?;
         trace!("storage_load_bytes32", self, key, value)
@@ -185,7 +194,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
 
         let gas_left = self.gas_left()?;
-        self.evm_api().flush_storage_cache(clear, gas_left)?;
+        let gas_cost = self.evm_api().flush_storage_cache(clear, gas_left)?;
+        if self.evm_data().arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+            self.buy_gas(gas_cost)?;
+        }
         trace!("storage_flush_cache", self, [be!(clear as u8)], &[])
     }
 

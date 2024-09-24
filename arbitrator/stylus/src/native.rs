@@ -435,14 +435,22 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
 pub fn activate(
     wasm: &[u8],
     codehash: &Bytes32,
-    version: u16,
+    stylus_version: u16,
+    arbos_version_for_gas: u64,
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
 ) -> Result<(Vec<u8>, ProverModule, StylusData)> {
-    let compile = CompileConfig::version(version, debug);
-    let (module, stylus_data) =
-        ProverModule::activate(wasm, codehash, version, page_limit, debug, gas)?;
+    let compile = CompileConfig::version(stylus_version, debug);
+    let (module, stylus_data) = ProverModule::activate(
+        wasm,
+        codehash,
+        stylus_version,
+        arbos_version_for_gas,
+        page_limit,
+        debug,
+        gas,
+    )?;
 
     let asm = match self::module(wasm, compile) {
         Ok(asm) => asm,

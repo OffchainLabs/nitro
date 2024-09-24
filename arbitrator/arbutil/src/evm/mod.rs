@@ -74,9 +74,12 @@ pub const GASPRICE_GAS: u64 = GAS_QUICK_STEP;
 // vm.GasQuickStep (see jump_table.go)
 pub const ORIGIN_GAS: u64 = GAS_QUICK_STEP;
 
+pub const ARBOS_VERSION_STYLUS_CHARGING_FIXES: u64 = 32;
+
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct EvmData {
+    pub arbos_version: u64,
     pub block_basefee: Bytes32,
     pub chainid: u64,
     pub block_coinbase: Bytes20,

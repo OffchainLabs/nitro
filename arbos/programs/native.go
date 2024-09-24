@@ -49,7 +49,8 @@ func activateProgram(
 	codehash common.Hash,
 	wasm []byte,
 	page_limit uint16,
-	version uint16,
+	stylusVersion uint16,
+	arbosVersionForGas uint64,
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
@@ -62,7 +63,8 @@ func activateProgram(
 	status := userStatus(C.stylus_activate(
 		goSlice(wasm),
 		u16(page_limit),
-		u16(version),
+		u16(stylusVersion),
+		u64(arbosVersionForGas),
 		cbool(debug),
 		output,
 		&asmLen,
@@ -244,6 +246,7 @@ func (params *goParams) encode() C.StylusConfig {
 
 func (data *evmData) encode() C.EvmData {
 	return C.EvmData{
+		arbos_version:    u64(data.arbosVersion),
 		block_basefee:    hashToBytes32(data.blockBasefee),
 		chainid:          u64(data.chainId),
 		block_coinbase:   addressToBytes20(data.blockCoinbase),
