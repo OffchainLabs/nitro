@@ -45,6 +45,7 @@ func (con ArbRetryableTx) oldNotFoundError(c ctx) error {
 	return errors.New("ticketId not found")
 }
 
+// TODO: add test
 // Redeem schedules an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, error) {
 	if c.txProcessor.CurrentRetryable != nil && ticketId == *c.txProcessor.CurrentRetryable {
@@ -130,11 +131,13 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast[int64](gasToDonate))
 }
 
+// TODO: add test
 // GetLifetime gets the default lifetime period a retryable has at creation
 func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	return big.NewInt(retryables.RetryableLifetimeSeconds), nil
 }
 
+// TODO: add test
 // GetTimeout gets the timestamp for when ticket will expire
 func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, error) {
 	retryableState := c.State.RetryableState()
@@ -152,6 +155,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, e
 	return new(big.Int).SetUint64(timeout), nil
 }
 
+// TODO: add test
 // Keepalive adds one lifetime period to the ticket's expiry
 func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, error) {
 
@@ -181,6 +185,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 	return bigNewTimeout, err
 }
 
+// TODO: add test
 // GetBeneficiary gets the beneficiary of the ticket
 func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (addr, error) {
 	retryableState := c.State.RetryableState()
@@ -194,6 +199,7 @@ func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (add
 	return retryable.Beneficiary()
 }
 
+// TODO: add test
 // Cancel the ticket and refund its callvalue to its beneficiary
 func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	if c.txProcessor.CurrentRetryable != nil && ticketId == *c.txProcessor.CurrentRetryable {
@@ -223,6 +229,7 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	return con.Canceled(c, evm, ticketId)
 }
 
+// TODO: add test
 func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, error) {
 	if c.txProcessor.CurrentRefundTo != nil {
 		return *c.txProcessor.CurrentRefundTo, nil
@@ -230,6 +237,7 @@ func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, e
 	return common.Address{}, nil
 }
 
+// TODO: add test
 func (con ArbRetryableTx) SubmitRetryable(
 	c ctx, evm mech, requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
 	gasLimit uint64, maxSubmissionFee huge,

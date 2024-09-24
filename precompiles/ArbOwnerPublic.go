@@ -21,6 +21,7 @@ func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, 
 	return c.State.ChainOwners().AllMembers(65536)
 }
 
+// TODO: add test
 // RectifyChainOwner checks if the account is a chain owner
 func (con ArbOwnerPublic) RectifyChainOwner(c ctx, evm mech, addr addr) error {
 	err := c.State.ChainOwners().RectifyMapping(addr)
@@ -35,6 +36,7 @@ func (con ArbOwnerPublic) IsChainOwner(c ctx, evm mech, addr addr) (bool, error)
 	return c.State.ChainOwners().IsMember(addr)
 }
 
+// TODO: add test
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()
@@ -48,11 +50,13 @@ func (con ArbOwnerPublic) GetInfraFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.InfraFeeAccount()
 }
 
+// TODO: add test
 // GetBrotliCompressionLevel gets the current brotli compression level used for fast compression
 func (con ArbOwnerPublic) GetBrotliCompressionLevel(c ctx, evm mech) (uint64, error) {
 	return c.State.BrotliCompressionLevel()
 }
 
+// TODO: add test
 // GetScheduledUpgrade gets the next scheduled ArbOS version upgrade and its activation timestamp.
 // Returns (0, 0, nil) if no ArbOS upgrade is scheduled.
 func (con ArbOwnerPublic) GetScheduledUpgrade(c ctx, evm mech) (uint64, uint64, error) {

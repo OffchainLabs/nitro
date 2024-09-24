@@ -12,21 +12,25 @@ type ArbWasmCache struct {
 	UpdateProgramCacheGasCost func(addr, bytes32, bool) (uint64, error)
 }
 
+// TODO: add test
 // See if the user is a cache manager owner.
 func (con ArbWasmCache) IsCacheManager(c ctx, _ mech, addr addr) (bool, error) {
 	return c.State.Programs().CacheManagers().IsMember(addr)
 }
 
+// TODO: add test
 // Retrieve all authorized address managers.
 func (con ArbWasmCache) AllCacheManagers(c ctx, _ mech) ([]addr, error) {
 	return c.State.Programs().CacheManagers().AllMembers(65536)
 }
 
+// TODO: add test
 // Deprecated: replaced with CacheProgram.
 func (con ArbWasmCache) CacheCodehash(c ctx, evm mech, codehash hash) error {
 	return con.setProgramCached(c, evm, common.Address{}, codehash, true)
 }
 
+// TODO: add test
 // Caches all programs with a codehash equal to the given address. Caller must be a cache manager or chain owner.
 func (con ArbWasmCache) CacheProgram(c ctx, evm mech, address addr) error {
 	codehash, err := c.GetCodeHash(address)
@@ -36,6 +40,7 @@ func (con ArbWasmCache) CacheProgram(c ctx, evm mech, address addr) error {
 	return con.setProgramCached(c, evm, address, codehash, true)
 }
 
+// TODO: add test
 // Evicts all programs with the given codehash. Caller must be a cache manager or chain owner.
 func (con ArbWasmCache) EvictCodehash(c ctx, evm mech, codehash hash) error {
 	return con.setProgramCached(c, evm, common.Address{}, codehash, false)

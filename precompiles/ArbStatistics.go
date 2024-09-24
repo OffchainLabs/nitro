@@ -14,6 +14,7 @@ type ArbStatistics struct {
 	Address addr // 0x6e
 }
 
+// TODO: add test
 // GetStats returns the current block number and some statistics about the rollup's pre-Nitro state
 func (con ArbStatistics) GetStats(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
 	blockNum := evm.Context.BlockNumber

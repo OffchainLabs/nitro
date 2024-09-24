@@ -22,6 +22,7 @@ var storageArbGas = big.NewInt(int64(storage.StorageWriteCost))
 
 const AssumedSimpleTxSize = 140
 
+// TODO: add test
 // GetPricesInWeiWithAggregator gets  prices in wei when using the provided aggregator
 func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	c ctx,
@@ -65,6 +66,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	return perL2Tx, weiForL1Calldata, weiForL2Storage, perArbGasBase, perArbGasCongestion, perArbGasTotal, nil
 }
 
+// TODO: add test
 func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 	c ctx,
 	evm mech,
@@ -97,11 +99,13 @@ func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 	return perL2Tx, weiForL1Calldata, weiForL2Storage, perArbGasBase, perArbGasCongestion, perArbGasTotal, nil
 }
 
+// TODO: add test
 // GetPricesInWei gets prices in wei when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
 	return con.GetPricesInWeiWithAggregator(c, evm, addr{})
 }
 
+// TODO: add test
 // GetPricesInArbGasWithAggregator gets prices in ArbGas when using the provided aggregator
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
 	if c.State.ArbOSVersion() < 4 {
@@ -131,6 +135,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 	return gasPerL2Tx, gasForL1Calldata, storageArbGas, nil
 }
 
+// TODO: add test
 func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
 	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
 	if err != nil {
@@ -154,11 +159,13 @@ func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm me
 	return perL2Tx, gasForL1Calldata, storageArbGas, nil
 }
 
+// TODO: add test
 // GetPricesInArbGas gets prices in ArbGas when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, error) {
 	return con.GetPricesInArbGasWithAggregator(c, evm, addr{})
 }
 
+// TODO: add test
 // GetGasAccountingParams gets the rollup's speed limit, pool size, and tx gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
 	l2pricing := c.State.L2PricingState()
@@ -167,56 +174,67 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxTxGasLimit), arbmath.UintToBig(maxTxGasLimit), err
 }
 
+// TODO: add test
 // GetMinimumGasPrice gets the minimum gas price needed for a transaction to succeed
 func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
 	return c.State.L2PricingState().MinBaseFeeWei()
 }
 
+// TODO: add test
 // GetL1BaseFeeEstimate gets the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimate(c ctx, evm mech) (huge, error) {
 	return c.State.L1PricingState().PricePerUnit()
 }
 
+// TODO: add test
 // GetL1BaseFeeEstimateInertia gets how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().Inertia()
 }
 
+// TODO: add test
 // GetL1RewardRate gets the L1 pricer reward rate
 func (con ArbGasInfo) GetL1RewardRate(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().PerUnitReward()
 }
 
+// TODO: add test
 // GetL1RewardRecipient gets the L1 pricer reward recipient
 func (con ArbGasInfo) GetL1RewardRecipient(c ctx, evm mech) (common.Address, error) {
 	return c.State.L1PricingState().PayRewardsTo()
 }
 
+// TODO: add test
 // GetL1GasPriceEstimate gets the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 	return con.GetL1BaseFeeEstimate(c, evm)
 }
 
+// TODO: add test
 // GetCurrentTxL1GasFees gets the fee paid to the aggregator for posting this tx
 func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 	return c.txProcessor.PosterFee, nil
 }
 
+// TODO: add test
 // GetGasBacklog gets the backlogged amount of gas burnt in excess of the speed limit
 func (con ArbGasInfo) GetGasBacklog(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().GasBacklog()
 }
 
+// TODO: add test
 // GetPricingInertia gets how slowly ArbOS updates the L2 basefee in response to backlogged gas
 func (con ArbGasInfo) GetPricingInertia(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().PricingInertia()
 }
 
+// TODO: add test
 // GetGasBacklogTolerance gets the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee
 func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().BacklogTolerance()
 }
 
+// TODO: add test
 // GetL1PricingSurplus gets the surplus of funds for L1 batch posting payments (may be negative)
 func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	if c.State.ArbOSVersion() < 10 {
@@ -226,6 +244,7 @@ func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	return ps.GetL1PricingSurplus()
 }
 
+// TODO: add test
 func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	ps := c.State.L1PricingState()
 	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
@@ -241,6 +260,7 @@ func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.I
 	return arbmath.BigSub(haveFunds.ToBig(), needFunds), nil
 }
 
+// TODO: add test
 // GetPerBatchGasCharge gets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
 func (con ArbGasInfo) GetPerBatchGasCharge(c ctx, evm mech) (int64, error) {
 	return c.State.L1PricingState().PerBatchGasCost()
@@ -256,26 +276,31 @@ func (con ArbGasInfo) GetL1FeesAvailable(c ctx, evm mech) (huge, error) {
 	return c.State.L1PricingState().L1FeesAvailable()
 }
 
+// TODO: add test
 // GetL1PricingEquilibrationUnits gets the equilibration units parameter for L1 price adjustment algorithm
 func (con ArbGasInfo) GetL1PricingEquilibrationUnits(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().EquilibrationUnits()
 }
 
+// TODO: add test
 // GetLastL1PricingUpdateTime gets the last time the L1 calldata pricer was updated
 func (con ArbGasInfo) GetLastL1PricingUpdateTime(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().LastUpdateTime()
 }
 
+// TODO: add test
 // GetL1PricingFundsDueForRewards gets the amount of L1 calldata payments due for rewards (per the L1 reward rate)
 func (con ArbGasInfo) GetL1PricingFundsDueForRewards(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().FundsDueForRewards()
 }
 
+// TODO: add test
 // GetL1PricingUnitsSinceUpdate gets the amount of L1 calldata posted since the last update
 func (con ArbGasInfo) GetL1PricingUnitsSinceUpdate(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().UnitsSinceUpdate()
 }
 
+// TODO: add test
 // GetLastL1PricingSurplus gets the L1 pricing surplus as of the last update (may be negative)
 func (con ArbGasInfo) GetLastL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().LastSurplus()

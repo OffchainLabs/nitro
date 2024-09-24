@@ -35,6 +35,7 @@ type Context struct {
 	readOnly    bool
 }
 
+// TODO: add test
 func (c *Context) Burn(amount uint64) error {
 	if c.gasLeft < amount {
 		return c.BurnOut()
@@ -43,36 +44,44 @@ func (c *Context) Burn(amount uint64) error {
 	return nil
 }
 
+// TODO: add test
 //nolint:unused
 func (c *Context) Burned() uint64 {
 	return c.gasSupplied - c.gasLeft
 }
 
+// TODO: add test
 func (c *Context) BurnOut() error {
 	c.gasLeft = 0
 	return vm.ErrOutOfGas
 }
 
+// TODO: add test
 func (c *Context) GasLeft() *uint64 {
 	return &c.gasLeft
 }
 
+// TODO: add test
 func (c *Context) Restrict(err error) {
 	log.Crit("A metered burner was used for access-controlled work", "error", err)
 }
 
+// TODO: add test
 func (c *Context) HandleError(err error) error {
 	return err
 }
 
+// TODO: add test
 func (c *Context) ReadOnly() bool {
 	return c.readOnly
 }
 
+// TODO: add test
 func (c *Context) TracingInfo() *util.TracingInfo {
 	return c.tracingInfo
 }
 
+// TODO: add test
 func (c *Context) GetCodeHash(address common.Address) (common.Hash, error) {
 	return c.State.BackingStorage().GetCodeHash(address)
 }
