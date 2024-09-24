@@ -99,7 +99,6 @@ func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 	return perL2Tx, weiForL1Calldata, weiForL2Storage, perArbGasBase, perArbGasCongestion, perArbGasTotal, nil
 }
 
-// TODO: add test
 // GetPricesInWei gets prices in wei when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
 	return con.GetPricesInWeiWithAggregator(c, evm, addr{})
@@ -174,13 +173,11 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxTxGasLimit), arbmath.UintToBig(maxTxGasLimit), err
 }
 
-// TODO: add test
 // GetMinimumGasPrice gets the minimum gas price needed for a transaction to succeed
 func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
 	return c.State.L2PricingState().MinBaseFeeWei()
 }
 
-// TODO: add test
 // GetL1BaseFeeEstimate gets the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimate(c ctx, evm mech) (huge, error) {
 	return c.State.L1PricingState().PricePerUnit()
@@ -234,7 +231,6 @@ func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().BacklogTolerance()
 }
 
-// TODO: add test
 // GetL1PricingSurplus gets the surplus of funds for L1 batch posting payments (may be negative)
 func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	if c.State.ArbOSVersion() < 10 {

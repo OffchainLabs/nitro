@@ -8,7 +8,6 @@ import (
 	"math/big"
 )
 
-// TODO: add test
 // ArbFunctionTable  precompile provided aggregator's the ability to manage function tables.
 // Aggregation works differently in Nitro, so these methods have been stubbed and their effects disabled.
 // They are kept for backwards compatibility.

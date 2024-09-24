@@ -24,7 +24,6 @@ type ArbDebug struct {
 	UnusedError func() error
 }
 
-// TODO: add test
 func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value bytes32) (addr, huge, error) {
 	// Emits 2 events that cover each case
 	//   Basic tests an index'd value & a normal value
@@ -43,13 +42,11 @@ func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value bytes32)
 	return c.caller, paid, nil
 }
 
-// TODO: add test
 func (con ArbDebug) EventsView(c ctx, evm mech) error {
 	_, _, err := con.Events(c, evm, common.Big0, true, bytes32{})
 	return err
 }
 
-// TODO: add test
 func (con ArbDebug) CustomRevert(c ctx, number uint64) error {
 	return con.CustomError(number, "This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\", true)
 }

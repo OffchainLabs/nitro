@@ -57,19 +57,16 @@ func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error)
 	return c.State.ChainOwners().AllMembers(65536)
 }
 
-// TODO: add test
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64) error {
 	return c.State.L1PricingState().SetInertia(inertia)
 }
 
-// TODO: add test
 // SetL2BaseFee sets the L2 gas price directly, bypassing the pool calculus
 func (con ArbOwner) SetL2BaseFee(c ctx, evm mech, priceInWei huge) error {
 	return c.State.L2PricingState().SetBaseFeeWei(priceInWei)
 }
 
-// TODO: add test
 // SetMinimumL2BaseFee sets the minimum base fee needed for a transaction to succeed
 func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error {
 	if c.txProcessor.MsgIsNonMutating() && priceInWei.Sign() == 0 {
@@ -78,31 +75,26 @@ func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error 
 	return c.State.L2PricingState().SetMinBaseFeeWei(priceInWei)
 }
 
-// TODO: add test
 // SetSpeedLimit sets the computational speed limit for the chain
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetSpeedLimitPerSecond(limit)
 }
 
-// TODO: add test
 // SetMaxTxGasLimit sets the maximum size a tx (and block) can be
 func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetMaxPerBlockGasLimit(limit)
 }
 
-// TODO: add test
 // SetL2GasPricingInertia sets the L2 gas pricing inertia
 func (con ArbOwner) SetL2GasPricingInertia(c ctx, evm mech, sec uint64) error {
 	return c.State.L2PricingState().SetPricingInertia(sec)
 }
 
-// TODO: add test
 // SetL2GasBacklogTolerance sets the L2 gas backlog tolerance
 func (con ArbOwner) SetL2GasBacklogTolerance(c ctx, evm mech, sec uint64) error {
 	return c.State.L2PricingState().SetBacklogTolerance(sec)
 }
 
-// TODO: add test
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()
@@ -113,7 +105,6 @@ func (con ArbOwner) GetInfraFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.InfraFeeAccount()
 }
 
-// TODO: add test
 // SetNetworkFeeAccount sets the network fee collector to the new network fee account
 func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
 	return c.State.SetNetworkFeeAccount(newNetworkFeeAccount)
@@ -124,38 +115,31 @@ func (con ArbOwner) SetInfraFeeAccount(c ctx, evm mech, newNetworkFeeAccount add
 	return c.State.SetInfraFeeAccount(newNetworkFeeAccount)
 }
 
-// TODO: add test
 // ScheduleArbOSUpgrade to the requested version at the requested timestamp
 func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, timestamp uint64) error {
 	return c.State.ScheduleArbOSUpgrade(newVersion, timestamp)
 }
 
-// TODO: add test
 func (con ArbOwner) SetL1PricingEquilibrationUnits(c ctx, evm mech, equilibrationUnits huge) error {
 	return c.State.L1PricingState().SetEquilibrationUnits(equilibrationUnits)
 }
 
-// TODO: add test
 func (con ArbOwner) SetL1PricingInertia(c ctx, evm mech, inertia uint64) error {
 	return c.State.L1PricingState().SetInertia(inertia)
 }
 
-// TODO: add test
 func (con ArbOwner) SetL1PricingRewardRecipient(c ctx, evm mech, recipient addr) error {
 	return c.State.L1PricingState().SetPayRewardsTo(recipient)
 }
 
-// TODO: add test
 func (con ArbOwner) SetL1PricingRewardRate(c ctx, evm mech, weiPerUnit uint64) error {
 	return c.State.L1PricingState().SetPerUnitReward(weiPerUnit)
 }
 
-// TODO: add test
 func (con ArbOwner) SetL1PricePerUnit(c ctx, evm mech, pricePerUnit *big.Int) error {
 	return c.State.L1PricingState().SetPricePerUnit(pricePerUnit)
 }
 
-// TODO: add test
 func (con ArbOwner) SetPerBatchGasCharge(c ctx, evm mech, cost int64) error {
 	return c.State.L1PricingState().SetPerBatchGasCost(cost)
 }
@@ -164,7 +148,6 @@ func (con ArbOwner) SetAmortizedCostCapBips(c ctx, evm mech, cap uint64) error {
 	return c.State.L1PricingState().SetAmortizedCostCapBips(cap)
 }
 
-// TODO: add test
 func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) error {
 	return c.State.SetBrotliCompressionLevel(level)
 }
@@ -189,7 +172,6 @@ func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease
 	return weiToTransfer, nil
 }
 
-// TODO: add test
 // Sets the amount of ink 1 gas buys
 func (con ArbOwner) SetInkPrice(c ctx, evm mech, inkPrice uint32) error {
 	params, err := c.State.Programs().Params()
@@ -204,7 +186,6 @@ func (con ArbOwner) SetInkPrice(c ctx, evm mech, inkPrice uint32) error {
 	return params.Save()
 }
 
-// TODO: add test
 // Sets the maximum depth (in wasm words) a wasm stack may grow
 func (con ArbOwner) SetWasmMaxStackDepth(c ctx, evm mech, depth uint32) error {
 	params, err := c.State.Programs().Params()
@@ -215,7 +196,6 @@ func (con ArbOwner) SetWasmMaxStackDepth(c ctx, evm mech, depth uint32) error {
 	return params.Save()
 }
 
-// TODO: add test
 // Gets the number of free wasm pages a tx gets
 func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
 	params, err := c.State.Programs().Params()
@@ -226,7 +206,6 @@ func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
 	return params.Save()
 }
 
-// TODO: add test
 // Sets the base cost of each additional wasm page
 func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint16) error {
 	params, err := c.State.Programs().Params()
@@ -237,7 +216,6 @@ func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint16) error {
 	return params.Save()
 }
 
-// TODO: add test
 // Sets the initial number of pages a wasm may allocate
 func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 	params, err := c.State.Programs().Params()
@@ -248,7 +226,6 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 	return params.Save()
 }
 
-// TODO: add test
 // Sets the minimum costs to invoke a program
 func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas, cached uint64) error {
 	params, err := c.State.Programs().Params()
@@ -260,7 +237,6 @@ func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas, cached uint64) error {
 	return params.Save()
 }
 
-// TODO: add test
 // Sets the linear adjustment made to program init costs
 func (con ArbOwner) SetWasmInitCostScalar(c ctx, _ mech, percent uint64) error {
 	params, err := c.State.Programs().Params()
@@ -271,7 +247,6 @@ func (con ArbOwner) SetWasmInitCostScalar(c ctx, _ mech, percent uint64) error {
 	return params.Save()
 }
 
-// TODO: add test
 // Sets the number of days after which programs deactivate
 func (con ArbOwner) SetWasmExpiryDays(c ctx, _ mech, days uint16) error {
 	params, err := c.State.Programs().Params()
@@ -282,7 +257,6 @@ func (con ArbOwner) SetWasmExpiryDays(c ctx, _ mech, days uint16) error {
 	return params.Save()
 }
 
-// TODO: add test
 // Sets the age a program must be to perform a keepalive
 func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
 	params, err := c.State.Programs().Params()
@@ -293,7 +267,6 @@ func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
 	return params.Save()
 }
 
-// TODO: add test
 // Sets the number of extra programs ArbOS caches during a given block
 func (con ArbOwner) SetWasmBlockCacheSize(c ctx, _ mech, count uint16) error {
 	params, err := c.State.Programs().Params()
@@ -304,13 +277,11 @@ func (con ArbOwner) SetWasmBlockCacheSize(c ctx, _ mech, count uint16) error {
 	return params.Save()
 }
 
-// TODO: add test
 // Adds account as a wasm cache manager
 func (con ArbOwner) AddWasmCacheManager(c ctx, _ mech, manager addr) error {
 	return c.State.Programs().CacheManagers().Add(manager)
 }
 
-// TODO: add test
 // Removes account from the list of wasm cache managers
 func (con ArbOwner) RemoveWasmCacheManager(c ctx, _ mech, manager addr) error {
 	managers := c.State.Programs().CacheManagers()
