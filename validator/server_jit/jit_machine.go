@@ -26,14 +26,14 @@ import (
 var jitWasmMemoryUsage = metrics.NewRegisteredHistogram("jit/wasm/memoryusage", nil, metrics.NewBoundedHistogramSample())
 
 type JitMachine struct {
-	binary                    string
-	process                   *exec.Cmd
-	stdin                     io.WriteCloser
-	wasmMemoryUsageLimit      int
-	maxExecutionTimeInSeconds int
+	binary               string
+	process              *exec.Cmd
+	stdin                io.WriteCloser
+	wasmMemoryUsageLimit int
+	maxExecutionTime     time.Duration
 }
 
-func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmMemoryUsageLimit int, maxExecutionTimeInSeconds int, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
+func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmMemoryUsageLimit int, maxExecutionTime time.Duration, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
 	invocation := []string{"--binary", binaryPath, "--forks"}
 	if cranelift {
 		invocation = append(invocation, "--cranelift")
@@ -52,11 +52,11 @@ func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmM
 	}()
 
 	machine := &JitMachine{
-		binary:                    binaryPath,
-		process:                   process,
-		stdin:                     stdin,
-		wasmMemoryUsageLimit:      wasmMemoryUsageLimit,
-		maxExecutionTimeInSeconds: maxExecutionTimeInSeconds,
+		binary:               binaryPath,
+		process:              process,
+		stdin:                stdin,
+		wasmMemoryUsageLimit: wasmMemoryUsageLimit,
+		maxExecutionTime:     maxExecutionTime,
 	}
 	return machine, nil
 }
@@ -75,7 +75,7 @@ func (machine *JitMachine) prove(
 	defer cancel() // ensure our cleanup functions run when we're done
 	state := validator.GoGlobalState{}
 
-	timeout := time.Now().Add(time.Duration(machine.maxExecutionTimeInSeconds) * time.Second)
+	timeout := time.Now().Add(machine.maxExecutionTime)
 	tcp, err := net.ListenTCP("tcp4", &net.TCPAddr{
 		IP: []byte{127, 0, 0, 1},
 	})

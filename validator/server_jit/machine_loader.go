@@ -7,23 +7,22 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 type JitMachineConfig struct {
-	ProverBinPath             string
-	JitCranelift              bool
-	WasmMemoryUsageLimit      int
-	MaxExecutionTimeInSeconds int
+	ProverBinPath        string
+	JitCranelift         bool
+	WasmMemoryUsageLimit int
 }
 
 var DefaultJitMachineConfig = JitMachineConfig{
-	JitCranelift:              true,
-	ProverBinPath:             "replay.wasm",
-	WasmMemoryUsageLimit:      4294967296,
-	MaxExecutionTimeInSeconds: 60,
+	JitCranelift:         true,
+	ProverBinPath:        "replay.wasm",
+	WasmMemoryUsageLimit: 4294967296,
 }
 
 func getJitPath() (string, error) {
@@ -54,14 +53,14 @@ type JitMachineLoader struct {
 	stopped bool
 }
 
-func NewJitMachineLoader(config *JitMachineConfig, locator *server_common.MachineLocator, fatalErrChan chan error) (*JitMachineLoader, error) {
+func NewJitMachineLoader(config *JitMachineConfig, locator *server_common.MachineLocator, MaxExecutionTime time.Duration, fatalErrChan chan error) (*JitMachineLoader, error) {
 	jitPath, err := getJitPath()
 	if err != nil {
 		return nil, err
 	}
 	createMachineThreadFunc := func(ctx context.Context, moduleRoot common.Hash) (*JitMachine, error) {
 		binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.ProverBinPath)
-		return createJitMachine(jitPath, binPath, config.JitCranelift, config.WasmMemoryUsageLimit, config.MaxExecutionTimeInSeconds, moduleRoot, fatalErrChan)
+		return createJitMachine(jitPath, binPath, config.JitCranelift, config.WasmMemoryUsageLimit, MaxExecutionTime, moduleRoot, fatalErrChan)
 	}
 	return &JitMachineLoader{
 		MachineLoader: *server_common.NewMachineLoader[JitMachine](locator, createMachineThreadFunc),
