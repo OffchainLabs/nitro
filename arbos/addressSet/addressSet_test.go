@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -26,7 +26,7 @@ func TestEmptyAddressSet(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
-	version := params.ArbitrumDevTestParams().InitialArbOSVersion
+	version := chaininfo.ArbitrumDevTestParams().InitialArbOSVersion
 
 	if size(t, aset) != 0 {
 		Fail(t)
@@ -49,7 +49,7 @@ func TestAddressSet(t *testing.T) {
 	sto := storage.NewGeth(db, burn.NewSystemBurner(nil, false))
 	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
-	version := params.ArbitrumDevTestParams().InitialArbOSVersion
+	version := chaininfo.ArbitrumDevTestParams().InitialArbOSVersion
 
 	statedb, _ := (db).(*state.StateDB)
 	stateHashBeforeChanges := statedb.IntermediateRoot(false)
@@ -144,7 +144,7 @@ func TestAddressSetAllMembers(t *testing.T) {
 	sto := storage.NewGeth(db, burn.NewSystemBurner(nil, false))
 	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
-	version := params.ArbitrumDevTestParams().InitialArbOSVersion
+	version := chaininfo.ArbitrumDevTestParams().InitialArbOSVersion
 
 	addr1 := testhelpers.RandomAddress()
 	addr2 := testhelpers.RandomAddress()

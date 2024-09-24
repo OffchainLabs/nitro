@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -49,7 +50,7 @@ var testChainConfig = &params.ChainConfig{
 	MuirGlacierBlock:    big.NewInt(0),
 	BerlinBlock:         big.NewInt(0),
 	LondonBlock:         big.NewInt(0),
-	ArbitrumChainParams: params.ArbitrumDevTestParams(),
+	ArbitrumChainParams: chaininfo.ArbitrumDevTestParams(),
 }
 
 func TestEthDepositMessage(t *testing.T) {
