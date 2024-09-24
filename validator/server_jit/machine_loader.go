@@ -53,14 +53,14 @@ type JitMachineLoader struct {
 	stopped bool
 }
 
-func NewJitMachineLoader(config *JitMachineConfig, locator *server_common.MachineLocator, MaxExecutionTime time.Duration, fatalErrChan chan error) (*JitMachineLoader, error) {
+func NewJitMachineLoader(config *JitMachineConfig, locator *server_common.MachineLocator, maxExecutionTime time.Duration, fatalErrChan chan error) (*JitMachineLoader, error) {
 	jitPath, err := getJitPath()
 	if err != nil {
 		return nil, err
 	}
 	createMachineThreadFunc := func(ctx context.Context, moduleRoot common.Hash) (*JitMachine, error) {
 		binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.ProverBinPath)
-		return createJitMachine(jitPath, binPath, config.JitCranelift, config.WasmMemoryUsageLimit, MaxExecutionTime, moduleRoot, fatalErrChan)
+		return createJitMachine(jitPath, binPath, config.JitCranelift, config.WasmMemoryUsageLimit, maxExecutionTime, moduleRoot, fatalErrChan)
 	}
 	return &JitMachineLoader{
 		MachineLoader: *server_common.NewMachineLoader[JitMachine](locator, createMachineThreadFunc),
