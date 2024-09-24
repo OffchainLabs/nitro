@@ -92,7 +92,7 @@ func LoadSimpleMachine(wasm string, libraries []string, debugChain bool) (*Arbit
 	cWasm := C.CString(wasm)
 	cLibraries := CreateCStringList(libraries)
 	debug := usize(arbmath.BoolToUint32(debugChain))
-	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)), debug, false)
+	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)), debug)
 	C.free(unsafe.Pointer(cWasm))
 	FreeCStringList(cLibraries, len(libraries))
 	if mach == nil {
