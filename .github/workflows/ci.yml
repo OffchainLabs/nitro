@@ -92,6 +92,7 @@ jobs:
             arbitrator/wasm-libraries/target/
             arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
+            /home/runner/.rustup/toolchains/
           key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
           restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
