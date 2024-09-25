@@ -7,11 +7,24 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 
 	"github.com/ethereum/go-ethereum/common"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
+
+func TestGetLifetime(t *testing.T) {
+	evm := newMockEVMForTesting()
+	retryableTx := ArbRetryableTx{}
+	context := testContext(common.Address{}, evm)
+
+	lifetime, err := retryableTx.GetLifetime(context, evm)
+	Require(t, err)
+	if lifetime.Cmp(big.NewInt(retryables.RetryableLifetimeSeconds)) != 0 {
+		t.Fatal("Expected to be ", retryables.RetryableLifetimeSeconds, " but got ", lifetime)
+	}
+}
 
 func TestRetryableRedeem(t *testing.T) {
 	evm := newMockEVMForTesting()

@@ -45,7 +45,6 @@ func (con ArbRetryableTx) oldNotFoundError(c ctx) error {
 	return errors.New("ticketId not found")
 }
 
-// TODO: add test
 // Redeem schedules an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, error) {
 	if c.txProcessor.CurrentRetryable != nil && ticketId == *c.txProcessor.CurrentRetryable {
@@ -131,13 +130,11 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast[int64](gasToDonate))
 }
 
-// TODO: add test
 // GetLifetime gets the default lifetime period a retryable has at creation
 func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	return big.NewInt(retryables.RetryableLifetimeSeconds), nil
 }
 
-// TODO: add test
 // GetTimeout gets the timestamp for when ticket will expire
 func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, error) {
 	retryableState := c.State.RetryableState()
