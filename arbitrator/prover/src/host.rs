@@ -405,7 +405,7 @@ impl Hostio {
     }
 }
 
-pub fn get_impl(module: &str, name: &str) -> Result<Function> {
+pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
     let hostio: Hostio = format!("{module}__{name}").parse()?;
 
     let append = |code: &mut Vec<Instruction>| {
@@ -414,11 +414,8 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
         Ok(())
     };
 
-    Function::new(&[], append, hostio.ty(), &[])
-}
-
-pub fn hostio_module_is_debug(module: &str) -> bool {
-    module == "console" || module == "debug"
+    let debug = module == "console" || module == "debug";
+    Function::new(&[], append, hostio.ty(), &[]).map(|x| (x, debug))
 }
 
 /// Adds internal functions to a module.
