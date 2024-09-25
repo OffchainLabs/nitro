@@ -140,6 +140,39 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 	assertNotAllGasConsumed(common.HexToAddress("0xff"), arbDebug.Methods["legacyError"].ID)
 }
 
+func TestGetBrotliCompressionLevel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), builder.L2.Client)
+	Require(t, err, "could not bind ArbOwner contract")
+
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), builder.L2.Client)
+	Require(t, err, "could not bind ArbOwner contract")
+
+	brotliCompressionLevel := uint64(11)
+
+	// sets brotli compression level
+	tx, err := arbOwner.SetBrotliCompressionLevel(&auth, brotliCompressionLevel)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// retrieves brotli compression level
+	callOpts := &bind.CallOpts{Context: ctx}
+	retrievedBrotliCompressionLevel, err := arbOwnerPublic.GetBrotliCompressionLevel(callOpts)
+	Require(t, err, "failed to call GetBrotliCompressionLevel")
+	if retrievedBrotliCompressionLevel != brotliCompressionLevel {
+		Fatal(t, "expected brotli compression level to be", brotliCompressionLevel, "got", retrievedBrotliCompressionLevel)
+	}
+}
+
 func TestScheduleArbosUpgrade(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
