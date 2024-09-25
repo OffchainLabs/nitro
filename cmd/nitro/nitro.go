@@ -472,6 +472,10 @@ func mainImpl() int {
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		blocksReExecutor = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
 		if nodeConfig.Init.ThenQuit {
+			if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+				log.Error("error populating stylus target cache", "err", err)
+				return 1
+			}
 			success := make(chan struct{})
 			blocksReExecutor.Start(ctx, success)
 			deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })

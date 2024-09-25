@@ -8,7 +8,7 @@ use crate::{
     programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
-use arbutil::{math::SaturatingSum, Bytes32, Color};
+use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color};
 use eyre::{bail, eyre, Report, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
@@ -418,58 +418,64 @@ impl Module {
     pub fn activate(
         wasm: &[u8],
         codehash: &Bytes32,
-        version: u16,
+        stylus_version: u16,
+        arbos_version_for_gas: u64, // must only be used for activation gas
         page_limit: u16,
         debug: bool,
         gas: &mut u64,
     ) -> Result<(Self, StylusData)> {
-        // converts a number of microseconds to gas
-        // TODO: collapse to a single value after finalizing factors
-        let us_to_gas = |us: u64| {
-            let fudge = 2;
-            let sync_rate = 1_000_000 / 2;
-            let speed = 7_000_000;
-            us.saturating_mul(fudge * speed) / sync_rate
-        };
+        let compile = CompileConfig::version(stylus_version, debug);
+        let (bin, stylus_data) =
+            WasmBinary::parse_user(wasm, arbos_version_for_gas, page_limit, &compile, codehash)
+                .wrap_err("failed to parse wasm")?;
 
-        macro_rules! pay {
-            ($us:expr) => {
-                let amount = us_to_gas($us);
-                if *gas < amount {
-                    *gas = 0;
-                    bail!("out of gas");
-                }
-                *gas -= amount;
+        if arbos_version_for_gas > 0 {
+            // converts a number of microseconds to gas
+            // TODO: collapse to a single value after finalizing factors
+            let us_to_gas = |us: u64| {
+                let fudge = 2;
+                let sync_rate = 1_000_000 / 2;
+                let speed = 7_000_000;
+                us.saturating_mul(fudge * speed) / sync_rate
             };
+
+            macro_rules! pay {
+                ($us:expr) => {
+                    let amount = us_to_gas($us);
+                    if *gas < amount {
+                        *gas = 0;
+                        bail!("out of gas");
+                    }
+                    *gas -= amount;
+                };
+            }
+
+            // pay for wasm
+            if arbos_version_for_gas >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+                let wasm_len = wasm.len() as u64;
+                pay!(wasm_len.saturating_mul(31_733) / 100_000);
+            }
+
+            // pay for funcs
+            let funcs = bin.functions.len() as u64;
+            pay!(funcs.saturating_mul(17_263) / 100_000);
+
+            // pay for data
+            let data = bin.datas.iter().map(|x| x.data.len()).saturating_sum() as u64;
+            pay!(data.saturating_mul(17_376) / 100_000);
+
+            // pay for elements
+            let elems = bin.elements.iter().map(|x| x.range.len()).saturating_sum() as u64;
+            pay!(elems.saturating_mul(17_376) / 100_000);
+
+            // pay for memory
+            let mem = bin.memories.first().map(|x| x.initial).unwrap_or_default();
+            pay!(mem.saturating_mul(2217));
+
+            // pay for code
+            let code = bin.codes.iter().map(|x| x.expr.len()).saturating_sum() as u64;
+            pay!(code.saturating_mul(535) / 1_000);
         }
-
-        // pay for wasm
-        let wasm_len = wasm.len() as u64;
-        pay!(wasm_len.saturating_mul(31_733 / 100_000));
-
-        let compile = CompileConfig::version(version, debug);
-        let (bin, stylus_data) = WasmBinary::parse_user(wasm, page_limit, &compile, codehash)
-            .wrap_err("failed to parse wasm")?;
-
-        // pay for funcs
-        let funcs = bin.functions.len() as u64;
-        pay!(funcs.saturating_mul(17_263) / 100_000);
-
-        // pay for data
-        let data = bin.datas.iter().map(|x| x.data.len()).saturating_sum() as u64;
-        pay!(data.saturating_mul(17_376) / 100_000);
-
-        // pay for elements
-        let elems = bin.elements.iter().map(|x| x.range.len()).saturating_sum() as u64;
-        pay!(elems.saturating_mul(17_376) / 100_000);
-
-        // pay for memory
-        let mem = bin.memories.first().map(|x| x.initial).unwrap_or_default();
-        pay!(mem.saturating_mul(2217));
-
-        // pay for code
-        let code = bin.codes.iter().map(|x| x.expr.len()).saturating_sum() as u64;
-        pay!(code.saturating_mul(535) / 1_000);
 
         let module = Self::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data))
             .wrap_err("failed to build user module")?;
