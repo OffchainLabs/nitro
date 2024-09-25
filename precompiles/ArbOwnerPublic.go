@@ -21,7 +21,6 @@ func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, 
 	return c.State.ChainOwners().AllMembers(65536)
 }
 
-// TODO: add test
 // RectifyChainOwner checks if the account is a chain owner
 func (con ArbOwnerPublic) RectifyChainOwner(c ctx, evm mech, addr addr) error {
 	err := c.State.ChainOwners().RectifyMapping(addr)
