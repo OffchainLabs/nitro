@@ -59,14 +59,12 @@ func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 	return evm.ChainConfig().ChainID, nil
 }
 
-// TODO: add test
 // ArbOSVersion gets the current ArbOS version
 func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
 	version := new(big.Int).SetUint64(55 + c.State.ArbOSVersion()) // Nitro starts at version 56
 	return version, nil
 }
 
-// TODO: add test
 // GetStorageGasAvailable returns 0 since Nitro has no concept of storage gas
 func (con *ArbSys) GetStorageGasAvailable(c ctx, evm mech) (huge, error) {
 	return big.NewInt(0), nil
@@ -109,7 +107,6 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 	return address, err
 }
 
-// TODO: add test
 // SendTxToL1 sends a transaction to L1, adding it to the outbox
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
 	l1BlockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})
