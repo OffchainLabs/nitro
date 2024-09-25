@@ -87,8 +87,6 @@ struct Opts {
     skip_until_host_io: bool,
     #[structopt(long)]
     max_steps: Option<u64>,
-    #[structopt(short, long)]
-    with_forwarder: bool,
     // JSON inputs supercede any of the command-line inputs which could
     // be specified in the JSON file.
     #[structopt(long)]
@@ -562,7 +560,6 @@ fn initialize_machine(opts: &Opts) -> eyre::Result<Machine> {
             global_state,
             inbox_contents,
             preimage_resolver,
-            opts.with_forwarder,
         )
     }
 }

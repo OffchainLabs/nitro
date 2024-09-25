@@ -6,7 +6,6 @@ pub mod color;
 pub mod crypto;
 pub mod evm;
 pub mod format;
-pub mod hostios;
 pub mod math;
 pub mod operator;
 pub mod pricing;

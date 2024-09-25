@@ -234,21 +234,73 @@ type NodeBuilder struct {
 	l1StackConfig *node.Config
 	l2StackConfig *node.Config
 	valnodeConfig *valnode.Config
+	l3Config      *NitroConfig
 	L1Info        info
 	L2Info        info
+	L3Info        info
 
-	// L1, L2 Node parameters
+	// L1, L2, L3 Node parameters
 	dataDir                     string
 	isSequencer                 bool
 	takeOwnership               bool
 	withL1                      bool
 	addresses                   *chaininfo.RollupAddresses
+	l3Addresses                 *chaininfo.RollupAddresses
 	initMessage                 *arbostypes.ParsedInitMessage
+	l3InitMessage               *arbostypes.ParsedInitMessage
 	withProdConfirmPeriodBlocks bool
 
 	// Created nodes
 	L1 *TestClient
 	L2 *TestClient
+	L3 *TestClient
+}
+
+type NitroConfig struct {
+	chainConfig   *params.ChainConfig
+	nodeConfig    *arbnode.Config
+	execConfig    *gethexec.Config
+	stackConfig   *node.Config
+	valnodeConfig *valnode.Config
+
+	withProdConfirmPeriodBlocks bool
+	isSequencer                 bool
+}
+
+func L3NitroConfigDefaultTest(t *testing.T) *NitroConfig {
+	chainConfig := &params.ChainConfig{
+		ChainID:             big.NewInt(333333),
+		HomesteadBlock:      big.NewInt(0),
+		DAOForkBlock:        nil,
+		DAOForkSupport:      true,
+		EIP150Block:         big.NewInt(0),
+		EIP155Block:         big.NewInt(0),
+		EIP158Block:         big.NewInt(0),
+		ByzantiumBlock:      big.NewInt(0),
+		ConstantinopleBlock: big.NewInt(0),
+		PetersburgBlock:     big.NewInt(0),
+		IstanbulBlock:       big.NewInt(0),
+		MuirGlacierBlock:    big.NewInt(0),
+		BerlinBlock:         big.NewInt(0),
+		LondonBlock:         big.NewInt(0),
+		ArbitrumChainParams: params.ArbitrumDevTestParams(),
+		Clique: &params.CliqueConfig{
+			Period: 0,
+			Epoch:  0,
+		},
+	}
+
+	valnodeConfig := valnode.TestValidationConfig
+	return &NitroConfig{
+		chainConfig:   chainConfig,
+		nodeConfig:    arbnode.ConfigDefaultL1Test(),
+		execConfig:    ExecConfigDefaultTest(t),
+		stackConfig:   testhelpers.CreateStackConfigForTest(t.TempDir()),
+		valnodeConfig: &valnodeConfig,
+
+		withProdConfirmPeriodBlocks: false,
+		isSequencer:                 true,
+	}
 }
 
 func NewNodeBuilder(ctx context.Context) *NodeBuilder {
@@ -274,6 +326,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	cp := valnode.TestValidationConfig
 	b.valnodeConfig = &cp
 	b.execConfig = ExecConfigDefaultTest(t)
+	b.l3Config = L3NitroConfigDefaultTest(t)
 	return b
 }
 
@@ -338,64 +391,169 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack = createTestL1BlockChain(t, b.L1Info)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
-	b.addresses, b.initMessage = DeployOnTestL1(t, b.ctx, b.L1Info, b.L1.Client, b.chainConfig, locator.LatestWasmModuleRoot(), b.withProdConfirmPeriodBlocks)
+	b.addresses, b.initMessage = deployOnParentChain(
+		t,
+		b.ctx,
+		b.L1Info,
+		b.L1.Client,
+		&headerreader.TestConfig,
+		b.chainConfig,
+		locator.LatestWasmModuleRoot(),
+		b.withProdConfirmPeriodBlocks,
+		true,
+	)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
 
-func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
-	if b.L1 == nil {
-		t.Fatal("must build L1 before building L2")
-	}
-	b.L2 = NewTestClient(b.ctx)
+func buildOnParentChain(
+	t *testing.T,
+	ctx context.Context,
 
-	var l2chainDb ethdb.Database
-	var l2arbDb ethdb.Database
-	var l2blockchain *core.BlockChain
-	_, b.L2.Stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(
-		t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.execConfig)
+	dataDir string,
+
+	parentChainInfo info,
+	parentChainTestClient *TestClient,
+	parentChainId *big.Int,
+
+	chainConfig *params.ChainConfig,
+	stackConfig *node.Config,
+	execConfig *gethexec.Config,
+	nodeConfig *arbnode.Config,
+	valnodeConfig *valnode.Config,
+	isSequencer bool,
+	chainInfo info,
+
+	initMessage *arbostypes.ParsedInitMessage,
+	addresses *chaininfo.RollupAddresses,
+) *TestClient {
+	if parentChainTestClient == nil {
+		t.Fatal("must build parent chain before building chain")
+	}
+
+	chainTestClient := NewTestClient(ctx)
+
+	var chainDb ethdb.Database
+	var arbDb ethdb.Database
+	var blockchain *core.BlockChain
+	_, chainTestClient.Stack, chainDb, arbDb, blockchain = createNonL1BlockChainWithStackConfig(
+		t, chainInfo, dataDir, chainConfig, initMessage, stackConfig, execConfig)
 
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
-	if b.isSequencer {
-		sequencerTxOpts := b.L1Info.GetDefaultTransactOpts("Sequencer", b.ctx)
+	if isSequencer {
+		sequencerTxOpts := parentChainInfo.GetDefaultTransactOpts("Sequencer", ctx)
 		sequencerTxOptsPtr = &sequencerTxOpts
-		dataSigner = signature.DataSignerFromPrivateKey(b.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+		dataSigner = signature.DataSignerFromPrivateKey(parentChainInfo.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	} else {
-		b.nodeConfig.BatchPoster.Enable = false
-		b.nodeConfig.Sequencer = false
-		b.nodeConfig.DelayedSequencer.Enable = false
-		b.execConfig.Sequencer.Enable = false
+		nodeConfig.BatchPoster.Enable = false
+		nodeConfig.Sequencer = false
+		nodeConfig.DelayedSequencer.Enable = false
+		execConfig.Sequencer.Enable = false
 	}
 
 	var validatorTxOptsPtr *bind.TransactOpts
-	if b.nodeConfig.Staker.Enable {
-		validatorTxOpts := b.L1Info.GetDefaultTransactOpts("Validator", b.ctx)
+	if nodeConfig.Staker.Enable {
+		validatorTxOpts := parentChainInfo.GetDefaultTransactOpts("Validator", ctx)
 		validatorTxOptsPtr = &validatorTxOpts
 	}
 
-	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
-	Require(t, b.execConfig.Validate())
-	execConfig := b.execConfig
-	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, l2chainDb, l2blockchain, b.L1.Client, execConfigFetcher)
+	Require(t, execConfig.Validate())
+	execConfigToBeUsedInConfigFetcher := execConfig
+	execConfigFetcher := func() *gethexec.Config { return execConfigToBeUsedInConfigFetcher }
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher)
 	Require(t, err)
 
 	fatalErrChan := make(chan error, 10)
-	b.L2.ConsensusNode, err = arbnode.CreateNode(
-		b.ctx, b.L2.Stack, execNode, l2arbDb, NewFetcherFromConfig(b.nodeConfig), l2blockchain.Config(), b.L1.Client,
-		b.addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, big.NewInt(1337), nil)
+	chainTestClient.ConsensusNode, err = arbnode.CreateNode(
+		ctx, chainTestClient.Stack, execNode, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainTestClient.Client,
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil)
 	Require(t, err)
 
-	err = b.L2.ConsensusNode.Start(b.ctx)
+	err = chainTestClient.ConsensusNode.Start(ctx)
 	Require(t, err)
 
-	b.L2.Client = ClientForStack(t, b.L2.Stack)
+	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack)
 
-	StartWatchChanErr(t, b.ctx, fatalErrChan, b.L2.ConsensusNode)
+	StartWatchChanErr(t, ctx, fatalErrChan, chainTestClient.ConsensusNode)
 
-	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
-	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	chainTestClient.ExecNode = getExecNode(t, chainTestClient.ConsensusNode)
+	chainTestClient.cleanup = func() { chainTestClient.ConsensusNode.StopAndWait() }
+
+	return chainTestClient
+}
+
+func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
+	b.L3Info = NewArbTestInfo(t, b.l3Config.chainConfig.ChainID)
+
+	locator, err := server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath)
+	Require(t, err)
+
+	parentChainReaderConfig := headerreader.TestConfig
+	parentChainReaderConfig.Dangerous.WaitForTxApprovalSafePoll = 0
+	b.l3Addresses, b.l3InitMessage = deployOnParentChain(
+		t,
+		b.ctx,
+		b.L2Info,
+		b.L2.Client,
+		&parentChainReaderConfig,
+		b.l3Config.chainConfig,
+		locator.LatestWasmModuleRoot(),
+		b.l3Config.withProdConfirmPeriodBlocks,
+		false,
+	)
+
+	b.L3 = buildOnParentChain(
+		t,
+		b.ctx,
+
+		b.dataDir,
+
+		b.L2Info,
+		b.L2,
+		b.chainConfig.ChainID,
+
+		b.l3Config.chainConfig,
+		b.l3Config.stackConfig,
+		b.l3Config.execConfig,
+		b.l3Config.nodeConfig,
+		b.l3Config.valnodeConfig,
+		b.l3Config.isSequencer,
+		b.L3Info,
+
+		b.l3InitMessage,
+		b.l3Addresses,
+	)
+
+	return func() {
+		b.L3.cleanup()
+	}
+}
+
+func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
+	b.L2 = buildOnParentChain(
+		t,
+		b.ctx,
+
+		b.dataDir,
+
+		b.L1Info,
+		b.L1,
+		big.NewInt(1337),
+
+		b.chainConfig,
+		b.l2StackConfig,
+		b.execConfig,
+		b.nodeConfig,
+		b.valnodeConfig,
+		b.isSequencer,
+		b.L2Info,
+
+		b.initMessage,
+		b.addresses,
+	)
+
 	return func() {
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
@@ -466,7 +624,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	}
 	b.L2.cleanup()
 
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.execConfig)
+	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.execConfig)
 
 	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
@@ -491,13 +649,25 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	b.L2Info = l2info
 }
 
-func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
-	if b.L2 == nil {
-		t.Fatal("builder did not previously build a L2 Node")
-	}
-	if b.withL1 && b.L1 == nil {
-		t.Fatal("builder did not previously build a L1 Node")
-	}
+func build2ndNode(
+	t *testing.T,
+	ctx context.Context,
+
+	firstNodeStackConfig *node.Config,
+	firsNodeExecConfig *gethexec.Config,
+	firstNodeNodeConfig *arbnode.Config,
+	firstNodeInfo info,
+	firstNodeTestClient *TestClient,
+	valnodeConfig *valnode.Config,
+
+	parentChainTestClient *TestClient,
+	parentChainInfo info,
+
+	params *SecondNodeParams,
+
+	addresses *chaininfo.RollupAddresses,
+	initMessage *arbostypes.ParsedInitMessage,
+) (*TestClient, func()) {
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
@@ -505,18 +675,18 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 		params.nodeConfig.DataAvailability = *params.dasConfig
 	}
 	if params.stackConfig == nil {
-		params.stackConfig = b.l2StackConfig
+		params.stackConfig = firstNodeStackConfig
 		// should use different dataDir from the previously used ones
 		params.stackConfig.DataDir = t.TempDir()
 	}
 	if params.initData == nil {
-		params.initData = &b.L2Info.ArbInitData
+		params.initData = &firstNodeInfo.ArbInitData
 	}
 	if params.execConfig == nil {
-		params.execConfig = b.execConfig
+		params.execConfig = firsNodeExecConfig
 	}
 	if params.addresses == nil {
-		params.addresses = b.addresses
+		params.addresses = addresses
 	}
 	if params.execConfig.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
 		if params.execConfig.Caching.Archive {
@@ -525,16 +695,69 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 			params.execConfig.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
 	}
-	if b.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.RedisUrl == "" {
+	if firstNodeNodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.RedisUrl == "" {
 		t.Fatal("The batch poster must use Redis when enabled for multiple nodes")
 	}
 
-	l2 := NewTestClient(b.ctx)
-	l2.Client, l2.ConsensusNode =
-		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, b.valnodeConfig, params.addresses, b.initMessage)
-	l2.ExecNode = getExecNode(t, l2.ConsensusNode)
-	l2.cleanup = func() { l2.ConsensusNode.StopAndWait() }
-	return l2, func() { l2.cleanup() }
+	testClient := NewTestClient(ctx)
+	testClient.Client, testClient.ConsensusNode =
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage)
+	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
+	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
+	return testClient, func() { testClient.cleanup() }
+}
+
+func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
+	if b.L2 == nil {
+		t.Fatal("builder did not previously built an L2 Node")
+	}
+	if b.withL1 && b.L1 == nil {
+		t.Fatal("builder did not previously built an L1 Node")
+	}
+	return build2ndNode(
+		t,
+		b.ctx,
+
+		b.l2StackConfig,
+		b.execConfig,
+		b.nodeConfig,
+		b.L2Info,
+		b.L2,
+		b.valnodeConfig,
+
+		b.L1,
+		b.L1Info,
+
+		params,
+
+		b.addresses,
+		b.initMessage,
+	)
+}
+
+func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
+	if b.L3 == nil {
+		t.Fatal("builder did not previously built an L3 Node")
+	}
+	return build2ndNode(
+		t,
+		b.ctx,
+
+		b.l3Config.stackConfig,
+		b.l3Config.execConfig,
+		b.l3Config.nodeConfig,
+		b.L3Info,
+		b.L3,
+		b.l3Config.valnodeConfig,
+
+		b.L2,
+		b.L2Info,
+
+		params,
+
+		b.l3Addresses,
+		b.l3InitMessage,
+	)
 }
 
 func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.Int) (*types.Transaction, *types.Receipt) {
@@ -990,8 +1213,8 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	return l1info, l1Client, l1backend, stack
 }
 
-func getInitMessage(ctx context.Context, t *testing.T, l1client client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
-	bridge, err := arbnode.NewDelayedBridge(l1client, addresses.Bridge, addresses.DeployedAt)
+func getInitMessage(ctx context.Context, t *testing.T, parentChainClient client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
+	bridge, err := arbnode.NewDelayedBridge(parentChainClient, addresses.Bridge, addresses.DeployedAt)
 	Require(t, err)
 	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
 	messages, err := bridge.LookupMessagesInRange(ctx, deployedAtBig, deployedAtBig, nil)
@@ -1005,63 +1228,72 @@ func getInitMessage(ctx context.Context, t *testing.T, l1client client, addresse
 	return initMessage
 }
 
-func DeployOnTestL1(
-	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig, wasmModuleRoot common.Hash, prodConfirmPeriodBlocks bool,
+func deployOnParentChain(
+	t *testing.T,
+	ctx context.Context,
+	parentChainInfo info,
+	parentChainClient client,
+	parentChainReaderConfig *headerreader.Config,
+	chainConfig *params.ChainConfig,
+	wasmModuleRoot common.Hash,
+	prodConfirmPeriodBlocks bool,
+	chainSupportsBlobs bool,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
-	l1info.GenerateAccount("RollupOwner")
-	l1info.GenerateAccount("Sequencer")
-	l1info.GenerateAccount("Validator")
-	l1info.GenerateAccount("User")
+	parentChainInfo.GenerateAccount("RollupOwner")
+	parentChainInfo.GenerateAccount("Sequencer")
+	parentChainInfo.GenerateAccount("Validator")
+	parentChainInfo.GenerateAccount("User")
 
-	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-		l1info.PrepareTx("Faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
-		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
-		l1info.PrepareTx("Faucet", "Validator", 30000, big.NewInt(9223372036854775807), nil),
-		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
+	SendWaitTestTransactions(t, ctx, parentChainClient, []*types.Transaction{
+		parentChainInfo.PrepareTx("Faucet", "RollupOwner", parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil),
+		parentChainInfo.PrepareTx("Faucet", "Sequencer", parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil),
+		parentChainInfo.PrepareTx("Faucet", "Validator", parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil),
+		parentChainInfo.PrepareTx("Faucet", "User", parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil)})
 
-	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	parentChainTransactionOpts := parentChainInfo.GetDefaultTransactOpts("RollupOwner", ctx)
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
 
-	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
-	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, parentChainClient)
+	parentChainReader, err := headerreader.New(ctx, parentChainClient, func() *headerreader.Config { return parentChainReaderConfig }, arbSys)
 	Require(t, err)
-	l1Reader.Start(ctx)
-	defer l1Reader.StopAndWait()
+	parentChainReader.Start(ctx)
+	defer parentChainReader.StopAndWait()
 
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
-	addresses, err := deploy.DeployOnL1(
+	addresses, err := deploy.DeployOnParentChain(
 		ctx,
-		l1Reader,
-		&l1TransactionOpts,
-		[]common.Address{l1info.GetAddress("Sequencer")},
-		l1info.GetAddress("RollupOwner"),
+		parentChainReader,
+		&parentChainTransactionOpts,
+		[]common.Address{parentChainInfo.GetAddress("Sequencer")},
+		parentChainInfo.GetAddress("RollupOwner"),
 		0,
-		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 		nativeToken,
 		maxDataSize,
+		chainSupportsBlobs,
 	)
 	Require(t, err)
-	l1info.SetContract("Bridge", addresses.Bridge)
-	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
-	l1info.SetContract("Inbox", addresses.Inbox)
-	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
-	initMessage := getInitMessage(ctx, t, l1client, addresses)
+	parentChainInfo.SetContract("Bridge", addresses.Bridge)
+	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
+	parentChainInfo.SetContract("Inbox", addresses.Inbox)
+	parentChainInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
+	initMessage := getInitMessage(ctx, t, parentChainClient, addresses)
 	return addresses, initMessage
 }
 
 func createL2BlockChain(
 	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, execConfig *gethexec.Config,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, execConfig)
+	return createNonL1BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, execConfig)
 }
 
-func createL2BlockChainWithStackConfig(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config,
+func createNonL1BlockChainWithStackConfig(
+	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	if l2info == nil {
-		l2info = NewArbTestInfo(t, chainConfig.ChainID)
+	if info == nil {
+		info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 	if stackConfig == nil {
 		stackConfig = testhelpers.CreateStackConfigForTest(dataDir)
@@ -1081,7 +1313,7 @@ func createL2BlockChainWithStackConfig(
 	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
 
-	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
+	initReader := statetransfer.NewMemoryInitDataReader(&info.ArbInitData)
 	if initMessage == nil {
 		serializedChainConfig, err := json.Marshal(chainConfig)
 		Require(t, err)
@@ -1096,7 +1328,7 @@ func createL2BlockChainWithStackConfig(
 	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
 	Require(t, err)
 
-	return l2info, stack, chainDb, arbDb, blockchain
+	return info, stack, chainDb, arbDb, blockchain
 }
 
 func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
@@ -1139,9 +1371,9 @@ func Create2ndNodeWithConfig(
 	t *testing.T,
 	ctx context.Context,
 	first *arbnode.Node,
-	l1stack *node.Node,
-	l1info *BlockchainTestInfo,
-	l2InitData *statetransfer.ArbosInitializationInfo,
+	parentChainStack *node.Node,
+	parentChainInfo *BlockchainTestInfo,
+	chainInitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
 	execConfig *gethexec.Config,
 	stackConfig *node.Config,
@@ -1156,34 +1388,34 @@ func Create2ndNodeWithConfig(
 		execConfig = ExecConfigDefaultNonSequencerTest(t)
 	}
 	feedErrChan := make(chan error, 10)
-	l1rpcClient := l1stack.Attach()
-	l1client := ethclient.NewClient(l1rpcClient)
+	parentChainRpcClient := parentChainStack.Attach()
+	parentChainClient := ethclient.NewClient(parentChainRpcClient)
 
 	if stackConfig == nil {
 		stackConfig = testhelpers.CreateStackConfigForTest(t.TempDir())
 	}
-	l2stack, err := node.New(stackConfig)
+	chainStack, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2chainData, err := l2stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
+	chainData, err := chainStack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 	Require(t, err)
-	wasmData, err := l2stack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
+	wasmData, err := chainStack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
 	Require(t, err)
-	l2chainDb := rawdb.WrapDatabaseWithWasm(l2chainData, wasmData, 0, execConfig.StylusTarget.WasmTargets())
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, 0, execConfig.StylusTarget.WasmTargets())
 
-	l2arbDb, err := l2stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
+	arbDb, err := chainStack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
-	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
+	initReader := statetransfer.NewMemoryInitDataReader(chainInitData)
 
-	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
-	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-	validatorTxOpts := l1info.GetDefaultTransactOpts("Validator", ctx)
+	dataSigner := signature.DataSignerFromPrivateKey(parentChainInfo.GetInfoWithPrivKey("Sequencer").PrivateKey)
+	sequencerTxOpts := parentChainInfo.GetDefaultTransactOpts("Sequencer", ctx)
+	validatorTxOpts := parentChainInfo.GetDefaultTransactOpts("Validator", ctx)
 	firstExec := getExecNode(t, first)
 
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
 
-	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
+	coreCacheConfig := gethexec.DefaultCacheConfigFor(chainStack, &execConfig.Caching)
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
 	Require(t, err)
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
@@ -1191,19 +1423,19 @@ func Create2ndNodeWithConfig(
 	Require(t, execConfig.Validate())
 	Require(t, nodeConfig.Validate())
 	configFetcher := func() *gethexec.Config { return execConfig }
-	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
+	currentNode, err := arbnode.CreateNode(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)
 	Require(t, err)
-	l2client := ClientForStack(t, l2stack)
+	chainClient := ClientForStack(t, chainStack)
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
 
-	return l2client, currentNode
+	return chainClient, currentNode
 }
 
 func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, account common.Address) *big.Int {

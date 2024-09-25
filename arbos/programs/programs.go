@@ -82,7 +82,7 @@ func (p Programs) CacheManagers() *addressSet.AddressSet {
 	return p.cacheManagers
 }
 
-func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode core.MessageRunMode, debugMode bool) (
+func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVersion uint64, runMode core.MessageRunMode, debugMode bool) (
 	uint16, common.Hash, common.Hash, *big.Int, bool, error,
 ) {
 	statedb := evm.StateDB
@@ -116,7 +116,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit := am.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
 
-	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, debugMode, burner)
+	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, arbosVersion, debugMode, burner)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -222,6 +222,7 @@ func (p Programs) CallProgram(
 	}
 
 	evmData := &EvmData{
+		arbosVersion:    evm.Context.ArbOSVersion,
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
 		chainId:         evm.ChainConfig().ChainID.Uint64(),
 		blockCoinbase:   evm.Context.Coinbase,
@@ -517,6 +518,7 @@ func (p Programs) progParams(version uint16, debug bool, params *StylusParams) *
 }
 
 type EvmData struct {
+	arbosVersion    uint64
 	blockBasefee    common.Hash
 	chainId         uint64
 	blockCoinbase   common.Address
