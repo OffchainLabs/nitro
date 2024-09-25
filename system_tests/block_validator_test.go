@@ -284,6 +284,20 @@ func TestBlockValidatorSimpleOnchain(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
+func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
+	cr, err := github.LatestConsensusRelease(context.Background())
+	Require(t, err)
+	machPath := populateMachineDir(t, cr)
+	opts := Options{
+		dasModeString: "onchain",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    false,
+		wasmRootDir:   machPath,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
 func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
