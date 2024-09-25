@@ -9,14 +9,17 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	tagged_base64 "github.com/EspressoSystems/espresso-sequencer-go/tagged-base64"
-	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"math/big"
 	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	tagged_base64 "github.com/EspressoSystems/espresso-sequencer-go/tagged-base64"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb/memorydb"
+	"github.com/offchainlabs/nitro/util/signature"
 
 	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
@@ -77,6 +80,7 @@ type TransactionStreamer struct {
 	inboxReader     *InboxReader
 	delayedBridge   *DelayedBridge
 	espressoClient  *espressoClient.Client
+	dataSigner      signature.DataSignerFunc
 }
 
 type TransactionStreamerConfig struct {
@@ -129,6 +133,7 @@ func NewTransactionStreamer(
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
 	snapSyncConfig *SnapSyncConfig,
+	dataSigner signature.DataSignerFunc,
 ) (*TransactionStreamer, error) {
 	streamer := &TransactionStreamer{
 		exec:               exec,
@@ -139,6 +144,7 @@ func NewTransactionStreamer(
 		fatalErrChan:       fatalErrChan,
 		config:             config,
 		snapSyncConfig:     snapSyncConfig,
+		dataSigner:         dataSigner,
 	}
 
 	if config().SovereignSequencerEnabled {
@@ -164,7 +170,7 @@ const (
 	BlockHashMismatchLogMsg = "BlockHash from feed doesn't match locally computed hash. Check feed source."
 )
 
-// Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
+// Encodes an uint64 as bytes in a lexically sortable manner for database iteration.
 // Generally this is only used for database keys, which need sorted.
 // A shorter RLP encoding is usually used for database values.
 func uint64ToKey(x uint64) []byte {
@@ -961,7 +967,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	}
 
 	if clearQueueOnSuccess {
-		// Check if new messages were added at the end of cache, if they were, then dont remove those particular messages
+		// Check if new messages were added at the end of cache, if they were, then don't remove those particular messages
 		if len(s.broadcasterQueuedMessages) > cacheClearLen {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[cacheClearLen:]
 			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos)+uint64(cacheClearLen))
@@ -1207,6 +1213,7 @@ func (s *TransactionStreamer) PollSubmittedTransactionForFinality(ctx context.Co
 		log.Warn("submitted hash not found", "err", err)
 		return s.config().EspressoTxnsPollingInterval
 	}
+
 	data, err := s.espressoClient.FetchTransactionByHash(ctx, &submittedTxHash)
 	if err != nil {
 		log.Error("failed to fetch the submitted transaction hash", "err", err, "hash", submittedTxHash.String())
@@ -1218,6 +1225,7 @@ func (s *TransactionStreamer) PollSubmittedTransactionForFinality(ctx context.Co
 		log.Error("failed to get espresso message at submitted txn pos", "err", err)
 		return s.config().EspressoTxnsPollingInterval
 	}
+
 	// parse the message to get the transaction bytes and the justification
 	txns, jst, err := arbos.ParseEspressoMsg(msg.MessageWithMeta.Message)
 	if err != nil {
@@ -1243,8 +1251,15 @@ func (s *TransactionStreamer) PollSubmittedTransactionForFinality(ctx context.Co
 	jst.Proof = &resp.Proof
 	jst.VidCommon = &resp.VidCommon
 
-	// create a new message with the header and the txn and the updated block justification
-	newMsg, err := arbos.MessageFromEspressoSovereignTx(txns[0], jst, msg.MessageWithMeta.Message.Header)
+	// signature will always be 65 bytes
+	payloadSignature, err := s.dataSigner(crypto.Keccak256Hash(txns[0]).Bytes())
+	if err != nil {
+		log.Error("failed to sign transaction hash before submitting to espresso", "err", err)
+		return s.config().EspressoTxnsPollingInterval
+	}
+
+	// create a new message with the header and the txn and updated block justification and payloadSignature
+	newMsg, err := arbos.MessageFromEspressoSovereignTx(txns[0], jst, payloadSignature, msg.MessageWithMeta.Message.Header)
 	if err != nil {
 		log.Error("failed to parse espresso message", "err", err)
 		return s.config().EspressoTxnsPollingInterval
@@ -1438,16 +1453,34 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context, ig
 			log.Error("failed to get espresso submitted pos", "err", err)
 			return s.config().EspressoTxnsPollingInterval
 		}
-		bytes, _, err := arbos.ParseEspressoMsg(msg.Message)
+		txns, _, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			log.Error("failed to parse espresso message before submitting", "err", err)
 			return s.config().EspressoTxnsPollingInterval
 		}
 
+		if s.dataSigner == nil {
+			panic("data signer not initialized, needs to be initialized to sign the transaction before submitting it to espresso")
+		}
+
+		// Signing the transaction here before sending it to espresso so that external parties have a way to verify that a transaction belongs to a certain namespace
+		// Internally the signature doesn't need to verified because the batch poster receives the transactions from the sequencer.
+		payloadSignature, err := s.dataSigner(crypto.Keccak256Hash(txns[0]).Bytes())
+		if err != nil {
+			log.Error("failed to sign transaction hash before submitting to espresso", "err", err)
+			return s.config().EspressoTxnsPollingInterval
+		}
+
+		var signedPayload []byte
+
+		signedPayload = append(signedPayload, payloadSignature...)
+		signedPayload = append(signedPayload, txns[0]...)
+
 		log.Info("submitting transaction to espresso using sovereign sequencer")
 
+		// Note: same key should not be used for two namespaces for this to work
 		hash, err := s.espressoClient.SubmitTransaction(ctx, espressoTypes.Transaction{
-			Payload:   bytes[0],
+			Payload:   signedPayload,
 			Namespace: s.config().EspressoNamespace,
 		})
 

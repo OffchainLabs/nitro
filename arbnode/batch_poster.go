@@ -503,6 +503,15 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 		}
 
 		if jst.Header == nil {
+			// If the message is an Espresso message, store the pos in the database to be used later
+			// to submit the message to hotshot for finalization.
+			if arbos.IsEspressoMsg(msg.Message) {
+				err = b.streamer.SubmitEspressoTransactionPos(b.building.msgCount, b.streamer.db.NewBatch())
+				if err != nil {
+					log.Error("failed to submit espresso transaction pos", "pos", b.building.msgCount, "err", err)
+					return err
+				}
+			}
 			return fmt.Errorf("this msg has not been included in hotshot")
 		}
 
@@ -527,7 +536,8 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 		var newMsg arbostypes.L1IncomingMessage
 		jst.BlockMerkleJustification = &arbostypes.BlockMerkleJustification{BlockMerkleProof: &proof, BlockMerkleComm: nextHeader.BlockMerkleTreeRoot}
 		if arbos.IsEspressoSovereignMsg(msg.Message) {
-			newMsg, err = arbos.MessageFromEspressoSovereignTx(txs[0], jst, msg.Message.Header)
+			// Passing an empty byte slice as payloadSignature because txs[0] already contains the payloadSignature here
+			newMsg, err = arbos.MessageFromEspressoSovereignTx(txs[0], jst, []byte{}, msg.Message.Header)
 			if err != nil {
 				return err
 			}
@@ -1314,16 +1324,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				"l1BoundMaxTimestamp", l1BoundMaxTimestamp,
 			)
 			break
-		}
-
-		// If the message is an Espresso message, store the pos in the database to be used later
-		// to submit the message to hotshot for finalization.
-		if arbos.IsEspressoMsg(msg.Message) {
-			err = b.streamer.SubmitEspressoTransactionPos(b.building.msgCount, b.streamer.db.NewBatch())
-			if err != nil {
-				log.Error("failed to submit espresso transaction pos", "pos", b.building.msgCount, "err", err)
-				break
-			}
 		}
 
 		err = b.addEspressoBlockMerkleProof(ctx, msg)

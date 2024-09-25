@@ -28,6 +28,10 @@ TestProgramArbitratorMemory
 TestProgramArbitratorLogs
 TestProgramArbitratorTransientStorage
 TestProgramArbitratorErrors
+TestBlockValidatorSimpleJITOnchain
+TestMockChallengeManagerAsserterIncorrect
+TestChallengeStakersFaultyHonestActive
+TestChallengeManagerFullAsserterCorrectWithPublishedMachine
 
 
 # These tests are specific to Espresso and we have a dedicated
