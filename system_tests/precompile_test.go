@@ -22,7 +22,10 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	arbosVersion := uint64(31)
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, false).
+		WithArbOSVersion(arbosVersion)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -32,6 +35,18 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	Require(t, err, "failed to get the ChainID")
 	if chainId.Uint64() != params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
 		Fatal(t, "Wrong ChainID", chainId.Uint64())
+	}
+
+	arbSysArbosVersion, err := arbSys.ArbOSVersion(&bind.CallOpts{})
+	Require(t, err)
+	if arbSysArbosVersion.Uint64() != 55+arbosVersion { // Nitro versios start at 56
+		Fatal(t, "Expected ArbOSVersion 86, got", arbosVersion)
+	}
+
+	storageGasAvailable, err := arbSys.GetStorageGasAvailable(&bind.CallOpts{})
+	Require(t, err)
+	if storageGasAvailable.Cmp(big.NewInt(0)) != 0 {
+		Fatal(t, "Expected 0 storage gas available, got", storageGasAvailable)
 	}
 }
 
