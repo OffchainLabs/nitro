@@ -68,7 +68,7 @@ impl TestEvmApi {
 }
 
 impl EvmApi<VecReader> for TestEvmApi {
-    fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
+    fn get_bytes32(&mut self, key: Bytes32, _evm_api_gas_to_use: u64) -> (Bytes32, u64) {
         let storage = &mut self.storage.lock();
         let storage = storage.get_mut(&self.program).unwrap();
         let value = storage.get(&key).cloned().unwrap_or_default();
