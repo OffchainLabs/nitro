@@ -400,9 +400,9 @@ func newApiClosures(
 			}
 			startInk := takeU64()
 			endInk := takeU64()
-			nameLen := takeU16()
-			argsLen := takeU16()
-			outsLen := takeU16()
+			nameLen := takeU32()
+			argsLen := takeU32()
+			outsLen := takeU32()
 			name := string(takeFixed(int(nameLen)))
 			args := takeFixed(int(argsLen))
 			outs := takeFixed(int(outsLen))
