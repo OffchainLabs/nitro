@@ -182,7 +182,6 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 	return bigNewTimeout, err
 }
 
-// TODO: add test
 // GetBeneficiary gets the beneficiary of the ticket
 func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (addr, error) {
 	retryableState := c.State.RetryableState()
