@@ -126,7 +126,6 @@ func (con ArbOwner) SetL1PricingEquilibrationUnits(c ctx, evm mech, equilibratio
 	return c.State.L1PricingState().SetEquilibrationUnits(equilibrationUnits)
 }
 
-// TODO: add test
 func (con ArbOwner) SetL1PricingInertia(c ctx, evm mech, inertia uint64) error {
 	return c.State.L1PricingState().SetInertia(inertia)
 }
