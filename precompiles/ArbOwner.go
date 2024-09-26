@@ -76,7 +76,6 @@ func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error 
 	return c.State.L2PricingState().SetMinBaseFeeWei(priceInWei)
 }
 
-// TODO: add test
 // SetSpeedLimit sets the computational speed limit for the chain
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetSpeedLimitPerSecond(limit)
