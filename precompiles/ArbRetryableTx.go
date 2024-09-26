@@ -233,7 +233,6 @@ func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, e
 	return common.Address{}, nil
 }
 
-// TODO: add test
 func (con ArbRetryableTx) SubmitRetryable(
 	c ctx, evm mech, requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
 	gasLimit uint64, maxSubmissionFee huge,
