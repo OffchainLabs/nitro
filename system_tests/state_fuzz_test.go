@@ -38,7 +38,7 @@ func BuildBlock(
 	chainConfig *params.ChainConfig,
 	inbox arbstate.InboxBackend,
 	seqBatch []byte,
-	runMode core.MessageRunMode, // TODO do we need to fuzz runMode?
+	runMode core.MessageRunMode,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
