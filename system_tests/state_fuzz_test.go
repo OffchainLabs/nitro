@@ -38,6 +38,7 @@ func BuildBlock(
 	chainConfig *params.ChainConfig,
 	inbox arbstate.InboxBackend,
 	seqBatch []byte,
+	runMode core.MessageRunMode, // TODO do we need to fuzz runMode?
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
@@ -63,7 +64,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, runMode,
 	)
 	return block, err
 }
@@ -127,7 +128,7 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 }
 
 func FuzzStateTransition(f *testing.F) {
-	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte) {
+	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, runMode uint8) {
 		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
 			return
 		}
@@ -201,7 +202,7 @@ func FuzzStateTransition(f *testing.F) {
 			positionWithinMessage: 0,
 			delayedMessages:       delayedMessages,
 		}
-		_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox, seqBatch)
+		_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox, seqBatch, core.MessageRunMode(runMode))
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.
