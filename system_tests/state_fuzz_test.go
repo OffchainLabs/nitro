@@ -60,7 +60,8 @@ func BuildBlock(
 	}
 	err = l1Message.FillInBatchGasCost(batchFetcher)
 	if err != nil {
-		return nil, err
+		// skip malformed batch posting report
+		return nil, nil
 	}
 
 	block, _, err := arbos.ProduceBlock(
