@@ -15,6 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
+type commonArtifact struct {
+	contractName string
+	abi          []interface{}
+	bytecode     string
+}
+
 type HardHatArtifact struct {
 	Format       string        `json:"_format"`
 	ContractName string        `json:"contractName"`
@@ -27,8 +33,13 @@ type FoundryBytecode struct {
 	Object string `json:"object"`
 }
 
+type FoundryAst struct {
+	AbsolutePath string `json:"absolutePath"`
+}
+
 type FoundryArtifact struct {
 	Abi      []interface{}   `json:"abi"`
+	Ast      FoundryAst      `json:"ast"`
 	Bytecode FoundryBytecode `json:"bytecode"`
 }
 
@@ -38,14 +49,14 @@ type moduleInfo struct {
 	bytecodes     []string
 }
 
-func (m *moduleInfo) addArtifact(artifact HardHatArtifact) {
-	abi, err := json.Marshal(artifact.Abi)
+func (m *moduleInfo) addArtifact(artifact commonArtifact) {
+	abi, err := json.Marshal(artifact.abi)
 	if err != nil {
 		log.Fatal(err)
 	}
-	m.contractNames = append(m.contractNames, artifact.ContractName)
+	m.contractNames = append(m.contractNames, artifact.contractName)
 	m.abis = append(m.abis, string(abi))
-	m.bytecodes = append(m.bytecodes, artifact.Bytecode)
+	m.bytecodes = append(m.bytecodes, artifact.bytecode)
 }
 
 func (m *moduleInfo) exportABIs(dest string) {
@@ -68,9 +79,50 @@ func main() {
 	}
 	root := filepath.Dir(filename)
 	parent := filepath.Dir(root)
-	filePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "build", "contracts", "src", "*", "*.sol", "*.json"))
+
+	modules := make(map[string]*moduleInfo)
+
+	filePathsOutDir, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "*.sol", "*.json"))
 	if err != nil {
 		log.Fatal(err)
+	}
+	for _, path := range filePathsOutDir {
+		dir, file := filepath.Split(path)
+		name := file[:len(file)-5]
+
+		_, contract := filepath.Split(dir[:len(dir)-1])
+		if strings.Contains(contract, ".t.sol") {
+			continue
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal("could not read ", path, " for contract ", name, err)
+		}
+
+		foundryArtifact := FoundryArtifact{}
+		if err := json.Unmarshal(data, &foundryArtifact); err != nil {
+			log.Fatal("failed to parse contract ", name, err)
+		}
+		if foundryArtifact.Ast.AbsolutePath[:4] != "src/" {
+			continue
+		}
+
+		compiledFileParent, _ := filepath.Split(foundryArtifact.Ast.AbsolutePath)
+		_, module := filepath.Split(compiledFileParent[:len(compiledFileParent)-1])
+		module = strings.ReplaceAll(module, "-", "_")
+		module += "gen"
+
+		modInfo := modules[module]
+		if modInfo == nil {
+			modInfo = &moduleInfo{}
+			modules[module] = modInfo
+		}
+		modInfo.addArtifact(commonArtifact{
+			contractName: name,
+			abi:          foundryArtifact.Abi,
+			bytecode:     foundryArtifact.Bytecode.Object,
+		})
 	}
 
 	filePathsSafeSmartAccount, err := filepath.Glob(filepath.Join(parent, "safe-smart-account", "build", "artifacts", "contracts", "*", "*.sol", "*.json"))
@@ -81,13 +133,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	filePathsSafeSmartAccount = append(filePathsSafeSmartAccount, filePathsSafeSmartAccountOuter...)
 
-	filePaths = append(filePaths, filePathsSafeSmartAccount...)
-	filePaths = append(filePaths, filePathsSafeSmartAccountOuter...)
-
-	modules := make(map[string]*moduleInfo)
-
-	for _, path := range filePaths {
+	for _, path := range filePathsSafeSmartAccount {
 		if strings.Contains(path, ".dbg.json") {
 			continue
 		}
@@ -114,7 +162,11 @@ func main() {
 			modInfo = &moduleInfo{}
 			modules[module] = modInfo
 		}
-		modInfo.addArtifact(artifact)
+		modInfo.addArtifact(commonArtifact{
+			contractName: artifact.ContractName,
+			abi:          artifact.Abi,
+			bytecode:     artifact.Bytecode,
+		})
 	}
 
 	yulFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "*", "*.yul", "*.json"))
@@ -139,10 +191,10 @@ func main() {
 		if err := json.Unmarshal(data, &artifact); err != nil {
 			log.Fatal("failed to parse contract", name, err)
 		}
-		yulModInfo.addArtifact(HardHatArtifact{
-			ContractName: name,
-			Abi:          artifact.Abi,
-			Bytecode:     artifact.Bytecode.Object,
+		yulModInfo.addArtifact(commonArtifact{
+			contractName: name,
+			abi:          artifact.Abi,
+			bytecode:     artifact.Bytecode.Object,
 		})
 	}
 
@@ -164,7 +216,11 @@ func main() {
 			modInfo = &moduleInfo{}
 			modules["upgrade_executorgen"] = modInfo
 		}
-		modInfo.addArtifact(artifact)
+		modInfo.addArtifact(commonArtifact{
+			contractName: artifact.ContractName,
+			abi:          artifact.Abi,
+			bytecode:     artifact.Bytecode,
+		})
 	}
 
 	for module, info := range modules {
