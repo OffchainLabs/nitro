@@ -30,9 +30,10 @@ type JitMachine struct {
 	process              *exec.Cmd
 	stdin                io.WriteCloser
 	wasmMemoryUsageLimit int
+	maxExecutionTime     time.Duration
 }
 
-func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmMemoryUsageLimit int, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
+func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmMemoryUsageLimit int, maxExecutionTime time.Duration, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
 	invocation := []string{"--binary", binaryPath, "--forks"}
 	if cranelift {
 		invocation = append(invocation, "--cranelift")
@@ -55,6 +56,7 @@ func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmM
 		process:              process,
 		stdin:                stdin,
 		wasmMemoryUsageLimit: wasmMemoryUsageLimit,
+		maxExecutionTime:     maxExecutionTime,
 	}
 	return machine, nil
 }
@@ -73,7 +75,7 @@ func (machine *JitMachine) prove(
 	defer cancel() // ensure our cleanup functions run when we're done
 	state := validator.GoGlobalState{}
 
-	timeout := time.Now().Add(60 * time.Second)
+	timeout := time.Now().Add(machine.maxExecutionTime)
 	tcp, err := net.ListenTCP("tcp4", &net.TCPAddr{
 		IP: []byte{127, 0, 0, 1},
 	})
