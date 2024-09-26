@@ -205,7 +205,6 @@ func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 	return c.txProcessor.PosterFee, nil
 }
 
-// TODO: add test
 // GetGasBacklog gets the backlogged amount of gas burnt in excess of the speed limit
 func (con ArbGasInfo) GetGasBacklog(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().GasBacklog()
@@ -265,25 +264,21 @@ func (con ArbGasInfo) GetL1PricingEquilibrationUnits(c ctx, evm mech) (*big.Int,
 	return c.State.L1PricingState().EquilibrationUnits()
 }
 
-// TODO: add test
 // GetLastL1PricingUpdateTime gets the last time the L1 calldata pricer was updated
 func (con ArbGasInfo) GetLastL1PricingUpdateTime(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().LastUpdateTime()
 }
 
-// TODO: add test
 // GetL1PricingFundsDueForRewards gets the amount of L1 calldata payments due for rewards (per the L1 reward rate)
 func (con ArbGasInfo) GetL1PricingFundsDueForRewards(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().FundsDueForRewards()
 }
 
-// TODO: add test
 // GetL1PricingUnitsSinceUpdate gets the amount of L1 calldata posted since the last update
 func (con ArbGasInfo) GetL1PricingUnitsSinceUpdate(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().UnitsSinceUpdate()
 }
 
-// TODO: add test
 // GetLastL1PricingSurplus gets the L1 pricing surplus as of the last update (may be negative)
 func (con ArbGasInfo) GetLastL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().LastSurplus()
