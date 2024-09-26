@@ -61,6 +61,7 @@ func BuildBlock(
 	err = l1Message.FillInBatchGasCost(batchFetcher)
 	if err != nil {
 		// skip malformed batch posting report
+		// nolint:nilerr
 		return nil, nil
 	}
 
