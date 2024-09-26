@@ -168,6 +168,18 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
 	}
 
+	// GetL1BaseFeeEstimateInertia test, but using a different setter from ArbOwner
+	inertia = uint64(11)
+	tx, err = arbOwner.SetL1PricingInertia(&auth, inertia)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoInertia, err = arbGasInfo.GetL1BaseFeeEstimateInertia(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoInertia != inertia {
+		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
+	}
+
 	// GetL1RewardRate test
 	perUnitReward := uint64(11)
 	tx, err = arbOwner.SetL1PricingRewardRate(&auth, perUnitReward)
