@@ -161,7 +161,6 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 	return con.GetPricesInArbGasWithAggregator(c, evm, addr{})
 }
 
-// TODO: add test
 // GetGasAccountingParams gets the rollup's speed limit, pool size, and tx gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
 	l2pricing := c.State.L2PricingState()

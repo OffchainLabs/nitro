@@ -169,7 +169,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	}
 
 	// GetL1BaseFeeEstimateInertia test, but using a different setter from ArbOwner
-	inertia = uint64(11)
+	inertia = uint64(12)
 	tx, err = arbOwner.SetL1PricingInertia(&auth, inertia)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
@@ -181,7 +181,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	}
 
 	// GetL1RewardRate test
-	perUnitReward := uint64(11)
+	perUnitReward := uint64(13)
 	tx, err = arbOwner.SetL1PricingRewardRate(&auth, perUnitReward)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
@@ -205,7 +205,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	}
 
 	// GetPricingInertia
-	inertia = uint64(11)
+	inertia = uint64(14)
 	tx, err = arbOwner.SetL2GasPricingInertia(&auth, inertia)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
@@ -217,8 +217,8 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	}
 
 	// GetGasBacklogTolerance
-	gasTolerance := uint64(11)
-	tx, err = arbOwner.SetL2GasBacklogTolerance(&auth, inertia)
+	gasTolerance := uint64(15)
+	tx, err = arbOwner.SetL2GasBacklogTolerance(&auth, gasTolerance)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -229,7 +229,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	}
 
 	// GetPerBatchGasCharge
-	perBatchGasCharge := int64(11)
+	perBatchGasCharge := int64(16)
 	tx, err = arbOwner.SetPerBatchGasCharge(&auth, perBatchGasCharge)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
@@ -241,7 +241,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	}
 
 	// GetL1PricingEquilibrationUnits
-	equilUnits := big.NewInt(11)
+	equilUnits := big.NewInt(17)
 	tx, err = arbOwner.SetL1PricingEquilibrationUnits(&auth, equilUnits)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
@@ -250,6 +250,29 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	Require(t, err)
 	if arbGasInfoEquilUnits.Cmp(equilUnits) != 0 {
 		Fatal(t, "expected equilibration units to be", equilUnits, "got", arbGasInfoEquilUnits)
+	}
+
+	// GetGasAccountingParams
+	speedLimit := uint64(18)
+	txGasLimit := uint64(19)
+	tx, err = arbOwner.SetSpeedLimit(&auth, speedLimit)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetMaxTxGasLimit(&auth, txGasLimit)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoSpeedLimit, arbGasInfoPoolSize, arbGasInfoTxGasLimit, err := arbGasInfo.GetGasAccountingParams(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoSpeedLimit.Cmp(big.NewInt(int64(speedLimit))) != 0 {
+		Fatal(t, "expected speed limit to be", speedLimit, "got", arbGasInfoSpeedLimit)
+	}
+	if arbGasInfoPoolSize.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
+		Fatal(t, "expected pool size to be", txGasLimit, "got", arbGasInfoPoolSize)
+	}
+	if arbGasInfoTxGasLimit.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
+		Fatal(t, "expected tx gas limit to be", txGasLimit, "got", arbGasInfoTxGasLimit)
 	}
 }
 
