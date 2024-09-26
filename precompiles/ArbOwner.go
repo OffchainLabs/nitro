@@ -62,7 +62,6 @@ func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64)
 	return c.State.L1PricingState().SetInertia(inertia)
 }
 
-// TODO: add test
 // SetL2BaseFee sets the L2 gas price directly, bypassing the pool calculus
 func (con ArbOwner) SetL2BaseFee(c ctx, evm mech, priceInWei huge) error {
 	return c.State.L2PricingState().SetBaseFeeWei(priceInWei)

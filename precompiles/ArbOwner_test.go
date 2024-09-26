@@ -159,6 +159,16 @@ func TestArbOwner(t *testing.T) {
 	if retrievedNetworkFeeAccount != addr1 {
 		Fail(t, "Expected", addr1, "got", retrievedNetworkFeeAccount)
 	}
+
+	l2BaseFee := big.NewInt(123)
+	err = prec.SetL2BaseFee(callCtx, evm, l2BaseFee)
+	Require(t, err)
+	retrievedL2BaseFee, err := state.L2PricingState().BaseFeeWei()
+	Require(t, err)
+	if l2BaseFee.Cmp(retrievedL2BaseFee) != 0 {
+		Fail(t, "Expected", l2BaseFee, "got", retrievedL2BaseFee)
+	}
+
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
