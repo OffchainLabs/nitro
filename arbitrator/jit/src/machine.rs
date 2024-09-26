@@ -129,7 +129,9 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "send_response" => func!(program::send_response),
             "create_stylus_config" => func!(program::create_stylus_config),
             "create_evm_data" => func!(program::create_evm_data),
+            "create_evm_data_v2" => func!(program::create_evm_data_v2),
             "activate" => func!(program::activate),
+            "activate_v2" => func!(program::activate_v2),
         },
     };
 

@@ -472,6 +472,10 @@ func mainImpl() int {
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		blocksReExecutor = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
 		if nodeConfig.Init.ThenQuit {
+			if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+				log.Error("error populating stylus target cache", "err", err)
+				return 1
+			}
 			success := make(chan struct{})
 			blocksReExecutor.Start(ctx, success)
 			deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
@@ -1006,14 +1010,15 @@ func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 			return nil
 		}
 		// Reorg out the batch containing the next message
-		var missing bool
+		var found bool
 		var err error
-		batchCount, missing, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
 		if err != nil {
 			return err
 		}
-		if missing {
-			return fmt.Errorf("cannot reorg to unknown message index %v", messageIndex)
+		if !found {
+			log.Warn("init-reorg: no need to reorg, because message ahead of chain", "messageIndex", messageIndex)
+			return nil
 		}
 	}
 	return inboxTracker.ReorgBatchesTo(batchCount)
