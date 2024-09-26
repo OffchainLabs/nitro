@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -138,6 +139,106 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 	arbDebug, err := precompilesgen.ArbDebugMetaData.GetAbi()
 	Require(t, err)
 	assertNotAllGasConsumed(common.HexToAddress("0xff"), arbDebug.Methods["legacyError"].ID)
+}
+
+func TestArbGasInfoAndArbOwner(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), builder.L2.Client)
+	Require(t, err)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
+	Require(t, err)
+
+	// GetL1BaseFeeEstimateInertia test
+	inertia := uint64(11)
+	tx, err := arbOwner.SetL1BaseFeeEstimateInertia(&auth, inertia)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoInertia, err := arbGasInfo.GetL1BaseFeeEstimateInertia(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoInertia != inertia {
+		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
+	}
+
+	// GetL1RewardRate test
+	perUnitReward := uint64(11)
+	tx, err = arbOwner.SetL1PricingRewardRate(&auth, perUnitReward)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoPerUnitReward, err := arbGasInfo.GetL1RewardRate(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoPerUnitReward != perUnitReward {
+		Fatal(t, "expected per unit reward to be", perUnitReward, "got", arbGasInfoPerUnitReward)
+	}
+
+	// GetL1RewardRecipient test
+	rewardRecipient := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	tx, err = arbOwner.SetL1PricingRewardRecipient(&auth, rewardRecipient)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoRewardRecipient, err := arbGasInfo.GetL1RewardRecipient(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoRewardRecipient.Cmp(rewardRecipient) != 0 {
+		Fatal(t, "expected reward recipient to be", rewardRecipient, "got", arbGasInfoRewardRecipient)
+	}
+
+	// GetPricingInertia
+	inertia = uint64(11)
+	tx, err = arbOwner.SetL2GasPricingInertia(&auth, inertia)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoInertia, err = arbGasInfo.GetPricingInertia(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoInertia != inertia {
+		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
+	}
+
+	// GetGasBacklogTolerance
+	gasTolerance := uint64(11)
+	tx, err = arbOwner.SetL2GasBacklogTolerance(&auth, inertia)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoGasTolerance, err := arbGasInfo.GetGasBacklogTolerance(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoGasTolerance != gasTolerance {
+		Fatal(t, "expected gas tolerance to be", gasTolerance, "got", arbGasInfoGasTolerance)
+	}
+
+	// GetPerBatchGasCharge
+	perBatchGasCharge := int64(11)
+	tx, err = arbOwner.SetPerBatchGasCharge(&auth, perBatchGasCharge)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoPerBatchGasCharge, err := arbGasInfo.GetPerBatchGasCharge(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoPerBatchGasCharge != perBatchGasCharge {
+		Fatal(t, "expected per batch gas charge to be", perBatchGasCharge, "got", arbGasInfoPerBatchGasCharge)
+	}
+
+	// GetL1PricingEquilibrationUnits
+	equilUnits := big.NewInt(11)
+	tx, err = arbOwner.SetL1PricingEquilibrationUnits(&auth, equilUnits)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoEquilUnits, err := arbGasInfo.GetL1PricingEquilibrationUnits(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoEquilUnits.Cmp(equilUnits) != 0 {
+		Fatal(t, "expected equilibration units to be", equilUnits, "got", arbGasInfoEquilUnits)
+	}
 }
 
 func TestGetBrotliCompressionLevel(t *testing.T) {

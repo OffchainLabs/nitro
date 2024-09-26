@@ -1,4 +1,3 @@
-// TODO: check
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
@@ -63,6 +62,7 @@ func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64)
 	return c.State.L1PricingState().SetInertia(inertia)
 }
 
+// TODO: add test
 // SetL2BaseFee sets the L2 gas price directly, bypassing the pool calculus
 func (con ArbOwner) SetL2BaseFee(c ctx, evm mech, priceInWei huge) error {
 	return c.State.L2PricingState().SetBaseFeeWei(priceInWei)
@@ -76,6 +76,7 @@ func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error 
 	return c.State.L2PricingState().SetMinBaseFeeWei(priceInWei)
 }
 
+// TODO: add test
 // SetSpeedLimit sets the computational speed limit for the chain
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetSpeedLimitPerSecond(limit)
@@ -96,6 +97,7 @@ func (con ArbOwner) SetL2GasBacklogTolerance(c ctx, evm mech, sec uint64) error 
 	return c.State.L2PricingState().SetBacklogTolerance(sec)
 }
 
+// TODO: add test
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()
@@ -125,6 +127,7 @@ func (con ArbOwner) SetL1PricingEquilibrationUnits(c ctx, evm mech, equilibratio
 	return c.State.L1PricingState().SetEquilibrationUnits(equilibrationUnits)
 }
 
+// TODO: add test
 func (con ArbOwner) SetL1PricingInertia(c ctx, evm mech, inertia uint64) error {
 	return c.State.L1PricingState().SetInertia(inertia)
 }
