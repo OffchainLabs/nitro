@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -77,5 +78,22 @@ func TestArbGasInfo(t *testing.T) {
 	Require(t, err)
 	if retrievedLastSurplus.Cmp(lastSurplus) != 0 {
 		t.Fatal("expected last surplus to be", lastSurplus, "but got", retrievedLastSurplus)
+	}
+
+	// GetPricesInArbGas test
+	evm.Context.BaseFee = big.NewInt(1005)
+	expectedGasPerL2Tx := big.NewInt(111442786069)
+	expectedGasForL1Calldata := big.NewInt(796019900)
+	expectedStorageArgGas := big.NewInt(int64(storage.StorageWriteCost))
+	gasPerL2Tx, gasForL1Calldata, storageArgGas, err := arbGasInfo.GetPricesInArbGas(callCtx, evm)
+	Require(t, err)
+	if gasPerL2Tx.Cmp(expectedGasPerL2Tx) != 0 {
+		t.Fatal("expected gas per L2 tx to be", expectedGasPerL2Tx, "but got", gasPerL2Tx)
+	}
+	if gasForL1Calldata.Cmp(expectedGasForL1Calldata) != 0 {
+		t.Fatal("expected gas for L1 calldata to be", expectedGasForL1Calldata, "but got", gasForL1Calldata)
+	}
+	if storageArgGas.Cmp(expectedStorageArgGas) != 0 {
+		t.Fatal("expected storage arg gas to be", expectedStorageArgGas, "but got", storageArgGas)
 	}
 }
