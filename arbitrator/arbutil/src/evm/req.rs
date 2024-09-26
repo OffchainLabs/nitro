@@ -298,9 +298,10 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         let mut request = Vec::with_capacity(2 * 8 + 3 * 2 + name.len() + args.len() + outs.len());
         request.extend(start_ink.to_be_bytes());
         request.extend(end_ink.to_be_bytes());
-        request.extend((name.len() as u16).to_be_bytes());
-        request.extend((args.len() as u16).to_be_bytes());
-        request.extend((outs.len() as u16).to_be_bytes());
+        // u32 is enough to represent the slices lengths because the WASM environment runs in 32 bits.
+        request.extend((name.len() as u32).to_be_bytes());
+        request.extend((args.len() as u32).to_be_bytes());
+        request.extend((outs.len() as u32).to_be_bytes());
         request.extend(name.as_bytes());
         request.extend(args);
         request.extend(outs);
