@@ -97,7 +97,6 @@ func (con ArbOwner) SetL2GasBacklogTolerance(c ctx, evm mech, sec uint64) error 
 	return c.State.L2PricingState().SetBacklogTolerance(sec)
 }
 
-// TODO: add test
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()

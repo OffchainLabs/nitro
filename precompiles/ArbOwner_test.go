@@ -151,6 +151,14 @@ func TestArbOwner(t *testing.T) {
 	if avail.Cmp(deposited) != 0 {
 		Fail(t, avail, deposited)
 	}
+
+	err = prec.SetNetworkFeeAccount(callCtx, evm, addr1)
+	Require(t, err)
+	retrievedNetworkFeeAccount, err := prec.GetNetworkFeeAccount(callCtx, evm)
+	Require(t, err)
+	if retrievedNetworkFeeAccount != addr1 {
+		Fail(t, "Expected", addr1, "got", retrievedNetworkFeeAccount)
+	}
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
