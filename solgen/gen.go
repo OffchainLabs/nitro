@@ -104,7 +104,7 @@ func main() {
 		if err := json.Unmarshal(data, &foundryArtifact); err != nil {
 			log.Fatal("failed to parse contract ", name, err)
 		}
-		if foundryArtifact.Ast.AbsolutePath[:4] != "src/" {
+		if len(foundryArtifact.Ast.AbsolutePath) < 4 || foundryArtifact.Ast.AbsolutePath[:4] != "src/" {
 			continue
 		}
 
@@ -112,6 +112,11 @@ func main() {
 		_, module := filepath.Split(compiledFileParent[:len(compiledFileParent)-1])
 		module = strings.ReplaceAll(module, "-", "_")
 		module += "gen"
+
+		// Manual override
+		if module == "rollupgen" && name == "Config" {
+			continue
+		}
 
 		modInfo := modules[module]
 		if modInfo == nil {
