@@ -205,7 +205,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 		Fatal(t, "expected reward recipient to be", rewardRecipient, "got", arbGasInfoRewardRecipient)
 	}
 
-	// GetPricingInertia
+	// GetPricingInertia test
 	inertia = uint64(14)
 	tx, err = arbOwner.SetL2GasPricingInertia(&auth, inertia)
 	Require(t, err)
@@ -217,7 +217,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
 	}
 
-	// GetGasBacklogTolerance
+	// GetGasBacklogTolerance test
 	gasTolerance := uint64(15)
 	tx, err = arbOwner.SetL2GasBacklogTolerance(&auth, gasTolerance)
 	Require(t, err)
@@ -229,7 +229,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 		Fatal(t, "expected gas tolerance to be", gasTolerance, "got", arbGasInfoGasTolerance)
 	}
 
-	// GetPerBatchGasCharge
+	// GetPerBatchGasCharge test
 	perBatchGasCharge := int64(16)
 	tx, err = arbOwner.SetPerBatchGasCharge(&auth, perBatchGasCharge)
 	Require(t, err)
@@ -241,7 +241,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 		Fatal(t, "expected per batch gas charge to be", perBatchGasCharge, "got", arbGasInfoPerBatchGasCharge)
 	}
 
-	// GetL1PricingEquilibrationUnits
+	// GetL1PricingEquilibrationUnits test
 	equilUnits := big.NewInt(17)
 	tx, err = arbOwner.SetL1PricingEquilibrationUnits(&auth, equilUnits)
 	Require(t, err)
@@ -253,7 +253,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 		Fatal(t, "expected equilibration units to be", equilUnits, "got", arbGasInfoEquilUnits)
 	}
 
-	// GetGasAccountingParams
+	// GetGasAccountingParams test
 	speedLimit := uint64(18)
 	txGasLimit := uint64(19)
 	tx, err = arbOwner.SetSpeedLimit(&auth, speedLimit)
@@ -276,6 +276,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 		Fatal(t, "expected tx gas limit to be", txGasLimit, "got", arbGasInfoTxGasLimit)
 	}
 
+	// GetCurrentTxL1GasFees test
 	currTxL1GasFees, err := arbGasInfo.GetCurrentTxL1GasFees(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	if currTxL1GasFees == nil {
