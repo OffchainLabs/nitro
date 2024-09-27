@@ -169,7 +169,7 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
 	}
 
-	// GetL1BaseFeeEstimateInertia test, but using a different setter from ArbOwner
+	// GetL1BaseFeeEstimateInertia test, but now using a different setter from ArbOwner
 	inertia = uint64(12)
 	tx, err = arbOwner.SetL1PricingInertia(&auth, inertia)
 	Require(t, err)
