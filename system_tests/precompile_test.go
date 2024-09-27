@@ -274,6 +274,15 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	if arbGasInfoTxGasLimit.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
 		Fatal(t, "expected tx gas limit to be", txGasLimit, "got", arbGasInfoTxGasLimit)
 	}
+
+	currTxL1GasFees, err := arbGasInfo.GetCurrentTxL1GasFees(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if currTxL1GasFees == nil {
+		Fatal(t, "currTxL1GasFees is nil")
+	}
+	if currTxL1GasFees.Cmp(big.NewInt(0)) != 1 {
+		Fatal(t, "expected currTxL1GasFees to be greater than 0, got", currTxL1GasFees)
+	}
 }
 
 func TestGetBrotliCompressionLevel(t *testing.T) {
