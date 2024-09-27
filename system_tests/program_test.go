@@ -535,7 +535,7 @@ func testCalls(t *testing.T, jit bool) {
 	defer cleanup()
 	callsAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
-	// checks ArbInfo.GetCode works properly
+	// checks that ArbInfo.GetCode works properly
 	codeFromFile, _ := readWasmFile(t, rustFile("multicall"))
 	arbInfo, err := pgen.NewArbInfo(types.ArbInfoAddress, l2client)
 	Require(t, err)
@@ -726,7 +726,7 @@ func testCalls(t *testing.T, jit bool) {
 		Fatal(t, balance, value)
 	}
 
-	// checks ArbInfo.GetBalance works properly
+	// checks that ArbInfo.GetBalance works properly
 	balance, err = arbInfo.GetBalance(nil, eoa)
 	Require(t, err)
 	if !arbmath.BigEquals(balance, value) {
