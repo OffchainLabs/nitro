@@ -195,7 +195,6 @@ func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (add
 	return retryable.Beneficiary()
 }
 
-// TODO: add test
 // Cancel the ticket and refund its callvalue to its beneficiary
 func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	if c.txProcessor.CurrentRetryable != nil && ticketId == *c.txProcessor.CurrentRetryable {
