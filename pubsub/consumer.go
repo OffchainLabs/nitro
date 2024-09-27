@@ -100,10 +100,8 @@ func decrementMsgIdByOne(msgId string) string {
 		return strconv.FormatUint(id[0], 10) + "-" + strconv.FormatUint(id[1]-1, 10)
 	} else if id[0] > 0 {
 		return strconv.FormatUint(id[0]-1, 10) + "-" + strconv.FormatUint(math.MaxUint64, 10)
-	} else {
-		log.Error("Error decrementing start of XAutoClaim by one, defaulting to 0")
-		return "0"
 	}
+	return "0"
 }
 
 // Consumer first checks it there exists pending message that is claimed by
