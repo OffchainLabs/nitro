@@ -354,12 +354,12 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 	}
 	// Make sure we don't allow accidentally downgrading ArbOS
 	if chainConfig.DebugMode() {
-		if currentArbosState.ArbOSVersion() > currentArbosState.MaxDebugArbosVersionSupported() {
-			return fmt.Errorf("attempted to launch node in debug mode with ArbOS version %v on ArbOS state with version %v", currentArbosState.MaxDebugArbosVersionSupported(), currentArbosState.ArbOSVersion())
+		if currentArbosState.ArbOSVersion() > arbosState.MaxDebugArbosVersionSupported {
+			return fmt.Errorf("attempted to launch node in debug mode with ArbOS version %v on ArbOS state with version %v", arbosState.MaxDebugArbosVersionSupported, currentArbosState.ArbOSVersion())
 		}
 	} else {
-		if currentArbosState.ArbOSVersion() > currentArbosState.MaxArbosVersionSupported() {
-			return fmt.Errorf("attempted to launch node with ArbOS version %v on ArbOS state with version %v", currentArbosState.MaxArbosVersionSupported(), currentArbosState.ArbOSVersion())
+		if currentArbosState.ArbOSVersion() > arbosState.MaxArbosVersionSupported {
+			return fmt.Errorf("attempted to launch node with ArbOS version %v on ArbOS state with version %v", arbosState.MaxArbosVersionSupported, currentArbosState.ArbOSVersion())
 		}
 
 	}
@@ -876,6 +876,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 		localWg.Add(1)
 		go func() {
 			batch := chainDb.NewBatch()
+			// #nosec G115
 			for blockNum := uint64(thread); blockNum <= lastBlock; blockNum += uint64(threads) {
 				blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
 				block := rawdb.ReadBlock(chainDb, blockHash, blockNum)

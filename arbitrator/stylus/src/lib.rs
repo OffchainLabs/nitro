@@ -139,7 +139,8 @@ impl RustBytes {
 pub unsafe extern "C" fn stylus_activate(
     wasm: GoSliceData,
     page_limit: u16,
-    version: u16,
+    stylus_version: u16,
+    arbos_version_for_gas: u64,
     debug: bool,
     output: *mut RustBytes,
     codehash: *const Bytes32,
@@ -153,7 +154,15 @@ pub unsafe extern "C" fn stylus_activate(
     let codehash = &*codehash;
     let gas = &mut *gas;
 
-    let (module, info) = match native::activate(wasm, codehash, version, page_limit, debug, gas) {
+    let (module, info) = match native::activate(
+        wasm,
+        codehash,
+        stylus_version,
+        arbos_version_for_gas,
+        page_limit,
+        debug,
+        gas,
+    ) {
         Ok(val) => val,
         Err(err) => return output.write_err(err),
     };

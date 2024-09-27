@@ -249,7 +249,7 @@ func mainImpl() int {
 	// If sequencer and signing is enabled or batchposter is enabled without
 	// external signing sequencer will need a key.
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
-		(nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "")
+		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DataAvailability.Enable))
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
@@ -437,61 +437,9 @@ func mainImpl() int {
 
 	// Check that node is compatible with on-chain WASM module root on startup and before any ArbOS upgrades take effect to prevent divergences
 	if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
-		// Fetch current on-chain WASM module root
-		rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
+		err := checkWasmModuleRootCompatibility(ctx, nodeConfig.Validation.Wasm, l1Client, rollupAddrs)
 		if err != nil {
-			log.Error("failed to create rollupUserLogic", "err", err)
-			return 1
-		}
-		moduleRoot, err := rollupUserLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
-		if err != nil {
-			log.Error("failed to get on-chain WASM module root", "err", err)
-			return 1
-		}
-		if (moduleRoot == common.Hash{}) {
-			log.Error("on-chain WASM module root is zero")
-			return 1
-		}
-		// Check if the on-chain WASM module root belongs to the set of allowed module roots
-		allowedWasmModuleRoots := nodeConfig.Validation.Wasm.AllowedWasmModuleRoots
-		if len(allowedWasmModuleRoots) > 0 {
-			moduleRootMatched := false
-			for _, root := range allowedWasmModuleRoots {
-				bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
-				if err == nil {
-					if common.HexToHash(root) == common.BytesToHash(bytes) {
-						moduleRootMatched = true
-						break
-					}
-					continue
-				}
-				locator, locatorErr := server_common.NewMachineLocator(root)
-				if locatorErr != nil {
-					log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
-					continue
-				}
-				path := locator.GetMachinePath(moduleRoot)
-				if _, err := os.Stat(path); err == nil {
-					moduleRootMatched = true
-					break
-				}
-			}
-			if !moduleRootMatched {
-				log.Error("on-chain WASM module root did not match with any of the allowed WASM module roots")
-				return 1
-			}
-		} else {
-			// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
-			locator, err := server_common.NewMachineLocator(nodeConfig.Validation.Wasm.RootPath)
-			if err != nil {
-				log.Warn("failed to create machine locator. Skipping the check for compatibility with on-chain WASM module root", "err", err)
-			} else {
-				path := locator.GetMachinePath(moduleRoot)
-				if _, err := os.Stat(path); err != nil {
-					log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
-					return 1
-				}
-			}
+			log.Warn("failed to check if node is compatible with on-chain WASM module root", "err", err)
 		}
 	}
 
@@ -524,6 +472,10 @@ func mainImpl() int {
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		blocksReExecutor = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
 		if nodeConfig.Init.ThenQuit {
+			if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+				log.Error("error populating stylus target cache", "err", err)
+				return 1
+			}
 			success := make(chan struct{})
 			blocksReExecutor.Start(ctx, success)
 			deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
@@ -892,6 +844,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainInfoIpfsDownloadPath := k.String("chain.info-ipfs-download-path")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
+	// #nosec G115
 	err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return nil, nil, err
@@ -1037,13 +990,16 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
 	var batchCount uint64
 	if initConfig.ReorgToBatch >= 0 {
+		// #nosec G115
 		batchCount = uint64(initConfig.ReorgToBatch) + 1
 	} else {
 		var messageIndex arbutil.MessageIndex
 		if initConfig.ReorgToMessageBatch >= 0 {
+			// #nosec G115
 			messageIndex = arbutil.MessageIndex(initConfig.ReorgToMessageBatch)
 		} else if initConfig.ReorgToBlockBatch > 0 {
 			genesis := chainConfig.ArbitrumChainParams.GenesisBlockNum
+			// #nosec G115
 			blockNum := uint64(initConfig.ReorgToBlockBatch)
 			if blockNum < genesis {
 				return fmt.Errorf("ReorgToBlockBatch %d before genesis %d", blockNum, genesis)
@@ -1054,14 +1010,15 @@ func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 			return nil
 		}
 		// Reorg out the batch containing the next message
-		var missing bool
+		var found bool
 		var err error
-		batchCount, missing, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
 		if err != nil {
 			return err
 		}
-		if missing {
-			return fmt.Errorf("cannot reorg to unknown message index %v", messageIndex)
+		if !found {
+			log.Warn("init-reorg: no need to reorg, because message ahead of chain", "messageIndex", messageIndex)
+			return nil
 		}
 	}
 	return inboxTracker.ReorgBatchesTo(batchCount)
@@ -1073,4 +1030,58 @@ type NodeConfigFetcher struct {
 
 func (f *NodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveConfig.Get().Node
+}
+
+func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {
+	// Fetch current on-chain WASM module root
+	rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
+	if err != nil {
+		return fmt.Errorf("failed to create RollupUserLogic: %w", err)
+	}
+	moduleRoot, err := rollupUserLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return fmt.Errorf("failed to get on-chain WASM module root: %w", err)
+	}
+	if (moduleRoot == common.Hash{}) {
+		return errors.New("on-chain WASM module root is zero")
+	}
+	// Check if the on-chain WASM module root belongs to the set of allowed module roots
+	allowedWasmModuleRoots := wasmConfig.AllowedWasmModuleRoots
+	if len(allowedWasmModuleRoots) > 0 {
+		moduleRootMatched := false
+		for _, root := range allowedWasmModuleRoots {
+			bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
+			if err == nil {
+				if common.HexToHash(root) == common.BytesToHash(bytes) {
+					moduleRootMatched = true
+					break
+				}
+				continue
+			}
+			locator, locatorErr := server_common.NewMachineLocator(root)
+			if locatorErr != nil {
+				log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
+				continue
+			}
+			path := locator.GetMachinePath(moduleRoot)
+			if _, err := os.Stat(path); err == nil {
+				moduleRootMatched = true
+				break
+			}
+		}
+		if !moduleRootMatched {
+			return errors.New("on-chain WASM module root did not match with any of the allowed WASM module roots")
+		}
+	} else {
+		// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
+		locator, err := server_common.NewMachineLocator(wasmConfig.RootPath)
+		if err != nil {
+			return fmt.Errorf("failed to create machine locator: %w", err)
+		}
+		path := locator.GetMachinePath(moduleRoot)
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("unable to find validator machine directory for the on-chain WASM module root: %w", err)
+		}
+	}
+	return nil
 }

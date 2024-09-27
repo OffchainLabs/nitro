@@ -60,6 +60,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func getStateHistory(maxBlockSpeed time.Duration) uint64 {
+	// #nosec G115
 	return uint64(24 * time.Hour / maxBlockSpeed)
 }
 
