@@ -82,11 +82,11 @@ func main() {
 
 	modules := make(map[string]*moduleInfo)
 
-	filePathsOutDir, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "*.sol", "*.json"))
+	solFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "*.sol", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, path := range filePathsOutDir {
+	for _, path := range solFilePaths {
 		dir, file := filepath.Split(path)
 		name := file[:len(file)-5]
 
@@ -104,7 +104,7 @@ func main() {
 		if err := json.Unmarshal(data, &foundryArtifact); err != nil {
 			log.Fatal("failed to parse contract ", name, err)
 		}
-		if len(foundryArtifact.Ast.AbsolutePath) < 4 || foundryArtifact.Ast.AbsolutePath[:4] != "src/" {
+		if !strings.Contains(foundryArtifact.Ast.AbsolutePath, "src/") {
 			continue
 		}
 
