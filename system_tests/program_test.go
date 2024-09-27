@@ -2007,3 +2007,128 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []s
 		}
 	}
 }
+
+func deployWasmAndGetLruEntrySizeEstimateBytes(
+	t *testing.T,
+	builder *NodeBuilder,
+	auth bind.TransactOpts,
+	wasmName string,
+) (common.Address, uint64) {
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+
+	wasm, _ := readWasmFile(t, rustFile(wasmName))
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err, ", wasmName:", wasmName)
+
+	programAddress := deployContract(t, ctx, auth, l2client, wasm)
+	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
+	Require(t, err, ", wasmName:", wasmName)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err, ", wasmName:", wasmName)
+
+	if len(receipt.Logs) != 1 {
+		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs), ", wasmName:", wasmName)
+	}
+	log, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
+	Require(t, err, ", wasmName:", wasmName)
+
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err, ", wasmName:", wasmName)
+
+	module, err := statedb.TryGetActivatedAsm(rawdb.LocalTarget(), log.ModuleHash)
+	Require(t, err, ", wasmName:", wasmName)
+
+	lruEntrySizeEstimateBytes := programs.GetLruEntrySizeEstimateBytes(module, log.Version, true)
+	// just a sanity check
+	if lruEntrySizeEstimateBytes == 0 {
+		Fatal(t, "lruEntrySizeEstimateBytes is 0, wasmName:", wasmName)
+	}
+	return programAddress, lruEntrySizeEstimateBytes
+}
+
+func TestWasmLruCache(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	auth.GasLimit = 32000000
+	auth.Value = oneEth
+
+	fallibleProgramAddress, fallibleLruEntrySizeEstimateBytes := deployWasmAndGetLruEntrySizeEstimateBytes(t, builder, auth, "fallible")
+	keccakProgramAddress, keccakLruEntrySizeEstimateBytes := deployWasmAndGetLruEntrySizeEstimateBytes(t, builder, auth, "keccak")
+	mathProgramAddress, mathLruEntrySizeEstimateBytes := deployWasmAndGetLruEntrySizeEstimateBytes(t, builder, auth, "math")
+	t.Log(
+		"lruEntrySizeEstimateBytes, ",
+		"fallible:", fallibleLruEntrySizeEstimateBytes,
+		"keccak:", keccakLruEntrySizeEstimateBytes,
+		"math:", mathLruEntrySizeEstimateBytes,
+	)
+
+	programs.ClearWasmLruCache()
+	lruMetrics := programs.GetWasmLruCacheMetrics()
+	if lruMetrics.Count != 0 {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
+	}
+	if lruMetrics.SizeBytes != 0 {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
+	}
+
+	programs.SetWasmLruCacheCapacity(fallibleLruEntrySizeEstimateBytes - 1)
+	// fallible wasm program will not be cached since its size is greater than lru cache capacity
+	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	lruMetrics = programs.GetWasmLruCacheMetrics()
+	if lruMetrics.Count != 0 {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
+	}
+	if lruMetrics.SizeBytes != 0 {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
+	}
+
+	programs.SetWasmLruCacheCapacity(
+		fallibleLruEntrySizeEstimateBytes + keccakLruEntrySizeEstimateBytes + mathLruEntrySizeEstimateBytes - 1,
+	)
+	// fallible wasm program will be cached
+	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	lruMetrics = programs.GetWasmLruCacheMetrics()
+	if lruMetrics.Count != 1 {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 1, lruMetrics.Count)
+	}
+	if lruMetrics.SizeBytes != fallibleLruEntrySizeEstimateBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", fallibleLruEntrySizeEstimateBytes, lruMetrics.SizeBytes)
+	}
+
+	// keccak wasm program will be cached
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	lruMetrics = programs.GetWasmLruCacheMetrics()
+	if lruMetrics.Count != 2 {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
+	}
+	if lruMetrics.SizeBytes != fallibleLruEntrySizeEstimateBytes+keccakLruEntrySizeEstimateBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", fallibleLruEntrySizeEstimateBytes+keccakLruEntrySizeEstimateBytes, lruMetrics.SizeBytes)
+	}
+
+	// math wasm program will be cached, but fallible will be evicted since (fallible + keccak + math) > lruCacheCapacity
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	lruMetrics = programs.GetWasmLruCacheMetrics()
+	if lruMetrics.Count != 2 {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
+	}
+	if lruMetrics.SizeBytes != keccakLruEntrySizeEstimateBytes+mathLruEntrySizeEstimateBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", keccakLruEntrySizeEstimateBytes+mathLruEntrySizeEstimateBytes, lruMetrics.SizeBytes)
+	}
+}
