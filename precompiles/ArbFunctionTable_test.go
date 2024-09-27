@@ -12,6 +12,8 @@ import (
 )
 
 func TestArbFunctionTable(t *testing.T) {
+	t.Parallel()
+
 	evm := newMockEVMForTesting()
 	ftab := ArbFunctionTable{}
 	context := testContext(common.Address{}, evm)
