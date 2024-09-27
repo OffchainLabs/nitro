@@ -152,10 +152,8 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, e
 	return new(big.Int).SetUint64(timeout), nil
 }
 
-// TODO: add test
 // Keepalive adds one lifetime period to the ticket's expiry
 func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, error) {
-
 	// charge for the expiry update
 	retryableState := c.State.RetryableState()
 	nbytes, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time)

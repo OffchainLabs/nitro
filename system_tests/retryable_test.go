@@ -423,7 +423,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	}
 }
 
-func TestCancelRetryable(t *testing.T) {
+func TestKeepaliveAndCancelRetryable(t *testing.T) {
 	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
@@ -477,9 +477,19 @@ func TestCancelRetryable(t *testing.T) {
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
 	Require(t, err)
 
-	// checks that the ticket exists
-	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
+	// checks that the ticket exists and gets current timeout
+	timeoutBeforeKeepalive, err := arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
 	Require(t, err)
+	// checks that keepalive increases the timeout as expected
+	_, err = arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
+	Require(t, err)
+	timeoutAfterKeepalive, err := arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
+	Require(t, err)
+	expectedTimeoutAfterKeepAlive := timeoutBeforeKeepalive
+	expectedTimeoutAfterKeepAlive.Add(expectedTimeoutAfterKeepAlive, big.NewInt(retryables.RetryableLifetimeSeconds))
+	if timeoutAfterKeepalive.Cmp(expectedTimeoutAfterKeepAlive) != 0 {
+		Fatal(t, "expected timeout after keepalive to be", expectedTimeoutAfterKeepAlive, "but got", timeoutAfterKeepalive)
+	}
 
 	// cancel the ticket
 	beneficiaryTxOpts := builder.L2Info.GetDefaultTransactOpts("Beneficiary", ctx)
