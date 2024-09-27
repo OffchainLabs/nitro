@@ -314,7 +314,7 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	config := n.ConfigFetcher()
-	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCache, &config.StylusTarget)
+	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCacheCapacity, &config.StylusTarget)
 	if err != nil {
 		return fmt.Errorf("error initializing execution engine: %w", err)
 	}
