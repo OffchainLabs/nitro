@@ -41,7 +41,7 @@ func TestProgramSimpleCost(t *testing.T) {
 		{hostio: "transient_store_bytes32", opcode: vm.TSTORE, params: []any{common.HexToHash("dead"), common.HexToHash("beef")}},
 		{hostio: "return_data_size", opcode: vm.RETURNDATASIZE, maxDiff: 1.0},
 		{hostio: "account_balance", opcode: vm.BALANCE, params: []any{l2info.GetAddress("Owner")}},
-		{hostio: "account_code", opcode: vm.EXTCODECOPY, params: []any{otherProgram}, maxDiff: 2},
+		{hostio: "account_code", opcode: vm.EXTCODECOPY, params: []any{otherProgram}},
 		{hostio: "account_code_size", opcode: vm.EXTCODESIZE, params: []any{otherProgram}},
 		{hostio: "account_codehash", opcode: vm.EXTCODEHASH, params: []any{otherProgram}},
 		{hostio: "evm_gas_left", opcode: vm.GAS, maxDiff: 1.0},

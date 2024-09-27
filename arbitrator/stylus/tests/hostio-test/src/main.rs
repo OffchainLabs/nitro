@@ -77,7 +77,13 @@ impl HostioTest {
     }
 
     fn account_code(account: Address) -> Result<Vec<u8>> {
-        Ok(account.code())
+        let mut size = 10000;
+        let mut code = vec![0; size];
+        unsafe {
+            size = hostio::account_code(account.as_ptr(), 0, size, code.as_mut_ptr());
+        }
+        code.resize(size, 0);
+        Ok(code)
     }
 
     fn account_code_size(account: Address) -> Result<U256> {
