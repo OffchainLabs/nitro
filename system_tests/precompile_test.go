@@ -38,10 +38,11 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 		Fatal(t, "Wrong ChainID", chainId.Uint64())
 	}
 
+	expectedArbosVersion := 55 + arbosVersion // Nitro versions start at 56
 	arbSysArbosVersion, err := arbSys.ArbOSVersion(&bind.CallOpts{})
 	Require(t, err)
-	if arbSysArbosVersion.Uint64() != 55+arbosVersion { // Nitro versios start at 56
-		Fatal(t, "Expected ArbOSVersion 86, got", arbosVersion)
+	if arbSysArbosVersion.Uint64() != expectedArbosVersion {
+		Fatal(t, "Expected ArbOS version", expectedArbosVersion, "got", arbSysArbosVersion)
 	}
 
 	storageGasAvailable, err := arbSys.GetStorageGasAvailable(&bind.CallOpts{})
