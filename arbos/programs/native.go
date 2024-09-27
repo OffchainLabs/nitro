@@ -7,7 +7,7 @@
 package programs
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -44,6 +45,14 @@ type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
+
+var (
+	stylusLRUCacheSizeBytesGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
+	stylusLRUCacheSizeCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
+	stylusLRUCacheSizeHitsCounter       = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/hits", nil)
+	stylusLRUCacheSizeMissesCounter     = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/misses", nil)
+	stylusLRUCacheSizeDoesNotFitCounter = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/does_not_fit", nil)
+)
 
 func activateProgram(
 	db vm.StateDB,
@@ -320,8 +329,39 @@ func init() {
 	}
 }
 
-func ResizeWasmLruCache(size uint32) {
-	C.stylus_cache_lru_resize(u32(size))
+func SetWasmLruCacheCapacity(capacityBytes uint64) {
+	C.stylus_set_cache_lru_capacity(u64(capacityBytes))
+}
+
+// exported for testing
+type WasmLruCacheMetrics struct {
+	SizeBytes uint64
+	Count     uint32
+}
+
+func GetWasmLruCacheMetrics() *WasmLruCacheMetrics {
+	metrics := C.stylus_get_lru_cache_metrics()
+
+	stylusLRUCacheSizeBytesGauge.Update(int64(metrics.size_bytes))
+	stylusLRUCacheSizeCountGauge.Update(int64(metrics.count))
+	stylusLRUCacheSizeHitsCounter.Inc(int64(metrics.hits))
+	stylusLRUCacheSizeMissesCounter.Inc(int64(metrics.misses))
+	stylusLRUCacheSizeDoesNotFitCounter.Inc(int64(metrics.does_not_fit))
+
+	return &WasmLruCacheMetrics{
+		SizeBytes: uint64(metrics.size_bytes),
+		Count:     uint32(metrics.count),
+	}
+}
+
+// Used for testing
+func ClearWasmLruCache() {
+	C.stylus_clear_lru_cache()
+}
+
+// Used for testing
+func GetLruEntrySizeEstimateBytes(module []byte, version uint16, debug bool) uint64 {
+	return uint64(C.stylus_get_lru_entry_size_estimate_bytes(goSlice(module), u16(version), cbool(debug)))
 }
 
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"

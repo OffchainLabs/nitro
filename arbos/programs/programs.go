@@ -127,6 +127,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVers
 		if err != nil {
 			return 0, codeHash, common.Hash{}, nil, true, err
 		}
+
 		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runMode, expired)
 	}
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
