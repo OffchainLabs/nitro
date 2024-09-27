@@ -51,9 +51,9 @@ type Consumer[Request any, Response any] struct {
 }
 
 type Message[Request any] struct {
-	ID          string
-	Value       Request
-	AckNotifier chan struct{}
+	ID    string
+	Value Request
+	Ack   func()
 }
 
 func NewConsumer[Request any, Response any](client redis.UniversalClient, streamName string, cfg *ConsumerConfig) (*Consumer[Request, Response], error) {
@@ -101,7 +101,7 @@ func decrementMsgIdByOne(msgId string) string {
 	} else if id[0] > 0 {
 		return strconv.FormatUint(id[0]-1, 10) + "-" + strconv.FormatUint(math.MaxUint64, 10)
 	} else {
-		log.Error("Error decrementing start of XAutoClaim by one, defaulting to 0", "err", err)
+		log.Error("Error decrementing start of XAutoClaim by one, defaulting to 0")
 		return "0"
 	}
 }
@@ -207,9 +207,9 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	})
 	log.Debug("Redis stream consuming", "consumer_id", c.id, "message_id", messages[0].ID)
 	return &Message[Request]{
-		ID:          messages[0].ID,
-		Value:       req,
-		AckNotifier: ackNotifier,
+		ID:    messages[0].ID,
+		Value: req,
+		Ack:   func() { close(ackNotifier) },
 	}, nil
 }
 
@@ -218,9 +218,9 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID s
 	if err != nil {
 		return fmt.Errorf("marshaling result: %w", err)
 	}
-	msgKey := MessageKeyFor(c.StreamName(), messageID)
-	log.Debug("consumer: setting result", "cid", c.id, "msgIdInStream", messageID, "msgKeyInRedis", msgKey)
-	acquired, err := c.client.SetNX(ctx, msgKey, resp, c.cfg.ResponseEntryTimeout).Result()
+	resultKey := ResultKeyFor(c.StreamName(), messageID)
+	log.Debug("consumer: setting result", "cid", c.id, "msgIdInStream", messageID, "resultKeyInRedis", resultKey)
+	acquired, err := c.client.SetNX(ctx, resultKey, resp, c.cfg.ResponseEntryTimeout).Result()
 	if err != nil || !acquired {
 		return fmt.Errorf("setting result for message with message-id in stream: %v, error: %w", messageID, err)
 	}

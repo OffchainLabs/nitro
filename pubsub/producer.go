@@ -50,27 +50,22 @@ type Producer[Request any, Response any] struct {
 type ProducerConfig struct {
 	// Interval duration for checking the result set by consumers.
 	CheckResultInterval time.Duration `koanf:"check-result-interval"`
-	// Timeout of entry's written to redis by producer
-	ResponseEntryTimeout time.Duration `koanf:"response-entry-timeout"`
 	// RequestTimeout is a TTL for any message sent to the redis stream
 	RequestTimeout time.Duration `koanf:"request-timeout"`
 }
 
 var DefaultProducerConfig = ProducerConfig{
-	CheckResultInterval:  5 * time.Second,
-	ResponseEntryTimeout: time.Hour,
-	RequestTimeout:       time.Hour, // should we increase this?
+	CheckResultInterval: 5 * time.Second,
+	RequestTimeout:      3 * time.Hour,
 }
 
 var TestProducerConfig = ProducerConfig{
-	CheckResultInterval:  5 * time.Millisecond,
-	ResponseEntryTimeout: time.Minute,
-	RequestTimeout:       time.Minute,
+	CheckResultInterval: 5 * time.Millisecond,
+	RequestTimeout:      time.Minute,
 }
 
 func ProducerAddConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".check-result-interval", DefaultProducerConfig.CheckResultInterval, "interval in which producer checks pending messages whether consumer processing them is inactive")
-	f.Duration(prefix+".response-entry-timeout", DefaultProducerConfig.ResponseEntryTimeout, "timeout after which responses written from producer to the redis are cleared. Currently used for the key mapping unique request id to redis stream message id")
 	f.Duration(prefix+".request-timeout", DefaultProducerConfig.RequestTimeout, "timeout after which the message in redis stream is considered as errored, this prevents workers from working on wrong requests indefinitely")
 }
 
@@ -133,39 +128,30 @@ func cmpMsgId(msgId1, msgId2 string) int {
 
 // checkResponses checks iteratively whether response for the promise is ready.
 func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.Duration {
-	pelData, err := p.client.XPending(ctx, p.redisStream, p.redisGroup).Result()
-	if err != nil {
-		log.Error("error getting PEL data from xpending, xtrimming is disabled", "err", err)
-	}
 	log.Debug("redis producer: check responses starting")
 	p.promisesLock.Lock()
 	defer p.promisesLock.Unlock()
 	responded := 0
 	errored := 0
 	checked := 0
+	allowedOldestID := fmt.Sprintf("%d-0", time.Now().Add(-p.cfg.RequestTimeout).UnixMilli())
 	for id, promise := range p.promises {
 		if ctx.Err() != nil {
 			return 0
 		}
 		checked++
-		msgKey := MessageKeyFor(p.redisStream, id)
-		res, err := p.client.Get(ctx, msgKey).Result()
+		resultKey := ResultKeyFor(p.redisStream, id)
+		res, err := p.client.Get(ctx, resultKey).Result()
 		if err != nil {
 			if !errors.Is(err, redis.Nil) {
-				log.Error("Error reading value in redis", "key", msgKey, "error", err)
-			} else {
+				log.Error("Error reading value in redis", "key", resultKey, "error", err)
+			} else if cmpMsgId(id, allowedOldestID) == -1 {
 				// The request this producer is waiting for has been past its TTL or is older than current PEL's lower,
 				// so safe to error and stop tracking this promise
-				allowedOldestID := fmt.Sprintf("%d-0", time.Now().Add(-p.cfg.RequestTimeout).UnixMilli())
-				if pelData != nil && pelData.Lower != "" {
-					allowedOldestID = pelData.Lower
-				}
-				if cmpMsgId(id, allowedOldestID) == -1 {
-					promise.ProduceError(errors.New("error getting response, request has been waiting for too long"))
-					log.Error("error getting response, request has been waiting past its TTL")
-					errored++
-					delete(p.promises, id)
-				}
+				promise.ProduceError(errors.New("error getting response, request has been waiting for too long"))
+				log.Error("error getting response, request has been waiting past its TTL")
+				errored++
+				delete(p.promises, id)
 			}
 			continue
 		}
@@ -178,16 +164,25 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 			promise.Produce(resp)
 			responded++
 		}
-		p.client.Del(ctx, msgKey)
+		p.client.Del(ctx, resultKey)
 		delete(p.promises, id)
+	}
+	log.Debug("checkResponses", "responded", responded, "errored", errored, "checked", checked)
+	return p.cfg.CheckResultInterval
+}
+
+func (p *Producer[Request, Response]) clearMessages(ctx context.Context) time.Duration {
+	pelData, err := p.client.XPending(ctx, p.redisStream, p.redisGroup).Result()
+	if err != nil {
+		log.Error("error getting PEL data from xpending, xtrimming is disabled", "err", err)
 	}
 	// XDEL on consumer side already deletes acked messages (mark as deleted) but doesnt claim the memory back, XTRIM helps in claiming this memory in normal conditions
 	// pelData might be outdated when we do the xtrim, but thats ok as the messages are also being trimmed by other producers
 	if pelData != nil && pelData.Lower != "" {
 		trimmed, trimErr := p.client.XTrimMinID(ctx, p.redisStream, pelData.Lower).Result()
-		log.Debug("trimming", "xTrimMinID", pelData.Lower, "trimmed", trimmed, "responded", responded, "errored", errored, "trim-err", trimErr, "checked", checked)
+		log.Debug("trimming", "xTrimMinID", pelData.Lower, "trimmed", trimmed, "trim-err", trimErr)
 		// Check if pelData.Lower has been past its TTL and if it is then ack it to remove from PEL and delete it, once
-		// its taken out from PEL the producer that sent this request will handle the corresponding promise accordingly (if PEL is non-empty)
+		// its taken out from PEL the producer that sent this request will handle the corresponding promise accordingly (as its past TTL)
 		allowedOldestID := fmt.Sprintf("%d-0", time.Now().Add(-p.cfg.RequestTimeout).UnixMilli())
 		if cmpMsgId(pelData.Lower, allowedOldestID) == -1 {
 			if err := p.client.XClaim(ctx, &redis.XClaimArgs{
@@ -198,18 +193,18 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 				Messages: []string{pelData.Lower},
 			}).Err(); err != nil {
 				log.Error("error claiming PEL's lower message thats past its TTL", "msgID", pelData.Lower, "err", err)
-				return p.cfg.CheckResultInterval
+				return 5 * p.cfg.CheckResultInterval
 			}
 			if _, err := p.client.XAck(ctx, p.redisStream, p.redisGroup, pelData.Lower).Result(); err != nil {
 				log.Error("error acking PEL's lower message thats past its TTL", "msgID", pelData.Lower, "err", err)
-				return p.cfg.CheckResultInterval
+				return 5 * p.cfg.CheckResultInterval
 			}
 			if _, err := p.client.XDel(ctx, p.redisStream, pelData.Lower).Result(); err != nil {
 				log.Error("error deleting PEL's lower message thats past its TTL", "msgID", pelData.Lower, "err", err)
 			}
 		}
 	}
-	return p.cfg.CheckResultInterval
+	return 5 * p.cfg.CheckResultInterval
 }
 
 func (p *Producer[Request, Response]) Start(ctx context.Context) {
@@ -246,6 +241,7 @@ func (p *Producer[Request, Response]) Produce(ctx context.Context, value Request
 	log.Debug("Redis stream producing", "value", value)
 	p.once.Do(func() {
 		p.StopWaiter.CallIteratively(p.checkResponses)
+		p.StopWaiter.CallIteratively(p.clearMessages)
 	})
 	return p.produce(ctx, value)
 }

@@ -48,9 +48,8 @@ func destroyRedisGroup(ctx context.Context, t *testing.T, streamName string, cli
 
 func producerCfg() *ProducerConfig {
 	return &ProducerConfig{
-		CheckResultInterval:  TestProducerConfig.CheckResultInterval,
-		ResponseEntryTimeout: TestProducerConfig.ResponseEntryTimeout,
-		RequestTimeout:       2 * time.Second,
+		CheckResultInterval: TestProducerConfig.CheckResultInterval,
+		RequestTimeout:      2 * time.Second,
 	}
 }
 
@@ -186,7 +185,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 						}
 						wantResponses[idx] = append(wantResponses[idx], resp)
 					}
-					close(res.AckNotifier)
+					res.Ack()
 				}
 			})
 	}
