@@ -156,7 +156,7 @@ func TestArbOwner(t *testing.T) {
 	Require(t, err)
 	retrievedNetworkFeeAccount, err := prec.GetNetworkFeeAccount(callCtx, evm)
 	Require(t, err)
-	if retrievedNetworkFeeAccount != addr1 {
+	if retrievedNetworkFeeAccount.Cmp(addr1) != 0 {
 		Fail(t, "Expected", addr1, "got", retrievedNetworkFeeAccount)
 	}
 
