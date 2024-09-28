@@ -33,13 +33,14 @@ func (c fakeClock) Now() time.Time {
 }
 
 func TestWriting(t *testing.T) {
-	w, err := NewWriter()
+	dir := t.TempDir()
+	w, err := NewWriter(
+		withTestClock(fakeClock{now: time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)}),
+		WithBaseDir(dir),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SetClockForTesting(fakeClock{now: time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)})
-	dir := t.TempDir()
-	w.SetBaseDir(dir)
 	err = w.Write(&server_api.InputJSON{Id: 24601})
 	if err != nil {
 		t.Fatal(err)
@@ -51,13 +52,15 @@ func TestWriting(t *testing.T) {
 }
 
 func TestWritingWithSlug(t *testing.T) {
-	w, err := NewWriter()
+	dir := t.TempDir()
+	w, err := NewWriter(
+		withTestClock(fakeClock{now: time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)}),
+		WithBaseDir(dir),
+		WithSlug("foo"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SetClockForTesting(fakeClock{now: time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)})
-	dir := t.TempDir()
-	w.SetBaseDir(dir).SetSlug("foo")
 	err = w.Write(&server_api.InputJSON{Id: 24601})
 	if err != nil {
 		t.Fatal(err)
@@ -69,13 +72,15 @@ func TestWritingWithSlug(t *testing.T) {
 }
 
 func TestWritingWithoutTimestampDir(t *testing.T) {
-	w, err := NewWriter()
+	dir := t.TempDir()
+	w, err := NewWriter(
+		withTestClock(fakeClock{now: time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)}),
+		WithBaseDir(dir),
+		WithTimestampDirEnabled(false),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SetClockForTesting(fakeClock{now: time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)})
-	dir := t.TempDir()
-	w.SetBaseDir(dir).SetUseTimestampDir(false)
 	err = w.Write(&server_api.InputJSON{Id: 24601})
 	if err != nil {
 		t.Fatal(err)

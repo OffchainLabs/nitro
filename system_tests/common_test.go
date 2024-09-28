@@ -1712,9 +1712,8 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 			break
 		}
 	}
-	validationInputsWriter, err := inputs.NewWriter()
+	validationInputsWriter, err := inputs.NewWriter(inputs.WithSlug(t.Name()))
 	Require(t, err)
-	validationInputsWriter.SetSlug(t.Name())
 	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.TargetWavm)
 	if err != nil {
 		Fatal(t, "failed to get validation inputs", block, err)

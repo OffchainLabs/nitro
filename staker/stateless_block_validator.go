@@ -41,6 +41,7 @@ type StatelessBlockValidator struct {
 	streamer     TransactionStreamerInterface
 	db           ethdb.Database
 	dapReaders   []daprovider.Reader
+	stack        *node.Node
 }
 
 type BlockValidatorRegistrer interface {
@@ -265,6 +266,7 @@ func NewStatelessBlockValidator(
 		db:             arbdb,
 		dapReaders:     dapReaders,
 		execSpawners:   executionSpawners,
+		stack:          stack,
 	}, nil
 }
 

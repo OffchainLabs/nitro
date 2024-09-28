@@ -288,11 +288,13 @@ func NewBlockValidator(
 		fatalErr:                fatalErr,
 		prevBatchCache:          make(map[uint64][]byte),
 	}
-	valInputsWriter, err := inputs.NewWriter()
+	valInputsWriter, err := inputs.NewWriter(
+		inputs.WithBaseDir(ret.stack.InstanceDir()),
+		inputs.WithSlug("BlockValidator"))
 	if err != nil {
 		return nil, err
 	}
-	ret.validationInputsWriter = valInputsWriter.SetSlug("BlockValidator")
+	ret.validationInputsWriter = valInputsWriter
 	if !config().Dangerous.ResetBlockValidation {
 		validated, err := ret.ReadLastValidatedInfo()
 		if err != nil {

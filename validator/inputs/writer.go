@@ -3,6 +3,7 @@ package inputs
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -43,6 +44,9 @@ type Writer struct {
 	useTimestampDir bool
 }
 
+// WriterOption is a function that configures a Writer.
+type WriterOption func(*Writer)
+
 // Clock is an interface for getting the current time.
 type Clock interface {
 	Now() time.Time
@@ -55,73 +59,81 @@ func (realClock) Now() time.Time {
 }
 
 // NewWriter creates a new Writer with default settings.
-func NewWriter() (*Writer, error) {
+func NewWriter(options ...WriterOption) (*Writer, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
 	baseDir := fmt.Sprintf("%s/.arbitrum/validation-inputs", homeDir)
-	return &Writer{
+	w := &Writer{
 		clock:           realClock{},
 		baseDir:         baseDir,
 		slug:            "",
-		useTimestampDir: true}, nil
+		useTimestampDir: true,
+	}
+	for _, o := range options {
+		o(w)
+	}
+	return w, nil
 }
 
-// SetClockForTesting sets the clock used by the Writer.
+// withTestClock configures the Writer to use the given clock.
 //
 // This is only intended for testing.
-func (w *Writer) SetClockForTesting(clock Clock) *Writer {
-	w.clock = clock
-	return w
+func withTestClock(clock Clock) WriterOption {
+	return func(w *Writer) {
+		w.clock = clock
+	}
 }
 
-// SetSlug configures the Writer to use the given slug as a directory name.
-func (w *Writer) SetSlug(slug string) *Writer {
-	w.slug = slug
-	return w
+// WithSlug configures the Writer to use the given slug as a directory name.
+func WithSlug(slug string) WriterOption {
+	return func(w *Writer) {
+		w.slug = slug
+	}
 }
 
-// ClearSlug clears the slug configuration.
+// WithoutSlug clears the slug configuration.
 //
-// This is equivalent to calling SetSlug("") but is more readable.
-func (w *Writer) ClearSlug() *Writer {
-	w.slug = ""
-	return w
+// This is equivalent to the WithSlug("") option but is more readable.
+func WithoutSlug() WriterOption {
+	return WithSlug("")
 }
 
-// SetBaseDir configures the Writer to use the given base directory.
-func (w *Writer) SetBaseDir(baseDir string) *Writer {
-	w.baseDir = baseDir
-	return w
+// WithBaseDir configures the Writer to use the given base directory.
+func WithBaseDir(baseDir string) WriterOption {
+	return func(w *Writer) {
+		w.baseDir = baseDir
+	}
 }
 
-// SetUseTimestampDir controls the addition of a timestamp directory.
-func (w *Writer) SetUseTimestampDir(useTimestampDir bool) *Writer {
-	w.useTimestampDir = useTimestampDir
-	return w
+// WithTimestampDirEnabled controls the addition of a timestamp directory.
+func WithTimestampDirEnabled(useTimestampDir bool) WriterOption {
+	return func(w *Writer) {
+		w.useTimestampDir = useTimestampDir
+	}
 }
 
 // Write writes the given InputJSON to a file in JSON format.
-func (w *Writer) Write(inputs *server_api.InputJSON) error {
+func (w *Writer) Write(json *server_api.InputJSON) error {
 	dir := w.baseDir
 	if w.slug != "" {
-		dir = fmt.Sprintf("%s/%s", dir, w.slug)
+		dir = filepath.Join(dir, w.slug)
 	}
 	if w.useTimestampDir {
 		t := w.clock.Now()
 		tStr := t.Format("20060102_150405")
-		dir = fmt.Sprintf("%s/%s", dir, tStr)
+		dir = filepath.Join(dir, tStr)
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	contents, err := inputs.Marshal()
+	contents, err := json.Marshal()
 	if err != nil {
 		return err
 	}
 	if err = os.WriteFile(
-		fmt.Sprintf("%s/block_inputs_%d.json", dir, inputs.Id),
+		fmt.Sprintf("%s/block_inputs_%d.json", dir, json.Id),
 		contents, 0600); err != nil {
 		return err
 	}
