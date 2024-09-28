@@ -343,7 +343,6 @@ fn main() -> eyre::Result<()> {
                     GlobalState::default(),
                     HashMap::default(),
                     machine::get_empty_preimage_resolver(),
-                    false,
                 );
 
                 if let Err(error) = &mech {
@@ -430,7 +429,6 @@ fn main() -> eyre::Result<()> {
                     GlobalState::default(),
                     HashMap::default(),
                     machine::get_empty_preimage_resolver(),
-                    false,
                 )
                 .expect_err(&format!("failed to reject invalid module {}", filename));
             }

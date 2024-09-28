@@ -63,7 +63,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainD
 	var err error
 	var stateDb *state.StateDB
 
-	if err := populateStylusTargetCache(targetConfig); err != nil {
+	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 

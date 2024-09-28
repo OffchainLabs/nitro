@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::binary::FloatType;
-use arbutil::{hostios::ParamType, Bytes32, Color};
+use arbutil::{Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};
@@ -73,16 +73,6 @@ impl From<ArbValueType> for ValType {
             V::RefNull => Self::Ref(RefType::NULLREF),
             V::FuncRef => Self::Ref(RefType::FUNCREF),
             V::InternalRef => Self::Ref(RefType::FUNCREF), // not analogous, but essentially a func pointer
-        }
-    }
-}
-
-impl From<&ParamType> for ArbValueType {
-    fn from(ty: &ParamType) -> Self {
-        use ParamType as V;
-        match ty {
-            V::I32 => Self::I32,
-            V::I64 => Self::I64,
         }
     }
 }
