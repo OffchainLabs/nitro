@@ -64,7 +64,7 @@ func NewWriter(options ...WriterOption) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	baseDir := fmt.Sprintf("%s/.arbitrum/validation-inputs", homeDir)
+	baseDir := filepath.Join(homeDir, ".arbitrum", "validation-inputs")
 	w := &Writer{
 		clock:           realClock{},
 		baseDir:         baseDir,
@@ -133,7 +133,7 @@ func (w *Writer) Write(json *server_api.InputJSON) error {
 		return err
 	}
 	if err = os.WriteFile(
-		fmt.Sprintf("%s/block_inputs_%d.json", dir, json.Id),
+		filepath.Join(dir, fmt.Sprintf("block_inputs_%d.json", json.Id)),
 		contents, 0600); err != nil {
 		return err
 	}
