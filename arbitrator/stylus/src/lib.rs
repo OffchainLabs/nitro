@@ -11,7 +11,7 @@ use arbutil::{
     format::DebugBytes,
     Bytes32,
 };
-use cache::InitCache;
+use cache::{deserialize_module, InitCache, LruCacheMetrics};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
@@ -309,10 +309,10 @@ pub unsafe extern "C" fn stylus_call(
     status
 }
 
-/// resize lru
+/// set lru cache capacity
 #[no_mangle]
-pub extern "C" fn stylus_cache_lru_resize(size: u32) {
-    InitCache::set_lru_size(size);
+pub extern "C" fn stylus_set_cache_lru_capacity(capacity_bytes: u64) {
+    InitCache::set_lru_capacity(capacity_bytes);
 }
 
 /// Caches an activated user program.
@@ -361,5 +361,34 @@ pub extern "C" fn stylus_reorg_vm(_block: u64, arbos_tag: u32) {
 pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
     if !vec.ptr.is_null() {
         mem::drop(vec.into_vec())
+    }
+}
+
+/// Gets lru cache metrics.
+#[no_mangle]
+pub extern "C" fn stylus_get_lru_cache_metrics() -> LruCacheMetrics {
+    InitCache::get_lru_metrics()
+}
+
+/// Clears lru cache.
+/// Only used for testing purposes.
+#[no_mangle]
+pub extern "C" fn stylus_clear_lru_cache() {
+    InitCache::clear_lru_cache()
+}
+
+/// Gets lru entry size in bytes.
+/// Only used for testing purposes.
+#[no_mangle]
+pub extern "C" fn stylus_get_lru_entry_size_estimate_bytes(
+    module: GoSliceData,
+    version: u16,
+    debug: bool,
+) -> u64 {
+    match deserialize_module(module.slice(), version, debug) {
+        Err(error) => panic!("tried to get invalid asm!: {error}"),
+        Ok((_, _, lru_entry_size_estimate_bytes)) => {
+            lru_entry_size_estimate_bytes.try_into().unwrap()
+        }
     }
 }

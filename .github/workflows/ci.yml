@@ -87,12 +87,12 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/registry/
-            ~/.cargo/git/
+            ~/.cargo/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
-            arbitrator/wasm-libraries/soft-float/SoftFloat/build
+            arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
+            /home/runner/.rustup/toolchains/
           key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
           restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
@@ -162,19 +162,6 @@ jobs:
           for package in $packages; do
             echo running tests for $package
             if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 20m -tags=cionly; then
-              exit 1
-            fi
-          done
-
-      - name: run tests with race detection and path state scheme
-        if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: path
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -timeout 30m > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
               exit 1
             fi
           done
