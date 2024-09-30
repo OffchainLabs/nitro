@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -68,15 +67,9 @@ type InputJSON struct {
 	DebugChain    bool
 }
 
-func (i *InputJSON) WriteToFile() error {
-	contents, err := json.MarshalIndent(i, "", "    ")
-	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(fmt.Sprintf("block_inputs_%d.json", i.Id), contents, 0600); err != nil {
-		return err
-	}
-	return nil
+// Marshal returns the JSON encoding of the InputJSON.
+func (i *InputJSON) Marshal() ([]byte, error) {
+	return json.MarshalIndent(i, "", "    ")
 }
 
 type BatchInfoJson struct {
