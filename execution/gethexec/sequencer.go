@@ -80,7 +80,10 @@ type SequencerConfig struct {
 	expectedSurplusHardThreshold int
 
 	// Espresso specific flags
-	EnableEspressoSovereign bool `koanf:"enable-espresso-sovereign"`
+	EnableEspressoSovereign    bool                       `koanf:"enable-espresso-sovereign"`
+	EspressoFinalityNodeConfig EspressoFinalityNodeConfig `koanf:"espresso-finality-node-config"`
+	// Espresso Finality Node creates blocks with finalized hotshot transactions
+	EnableEspressoFinalityNode bool `koanf:"enable-espresso-finality-node"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -101,6 +104,12 @@ func (c *SequencerConfig) Validate() error {
 
 type SequencerConfigFetcher func() *SequencerConfig
 
+type EspressoFinalityNodeConfig struct {
+	HotShotUrl string `koanf:"hotshot-url"`
+	StartBlock uint64 `koanf:"start-block"`
+	Namespace  uint64 `koanf:"namespace"`
+}
+
 var DefaultSequencerConfig = SequencerConfig{
 	Enable:                      false,
 	MaxBlockSpeed:               time.Millisecond * 250,
@@ -119,7 +128,8 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 
-	EnableEspressoSovereign: false,
+	EnableEspressoFinalityNode: false,
+	EnableEspressoSovereign:    false,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -139,7 +149,8 @@ var TestSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 
-	EnableEspressoSovereign: false,
+	EnableEspressoFinalityNode: false,
+	EnableEspressoSovereign:    false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -160,6 +171,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
 
 	// Espresso specific flags
+	f.Bool(prefix+".enable-espresso-finality-node", DefaultSequencerConfig.EnableEspressoFinalityNode, "enable espresso finality node")
 	f.Bool(prefix+".enable-espresso-sovereign", DefaultSequencerConfig.EnableEspressoSovereign, "enable sovereign sequencer mode for the Espresso integration")
 }
 

@@ -1216,26 +1216,26 @@ func (s *TransactionStreamer) PollSubmittedTransactionForFinality(ctx context.Co
 
 	data, err := s.espressoClient.FetchTransactionByHash(ctx, &submittedTxHash)
 	if err != nil {
-		log.Error("failed to fetch the submitted transaction hash", "err", err, "hash", submittedTxHash.String())
+		log.Warn("failed to fetch the submitted transaction hash", "err", err, "hash", submittedTxHash.String())
 		return s.config().EspressoTxnsPollingInterval
 	}
 	// get the message at the submitted txn position
 	msg, err := s.getMessageWithMetadataAndBlockHash(submittedTxnPos)
 	if err != nil {
-		log.Error("failed to get espresso message at submitted txn pos", "err", err)
+		log.Warn("failed to get espresso message at submitted txn pos", "err", err)
 		return s.config().EspressoTxnsPollingInterval
 	}
 
 	// parse the message to get the transaction bytes and the justification
 	txns, jst, err := arbos.ParseEspressoMsg(msg.MessageWithMeta.Message)
 	if err != nil {
-		log.Error("failed to parse espresso message", "err", err)
+		log.Warn("failed to parse espresso message", "err", err)
 		return s.config().EspressoTxnsPollingInterval
 	}
 
 	espressoHeader, err := s.espressoClient.FetchHeaderByHeight(ctx, data.BlockHeight)
 	if err != nil {
-		log.Error("espresso: failed to fetch header by height ", "err", err)
+		log.Warn("espresso: failed to fetch header by height ", "err", err)
 		return s.config().EspressoTxnsPollingInterval
 	}
 
@@ -1442,7 +1442,6 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context, ig
 
 	pendingTxnsPos, err := s.getEspressoPendingTxnsPos()
 	if err != nil {
-		log.Warn("failed to get pending txns position", "err", err)
 		return s.config().EspressoTxnsPollingInterval
 	}
 

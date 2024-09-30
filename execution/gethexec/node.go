@@ -185,7 +185,18 @@ func CreateExecutionNode(
 		if err != nil {
 			return nil, err
 		}
-		txPublisher = sequencer
+
+		// sovereign sequencer should not be configured with espresso finality node
+		if config.Sequencer.EnableEspressoFinalityNode && config.Sequencer.EnableEspressoSovereign {
+			return nil, errors.New("espresso finality node cannot be configured with espresso sovereign sequencer")
+		}
+
+		if config.Sequencer.EnableEspressoFinalityNode {
+			espressoFinalityNode := NewEspressoFinalityNode(execEngine, seqConfigFetcher)
+			txPublisher = espressoFinalityNode
+		} else {
+			txPublisher = sequencer
+		}
 	} else {
 		if config.Forwarder.RedisUrl != "" {
 			txPublisher = NewRedisTxForwarder(config.forwardingTarget, &config.Forwarder)
@@ -329,6 +340,7 @@ func (n *ExecutionNode) StopAndWait() {
 	if n.TxPublisher.Started() {
 		n.TxPublisher.StopAndWait()
 	}
+
 	n.Recorder.OrderlyShutdown()
 	if n.ParentChainReader != nil && n.ParentChainReader.Started() {
 		n.ParentChainReader.StopAndWait()
