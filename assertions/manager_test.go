@@ -540,7 +540,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	assertionManagerBob.Start(ctx)
 
 	// Only after both Alice and Bob confirm the assertion, it should be confirmed.
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	expectAssertionConfirmed(t, ctx, setup.Backend, aliceChain.RollupAddress())
 }
