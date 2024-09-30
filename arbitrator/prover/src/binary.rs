@@ -9,7 +9,9 @@ use crate::{
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
-use arbutil::{math::SaturatingSum, Bytes32, Color, DebugColor};
+use arbutil::{
+    evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color, DebugColor,
+};
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
@@ -471,14 +473,10 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         let export = export.rsplit("__").take(1);
         exports.extend(export);
     }
-    // forwarder is allowed to re-export the same name
-    // TODO: is there a real problem if import_name == export_name but module names don't?
-    if path != Path::new("forwarder") {
-        for import in &binary.imports {
-            let name = import.name;
-            if exports.contains(name) {
-                bail!("binary exports an import with the same name {}", name.red());
-            }
+    for import in &binary.imports {
+        let name = import.name;
+        if exports.contains(name) {
+            bail!("binary exports an import with the same name {}", name.red());
         }
     }
 
@@ -645,6 +643,7 @@ impl<'a> WasmBinary<'a> {
     /// Parses and instruments a user wasm
     pub fn parse_user(
         wasm: &'a [u8],
+        arbos_version_for_gas: u64,
         page_limit: u16,
         compile: &CompileConfig,
         codehash: &Bytes32,
@@ -680,6 +679,10 @@ impl<'a> WasmBinary<'a> {
         for code in &bin.codes {
             limit!(348, code.locals.len(), "locals");
             limit!(65536, code.expr.len(), "opcodes in func body");
+        }
+
+        if arbos_version_for_gas >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+            limit!(513, bin.imports.len(), "imports")
         }
 
         let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();
