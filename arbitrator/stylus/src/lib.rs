@@ -11,7 +11,7 @@ use arbutil::{
     format::DebugBytes,
     Bytes32,
 };
-use cache::{deserialize_module, InitCache, CacheMetrics};
+use cache::{deserialize_module, CacheMetrics, InitCache};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
@@ -387,8 +387,6 @@ pub extern "C" fn stylus_get_entry_size_estimate_bytes(
 ) -> u64 {
     match deserialize_module(module.slice(), version, debug) {
         Err(error) => panic!("tried to get invalid asm!: {error}"),
-        Ok((_, _, entry_size_estimate_bytes)) => {
-            entry_size_estimate_bytes.try_into().unwrap()
-        }
+        Ok((_, _, entry_size_estimate_bytes)) => entry_size_estimate_bytes.try_into().unwrap(),
     }
 }
