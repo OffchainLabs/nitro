@@ -417,10 +417,15 @@ func storageTest(t *testing.T, jit bool) {
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
-	ensure(tx, l2client.SendTransaction(ctx, tx))
+	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
 	validateBlocks(t, 2, jit, builder)
+
+	// Captures a block_input_<id>.json file for the block that included the
+	// storage write transaction.
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder)
 }
 
 func TestProgramTransientStorage(t *testing.T) {
