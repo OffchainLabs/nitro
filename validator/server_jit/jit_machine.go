@@ -33,7 +33,7 @@ type JitMachine struct {
 	maxExecutionTime     time.Duration
 }
 
-func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmMemoryUsageLimit int, maxExecutionTime time.Duration, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
+func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmMemoryUsageLimit int, maxExecutionTime time.Duration, _ common.Hash, fatalErrChan chan error) (*JitMachine, error) {
 	invocation := []string{"--binary", binaryPath, "--forks"}
 	if cranelift {
 		invocation = append(invocation, "--cranelift")
