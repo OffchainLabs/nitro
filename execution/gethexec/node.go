@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"sync/atomic"
 	"testing"
 
@@ -60,6 +61,11 @@ func (c *StylusTargetConfig) Validate() error {
 	for target := range targetsSet {
 		targets = append(targets, target)
 	}
+	sort.Slice(
+		targets,
+		func(i, j int) bool {
+			return targets[i] < targets[j]
+		})
 	c.wasmTargets = targets
 	return nil
 }
@@ -79,19 +85,19 @@ func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader         headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                 SequencerConfig                  `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase         arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
-	TxPreChecker              TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                 ForwarderConfig                  `koanf:"forwarder"`
-	ForwardingTarget          string                           `koanf:"forwarding-target"`
-	SecondaryForwardingTarget []string                         `koanf:"secondary-forwarding-target"`
-	Caching                   CachingConfig                    `koanf:"caching"`
-	RPC                       arbitrum.Config                  `koanf:"rpc"`
-	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
-	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
-	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
-	StylusTarget              StylusTargetConfig               `koanf:"stylus-target"`
+	ParentChainReader         headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                 SequencerConfig     `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase         BlockRecorderConfig `koanf:"recording-database"`
+	TxPreChecker              TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                 ForwarderConfig     `koanf:"forwarder"`
+	ForwardingTarget          string              `koanf:"forwarding-target"`
+	SecondaryForwardingTarget []string            `koanf:"secondary-forwarding-target"`
+	Caching                   CachingConfig       `koanf:"caching"`
+	RPC                       arbitrum.Config     `koanf:"rpc"`
+	TxLookupLimit             uint64              `koanf:"tx-lookup-limit"`
+	EnablePrefetchBlock       bool                `koanf:"enable-prefetch-block"`
+	SyncMonitor               SyncMonitorConfig   `koanf:"sync-monitor"`
+	StylusTarget              StylusTargetConfig  `koanf:"stylus-target"`
 
 	forwardingTarget string
 }
@@ -124,7 +130,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
-	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
+	BlockRecorderConfigAddOptions(prefix+".recording-database", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
@@ -140,7 +146,7 @@ var ConfigDefault = Config{
 	RPC:                       arbitrum.DefaultConfig,
 	Sequencer:                 DefaultSequencerConfig,
 	ParentChainReader:         headerreader.DefaultConfig,
-	RecordingDatabase:         arbitrum.DefaultRecordingDatabaseConfig,
+	RecordingDatabase:         DefaultBlockRecorderConfig,
 	ForwardingTarget:          "",
 	SecondaryForwardingTarget: []string{},
 	TxPreChecker:              DefaultTxPreCheckerConfig,
@@ -309,7 +315,7 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	config := n.ConfigFetcher()
-	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCache, &config.StylusTarget)
+	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCacheCapacity, &config.StylusTarget)
 	if err != nil {
 		return fmt.Errorf("error initializing execution engine: %w", err)
 	}
