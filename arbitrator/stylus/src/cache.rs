@@ -137,7 +137,12 @@ impl InitCache {
 
     /// Retrieves a cached value, updating items as necessary.
     /// If long_term_tag is 1 and the item is only in LRU will insert to long term cache.
-    pub fn get(module_hash: Bytes32, version: u16, long_term_tag: u32, debug: bool) -> Option<(Module, Store)> {
+    pub fn get(
+        module_hash: Bytes32,
+        version: u16,
+        long_term_tag: u32,
+        debug: bool,
+    ) -> Option<(Module, Store)> {
         let key = CacheKey::new(module_hash, version, debug);
         let mut cache = cache!();
 
