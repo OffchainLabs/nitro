@@ -2013,7 +2013,7 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []s
 	}
 }
 
-func deployWasmAndGetLruEntrySizeEstimateBytes(
+func deployWasmAndGetEntrySizeEstimateBytes(
 	t *testing.T,
 	builder *NodeBuilder,
 	auth bind.TransactOpts,
@@ -2044,12 +2044,12 @@ func deployWasmAndGetLruEntrySizeEstimateBytes(
 	module, err := statedb.TryGetActivatedAsm(rawdb.LocalTarget(), log.ModuleHash)
 	Require(t, err, ", wasmName:", wasmName)
 
-	lruEntrySizeEstimateBytes := programs.GetLruEntrySizeEstimateBytes(module, log.Version, true)
+	entrySizeEstimateBytes := programs.GetEntrySizeEstimateBytes(module, log.Version, true)
 	// just a sanity check
-	if lruEntrySizeEstimateBytes == 0 {
-		Fatal(t, "lruEntrySizeEstimateBytes is 0, wasmName:", wasmName)
+	if entrySizeEstimateBytes == 0 {
+		Fatal(t, "entrySizeEstimateBytes is 0, wasmName:", wasmName)
 	}
-	return programAddress, lruEntrySizeEstimateBytes
+	return programAddress, entrySizeEstimateBytes
 }
 
 func TestWasmLruCache(t *testing.T) {
@@ -2062,9 +2062,9 @@ func TestWasmLruCache(t *testing.T) {
 	auth.GasLimit = 32000000
 	auth.Value = oneEth
 
-	fallibleProgramAddress, fallibleLruEntrySizeEstimateBytes := deployWasmAndGetLruEntrySizeEstimateBytes(t, builder, auth, "fallible")
-	keccakProgramAddress, keccakLruEntrySizeEstimateBytes := deployWasmAndGetLruEntrySizeEstimateBytes(t, builder, auth, "keccak")
-	mathProgramAddress, mathLruEntrySizeEstimateBytes := deployWasmAndGetLruEntrySizeEstimateBytes(t, builder, auth, "math")
+	fallibleProgramAddress, fallibleLruEntrySizeEstimateBytes := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "fallible")
+	keccakProgramAddress, keccakLruEntrySizeEstimateBytes := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "keccak")
+	mathProgramAddress, mathLruEntrySizeEstimateBytes := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "math")
 	t.Log(
 		"lruEntrySizeEstimateBytes, ",
 		"fallible:", fallibleLruEntrySizeEstimateBytes,
@@ -2073,7 +2073,7 @@ func TestWasmLruCache(t *testing.T) {
 	)
 
 	programs.ClearWasmLruCache()
-	lruMetrics := programs.GetWasmLruCacheMetrics()
+	lruMetrics := programs.GetWasmCacheMetrics().Lru
 	if lruMetrics.Count != 0 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
 	}
@@ -2087,7 +2087,7 @@ func TestWasmLruCache(t *testing.T) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	lruMetrics = programs.GetWasmLruCacheMetrics()
+	lruMetrics = programs.GetWasmCacheMetrics().Lru
 	if lruMetrics.Count != 0 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
 	}
@@ -2103,7 +2103,7 @@ func TestWasmLruCache(t *testing.T) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	lruMetrics = programs.GetWasmLruCacheMetrics()
+	lruMetrics = programs.GetWasmCacheMetrics().Lru
 	if lruMetrics.Count != 1 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 1, lruMetrics.Count)
 	}
@@ -2116,7 +2116,7 @@ func TestWasmLruCache(t *testing.T) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	lruMetrics = programs.GetWasmLruCacheMetrics()
+	lruMetrics = programs.GetWasmCacheMetrics().Lru
 	if lruMetrics.Count != 2 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
 	}
@@ -2129,7 +2129,7 @@ func TestWasmLruCache(t *testing.T) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	lruMetrics = programs.GetWasmLruCacheMetrics()
+	lruMetrics = programs.GetWasmCacheMetrics().Lru
 	if lruMetrics.Count != 2 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
 	}

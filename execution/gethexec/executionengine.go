@@ -87,6 +87,8 @@ type ExecutionEngine struct {
 
 	reorgSequencing bool
 
+	disableStylusCacheMetricsCollection bool
+
 	prefetchBlock bool
 
 	cachedL1PriceData *L1PriceData
@@ -210,6 +212,16 @@ func (s *ExecutionEngine) EnableReorgSequencing() {
 		panic("trying to enable reorg sequencing when already set")
 	}
 	s.reorgSequencing = true
+}
+
+func (s *ExecutionEngine) DisableStylusCacheMetricsCollection() {
+	if s.Started() {
+		panic("trying to disable stylus cache metrics collection after start")
+	}
+	if s.disableStylusCacheMetricsCollection {
+		panic("trying to disable stylus cache metrics collection when already set")
+	}
+	s.disableStylusCacheMetricsCollection = true
 }
 
 func (s *ExecutionEngine) EnablePrefetchBlock() {
@@ -969,15 +981,17 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			}
 		}
 	})
-	// periodically update stylus lru cache metrics
-	s.LaunchThread(func(ctx context.Context) {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Minute):
-				programs.GetWasmLruCacheMetrics()
+	if !s.disableStylusCacheMetricsCollection {
+		// periodically update stylus cache metrics
+		s.LaunchThread(func(ctx context.Context) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Minute):
+					programs.UpdateWasmCacheMetrics()
+				}
 			}
-		}
-	})
+		})
+	}
 }

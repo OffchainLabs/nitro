@@ -52,6 +52,11 @@ var (
 	stylusLRUCacheSizeHitsCounter       = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/hits", nil)
 	stylusLRUCacheSizeMissesCounter     = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/misses", nil)
 	stylusLRUCacheSizeDoesNotFitCounter = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/does_not_fit", nil)
+
+	stylusLongTermCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/long_term/size_bytes", nil)
+	stylusLongTermCacheSizeCountGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/long_term/count", nil)
+	stylusLongTermCacheSizeHitsCounter   = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/long_term/hits", nil)
+	stylusLongTermCacheSizeMissesCounter = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/long_term/misses", nil)
 )
 
 func activateProgram(
@@ -333,24 +338,52 @@ func SetWasmLruCacheCapacity(capacityBytes uint64) {
 	C.stylus_set_cache_lru_capacity(u64(capacityBytes))
 }
 
-// exported for testing
+func UpdateWasmCacheMetrics() {
+	metrics := C.stylus_get_cache_metrics()
+
+	stylusLRUCacheSizeBytesGauge.Update(int64(metrics.lru.size_bytes))
+	stylusLRUCacheSizeCountGauge.Update(int64(metrics.lru.count))
+	stylusLRUCacheSizeHitsCounter.Inc(int64(metrics.lru.hits))
+	stylusLRUCacheSizeMissesCounter.Inc(int64(metrics.lru.misses))
+	stylusLRUCacheSizeDoesNotFitCounter.Inc(int64(metrics.lru.does_not_fit))
+
+	stylusLongTermCacheSizeBytesGauge.Update(int64(metrics.long_term.size_bytes))
+	stylusLongTermCacheSizeCountGauge.Update(int64(metrics.long_term.count))
+	stylusLongTermCacheSizeHitsCounter.Inc(int64(metrics.long_term.hits))
+	stylusLongTermCacheSizeMissesCounter.Inc(int64(metrics.long_term.misses))
+}
+
+// Used for testing
 type WasmLruCacheMetrics struct {
 	SizeBytes uint64
 	Count     uint32
 }
 
-func GetWasmLruCacheMetrics() *WasmLruCacheMetrics {
-	metrics := C.stylus_get_lru_cache_metrics()
+// Used for testing
+type WasmLongTermCacheMetrics struct {
+	SizeBytes uint64
+	Count     uint32
+}
 
-	stylusLRUCacheSizeBytesGauge.Update(int64(metrics.size_bytes))
-	stylusLRUCacheSizeCountGauge.Update(int64(metrics.count))
-	stylusLRUCacheSizeHitsCounter.Inc(int64(metrics.hits))
-	stylusLRUCacheSizeMissesCounter.Inc(int64(metrics.misses))
-	stylusLRUCacheSizeDoesNotFitCounter.Inc(int64(metrics.does_not_fit))
+// Used for testing
+type WasmCacheMetrics struct {
+	Lru      WasmLruCacheMetrics
+	LongTerm WasmLongTermCacheMetrics
+}
 
-	return &WasmLruCacheMetrics{
-		SizeBytes: uint64(metrics.size_bytes),
-		Count:     uint32(metrics.count),
+// Used for testing
+func GetWasmCacheMetrics() *WasmCacheMetrics {
+	metrics := C.stylus_get_cache_metrics()
+
+	return &WasmCacheMetrics{
+		Lru: WasmLruCacheMetrics{
+			SizeBytes: uint64(metrics.lru.size_bytes),
+			Count:     uint32(metrics.lru.count),
+		},
+		LongTerm: WasmLongTermCacheMetrics{
+			SizeBytes: uint64(metrics.long_term.size_bytes),
+			Count:     uint32(metrics.long_term.count),
+		},
 	}
 }
 
@@ -360,8 +393,8 @@ func ClearWasmLruCache() {
 }
 
 // Used for testing
-func GetLruEntrySizeEstimateBytes(module []byte, version uint16, debug bool) uint64 {
-	return uint64(C.stylus_get_lru_entry_size_estimate_bytes(goSlice(module), u16(version), cbool(debug)))
+func GetEntrySizeEstimateBytes(module []byte, version uint16, debug bool) uint64 {
+	return uint64(C.stylus_get_entry_size_estimate_bytes(goSlice(module), u16(version), cbool(debug)))
 }
 
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"

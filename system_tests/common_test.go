@@ -155,19 +155,20 @@ func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transactio
 }
 
 var TestCachingConfig = gethexec.CachingConfig{
-	Archive:                            false,
-	BlockCount:                         128,
-	BlockAge:                           30 * time.Minute,
-	TrieTimeLimit:                      time.Hour,
-	TrieDirtyCache:                     1024,
-	TrieCleanCache:                     600,
-	SnapshotCache:                      400,
-	DatabaseCache:                      2048,
-	SnapshotRestoreGasLimit:            300_000_000_000,
-	MaxNumberOfBlocksToSkipStateSaving: 0,
-	MaxAmountOfGasToSkipStateSaving:    0,
-	StylusLRUCacheCapacity:             0,
-	StateScheme:                        env.GetTestStateScheme(),
+	Archive:                             false,
+	BlockCount:                          128,
+	BlockAge:                            30 * time.Minute,
+	TrieTimeLimit:                       time.Hour,
+	TrieDirtyCache:                      1024,
+	TrieCleanCache:                      600,
+	SnapshotCache:                       400,
+	DatabaseCache:                       2048,
+	SnapshotRestoreGasLimit:             300_000_000_000,
+	MaxNumberOfBlocksToSkipStateSaving:  0,
+	MaxAmountOfGasToSkipStateSaving:     0,
+	StylusLRUCacheCapacity:              0,
+	DisableStylusCacheMetricsCollection: true,
+	StateScheme:                         env.GetTestStateScheme(),
 }
 
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
