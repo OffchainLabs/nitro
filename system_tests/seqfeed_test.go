@@ -164,12 +164,12 @@ func compareAllMsgResultsFromConsensusAndExecution(
 	}
 
 	var lastResult *execution.MessageResult
-	for msgCount := 1; arbutil.MessageIndex(msgCount) <= consensusMsgCount; msgCount++ {
+	for msgCount := arbutil.MessageIndex(1); msgCount <= consensusMsgCount; msgCount++ {
 		pos := msgCount - 1
 		resultExec, err := testClient.ExecNode.ResultAtPos(arbutil.MessageIndex(pos))
 		Require(t, err)
 
-		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(msgCount))
+		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(msgCount)
 		Require(t, err)
 
 		if !reflect.DeepEqual(resultExec, resultConsensus) {

@@ -1,6 +1,5 @@
 use std::{path::PathBuf, time::Duration};
 
-use bench::prepare::*;
 use clap::Parser;
 use eyre::bail;
 
@@ -10,10 +9,11 @@ use gperftools::profiler::PROFILER;
 #[cfg(feature = "heapprof")]
 use gperftools::heap_profiler::HEAP_PROFILER;
 
-use prover::machine::MachineStatus;
-
 #[cfg(feature = "counters")]
 use prover::{machine, memory, merkle};
+
+use prover::machine::MachineStatus;
+use prover::prepare::prepare_machine;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
