@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
@@ -37,7 +36,7 @@ func startLocalDASServer(
 	t *testing.T,
 	ctx context.Context,
 	dataDir string,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	seqInboxAddress common.Address,
 ) (*http.Server, *blsSignatures.PublicKey, das.BackendConfig, *das.RestfulDasServer, string) {
 	keyDir := t.TempDir()
