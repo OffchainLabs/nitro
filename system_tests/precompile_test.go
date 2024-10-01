@@ -142,13 +142,24 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 	assertNotAllGasConsumed(common.HexToAddress("0xff"), arbDebug.Methods["legacyError"].ID)
 }
 
-func TestArbGasInfoAndArbOwner(t *testing.T) {
+func setupArbOwnerAndArbGasInfo(
+	t *testing.T,
+) (
+	*NodeBuilder,
+	func(),
+	bind.TransactOpts,
+	*precompilesgen.ArbOwner,
+	*precompilesgen.ArbGasInfo,
+) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	cleanup := builder.Build(t)
-	defer cleanup()
+	builderCleanup := builder.Build(t)
+
+	cleanup := func() {
+		builderCleanup()
+		cancel()
+	}
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
@@ -157,7 +168,16 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
 	Require(t, err)
 
-	// GetL1BaseFeeEstimateInertia test
+	return builder, cleanup, auth, arbOwner, arbGasInfo
+}
+
+func TestL1BaseFeeEstimateInertia(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
 	inertia := uint64(11)
 	tx, err := arbOwner.SetL1BaseFeeEstimateInertia(&auth, inertia)
 	Require(t, err)
@@ -168,22 +188,37 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	if arbGasInfoInertia != inertia {
 		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
 	}
+}
 
-	// GetL1BaseFeeEstimateInertia test, but now using a different setter from ArbOwner
-	inertia = uint64(12)
-	tx, err = arbOwner.SetL1PricingInertia(&auth, inertia)
+// Similar to TestL1BaseFeeEstimateInertia, but now using a different setter from ArbOwner
+func TestL1PricingInertia(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	inertia := uint64(12)
+	tx, err := arbOwner.SetL1PricingInertia(&auth, inertia)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-	arbGasInfoInertia, err = arbGasInfo.GetL1BaseFeeEstimateInertia(&bind.CallOpts{Context: ctx})
+	arbGasInfoInertia, err := arbGasInfo.GetL1BaseFeeEstimateInertia(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	if arbGasInfoInertia != inertia {
 		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
 	}
+}
 
-	// GetL1RewardRate test
+func TestL1PricingRewardRate(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
 	perUnitReward := uint64(13)
-	tx, err = arbOwner.SetL1PricingRewardRate(&auth, perUnitReward)
+	tx, err := arbOwner.SetL1PricingRewardRate(&auth, perUnitReward)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -192,10 +227,17 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	if arbGasInfoPerUnitReward != perUnitReward {
 		Fatal(t, "expected per unit reward to be", perUnitReward, "got", arbGasInfoPerUnitReward)
 	}
+}
 
-	// GetL1RewardRecipient test
+func TestL1PricingRewardRecipient(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
 	rewardRecipient := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-	tx, err = arbOwner.SetL1PricingRewardRecipient(&auth, rewardRecipient)
+	tx, err := arbOwner.SetL1PricingRewardRecipient(&auth, rewardRecipient)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -204,22 +246,36 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	if arbGasInfoRewardRecipient.Cmp(rewardRecipient) != 0 {
 		Fatal(t, "expected reward recipient to be", rewardRecipient, "got", arbGasInfoRewardRecipient)
 	}
+}
 
-	// GetPricingInertia test
-	inertia = uint64(14)
-	tx, err = arbOwner.SetL2GasPricingInertia(&auth, inertia)
+func TestL2GasPricingInertia(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	inertia := uint64(14)
+	tx, err := arbOwner.SetL2GasPricingInertia(&auth, inertia)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-	arbGasInfoInertia, err = arbGasInfo.GetPricingInertia(&bind.CallOpts{Context: ctx})
+	arbGasInfoInertia, err := arbGasInfo.GetPricingInertia(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	if arbGasInfoInertia != inertia {
 		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
 	}
+}
 
-	// GetGasBacklogTolerance test
+func TestL2GasBacklogTolerance(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
 	gasTolerance := uint64(15)
-	tx, err = arbOwner.SetL2GasBacklogTolerance(&auth, gasTolerance)
+	tx, err := arbOwner.SetL2GasBacklogTolerance(&auth, gasTolerance)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -228,10 +284,17 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	if arbGasInfoGasTolerance != gasTolerance {
 		Fatal(t, "expected gas tolerance to be", gasTolerance, "got", arbGasInfoGasTolerance)
 	}
+}
 
-	// GetPerBatchGasCharge test
+func TestPerBatchGasCharge(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
 	perBatchGasCharge := int64(16)
-	tx, err = arbOwner.SetPerBatchGasCharge(&auth, perBatchGasCharge)
+	tx, err := arbOwner.SetPerBatchGasCharge(&auth, perBatchGasCharge)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -240,10 +303,17 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	if arbGasInfoPerBatchGasCharge != perBatchGasCharge {
 		Fatal(t, "expected per batch gas charge to be", perBatchGasCharge, "got", arbGasInfoPerBatchGasCharge)
 	}
+}
 
-	// GetL1PricingEquilibrationUnits test
+func TestL1PricingEquilibrationUnits(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
 	equilUnits := big.NewInt(17)
-	tx, err = arbOwner.SetL1PricingEquilibrationUnits(&auth, equilUnits)
+	tx, err := arbOwner.SetL1PricingEquilibrationUnits(&auth, equilUnits)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -252,11 +322,18 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	if arbGasInfoEquilUnits.Cmp(equilUnits) != 0 {
 		Fatal(t, "expected equilibration units to be", equilUnits, "got", arbGasInfoEquilUnits)
 	}
+}
 
-	// GetGasAccountingParams test
+func TestGasAccountingParams(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
 	speedLimit := uint64(18)
 	txGasLimit := uint64(19)
-	tx, err = arbOwner.SetSpeedLimit(&auth, speedLimit)
+	tx, err := arbOwner.SetSpeedLimit(&auth, speedLimit)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -275,8 +352,21 @@ func TestArbGasInfoAndArbOwner(t *testing.T) {
 	if arbGasInfoTxGasLimit.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
 		Fatal(t, "expected tx gas limit to be", txGasLimit, "got", arbGasInfoTxGasLimit)
 	}
+}
 
-	// GetCurrentTxL1GasFees test
+func TestCurrentTxL1GasFees(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
+	Require(t, err)
+
 	currTxL1GasFees, err := arbGasInfo.GetCurrentTxL1GasFees(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	if currTxL1GasFees == nil {
