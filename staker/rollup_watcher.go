@@ -51,13 +51,19 @@ type RollupWatcher struct {
 	*rollupgen.RollupUserLogic
 	address             common.Address
 	fromBlock           *big.Int
-	client              arbutil.L1Interface
+	client              RollupWatcherL1Interface
 	baseCallOpts        bind.CallOpts
 	unSupportedL3Method atomic.Bool
 	supportedL3Method   atomic.Bool
 }
 
-func NewRollupWatcher(address common.Address, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
+type RollupWatcherL1Interface interface {
+	bind.ContractBackend
+	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
+	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+}
+
+func NewRollupWatcher(address common.Address, client RollupWatcherL1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
 	con, err := rollupgen.NewRollupUserLogic(address, client)
 	if err != nil {
 		return nil, err
