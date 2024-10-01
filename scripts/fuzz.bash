@@ -2,12 +2,12 @@
 
 set -e
 
-mydir=`dirname $0`
+mydir=$(dirname "$0")
 cd "$mydir"
 
 function printusage {
-    echo Usage: $0 --build \[--binary-path PATH\]
-    echo "      "  $0 \<fuzzer-name\> \[--binary-path PATH\] \[--fuzzcache-path PATH\]  \[--nitro-path PATH\] \[--duration DURATION\]
+    echo Usage: "$0" --build \[--binary-path PATH\]
+    echo "      "  "$0" \<fuzzer-name\> \[--binary-path PATH\] \[--fuzzcache-path PATH\]  \[--nitro-path PATH\] \[--duration DURATION\]
     echo
     echo fuzzer names:
     echo "   " FuzzPrecompiles
@@ -22,7 +22,6 @@ if [[ $# -eq 0 ]]; then
     exit
 fi
 
-fuzz_executable=../target/bin/system_test.fuzz
 binpath=../target/bin/
 fuzzcachepath=../target/var/fuzz-cache
 nitropath=../
@@ -72,7 +71,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         FuzzPrecompiles | FuzzStateTransition)
-            if [[ ! -z "$test_name" ]]; then
+            if [[ -n "$test_name" ]]; then
                 echo can only run one fuzzer at a time
                 exit 1
             fi
@@ -81,7 +80,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         FuzzInboxMultiplexer)
-            if [[ ! -z "$test_name" ]]; then
+            if [[ -n "$test_name" ]]; then
                 echo can only run one fuzzer at a time
                 exit 1
             fi
@@ -102,17 +101,17 @@ fi
 
 if $run_build; then
     for build_group in system_tests arbstate; do
-        go test -c ${nitropath}/${build_group} -fuzz Fuzz -o "$binpath"/${build_group}.fuzz
+        go test -c "${nitropath}"/${build_group} -fuzz Fuzz -o "$binpath"/${build_group}.fuzz
     done
 fi
 
-if [[ ! -z $test_group ]]; then
-    timeout "$((60 * duration))" "$binpath"/${test_group}.fuzz -test.run "^$" -test.fuzzcachedir "$fuzzcachepath" -test.fuzz $test_name || exit_status=$?
+if [[ -n $test_group ]]; then
+    timeout "$((60 * duration))" "$binpath"/${test_group}.fuzz -test.run "^$" -test.fuzzcachedir "$fuzzcachepath" -test.fuzz "$test_name" || exit_status=$?
 fi
 
-if  [ -n "$exit_status" ] && [ $exit_status -ne 0 ] && [ $exit_status -ne 124 ]; then
+if  [ -n "$exit_status" ] && [ "$exit_status" -ne 0 ] && [ "$exit_status" -ne 124 ]; then
     echo "Fuzzing failed."
-    exit $exit_status
+    exit "$exit_status"
 fi
 
 echo "Fuzzing succeeded."
