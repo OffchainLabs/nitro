@@ -111,7 +111,7 @@ func (r *RollupWatcher) getNodeCreationBlock(ctx context.Context, nodeNum uint64
 			if r.supportedL3Method.Load() {
 				return nil, fmt.Errorf("getNodeCreationBlockForLogLookup failed despite previously succeeding: %w", err)
 			}
-			log.Trace("failed to call getNodeCreationBlockForLogLookup, falling back on node CreatedAtBlock field", "err", err)
+			log.Info("getNodeCreationBlockForLogLookup does not seem to exist, falling back on node CreatedAtBlock field", "err", err)
 			r.unSupportedL3Method.Store(true)
 		} else {
 			return nil, err
