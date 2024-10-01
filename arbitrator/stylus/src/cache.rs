@@ -136,9 +136,10 @@ impl InitCache {
     }
 
     /// Retrieves a cached value, updating items as necessary.
-    pub fn get(module_hash: Bytes32, version: u16, debug: bool) -> Option<(Module, Store)> {
-        let mut cache = cache!();
+    /// If long_term_tag is 1 and the item is only in LRU will insert to long term cache.
+    pub fn get(module_hash: Bytes32, version: u16, long_term_tag: u32, debug: bool) -> Option<(Module, Store)> {
         let key = CacheKey::new(module_hash, version, debug);
+        let mut cache = cache!();
 
         // See if the item is in the long term cache
         if let Some(item) = cache.long_term.get(&key) {
@@ -146,12 +147,18 @@ impl InitCache {
         }
 
         // See if the item is in the LRU cache, promoting if so
-        if let Some(item) = cache.lru.get(&key) {
-            let data = item.data();
+        if let Some(item) = cache.lru.peek(&key).cloned() {
             cache.lru_counters.hits += 1;
-            return Some(data);
+            if long_term_tag == Self::ARBOS_TAG {
+                cache.long_term.insert(key, item.clone());
+            } else {
+                // only calls get to move the key to the head of the LRU list
+                cache.lru.get(&key);
+            }
+            return Some(item.data());
         }
         cache.lru_counters.misses += 1;
+
         None
     }
 
