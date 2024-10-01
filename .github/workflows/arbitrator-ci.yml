@@ -59,7 +59,7 @@ jobs:
           cd go-ethereum
           # Enable KZG point evaluation precompile early
           sed -i 's#var PrecompiledContractsBerlin = map\[common.Address\]PrecompiledContract{#\0 common.BytesToAddress([]byte{0x0a}): \&kzgPointEvaluation{},#g' core/vm/contracts.go
-          go build -o /usr/local/bin/geth -ldflags='-checklinkname=0' ./cmd/geth
+          go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup nodejs
         uses: actions/setup-node@v3

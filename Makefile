@@ -27,12 +27,6 @@ ifneq ($(origin NITRO_MODIFIED),undefined)
  GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.modified=$(NITRO_MODIFIED)
 endif
 
-# As of Go 1.23, the package github.com/fjl/memsize no longer works because of a restriction added
-# by the Go toolchain. The Go 1.23 compiler no longer allows access to runtime symbols via
-# go:linkname, which prevents memsize from accessing the Stop-the-World functionality of the Go
-# runtime. To solve that we add the following compiler directive.
-GOLANG_LDFLAGS += -checklinkname=0
-
 ifneq ($(origin GOLANG_LDFLAGS),undefined)
  GOLANG_PARAMS = -ldflags="-extldflags '-ldl' $(GOLANG_LDFLAGS)"
 endif
@@ -232,17 +226,17 @@ test-go: .make/test-go
 
 .PHONY: test-go-challenge
 test-go-challenge: test-go-deps
-	gotestsum --format short-verbose --no-color=false -- $(GOLANG_PARAMS) -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
+	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
 	@printf $(done)
 
 .PHONY: test-go-stylus
 test-go-stylus: test-go-deps
-	gotestsum --format short-verbose --no-color=false -- $(GOLANG_PARAMS) -timeout 120m ./system_tests/... -run TestProgramArbitrator -tags stylustest
+	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run TestProgramArbitrator -tags stylustest
 	@printf $(done)
 
 .PHONY: test-go-redis
 test-go-redis: test-go-deps
-	TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose --no-color=false -- $(GOLANG_PARAMS) -p 1 -run TestRedis ./system_tests/... ./arbnode/...
+	TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/...
 	@printf $(done)
 
 .PHONY: test-gen-proofs
@@ -547,7 +541,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/test-go: $(DEP_PREDICATE) $(go_source) build-node-deps test-go-deps $(ORDER_ONLY_PREDICATE) .make
-	gotestsum --format short-verbose --no-color=false -- $(GOLANG_PARAMS)
+	gotestsum --format short-verbose --no-color=false
 	@touch $@
 
 .make/test-rust: $(DEP_PREDICATE) wasm-ci-build $(ORDER_ONLY_PREDICATE) .make
