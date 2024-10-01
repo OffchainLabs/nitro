@@ -7,7 +7,7 @@
 package gethexec
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 */
@@ -150,7 +150,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
+func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	localTarget := rawdb.LocalTarget()
 	targets := targetConfig.WasmTargets()
 	var nativeSet bool
@@ -182,11 +182,11 @@ func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	return nil
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
-	if rustCacheSize != 0 {
-		programs.ResizeWasmLruCache(rustCacheSize)
+func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *StylusTargetConfig) error {
+	if rustCacheCapacityMB != 0 {
+		programs.SetWasmLruCacheCapacity(arbmath.SaturatingUMul(uint64(rustCacheCapacityMB), 1024*1024))
 	}
-	if err := populateStylusTargetCache(targetConfig); err != nil {
+	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 	return nil
@@ -960,6 +960,17 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 				case <-ctx.Done():
 					return
 				}
+			}
+		}
+	})
+	// periodically update stylus lru cache metrics
+	s.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Minute):
+				programs.GetWasmLruCacheMetrics()
 			}
 		}
 	})
