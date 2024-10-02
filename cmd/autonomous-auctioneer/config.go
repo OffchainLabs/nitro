@@ -81,7 +81,6 @@ func AuctioneerConfigAddOptions(f *flag.FlagSet) {
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
-	genericconf.AuthRPCConfigAddOptions("auth", f)
 	f.Bool("metrics", AutonomousAuctioneerConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 	f.Bool("pprof", AutonomousAuctioneerConfigDefault.PProf, "enable pprof")
