@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"testing"
 	"time"
@@ -38,7 +37,7 @@ func (c *mockGCSClient) Upload(ctx context.Context, bucket, objectPrefix string,
 	return nil
 }
 
-func NewTestGoogleCloudStorageService(ctx context.Context, googleCloudStorageConfig genericconf.GoogleCloudStorageConfig) (StorageService, error) {
+func NewTestGoogleCloudStorageService(ctx context.Context, googleCloudStorageConfig GoogleCloudStorageServiceConfig) (StorageService, error) {
 	return &GoogleCloudStorageService{
 		bucket:       googleCloudStorageConfig.Bucket,
 		objectPrefix: googleCloudStorageConfig.ObjectPrefix,
@@ -52,7 +51,10 @@ func NewTestGoogleCloudStorageService(ctx context.Context, googleCloudStorageCon
 func TestNewGoogleCloudStorageService(t *testing.T) {
 	ctx := context.Background()
 	expiry := uint64(time.Now().Add(time.Hour).Unix())
-	googleCloudService, err := NewTestGoogleCloudStorageService(ctx, genericconf.DefaultGoogleCloudStorageConfig)
+	googleCloudStorageServiceConfig := DefaultGoogleCloudStorageServiceConfig
+	googleCloudStorageServiceConfig.Enable = true
+	googleCloudStorageServiceConfig.MaxRetention = time.Hour * 24
+	googleCloudService, err := NewTestGoogleCloudStorageService(ctx, googleCloudStorageServiceConfig)
 	Require(t, err)
 
 	val1 := []byte("The first value")
