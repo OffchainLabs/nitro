@@ -10,7 +10,7 @@ func TestTimeboostedInDifferentScenarios(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name          string
-		blockMetadata arbostypes.Timeboosted
+		blockMetadata arbostypes.BlockMetadata
 		txs           []bool // Array representing whether the tx is timeboosted or not. First tx is always false as its an arbitrum internal tx
 	}{
 		{
@@ -30,11 +30,10 @@ func TestTimeboostedInDifferentScenarios(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			feedMsg := BroadcastFeedMessage{BlockMetadata: tc.blockMetadata}
 			for txIndex, isTxTimeBoosted := range tc.txs {
-				if isTxTimeBoosted && !feedMsg.IsTxTimeboosted(txIndex) {
+				if isTxTimeBoosted && !tc.blockMetadata.IsTxTimeboosted(txIndex) {
 					t.Fatalf("incorrect timeboosted bit for tx of index %d, it should be timeboosted", txIndex)
-				} else if !isTxTimeBoosted && feedMsg.IsTxTimeboosted(txIndex) {
+				} else if !isTxTimeBoosted && tc.blockMetadata.IsTxTimeboosted(txIndex) {
 					t.Fatalf("incorrect timeboosted bit for tx of index %d, it shouldn't be timeboosted", txIndex)
 				}
 			}

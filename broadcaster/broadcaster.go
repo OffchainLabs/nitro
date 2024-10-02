@@ -43,7 +43,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	message arbostypes.MessageWithMetadata,
 	sequenceNumber arbutil.MessageIndex,
 	blockHash *common.Hash,
-	blockMetadata arbostypes.Timeboosted,
+	blockMetadata arbostypes.BlockMetadata,
 ) (*m.BroadcastFeedMessage, error) {
 	var messageSignature []byte
 	if b.dataSigner != nil {
@@ -70,7 +70,7 @@ func (b *Broadcaster) BroadcastSingle(
 	msg arbostypes.MessageWithMetadata,
 	seq arbutil.MessageIndex,
 	blockHash *common.Hash,
-	blockMetadata arbostypes.Timeboosted,
+	blockMetadata arbostypes.BlockMetadata,
 ) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
