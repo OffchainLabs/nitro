@@ -551,26 +551,16 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 // timeboosted[index / 8 + 1] & (1 << (index % 8)) != 0; where index = (N - 1), implies whether (N)th tx in a block is timeboosted
 // note that number of txs in a block will always lag behind (len(timeboosted) - 1) * 8 but it wont lag more than a value of 7
 func (s *ExecutionEngine) timeboostedFromBlock(block *types.Block, timeboostedTxs map[common.Hash]bool) []byte {
-	timeboosted := []byte{}
+	bits := make([]byte, 1+arbmath.DivCeil(uint64(len(block.Transactions())), 8))
 	if len(timeboostedTxs) == 0 {
-		timeboosted = append(timeboosted, byte(0)) // first byte represents version, for now its 0
-		for i := 0; i < len(block.Transactions()); i += 8 {
-			timeboosted = append(timeboosted, byte(0))
-		}
-		return timeboosted
+		return bits
 	}
-	curr := byte(0) // first byte represents version, for now its 0
-	for idx, tx := range block.Transactions() {
-		posInCurr := idx % 8
-		if posInCurr == 0 {
-			timeboosted = append(timeboosted, curr)
-			curr = byte(0)
-		}
+	for i, tx := range block.Transactions() {
 		if _, ok := timeboostedTxs[tx.Hash()]; ok {
-			curr |= (1 << posInCurr)
+			bits[1+i/8] |= 1 << (i % 8)
 		}
 	}
-	return append(timeboosted, curr)
+	return bits
 }
 
 func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
