@@ -9,8 +9,8 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -112,7 +112,7 @@ func CreateBatchPosterDAS(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
 	dataSigner signature.DataSignerFunc,
-	l1Reader arbutil.L1Interface,
+	l1Reader *ethclient.Client,
 	sequencerInboxAddr common.Address,
 ) (DataAvailabilityServiceWriter, DataAvailabilityServiceReader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {
