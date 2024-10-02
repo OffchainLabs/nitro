@@ -382,7 +382,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	if err != nil {
 		return err
 	}
-	err = deleteStartingAt(s.db, batch, timeboostedTxsInputFeedPrefix, uint64ToKey(uint64(count)))
+	err = deleteStartingAt(s.db, batch, blockMetadataInputFeedPrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
 	}
@@ -474,8 +474,8 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(seqNum arbutil.
 		return nil, err
 	}
 
-	key = dbKey(timeboostedTxsInputFeedPrefix, uint64(seqNum))
-	timeboosted, err := s.db.Get(key)
+	key = dbKey(blockMetadataInputFeedPrefix, uint64(seqNum))
+	blockMetadata, err := s.db.Get(key)
 	if err != nil && !dbutil.IsErrNotFound(err) {
 		return nil, err
 	}
@@ -483,7 +483,7 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(seqNum arbutil.
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 		MessageWithMeta: *msg,
 		BlockHash:       blockHash,
-		TimeBoosted:     timeboosted,
+		BlockMetadata:   blockMetadata,
 	}
 	return &msgWithBlockInfo, nil
 }
@@ -553,7 +553,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 		msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: feedMessage.Message,
 			BlockHash:       feedMessage.BlockHash,
-			TimeBoosted:     feedMessage.Timeboosted,
+			BlockMetadata:   feedMessage.BlockMetadata,
 		}
 		messages = append(messages, msgWithBlockInfo)
 		broadcastAfterPos++
@@ -960,7 +960,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	pos arbutil.MessageIndex,
 	msgWithMeta arbostypes.MessageWithMetadata,
 	msgResult execution.MessageResult,
-	timeboosted []byte,
+	blockMetadata arbostypes.Timeboosted,
 ) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
@@ -988,7 +988,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 		MessageWithMeta: msgWithMeta,
 		BlockHash:       &msgResult.BlockHash,
-		TimeBoosted:     timeboosted,
+		BlockMetadata:   blockMetadata,
 	}
 
 	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, nil); err != nil {
@@ -1039,8 +1039,8 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 		return err
 	}
 
-	key = dbKey(timeboostedTxsInputFeedPrefix, uint64(pos))
-	return batch.Put(key, msg.TimeBoosted)
+	key = dbKey(blockMetadataInputFeedPrefix, uint64(pos))
+	return batch.Put(key, msg.BlockMetadata)
 }
 
 func (s *TransactionStreamer) broadcastMessages(
@@ -1085,18 +1085,18 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	return nil
 }
 
-func (s *TransactionStreamer) TimeboostedAtCount(count arbutil.MessageIndex) ([]byte, error) {
+func (s *TransactionStreamer) BlockMetadataAtCount(count arbutil.MessageIndex) ([]byte, error) {
 	if count == 0 {
 		return []byte{}, nil
 	}
 	pos := count - 1
 
-	key := dbKey(timeboostedTxsInputFeedPrefix, uint64(pos))
-	timeboosted, err := s.db.Get(key)
+	key := dbKey(blockMetadataInputFeedPrefix, uint64(pos))
+	blockMetadata, err := s.db.Get(key)
 	if err != nil && !dbutil.IsErrNotFound(err) {
 		return nil, err
 	}
-	return timeboosted, nil
+	return blockMetadata, nil
 }
 
 func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error) {
@@ -1234,7 +1234,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 		MessageWithMeta: msgAndBlockInfo.MessageWithMeta,
 		BlockHash:       &msgResult.BlockHash,
 		// maybe if blockhash is differing we clear out previous timeboosted and not send timeboosted info to broadcasting?
-		TimeBoosted: msgAndBlockInfo.TimeBoosted,
+		BlockMetadata: msgAndBlockInfo.BlockMetadata,
 	}
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, pos)
 

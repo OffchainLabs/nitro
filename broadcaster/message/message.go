@@ -37,7 +37,7 @@ type BroadcastFeedMessage struct {
 	Message        arbostypes.MessageWithMetadata `json:"message"`
 	BlockHash      *common.Hash                   `json:"blockHash,omitempty"`
 	Signature      []byte                         `json:"signature"`
-	Timeboosted    []byte                         `json:"timeboosted"`
+	BlockMetadata  arbostypes.Timeboosted         `json:"blockMetadata"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`
 }
@@ -57,11 +57,11 @@ func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {
 // IsTxTimeboosted given a tx's index in the block returns whether the tx was timeboosted or not.
 // Currently used in testing
 func (m *BroadcastFeedMessage) IsTxTimeboosted(txIndex int) bool {
-	maxTxCount := (len(m.Timeboosted) - 1) * 8
+	maxTxCount := (len(m.BlockMetadata) - 1) * 8
 	if txIndex >= maxTxCount {
 		return false
 	}
-	return m.Timeboosted[1+(txIndex/8)]&(1<<(txIndex%8)) != 0
+	return m.BlockMetadata[1+(txIndex/8)]&(1<<(txIndex%8)) != 0
 }
 
 type ConfirmedSequenceNumberMessage struct {

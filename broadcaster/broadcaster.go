@@ -43,7 +43,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	message arbostypes.MessageWithMetadata,
 	sequenceNumber arbutil.MessageIndex,
 	blockHash *common.Hash,
-	timeboosted []byte,
+	blockMetadata arbostypes.Timeboosted,
 ) (*m.BroadcastFeedMessage, error) {
 	var messageSignature []byte
 	if b.dataSigner != nil {
@@ -62,7 +62,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 		Message:        message,
 		BlockHash:      blockHash,
 		Signature:      messageSignature,
-		Timeboosted:    timeboosted,
+		BlockMetadata:  blockMetadata,
 	}, nil
 }
 
@@ -70,7 +70,7 @@ func (b *Broadcaster) BroadcastSingle(
 	msg arbostypes.MessageWithMetadata,
 	seq arbutil.MessageIndex,
 	blockHash *common.Hash,
-	timeboosted []byte,
+	blockMetadata arbostypes.Timeboosted,
 ) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -78,7 +78,7 @@ func (b *Broadcaster) BroadcastSingle(
 			err = errors.New("panic in BroadcastSingle")
 		}
 	}()
-	bfm, err := b.NewBroadcastFeedMessage(msg, seq, blockHash, timeboosted)
+	bfm, err := b.NewBroadcastFeedMessage(msg, seq, blockHash, blockMetadata)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (b *Broadcaster) BroadcastMessages(
 	}()
 	var feedMessages []*m.BroadcastFeedMessage
 	for i, msg := range messagesWithBlockInfo {
-		bfm, err := b.NewBroadcastFeedMessage(msg.MessageWithMeta, seq+arbutil.MessageIndex(i), msg.BlockHash, msg.TimeBoosted)
+		bfm, err := b.NewBroadcastFeedMessage(msg.MessageWithMeta, seq+arbutil.MessageIndex(i), msg.BlockHash, msg.BlockMetadata)
 		if err != nil {
 			return err
 		}

@@ -951,7 +951,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.nonceCache.BeginNewBlock()
 	queueItems = s.precheckNonces(queueItems, totalBlockSize)
 	txes := make([]*types.Transaction, len(queueItems))
-	timeboostedTxs := make(map[common.Hash]bool)
+	timeboostedTxs := make(map[common.Hash]struct{})
 	hooks := s.makeSequencingHooks()
 	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
 	totalBlockSize = 0 // recompute the totalBlockSize to double check it
@@ -960,7 +960,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		totalBlockSize = arbmath.SaturatingAdd(totalBlockSize, queueItem.txSize)
 		hooks.ConditionalOptionsForTx[i] = queueItem.options
 		if queueItem.isTimeboosted {
-			timeboostedTxs[queueItem.tx.Hash()] = true
+			timeboostedTxs[queueItem.tx.Hash()] = struct{}{}
 		}
 	}
 
