@@ -10,8 +10,8 @@ go_library(
 
 go_test(
     name = "fsm_test",
+    size = "small",
     srcs = ["fsm_test.go"],
     embed = [":fsm"],
     deps = ["@com_github_stretchr_testify//require"],
-    size = "small",
 )

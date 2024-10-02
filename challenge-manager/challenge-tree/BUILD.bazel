@@ -26,6 +26,7 @@ go_library(
 
 go_test(
     name = "challenge-tree_test",
+    size = "small",
     srcs = [
         "ancestors_test.go",
         "compute_ancestors_test.go",
@@ -45,5 +46,4 @@ go_test(
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_stretchr_testify//require",
     ],
-    size = "small",
 )

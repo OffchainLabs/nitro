@@ -9,8 +9,8 @@ go_library(
 
 go_test(
     name = "containers_test",
+    size = "small",
     srcs = ["slice_test.go"],
     embed = [":containers"],
     deps = ["@com_github_stretchr_testify//require"],
-    size = "small",
 )

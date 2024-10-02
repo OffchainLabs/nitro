@@ -23,11 +23,11 @@ go_library(
 
 go_test(
     name = "layer2-state-provider_test",
+    size = "small",
     srcs = ["history_commitment_provider_test.go"],
     embed = [":layer2-state-provider"],
     deps = [
         "//containers/option",
         "@com_github_stretchr_testify//require",
     ],
-    size = "small",
 )

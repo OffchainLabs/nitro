@@ -14,6 +14,7 @@ go_library(
 
 go_test(
     name = "history_test",
+    size = "small",
     srcs = ["commitments_test.go"],
     embed = [":history"],
     deps = [
@@ -21,5 +22,4 @@ go_test(
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_stretchr_testify//require",
     ],
-    size = "small",
 )

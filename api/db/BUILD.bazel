@@ -21,6 +21,7 @@ go_library(
 
 go_test(
     name = "db_test",
+    size = "small",
     srcs = ["db_test.go"],
     embed = [":db"],
     deps = [
@@ -32,5 +33,4 @@ go_test(
         "@com_github_mattn_go_sqlite3//:go-sqlite3",
         "@com_github_stretchr_testify//require",
     ],
-    size = "small",
 )

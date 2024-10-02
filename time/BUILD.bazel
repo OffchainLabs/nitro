@@ -9,7 +9,7 @@ go_library(
 
 go_test(
     name = "time_test",
+    size = "small",
     srcs = ["time_reference_test.go"],
     embed = [":time"],
-    size = "small",
 )

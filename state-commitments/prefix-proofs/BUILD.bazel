@@ -17,6 +17,7 @@ go_library(
 
 go_test(
     name = "prefix-proofs_test",
+    size = "small",
     srcs = [
         "merkle_expansions_test.go",
         "prefix_proofs_test.go",
@@ -36,5 +37,4 @@ go_test(
         "@com_github_ethereum_go_ethereum//ethclient/simulated",
         "@com_github_stretchr_testify//require",
     ],
-    size = "small",
 )

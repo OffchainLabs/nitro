@@ -24,6 +24,7 @@ go_library(
 
 go_test(
     name = "state-provider_test",
+    size = "small",
     srcs = [
         "execution_engine_test.go",
         "history_provider_test.go",
@@ -39,5 +40,4 @@ go_test(
         "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_stretchr_testify//require",
     ],
-    size = "small",
 )

@@ -15,6 +15,7 @@ go_library(
 
 go_test(
     name = "inclusion-proofs_test",
+    size = "small",
     srcs = ["inclusion_proofs_test.go"],
     embed = [":inclusion-proofs"],
     deps = [
@@ -22,5 +23,4 @@ go_test(
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_stretchr_testify//require",
     ],
-    size = "small",
 )

@@ -13,8 +13,8 @@ go_library(
 
 go_test(
     name = "runtime_test",
+    size = "small",
     srcs = ["retry_test.go"],
     embed = [":runtime"],
     deps = ["@com_github_stretchr_testify//require"],
-    size = "small",
 )

@@ -20,6 +20,7 @@ go_library(
 
 go_test(
     name = "threadsafe_test",
+    size = "small",
     srcs = [
         "collections_test.go",
         "map_test.go",
@@ -28,5 +29,4 @@ go_test(
     ],
     embed = [":threadsafe"],
     deps = ["@com_github_stretchr_testify//require"],
-    size = "small",
 )
