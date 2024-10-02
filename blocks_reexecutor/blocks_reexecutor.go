@@ -154,7 +154,7 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 			stateReleaseFunc := func() {
 				_ = blocksReExecutor.db.TrieDB().Dereference(header.Root)
 			}
-			return sdb, stateReleaseFunc, err
+			return sdb, stateReleaseFunc, nil
 		}
 		return sdb, arbitrum.NoopStateRelease, err
 	}
