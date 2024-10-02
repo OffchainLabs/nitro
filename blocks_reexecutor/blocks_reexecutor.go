@@ -30,6 +30,7 @@ type Config struct {
 	EndBlock           uint64 `koanf:"end-block"`
 	Room               int    `koanf:"room"`
 	MinBlocksPerThread uint64 `koanf:"min-blocks-per-thread"`
+	TrieCleanLimit     int    `koanf:"trie-clean-limit"`
 }
 
 func (c *Config) Validate() error {
@@ -57,6 +58,7 @@ var TestConfig = Config{
 	Mode:               "full",
 	Room:               runtime.NumCPU(),
 	MinBlocksPerThread: 10,
+	TrieCleanLimit:     600,
 }
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -66,6 +68,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".end-block", DefaultConfig.EndBlock, "last block number of the block range for re-execution")
 	f.Int(prefix+".room", DefaultConfig.Room, "number of threads to parallelize blocks re-execution")
 	f.Uint64(prefix+".min-blocks-per-thread", DefaultConfig.MinBlocksPerThread, "minimum number of blocks to execute per thread. When mode is random this acts as the size of random block range sample")
+	f.Int(prefix+".trie-clean-limit", DefaultConfig.TrieCleanLimit, "memory allowance (MB) to use for caching trie nodes in memory")
 }
 
 type BlocksReExecutor struct {
@@ -128,9 +131,11 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 			minBlocksPerThread = work
 		}
 	}
+	hashConfig := *hashdb.Defaults
+	hashConfig.CleanCacheSize = c.TrieCleanLimit * 1024 * 1024
 	trieConfig := triedb.Config{
 		Preimages: false,
-		HashDB:    hashdb.Defaults,
+		HashDB:    &hashConfig,
 	}
 	blocksReExecutor := &BlocksReExecutor{
 		config:             c,
@@ -146,6 +151,10 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 		sdb, err := state.NewDeterministic(header.Root, blocksReExecutor.db)
 		if err == nil {
 			_ = blocksReExecutor.db.TrieDB().Reference(header.Root, common.Hash{}) // Will be dereferenced later in advanceStateUpToBlock
+			stateReleaseFunc := func() {
+				_ = blocksReExecutor.db.TrieDB().Dereference(header.Root)
+			}
+			return sdb, stateReleaseFunc, err
 		}
 		return sdb, arbitrum.NoopStateRelease, err
 	}
@@ -163,12 +172,10 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, currentB
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
 		return s.startBlock
 	}
-	// NoOp
-	defer release()
 	start = startHeader.Number.Uint64()
 	s.LaunchThread(func(ctx context.Context) {
 		log.Info("Starting reexecution of blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
-		if err := s.advanceStateUpToBlock(ctx, startState, s.blockchain.GetHeaderByNumber(currentBlock), startHeader); err != nil {
+		if err := s.advanceStateUpToBlock(ctx, startState, s.blockchain.GetHeaderByNumber(currentBlock), startHeader, release); err != nil {
 			s.fatalErrChan <- fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err)
 		} else {
 			log.Info("Successfully reexecuted blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
@@ -218,27 +225,32 @@ func (s *BlocksReExecutor) StopAndWait() {
 	s.StopWaiter.StopAndWait()
 }
 
-func (s *BlocksReExecutor) commitStateAndVerify(statedb *state.StateDB, expected common.Hash, blockNumber uint64) (*state.StateDB, error) {
+func (s *BlocksReExecutor) commitStateAndVerify(statedb *state.StateDB, expected common.Hash, blockNumber uint64) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
 	result, err := statedb.Commit(blockNumber, true)
 	if err != nil {
-		return nil, err
+		return nil, arbitrum.NoopStateRelease, err
 	}
 	if result != expected {
-		return nil, fmt.Errorf("bad root hash expected: %v got: %v", expected, result)
+		return nil, arbitrum.NoopStateRelease, fmt.Errorf("bad root hash expected: %v got: %v", expected, result)
 	}
-	_ = s.db.TrieDB().Reference(result, common.Hash{})
-	return state.New(result, statedb.Database(), nil)
+	sdb, err := state.New(result, statedb.Database(), nil)
+	if err == nil {
+		_ = s.db.TrieDB().Reference(result, common.Hash{})
+		stateReleaseFunc := func() {
+			_ = s.db.TrieDB().Dereference(result)
+		}
+		return sdb, stateReleaseFunc, nil
+	}
+	return sdb, arbitrum.NoopStateRelease, err
 }
 
-func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *state.StateDB, targetHeader *types.Header, lastAvailableHeader *types.Header) error {
+func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *state.StateDB, targetHeader *types.Header, lastAvailableHeader *types.Header, lastRelease arbitrum.StateReleaseFunc) error {
 	targetBlockNumber := targetHeader.Number.Uint64()
 	blockToRecreate := lastAvailableHeader.Number.Uint64() + 1
 	prevHash := lastAvailableHeader.Hash()
-	lastRoot := lastAvailableHeader.Root
+	var stateRelease arbitrum.StateReleaseFunc
 	defer func() {
-		if (lastRoot != common.Hash{}) {
-			_ = s.db.TrieDB().Dereference(lastRoot)
-		}
+		lastRelease()
 	}()
 	var block *types.Block
 	var err error
@@ -248,12 +260,12 @@ func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *sta
 			return err
 		}
 		prevHash = block.Hash()
-		state, err = s.commitStateAndVerify(state, block.Root(), block.NumberU64())
+		state, stateRelease, err = s.commitStateAndVerify(state, block.Root(), block.NumberU64())
 		if err != nil {
 			return fmt.Errorf("failed committing state for block %d : %w", blockToRecreate, err)
 		}
-		_ = s.db.TrieDB().Dereference(lastRoot)
-		lastRoot = block.Root()
+		lastRelease()
+		lastRelease = stateRelease
 		if blockToRecreate >= targetBlockNumber {
 			if block.Hash() != targetHeader.Hash() {
 				return fmt.Errorf("blockHash doesn't match when recreating number: %d expected: %v got: %v", blockToRecreate, targetHeader.Hash(), block.Hash())
