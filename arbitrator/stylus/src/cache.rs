@@ -184,6 +184,7 @@ impl InitCache {
             cache.lru_counters.hits += 1;
             if long_term_tag == Self::ARBOS_TAG {
                 cache.long_term.insert(key, item.clone());
+                cache.long_term_size_bytes += item.entry_size_estimate_bytes;
             } else {
                 // only calls get to move the key to the head of the LRU list
                 cache.lru.get(&key);
