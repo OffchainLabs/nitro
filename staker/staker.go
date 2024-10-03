@@ -305,7 +305,6 @@ func NewStaker(
 	validatorUtilsAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
-
 	if err := config().Validate(); err != nil {
 		return nil, err
 	}
@@ -1224,7 +1223,7 @@ func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
 	}
 	balance, err := s.client.BalanceAt(ctx, *txSenderAddress, nil)
 	if err != nil {
-		log.Error("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
+		log.Warn("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
 		return
 	}
 	stakerBalanceGauge.Update(arbmath.BalancePerEther(balance))
