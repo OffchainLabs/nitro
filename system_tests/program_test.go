@@ -1385,7 +1385,7 @@ func TestProgramCacheManager(t *testing.T) {
 	isManager, err := arbWasmCache.IsCacheManager(nil, manager)
 	assert(!isManager, err)
 
-	// athorize the manager
+	// authorize the manager
 	ensure(arbOwner.AddWasmCacheManager(&ownerAuth, manager))
 	assert(arbWasmCache.IsCacheManager(nil, manager))
 	all, err := arbWasmCache.AllCacheManagers(nil)
@@ -2136,4 +2136,108 @@ func TestWasmLruCache(t *testing.T) {
 	if lruMetrics.SizeBytes != keccakLruEntrySizeEstimateBytes+mathLruEntrySizeEstimateBytes {
 		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", keccakLruEntrySizeEstimateBytes+mathLruEntrySizeEstimateBytes, lruMetrics.SizeBytes)
 	}
+}
+
+func TestWasmLongTermCache(t *testing.T) {
+	builder, ownerAuth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	manager, tx, _, err := mocksgen.DeploySimpleCacheManager(&ownerAuth, l2client)
+	ensure(tx, err)
+
+	arbWasmCache, err := pgen.NewArbWasmCache(types.ArbWasmCacheAddress, builder.L2.Client)
+	Require(t, err)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&ownerAuth, 10_000))
+
+	ownerAuth.GasLimit = 32000000
+	ownerAuth.Value = oneEth
+
+	fallibleProgramAddress, fallibleEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "fallible")
+	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "keccak")
+	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "math")
+	t.Log(
+		"lruEntrySizeEstimateBytes, ",
+		"fallible:", fallibleEntrySize,
+		"keccak:", keccakEntrySize,
+		"math:", mathEntrySize,
+	)
+
+	isManager, err := arbWasmCache.IsCacheManager(nil, manager)
+	Require(t, err)
+	t.Log("isManager", isManager)
+	ownerAuth.Value = common.Big0
+	ensure(arbOwner.AddWasmCacheManager(&ownerAuth, manager))
+
+	checkLongTermMetrics := func(expected programs.WasmLongTermCacheMetrics) {
+		t.Helper()
+		longTermMetrics := programs.GetWasmCacheMetrics().LongTerm
+		if longTermMetrics.Count != expected.Count {
+			t.Fatalf("longTermMetrics.Count, expected: %v, actual: %v", expected.Count, longTermMetrics.Count)
+		}
+		if longTermMetrics.SizeBytes != expected.SizeBytes {
+			t.Fatalf("longTermMetrics.SizeBytes, expected: %v, actual: %v", expected.SizeBytes, longTermMetrics.SizeBytes)
+		}
+	}
+
+	programs.ClearWasmLongTermCache(1)
+	checkLongTermMetrics(programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	// fallible wasm program will not be cached since caching is not set for this program
+	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermMetrics(programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, fallibleProgramAddress))
+	// fallible wasm program will be cached
+	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermMetrics(programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+
+	// keccak wasm program will be cached
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, keccakProgramAddress))
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermMetrics(programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+
+	// math wasm program will not be cached
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermMetrics(programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+
+	// math wasm program will be cached
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, mathProgramAddress))
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermMetrics(programs.WasmLongTermCacheMetrics{
+		Count:     3,
+		SizeBytes: fallibleEntrySize + keccakEntrySize + mathEntrySize,
+	})
 }

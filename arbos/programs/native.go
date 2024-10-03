@@ -393,6 +393,11 @@ func ClearWasmLruCache() {
 }
 
 // Used for testing
+func ClearWasmLongTermCache(arbos_tag uint32) {
+	C.stylus_clear_long_term_cache(u32(arbos_tag))
+}
+
+// Used for testing
 func GetEntrySizeEstimateBytes(module []byte, version uint16, debug bool) uint64 {
 	return uint64(C.stylus_get_entry_size_estimate_bytes(goSlice(module), u16(version), cbool(debug)))
 }
