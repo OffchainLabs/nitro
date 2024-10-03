@@ -182,14 +182,15 @@ impl InitCache {
         // See if the item is in the LRU cache, promoting if so
         if let Some(item) = cache.lru.peek(&key).cloned() {
             cache.lru_counters.hits += 1;
+            let data = item.data();
             if long_term_tag == Self::ARBOS_TAG {
-                cache.long_term.insert(key, item.clone());
                 cache.long_term_size_bytes += item.entry_size_estimate_bytes;
+                cache.long_term.insert(key, item);
             } else {
                 // only calls get to move the key to the head of the LRU list
                 cache.lru.get(&key);
             }
-            return Some(item.data());
+            return Some(data);
         }
         cache.lru_counters.misses += 1;
 
