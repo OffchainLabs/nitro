@@ -2139,7 +2139,9 @@ func TestWasmLruCache(t *testing.T) {
 }
 
 func TestWasmLongTermCache(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true)
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
+		builder.WithStylusLongTermCache(true)
+	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
