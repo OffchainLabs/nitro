@@ -56,7 +56,6 @@ func TestProgramSimpleCost(t *testing.T) {
 		{hostio: "contract_address", opcode: vm.ADDRESS, maxDiff: 0.5},
 		{hostio: "math_div", opcode: vm.DIV, params: []any{big.NewInt(1), big.NewInt(3)}},
 		{hostio: "math_mod", opcode: vm.MOD, params: []any{big.NewInt(1), big.NewInt(3)}},
-		{hostio: "math_pow", opcode: vm.EXP, params: []any{big.NewInt(1), new(big.Int).Lsh(big.NewInt(1), 255)}, maxDiff: 2}, // worst case
 		{hostio: "math_add_mod", opcode: vm.ADDMOD, params: []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)}, maxDiff: 0.5},
 		{hostio: "math_mul_mod", opcode: vm.MULMOD, params: []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)}, maxDiff: 0.5},
 		{hostio: "msg_sender", opcode: vm.CALLER, maxDiff: 0.5},
@@ -73,6 +72,32 @@ func TestProgramSimpleCost(t *testing.T) {
 			data, err := packer(tc.params...)
 			Require(t, err)
 			compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, compareGasForEach, tc.maxDiff, compareGasPair{tc.opcode, tc.hostio})
+		})
+	}
+}
+
+func TestProgramPowCost(t *testing.T) {
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
+	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "mathPow")
+
+	for _, exponentNumBytes := range []uint{1, 2, 10, 32} {
+		name := fmt.Sprintf("exponentNumBytes%v", exponentNumBytes)
+		t.Run(name, func(t *testing.T) {
+			exponent := new(big.Int).Lsh(big.NewInt(1), exponentNumBytes*8-1)
+			params := []any{big.NewInt(1), exponent}
+			data, err := packer(params...)
+			Require(t, err)
+			evmGasUsage, stylusGasUsage := measureGasUsage(t, builder, evmProgram, stylusProgram, data, nil)
+			expectedGas := 2.652 + 1.75*float64(exponentNumBytes+1)
+			t.Logf("evm EXP usage: %v - stylus math_pow usage: %v - expected math_pow usage: %v",
+				evmGasUsage[vm.EXP][0], stylusGasUsage["math_pow"][0], expectedGas)
+			// The math_pow HostIO uses significally less gas than the EXP opcode. So,
+			// instead of comparing it to EVM, we compare it to the expected gas usage
+			// for each test case.
+			checkPercentDiff(t, stylusGasUsage["math_pow"][0], expectedGas, 0.001)
 		})
 	}
 }
@@ -261,35 +286,15 @@ func deployEvmContract(t *testing.T, ctx context.Context, auth bind.TransactOpts
 	return address
 }
 
-type compareGasPair struct {
-	opcode vm.OpCode
-	hostio string
-}
-
-type compareGasMode int
-
-const (
-	compareGasForEach compareGasMode = iota
-	compareGasSum
-)
-
-// compareGasUsage calls an EVM and a Wasm contract passing the same data and the same value.
-// Then, it ensures the given opcodes and hostios cost roughly the same amount of gas.
-func compareGasUsage(
+// measureGasUsage calls an EVM and a Wasm contract passing the same data and the same value.
+func measureGasUsage(
 	t *testing.T,
 	builder *NodeBuilder,
 	evmContract common.Address,
 	stylusContract common.Address,
 	txData []byte,
 	txValue *big.Int,
-	mode compareGasMode,
-	maxAllowedDifference float64,
-	pairs ...compareGasPair,
-) {
-	if evmContract == stylusContract {
-		Fatal(t, "evm and stylus contract are the same")
-	}
-
+) (map[vm.OpCode][]uint64, map[string][]float64) {
 	const txGas uint64 = 32_000_000
 	txs := []*types.Transaction{
 		builder.L2Info.PrepareTxTo("Owner", &evmContract, txGas, txValue, txData),
@@ -307,6 +312,38 @@ func compareGasUsage(
 
 	t.Logf("evm total usage: %v - stylus total usage: %v", evmGas, stylusGas)
 
+	return evmGasUsage, stylusGasUsage
+}
+
+type compareGasPair struct {
+	opcode vm.OpCode
+	hostio string
+}
+
+type compareGasMode int
+
+const (
+	compareGasForEach compareGasMode = iota
+	compareGasSum
+)
+
+// compareGasUsage calls measureGasUsage and then it ensures the given opcodes and hostios cost
+// roughly the same amount of gas.
+func compareGasUsage(
+	t *testing.T,
+	builder *NodeBuilder,
+	evmContract common.Address,
+	stylusContract common.Address,
+	txData []byte,
+	txValue *big.Int,
+	mode compareGasMode,
+	maxAllowedDifference float64,
+	pairs ...compareGasPair,
+) {
+	if evmContract == stylusContract {
+		Fatal(t, "evm and stylus contract are the same")
+	}
+	evmGasUsage, stylusGasUsage := measureGasUsage(t, builder, evmContract, stylusContract, txData, txValue)
 	for i := range pairs {
 		opcode := pairs[i].opcode
 		hostio := pairs[i].hostio
