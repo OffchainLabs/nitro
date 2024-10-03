@@ -513,6 +513,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 	backoff := time.Second
 	isAheadOfOnChainNonceEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
 	exceedsMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), 0)
+	blockValidationPendingEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "block validation is still pending", 0)
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
 		defer func() {
 			panicErr := recover()
@@ -548,6 +549,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		if err == nil {
 			isAheadOfOnChainNonceEphemeralErrorHandler.Reset()
 			exceedsMaxMempoolSizeEphemeralErrorHandler.Reset()
+			blockValidationPendingEphemeralErrorHandler.Reset()
 			backoff = time.Second
 			stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
 			stakerActionSuccessCounter.Inc(1)
@@ -567,6 +569,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		logLevel = isAheadOfOnChainNonceEphemeralErrorHandler.LogLevel(err, logLevel)
 		logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+		logLevel = blockValidationPendingEphemeralErrorHandler.LogLevel(err, logLevel)
 		logLevel("error acting as staker", "err", err)
 		return backoff
 	})
