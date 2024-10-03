@@ -336,7 +336,7 @@ func (p *DataPoster) UsingNoOpStorage() bool {
 	return p.usingNoOpStorage
 }
 
-var ErrExceedsMaxMempoolSize = errors.New("Node is behind, posting this transaction will exceed max mempool size")
+var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed max mempool size")
 
 // Does basic check whether posting transaction with specified nonce would
 // result in exceeding maximum queue length or maximum transactions in mempool.
