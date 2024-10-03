@@ -40,28 +40,28 @@ func TestProgramSimpleCost(t *testing.T) {
 		{hostio: "exit_early", opcode: vm.STOP},
 		{hostio: "transient_load_bytes32", opcode: vm.TLOAD, params: []any{common.HexToHash("dead")}},
 		{hostio: "transient_store_bytes32", opcode: vm.TSTORE, params: []any{common.HexToHash("dead"), common.HexToHash("beef")}},
-		{hostio: "return_data_size", opcode: vm.RETURNDATASIZE, maxDiff: 1.0},
+		{hostio: "return_data_size", opcode: vm.RETURNDATASIZE, maxDiff: 1.5},
 		{hostio: "account_balance", opcode: vm.BALANCE, params: []any{builder.L2Info.GetAddress("Owner")}},
 		{hostio: "account_code", opcode: vm.EXTCODECOPY, params: []any{otherProgram}},
-		{hostio: "account_code_size", opcode: vm.EXTCODESIZE, params: []any{otherProgram}},
+		{hostio: "account_code_size", opcode: vm.EXTCODESIZE, params: []any{otherProgram}, maxDiff: 0.3},
 		{hostio: "account_codehash", opcode: vm.EXTCODEHASH, params: []any{otherProgram}},
-		{hostio: "evm_gas_left", opcode: vm.GAS, maxDiff: 1.0},
-		{hostio: "evm_ink_left", opcode: vm.GAS, maxDiff: 1.0},
+		{hostio: "evm_gas_left", opcode: vm.GAS, maxDiff: 1.5},
+		{hostio: "evm_ink_left", opcode: vm.GAS, maxDiff: 1.5},
 		{hostio: "block_basefee", opcode: vm.BASEFEE, maxDiff: 0.5},
-		{hostio: "chainid", opcode: vm.CHAINID, maxDiff: 1.0},
+		{hostio: "chainid", opcode: vm.CHAINID, maxDiff: 1.5},
 		{hostio: "block_coinbase", opcode: vm.COINBASE, maxDiff: 0.5},
-		{hostio: "block_gas_limit", opcode: vm.GASLIMIT, maxDiff: 1.0},
-		{hostio: "block_number", opcode: vm.NUMBER, maxDiff: 1.0},
-		{hostio: "block_timestamp", opcode: vm.TIMESTAMP, maxDiff: 1.0},
+		{hostio: "block_gas_limit", opcode: vm.GASLIMIT, maxDiff: 1.5},
+		{hostio: "block_number", opcode: vm.NUMBER, maxDiff: 1.5},
+		{hostio: "block_timestamp", opcode: vm.TIMESTAMP, maxDiff: 1.5},
 		{hostio: "contract_address", opcode: vm.ADDRESS, maxDiff: 0.5},
 		{hostio: "math_div", opcode: vm.DIV, params: []any{big.NewInt(1), big.NewInt(3)}},
 		{hostio: "math_mod", opcode: vm.MOD, params: []any{big.NewInt(1), big.NewInt(3)}},
-		{hostio: "math_add_mod", opcode: vm.ADDMOD, params: []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)}, maxDiff: 0.5},
-		{hostio: "math_mul_mod", opcode: vm.MULMOD, params: []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)}, maxDiff: 0.5},
+		{hostio: "math_add_mod", opcode: vm.ADDMOD, params: []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)}, maxDiff: 0.7},
+		{hostio: "math_mul_mod", opcode: vm.MULMOD, params: []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)}, maxDiff: 0.7},
 		{hostio: "msg_sender", opcode: vm.CALLER, maxDiff: 0.5},
 		{hostio: "msg_value", opcode: vm.CALLVALUE, maxDiff: 0.5},
 		{hostio: "tx_gas_price", opcode: vm.GASPRICE, maxDiff: 0.5},
-		{hostio: "tx_ink_price", opcode: vm.GASPRICE, maxDiff: 1.0},
+		{hostio: "tx_ink_price", opcode: vm.GASPRICE, maxDiff: 1.5},
 		{hostio: "tx_origin", opcode: vm.ORIGIN, maxDiff: 0.5},
 	} {
 		t.Run(tc.hostio, func(t *testing.T) {
@@ -259,7 +259,7 @@ func TestProgramKeccakCost(t *testing.T) {
 			preImage[len(preImage)-1] = 0
 			data, err := packer(preImage)
 			Require(t, err)
-			const maxDiff = 1.1
+			const maxDiff = 2.5 // stylus keccak charges significantly less gas
 			compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, compareGasForEach, maxDiff, compareGasPair{vm.KECCAK256, "native_keccak256"})
 		})
 	}
@@ -451,7 +451,7 @@ func checkPercentDiff(t *testing.T, a, b float64, maxAllowedDifference float64) 
 	if maxAllowedDifference == 0 {
 		maxAllowedDifference = 0.25
 	}
-	percentageDifference := math.Abs(a-b) / ((a + b) / 2)
+	percentageDifference := (max(a, b) / min(a, b)) - 1
 	if percentageDifference > maxAllowedDifference {
 		Fatal(t, fmt.Sprintf("gas usages are too different; got %v, max allowed is %v", percentageDifference, maxAllowedDifference))
 	}
