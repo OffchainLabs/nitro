@@ -1,13 +1,13 @@
 use arbutil::{Bytes32, PreimageType};
-use prover::machine::{argument_data_to_inbox, GlobalState, Machine};
-use prover::utils::CBytes;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::machine::{argument_data_to_inbox, GlobalState, Machine};
 use crate::parse_input::*;
+use crate::utils::CBytes;
 
 pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Machine> {
     let file = File::open(preimages)?;
@@ -39,6 +39,15 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
         bytes32_vals,
         u64_vals,
     };
+
+    for (arch, wasm) in data.user_wasms.iter() {
+        if arch != "wavm" {
+            continue;
+        }
+        for (id, wasm) in wasm.iter() {
+            mach.add_stylus_module(*id, wasm.as_vec());
+        }
+    }
 
     mach.set_global_state(start_state);
 

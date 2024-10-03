@@ -50,15 +50,13 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.21.x
+          go-version: 1.23.x
 
       - name: Install custom go-ethereum
         run: |
           cd /tmp
-          git clone --branch v1.13.8 --depth 1 https://github.com/ethereum/go-ethereum.git
+          git clone --branch v1.14.11 --depth 1 https://github.com/ethereum/go-ethereum.git
           cd go-ethereum
-          # Enable KZG point evaluation precompile early
-          sed -i 's#var PrecompiledContractsBerlin = map\[common.Address\]PrecompiledContract{#\0 common.BytesToAddress([]byte{0x0a}): \&kzgPointEvaluation{},#g' core/vm/contracts.go
           go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup nodejs

@@ -284,6 +284,7 @@ clean:
 	rm -f arbitrator/wasm-libraries/forward/*.wat
 	rm -rf brotli/buildfiles
 	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
+	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*
 
