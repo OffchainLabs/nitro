@@ -24,10 +24,11 @@ import (
 )
 
 func TestProgramSimpleCost(t *testing.T) {
-	ctx, l2info, l2client, auth := setupGasCostTest(t)
-	stylusProgram := deployWasm(t, ctx, auth, l2client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, ctx, auth, l2client, mocksgen.HostioTestMetaData)
-	otherProgram := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
+	otherProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("storage"))
 	matchSnake := regexp.MustCompile("_[a-z]")
 
 	for _, tc := range []struct {
@@ -40,7 +41,7 @@ func TestProgramSimpleCost(t *testing.T) {
 		{hostio: "transient_load_bytes32", opcode: vm.TLOAD, params: []any{common.HexToHash("dead")}},
 		{hostio: "transient_store_bytes32", opcode: vm.TSTORE, params: []any{common.HexToHash("dead"), common.HexToHash("beef")}},
 		{hostio: "return_data_size", opcode: vm.RETURNDATASIZE, maxDiff: 1.0},
-		{hostio: "account_balance", opcode: vm.BALANCE, params: []any{l2info.GetAddress("Owner")}},
+		{hostio: "account_balance", opcode: vm.BALANCE, params: []any{builder.L2Info.GetAddress("Owner")}},
 		{hostio: "account_code", opcode: vm.EXTCODECOPY, params: []any{otherProgram}},
 		{hostio: "account_code_size", opcode: vm.EXTCODESIZE, params: []any{otherProgram}},
 		{hostio: "account_codehash", opcode: vm.EXTCODEHASH, params: []any{otherProgram}},
@@ -71,17 +72,16 @@ func TestProgramSimpleCost(t *testing.T) {
 			packer, _ := util.NewCallParser(mocksgen.HostioTestABI, solFunc)
 			data, err := packer(tc.params...)
 			Require(t, err)
-			compareGasUsage(t, ctx, l2client, l2info, evmProgram, stylusProgram, data, nil,
-				compareGasForEach, tc.maxDiff, compareGasPair{tc.opcode, tc.hostio})
+			compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, compareGasForEach, tc.maxDiff, compareGasPair{tc.opcode, tc.hostio})
 		})
 	}
 }
 
 func TestProgramStorageCost(t *testing.T) {
-	ctx, l2info, l2client, auth := setupGasCostTest(t)
-
-	stylusMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-	evmMulticall := deployEvmContract(t, ctx, auth, l2client, mocksgen.MultiCallTestMetaData)
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusMulticall := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
+	evmMulticall := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.MultiCallTestMetaData)
 
 	const numSlots = 42
 	rander := testhelpers.NewPseudoRandomDataSource(t, 0)
@@ -109,18 +109,17 @@ func TestProgramStorageCost(t *testing.T) {
 		{"writeAgainAgain", writeRandAData},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			compareGasUsage(t, ctx, l2client, l2info, evmMulticall, stylusMulticall, tc.data, nil,
-				compareGasSum, 0, compareGasPair{vm.SSTORE, "storage_flush_cache"},
-				compareGasPair{vm.SLOAD, "storage_load_bytes32"})
+			compareGasUsage(t, builder, evmMulticall, stylusMulticall, tc.data, nil, compareGasSum, 0,
+				compareGasPair{vm.SSTORE, "storage_flush_cache"}, compareGasPair{vm.SLOAD, "storage_load_bytes32"})
 		})
 	}
 }
 
 func TestProgramLogCost(t *testing.T) {
-	ctx, l2info, l2client, auth := setupGasCostTest(t)
-
-	stylusProgram := deployWasm(t, ctx, auth, l2client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, ctx, auth, l2client, mocksgen.HostioTestMetaData)
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
 	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "emitLog")
 
 	for ntopics := int8(0); ntopics < 5; ntopics++ {
@@ -137,8 +136,7 @@ func TestProgramLogCost(t *testing.T) {
 				data, err := packer(args...)
 				Require(t, err)
 				opcode := vm.LOG0 + vm.OpCode(ntopics)
-				compareGasUsage(t, ctx, l2client, l2info, evmProgram, stylusProgram, data, nil,
-					compareGasForEach, 0, compareGasPair{opcode, "emit_log"})
+				compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, compareGasForEach, 0, compareGasPair{opcode, "emit_log"})
 			})
 		}
 	}
@@ -146,12 +144,12 @@ func TestProgramLogCost(t *testing.T) {
 }
 
 func TestProgramCallCost(t *testing.T) {
-	ctx, l2info, l2client, auth := setupGasCostTest(t)
-
-	stylusMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-	evmMulticall := deployEvmContract(t, ctx, auth, l2client, mocksgen.MultiCallTestMetaData)
-	otherStylusProgram := deployWasm(t, ctx, auth, l2client, rustFile("hostio-test"))
-	otherEvmProgram := deployEvmContract(t, ctx, auth, l2client, mocksgen.HostioTestMetaData)
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusMulticall := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
+	evmMulticall := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.MultiCallTestMetaData)
+	otherStylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+	otherEvmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
 	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "msgValue")
 	otherData, err := packer()
 	Require(t, err)
@@ -167,18 +165,18 @@ func TestProgramCallCost(t *testing.T) {
 			burnData, err := burnArbGas(big.NewInt(0))
 			Require(t, err)
 			data := argsForMulticall(pair.opcode, arbTest, nil, burnData)
-			compareGasUsage(t, ctx, l2client, l2info, evmMulticall, stylusMulticall, data, nil, compareGasForEach, 0, pair)
+			compareGasUsage(t, builder, evmMulticall, stylusMulticall, data, nil, compareGasForEach, 0, pair)
 		})
 
 		t.Run(pair.hostio+"/evmContract", func(t *testing.T) {
 			data := argsForMulticall(pair.opcode, otherEvmProgram, nil, otherData)
-			compareGasUsage(t, ctx, l2client, l2info, evmMulticall, stylusMulticall, data, nil, compareGasForEach, 0, pair,
+			compareGasUsage(t, builder, evmMulticall, stylusMulticall, data, nil, compareGasForEach, 0, pair,
 				compareGasPair{vm.RETURNDATACOPY, "read_return_data"}) // also test read_return_data
 		})
 
 		t.Run(pair.hostio+"/stylusContract", func(t *testing.T) {
 			data := argsForMulticall(pair.opcode, otherStylusProgram, nil, otherData)
-			compareGasUsage(t, ctx, l2client, l2info, evmMulticall, stylusMulticall, data, nil, compareGasForEach, 0, pair,
+			compareGasUsage(t, builder, evmMulticall, stylusMulticall, data, nil, compareGasForEach, 0, pair,
 				compareGasPair{vm.RETURNDATACOPY, "read_return_data"}) // also test read_return_data
 		})
 
@@ -187,30 +185,29 @@ func TestProgramCallCost(t *testing.T) {
 			for i := 0; i < 9; i++ {
 				data = multicallAppend(data, pair.opcode, otherEvmProgram, otherData)
 			}
-			compareGasUsage(t, ctx, l2client, l2info, evmMulticall, stylusMulticall, data, nil, compareGasForEach, 0, pair)
+			compareGasUsage(t, builder, evmMulticall, stylusMulticall, data, nil, compareGasForEach, 0, pair)
 		})
 	}
 
 	t.Run("call_contract/evmContractWithValue", func(t *testing.T) {
 		value := big.NewInt(1000)
 		data := argsForMulticall(vm.CALL, otherEvmProgram, value, otherData)
-		compareGasUsage(t, ctx, l2client, l2info, evmMulticall, stylusMulticall, data, value, compareGasForEach, 0, compareGasPair{vm.CALL, "call_contract"})
+		compareGasUsage(t, builder, evmMulticall, stylusMulticall, data, value, compareGasForEach, 0, compareGasPair{vm.CALL, "call_contract"})
 	})
 }
 
 func TestProgramCreateCost(t *testing.T) {
-	ctx, l2info, l2client, auth := setupGasCostTest(t)
-
-	stylusCreate := deployWasm(t, ctx, auth, l2client, rustFile("create"))
-	evmCreate := deployEvmContract(t, ctx, auth, l2client, mocksgen.CreateTestMetaData)
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusCreate := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("create"))
+	evmCreate := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.CreateTestMetaData)
 	deployCode := common.FromHex(mocksgen.ProgramTestMetaData.Bin)
 
 	t.Run("create1", func(t *testing.T) {
 		data := []byte{0x01}
 		data = append(data, (common.Hash{}).Bytes()...) // endowment
 		data = append(data, deployCode...)
-		compareGasUsage(t, ctx, l2client, l2info, evmCreate, stylusCreate, data, nil,
-			compareGasForEach, 0, compareGasPair{vm.CREATE, "create1"})
+		compareGasUsage(t, builder, evmCreate, stylusCreate, data, nil, compareGasForEach, 0, compareGasPair{vm.CREATE, "create1"})
 	})
 
 	t.Run("create2", func(t *testing.T) {
@@ -218,16 +215,15 @@ func TestProgramCreateCost(t *testing.T) {
 		data = append(data, (common.Hash{}).Bytes()...)            // endowment
 		data = append(data, (common.HexToHash("beef")).Bytes()...) // salt
 		data = append(data, deployCode...)
-		compareGasUsage(t, ctx, l2client, l2info, evmCreate, stylusCreate, data, nil,
-			compareGasForEach, 0, compareGasPair{vm.CREATE2, "create2"})
+		compareGasUsage(t, builder, evmCreate, stylusCreate, data, nil, compareGasForEach, 0, compareGasPair{vm.CREATE2, "create2"})
 	})
 }
 
 func TestProgramKeccakCost(t *testing.T) {
-	ctx, l2info, l2client, auth := setupGasCostTest(t)
-
-	stylusProgram := deployWasm(t, ctx, auth, l2client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, ctx, auth, l2client, mocksgen.HostioTestMetaData)
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
 	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "keccak")
 
 	for i := 1; i < 5; i++ {
@@ -239,22 +235,18 @@ func TestProgramKeccakCost(t *testing.T) {
 			data, err := packer(preImage)
 			Require(t, err)
 			const maxDiff = 1.1
-			compareGasUsage(t, ctx, l2client, l2info, evmProgram, stylusProgram, data, nil,
-				compareGasForEach, maxDiff, compareGasPair{vm.KECCAK256, "native_keccak256"})
+			compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, compareGasForEach, maxDiff, compareGasPair{vm.KECCAK256, "native_keccak256"})
 		})
 	}
 }
 
-func setupGasCostTest(t *testing.T) (ctx context.Context, l2info *BlockchainTestInfo, l2client *ethclient.Client, auth bind.TransactOpts) {
+func setupGasCostTest(t *testing.T) *NodeBuilder {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	t.Cleanup(cleanup)
-	l2info = builder.L2Info
-	l2client = builder.L2.Client
-	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	return
+	return builder
 }
 
 // deployEvmContract deploys an Evm contract and return its address.
@@ -285,9 +277,7 @@ const (
 // Then, it ensures the given opcodes and hostios cost roughly the same amount of gas.
 func compareGasUsage(
 	t *testing.T,
-	ctx context.Context,
-	client *ethclient.Client,
-	info *BlockchainTestInfo,
+	builder *NodeBuilder,
 	evmContract common.Address,
 	stylusContract common.Address,
 	txData []byte,
@@ -301,14 +291,14 @@ func compareGasUsage(
 	}
 
 	const txGas uint64 = 32_000_000
-	tx := info.PrepareTxTo("Owner", &evmContract, txGas, txValue, txData)
-	evmGas := sendAndEnsureTransaction(t, ctx, client, tx)
-	evmGasUsage, err := evmOpcodesGasUsage(ctx, client.Client(), tx)
+	tx := builder.L2Info.PrepareTxTo("Owner", &evmContract, txGas, txValue, txData)
+	evmGas := sendAndEnsureTransaction(t, builder.ctx, builder.L2.Client, tx)
+	evmGasUsage, err := evmOpcodesGasUsage(builder.ctx, builder.L2.Client.Client(), tx)
 	Require(t, err)
 
-	tx = info.PrepareTxTo("Owner", &stylusContract, txGas, txValue, txData)
-	stylusGas := sendAndEnsureTransaction(t, ctx, client, tx)
-	stylusGasUsage, err := stylusHostiosGasUsage(ctx, client.Client(), tx)
+	tx = builder.L2Info.PrepareTxTo("Owner", &stylusContract, txGas, txValue, txData)
+	stylusGas := sendAndEnsureTransaction(t, builder.ctx, builder.L2.Client, tx)
+	stylusGasUsage, err := stylusHostiosGasUsage(builder.ctx, builder.L2.Client.Client(), tx)
 	Require(t, err)
 
 	t.Logf("evm total usage: %v - stylus total usage: %v", evmGas, stylusGas)
