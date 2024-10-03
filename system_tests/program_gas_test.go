@@ -291,14 +291,18 @@ func compareGasUsage(
 	}
 
 	const txGas uint64 = 32_000_000
-	tx := builder.L2Info.PrepareTxTo("Owner", &evmContract, txGas, txValue, txData)
-	evmGas := sendAndEnsureTransaction(t, builder.ctx, builder.L2.Client, tx)
-	evmGasUsage, err := evmOpcodesGasUsage(builder.ctx, builder.L2.Client.Client(), tx)
+	txs := []*types.Transaction{
+		builder.L2Info.PrepareTxTo("Owner", &evmContract, txGas, txValue, txData),
+		builder.L2Info.PrepareTxTo("Owner", &stylusContract, txGas, txValue, txData),
+	}
+	receipts := builder.L2.SendWaitTestTransactions(t, txs)
+
+	evmGas := receipts[0].GasUsedForL2()
+	evmGasUsage, err := evmOpcodesGasUsage(builder.ctx, builder.L2.Client.Client(), txs[0])
 	Require(t, err)
 
-	tx = builder.L2Info.PrepareTxTo("Owner", &stylusContract, txGas, txValue, txData)
-	stylusGas := sendAndEnsureTransaction(t, builder.ctx, builder.L2.Client, tx)
-	stylusGasUsage, err := stylusHostiosGasUsage(builder.ctx, builder.L2.Client.Client(), tx)
+	stylusGas := receipts[1].GasUsedForL2()
+	stylusGasUsage, err := stylusHostiosGasUsage(builder.ctx, builder.L2.Client.Client(), txs[1])
 	Require(t, err)
 
 	t.Logf("evm total usage: %v - stylus total usage: %v", evmGas, stylusGas)
@@ -414,14 +418,4 @@ func checkPercentDiff(t *testing.T, a, b float64, maxAllowedDifference float64) 
 	if percentageDifference > maxAllowedDifference {
 		Fatal(t, fmt.Sprintf("gas usages are too different; got %v, max allowed is %v", percentageDifference, maxAllowedDifference))
 	}
-}
-
-// sendAndEnsureTransaction sends a transaction, ensures it succeed, and returns the total gas cost.
-func sendAndEnsureTransaction(t *testing.T, ctx context.Context, client *ethclient.Client, tx *types.Transaction) uint64 {
-	t.Helper()
-	err := client.SendTransaction(ctx, tx)
-	Require(t, err)
-	receipt, err := EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
-	return receipt.GasUsedForL2()
 }
