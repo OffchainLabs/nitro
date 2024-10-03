@@ -50,6 +50,7 @@ func NewTestGoogleCloudStorageService(ctx context.Context, googleCloudStorageCon
 
 func TestNewGoogleCloudStorageService(t *testing.T) {
 	ctx := context.Background()
+	// #nosec G115
 	expiry := uint64(time.Now().Add(time.Hour).Unix())
 	googleCloudStorageServiceConfig := DefaultGoogleCloudStorageServiceConfig
 	googleCloudStorageServiceConfig.Enable = true
