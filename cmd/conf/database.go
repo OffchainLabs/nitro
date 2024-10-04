@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	"github.com/ethereum/go-ethereum/ethdb/pebble"
@@ -116,7 +115,7 @@ type PebbleConfig struct {
 }
 
 var PebbleConfigDefault = PebbleConfig{
-	MaxConcurrentCompactions: runtime.NumCPU(),
+	MaxConcurrentCompactions: 1,
 	Experimental:             PebbleExperimentalConfigDefault,
 }
 
