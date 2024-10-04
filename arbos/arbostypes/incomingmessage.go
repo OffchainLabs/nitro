@@ -182,6 +182,17 @@ func (msg *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetch
 	return nil
 }
 
+func (msg *L1IncomingMessage) PastBatchesRequired() ([]uint64, error) {
+	if msg.Header.Kind != L1MessageType_BatchPostingReport {
+		return nil, nil
+	}
+	_, _, _, batchNum, _, _, err := ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse batch posting report: %w", err)
+	}
+	return []uint64{batchNum}, nil
+}
+
 func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L1IncomingMessage, error) {
 	var kindBuf [1]byte
 	_, err := rd.Read(kindBuf[:])

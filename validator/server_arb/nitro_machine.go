@@ -4,7 +4,7 @@
 package server_arb
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #include "arbitrator.h"
 #include <stdlib.h>
 */

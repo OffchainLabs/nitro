@@ -47,6 +47,7 @@ func (r *DummyUpStream) PopulateFeedBacklogByNumber(ctx context.Context, backlog
 	was := r.broadcaster.GetCachedMessageCount()
 	var seqNums []arbutil.MessageIndex
 	for i := was; i < was+backlogSize; i++ {
+		// #nosec G115
 		seqNums = append(seqNums, arbutil.MessageIndex(i))
 	}
 

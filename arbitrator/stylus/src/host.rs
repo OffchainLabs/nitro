@@ -13,6 +13,7 @@ use arbutil::{
 };
 use caller_env::GuestPtr;
 use eyre::Result;
+use prover::value::Value;
 use std::{
     fmt::Display,
     mem::{self, MaybeUninit},
@@ -440,76 +441,26 @@ pub(crate) fn pay_for_memory_grow<D: DataReader, E: EvmApi<D>>(
     hostio!(env, pay_for_memory_grow(pages))
 }
 
-pub(crate) mod console {
-    use super::*;
-
-    pub(crate) fn log_txt<D: DataReader, E: EvmApi<D>>(
-        mut env: WasmEnvMut<D, E>,
-        ptr: GuestPtr,
-        len: u32,
-    ) -> MaybeEscape {
-        hostio!(env, console_log_text(ptr, len))
-    }
-
-    pub(crate) fn log_i32<D: DataReader, E: EvmApi<D>>(
-        mut env: WasmEnvMut<D, E>,
-        value: u32,
-    ) -> MaybeEscape {
-        hostio!(env, console_log(value))
-    }
-
-    pub(crate) fn tee_i32<D: DataReader, E: EvmApi<D>>(
-        mut env: WasmEnvMut<D, E>,
-        value: u32,
-    ) -> Result<u32, Escape> {
-        hostio!(env, console_tee(value))
-    }
-
-    pub(crate) fn log_i64<D: DataReader, E: EvmApi<D>>(
-        mut env: WasmEnvMut<D, E>,
-        value: u64,
-    ) -> MaybeEscape {
-        hostio!(env, console_log(value))
-    }
-
-    pub(crate) fn tee_i64<D: DataReader, E: EvmApi<D>>(
-        mut env: WasmEnvMut<D, E>,
-        value: u64,
-    ) -> Result<u64, Escape> {
-        hostio!(env, console_tee(value))
-    }
-
-    pub(crate) fn log_f32<D: DataReader, E: EvmApi<D>>(
-        mut env: WasmEnvMut<D, E>,
-        value: f32,
-    ) -> MaybeEscape {
-        hostio!(env, console_log(value))
-    }
-
-    pub(crate) fn tee_f32<D: DataReader, E: EvmApi<D>>(
-        mut env: WasmEnvMut<D, E>,
-        value: f32,
-    ) -> Result<f32, Escape> {
-        hostio!(env, console_tee(value))
-    }
-
-    pub(crate) fn log_f64<D: DataReader, E: EvmApi<D>>(
-        mut env: WasmEnvMut<D, E>,
-        value: f64,
-    ) -> MaybeEscape {
-        hostio!(env, console_log(value))
-    }
-
-    pub(crate) fn tee_f64<D: DataReader, E: EvmApi<D>>(
-        mut env: WasmEnvMut<D, E>,
-        value: f64,
-    ) -> Result<f64, Escape> {
-        hostio!(env, console_tee(value))
-    }
+pub(crate) fn console_log_text<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    ptr: GuestPtr,
+    len: u32,
+) -> MaybeEscape {
+    hostio!(env, console_log_text(ptr, len))
 }
 
-pub(crate) mod debug {
-    use super::*;
-
-    pub(crate) fn null_host<D: DataReader, E: EvmApi<D>>(_: WasmEnvMut<D, E>) {}
+pub(crate) fn console_log<D: DataReader, E: EvmApi<D>, T: Into<Value>>(
+    mut env: WasmEnvMut<D, E>,
+    value: T,
+) -> MaybeEscape {
+    hostio!(env, console_log(value))
 }
+
+pub(crate) fn console_tee<D: DataReader, E: EvmApi<D>, T: Into<Value> + Copy>(
+    mut env: WasmEnvMut<D, E>,
+    value: T,
+) -> Result<T, Escape> {
+    hostio!(env, console_tee(value))
+}
+
+pub(crate) fn null_host<D: DataReader, E: EvmApi<D>>(_: WasmEnvMut<D, E>) {}
