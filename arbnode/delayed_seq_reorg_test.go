@@ -127,7 +127,13 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		Fail(t, "Unexpected tracker delayed message count", delayedCount, "(expected 3)")
 	}
 
-	// By modifying the timestamp of the userDelayed message, and adding it again, we remove userDelayed2 message.
+	batchCount, err := tracker.GetBatchCount()
+	Require(t, err)
+	if batchCount != 3 {
+		Fail(t, "Unexpected tracker batch count", batchCount, "(expected 3)")
+	}
+
+	// By modifying the timestamp of the userDelayed message, and adding it again, we cause a reorg
 	userDelayedModified := &DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
@@ -145,14 +151,20 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayedModified})
 	Require(t, err)
 
-	// userMsgBatch, and emptyBatch will be deleted since their AfterDelayedAcc are not valid anymore after the reorg
+	// userMsgBatch, and emptyBatch will be reorged out
 	msgCount, err = streamer.GetMessageCount()
 	Require(t, err)
 	if msgCount != 1 {
 		Fail(t, "Unexpected tx streamer message count", msgCount, "(expected 1)")
 	}
 
-	// userDelayed2 will be deleted since its AfterDelayedAcc is not valid anymore after the reorg
+	batchCount, err = tracker.GetBatchCount()
+	Require(t, err)
+	if batchCount != 1 {
+		Fail(t, "Unexpected tracker batch count", batchCount, "(expected 1)")
+	}
+
+	// userDelayed2 will be deleted
 	delayedCount, err = tracker.GetDelayedCount()
 	Require(t, err)
 	if delayedCount != 2 {
@@ -170,12 +182,6 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	}
 	if userDelayedModified.Message.Header.Timestamp == userDelayed.Message.Header.Timestamp {
 		Fail(t, "Unexpected delayed message timestamp", userDelayedModified.Message.Header.Timestamp, "(expected", userDelayed.Message.Header.Timestamp, ")")
-	}
-
-	batchCount, err := tracker.GetBatchCount()
-	Require(t, err)
-	if batchCount != 1 {
-		Fail(t, "Unexpected tracker batch count", batchCount, "(expected 1)")
 	}
 
 	emptyBatch = &SequencerInboxBatch{
