@@ -2059,83 +2059,68 @@ func TestWasmLruCache(t *testing.T) {
 	l2client := builder.L2.Client
 	defer cleanup()
 
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
 	auth.GasLimit = 32000000
 	auth.Value = oneEth
 
-	fallibleProgramAddress, fallibleLruEntrySizeEstimateBytes := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "fallible")
-	keccakProgramAddress, keccakLruEntrySizeEstimateBytes := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "keccak")
-	mathProgramAddress, mathLruEntrySizeEstimateBytes := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "math")
+	fallibleProgramAddress, fallibleEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "fallible")
+	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "keccak")
+	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "math")
 	t.Log(
 		"lruEntrySizeEstimateBytes, ",
-		"fallible:", fallibleLruEntrySizeEstimateBytes,
-		"keccak:", keccakLruEntrySizeEstimateBytes,
-		"math:", mathLruEntrySizeEstimateBytes,
+		"fallible:", fallibleEntrySize,
+		"keccak:", keccakEntrySize,
+		"math:", mathEntrySize,
 	)
 
 	programs.ClearWasmLruCache()
-	lruMetrics := programs.GetWasmCacheMetrics().Lru
-	if lruMetrics.Count != 0 {
-		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
-	}
-	if lruMetrics.SizeBytes != 0 {
-		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
-	}
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
 
-	programs.SetWasmLruCacheCapacity(fallibleLruEntrySizeEstimateBytes - 1)
+	programs.SetWasmLruCacheCapacity(fallibleEntrySize - 1)
 	// fallible wasm program will not be cached since its size is greater than lru cache capacity
 	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
-	Require(t, l2client.SendTransaction(ctx, tx))
-	_, err := EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-	lruMetrics = programs.GetWasmCacheMetrics().Lru
-	if lruMetrics.Count != 0 {
-		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
-	}
-	if lruMetrics.SizeBytes != 0 {
-		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
-	}
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
 
 	programs.SetWasmLruCacheCapacity(
-		fallibleLruEntrySizeEstimateBytes + keccakLruEntrySizeEstimateBytes + mathLruEntrySizeEstimateBytes - 1,
+		fallibleEntrySize + keccakEntrySize + mathEntrySize - 1,
 	)
 	// fallible wasm program will be cached
 	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
-	Require(t, l2client.SendTransaction(ctx, tx))
-	_, err = EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-	lruMetrics = programs.GetWasmCacheMetrics().Lru
-	if lruMetrics.Count != 1 {
-		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 1, lruMetrics.Count)
-	}
-	if lruMetrics.SizeBytes != fallibleLruEntrySizeEstimateBytes {
-		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", fallibleLruEntrySizeEstimateBytes, lruMetrics.SizeBytes)
-	}
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
 
 	// keccak wasm program will be cached
 	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
-	Require(t, l2client.SendTransaction(ctx, tx))
-	_, err = EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-	lruMetrics = programs.GetWasmCacheMetrics().Lru
-	if lruMetrics.Count != 2 {
-		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
-	}
-	if lruMetrics.SizeBytes != fallibleLruEntrySizeEstimateBytes+keccakLruEntrySizeEstimateBytes {
-		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", fallibleLruEntrySizeEstimateBytes+keccakLruEntrySizeEstimateBytes, lruMetrics.SizeBytes)
-	}
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
 
 	// math wasm program will be cached, but fallible will be evicted since (fallible + keccak + math) > lruCacheCapacity
 	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
-	Require(t, l2client.SendTransaction(ctx, tx))
-	_, err = EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-	lruMetrics = programs.GetWasmCacheMetrics().Lru
-	if lruMetrics.Count != 2 {
-		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
-	}
-	if lruMetrics.SizeBytes != keccakLruEntrySizeEstimateBytes+mathLruEntrySizeEstimateBytes {
-		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", keccakLruEntrySizeEstimateBytes+mathLruEntrySizeEstimateBytes, lruMetrics.SizeBytes)
-	}
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: keccakEntrySize + mathEntrySize,
+	})
 }
 
 func checkLongTermCacheMetrics(t *testing.T, expected programs.WasmLongTermCacheMetrics) {
@@ -2403,7 +2388,9 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 		SizeBytes: fallibleEntrySize,
 	})
 
-	// mathProgram should end up in lru cache and as result fallibleProgram should be evicted as least recently used item (tx that restores the program back to long term cache shouldn't promote the lru item); fallibleProgram should remain in long term cache
+	// mathProgram should end up in lru cache and
+	// as result fallibleProgram should be evicted as least recently used item (tx that restores the program back to long term cache shouldn't promote the lru item);
+	// fallibleProgram should remain in long term cache
 	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
