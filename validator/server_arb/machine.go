@@ -312,6 +312,20 @@ func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
 	}
 }
 
+func DeserializeAndSerializeFileData(readPath, writePath string) error {
+	cReadPath := C.CString(readPath)
+	cWritePath := C.CString(writePath)
+	status := C.arbitrator_deserialize_and_serialize_file_data(cReadPath, cWritePath)
+	C.free(unsafe.Pointer(cReadPath))
+	C.free(unsafe.Pointer(cWritePath))
+
+	if status != 0 {
+		return fmt.Errorf("failed to call arbitrator_deserialize_and_serialize_file_data. Error code: %d", status)
+	} else {
+		return nil
+	}
+}
+
 func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data []byte) error {
 	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
