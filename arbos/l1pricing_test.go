@@ -280,7 +280,9 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 			evm.StateDB,
 			evm,
 			3,
+			// #nosec G115
 			uint64(10*(i+1)),
+			// #nosec G115
 			uint64(10*(i+1)+5),
 			bpAddr,
 			arbmath.BigMulByUint(equilibriumL1BasefeeEstimate, unitsToAdd),
