@@ -390,6 +390,10 @@ func evmOpcodesGasUsage(ctx context.Context, rpcClient rpc.ClientInterface, tx *
 		op := vm.StringToOp(result.StructLogs[i].Op)
 		gasUsed := uint64(0)
 		if op == vm.CALL || op == vm.STATICCALL || op == vm.DELEGATECALL || op == vm.CREATE || op == vm.CREATE2 {
+			if result.StructLogs[i].GasCost == 0 {
+				// ignore mock call emitted by arbos
+				continue
+			}
 			// For the CALL* opcodes, the GasCost in the tracer represents the gas sent
 			// to the callee contract, which is 63/64 of the remaining gas. This happens
 			// because the tracer is evaluated before the call is executed, so the EVM
@@ -411,6 +415,7 @@ func evmOpcodesGasUsage(ctx context.Context, rpcClient rpc.ClientInterface, tx *
 					// back to the original call
 					gasAfterCall = result.StructLogs[j].Gas + result.StructLogs[j].GasCost
 					found = true
+					break
 				}
 			}
 			if !found {
