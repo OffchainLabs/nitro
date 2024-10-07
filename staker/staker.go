@@ -305,7 +305,6 @@ func NewStaker(
 	validatorUtilsAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
-
 	if err := config().Validate(); err != nil {
 		return nil, err
 	}
@@ -512,7 +511,9 @@ func (s *Staker) Start(ctxIn context.Context) {
 	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
-	ephemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
+	isAheadOfOnChainNonceEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
+	exceedsMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), 0)
+	blockValidationPendingEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "block validation is still pending", 0)
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
 		defer func() {
 			panicErr := recover()
@@ -546,7 +547,9 @@ func (s *Staker) Start(ctxIn context.Context) {
 			}
 		}
 		if err == nil {
-			ephemeralErrorHandler.Reset()
+			isAheadOfOnChainNonceEphemeralErrorHandler.Reset()
+			exceedsMaxMempoolSizeEphemeralErrorHandler.Reset()
+			blockValidationPendingEphemeralErrorHandler.Reset()
 			backoff = time.Second
 			stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
 			stakerActionSuccessCounter.Inc(1)
@@ -564,7 +567,9 @@ func (s *Staker) Start(ctxIn context.Context) {
 		} else {
 			logLevel = log.Warn
 		}
-		logLevel = ephemeralErrorHandler.LogLevel(err, logLevel)
+		logLevel = isAheadOfOnChainNonceEphemeralErrorHandler.LogLevel(err, logLevel)
+		logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+		logLevel = blockValidationPendingEphemeralErrorHandler.LogLevel(err, logLevel)
 		logLevel("error acting as staker", "err", err)
 		return backoff
 	})
@@ -1221,7 +1226,7 @@ func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
 	}
 	balance, err := s.client.BalanceAt(ctx, *txSenderAddress, nil)
 	if err != nil {
-		log.Error("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
+		log.Warn("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
 		return
 	}
 	stakerBalanceGauge.Update(arbmath.BalancePerEther(balance))
