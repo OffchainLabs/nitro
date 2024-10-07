@@ -48,6 +48,7 @@ func TestRestfulClientServer(t *testing.T) {
 	server, port, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage)
 	Require(t, err)
 
+	// #nosec G115
 	err = storage.Put(ctx, data, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
 
