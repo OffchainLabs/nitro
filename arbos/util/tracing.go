@@ -122,7 +122,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 		tracer.OnOpcode(0, byte(vm.RETURN), 0, 0, retScope, []byte{}, depth+1, nil)
 	}
 	if tracer.OnExit != nil {
-		tracer.OnExit(depth+1, nil, 0, nil, false)
+		tracer.OnExit(depth, nil, 0, nil, false)
 	}
 
 	popScope := &vm.ScopeContext{
