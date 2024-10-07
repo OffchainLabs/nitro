@@ -95,11 +95,11 @@ func (s *Storage) PruneAll(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("pruning all keys: %w", err)
 	}
-	until, err := strconv.Atoi(string(idx))
+	until, err := strconv.ParseUint(string(idx), 10, 64)
 	if err != nil {
 		return fmt.Errorf("converting last item index bytes to integer: %w", err)
 	}
-	return s.Prune(ctx, uint64(until+1))
+	return s.Prune(ctx, until+1)
 }
 
 func (s *Storage) Prune(ctx context.Context, until uint64) error {

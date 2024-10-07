@@ -113,6 +113,7 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 	}
 	// Divide work equally among available threads when BlocksPerThread is zero
 	if c.BlocksPerThread == 0 {
+		// #nosec G115
 		work := (end - start) / uint64(c.Room)
 		if work > 0 {
 			blocksPerThread = work

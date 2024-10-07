@@ -9,7 +9,7 @@ package programs
 // This file exists because cgo isn't allowed in tests
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #include "arbitrator.h"
 */
 import "C"

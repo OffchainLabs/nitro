@@ -7,7 +7,7 @@
 package programs
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -45,17 +46,26 @@ type bytes32 = C.Bytes32
 type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
+var (
+	stylusLRUCacheSizeBytesGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
+	stylusLRUCacheSizeCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
+	stylusLRUCacheSizeHitsCounter       = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/hits", nil)
+	stylusLRUCacheSizeMissesCounter     = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/misses", nil)
+	stylusLRUCacheSizeDoesNotFitCounter = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/does_not_fit", nil)
+)
+
 func activateProgram(
 	db vm.StateDB,
 	program common.Address,
 	codehash common.Hash,
 	wasm []byte,
 	page_limit uint16,
-	version uint16,
+	stylusVersion uint16,
+	arbosVersionForGas uint64,
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
-	info, asmMap, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner.GasLeft())
+	info, asmMap, err := activateProgramInternal(db, program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, burner.GasLeft())
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +79,8 @@ func activateProgramInternal(
 	codehash common.Hash,
 	wasm []byte,
 	page_limit uint16,
-	version uint16,
+	stylusVersion uint16,
+	arbosVersionForGas uint64,
 	debug bool,
 	gasLeft *uint64,
 ) (*activationInfo, map[ethdb.WasmTarget][]byte, error) {
@@ -81,7 +92,8 @@ func activateProgramInternal(
 	status_mod := userStatus(C.stylus_activate(
 		goSlice(wasm),
 		u16(page_limit),
-		u16(version),
+		u16(stylusVersion),
+		u64(arbosVersionForGas),
 		cbool(debug),
 		output,
 		&codeHash,
@@ -100,6 +112,7 @@ func activateProgramInternal(
 		}
 		return nil, nil, err
 	}
+	hash := moduleHash.toHash()
 	targets := db.Database().WasmTargets()
 	type result struct {
 		target ethdb.WasmTarget
@@ -108,15 +121,15 @@ func activateProgramInternal(
 	}
 	results := make(chan result, len(targets))
 	for _, target := range targets {
+		target := target
 		if target == rawdb.TargetWavm {
 			results <- result{target, module, nil}
 		} else {
-			target := target
 			go func() {
 				output := &rustBytes{}
 				status_asm := C.stylus_compile(
 					goSlice(wasm),
-					u16(version),
+					u16(stylusVersion),
 					cbool(debug),
 					goSlice([]byte(target)),
 					output,
@@ -140,10 +153,17 @@ func activateProgramInternal(
 		}
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("compilation failed for one or more targets: %w", err)
+		log.Error(
+			"Compilation failed for one or more targets despite activation succeeding",
+			"address", addressForLogging,
+			"codeHash", codeHash,
+			"moduleHash", hash,
+			"targets", targets,
+			"err", err,
+		)
+		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding: %v", addressForLogging, err))
 	}
 
-	hash := moduleHash.toHash()
 	info := &activationInfo{
 		moduleHash:    hash,
 		initGas:       uint16(stylusData.init_cost),
@@ -168,9 +188,12 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
 	}
 
-	unlimitedGas := uint64(0xffffffffffff)
+	// don't charge gas
+	zeroArbosVersion := uint64(0)
+	zeroGas := uint64(0)
+
 	// we know program is activated, so it must be in correct version and not use too much memory
-	info, asmMap, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
+	info, asmMap, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -306,8 +329,39 @@ func init() {
 	}
 }
 
-func ResizeWasmLruCache(size uint32) {
-	C.stylus_cache_lru_resize(u32(size))
+func SetWasmLruCacheCapacity(capacityBytes uint64) {
+	C.stylus_set_cache_lru_capacity(u64(capacityBytes))
+}
+
+// exported for testing
+type WasmLruCacheMetrics struct {
+	SizeBytes uint64
+	Count     uint32
+}
+
+func GetWasmLruCacheMetrics() *WasmLruCacheMetrics {
+	metrics := C.stylus_get_lru_cache_metrics()
+
+	stylusLRUCacheSizeBytesGauge.Update(int64(metrics.size_bytes))
+	stylusLRUCacheSizeCountGauge.Update(int64(metrics.count))
+	stylusLRUCacheSizeHitsCounter.Inc(int64(metrics.hits))
+	stylusLRUCacheSizeMissesCounter.Inc(int64(metrics.misses))
+	stylusLRUCacheSizeDoesNotFitCounter.Inc(int64(metrics.does_not_fit))
+
+	return &WasmLruCacheMetrics{
+		SizeBytes: uint64(metrics.size_bytes),
+		Count:     uint32(metrics.count),
+	}
+}
+
+// Used for testing
+func ClearWasmLruCache() {
+	C.stylus_clear_lru_cache()
+}
+
+// Used for testing
+func GetLruEntrySizeEstimateBytes(module []byte, version uint16, debug bool) uint64 {
+	return uint64(C.stylus_get_lru_entry_size_estimate_bytes(goSlice(module), u16(version), cbool(debug)))
 }
 
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
@@ -391,6 +445,7 @@ func (params *ProgParams) encode() C.StylusConfig {
 
 func (data *EvmData) encode() C.EvmData {
 	return C.EvmData{
+		arbos_version:    u64(data.arbosVersion),
 		block_basefee:    hashToBytes32(data.blockBasefee),
 		chainid:          u64(data.chainId),
 		block_coinbase:   addressToBytes20(data.blockCoinbase),
