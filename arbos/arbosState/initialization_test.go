@@ -127,6 +127,7 @@ func checkAddressTable(arbState *ArbosState, addrTable []common.Address, t *test
 		Fail(t)
 	}
 	for i, addr := range addrTable {
+		// #nosec G115
 		res, exists, err := atab.LookupIndex(uint64(i))
 		Require(t, err)
 		if !exists {

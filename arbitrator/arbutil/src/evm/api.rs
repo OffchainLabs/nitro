@@ -77,7 +77,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Reads the 32-byte value in the EVM state trie at offset `key`.
     /// Returns the value and the access cost in gas.
     /// Analogous to `vm.SLOAD`.
-    fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64);
+    fn get_bytes32(&mut self, key: Bytes32, evm_api_gas_to_use: u64) -> (Bytes32, u64);
 
     /// Stores the given value at the given key in Stylus VM's cache of the EVM state trie.
     /// Note that the actual values only get written after calls to `set_trie_slots`.

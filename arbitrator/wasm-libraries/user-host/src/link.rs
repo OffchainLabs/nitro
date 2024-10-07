@@ -37,14 +37,15 @@ struct MemoryLeaf([u8; 32]);
 ///
 /// pages_ptr: starts pointing to max allowed pages, returns number of pages used
 #[no_mangle]
-pub unsafe extern "C" fn programs__activate(
+pub unsafe extern "C" fn programs__activate_v2(
     wasm_ptr: GuestPtr,
     wasm_size: usize,
     pages_ptr: GuestPtr,
     asm_estimate_ptr: GuestPtr,
     init_cost_ptr: GuestPtr,
     cached_init_cost_ptr: GuestPtr,
-    version: u16,
+    stylus_version: u16,
+    arbos_version_for_gas: u64,
     debug: u32,
     codehash: GuestPtr,
     module_hash_ptr: GuestPtr,
@@ -58,7 +59,15 @@ pub unsafe extern "C" fn programs__activate(
 
     let page_limit = STATIC_MEM.read_u16(pages_ptr);
     let gas_left = &mut STATIC_MEM.read_u64(gas_ptr);
-    match Module::activate(&wasm, codehash, version, page_limit, debug, gas_left) {
+    match Module::activate(
+        &wasm,
+        codehash,
+        stylus_version,
+        arbos_version_for_gas,
+        page_limit,
+        debug,
+        gas_left,
+    ) {
         Ok((module, data)) => {
             STATIC_MEM.write_u64(gas_ptr, *gas_left);
             STATIC_MEM.write_u16(pages_ptr, data.footprint);
@@ -242,7 +251,8 @@ pub unsafe extern "C" fn programs__create_stylus_config(
 /// Creates an `EvmData` handler from its component parts.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn programs__create_evm_data(
+pub unsafe extern "C" fn programs__create_evm_data_v2(
+    arbos_version: u64,
     block_basefee_ptr: GuestPtr,
     chainid: u64,
     block_coinbase_ptr: GuestPtr,
@@ -259,6 +269,7 @@ pub unsafe extern "C" fn programs__create_evm_data(
     reentrant: u32,
 ) -> u64 {
     let evm_data = EvmData {
+        arbos_version,
         block_basefee: read_bytes32(block_basefee_ptr),
         cached: cached != 0,
         chainid,

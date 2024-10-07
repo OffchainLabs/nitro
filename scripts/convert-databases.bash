@@ -33,7 +33,7 @@ printStatus() {
 }
 
 printUsage() {
-echo Usage: $0 \[OPTIONS..\]
+echo Usage: "$0" \[OPTIONS..\]
     echo
     echo OPTIONS:
     echo "--dbconv          dbconv binary path (default: \"$DEFAULT_DBCONV\")"
@@ -42,15 +42,15 @@ echo Usage: $0 \[OPTIONS..\]
     echo "--force           remove destination directory if it exists"
     echo "--skip-existing   skip convertion of databases which directories already exist in the destination directory"
     echo "--clean           sets what should be removed in case of error, possible values:"
-	echo "                      \"failed\" - remove database which conversion failed (default)"
+    echo "                      \"failed\" - remove database which conversion failed (default)"
     echo "                      \"none\"   - remove nothing, leave unfinished and potentially corrupted databases"
     echo "                      \"all\"    - remove whole destination directory"
 }
 
 removeDir() {
     cmd="rm -r \"$1\""
-    echo $cmd
-    eval $cmd
+    echo "$cmd"
+    eval "$cmd"
     return $?
 }
 
@@ -62,7 +62,7 @@ cleanup() {
             ;;
         failed)
             echo "== Note: removing only failed destination directory"
-            dstdir=$(echo $dst/$1 | tr -s /)
+            dstdir=$(echo "$dst"/"$1" | tr -s /)
             removeDir "$dstdir"
             ;;
         none)
@@ -127,8 +127,8 @@ if $force && $skip_existing; then
     exit 1
 fi
 
-if [ $clean != "all" ] && [ $clean != "failed" ] && [ $clean != "none" ] ; then
-    echo Error: Invalid --clean value: $clean
+if [ "$clean" != "all" ] && [ "$clean" != "failed" ] && [ "$clean" != "none" ] ; then
+    echo Error: Invalid --clean value: "$clean"
     printUsage
     exit 1
 fi
@@ -138,8 +138,8 @@ if ! [ -e "$dbconv" ]; then
     exit 1
 fi
 
-if ! [ -n "$dst" ]; then
-    echo Error: Missing destination directory \(\-\-dst\)
+if [ -z "$dst" ]; then
+    echo "Error: Missing destination directory (--dst)"
     printUsage
     exit 1
 fi
@@ -168,9 +168,8 @@ fi
 
 if [ -e "$dst" ] && ! $skip_existing; then
     if $force; then
-        echo == Warning! Destination already exists, --force is set, removing all files under path: "$dst"
-        removeDir "$dst"
-        if [ $? -ne 0 ]; then
+        echo "== Warning! Destination already exists, --force is set, removing all files under path: $dst"
+        if ! removeDir "$dst"; then
             echo Error: failed to remove "$dst"
             exit 1
         fi
@@ -183,14 +182,13 @@ fi
 convert_result=
 convert () {
     srcdir="$src"/$1
-    dstdir=$(echo $dst/$1 | tr -s /)
-    if ! [ -e $dstdir ]; then
+    dstdir=$(echo "$dst"/"$1" | tr -s /)
+    if ! [ -e "$dstdir" ]; then
         echo "== Converting $1 db"
         cmd="$dbconv --src.db-engine=leveldb --src.data \"$srcdir\" --dst.db-engine=pebble --dst.data \"$dstdir\" --convert --compact"
-        echo $cmd
-        eval $cmd
-        if [ $? -ne 0 ]; then
-            cleanup $1
+        echo "$cmd"
+        if ! eval "$cmd"; then
+            cleanup "$1"
             convert_result="FAILED"
             return 1
         fi
@@ -221,9 +219,8 @@ if ! [ -e "$dst"/l2chaindata/ancient ]; then
     ancient_dst=$(echo "$dst"/l2chaindata/ | tr -s /)
     echo "== Copying l2chaindata ancients"
     cmd="cp -r \"$ancient_src\" \"$ancient_dst\""
-    echo $cmd
-    eval $cmd
-    if [ $? -ne 0 ]; then
+    echo "$cmd"
+    if ! eval "$cmd"; then
         l2chaindata_ancient_status="FAILED (failed to copy)"
         cleanup "l2chaindata"
         printStatus
@@ -249,7 +246,7 @@ if [ $res -ne 0 ]; then
     exit 1
 fi
 
-if [ -e $src/wasm ]; then
+if [ -e "$src"/wasm ]; then
     convert "wasm"
     res=$?
     wasm_status=$convert_result
@@ -262,7 +259,7 @@ else
     wasm_status="not found in source directory"
 fi
 
-if [ -e $src/classic-msg ]; then
+if [ -e "$src"/classic-msg ]; then
     convert "classic-msg"
     res=$?
     classicmsg_status=$convert_result
