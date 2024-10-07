@@ -122,20 +122,23 @@ func TestProgramStorageCost(t *testing.T) {
 		writeZeroData = multicallAppendStore(writeZeroData, slot, common.Hash{}, false)
 	}
 
+	writePair := compareGasPair{vm.SSTORE, "storage_flush_cache"}
+	readPair := compareGasPair{vm.SLOAD, "storage_load_bytes32"}
+
 	for _, tc := range []struct {
 		name string
 		data []byte
+		pair compareGasPair
 	}{
-		{"initialWrite", writeRandAData},
-		{"read", readData},
-		{"writeAgain", writeRandBData},
-		{"delete", writeZeroData},
-		{"readZeros", readData},
-		{"writeAgainAgain", writeRandAData},
+		{"initialWrite", writeRandAData, writePair},
+		{"read", readData, readPair},
+		{"writeAgain", writeRandBData, writePair},
+		{"delete", writeZeroData, writePair},
+		{"readZeros", readData, readPair},
+		{"writeAgainAgain", writeRandAData, writePair},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			compareGasUsage(t, builder, evmMulticall, stylusMulticall, tc.data, nil, compareGasSum, 0,
-				compareGasPair{vm.SSTORE, "storage_flush_cache"}, compareGasPair{vm.SLOAD, "storage_load_bytes32"})
+			compareGasUsage(t, builder, evmMulticall, stylusMulticall, tc.data, nil, compareGasSum, 0, tc.pair)
 		})
 	}
 }
@@ -360,10 +363,12 @@ func compareGasUsage(
 			}
 		case compareGasSum:
 			evmSum := float64(0)
+			for _, v := range evmGasUsage[opcode] {
+				evmSum += float64(v)
+			}
 			stylusSum := float64(0)
-			for i := range evmGasUsage[opcode] {
-				evmSum += float64(evmGasUsage[opcode][i])
-				stylusSum += stylusGasUsage[hostio][i]
+			for _, v := range stylusGasUsage[hostio] {
+				stylusSum += v
 			}
 			t.Logf("evm %v usage: %v - stylus %v usage: %v", opcode, evmSum, hostio, stylusSum)
 			checkPercentDiff(t, evmSum, stylusSum, maxAllowedDifference)
