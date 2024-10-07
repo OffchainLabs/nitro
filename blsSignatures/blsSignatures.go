@@ -46,12 +46,10 @@ func GenerateKeys() (PublicKey, PrivateKey, error) {
 
 func PublicKeyFromPrivateKey(privateKey PrivateKey) (PublicKey, error) {
 	pubKey := new(bls12381.G2Affine)
-	g2 := new(bls12381.G2Affine)
-	g2.X.SetOne()
-	g2.Y.SetOne()
+	_, _, _, g2 := bls12381.Generators()
 	fr := new(fr.Element)
 	fr.Set(privateKey)
-	pubKey.ScalarMultiplication(g2, fr.BigInt(new(big.Int)))
+	pubKey.ScalarMultiplication(&g2, fr.BigInt(new(big.Int)))
 	proof, err := KeyValidityProof(pubKey, privateKey)
 	if err != nil {
 		return PublicKey{}, err
@@ -129,10 +127,8 @@ func verifySignature2(sig Signature, message []byte, publicKey PublicKey, keyVal
 	if err != nil {
 		return false, err
 	}
-	g2 := new(bls12381.G2Affine)
-	g2.X.SetOne()
-	g2.Y.SetOne()
-	rightSide, err := bls12381.Pair([]bls12381.G1Affine{*sig}, []bls12381.G2Affine{*g2})
+	_, _, _, g2 := bls12381.Generators()
+	rightSide, err := bls12381.Pair([]bls12381.G1Affine{*sig}, []bls12381.G2Affine{g2})
 	if err != nil {
 		return false, err
 	}
@@ -182,10 +178,8 @@ func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte
 	if err != nil {
 		return false, err
 	}
-	g2 := new(bls12381.G2Affine)
-	g2.X.SetOne()
-	g2.Y.SetOne()
-	rightSide, err := bls12381.Pair([]bls12381.G1Affine{*sig}, []bls12381.G2Affine{*g2})
+	_, _, _, g2 := bls12381.Generators()
+	rightSide, err := bls12381.Pair([]bls12381.G1Affine{*sig}, []bls12381.G2Affine{g2})
 	if err != nil {
 		return false, err
 	}
