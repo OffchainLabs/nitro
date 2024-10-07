@@ -98,7 +98,6 @@ type BatchPoster struct {
 	arbOSVersionGetter execution.FullExecutionClient
 	config             BatchPosterConfigFetcher
 	seqInbox           *bridgegen.SequencerInbox
-	bridge             *bridgegen.Bridge
 	syncMonitor        *SyncMonitor
 	seqInboxABI        *abi.ABI
 	seqInboxAddr       common.Address
@@ -309,10 +308,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	if err != nil {
 		return nil, err
 	}
-	bridge, err := bridgegen.NewBridge(opts.DeployInfo.Bridge, opts.L1Reader.Client())
-	if err != nil {
-		return nil, err
-	}
+
 	if err = opts.Config().Validate(); err != nil {
 		return nil, err
 	}
@@ -340,7 +336,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		arbOSVersionGetter: opts.VersionGetter,
 		syncMonitor:        opts.SyncMonitor,
 		config:             opts.Config,
-		bridge:             bridge,
 		seqInbox:           seqInbox,
 		seqInboxABI:        seqInboxABI,
 		seqInboxAddr:       opts.DeployInfo.SequencerInbox,
