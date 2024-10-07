@@ -141,8 +141,8 @@ type BatchPosterDangerousConfig struct {
 }
 
 type BatchPosterConfig struct {
-	Enable                            bool `koanf:"enable"`
-	EnableDapFallbackStoreDataOnChain bool `koanf:"enable-dap-fallback-store-data-on-chain" reload:"hot"`
+	Enable                             bool `koanf:"enable"`
+	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
 	// Max batch size.
 	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
@@ -205,7 +205,7 @@ type BatchPosterConfigFetcher func() *BatchPosterConfig
 
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
-	f.Bool(prefix+".enable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.EnableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, enable fallback storing data on chain")
+	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum 4844 blob enabled batch size")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
@@ -231,8 +231,8 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
-	Enable:                            false,
-	EnableDapFallbackStoreDataOnChain: true,
+	Enable:                             false,
+	DisableDapFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxSize: 100000,
 	// Try to fill 3 blobs per batch
@@ -1366,7 +1366,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
 		}
 		// #nosec G115
-		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.EnableDapFallbackStoreDataOnChain)
+		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
 		if err != nil {
 			batchPosterDAFailureCounter.Inc(1)
 			return false, err
