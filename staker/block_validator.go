@@ -292,6 +292,10 @@ func NewBlockValidator(
 	if len(remoteBlockValidatorServerUrl) > 0 && remoteBlockValidatorServerUrl != "self" && remoteBlockValidatorServerUrl != "self-auth" {
 		confFetcher := func() *rpcclient.ClientConfig { return &config().RemoteBlockValidatorServer }
 		remoteBlockValidatorClient = rpcclient.NewRpcClient(confFetcher, stack)
+		err := remoteBlockValidatorClient.Start(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	ret := &BlockValidator{
 		StatelessBlockValidator:    statelessBlockValidator,
@@ -1382,12 +1386,6 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
-	if v.remoteBlockValidatorClient != nil {
-		err := v.remoteBlockValidatorClient.Start(ctxIn)
-		if err != nil {
-			return err
-		}
-	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	v.CallIteratively(v.iterativeValidationPrint)
 	return nil
