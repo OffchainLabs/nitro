@@ -77,16 +77,9 @@ func newStylusTracer(ctx *tracers.Context, _ json.RawMessage) (*tracers.Tracer, 
 
 	return &tracers.Tracer{
 		Hooks: &tracing.Hooks{
-			OnExit:                    t.OnExit,
-			OnEnter:                   t.OnEnter,
-			OnOpcode:                  t.OnOpcode,
-			OnFault:                   t.OnFault,
-			OnTxStart:                 t.OnTxStart,
-			OnTxEnd:                   t.OnTxEnd,
-			CaptureArbitrumTransfer:   t.CaptureArbitrumTransfer,
-			CaptureArbitrumStorageGet: t.CaptureArbitrumStorageGet,
-			CaptureArbitrumStorageSet: t.CaptureArbitrumStorageSet,
-			CaptureStylusHostio:       t.CaptureStylusHostio,
+			OnEnter:             t.OnEnter,
+			OnExit:              t.OnExit,
+			CaptureStylusHostio: t.CaptureStylusHostio,
 		},
 		GetResult: t.GetResult,
 		Stop:      t.Stop,
@@ -127,6 +120,9 @@ func (t *stylusTracer) OnEnter(depth int, typ byte, from common.Address, to comm
 	if t.interrupt.Load() {
 		return
 	}
+	if depth == 0 {
+		return
+	}
 
 	// This function adds the prefix evm_ because it assumes the opcode came from the EVM.
 	// If the opcode comes from WASM, the CaptureStylusHostio function will remove the evm prefix.
@@ -159,6 +155,9 @@ func (t *stylusTracer) OnEnter(depth int, typ byte, from common.Address, to comm
 
 func (t *stylusTracer) OnExit(depth int, output []byte, gasUsed uint64, _ error, reverted bool) {
 	if t.interrupt.Load() {
+		return
+	}
+	if depth == 0 {
 		return
 	}
 	var err error
@@ -199,17 +198,3 @@ func (t *stylusTracer) Stop(err error) {
 	t.reason = err
 	t.interrupt.Store(true)
 }
-
-// Unimplemented EVMLogger interface methods
-
-func (t *stylusTracer) CaptureArbitrumTransfer(from, to *common.Address, value *big.Int, before bool, purpose string) {
-}
-func (t *stylusTracer) CaptureArbitrumStorageGet(key common.Hash, depth int, before bool)        {}
-func (t *stylusTracer) CaptureArbitrumStorageSet(key, value common.Hash, depth int, before bool) {}
-func (t *stylusTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, scope tracing.OpContext, rData []byte, depth int, err error) {
-}
-func (t *stylusTracer) OnFault(pc uint64, op byte, gas, cost uint64, _ tracing.OpContext, depth int, err error) {
-}
-func (t *stylusTracer) OnTxStart(env *tracing.VMContext, tx *types.Transaction, from common.Address) {
-}
-func (t *stylusTracer) OnTxEnd(receipt *types.Receipt, err error) {}
