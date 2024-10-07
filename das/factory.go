@@ -65,6 +65,15 @@ func CreatePersistentStorageService(
 		storageServices = append(storageServices, s)
 	}
 
+	if config.GoogleCloudStorage.Enable {
+		s, err := NewGoogleCloudStorageService(config.GoogleCloudStorage)
+		if err != nil {
+			return nil, nil, err
+		}
+		lifecycleManager.Register(s)
+		storageServices = append(storageServices, s)
+	}
+
 	if len(storageServices) > 1 {
 		s, err := NewRedundantStorageService(ctx, storageServices)
 		if err != nil {
