@@ -400,14 +400,15 @@ func evmOpcodesGasUsage(ctx context.Context, rpcClient rpc.ClientInterface, tx *
 			// in the caller's depth. Then, we subtract the gas before the call by the
 			// gas after the call returned.
 			var gasAfterCall uint64
+			var found bool
 			for j := i + 1; j < len(result.StructLogs); j++ {
 				if result.StructLogs[j].Depth == result.StructLogs[i].Depth {
 					// back to the original call
 					gasAfterCall = result.StructLogs[j].Gas + result.StructLogs[j].GasCost
-					break
+					found = true
 				}
 			}
-			if gasAfterCall == 0 {
+			if !found {
 				return nil, fmt.Errorf("malformed log: didn't get back to call original depth")
 			}
 			if i == 0 {
