@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 )
 
@@ -13,6 +14,7 @@ func TestBlocksReExecutorModes(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -37,7 +39,8 @@ func TestBlocksReExecutorModes(t *testing.T) {
 
 	// Reexecute blocks at mode full
 	success := make(chan struct{})
-	executorFull := blocksreexecutor.New(&blocksreexecutor.TestConfig, blockchain, feedErrChan)
+	executorFull, err := blocksreexecutor.New(&blocksreexecutor.TestConfig, blockchain, builder.L2.ExecNode.ChainDB, feedErrChan)
+	Require(t, err)
 	executorFull.Start(ctx, success)
 	select {
 	case err := <-feedErrChan:
@@ -49,7 +52,8 @@ func TestBlocksReExecutorModes(t *testing.T) {
 	success = make(chan struct{})
 	c := &blocksreexecutor.TestConfig
 	c.Mode = "random"
-	executorRandom := blocksreexecutor.New(c, blockchain, feedErrChan)
+	executorRandom, err := blocksreexecutor.New(c, blockchain, builder.L2.ExecNode.ChainDB, feedErrChan)
+	Require(t, err)
 	executorRandom.Start(ctx, success)
 	select {
 	case err := <-feedErrChan:
