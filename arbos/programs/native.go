@@ -47,16 +47,16 @@ type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
 var (
-	stylusLRUCacheSizeBytesGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
-	stylusLRUCacheSizeCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
-	stylusLRUCacheSizeHitsCounter       = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/hits", nil)
-	stylusLRUCacheSizeMissesCounter     = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/misses", nil)
-	stylusLRUCacheSizeDoesNotFitCounter = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/does_not_fit", nil)
+	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
+	stylusLRUCacheCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
+	stylusLRUCacheHitsCounter       = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/hits", nil)
+	stylusLRUCacheMissesCounter     = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/misses", nil)
+	stylusLRUCacheDoesNotFitCounter = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/does_not_fit", nil)
 
-	stylusLongTermCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/long_term/size_bytes", nil)
-	stylusLongTermCacheSizeCountGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/long_term/count", nil)
-	stylusLongTermCacheSizeHitsCounter   = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/long_term/hits", nil)
-	stylusLongTermCacheSizeMissesCounter = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/long_term/misses", nil)
+	stylusLongTermCacheSizeBytesGauge = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/long_term/size_bytes", nil)
+	stylusLongTermCacheCountGauge     = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/long_term/count", nil)
+	stylusLongTermCacheHitsCounter    = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/long_term/hits", nil)
+	stylusLongTermCacheMissesCounter  = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/long_term/misses", nil)
 )
 
 func activateProgram(
@@ -342,15 +342,15 @@ func UpdateWasmCacheMetrics() {
 	metrics := C.stylus_get_cache_metrics()
 
 	stylusLRUCacheSizeBytesGauge.Update(int64(metrics.lru.size_bytes))
-	stylusLRUCacheSizeCountGauge.Update(int64(metrics.lru.count))
-	stylusLRUCacheSizeHitsCounter.Inc(int64(metrics.lru.hits))
-	stylusLRUCacheSizeMissesCounter.Inc(int64(metrics.lru.misses))
-	stylusLRUCacheSizeDoesNotFitCounter.Inc(int64(metrics.lru.does_not_fit))
+	stylusLRUCacheCountGauge.Update(int64(metrics.lru.count))
+	stylusLRUCacheHitsCounter.Inc(int64(metrics.lru.hits))
+	stylusLRUCacheMissesCounter.Inc(int64(metrics.lru.misses))
+	stylusLRUCacheDoesNotFitCounter.Inc(int64(metrics.lru.does_not_fit))
 
 	stylusLongTermCacheSizeBytesGauge.Update(int64(metrics.long_term.size_bytes))
-	stylusLongTermCacheSizeCountGauge.Update(int64(metrics.long_term.count))
-	stylusLongTermCacheSizeHitsCounter.Inc(int64(metrics.long_term.hits))
-	stylusLongTermCacheSizeMissesCounter.Inc(int64(metrics.long_term.misses))
+	stylusLongTermCacheCountGauge.Update(int64(metrics.long_term.count))
+	stylusLongTermCacheHitsCounter.Inc(int64(metrics.long_term.hits))
+	stylusLongTermCacheMissesCounter.Inc(int64(metrics.long_term.misses))
 }
 
 // Used for testing
