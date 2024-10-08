@@ -2366,6 +2366,7 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 	Require(t, err)
 	// restore nonce in L2Info
 	builder.L2Info.GetInfoWithPrivKey("Owner").Nonce.Store(nonce)
+	// fallibleProgram should be added only to lru cache as the api call should be processed with wasm cache tag = 0
 	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
 		Count:     1,
 		SizeBytes: fallibleEntrySize,
