@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -35,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -69,7 +71,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbutil"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -83,7 +84,6 @@ import (
 )
 
 type info = *BlockchainTestInfo
-type client = arbutil.L1Interface
 
 type SecondNodeParams struct {
 	nodeConfig  *arbnode.Config
@@ -138,8 +138,8 @@ func (tc *TestClient) GetBaseFeeAt(t *testing.T, blockNum *big.Int) *big.Int {
 	return GetBaseFeeAt(t, tc.Client, tc.ctx, blockNum)
 }
 
-func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transaction) {
-	SendWaitTestTransactions(t, tc.ctx, tc.Client, txs)
+func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transaction) []*types.Receipt {
+	return SendWaitTestTransactions(t, tc.ctx, tc.Client, txs)
 }
 
 func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
@@ -763,26 +763,29 @@ func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.In
 	return BridgeBalance(t, account, amount, b.L1Info, b.L2Info, b.L1.Client, b.L2.Client, b.ctx)
 }
 
-func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {
+func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclient.Client, txs []*types.Transaction) []*types.Receipt {
 	t.Helper()
+	receipts := make([]*types.Receipt, len(txs))
 	for _, tx := range txs {
 		Require(t, client.SendTransaction(ctx, tx))
 	}
-	for _, tx := range txs {
-		_, err := EnsureTxSucceeded(ctx, client, tx)
+	for i, tx := range txs {
+		var err error
+		receipts[i], err = EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
+	return receipts
 }
 
 func TransferBalance(
-	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context,
+	t *testing.T, from, to string, amount *big.Int, l2info info, client *ethclient.Client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
 }
 
 func TransferBalanceTo(
-	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client client, ctx context.Context,
+	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client *ethclient.Client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 	tx := l2info.PrepareTxTo(from, &to, l2info.TransferGas, amount, nil)
@@ -795,7 +798,7 @@ func TransferBalanceTo(
 
 // if l2client is not nil - will wait until balance appears in l2
 func BridgeBalance(
-	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client client, l2client client, ctx context.Context,
+	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client *ethclient.Client, l2client *ethclient.Client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 
@@ -855,8 +858,8 @@ func SendSignedTxesInBatchViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client arbutil.L1Interface,
-	l2client arbutil.L1Interface,
+	l1client *ethclient.Client,
+	l2client *ethclient.Client,
 	delayedTxes types.Transactions,
 ) types.Receipts {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -906,8 +909,8 @@ func SendSignedTxViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client arbutil.L1Interface,
-	l2client arbutil.L1Interface,
+	l1client *ethclient.Client,
+	l2client *ethclient.Client,
 	delayedTx *types.Transaction,
 ) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -937,8 +940,8 @@ func SendUnsignedTxViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client arbutil.L1Interface,
-	l2client arbutil.L1Interface,
+	l1client *ethclient.Client,
+	l2client *ethclient.Client,
 	templateTx *types.Transaction,
 ) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -984,13 +987,13 @@ func SendUnsignedTxViaL1(
 	return receipt
 }
 
-func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
+func GetBaseFee(t *testing.T, client *ethclient.Client, ctx context.Context) *big.Int {
 	header, err := client.HeaderByNumber(ctx, nil)
 	Require(t, err)
 	return header.BaseFee
 }
 
-func GetBaseFeeAt(t *testing.T, client client, ctx context.Context, blockNum *big.Int) *big.Int {
+func GetBaseFeeAt(t *testing.T, client *ethclient.Client, ctx context.Context, blockNum *big.Int) *big.Int {
 	header, err := client.HeaderByNumber(ctx, blockNum)
 	Require(t, err)
 	return header.BaseFee
@@ -1212,7 +1215,7 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	return l1info, l1Client, l1backend, stack
 }
 
-func getInitMessage(ctx context.Context, t *testing.T, parentChainClient client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
+func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
 	bridge, err := arbnode.NewDelayedBridge(parentChainClient, addresses.Bridge, addresses.DeployedAt)
 	Require(t, err)
 	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
@@ -1231,7 +1234,7 @@ func deployOnParentChain(
 	t *testing.T,
 	ctx context.Context,
 	parentChainInfo info,
-	parentChainClient client,
+	parentChainClient *ethclient.Client,
 	parentChainReaderConfig *headerreader.Config,
 	chainConfig *params.ChainConfig,
 	wasmModuleRoot common.Hash,
@@ -1454,7 +1457,7 @@ func authorizeDASKeyset(
 	ctx context.Context,
 	dasSignerKey *blsSignatures.PublicKey,
 	l1info info,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 ) {
 	if dasSignerKey == nil {
 		return
@@ -1691,6 +1694,34 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 		event, err := parser(log)
 		Require(t, err, "failed to parse log")
 		return event
+	}
+}
+
+// recordBlock writes a json file with all of the data needed to validate a block.
+//
+// This can be used as an input to the arbitrator prover to validate a block.
+func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
+	t.Helper()
+	ctx := builder.ctx
+	inboxPos := arbutil.MessageIndex(block)
+	for {
+		time.Sleep(250 * time.Millisecond)
+		batches, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		Require(t, err)
+		haveMessages, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMessageCount(batches - 1)
+		Require(t, err)
+		if haveMessages >= inboxPos {
+			break
+		}
+	}
+	validationInputsWriter, err := inputs.NewWriter(inputs.WithSlug(t.Name()))
+	Require(t, err)
+	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.TargetWavm)
+	if err != nil {
+		Fatal(t, "failed to get validation inputs", block, err)
+	}
+	if err := validationInputsWriter.Write(&inputJson); err != nil {
+		Fatal(t, "failed to write validation inputs", block, err)
 	}
 }
 
