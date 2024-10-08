@@ -186,11 +186,6 @@ func CreateExecutionNode(
 			return nil, err
 		}
 
-		// sovereign sequencer should not be configured with espresso finality node
-		if config.Sequencer.EnableEspressoFinalityNode && config.Sequencer.EnableEspressoSovereign {
-			return nil, errors.New("espresso finality node cannot be configured with espresso sovereign sequencer")
-		}
-
 		if config.Sequencer.EnableEspressoFinalityNode {
 			espressoFinalityNode := NewEspressoFinalityNode(execEngine, seqConfigFetcher)
 			txPublisher = espressoFinalityNode
