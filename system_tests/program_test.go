@@ -2074,11 +2074,14 @@ func TestWasmLruCache(t *testing.T) {
 	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "keccak")
 	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "math")
 	t.Log(
-		"lruEntrySizeEstimateBytes, ",
+		"entrySizeEstimateBytes, ",
 		"fallible:", fallibleEntrySize,
 		"keccak:", keccakEntrySize,
 		"math:", mathEntrySize,
 	)
+	if fallibleEntrySize == keccakEntrySize || fallibleEntrySize == mathEntrySize || keccakEntrySize == mathEntrySize {
+		Fatal(t, "at least two programs have the same entry size")
+	}
 
 	programs.ClearWasmLruCache()
 	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
@@ -2175,11 +2178,14 @@ func TestWasmLongTermCache(t *testing.T) {
 	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "keccak")
 	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "math")
 	t.Log(
-		"lruEntrySizeEstimateBytes, ",
+		"entrySizeEstimateBytes, ",
 		"fallible:", fallibleEntrySize,
 		"keccak:", keccakEntrySize,
 		"math:", mathEntrySize,
 	)
+	if fallibleEntrySize == keccakEntrySize || fallibleEntrySize == mathEntrySize || keccakEntrySize == mathEntrySize {
+		Fatal(t, "at least two programs have the same entry size")
+	}
 
 	ownerAuth.Value = common.Big0
 
@@ -2309,6 +2315,9 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 	fallibleProgramAddress, fallibleEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "fallible")
 	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "keccak")
 	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "math")
+	if fallibleEntrySize == keccakEntrySize || fallibleEntrySize == mathEntrySize || keccakEntrySize == mathEntrySize {
+		Fatal(t, "at least two programs have the same entry size")
+	}
 
 	ownerAuth.Value = common.Big0
 
