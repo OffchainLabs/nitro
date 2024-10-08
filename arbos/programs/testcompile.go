@@ -9,7 +9,7 @@ package programs
 // This file exists because cgo isn't allowed in tests
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #include "arbitrator.h"
 
 typedef uint16_t u16;
@@ -173,6 +173,28 @@ func testCompileArch(store bool) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func resetNativeTarget() error {
+	output := &rustBytes{}
+
+	_, err := fmt.Print("resetting native target\n")
+	if err != nil {
+		return err
+	}
+
+	localCompileName := []byte("local")
+
+	status := C.stylus_target_set(goSlice(localCompileName),
+		goSlice([]byte{}),
+		output,
+		cbool(true))
+
+	if status != 0 {
+		return fmt.Errorf("failed setting compilation target arm: %v", string(output.intoBytes()))
 	}
 
 	return nil

@@ -439,13 +439,21 @@ pub fn module(wasm: &[u8], compile: CompileConfig, target: Target) -> Result<Vec
 pub fn activate(
     wasm: &[u8],
     codehash: &Bytes32,
-    version: u16,
+    stylus_version: u16,
+    arbos_version_for_gas: u64,
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
 ) -> Result<(ProverModule, StylusData)> {
-    let (module, stylus_data) =
-        ProverModule::activate(wasm, codehash, version, page_limit, debug, gas)?;
+    let (module, stylus_data) = ProverModule::activate(
+        wasm,
+        codehash,
+        stylus_version,
+        arbos_version_for_gas,
+        page_limit,
+        debug,
+        gas,
+    )?;
 
     Ok((module, stylus_data))
 }

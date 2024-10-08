@@ -121,10 +121,12 @@ func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash com
 		return err
 	}
 	if alreadyApproved.Cmp(common.Big1) == 0 {
+		log.Info("Already approved Safe tx hash for fast confirmation, checking if we can execute the Safe tx", "safeHash", safeTxHash, "nodeHash", nodeHash)
 		_, err = f.checkApprovedHashAndExecTransaction(ctx, fastConfirmCallData, safeTxHash)
 		return err
 	}
 
+	log.Info("Approving Safe tx hash to fast confirm", "safeHash", safeTxHash, "nodeHash", nodeHash)
 	auth, err := f.builder.Auth(ctx)
 	if err != nil {
 		return err
@@ -231,6 +233,7 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		if err != nil {
 			return false, err
 		}
+		log.Info("Executing Safe tx to fast confirm", "safeHash", safeTxHash)
 		_, err = f.safe.ExecTransaction(
 			auth,
 			f.wallet.RollupAddress(),
@@ -249,5 +252,6 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		}
 		return true, nil
 	}
+	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", safeTxHash)
 	return false, nil
 }
