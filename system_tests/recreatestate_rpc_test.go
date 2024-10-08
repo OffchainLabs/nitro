@@ -454,7 +454,7 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	cacheConfig.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 
 	runTestCase := func(t *testing.T, cacheConfig gethexec.CachingConfig, txes int) {
-		t.Run(fmt.Sprintf("TestSkippingSavingStateAndRecreatingAfterRestart-skip-blocks-%d-skip-gas-%d-txes-%d", cacheConfig.MaxNumberOfBlocksToSkipStateSaving, cacheConfig.MaxAmountOfGasToSkipStateSaving, txes), func(t *testing.T) {
+		t.Run(fmt.Sprintf("skip-blocks-%d-skip-gas-%d-txes-%d", cacheConfig.MaxNumberOfBlocksToSkipStateSaving, cacheConfig.MaxAmountOfGasToSkipStateSaving, txes), func(t *testing.T) {
 			testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, txes)
 		})
 	}
@@ -553,7 +553,7 @@ func TestGettingState(t *testing.T) {
 	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	t.Run("TestGettingStateForRPCFullNode", func(t *testing.T) {
+	t.Run("full-node", func(t *testing.T) {
 		testGettingState(t, execConfig)
 	})
 
@@ -567,7 +567,7 @@ func TestGettingState(t *testing.T) {
 	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	t.Run("TestGettingStateForRPCSparseArchiveNode", func(t *testing.T) {
+	t.Run("archive-node", func(t *testing.T) {
 		testGettingState(t, execConfig)
 	})
 }
