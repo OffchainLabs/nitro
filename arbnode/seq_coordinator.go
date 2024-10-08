@@ -37,7 +37,8 @@ var (
 type SeqCoordinator struct {
 	stopwaiter.StopWaiter
 
-	redisutil.RedisCoordinator
+	redisCoordinatorMutex sync.RWMutex
+	redisCoordinator      redisutil.RedisCoordinator
 	prevRedisCoordinator  *redisutil.RedisCoordinator
 	prevRedisMessageCount arbutil.MessageIndex
 
@@ -159,7 +160,7 @@ func NewSeqCoordinator(
 		return nil, err
 	}
 	coordinator := &SeqCoordinator{
-		RedisCoordinator: *redisCoordinator,
+		redisCoordinator: *redisCoordinator,
 		sync:             sync,
 		streamer:         streamer,
 		sequencer:        sequencer,
@@ -178,6 +179,19 @@ func (c *SeqCoordinator) SetDelayedSequencer(delayedSequencer *DelayedSequencer)
 		panic("trying to set delayed sequencer when already set")
 	}
 	c.delayedSequencer = delayedSequencer
+}
+
+func (c *SeqCoordinator) RedisCoordinator() *redisutil.RedisCoordinator {
+	c.redisCoordinatorMutex.RLock()
+	defer c.redisCoordinatorMutex.RUnlock()
+	return &c.redisCoordinator
+}
+
+func (c *SeqCoordinator) setRedisCoordinator(redisCoordinator *redisutil.RedisCoordinator) {
+	c.redisCoordinatorMutex.Lock()
+	defer c.redisCoordinatorMutex.Unlock()
+	c.prevRedisCoordinator = &c.redisCoordinator
+	c.redisCoordinator = *redisCoordinator
 }
 
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
@@ -282,7 +296,7 @@ func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgC
 	defer c.wantsLockoutMutex.Unlock()
 	setWantsLockout := c.avoidLockout <= 0
 	lockoutUntil := time.Now().Add(c.config.LockoutDuration)
-	err = c.Client.Watch(ctx, func(tx *redis.Tx) error {
+	err = c.RedisCoordinator().Client.Watch(ctx, func(tx *redis.Tx) error {
 		current, err := tx.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
 		var wasEmpty bool
 		if errors.Is(err, redis.Nil) {
@@ -351,7 +365,7 @@ func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgC
 }
 
 func (c *SeqCoordinator) getRemoteFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	resStr, err := c.Client.Get(ctx, redisutil.FINALIZED_MSG_COUNT_KEY).Result()
+	resStr, err := c.RedisCoordinator().Client.Get(ctx, redisutil.FINALIZED_MSG_COUNT_KEY).Result()
 	if err != nil {
 		return 0, err
 	}
@@ -370,7 +384,7 @@ func (c *SeqCoordinator) getRemoteMsgCountImpl(ctx context.Context, r redis.Cmda
 }
 
 func (c *SeqCoordinator) GetRemoteMsgCount() (arbutil.MessageIndex, error) {
-	return c.getRemoteMsgCountImpl(c.GetContext(), c.Client)
+	return c.getRemoteMsgCountImpl(c.GetContext(), c.RedisCoordinator().Client)
 }
 
 func (c *SeqCoordinator) wantsLockoutUpdate(ctx context.Context, client redis.UniversalClient) error {
@@ -404,7 +418,7 @@ func (c *SeqCoordinator) wantsLockoutUpdateWithMutex(ctx context.Context, client
 func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 	atomicTimeWrite(&c.lockoutUntil, time.Time{})
 	isActiveSequencer.Update(0)
-	releaseErr := c.Client.Watch(ctx, func(tx *redis.Tx) error {
+	releaseErr := c.RedisCoordinator().Client.Watch(ctx, func(tx *redis.Tx) error {
 		current, err := tx.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
 		if errors.Is(err, redis.Nil) {
 			return nil
@@ -427,7 +441,7 @@ func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 		return nil
 	}
 	// got error - was it still released?
-	current, readErr := c.Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
+	current, readErr := c.RedisCoordinator().Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
 	if errors.Is(readErr, redis.Nil) {
 		return nil
 	}
@@ -444,10 +458,10 @@ func (c *SeqCoordinator) wantsLockoutRelease(ctx context.Context) error {
 		return nil
 	}
 	myWantsLockoutKey := redisutil.WantsLockoutKeyFor(c.config.Url())
-	releaseErr := c.Client.Del(ctx, myWantsLockoutKey).Err()
+	releaseErr := c.RedisCoordinator().Client.Del(ctx, myWantsLockoutKey).Err()
 	if releaseErr != nil {
 		// got error - was it still deleted?
-		readErr := c.Client.Get(ctx, myWantsLockoutKey).Err()
+		readErr := c.RedisCoordinator().Client.Get(ctx, myWantsLockoutKey).Err()
 		if !errors.Is(readErr, redis.Nil) {
 			return releaseErr
 		}
@@ -531,7 +545,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 			// In non-init cases it doesn't matter how we delete as we always try to delete from prevFinalized to finalized
 			batchDeleteCount := 1000
 			for i := len(keys); i > 0; i -= batchDeleteCount {
-				if err := c.Client.Del(ctx, keys[max(0, i-batchDeleteCount):i]...).Err(); err != nil {
+				if err := c.RedisCoordinator().Client.Del(ctx, keys[max(0, i-batchDeleteCount):i]...).Err(); err != nil {
 					return fmt.Errorf("error deleting finalized messages and their signatures from redis: %w", err)
 				}
 			}
@@ -540,7 +554,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 		if err != nil {
 			return err
 		}
-		if err = c.Client.Set(ctx, redisutil.FINALIZED_MSG_COUNT_KEY, finalizedBytes, c.config.SeqNumDuration).Err(); err != nil {
+		if err = c.RedisCoordinator().Client.Set(ctx, redisutil.FINALIZED_MSG_COUNT_KEY, finalizedBytes, c.config.SeqNumDuration).Err(); err != nil {
 			return fmt.Errorf("couldn't set %s key to current finalizedMsgCount in redis: %w", redisutil.FINALIZED_MSG_COUNT_KEY, err)
 		}
 		return nil
@@ -549,7 +563,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	if errors.Is(err, redis.Nil) {
 		var keys []string
 		for msg := finalized - 1; msg > 0; msg-- {
-			exists, err := c.Client.Exists(ctx, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg)).Result()
+			exists, err := c.RedisCoordinator().Client.Exists(ctx, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg)).Result()
 			if err != nil {
 				// If there is an error deleting finalized messages during init, we retry later either from this sequencer or from another
 				return err
@@ -564,7 +578,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	} else if err != nil {
 		return fmt.Errorf("error getting finalizedMsgCount value from redis: %w", err)
 	}
-	remoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, c.Client)
+	remoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, c.RedisCoordinator().Client)
 	if err != nil {
 		return fmt.Errorf("cannot get remote message count: %w", err)
 	}
@@ -580,7 +594,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 }
 
 func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
-	chosenSeq, err := c.RecommendSequencerWantingLockout(ctx)
+	chosenSeq, err := c.RedisCoordinator().RecommendSequencerWantingLockout(ctx)
 	if err != nil {
 		log.Warn("coordinator failed finding sequencer wanting lockout", "err", err)
 		return c.retryAfterRedisError()
@@ -632,7 +646,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.retryAfterRedisError()
 	}
 	readUntil := min(localMsgCount+c.config.MsgPerPoll, remoteMsgCount)
-	client := c.Client
+	client := c.RedisCoordinator().Client
 	// If we have a previous redis coordinator,
 	// we can read from it until the local message count catches up to the prev coordinator's message count
 	if c.prevRedisMessageCount > localMsgCount {
@@ -744,7 +758,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 				// this could be just new messages we didn't get yet - even then, we should retry soon
 				log.Info("sequencer failed to become chosen", "err", err, "msgcount", localMsgCount)
 				// make sure we're marked as wanting the lockout
-				if err := c.wantsLockoutUpdate(ctx, c.Client); err != nil {
+				if err := c.wantsLockoutUpdate(ctx, c.RedisCoordinator().Client); err != nil {
 					log.Warn("failed to update wants lockout key", "err", err)
 				}
 				c.prevChosenSequencer = ""
@@ -772,7 +786,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	// update wanting the lockout
 	var wantsLockoutErr error
 	if synced && !c.AvoidingLockout() {
-		wantsLockoutErr = c.wantsLockoutUpdate(ctx, c.Client)
+		wantsLockoutErr = c.wantsLockoutUpdate(ctx, c.RedisCoordinator().Client)
 	} else {
 		wantsLockoutErr = c.wantsLockoutRelease(ctx)
 	}
@@ -871,7 +885,7 @@ func (c *SeqCoordinator) trySwitchingRedis(ctx context.Context, newRedisCoordina
 	if err != nil {
 		return err
 	}
-	current, err := c.Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
+	current, err := c.RedisCoordinator().Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
 	var wasEmpty bool
 	if errors.Is(err, redis.Nil) {
 		wasEmpty = true
@@ -883,12 +897,11 @@ func (c *SeqCoordinator) trySwitchingRedis(ctx context.Context, newRedisCoordina
 	}
 	// If the chosen key is set to switch, we need to switch to the new redis coordinator.
 	if !wasEmpty && (current == redisutil.SWITCHED_REDIS) {
-		err = c.wantsLockoutUpdate(ctx, c.Client)
+		err = c.wantsLockoutUpdate(ctx, c.RedisCoordinator().Client)
 		if err != nil {
 			return err
 		}
-		c.prevRedisCoordinator = &c.RedisCoordinator
-		c.RedisCoordinator = *newRedisCoordinator
+		c.setRedisCoordinator(newRedisCoordinator)
 	}
 	return nil
 }
@@ -942,7 +955,7 @@ func (c *SeqCoordinator) StopAndWait() {
 			time.Sleep(c.retryAfterRedisError())
 		}
 	}
-	_ = c.Client.Close()
+	_ = c.RedisCoordinator().Client.Close()
 }
 
 func (c *SeqCoordinator) CurrentlyChosen() bool {
@@ -984,7 +997,7 @@ func (c *SeqCoordinator) TryToHandoffChosenOne(ctx context.Context) bool {
 			return !c.CurrentlyChosen()
 		})
 		if success {
-			wantsLockout, err := c.RecommendSequencerWantingLockout(ctx)
+			wantsLockout, err := c.RedisCoordinator().RecommendSequencerWantingLockout(ctx)
 			if err == nil {
 				log.Info("released chosen one status; a new sequencer hopefully wants to acquire it", "delay", c.config.SafeShutdownDelay, "wantsLockout", wantsLockout)
 			} else {
@@ -1006,7 +1019,7 @@ func (c *SeqCoordinator) SeekLockout(ctx context.Context) {
 	log.Info("seeking lockout", "myUrl", c.config.Url())
 	if c.sequencer.Synced() {
 		// Even if this errors we still internally marked ourselves as wanting the lockout
-		err := c.wantsLockoutUpdateWithMutex(ctx, c.Client)
+		err := c.wantsLockoutUpdateWithMutex(ctx, c.RedisCoordinator().Client)
 		if err != nil {
 			log.Warn("failed to set wants lockout key in redis after seeking lockout again", "err", err)
 		}
