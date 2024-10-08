@@ -23,8 +23,7 @@ type PrivateKey *fr.Element
 type Signature *bls12381.G1Affine
 
 func GeneratePrivKeyString() (string, error) {
-	fr := new(fr.Element)
-	privKey, err := fr.SetRandom()
+	privKey, err := new(fr.Element).SetRandom()
 	if err != nil {
 		return "", err
 	}
@@ -47,9 +46,7 @@ func GenerateKeys() (PublicKey, PrivateKey, error) {
 func PublicKeyFromPrivateKey(privateKey PrivateKey) (PublicKey, error) {
 	pubKey := new(bls12381.G2Affine)
 	_, _, _, g2 := bls12381.Generators()
-	fr := new(fr.Element)
-	fr.Set(privateKey)
-	pubKey.ScalarMultiplication(&g2, fr.BigInt(new(big.Int)))
+	pubKey.ScalarMultiplication(&g2, (*privateKey).BigInt(new(big.Int)))
 	proof, err := KeyValidityProof(pubKey, privateKey)
 	if err != nil {
 		return PublicKey{}, err
@@ -107,9 +104,7 @@ func signMessage2(priv PrivateKey, message []byte, keyValidationMode bool) (Sign
 		return nil, err
 	}
 	result := new(bls12381.G1Affine)
-	fr := new(fr.Element)
-	fr.Set(priv)
-	result.ScalarMultiplication(pointOnCurve, fr.BigInt(new(big.Int)))
+	result.ScalarMultiplication(pointOnCurve, (*priv).BigInt(new(big.Int)))
 	return result, nil
 }
 
@@ -137,8 +132,6 @@ func verifySignature2(sig Signature, message []byte, publicKey PublicKey, keyVal
 
 func AggregatePublicKeys(pubKeys []PublicKey) PublicKey {
 	g2 := new(bls12381.G2Affine)
-	g2.X.SetZero()
-	g2.Y.SetZero()
 	for _, pk := range pubKeys {
 		g2.Add(g2, pk.key)
 	}
@@ -147,8 +140,6 @@ func AggregatePublicKeys(pubKeys []PublicKey) PublicKey {
 
 func AggregateSignatures(sigs []Signature) Signature {
 	g1 := new(bls12381.G1Affine)
-	g1.X.SetZero()
-	g1.Y.SetZero()
 	for _, s := range sigs {
 		g1.Add(g1, s)
 	}
@@ -256,7 +247,7 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 }
 
 func PrivateKeyToBytes(priv PrivateKey) []byte {
-	bytes := new(fr.Element).Set(priv).Bytes()
+	bytes := (*priv).Bytes()
 	return bytes[:]
 }
 
@@ -265,9 +256,7 @@ func PrivateKeyFromBytes(in []byte) (PrivateKey, error) {
 }
 
 func SignatureToBytes(sig Signature) []byte {
-	g1 := new(bls12381.G1Affine)
-	g1.Set(sig)
-	bytes := g1.Bytes()
+	bytes := (*sig).Bytes()
 	return bytes[:]
 }
 
