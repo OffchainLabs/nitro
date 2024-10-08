@@ -3,6 +3,8 @@ package arbtest
 import (
 	"context"
 	"fmt"
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
+	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"testing"
 	"time"
@@ -76,6 +78,12 @@ func TestSovereignSequencer(t *testing.T) {
 	// wait for the builder
 	err = waitForEspressoNode(t, ctx)
 	Require(t, err)
+
+	// create light client reader
+	lightClientReader, err := lightclient.NewLightClientReader(common.HexToAddress(lightClientAddress), builder.L1.Client)
+
+	// wait for hotshot liveness
+	err = waitForHotShotLiveness(t, ctx, lightClientReader)
 
 	err = checkTransferTxOnL2(t, ctx, builder.L2, "User14", builder.L2Info)
 	Require(t, err)
