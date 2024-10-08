@@ -86,12 +86,13 @@ import (
 type info = *BlockchainTestInfo
 
 type SecondNodeParams struct {
-	nodeConfig  *arbnode.Config
-	execConfig  *gethexec.Config
-	stackConfig *node.Config
-	dasConfig   *das.DataAvailabilityConfig
-	initData    *statetransfer.ArbosInitializationInfo
-	addresses   *chaininfo.RollupAddresses
+	nodeConfig   *arbnode.Config
+	execConfig   *gethexec.Config
+	stackConfig  *node.Config
+	dasConfig    *das.DataAvailabilityConfig
+	initData     *statetransfer.ArbosInitializationInfo
+	addresses    *chaininfo.RollupAddresses
+	wasmCacheTag uint32
 }
 
 type TestClient struct {
@@ -717,7 +718,7 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.wasmCacheTag)
 	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
 	return testClient, func() { testClient.cleanup() }
@@ -1399,6 +1400,7 @@ func Create2ndNodeWithConfig(
 	valnodeConfig *valnode.Config,
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
+	wasmCacheTag uint32,
 ) (*ethclient.Client, *arbnode.Node) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
