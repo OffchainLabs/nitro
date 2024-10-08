@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
 	"math"
 	"math/big"
 	"runtime/debug"
@@ -80,7 +81,8 @@ type SequencerConfig struct {
 	expectedSurplusHardThreshold int
 
 	// Espresso specific flags
-	EnableEspressoSovereign    bool                       `koanf:"enable-espresso-sovereign"`
+	LightClientAddress         string                     `koanf:"light-client-address"`
+	SwitchDelayThreshold       uint64                     `koanf:"switch-delay-threshold"`
 	EspressoFinalityNodeConfig EspressoFinalityNodeConfig `koanf:"espresso-finality-node-config"`
 	// Espresso Finality Node creates blocks with finalized hotshot transactions
 	EnableEspressoFinalityNode bool `koanf:"enable-espresso-finality-node"`
@@ -129,7 +131,6 @@ var DefaultSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 
 	EnableEspressoFinalityNode: false,
-	EnableEspressoSovereign:    false,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -150,7 +151,6 @@ var TestSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 
 	EnableEspressoFinalityNode: false,
-	EnableEspressoSovereign:    false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -172,7 +172,6 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 	// Espresso specific flags
 	f.Bool(prefix+".enable-espresso-finality-node", DefaultSequencerConfig.EnableEspressoFinalityNode, "enable espresso finality node")
-	f.Bool(prefix+".enable-espresso-sovereign", DefaultSequencerConfig.EnableEspressoSovereign, "enable sovereign sequencer mode for the Espresso integration")
 }
 
 type txQueueItem struct {
@@ -341,6 +340,8 @@ type Sequencer struct {
 	expectedSurplusMutex   sync.RWMutex
 	expectedSurplus        int64
 	expectedSurplusUpdated bool
+
+	lightClientReader *lightclient.LightClientReader
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -356,17 +357,26 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		}
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
+
+	lightClientReader, err := lightclient.NewLightClientReader(common.HexToAddress(config.LightClientAddress), l1Reader.Client())
+
+	if err != nil {
+		log.Error("Could not construct light client reader for sequencer. Failing.", "err", err)
+		return nil, err
+	}
+
 	s := &Sequencer{
-		execEngine:      execEngine,
-		txQueue:         make(chan txQueueItem, config.QueueSize),
-		l1Reader:        l1Reader,
-		config:          configFetcher,
-		senderWhitelist: senderWhitelist,
-		nonceCache:      newNonceCache(config.NonceCacheSize),
-		l1BlockNumber:   0,
-		l1Timestamp:     0,
-		pauseChan:       nil,
-		onForwarderSet:  make(chan struct{}, 1),
+		execEngine:        execEngine,
+		txQueue:           make(chan txQueueItem, config.QueueSize),
+		l1Reader:          l1Reader,
+		config:            configFetcher,
+		senderWhitelist:   senderWhitelist,
+		nonceCache:        newNonceCache(config.NonceCacheSize),
+		l1BlockNumber:     0,
+		l1Timestamp:       0,
+		pauseChan:         nil,
+		onForwarderSet:    make(chan struct{}, 1),
+		lightClientReader: lightClientReader,
 	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
@@ -938,10 +948,17 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		block *types.Block
 		err   error
 	)
+
+	shouldSequenceWithEspresso, err := s.lightClientReader.IsHotShotLiveAtHeight(l1Block, s.config().SwitchDelayThreshold)
+
+	if err != nil {
+		log.Warn("An error occurred while attempting to determine if hotshot is live at l1 block, sequencing transactions without espresso", "l1Block", l1Block, "err", err)
+		shouldSequenceWithEspresso = false
+	}
 	if config.EnableProfiling {
-		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks, config.EnableEspressoSovereign)
+		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks, shouldSequenceWithEspresso)
 	} else {
-		block, err = s.execEngine.SequenceTransactions(header, txes, hooks, config.EnableEspressoSovereign)
+		block, err = s.execEngine.SequenceTransactions(header, txes, hooks, shouldSequenceWithEspresso)
 	}
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed)
