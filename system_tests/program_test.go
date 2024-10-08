@@ -2183,7 +2183,7 @@ func TestWasmLongTermCache(t *testing.T) {
 
 	ownerAuth.Value = common.Big0
 
-	programs.ClearWasmLongTermCache(1)
+	programs.ClearWasmLongTermCache()
 	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
 		Count:     0,
 		SizeBytes: 0,
@@ -2312,7 +2312,7 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 
 	ownerAuth.Value = common.Big0
 
-	programs.ClearWasmLongTermCache(1)
+	programs.ClearWasmLongTermCache()
 	programs.ClearWasmLruCache()
 	// only 2 out of 3 programs should fit lru
 	programs.SetWasmLruCacheCapacity(
@@ -2339,7 +2339,7 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 	})
 
 	// clear long term cache to emulate restart
-	programs.ClearWasmLongTermCache(1)
+	programs.ClearWasmLongTermCache()
 	programs.ClearWasmLruCache()
 
 	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{

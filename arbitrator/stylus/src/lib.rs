@@ -377,11 +377,11 @@ pub extern "C" fn stylus_clear_lru_cache() {
     InitCache::clear_lru_cache()
 }
 
-/// Clears long term cache.
+/// Clears long term cache (for arbos_tag = 1)
 /// Only used for testing purposes.
 #[no_mangle]
-pub extern "C" fn stylus_clear_long_term_cache(arbos_tag: u32) {
-    InitCache::clear_long_term(arbos_tag);
+pub extern "C" fn stylus_clear_long_term_cache() {
+    InitCache::clear_long_term(1);
 }
 
 /// Gets entry size in bytes.

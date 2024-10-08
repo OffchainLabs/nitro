@@ -393,8 +393,8 @@ func ClearWasmLruCache() {
 }
 
 // Used for testing
-func ClearWasmLongTermCache(arbos_tag uint32) {
-	C.stylus_clear_long_term_cache(u32(arbos_tag))
+func ClearWasmLongTermCache() {
+	C.stylus_clear_long_term_cache()
 }
 
 // Used for testing
