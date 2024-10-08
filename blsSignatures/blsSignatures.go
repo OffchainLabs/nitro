@@ -34,8 +34,7 @@ func GeneratePrivKeyString() (string, error) {
 }
 
 func GenerateKeys() (PublicKey, PrivateKey, error) {
-	fr := new(fr.Element)
-	privateKey, err := fr.SetRandom()
+	privateKey, err := new(fr.Element).SetRandom()
 	if err != nil {
 		return PublicKey{}, nil, err
 	}
