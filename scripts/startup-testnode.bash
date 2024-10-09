@@ -5,9 +5,9 @@
 
 timeout 60 ./nitro-testnode/test-node.bash --init --dev || exit_status=$?
 
-if  [ -n "$exit_status" ] && [ $exit_status -ne 0 ] && [ $exit_status -ne 124 ]; then
+if  [ -n "$exit_status" ] && [ "$exit_status" -ne 0 ] && [ "$exit_status" -ne 124 ]; then
     echo "Startup failed."
-    exit $exit_status
+    exit "$exit_status"
 fi
 
 echo "Startup succeeded."

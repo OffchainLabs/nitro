@@ -194,7 +194,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 			Batch:      1,
 			PosInBatch: mm.totalSteps - 1,
 		}))
-		if len(hashes) >= int(maxIterations) {
+		if uint64(len(hashes)) >= maxIterations {
 			t.Fatal("Wanted fewer hashes than the max iterations")
 		}
 		for i := range hashes {

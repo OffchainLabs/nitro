@@ -205,35 +205,39 @@ func setMinIdInt(min *[2]uint64, id string) error {
 // checkResponses checks iteratively whether response for the promise is ready.
 func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.Duration {
 	minIdInt := [2]uint64{math.MaxUint64, math.MaxUint64}
+	log.Debug("redis producer: check responses starting")
 	p.promisesLock.Lock()
 	defer p.promisesLock.Unlock()
 	responded := 0
 	errored := 0
+	checked := 0
 	for id, promise := range p.promises {
 		if ctx.Err() != nil {
 			return 0
 		}
+		checked++
 		res, err := p.client.Get(ctx, id).Result()
 		if err != nil {
 			errSetId := setMinIdInt(&minIdInt, id)
 			if errSetId != nil {
-				log.Error("error setting minId", "err", err)
+				log.Error("redis producer: error setting minId", "err", err)
 				return p.cfg.CheckResultInterval
 			}
 			if !errors.Is(err, redis.Nil) {
-				log.Error("Error reading value in redis", "key", id, "error", err)
+				log.Error("redis producer: Error reading value in redis", "key", id, "error", err)
 			}
 			continue
 		}
 		var resp Response
 		if err := json.Unmarshal([]byte(res), &resp); err != nil {
 			promise.ProduceError(fmt.Errorf("error unmarshalling: %w", err))
-			log.Error("Error unmarshaling", "value", res, "error", err)
+			log.Error("redis producer: Error unmarshaling", "value", res, "error", err)
 			errored++
 		} else {
 			promise.Produce(resp)
 			responded++
 		}
+		p.client.Del(ctx, id)
 		delete(p.promises, id)
 	}
 	var trimmed int64
@@ -245,7 +249,7 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 	} else {
 		trimmed, trimErr = p.client.XTrimMaxLen(ctx, p.redisStream, 0).Result()
 	}
-	log.Trace("trimming", "id", minId, "trimmed", trimmed, "responded", responded, "errored", errored, "trim-err", trimErr)
+	log.Debug("trimming", "id", minId, "trimmed", trimmed, "responded", responded, "errored", errored, "trim-err", trimErr, "checked", checked)
 	return p.cfg.CheckResultInterval
 }
 

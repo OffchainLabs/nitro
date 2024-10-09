@@ -2,17 +2,18 @@ package dataposter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
 	"github.com/Knetic/govaluate"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -152,46 +153,36 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 	}
 }
 
-type stubL1Client struct {
+type stubL1ClientInner struct {
 	senderNonce        uint64
 	suggestedGasTipCap *big.Int
-
-	// Define most of the required methods that aren't used by feeAndTipCaps
-	backends.SimulatedBackend
 }
 
-func (c *stubL1Client) NonceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (uint64, error) {
-	return c.senderNonce, nil
-}
-
-func (c *stubL1Client) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
-	return c.suggestedGasTipCap, nil
-}
-
-// Not used but we need to define
-func (c *stubL1Client) BlockNumber(ctx context.Context) (uint64, error) {
-	return 0, nil
-}
-
-func (c *stubL1Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error) {
-	return []byte{}, nil
-}
-
-func (c *stubL1Client) CodeAtHash(ctx context.Context, address common.Address, blockHash common.Hash) ([]byte, error) {
-	return []byte{}, nil
-}
-
-func (c *stubL1Client) ChainID(ctx context.Context) (*big.Int, error) {
-	return nil, nil
-}
-
-func (c *stubL1Client) Client() rpc.ClientInterface {
+func (c *stubL1ClientInner) CallContext(ctx_in context.Context, result interface{}, method string, args ...interface{}) error {
+	switch method {
+	case "eth_getTransactionCount":
+		ptr, ok := result.(*hexutil.Uint64)
+		if !ok {
+			return errors.New("result is not a *hexutil.Uint64")
+		}
+		*ptr = hexutil.Uint64(c.senderNonce)
+	case "eth_maxPriorityFeePerGas":
+		ptr, ok := result.(*hexutil.Big)
+		if !ok {
+			return errors.New("result is not a *hexutil.Big")
+		}
+		*ptr = hexutil.Big(*c.suggestedGasTipCap)
+	}
 	return nil
 }
 
-func (c *stubL1Client) TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error) {
-	return common.Address{}, nil
+func (c *stubL1ClientInner) EthSubscribe(ctx context.Context, channel interface{}, args ...interface{}) (*rpc.ClientSubscription, error) {
+	return nil, nil
 }
+func (c *stubL1ClientInner) BatchCallContext(ctx context.Context, b []rpc.BatchElem) error {
+	return nil
+}
+func (c *stubL1ClientInner) Close() {}
 
 func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T) {
 	conf := func() *DataPosterConfig {
@@ -204,7 +195,7 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 			MinBlobTxTipCapGwei:    1,
 			MaxTipCapGwei:          5,
 			MaxBlobTxTipCapGwei:    10,
-			MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+			MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 			AllocateMempoolBalance: true,
 
 			UrgencyGwei:           2.,
@@ -223,10 +214,10 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 		extraBacklog:     func() uint64 { return 0 },
 		balance:          big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10)),
 		usingNoOpStorage: false,
-		client: &stubL1Client{
+		client: ethclient.NewClient(&stubL1ClientInner{
 			senderNonce:        1,
 			suggestedGasTipCap: big.NewInt(2 * params.GWei),
-		},
+		}),
 		auth: &bind.TransactOpts{
 			From: common.Address{},
 		},
@@ -335,7 +326,7 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 			MinBlobTxTipCapGwei:    1,
 			MaxTipCapGwei:          5,
 			MaxBlobTxTipCapGwei:    10,
-			MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+			MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 			AllocateMempoolBalance: true,
 
 			UrgencyGwei:           2.,
@@ -354,10 +345,10 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 		extraBacklog:     func() uint64 { return 0 },
 		balance:          big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10)),
 		usingNoOpStorage: false,
-		client: &stubL1Client{
+		client: ethclient.NewClient(&stubL1ClientInner{
 			senderNonce:        1,
 			suggestedGasTipCap: big.NewInt(2 * params.GWei),
-		},
+		}),
 		auth: &bind.TransactOpts{
 			From: common.Address{},
 		},

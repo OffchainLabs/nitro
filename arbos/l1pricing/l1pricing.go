@@ -509,7 +509,7 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 		return 0
 	}
 
-	l1Bytes, err := byteCountAfterBrotliLevel(txBytes, int(brotliCompressionLevel))
+	l1Bytes, err := byteCountAfterBrotliLevel(txBytes, brotliCompressionLevel)
 	if err != nil {
 		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
@@ -594,7 +594,7 @@ func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Ad
 	return am.BigMulByUint(pricePerUnit, units), units
 }
 
-func byteCountAfterBrotliLevel(input []byte, level int) (uint64, error) {
+func byteCountAfterBrotliLevel(input []byte, level uint64) (uint64, error) {
 	compressed, err := arbcompress.CompressLevel(input, level)
 	if err != nil {
 		return 0, err

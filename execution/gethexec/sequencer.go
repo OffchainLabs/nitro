@@ -887,11 +887,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		for _, queueItem := range queueItems {
 			s.txRetryQueue.Push(queueItem)
 		}
+		// #nosec G115
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
 			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
-			"localTimestamp", time.Unix(int64(timestamp), 0),
+			"localTimestamp", time.Unix(timestamp, 0),
 		)
 		return true
 	}
@@ -900,7 +901,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		Kind:        arbostypes.L1MessageType_L2Message,
 		Poster:      l1pricing.BatchPosterAddress,
 		BlockNumber: l1Block,
-		Timestamp:   uint64(timestamp),
+		Timestamp:   arbmath.SaturatingUCast[uint64](timestamp),
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
@@ -1037,10 +1038,14 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error encountered getting l1 pricing surplus while updating expectedSurplus: %w", err)
 	}
+	// #nosec G115
 	backlogL1GasCharged := int64(s.execEngine.backlogL1GasCharged())
+	// #nosec G115
 	backlogCallDataUnits := int64(s.execEngine.backlogCallDataUnits())
+	// #nosec G115
 	expectedSurplus := int64(surplus) + backlogL1GasCharged - backlogCallDataUnits*int64(l1GasPrice)
 	// update metrics
+	// #nosec G115
 	l1GasPriceGauge.Update(int64(l1GasPrice))
 	callDataUnitsBacklogGauge.Update(backlogCallDataUnits)
 	unusedL1GasChargeGauge.Update(backlogL1GasCharged)
