@@ -1699,8 +1699,8 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 
 // recordBlock writes a json file with all of the data needed to validate a block.
 //
-// This can be used as an input to the arbitrator prover to validate a block.
-func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
+// This can be used as an input to the arbitrator's prover (target=rawdb.TargetWavm) and jit (target=rawdb.LocalTarget()) binaries to validate a block.
+func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, target ethdb.WasmTarget) {
 	t.Helper()
 	ctx := builder.ctx
 	inboxPos := arbutil.MessageIndex(block)
@@ -1716,7 +1716,7 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 	}
 	validationInputsWriter, err := inputs.NewWriter(inputs.WithSlug(t.Name()))
 	Require(t, err)
-	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.TargetWavm)
+	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, target)
 	if err != nil {
 		Fatal(t, "failed to get validation inputs", block, err)
 	}
