@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -39,7 +40,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -69,7 +69,7 @@ var (
 type DataPoster struct {
 	stopwaiter.StopWaiter
 	headerReader      *headerreader.HeaderReader
-	client            arbutil.L1Interface
+	client            *ethclient.Client
 	auth              *bind.TransactOpts
 	signer            signerFn
 	config            ConfigFetcher
@@ -638,11 +638,11 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 
 	if config.MaxFeeBidMultipleBips > 0 {
 		// Limit the fee caps to be no greater than max(MaxFeeBidMultipleBips, minRbf)
-		maxNonBlobFee := arbmath.BigMulByBips(currentNonBlobFee, config.MaxFeeBidMultipleBips)
+		maxNonBlobFee := arbmath.BigMulByUBips(currentNonBlobFee, config.MaxFeeBidMultipleBips)
 		if lastTx != nil {
 			maxNonBlobFee = arbmath.BigMax(maxNonBlobFee, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
 		}
-		maxBlobFee := arbmath.BigMulByBips(currentBlobFee, config.MaxFeeBidMultipleBips)
+		maxBlobFee := arbmath.BigMulByUBips(currentBlobFee, config.MaxFeeBidMultipleBips)
 		if lastTx != nil && lastTx.BlobGasFeeCap() != nil {
 			maxBlobFee = arbmath.BigMax(maxBlobFee, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
 		}
@@ -1255,7 +1255,7 @@ type DataPosterConfig struct {
 	MinBlobTxTipCapGwei    float64           `koanf:"min-blob-tx-tip-cap-gwei" reload:"hot"`
 	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
 	MaxBlobTxTipCapGwei    float64           `koanf:"max-blob-tx-tip-cap-gwei" reload:"hot"`
-	MaxFeeBidMultipleBips  arbmath.Bips      `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
+	MaxFeeBidMultipleBips  arbmath.UBips     `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
@@ -1359,7 +1359,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
 	MaxTipCapGwei:          1.2,
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
-	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
@@ -1394,7 +1394,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MinBlobTxTipCapGwei:    1,
 	MaxTipCapGwei:          5,
 	MaxBlobTxTipCapGwei:    1,
-	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,

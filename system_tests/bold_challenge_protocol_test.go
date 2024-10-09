@@ -542,9 +542,10 @@ func createTestNodeOnL1ForBoldProtocol(
 	l1info.SetContract("Rollup", addresses.Rollup)
 	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
-	cacheConfig := TestCachingConfig
-	cacheConfig.StateScheme = rawdb.HashScheme
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, &cacheConfig)
+	execConfig := ExecConfigDefaultNonSequencerTest(t)
+	Require(t, execConfig.Validate())
+	execConfig.Caching.StateScheme = rawdb.HashScheme
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, l2info, "", chainConfig, execConfig)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -560,9 +561,6 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
-	execConfig := ExecConfigDefaultNonSequencerTest()
-	Require(t, execConfig.Validate())
-	execConfig.Caching.StateScheme = rawdb.HashScheme
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
@@ -765,7 +763,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
 
-	execConfig := ExecConfigDefaultNonSequencerTest()
+	execConfig := ExecConfigDefaultNonSequencerTest(t)
 	Require(t, execConfig.Validate())
 	execConfig.Caching.StateScheme = rawdb.HashScheme
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)

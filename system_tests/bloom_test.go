@@ -48,11 +48,13 @@ func TestBloom(t *testing.T) {
 	nullEventCounts := make(map[uint64]struct{})
 
 	for i := 0; i < eventsNum; i++ {
+		// #nosec G115
 		count := uint64(rand.Int() % countsNum)
 		eventCounts[count] = struct{}{}
 	}
 
 	for i := 0; i < nullEventsNum; i++ {
+		// #nosec G115
 		count := uint64(rand.Int() % countsNum)
 		nullEventCounts[count] = struct{}{}
 	}
@@ -60,6 +62,7 @@ func TestBloom(t *testing.T) {
 	for i := 0; i <= countsNum; i++ {
 		var tx *types.Transaction
 		var err error
+		// #nosec G115
 		_, sendNullEvent := nullEventCounts[uint64(i)]
 		if sendNullEvent {
 			tx, err = simple.EmitNullEvent(&ownerTxOpts)
@@ -68,6 +71,7 @@ func TestBloom(t *testing.T) {
 			Require(t, err)
 		}
 
+		// #nosec G115
 		_, sendEvent := eventCounts[uint64(i)]
 		if sendEvent {
 			tx, err = simple.IncrementEmit(&ownerTxOpts)
@@ -86,7 +90,9 @@ func TestBloom(t *testing.T) {
 		if sectionSize != 256 {
 			Fatal(t, "unexpected section size: ", sectionSize)
 		}
+		// #nosec G115
 		t.Log("sections: ", sectionNum, "/", uint64(countsNum)/sectionSize)
+		// #nosec G115
 		if sectionSize*(sectionNum+1) > uint64(countsNum) && sectionNum > 1 {
 			break
 		}

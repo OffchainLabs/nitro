@@ -212,7 +212,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		toBatch := l2stateprovider.Batch(3)
 		fromHeight := l2stateprovider.Height(0)
 		toHeight := l2stateprovider.Height(14)
-		stateRoots, states, err := stateManager.StatesInBatchRange(fromHeight, toHeight, fromBatch, toBatch)
+		stateRoots, states, err := stateManager.StatesInBatchRange(ctx, fromHeight, toHeight, fromBatch, toBatch)
 		Require(t, err)
 
 		if len(stateRoots) != 15 {

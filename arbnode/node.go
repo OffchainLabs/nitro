@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -339,6 +340,29 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
+func DataposterOnlyUsedToCreateValidatorWalletContract(
+	ctx context.Context,
+	l1Reader *headerreader.HeaderReader,
+	transactOpts *bind.TransactOpts,
+	cfg *dataposter.DataPosterConfig,
+	parentChainID *big.Int,
+) (*dataposter.DataPoster, error) {
+	cfg.UseNoOpStorage = true
+	return dataposter.NewDataPoster(ctx,
+		&dataposter.DataPosterOpts{
+			HeaderReader: l1Reader,
+			Auth:         transactOpts,
+			Config: func() *dataposter.DataPosterConfig {
+				return cfg
+			},
+			MetadataRetriever: func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
+				return nil, nil
+			},
+			ParentChainID: parentChainID,
+		},
+	)
+}
+
 func StakerDataposter(
 	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
@@ -384,7 +408,7 @@ func createNodeImpl(
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	txOptsValidator *bind.TransactOpts,
 	txOptsBatchPoster *bind.TransactOpts,
@@ -758,7 +782,7 @@ func CreateNode(
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	txOptsValidator *bind.TransactOpts,
 	txOptsBatchPoster *bind.TransactOpts,

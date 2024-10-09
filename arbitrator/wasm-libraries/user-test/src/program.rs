@@ -102,7 +102,7 @@ impl Program {
 pub struct MockEvmApi;
 
 impl EvmApi<VecReader> for MockEvmApi {
-    fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
+    fn get_bytes32(&mut self, key: Bytes32, _evm_api_gas_to_use: u64) -> (Bytes32, u64) {
         let value = KEYS.lock().get(&key).cloned().unwrap_or_default();
         (value, 2100) // pretend worst case
     }
