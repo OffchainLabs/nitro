@@ -82,9 +82,11 @@ func TestSovereignSequencer(t *testing.T) {
 	// create light client reader
 	lightClientReader, err := lightclient.NewLightClientReader(common.HexToAddress(lightClientAddress), builder.L1.Client)
 
+	Require(t, err)
+
 	// wait for hotshot liveness
 	err = waitForHotShotLiveness(t, ctx, lightClientReader)
-
+	Require(t, err)
 	err = checkTransferTxOnL2(t, ctx, builder.L2, "User14", builder.L2Info)
 	Require(t, err)
 
