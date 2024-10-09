@@ -122,20 +122,23 @@ func TestProgramStorageCost(t *testing.T) {
 		writeZeroData = multicallAppendStore(writeZeroData, slot, common.Hash{}, false)
 	}
 
+	writePair := compareGasPair{vm.SSTORE, "storage_flush_cache"}
+	readPair := compareGasPair{vm.SLOAD, "storage_load_bytes32"}
+
 	for _, tc := range []struct {
 		name string
 		data []byte
+		pair compareGasPair
 	}{
-		{"initialWrite", writeRandAData},
-		{"read", readData},
-		{"writeAgain", writeRandBData},
-		{"delete", writeZeroData},
-		{"readZeros", readData},
-		{"writeAgainAgain", writeRandAData},
+		{"initialWrite", writeRandAData, writePair},
+		{"read", readData, readPair},
+		{"writeAgain", writeRandBData, writePair},
+		{"delete", writeZeroData, writePair},
+		{"readZeros", readData, readPair},
+		{"writeAgainAgain", writeRandAData, writePair},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			compareGasUsage(t, builder, evmMulticall, stylusMulticall, tc.data, nil, compareGasSum, 0,
-				compareGasPair{vm.SSTORE, "storage_flush_cache"}, compareGasPair{vm.SLOAD, "storage_load_bytes32"})
+			compareGasUsage(t, builder, evmMulticall, stylusMulticall, tc.data, nil, compareGasSum, 0, tc.pair)
 		})
 	}
 }
@@ -360,10 +363,12 @@ func compareGasUsage(
 			}
 		case compareGasSum:
 			evmSum := float64(0)
+			for _, v := range evmGasUsage[opcode] {
+				evmSum += float64(v)
+			}
 			stylusSum := float64(0)
-			for i := range evmGasUsage[opcode] {
-				evmSum += float64(evmGasUsage[opcode][i])
-				stylusSum += stylusGasUsage[hostio][i]
+			for _, v := range stylusGasUsage[hostio] {
+				stylusSum += v
 			}
 			t.Logf("evm %v usage: %v - stylus %v usage: %v", opcode, evmSum, hostio, stylusSum)
 			checkPercentDiff(t, evmSum, stylusSum, maxAllowedDifference)
@@ -385,6 +390,10 @@ func evmOpcodesGasUsage(ctx context.Context, rpcClient rpc.ClientInterface, tx *
 		op := vm.StringToOp(result.StructLogs[i].Op)
 		gasUsed := uint64(0)
 		if op == vm.CALL || op == vm.STATICCALL || op == vm.DELEGATECALL || op == vm.CREATE || op == vm.CREATE2 {
+			if result.StructLogs[i].GasCost == 0 {
+				// ignore mock call emitted by arbos
+				continue
+			}
 			// For the CALL* opcodes, the GasCost in the tracer represents the gas sent
 			// to the callee contract, which is 63/64 of the remaining gas. This happens
 			// because the tracer is evaluated before the call is executed, so the EVM
@@ -400,14 +409,16 @@ func evmOpcodesGasUsage(ctx context.Context, rpcClient rpc.ClientInterface, tx *
 			// in the caller's depth. Then, we subtract the gas before the call by the
 			// gas after the call returned.
 			var gasAfterCall uint64
+			var found bool
 			for j := i + 1; j < len(result.StructLogs); j++ {
 				if result.StructLogs[j].Depth == result.StructLogs[i].Depth {
 					// back to the original call
 					gasAfterCall = result.StructLogs[j].Gas + result.StructLogs[j].GasCost
+					found = true
 					break
 				}
 			}
-			if gasAfterCall == 0 {
+			if !found {
 				return nil, fmt.Errorf("malformed log: didn't get back to call original depth")
 			}
 			if i == 0 {
