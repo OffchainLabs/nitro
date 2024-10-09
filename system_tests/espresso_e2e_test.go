@@ -223,11 +223,11 @@ func TestEspressoE2E(t *testing.T) {
 	})
 	Require(t, err)
 
-	//make light client reader
+	// make light client reader
 
 	lightClientReader, err := lightclient.NewLightClientReader(common.HexToAddress(lightClientAddress), builder.L1.Client)
 	Require(t, err)
-	//wait for hotshot liveness
+	// wait for hotshot liveness
 
 	err = waitForHotShotLiveness(t, ctx, lightClientReader)
 	Require(t, err)
