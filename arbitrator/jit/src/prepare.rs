@@ -49,7 +49,7 @@ pub fn prepare_env(json_inputs: PathBuf, debug: bool) -> eyre::Result<WasmEnv> {
             .insert(batch_info.number, batch_info.data_b64.clone());
     }
 
-    if data.delayed_msg_nr != 0 && data.delayed_msg_b64.len() != 0 {
+    if data.delayed_msg_nr != 0 && !data.delayed_msg_b64.is_empty() {
         env.delayed_messages
             .insert(data.delayed_msg_nr, data.delayed_msg_b64.clone());
     }
