@@ -12,13 +12,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type ValidatorWalletInterface interface {
 	// Address must be able to be called concurrently with other functions
 	Address() *common.Address
-	L1Client() arbutil.L1Interface
+	L1Client() *ethclient.Client
 	TestTransactions(context.Context, []*types.Transaction) error
 	ExecuteTransactions(context.Context, *Builder, common.Address) (*types.Transaction, error)
 	AuthIfEoa() *bind.TransactOpts
@@ -27,10 +27,10 @@ type ValidatorWalletInterface interface {
 // Builder combines any transactions sent to it via SendTransaction into one batch,
 // which is then sent to the validator wallet.
 // This lets the validator make multiple atomic transactions.
-// This inherits from an eth client so it can be used as an L1Interface,
-// where it transparently intercepts calls to SendTransaction and queues them for the next batch.
+// This inherits from an ethclient.Client so it can be used to transparently
+// intercept calls to SendTransaction and queue them for the next batch.
 type Builder struct {
-	arbutil.L1Interface
+	*ethclient.Client
 	transactions []*types.Transaction
 	builderAuth  *bind.TransactOpts
 	isAuthFake   bool
@@ -55,7 +55,7 @@ func NewBuilder(wallet ValidatorWalletInterface) (*Builder, error) {
 	return &Builder{
 		builderAuth: builderAuth,
 		wallet:      wallet,
-		L1Interface: wallet.L1Client(),
+		Client:      wallet.L1Client(),
 		isAuthFake:  isAuthFake,
 	}, nil
 }
@@ -70,7 +70,7 @@ func (b *Builder) ClearTransactions() {
 
 func (b *Builder) EstimateGas(ctx context.Context, call ethereum.CallMsg) (gas uint64, err error) {
 	if len(b.transactions) == 0 && !b.isAuthFake {
-		return b.L1Interface.EstimateGas(ctx, call)
+		return b.Client.EstimateGas(ctx, call)
 	}
 	return 0, nil
 }
