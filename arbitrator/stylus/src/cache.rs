@@ -177,7 +177,10 @@ impl InitCache {
             cache.long_term_counters.hits += 1;
             return Some(data);
         }
-        cache.long_term_counters.misses += 1;
+        if long_term_tag == Self::ARBOS_TAG {
+            // only count misses only when we can expect to find the item in long term cache
+            cache.long_term_counters.misses += 1;
+        }
 
         // See if the item is in the LRU cache, promoting if so
         if let Some(item) = cache.lru.peek(&key).cloned() {
