@@ -9,8 +9,8 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -65,6 +65,15 @@ func CreatePersistentStorageService(
 		storageServices = append(storageServices, s)
 	}
 
+	if config.GoogleCloudStorage.Enable {
+		s, err := NewGoogleCloudStorageService(config.GoogleCloudStorage)
+		if err != nil {
+			return nil, nil, err
+		}
+		lifecycleManager.Register(s)
+		storageServices = append(storageServices, s)
+	}
+
 	if len(storageServices) > 1 {
 		s, err := NewRedundantStorageService(ctx, storageServices)
 		if err != nil {
@@ -112,7 +121,7 @@ func CreateBatchPosterDAS(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
 	dataSigner signature.DataSignerFunc,
-	l1Reader arbutil.L1Interface,
+	l1Reader *ethclient.Client,
 	sequencerInboxAddr common.Address,
 ) (DataAvailabilityServiceWriter, DataAvailabilityServiceReader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {

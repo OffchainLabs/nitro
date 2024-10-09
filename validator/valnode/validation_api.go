@@ -118,15 +118,6 @@ func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.CallIteratively(a.removeOldRuns)
 }
 
-func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *server_api.InputJSON, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
-	input, err := server_api.ValidationInputFromJson(jsonInput)
-	if err != nil {
-		return err
-	}
-	_, err = a.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(ctx)
-	return err
-}
-
 var errRunNotFound error = errors.New("run not found")
 
 func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {

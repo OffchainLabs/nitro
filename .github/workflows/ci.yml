@@ -46,7 +46,7 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.21.x
+          go-version: 1.23.x
 
       - name: Install wasm-ld
         run: |
@@ -87,12 +87,12 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/registry/
-            ~/.cargo/git/
+            ~/.cargo/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
-            arbitrator/wasm-libraries/soft-float/SoftFloat/build
+            arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
+            /home/runner/.rustup/toolchains/
           key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
           restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
@@ -145,89 +145,42 @@ jobs:
         env:
           TEST_STATE_SCHEME: path
         run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 20m -tags=cionly > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          echo "Running tests with Path Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m --cover
 
       - name: run tests without race detection and hash state scheme
         if: matrix.test-mode == 'defaults'
         env:
           TEST_STATE_SCHEME: hash
         run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 20m -tags=cionly; then
-              exit 1
-            fi
-          done
-
-      - name: run tests with race detection and path state scheme
-        if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: path
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -timeout 30m > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          echo "Running tests with Hash Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m
 
       - name: run tests with race detection and hash state scheme
         if: matrix.test-mode == 'race'
         env:
           TEST_STATE_SCHEME: hash
         run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -timeout 30m; then
-              exit 1
-            fi
-          done
+          echo "Running tests with Hash Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: |
+          echo "Running redis tests" >> full.log
+          TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --timeout 60m --cover
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramArbitrator" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
 
       - name: run long stylus tests
         if: matrix.test-mode == 'long'
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramLong" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v3

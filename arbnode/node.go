@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -407,7 +408,7 @@ func createNodeImpl(
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	txOptsValidator *bind.TransactOpts,
 	txOptsBatchPoster *bind.TransactOpts,
@@ -781,7 +782,7 @@ func CreateNode(
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	txOptsValidator *bind.TransactOpts,
 	txOptsBatchPoster *bind.TransactOpts,

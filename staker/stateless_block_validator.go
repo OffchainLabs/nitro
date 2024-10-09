@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/offchainlabs/nitro/validator/server_api"
 
 	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
@@ -40,6 +41,7 @@ type StatelessBlockValidator struct {
 	streamer     TransactionStreamerInterface
 	db           ethdb.Database
 	dapReaders   []daprovider.Reader
+	stack        *node.Node
 }
 
 type BlockValidatorRegistrer interface {
@@ -265,6 +267,7 @@ func NewStatelessBlockValidator(
 		db:             arbdb,
 		dapReaders:     dapReaders,
 		execSpawners:   executionSpawners,
+		stack:          stack,
 	}, nil
 }
 
@@ -507,6 +510,18 @@ func (v *StatelessBlockValidator) ValidateResult(
 		return false, &gsEnd, err
 	}
 	return true, &entry.End, nil
+}
+
+func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, target ethdb.WasmTarget) (server_api.InputJSON, error) {
+	entry, err := v.CreateReadyValidationEntry(ctx, pos)
+	if err != nil {
+		return server_api.InputJSON{}, err
+	}
+	input, err := entry.ToInput([]ethdb.WasmTarget{target})
+	if err != nil {
+		return server_api.InputJSON{}, err
+	}
+	return *server_api.ValidationInputToJson(input), nil
 }
 
 func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execution.ExecutionRecorder) {
