@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"math/big"
 	"time"
 
@@ -138,7 +139,7 @@ func newBOLDStaker(
 	rollupAddress common.Address,
 	callOpts bind.CallOpts,
 	txOpts *bind.TransactOpts,
-	client arbutil.L1Interface,
+	client *ethclient.Client,
 	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
 	config *BoldConfig,
@@ -321,7 +322,7 @@ func newBOLDChallengeManager(
 	ctx context.Context,
 	rollupAddress common.Address,
 	txOpts *bind.TransactOpts,
-	client arbutil.L1Interface,
+	client *ethclient.Client,
 	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
 	config *BoldConfig,
