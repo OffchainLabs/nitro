@@ -18,8 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/util/pretty"
@@ -28,7 +28,7 @@ import (
 )
 
 type BlobClient struct {
-	ec                 arbutil.L1Interface
+	ec                 *ethclient.Client
 	beaconUrl          *url.URL
 	secondaryBeaconUrl *url.URL
 	httpClient         *http.Client
@@ -63,7 +63,7 @@ func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".authorization", DefaultBlobClientConfig.Authorization, "Value to send with the HTTP Authorization: header for Beacon REST requests, must include both scheme and scheme parameters")
 }
 
-func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient, error) {
+func NewBlobClient(config BlobClientConfig, ec *ethclient.Client) (*BlobClient, error) {
 	beaconUrl, err := url.Parse(config.BeaconUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse beacon chain URL: %w", err)
