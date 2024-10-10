@@ -140,21 +140,21 @@ jobs:
           echo "GOGC=80" >> "$GITHUB_ENV"
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
 
-      # - name: run tests without race detection and path state scheme
-      #   if: matrix.test-mode == 'defaults'
-      #   env:
-      #     TEST_STATE_SCHEME: path
-      #   run: |
-      #     echo "Running tests with Path Scheme" >> full.log
-      #     ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m --cover
+      - name: run tests without race detection and path state scheme
+        if: matrix.test-mode == 'defaults'
+        env:
+          TEST_STATE_SCHEME: path
+        run: |
+          echo "Running tests with Path Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m --cover
 
-      # - name: run tests without race detection and hash state scheme
-      #   if: matrix.test-mode == 'defaults'
-      #   env:
-      #     TEST_STATE_SCHEME: hash
-      #   run: |
-      #     echo "Running tests with Hash Scheme" >> full.log
-      #     ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m
+      - name: run tests without race detection and hash state scheme
+        if: matrix.test-mode == 'defaults'
+        env:
+          TEST_STATE_SCHEME: hash
+        run: |
+          echo "Running tests with Hash Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m
 
       - name: run tests with race detection and hash state scheme
         if: matrix.test-mode == 'race'
@@ -164,22 +164,22 @@ jobs:
           echo "Running tests with Hash Scheme" >> full.log
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m
 
-      # - name: run redis tests
-      #   if: matrix.test-mode == 'defaults'
-      #   run: |
-      #     echo "Running redis tests" >> full.log
-      #     TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+      - name: run redis tests
+        if: matrix.test-mode == 'defaults'
+        run: |
+          echo "Running redis tests" >> full.log
+          TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
       
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
         run: |
           BLOCK_INPUT_JSON_PATH="${{ github.workspace }}/target/block_input.json" gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1
       
-      # - name: run arbitrator prover on block input json
-      #   if: matrix.test-mode == 'defaults'
-      #   run: |
-      #     make build-prover-bin
-      #     target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/block_input.json"
+      - name: run arbitrator prover on block input json
+        if: matrix.test-mode == 'defaults'
+        run: |
+          make build-prover-bin
+          target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/block_input.json"
           
       - name: run jit prover on block input json
         if: matrix.test-mode == 'defaults'
