@@ -121,12 +121,11 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         let compile = CompileConfig::version(version, debug);
         let env = WasmEnv::new(compile, None, evm, evm_data);
         let module_hash = env.evm_data.module_hash;
-
-        if let Some((module, store)) = InitCache::get(module_hash, version, debug) {
-            return Self::from_module(module, store, env);
-        }
         if !env.evm_data.cached {
             long_term_tag = 0;
+        }
+        if let Some((module, store)) = InitCache::get(module_hash, version, long_term_tag, debug) {
+            return Self::from_module(module, store, env);
         }
         let (module, store) =
             InitCache::insert(module_hash, module, version, long_term_tag, debug)?;
