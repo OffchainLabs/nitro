@@ -180,6 +180,12 @@ jobs:
         run: |
           make build-prover-bin
           target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/block_input.json"
+          
+      - name: run jit prover on block input json
+        if: matrix.test-mode == 'defaults'
+        run: |
+          make build-jit
+          target/bin/jit --binary target/machines/latest/replay.wasm --cranelift --json-inputs="${{ github.workspace }}/target/block_input.json"
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
