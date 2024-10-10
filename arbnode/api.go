@@ -59,5 +59,5 @@ func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
 
 func (a *BlockValidatorDebugAPI) ValidationInputsAt(ctx context.Context, msgNum hexutil.Uint64, target ethdb.WasmTarget,
 ) (server_api.InputJSON, error) {
-	return a.val.ValidationInputsAt(ctx, arbutil.MessageIndex(msgNum), target)
+	return a.val.ValidationInputsAt(ctx, arbutil.MessageIndex(msgNum), []ethdb.WasmTarget{target})
 }

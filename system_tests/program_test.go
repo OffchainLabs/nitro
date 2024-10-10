@@ -424,8 +424,11 @@ func storageTest(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, builder)
 
 	// Captures a block_input_<id>.json file for the block that included the
-	// storage write transaction.
-	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm)
+	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
+	blockInputJSONPath := os.Getenv("BLOCK_INPUT_JSON_PATH")
+	if blockInputJSONPath != "" {
+		recordBlock(t, receipt.BlockNumber.Uint64(), builder, []ethdb.WasmTarget{rawdb.TargetWavm, rawdb.LocalTarget()}, blockInputJSONPath)
+	}
 }
 
 func TestProgramTransientStorage(t *testing.T) {
@@ -492,12 +495,6 @@ func transientStorageTest(t *testing.T, jit bool) {
 	}
 
 	validateBlocks(t, 7, jit, builder)
-
-	// Captures a block_input_<id>.json file for the block that included the storage
-	// related transaction. Has userwasms for WasmTarget recognized by jit binary
-	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.LocalTarget())
 }
 
 func TestProgramMath(t *testing.T) {
