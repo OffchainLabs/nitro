@@ -339,7 +339,8 @@ func SetWasmLruCacheCapacity(capacityBytes uint64) {
 }
 
 func UpdateWasmCacheMetrics() {
-	metrics := C.stylus_get_cache_metrics()
+	metrics := &C.CacheMetrics{}
+	C.stylus_get_cache_metrics(metrics)
 
 	stylusLRUCacheSizeBytesGauge.Update(int64(metrics.lru.size_bytes))
 	stylusLRUCacheCountGauge.Update(int64(metrics.lru.count))
@@ -373,7 +374,8 @@ type WasmCacheMetrics struct {
 
 // Used for testing
 func GetWasmCacheMetrics() *WasmCacheMetrics {
-	metrics := C.stylus_get_cache_metrics()
+	metrics := &C.CacheMetrics{}
+	C.stylus_get_cache_metrics(metrics)
 
 	return &WasmCacheMetrics{
 		Lru: WasmLruCacheMetrics{
