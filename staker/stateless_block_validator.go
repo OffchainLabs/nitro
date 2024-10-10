@@ -511,7 +511,7 @@ func (v *StatelessBlockValidator) ValidateResult(
 	return true, &entry.End, nil
 }
 
-func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, targets []ethdb.WasmTarget) (server_api.InputJSON, error) {
+func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, targets ...ethdb.WasmTarget) (server_api.InputJSON, error) {
 	entry, err := v.CreateReadyValidationEntry(ctx, pos)
 	if err != nil {
 		return server_api.InputJSON{}, err

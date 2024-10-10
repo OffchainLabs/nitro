@@ -427,7 +427,7 @@ func storageTest(t *testing.T, jit bool) {
 	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
 	blockInputJSONPath := os.Getenv("BLOCK_INPUT_JSON_PATH")
 	if blockInputJSONPath != "" {
-		recordBlock(t, receipt.BlockNumber.Uint64(), builder, []ethdb.WasmTarget{rawdb.TargetWavm, rawdb.LocalTarget()}, blockInputJSONPath)
+		recordBlock(t, receipt.BlockNumber.Uint64(), builder, blockInputJSONPath, rawdb.TargetWavm, rawdb.LocalTarget())
 	}
 }
 
