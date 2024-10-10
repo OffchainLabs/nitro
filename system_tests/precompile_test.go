@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -22,7 +23,10 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	arbosVersion := uint64(31)
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, false).
+		WithArbOSVersion(arbosVersion)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -32,6 +36,19 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	Require(t, err, "failed to get the ChainID")
 	if chainId.Uint64() != params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
 		Fatal(t, "Wrong ChainID", chainId.Uint64())
+	}
+
+	expectedArbosVersion := 55 + arbosVersion // Nitro versions start at 56
+	arbSysArbosVersion, err := arbSys.ArbOSVersion(&bind.CallOpts{})
+	Require(t, err)
+	if arbSysArbosVersion.Uint64() != expectedArbosVersion {
+		Fatal(t, "Expected ArbOS version", expectedArbosVersion, "got", arbSysArbosVersion)
+	}
+
+	storageGasAvailable, err := arbSys.GetStorageGasAvailable(&bind.CallOpts{})
+	Require(t, err)
+	if storageGasAvailable.Cmp(big.NewInt(0)) != 0 {
+		Fatal(t, "Expected 0 storage gas available, got", storageGasAvailable)
 	}
 }
 
@@ -123,6 +140,274 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 	arbDebug, err := precompilesgen.ArbDebugMetaData.GetAbi()
 	Require(t, err)
 	assertNotAllGasConsumed(common.HexToAddress("0xff"), arbDebug.Methods["legacyError"].ID)
+}
+
+func setupArbOwnerAndArbGasInfo(
+	t *testing.T,
+) (
+	*NodeBuilder,
+	func(),
+	bind.TransactOpts,
+	*precompilesgen.ArbOwner,
+	*precompilesgen.ArbGasInfo,
+) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builderCleanup := builder.Build(t)
+
+	cleanup := func() {
+		builderCleanup()
+		cancel()
+	}
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), builder.L2.Client)
+	Require(t, err)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
+	Require(t, err)
+
+	return builder, cleanup, auth, arbOwner, arbGasInfo
+}
+
+func TestL1BaseFeeEstimateInertia(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	inertia := uint64(11)
+	tx, err := arbOwner.SetL1BaseFeeEstimateInertia(&auth, inertia)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoInertia, err := arbGasInfo.GetL1BaseFeeEstimateInertia(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoInertia != inertia {
+		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
+	}
+}
+
+// Similar to TestL1BaseFeeEstimateInertia, but now using a different setter from ArbOwner
+func TestL1PricingInertia(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	inertia := uint64(12)
+	tx, err := arbOwner.SetL1PricingInertia(&auth, inertia)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoInertia, err := arbGasInfo.GetL1BaseFeeEstimateInertia(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoInertia != inertia {
+		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
+	}
+}
+
+func TestL1PricingRewardRate(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	perUnitReward := uint64(13)
+	tx, err := arbOwner.SetL1PricingRewardRate(&auth, perUnitReward)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoPerUnitReward, err := arbGasInfo.GetL1RewardRate(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoPerUnitReward != perUnitReward {
+		Fatal(t, "expected per unit reward to be", perUnitReward, "got", arbGasInfoPerUnitReward)
+	}
+}
+
+func TestL1PricingRewardRecipient(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	rewardRecipient := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	tx, err := arbOwner.SetL1PricingRewardRecipient(&auth, rewardRecipient)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoRewardRecipient, err := arbGasInfo.GetL1RewardRecipient(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoRewardRecipient.Cmp(rewardRecipient) != 0 {
+		Fatal(t, "expected reward recipient to be", rewardRecipient, "got", arbGasInfoRewardRecipient)
+	}
+}
+
+func TestL2GasPricingInertia(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	inertia := uint64(14)
+	tx, err := arbOwner.SetL2GasPricingInertia(&auth, inertia)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoInertia, err := arbGasInfo.GetPricingInertia(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoInertia != inertia {
+		Fatal(t, "expected inertia to be", inertia, "got", arbGasInfoInertia)
+	}
+}
+
+func TestL2GasBacklogTolerance(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	gasTolerance := uint64(15)
+	tx, err := arbOwner.SetL2GasBacklogTolerance(&auth, gasTolerance)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoGasTolerance, err := arbGasInfo.GetGasBacklogTolerance(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoGasTolerance != gasTolerance {
+		Fatal(t, "expected gas tolerance to be", gasTolerance, "got", arbGasInfoGasTolerance)
+	}
+}
+
+func TestPerBatchGasCharge(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	perBatchGasCharge := int64(16)
+	tx, err := arbOwner.SetPerBatchGasCharge(&auth, perBatchGasCharge)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoPerBatchGasCharge, err := arbGasInfo.GetPerBatchGasCharge(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoPerBatchGasCharge != perBatchGasCharge {
+		Fatal(t, "expected per batch gas charge to be", perBatchGasCharge, "got", arbGasInfoPerBatchGasCharge)
+	}
+}
+
+func TestL1PricingEquilibrationUnits(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	equilUnits := big.NewInt(17)
+	tx, err := arbOwner.SetL1PricingEquilibrationUnits(&auth, equilUnits)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoEquilUnits, err := arbGasInfo.GetL1PricingEquilibrationUnits(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoEquilUnits.Cmp(equilUnits) != 0 {
+		Fatal(t, "expected equilibration units to be", equilUnits, "got", arbGasInfoEquilUnits)
+	}
+}
+
+func TestGasAccountingParams(t *testing.T) {
+	t.Parallel()
+
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
+	defer cleanup()
+	ctx := builder.ctx
+
+	speedLimit := uint64(18)
+	txGasLimit := uint64(19)
+	tx, err := arbOwner.SetSpeedLimit(&auth, speedLimit)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetMaxTxGasLimit(&auth, txGasLimit)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	arbGasInfoSpeedLimit, arbGasInfoPoolSize, arbGasInfoTxGasLimit, err := arbGasInfo.GetGasAccountingParams(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if arbGasInfoSpeedLimit.Cmp(big.NewInt(int64(speedLimit))) != 0 {
+		Fatal(t, "expected speed limit to be", speedLimit, "got", arbGasInfoSpeedLimit)
+	}
+	if arbGasInfoPoolSize.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
+		Fatal(t, "expected pool size to be", txGasLimit, "got", arbGasInfoPoolSize)
+	}
+	if arbGasInfoTxGasLimit.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
+		Fatal(t, "expected tx gas limit to be", txGasLimit, "got", arbGasInfoTxGasLimit)
+	}
+}
+
+func TestCurrentTxL1GasFees(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
+	Require(t, err)
+
+	currTxL1GasFees, err := arbGasInfo.GetCurrentTxL1GasFees(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if currTxL1GasFees == nil {
+		Fatal(t, "currTxL1GasFees is nil")
+	}
+	if currTxL1GasFees.Cmp(big.NewInt(0)) != 1 {
+		Fatal(t, "expected currTxL1GasFees to be greater than 0, got", currTxL1GasFees)
+	}
+}
+
+func TestGetBrotliCompressionLevel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), builder.L2.Client)
+	Require(t, err, "could not bind ArbOwner contract")
+
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), builder.L2.Client)
+	Require(t, err, "could not bind ArbOwner contract")
+
+	brotliCompressionLevel := uint64(11)
+
+	// sets brotli compression level
+	tx, err := arbOwner.SetBrotliCompressionLevel(&auth, brotliCompressionLevel)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// retrieves brotli compression level
+	callOpts := &bind.CallOpts{Context: ctx}
+	retrievedBrotliCompressionLevel, err := arbOwnerPublic.GetBrotliCompressionLevel(callOpts)
+	Require(t, err, "failed to call GetBrotliCompressionLevel")
+	if retrievedBrotliCompressionLevel != brotliCompressionLevel {
+		Fatal(t, "expected brotli compression level to be", brotliCompressionLevel, "got", retrievedBrotliCompressionLevel)
+	}
 }
 
 func TestScheduleArbosUpgrade(t *testing.T) {

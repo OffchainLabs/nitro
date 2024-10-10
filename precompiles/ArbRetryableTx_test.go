@@ -7,13 +7,45 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/vm"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
-func TestRetryableRedeem(t *testing.T) {
+func newMockEVMForTestingWithCurrentRefundTo(currentRefundTo *common.Address) *vm.EVM {
+	evm := newMockEVMForTesting()
+	txProcessor := arbos.NewTxProcessor(evm, &core.Message{})
+	txProcessor.CurrentRefundTo = currentRefundTo
+	evm.ProcessingHook = txProcessor
+	return evm
+}
+
+func TestGetLifetimeAndCurrentRedeemer(t *testing.T) {
+	currentRefundTo := common.HexToAddress("0x030405")
+
+	evm := newMockEVMForTestingWithCurrentRefundTo(&currentRefundTo)
+	retryableTx := ArbRetryableTx{}
+	context := testContext(common.Address{}, evm)
+
+	lifetime, err := retryableTx.GetLifetime(context, evm)
+	Require(t, err)
+	if lifetime.Cmp(big.NewInt(retryables.RetryableLifetimeSeconds)) != 0 {
+		t.Fatal("Expected to be ", retryables.RetryableLifetimeSeconds, " but got ", lifetime)
+	}
+
+	currentRedeemer, err := retryableTx.GetCurrentRedeemer(context, evm)
+	Require(t, err)
+	if currentRefundTo.Cmp(currentRedeemer) != 0 {
+		t.Fatal("Expected to be ", currentRefundTo, " but got ", currentRedeemer)
+	}
+}
+
+func TestRetryableRedeemAndGetBeneficiary(t *testing.T) {
 	evm := newMockEVMForTesting()
 	precompileCtx := testContext(common.Address{}, evm)
 
@@ -61,5 +93,22 @@ func TestRetryableRedeem(t *testing.T) {
 		//     use cases the precompile would cause a non-zero write. So the precompile allocates enough gas
 		//     to handle both cases, and some will be left over in this test's use case.
 		Fail(t, "didn't consume all the expected gas")
+	}
+
+	getBeneficiaryCallData, err := retryABI.Pack("getBeneficiary", id)
+	Require(t, err)
+	retrievedBeneficiary, _, err := Precompiles()[retryAddress].Call(
+		getBeneficiaryCallData,
+		retryAddress,
+		retryAddress,
+		common.Address{},
+		big.NewInt(0),
+		false,
+		1000000,
+		evm,
+	)
+	Require(t, err)
+	if common.BytesToAddress(retrievedBeneficiary).Cmp(beneficiary) != 0 {
+		Fail(t, "expected beneficiary to be ", beneficiary, " but got ", common.BytesToAddress(retrievedBeneficiary))
 	}
 }
