@@ -289,13 +289,6 @@ func main() {
 		// Handle the various pre-conditions if the message is an Espresso message
 		validatingAgainstEspresso := chainConfig.ArbitrumChainParams.EnableEspresso && arbos.IsEspressoMsg(message.Message)
 
-		// Currently we don't check the hotshot liveness here as it introduces a panic if the wavmio call fails.
-		// When we can again panic in the STF, we should re-add this check.
-		//
-		// The following call will be used to check the liveness based on the l1 block height.
-		// isHotShotLive := wavmio.IsHotShotLive(message.Message.Header.BlockNumber)
-		//
-		// The following line should be changed to if validatingAgainstEspresso && isHotShotLive {
 		if validatingAgainstEspresso {
 			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {

@@ -358,6 +358,9 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
 
+	// For the sovereign sequencer to have an escape hatch, we need to be able to read the state of the light client.
+	// To accomplish this, we introduce a requirement on the l1Reader/ParentChainReader to not be null. This is a soft
+	// requirement as the sequencer will still run if we don't have this reader, but it will not create espresso messages.
 	var (
 		lightClientReader *lightclient.LightClientReader
 		err               error
