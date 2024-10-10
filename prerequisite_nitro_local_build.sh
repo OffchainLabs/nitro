@@ -1,4 +1,5 @@
 #!/bin/bash
+# This script checks the prerequisites for building Arbitrum Nitro locally.
 
 # Color codes
 RED='\033[0;31m'
@@ -69,6 +70,9 @@ fi
 
 for pkg in "${prerequisites[@]}"; do
     if command_exists "$pkg"; then
+        # There is no way to check for wabt / llvm directly, since they install multiple tools
+        # So instead, we check for wasm2wat and clang, which are part of wabt and llvm respectively
+        # and if they are installed, we assume wabt / llvm is installed else we ask the user to install wabt / llvm
         [[ "$pkg" == "wasm2wat" ]] && pkg="wabt"
         [[ "$pkg" == "clang" ]] && pkg="llvm"
 
