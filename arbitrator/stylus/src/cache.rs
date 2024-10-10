@@ -275,28 +275,21 @@ impl InitCache {
         cache.long_term_size_bytes = 0;
     }
 
-    pub fn get_metrics() -> CacheMetrics {
+    pub fn get_metrics(output: &mut CacheMetrics) {
         let mut cache = cache!();
 
         let lru_count = cache.lru.len();
-        let lru_metrics = LruCacheMetrics {
-            // adds 1 to each entry to account that we subtracted 1 in the weight calculation
-            size_bytes: (cache.lru.weight() + lru_count).try_into().unwrap(),
+        // adds 1 to each entry to account that we subtracted 1 in the weight calculation
+        output.lru.size_bytes = (cache.lru.weight() + lru_count).try_into().unwrap();
+        output.lru.count = lru_count.try_into().unwrap();
+        output.lru.hits = cache.lru_counters.hits;
+        output.lru.misses = cache.lru_counters.misses;
+        output.lru.does_not_fit = cache.lru_counters.does_not_fit;
 
-            count: lru_count.try_into().unwrap(),
-
-            hits: cache.lru_counters.hits,
-            misses: cache.lru_counters.misses,
-            does_not_fit: cache.lru_counters.does_not_fit,
-        };
-
-        let long_term_metrics = LongTermCacheMetrics {
-            size_bytes: cache.long_term_size_bytes.try_into().unwrap(),
-            count: cache.long_term.len().try_into().unwrap(),
-
-            hits: cache.long_term_counters.hits,
-            misses: cache.long_term_counters.misses,
-        };
+        output.long_term.size_bytes = cache.long_term_size_bytes.try_into().unwrap();
+        output.long_term.count = cache.long_term.len().try_into().unwrap();
+        output.long_term.hits = cache.long_term_counters.hits;
+        output.long_term.misses = cache.long_term_counters.misses;
 
         // Empty counters.
         // go side, which is the only consumer of this function besides tests,
@@ -307,11 +300,6 @@ impl InitCache {
             does_not_fit: 0,
         };
         cache.long_term_counters = LongTermCounters { hits: 0, misses: 0 };
-
-        CacheMetrics {
-            lru: lru_metrics,
-            long_term: long_term_metrics,
-        }
     }
 
     // only used for testing

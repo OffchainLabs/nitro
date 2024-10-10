@@ -366,8 +366,9 @@ pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
 
 /// Gets cache metrics.
 #[no_mangle]
-pub extern "C" fn stylus_get_cache_metrics() -> CacheMetrics {
-    InitCache::get_metrics()
+pub unsafe extern "C" fn stylus_get_cache_metrics(output: *mut CacheMetrics) {
+    let output = &mut *output;
+    InitCache::get_metrics(output);
 }
 
 /// Clears lru cache.
