@@ -365,6 +365,10 @@ pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
 }
 
 /// Gets cache metrics.
+///
+/// # Safety
+///
+/// `output` must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_get_cache_metrics(output: *mut CacheMetrics) {
     let output = &mut *output;
