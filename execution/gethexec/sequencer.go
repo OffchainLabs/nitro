@@ -358,7 +358,14 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
 
-	lightClientReader, err := lightclient.NewLightClientReader(common.HexToAddress(config.LightClientAddress), l1Reader.Client())
+	var (
+		lightClientReader *lightclient.LightClientReader
+		err               error
+	)
+
+	if l1Reader != nil {
+		lightClientReader, err = lightclient.NewLightClientReader(common.HexToAddress(config.LightClientAddress), l1Reader.Client())
+	}
 
 	if err != nil {
 		log.Error("Could not construct light client reader for sequencer. Failing.", "err", err)
@@ -945,16 +952,23 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	start := time.Now()
 	var (
-		block *types.Block
-		err   error
+		block                      *types.Block
+		err                        error
+		shouldSequenceWithEspresso bool
 	)
 
-	shouldSequenceWithEspresso, err := s.lightClientReader.IsHotShotLiveAtHeight(l1Block, s.config().SwitchDelayThreshold)
+	// Initialize shouldSequenceWithEspresso to false and if we have a light client reader then give it a value based on hotshot liveness
+	// This is a side effect of the sequencer having the capability to run without an L1 reader. For the Espresso integration this is a necessary component of the sequencer.
+	// However, many tests use the case of having a nil l1 reader
+	if s.lightClientReader != nil {
+		shouldSequenceWithEspresso, err = s.lightClientReader.IsHotShotLiveAtHeight(l1Block, s.config().SwitchDelayThreshold)
+	}
 
 	if err != nil {
 		log.Warn("An error occurred while attempting to determine if hotshot is live at l1 block, sequencing transactions without espresso", "l1Block", l1Block, "err", err)
 		shouldSequenceWithEspresso = false
 	}
+
 	if config.EnableProfiling {
 		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks, shouldSequenceWithEspresso)
 	} else {
