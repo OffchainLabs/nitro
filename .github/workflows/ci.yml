@@ -173,7 +173,7 @@ jobs:
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
         run: |
-          BLOCK_INPUT_JSON_PATH="${{ github.workspace }}/target/block_input.json" gotestsum --format standard-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1
+          BLOCK_INPUT_JSON_PATH="${{ github.workspace }}/target/block_input.json" gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1
       
       # - name: run arbitrator prover on block input json
       #   if: matrix.test-mode == 'defaults'
@@ -185,7 +185,10 @@ jobs:
         if: matrix.test-mode == 'defaults'
         run: |
           make build-jit
-          target/bin/jit --binary target/machines/latest/replay.wasm --cranelift --json-inputs="${{ github.workspace }}/target/block_input.json"
+          if [ -n "$(target/bin/jit --binary target/machines/latest/replay.wasm --cranelift --json-inputs='${{ github.workspace }}/target/block_input.json')" ]; then
+            echo "Error: Command produced output."
+            exit 1
+          fi
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'

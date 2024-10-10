@@ -16,8 +16,8 @@ use std::path::PathBuf;
 pub fn local_target() -> String {
     if env::consts::OS == "linux" {
         match env::consts::ARCH {
-            "arm64" => "arm64".to_string(),
-            "amd64" => "amd64".to_string(),
+            "aarch64" => "arm64".to_string(),
+            "x86_64" => "amd64".to_string(),
             _ => "host".to_string(),
         }
     } else {
@@ -68,13 +68,6 @@ pub fn prepare_env(json_inputs: PathBuf, debug: bool) -> eyre::Result<WasmEnv> {
                 .insert(*module_hash, module_asm.as_vec().into());
         }
     }
-
-    eprintln!(
-        "env Info. OS- {}, Arch- {}",
-        env::consts::OS,
-        env::consts::ARCH
-    );
-    eprintln!("localTarget {}", local_target());
 
     Ok(env)
 }
