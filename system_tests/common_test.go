@@ -36,7 +36,6 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
-	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -1719,7 +1718,7 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 // recordBlock writes a json file with all of the data needed to validate a block.
 //
 // This can be used as an input to the arbitrator prover to validate a block.
-func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
+func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, blockInputJSONPath string) {
 	t.Helper()
 	ctx := builder.ctx
 	inboxPos := arbutil.MessageIndex(block)
@@ -1733,15 +1732,14 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 			break
 		}
 	}
-	validationInputsWriter, err := inputs.NewWriter(inputs.WithSlug(t.Name()))
-	Require(t, err)
 	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.TargetWavm)
 	if err != nil {
 		Fatal(t, "failed to get validation inputs", block, err)
 	}
-	if err := validationInputsWriter.Write(&inputJson); err != nil {
-		Fatal(t, "failed to write validation inputs", block, err)
-	}
+	contents, err := json.Marshal(inputJson)
+	Require(t, err)
+	err = os.WriteFile(blockInputJSONPath, contents, 0600)
+	Require(t, err)
 }
 
 func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {

@@ -169,6 +169,18 @@ jobs:
         run: |
           echo "Running redis tests" >> full.log
           TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+      
+      - name: create block input json file
+        if: matrix.test-mode == 'defaults'
+        run: |
+          echo "BLOCK_INPUT_JSON_PATH=$(pwd)/target/block_input.json" >> "$GITHUB_ENV"
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --run TestProgramStorage$ --count 1
+      
+      - name: run arbitrator prover on block input json
+        if: matrix.test-mode == 'defaults'
+        run: |
+          make build-prover-bin
+          target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs=$BLOCK_INPUT_JSON_PATH
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'

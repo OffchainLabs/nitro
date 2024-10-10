@@ -33,12 +33,9 @@ use machine::{
     PreimageResolver,
 };
 use once_cell::sync::OnceCell;
-use parse_input::FileData;
 use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
-    fs::File,
-    io::BufReader,
     num::NonZeroUsize,
     os::raw::{c_char, c_int},
     path::Path,
@@ -83,39 +80,6 @@ pub unsafe extern "C" fn arbitrator_load_machine(
         Err(err) => {
             eprintln!("Error loading binary: {:?}", err);
             ptr::null_mut()
-        }
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_deserialize_and_serialize_file_data(
-    read_path: *const c_char,
-    write_path: *const c_char,
-) -> c_int {
-    let read_path = cstr_to_string(read_path);
-    let write_path = cstr_to_string(write_path);
-
-    let file = File::open(read_path);
-    let reader = match file {
-        Ok(file) => BufReader::new(file),
-        Err(err) => {
-            eprintln!("Failed to open read_path of FileData: {}", err);
-            return 1;
-        }
-    };
-    let data = match FileData::from_reader(reader) {
-        Ok(data) => data,
-        Err(err) => {
-            eprintln!("Failed to deserialize FileData: {}", err);
-            return 2;
-        }
-    };
-
-    match data.write_to_file(&write_path) {
-        Ok(()) => 0,
-        Err(err) => {
-            eprintln!("Failed to serialize FileData: {}", err);
-            3
         }
     }
 }

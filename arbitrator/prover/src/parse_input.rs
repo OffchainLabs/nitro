@@ -1,14 +1,12 @@
 use arbutil::Bytes32;
 use serde::Deserialize;
-use serde::Serialize;
 use serde_json;
 use serde_with::base64::Base64;
 use serde_with::As;
 use serde_with::DisplayFromStr;
 use std::{
     collections::HashMap,
-    fs::File,
-    io::{self, BufRead, BufWriter},
+    io::{self, BufRead},
 };
 
 /// prefixed_hex deserializes hex strings which are prefixed with `0x`
@@ -18,7 +16,7 @@ use std::{
 /// It is an error to use this deserializer on a string that does not
 /// begin with `0x`.
 mod prefixed_hex {
-    use serde::{self, Deserialize, Deserializer, Serializer};
+    use serde::{self, Deserialize, Deserializer};
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
     where
@@ -30,14 +28,6 @@ mod prefixed_hex {
         } else {
             Err(serde::de::Error::custom("missing 0x prefix"))
         }
-    }
-
-    pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let hex_string = format!("0x{}", hex::encode(bytes));
-        serializer.serialize_str(&hex_string)
     }
 }
 
@@ -71,7 +61,7 @@ impl From<Vec<u8>> for UserWasm {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
     pub number: u64,
@@ -79,7 +69,7 @@ pub struct BatchInfo {
     pub data_b64: Vec<u8>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct StartState {
     #[serde(with = "prefixed_hex")]
@@ -98,7 +88,7 @@ pub struct StartState {
 ///
 /// Note: It is important to change this file whenever the go JSON
 /// serialization changes.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct FileData {
     pub id: u64,
@@ -118,12 +108,5 @@ impl FileData {
     pub fn from_reader<R: BufRead>(mut reader: R) -> io::Result<Self> {
         let data = serde_json::from_reader(&mut reader)?;
         Ok(data)
-    }
-
-    pub fn write_to_file(&self, file_path: &str) -> io::Result<()> {
-        let file = File::create(file_path)?;
-        let writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, &self)?;
-        Ok(())
     }
 }

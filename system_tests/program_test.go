@@ -425,7 +425,10 @@ func storageTest(t *testing.T, jit bool) {
 
 	// Captures a block_input_<id>.json file for the block that included the
 	// storage write transaction.
-	recordBlock(t, receipt.BlockNumber.Uint64(), builder)
+	blockInputJSONPath := os.Getenv("BLOCK_INPUT_JSON_PATH")
+	if blockInputJSONPath != "" {
+		recordBlock(t, receipt.BlockNumber.Uint64(), builder, blockInputJSONPath)
+	}
 }
 
 func TestProgramTransientStorage(t *testing.T) {
