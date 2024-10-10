@@ -173,7 +173,7 @@ jobs:
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
         run: |
-          BLOCK_INPUT_JSON_PATH="${{ github.workspace }}/target/block_input.json" gotestsum --format short-verbose -- -run TestProgramStorage$ --count 1
+          BLOCK_INPUT_JSON_PATH="${{ github.workspace }}/target/block_input.json" gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1
       
       - name: run arbitrator prover on block input json
         if: matrix.test-mode == 'defaults'
