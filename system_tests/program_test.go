@@ -429,6 +429,7 @@ func storageTest(t *testing.T, jit bool) {
 	if blockInputJSONPath != "" {
 		recordBlock(t, receipt.BlockNumber.Uint64(), builder, []ethdb.WasmTarget{rawdb.TargetWavm, rawdb.LocalTarget()}, blockInputJSONPath)
 	}
+	log.Info("printing debug info", "localTarget", rawdb.LocalTarget())
 }
 
 func TestProgramTransientStorage(t *testing.T) {

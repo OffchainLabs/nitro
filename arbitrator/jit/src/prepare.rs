@@ -68,6 +68,6 @@ pub fn prepare_env(json_inputs: PathBuf, debug: bool) -> eyre::Result<WasmEnv> {
                 .insert(*module_hash, module_asm.as_vec().into());
         }
     }
-
+    eprintln!("localTarget {}", local_target());
     Ok(env)
 }
