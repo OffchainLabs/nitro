@@ -86,6 +86,7 @@ type SequencerConfig struct {
 	EspressoFinalityNodeConfig EspressoFinalityNodeConfig `koanf:"espresso-finality-node-config"`
 	// Espresso Finality Node creates blocks with finalized hotshot transactions
 	EnableEspressoFinalityNode bool `koanf:"enable-espresso-finality-node"`
+	EnableEspressoSovereign    bool `koanf:"enable-espresso-sovereign"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -131,6 +132,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 
 	EnableEspressoFinalityNode: false,
+	EnableEspressoSovereign:    false,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -151,6 +153,7 @@ var TestSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 
 	EnableEspressoFinalityNode: false,
+	EnableEspressoSovereign:    false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -172,6 +175,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 	// Espresso specific flags
 	f.Bool(prefix+".enable-espresso-finality-node", DefaultSequencerConfig.EnableEspressoFinalityNode, "enable espresso finality node")
+	f.Bool(prefix+".enable-espresso-sovereign", DefaultSequencerConfig.EnableEspressoSovereign, "enable sovereign sequencer mode for the Espresso integration")
 }
 
 type txQueueItem struct {
