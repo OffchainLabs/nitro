@@ -370,13 +370,16 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		err               error
 	)
 
-	if l1Reader != nil {
-		lightClientReader, err = lightclient.NewLightClientReader(common.HexToAddress(config.LightClientAddress), l1Reader.Client())
+	if l1Reader == nil && config.EnableEspressoSovereign {
+		return nil, fmt.Errorf("Cannot enable espresso sequencing mode in the sovereign sequencer with no l1 reader")
 	}
 
-	if err != nil {
-		log.Error("Could not construct light client reader for sequencer. Failing.", "err", err)
-		return nil, err
+	if l1Reader != nil {
+		lightClientReader, err = lightclient.NewLightClientReader(common.HexToAddress(config.LightClientAddress), l1Reader.Client())
+		if err != nil {
+			log.Error("Could not construct light client reader for sequencer. Failing.", "err", err)
+			return nil, err
+		}
 	}
 
 	s := &Sequencer{
