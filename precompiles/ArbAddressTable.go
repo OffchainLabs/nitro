@@ -13,16 +13,19 @@ type ArbAddressTable struct {
 	Address addr // 0x66
 }
 
+// TODO: add system test
 // AddressExists checks if an address exists in the table
 func (con ArbAddressTable) AddressExists(c ctx, evm mech, addr addr) (bool, error) {
 	return c.State.AddressTable().AddressExists(addr)
 }
 
+// TODO: add system test
 // Compress and returns the bytes that represent the address
 func (con ArbAddressTable) Compress(c ctx, evm mech, addr addr) ([]uint8, error) {
 	return c.State.AddressTable().Compress(addr)
 }
 
+// TODO: add system test
 // Decompress the compressed bytes at the given offset with those of the corresponding account
 func (con ArbAddressTable) Decompress(c ctx, evm mech, buf []uint8, offset huge) (addr, huge, error) {
 	if !offset.IsInt64() {
@@ -36,6 +39,7 @@ func (con ArbAddressTable) Decompress(c ctx, evm mech, buf []uint8, offset huge)
 	return result, new(big.Int).SetUint64(nbytes), err
 }
 
+// TODO: add system test
 // Lookup the index of an address in the table
 func (con ArbAddressTable) Lookup(c ctx, evm mech, addr addr) (huge, error) {
 	result, exists, err := c.State.AddressTable().Lookup(addr)
@@ -48,6 +52,7 @@ func (con ArbAddressTable) Lookup(c ctx, evm mech, addr addr) (huge, error) {
 	return new(big.Int).SetUint64(result), nil
 }
 
+// TODO: add system test
 // LookupIndex for  an address in the table by index
 func (con ArbAddressTable) LookupIndex(c ctx, evm mech, index huge) (addr, error) {
 	if !index.IsUint64() {
@@ -63,12 +68,14 @@ func (con ArbAddressTable) LookupIndex(c ctx, evm mech, index huge) (addr, error
 	return result, nil
 }
 
+// TODO: add system test
 // Register adds an account to the table, shrinking its compressed representation
 func (con ArbAddressTable) Register(c ctx, evm mech, addr addr) (huge, error) {
 	slot, err := c.State.AddressTable().Register(addr)
 	return new(big.Int).SetUint64(slot), err
 }
 
+// TODO: add system test
 // Size gets the number of addresses in the table
 func (con ArbAddressTable) Size(c ctx, evm mech) (huge, error) {
 	size, err := c.State.AddressTable().Size()

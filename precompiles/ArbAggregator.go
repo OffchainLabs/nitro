@@ -19,12 +19,14 @@ type ArbAggregator struct {
 
 var ErrNotOwner = errors.New("must be called by chain owner")
 
+// TODO: add system test
 // GetPreferredAggregator returns the preferred aggregator address.
 // Deprecated: Do not use this method.
 func (con ArbAggregator) GetPreferredAggregator(c ctx, evm mech, address addr) (prefAgg addr, isDefault bool, err error) {
 	return l1pricing.BatchPosterAddress, true, err
 }
 
+// TODO: add system test
 // GetDefaultAggregator returns the default aggregator address.
 // Deprecated: Do not use this method.
 func (con ArbAggregator) GetDefaultAggregator(c ctx, evm mech) (addr, error) {
@@ -36,6 +38,7 @@ func (con ArbAggregator) GetBatchPosters(c ctx, evm mech) ([]addr, error) {
 	return c.State.L1PricingState().BatchPosterTable().AllPosters(65536)
 }
 
+// TODO: add system test
 func (con ArbAggregator) AddBatchPoster(c ctx, evm mech, newBatchPoster addr) error {
 	isOwner, err := c.State.ChainOwners().IsMember(c.caller)
 	if err != nil {
@@ -58,6 +61,7 @@ func (con ArbAggregator) AddBatchPoster(c ctx, evm mech, newBatchPoster addr) er
 	return nil
 }
 
+// TODO: add system test
 // GetFeeCollector gets a batch poster's fee collector
 func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, batchPoster addr) (addr, error) {
 	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster, false)
@@ -67,6 +71,7 @@ func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, batchPoster addr) (add
 	return posterInfo.PayTo()
 }
 
+// TODO: add system test
 // SetFeeCollector sets a batch poster's fee collector (caller must be the batch poster, its fee collector, or an owner)
 func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, batchPoster addr, newFeeCollector addr) error {
 	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster, false)
@@ -89,12 +94,14 @@ func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, batchPoster addr, newF
 	return posterInfo.SetPayTo(newFeeCollector)
 }
 
+// TODO: add system test
 // GetTxBaseFee gets an aggregator's current fixed fee to submit a tx
 func (con ArbAggregator) GetTxBaseFee(c ctx, evm mech, aggregator addr) (huge, error) {
 	// This is deprecated and now always returns zero.
 	return big.NewInt(0), nil
 }
 
+// TODO: add system test
 // SetTxBaseFee sets an aggregator's fixed fee (caller must be the aggregator, its fee collector, or an owner)
 func (con ArbAggregator) SetTxBaseFee(c ctx, evm mech, aggregator addr, feeInL1Gas huge) error {
 	// This is deprecated and is now a no-op.

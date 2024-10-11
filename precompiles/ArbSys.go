@@ -75,6 +75,7 @@ func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
 	return evm.Depth() <= 2, nil
 }
 
+// TODO: add system test
 // MapL1SenderContractAddressToL2Alias gets the contract's L2 alias
 func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest addr) (addr, error) {
 	return util.RemapL1Address(sender), nil
@@ -92,7 +93,6 @@ func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
 
 // MyCallersAddressWithoutAliasing gets the caller's caller without any potential aliasing
 func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
-
 	address := addr{}
 
 	if evm.Depth() > 1 {
@@ -106,6 +106,7 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 	return address, err
 }
 
+// TODO: add system test
 // SendTxToL1 sends a transaction to L1, adding it to the outbox
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
 	l1BlockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})

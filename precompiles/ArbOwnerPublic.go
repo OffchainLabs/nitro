@@ -16,11 +16,13 @@ type ArbOwnerPublic struct {
 	ChainOwnerRectifiedGasCost func(addr) (uint64, error)
 }
 
+// TODO: add system test
 // GetAllChainOwners retrieves the list of chain owners
 func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
 	return c.State.ChainOwners().AllMembers(65536)
 }
 
+// TODO: add system test
 // RectifyChainOwner checks if the account is a chain owner
 func (con ArbOwnerPublic) RectifyChainOwner(c ctx, evm mech, addr addr) error {
 	err := c.State.ChainOwners().RectifyMapping(addr)
