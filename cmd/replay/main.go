@@ -288,6 +288,7 @@ func main() {
 
 		// Handle the various pre-conditions if the message is an Espresso message
 		validatingAgainstEspresso := chainConfig.ArbitrumChainParams.EnableEspresso && arbos.IsEspressoMsg(message.Message)
+
 		if validatingAgainstEspresso {
 			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {

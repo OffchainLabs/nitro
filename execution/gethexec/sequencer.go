@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
 	"math"
 	"math/big"
 	"runtime/debug"
@@ -80,10 +81,12 @@ type SequencerConfig struct {
 	expectedSurplusHardThreshold int
 
 	// Espresso specific flags
-	EnableEspressoSovereign    bool                       `koanf:"enable-espresso-sovereign"`
+	LightClientAddress         string                     `koanf:"light-client-address"`
+	SwitchDelayThreshold       uint64                     `koanf:"switch-delay-threshold"`
 	EspressoFinalityNodeConfig EspressoFinalityNodeConfig `koanf:"espresso-finality-node-config"`
 	// Espresso Finality Node creates blocks with finalized hotshot transactions
 	EnableEspressoFinalityNode bool `koanf:"enable-espresso-finality-node"`
+	EnableEspressoSovereign    bool `koanf:"enable-espresso-sovereign"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -341,6 +344,8 @@ type Sequencer struct {
 	expectedSurplusMutex   sync.RWMutex
 	expectedSurplus        int64
 	expectedSurplusUpdated bool
+
+	lightClientReader *lightclient.LightClientReader
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -356,17 +361,39 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		}
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
+
+	// For the sovereign sequencer to have an escape hatch, we need to be able to read the state of the light client.
+	// To accomplish this, we introduce a requirement on the l1Reader/ParentChainReader to not be null. This is a soft
+	// requirement as the sequencer will still run if we don't have this reader, but it will not create espresso messages.
+	var (
+		lightClientReader *lightclient.LightClientReader
+		err               error
+	)
+
+	if l1Reader == nil && config.EnableEspressoSovereign {
+		return nil, fmt.Errorf("Cannot enable espresso sequencing mode in the sovereign sequencer with no l1 reader")
+	}
+
+	if l1Reader != nil {
+		lightClientReader, err = lightclient.NewLightClientReader(common.HexToAddress(config.LightClientAddress), l1Reader.Client())
+		if err != nil {
+			log.Error("Could not construct light client reader for sequencer. Failing.", "err", err)
+			return nil, err
+		}
+	}
+
 	s := &Sequencer{
-		execEngine:      execEngine,
-		txQueue:         make(chan txQueueItem, config.QueueSize),
-		l1Reader:        l1Reader,
-		config:          configFetcher,
-		senderWhitelist: senderWhitelist,
-		nonceCache:      newNonceCache(config.NonceCacheSize),
-		l1BlockNumber:   0,
-		l1Timestamp:     0,
-		pauseChan:       nil,
-		onForwarderSet:  make(chan struct{}, 1),
+		execEngine:        execEngine,
+		txQueue:           make(chan txQueueItem, config.QueueSize),
+		l1Reader:          l1Reader,
+		config:            configFetcher,
+		senderWhitelist:   senderWhitelist,
+		nonceCache:        newNonceCache(config.NonceCacheSize),
+		l1BlockNumber:     0,
+		l1Timestamp:       0,
+		pauseChan:         nil,
+		onForwarderSet:    make(chan struct{}, 1),
+		lightClientReader: lightClientReader,
 	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
@@ -935,13 +962,27 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	start := time.Now()
 	var (
-		block *types.Block
-		err   error
+		block                      *types.Block
+		err                        error
+		shouldSequenceWithEspresso bool
 	)
+
+	// Initialize shouldSequenceWithEspresso to false and if we have a light client reader then give it a value based on hotshot liveness
+	// This is a side effect of the sequencer having the capability to run without an L1 reader. For the Espresso integration this is a necessary component of the sequencer.
+	// However, many tests use the case of having a nil l1 reader
+	if s.lightClientReader != nil {
+		shouldSequenceWithEspresso, err = s.lightClientReader.IsHotShotLiveAtHeight(l1Block, s.config().SwitchDelayThreshold)
+	}
+
+	if err != nil {
+		log.Warn("An error occurred while attempting to determine if hotshot is live at l1 block, sequencing transactions without espresso", "l1Block", l1Block, "err", err)
+		shouldSequenceWithEspresso = false
+	}
+
 	if config.EnableProfiling {
-		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks, config.EnableEspressoSovereign)
+		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks, shouldSequenceWithEspresso)
 	} else {
-		block, err = s.execEngine.SequenceTransactions(header, txes, hooks, config.EnableEspressoSovereign)
+		block, err = s.execEngine.SequenceTransactions(header, txes, hooks, shouldSequenceWithEspresso)
 	}
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed)

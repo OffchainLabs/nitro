@@ -3,6 +3,8 @@ package arbtest
 import (
 	"context"
 	"fmt"
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
+	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"testing"
 	"time"
@@ -39,10 +41,11 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func())
 
 	// sequencer config
 	builder.nodeConfig.Sequencer = true
+	builder.nodeConfig.ParentChainReader.Enable = true // This flag is necessary to enable sequencing transactions with espresso behavior
 	builder.nodeConfig.Dangerous.NoSequencerCoordinator = true
-	builder.execConfig.Sequencer.Enable = true
-	// using the sovereign sequencer
 	builder.execConfig.Sequencer.EnableEspressoSovereign = true
+	builder.execConfig.Sequencer.Enable = true
+	builder.execConfig.Sequencer.LightClientAddress = lightClientAddress
 
 	// transaction stream config
 	builder.nodeConfig.TransactionStreamer.SovereignSequencerEnabled = true
@@ -79,6 +82,14 @@ func TestSovereignSequencer(t *testing.T) {
 	err = waitForEspressoNode(t, ctx)
 	Require(t, err)
 
+	// create light client reader
+	lightClientReader, err := lightclient.NewLightClientReader(common.HexToAddress(lightClientAddress), builder.L1.Client)
+
+	Require(t, err)
+
+	// wait for hotshot liveness
+	err = waitForHotShotLiveness(t, ctx, lightClientReader)
+	Require(t, err)
 	err = checkTransferTxOnL2(t, ctx, builder.L2, "User14", builder.L2Info)
 	Require(t, err)
 

@@ -3,7 +3,11 @@ package arbtest
 import (
 	"context"
 	"encoding/json"
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
+	lightclientmock "github.com/EspressoSystems/espresso-sequencer-go/light-client-mock"
+	"github.com/ethereum/go-ethereum/common"
 	"math/big"
+	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -22,6 +26,7 @@ var workingDir = "./espresso-e2e"
 var lightClientAddress = "0xb075b82c7a23e0994df4793422a1f03dbcf9136f"
 
 var hotShotUrl = "http://127.0.0.1:41000"
+var delayThreshold = 10
 
 var (
 	jitValidationPort = 54320
@@ -141,6 +146,17 @@ func waitForEspressoNode(t *testing.T, ctx context.Context) error {
 	})
 }
 
+func waitForHotShotLiveness(t *testing.T, ctx context.Context, lightClientReader *lightclient.LightClientReader) error {
+	return waitForWith(t, ctx, 400*time.Second, 1*time.Second, func() bool {
+		log.Info("Waiting for HotShot Liveness")
+		live, err := lightClientReader.IsHotShotLive(10)
+		if err != nil {
+			return false
+		}
+		return live
+	})
+}
+
 func waitForL1Node(t *testing.T, ctx context.Context) error {
 	return waitFor(t, ctx, func() bool {
 		if e := exec.Command(
@@ -207,6 +223,15 @@ func TestEspressoE2E(t *testing.T) {
 	})
 	Require(t, err)
 
+	// make light client reader
+
+	lightClientReader, err := lightclient.NewLightClientReader(common.HexToAddress(lightClientAddress), builder.L1.Client)
+	Require(t, err)
+	// wait for hotshot liveness
+
+	err = waitForHotShotLiveness(t, ctx, lightClientReader)
+	Require(t, err)
+
 	// Check if the tx is executed correctly
 	err = checkTransferTxOnL2(t, ctx, l2Node, "User10", l2Info)
 	Require(t, err)
@@ -246,6 +271,66 @@ func TestEspressoE2E(t *testing.T) {
 		return balance2.Cmp(transferAmount) >= 0
 	})
 	Require(t, err)
+
+	// Pause l1 height and verify that the escape hatch is working
+	checkStaker := os.Getenv("E2E_SKIP_ESCAPE_HATCH_TEST")
+	if checkStaker == "" {
+		log.Info("Checking the escape hatch")
+		// Start to check the escape hatch
+		address := common.HexToAddress(lightClientAddress)
+
+		txOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+
+		// Freeze the l1 height
+		err := lightclientmock.FreezeL1Height(t, builder.L1.Client, address, &txOpts)
+		log.Info("waiting for light client to report hotshot is down")
+		Require(t, err)
+		err = waitForWith(t, ctx, 10*time.Minute, 1*time.Second, func() bool {
+			isLive, err := lightclientmock.IsHotShotLive(t, builder.L1.Client, address, uint64(delayThreshold))
+			if err != nil {
+				return false
+			}
+			return !isLive
+		})
+		Require(t, err)
+		log.Info("light client has reported that hotshot is down")
+		// Wait for the switch to be totally finished
+		currMsg, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+		Require(t, err)
+		log.Info("waiting for message count", "currMsg", currMsg)
+		var validatedMsg arbutil.MessageIndex
+		err = waitForWith(t, ctx, 6*time.Minute, 60*time.Second, func() bool {
+			validatedCnt := builder.L2.ConsensusNode.BlockValidator.Validated(t)
+			log.Info("Validation status", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
+			if validatedCnt >= currMsg {
+				validatedMsg = validatedCnt
+				return true
+			}
+			return false
+		})
+		Require(t, err)
+		err = checkTransferTxOnL2(t, ctx, l2Node, "User12", l2Info)
+		Require(t, err)
+		err = checkTransferTxOnL2(t, ctx, l2Node, "User13", l2Info)
+		Require(t, err)
+
+		err = waitForWith(t, ctx, 3*time.Minute, 20*time.Second, func() bool {
+			validated := builder.L2.ConsensusNode.BlockValidator.Validated(t)
+			return validated >= validatedMsg
+		})
+		Require(t, err)
+
+		// Unfreeze the l1 height
+		err = lightclientmock.UnfreezeL1Height(t, builder.L1.Client, address, &txOpts)
+		Require(t, err)
+
+		// Check if the validated count is increasing
+		err = waitForWith(t, ctx, 3*time.Minute, 20*time.Second, func() bool {
+			validated := builder.L2.ConsensusNode.BlockValidator.Validated(t)
+			return validated >= validatedMsg+10
+		})
+		Require(t, err)
+	}
 }
 
 func checkTransferTxOnL2(
