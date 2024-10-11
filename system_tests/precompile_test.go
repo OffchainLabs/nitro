@@ -463,6 +463,8 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 }
 
 func TestArbStatistics(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -482,5 +484,41 @@ func TestArbStatistics(t *testing.T) {
 
 	if blockNum.Uint64() != expectedBlockNum {
 		Fatal(t, "expected block number to be", expectedBlockNum, "got", blockNum)
+	}
+}
+
+func TestArbFunctionTable(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbFunctionTable, err := precompilesgen.NewArbFunctionTable(types.ArbFunctionTableAddress, builder.L2.Client)
+	Require(t, err)
+
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+
+	// should be a noop
+	tx, err := arbFunctionTable.Upload(&auth, []byte{0, 0, 0, 0})
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	size, err := arbFunctionTable.Size(callOpts, addr)
+	Require(t, err)
+	if size.Cmp(big.NewInt(0)) != 0 {
+		t.Fatal("Size should be 0")
+	}
+
+	_, _, _, err = arbFunctionTable.Get(callOpts, addr, big.NewInt(10))
+	if err == nil {
+		t.Fatal("Should error")
 	}
 }

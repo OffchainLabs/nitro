@@ -15,19 +15,16 @@ type ArbFunctionTable struct {
 	Address addr // 0x68
 }
 
-// TODO: add system test
 // Upload does nothing
 func (con ArbFunctionTable) Upload(c ctx, evm mech, buf []byte) error {
 	return nil
 }
 
-// TODO: add system test
 // Size returns the empty table's size, which is 0
 func (con ArbFunctionTable) Size(c ctx, evm mech, addr addr) (huge, error) {
 	return big.NewInt(0), nil
 }
 
-// TODO: add system test
 // Get reverts since the table is empty
 func (con ArbFunctionTable) Get(c ctx, evm mech, addr addr, index huge) (huge, bool, huge, error) {
 	return nil, false, nil, errors.New("table is empty")
