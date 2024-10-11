@@ -26,29 +26,28 @@ if command_exists docker; then
     echo -e "${GREEN}Docker is installed.${NC}"
 else
     echo -e "${RED}Docker is not installed. $INSTALLATION_DOCS_URL${NC}"
+    exit 1
 fi
 
 # Step 2: Check if Docker service is running
 if [[ "$OS" == "Linux" ]] && ! sudo service docker status >/dev/null; then
     echo -e "${YELLOW}Docker service is not running on Linux. Start it with: sudo service docker start${NC}"
+    exit 1
 elif [[ "$OS" == "Darwin" ]] && ! docker info >/dev/null 2>&1; then
     echo -e "${YELLOW}Docker service is not running on macOS. Ensure Docker Desktop is started.${NC}"
+    exit 1
 else
     echo -e "${GREEN}Docker service is running.${NC}"
 fi
 
-# Step 3: Check if the correct Nitro branch is checked out and submodules are updated
-EXPECTED_BRANCH="v3.2.1"
-CURRENT_BRANCH=$(git branch --show-current)
-if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
-    echo -e "${YELLOW}Switch to the correct branch using: git fetch origin && git checkout $EXPECTED_BRANCH${NC}"
-else
-    echo -e "${GREEN}The Nitro repository is on the correct branch: $EXPECTED_BRANCH.${NC}"
-fi
+# Step 3: Check the version tag
+VERSION_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV | sed 's/_$//' | head -n 1 | grep ^ || git show -s --pretty=%D | sed 's/, /\n/g' | grep -v '^origin/' | grep -v '^grafted\|HEAD\|master\|main$' || echo "dev")
+echo -e "${YELLOW}You are on the version tag: $VERSION_TAG${NC}"
 
 # Check if submodules are properly initialized and updated
 if git submodule status | grep -qE '^-|\+'; then
     echo -e "${YELLOW}Submodules are not properly initialized or updated. Run: git submodule update --init --recursive --force${NC}"
+    exit 1
 else
     echo -e "${GREEN}All submodules are properly initialized and up to date.${NC}"
 fi
@@ -58,6 +57,7 @@ if docker images | grep -q "nitro-node"; then
     echo -e "${GREEN}Nitro Docker image is built.${NC}"
 else
     echo -e "${RED}Nitro Docker image is not built. Build it using: docker build . --tag nitro-node${NC}"
+    exit 1
 fi
 
 # Step 5: Check prerequisites for building binaries
@@ -101,6 +101,7 @@ for pkg in "${prerequisites[@]}"; do
         [[ "$pkg" == "wasm2wat" ]] && pkg="wabt"
         [[ "$pkg" == "clang" ]] && pkg="llvm"
         echo -e "${RED}$pkg is not installed. Please install $pkg. $INSTALLATION_DOCS_URL${NC}"
+        exit 1
     fi
 done
 
@@ -109,13 +110,23 @@ if command_exists node && node -v | grep -q "v18"; then
     echo -e "${GREEN}Node.js version 18 is installed.${NC}"
 else
     echo -e "${RED}Node.js version 18 not installed. $INSTALLATION_DOCS_URL${NC}"
+    exit 1
 fi
 
-# Step 7: Check Rust version
+# Step 7a: Check Rust version
 if command_exists rustc && rustc --version | grep -q "1.80.1"; then
     echo -e "${GREEN}Rust version 1.80.1 is installed.${NC}"
 else
     echo -e "${RED}Rust version 1.80.1 not installed. $INSTALLATION_DOCS_URL${NC}"
+    exit 1
+fi
+
+# Step 7b: Check Rust nightly toolchain
+if rustup toolchain list | grep -q "nightly"; then
+    echo -e "${GREEN}Rust nightly toolchain is installed.${NC}"
+else
+    echo -e "${RED}Rust nightly toolchain is not installed. Install it using: rustup toolchain install nightly${NC}"
+    exit 1
 fi
 
 # Step 8: Check Go version
@@ -123,6 +134,7 @@ if command_exists go && go version | grep -q "go1.23"; then
     echo -e "${GREEN}Go version 1.23 is installed.${NC}"
 else
     echo -e "${RED}Go version 1.23 not installed. $INSTALLATION_DOCS_URL${NC}"
+    exit 1
 fi
 
 # Step 9: Check Foundry installation
@@ -130,7 +142,8 @@ if command_exists foundryup; then
     echo -e "${GREEN}Foundry is installed.${NC}"
 else
     echo -e "${RED}Foundry is not installed. $INSTALLATION_DOCS_URL${NC}"
+    exit 1
 fi
 
 echo -e "${BLUE}Verification complete.${NC}"
-echo -e "${YELLOW}Refer to https://docs.arbitrum.io/run-arbitrum-node/nitro/build-nitro-locally if the build fails for any other reason.${NC}"
+exit 0
