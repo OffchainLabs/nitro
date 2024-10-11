@@ -43,6 +43,7 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func())
 	builder.nodeConfig.Sequencer = true
 	builder.nodeConfig.ParentChainReader.Enable = true // This flag is necessary to enable sequencing transactions with espresso behavior
 	builder.nodeConfig.Dangerous.NoSequencerCoordinator = true
+	builder.execConfig.Sequencer.EnableEspressoSovereign = true
 	builder.execConfig.Sequencer.Enable = true
 	builder.execConfig.Sequencer.LightClientAddress = lightClientAddress
 
