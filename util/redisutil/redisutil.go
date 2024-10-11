@@ -1,6 +1,6 @@
 package redisutil
 
-import "github.com/go-redis/redis/v8"
+import "github.com/redis/go-redis/v9"
 
 func RedisClientFromURL(url string) (redis.UniversalClient, error) {
 	if url == "" {
