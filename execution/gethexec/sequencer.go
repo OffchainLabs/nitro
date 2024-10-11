@@ -85,15 +85,19 @@ type SequencerConfig struct {
 }
 
 type TimeboostConfig struct {
-	Enable                bool          `koanf:"enable"`
-	ExpressLaneAdvantage  time.Duration `koanf:"express-lane-advantage"`
-	SequencerHTTPEndpoint string        `koanf:"sequencer-http-endpoint"`
+	Enable                 bool          `koanf:"enable"`
+	AuctionContractAddress string        `koanf:"auction-contract-address"`
+	AuctioneerAddress      string        `koanf:"auctioneer-address"`
+	ExpressLaneAdvantage   time.Duration `koanf:"express-lane-advantage"`
+	SequencerHTTPEndpoint  string        `koanf:"sequencer-http-endpoint"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
-	Enable:                false,
-	ExpressLaneAdvantage:  time.Millisecond * 200,
-	SequencerHTTPEndpoint: "http://localhost:9567",
+	Enable:                 false,
+	AuctionContractAddress: "",
+	AuctioneerAddress:      "",
+	ExpressLaneAdvantage:   time.Millisecond * 200,
+	SequencerHTTPEndpoint:  "http://localhost:8547",
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -121,6 +125,19 @@ func (c *SequencerConfig) Validate() error {
 	}
 	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
 		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
+	}
+	return c.Timeboost.Validate()
+}
+
+func (c *TimeboostConfig) Validate() error {
+	if !c.Enable {
+		return nil
+	}
+	if len(c.AuctionContractAddress) > 0 && !common.IsHexAddress(c.AuctionContractAddress) {
+		return fmt.Errorf("invalid timeboost.auction-contract-address \"%v\"", c.AuctionContractAddress)
+	}
+	if len(c.AuctioneerAddress) > 0 && !common.IsHexAddress(c.AuctioneerAddress) {
+		return fmt.Errorf("invalid timeboost.auctioneer-address \"%v\"", c.AuctioneerAddress)
 	}
 	return nil
 }
@@ -170,6 +187,8 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultTimeboostConfig.Enable, "enable timeboost based on express lane auctions")
+	f.String(prefix+".auction-contract-address", DefaultTimeboostConfig.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
+	f.String(prefix+".auctioneer-address", DefaultTimeboostConfig.AuctioneerAddress, "Address of the Timeboost Autonomous Auctioneer")
 	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
 	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 }
@@ -1215,6 +1234,13 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		return 0
 	})
 
+	if config.Timeboost.Enable {
+		s.StartExpressLane(
+			ctxIn,
+			common.HexToAddress(config.Timeboost.AuctionContractAddress),
+			common.HexToAddress(config.Timeboost.AuctioneerAddress))
+	}
+
 	return nil
 }
 
@@ -1242,6 +1268,9 @@ func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr co
 
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
+	if s.config().Timeboost.Enable {
+		s.expressLaneService.StopWaiter.StopAndWait()
+	}
 	if s.txRetryQueue.Len() == 0 && len(s.txQueue) == 0 && s.nonceFailures.Len() == 0 {
 		return
 	}

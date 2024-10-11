@@ -32,12 +32,12 @@ type BidderClientConfig struct {
 }
 
 var DefaultBidderClientConfig = BidderClientConfig{
-	ArbitrumNodeEndpoint: "http://localhost:9567",
+	ArbitrumNodeEndpoint: "http://localhost:8547",
 	BidValidatorEndpoint: "http://localhost:9372",
 }
 
 var TestBidderClientConfig = BidderClientConfig{
-	ArbitrumNodeEndpoint: "http://localhost:9567",
+	ArbitrumNodeEndpoint: "http://localhost:8547",
 	BidValidatorEndpoint: "http://localhost:9372",
 }
 
