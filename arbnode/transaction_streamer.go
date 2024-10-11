@@ -1039,8 +1039,14 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 		return err
 	}
 
-	key = dbKey(blockMetadataInputFeedPrefix, uint64(pos))
-	return batch.Put(key, msg.BlockMetadata)
+	if msg.BlockMetadata != nil {
+		// Only store non-nil BlockMetadata to db. In case of a reorg, we dont have to explicitly
+		// clear out BlockMetadata of the reorged message, since those messages will be handled by s.reorg()
+		// This also allows update of BatchGasCost in message without mistakenly erasing BlockMetadata
+		key = dbKey(blockMetadataInputFeedPrefix, uint64(pos))
+		return batch.Put(key, msg.BlockMetadata)
+	}
+	return nil
 }
 
 func (s *TransactionStreamer) broadcastMessages(
