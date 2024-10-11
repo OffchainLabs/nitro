@@ -138,11 +138,6 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("failed to initialize geth stack", "err", err)
 		}
-		err = stack.Start()
-		if err != nil {
-			fatalErrChan <- fmt.Errorf("error starting stack: %w", err)
-		}
-		defer stack.Close()
 		bidValidator, err := timeboost.NewBidValidator(
 			ctx,
 			stack,
@@ -156,6 +151,11 @@ func mainImpl() int {
 			log.Error("error initializing bid validator", "err", err)
 			return 1
 		}
+		err = stack.Start()
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting stack: %w", err)
+		}
+		defer stack.Close()
 		bidValidator.Start(ctx)
 	}
 
