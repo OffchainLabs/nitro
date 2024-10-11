@@ -173,13 +173,13 @@ jobs:
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
         run: |
-          BLOCK_INPUT_JSON_PATH="${{ github.workspace }}/target/block_input.json" gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1
+          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 --validator.inputswriter.basedir=""${{ github.workspace }}/target"
       
       - name: run arbitrator prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |
           make build-prover-bin
-          target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/block_input.json"
+          target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/block_inputs.json"
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
