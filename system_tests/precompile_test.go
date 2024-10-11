@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
@@ -458,5 +459,28 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 	Require(t, err, "failed to call GetScheduledUpgrade after scheduling upgrade")
 	if scheduled.ArbosVersion != testVersion || scheduled.ScheduledForTimestamp != testTimestamp {
 		t.Errorf("expected upgrade to be scheduled for version %v timestamp %v, got version %v timestamp %v", testVersion, testTimestamp, scheduled.ArbosVersion, scheduled.ScheduledForTimestamp)
+	}
+}
+
+func TestArbStatistics(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbStatistics, err := precompilesgen.NewArbStatistics(types.ArbStatisticsAddress, builder.L2.Client)
+	Require(t, err)
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	blockNum, _, _, _, _, _, err := arbStatistics.GetStats(callOpts)
+	Require(t, err)
+
+	expectedBlockNum, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	if blockNum.Uint64() != expectedBlockNum {
+		Fatal(t, "expected block number to be", expectedBlockNum, "got", blockNum)
 	}
 }
