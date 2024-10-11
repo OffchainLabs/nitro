@@ -37,6 +37,15 @@ func TestPublicKeyFromPrivateKey(t *testing.T) {
 	}
 }
 
+func TestPublicKeyToBytes(t *testing.T) {
+	expectedPublicKeyBytes := []byte{0, 5, 26, 203, 151, 1, 124, 221, 162, 29, 13, 15, 227, 78, 232, 125, 200, 232, 245, 251, 196, 153, 185, 66, 74, 49, 126, 168, 225, 101, 252, 124, 184, 52, 101, 97, 135, 1, 36, 242, 88, 206, 106, 47, 226, 161, 148, 35, 61, 8, 234, 6, 124, 238, 224, 58, 64, 92, 163, 210, 25, 221, 204, 20, 149, 121, 193, 175, 168, 157, 184, 16, 216, 30, 181, 114, 184, 201, 251, 46, 246, 7, 80, 87, 34, 101, 34, 123, 51, 58, 176, 132, 118, 190, 53, 158, 161, 19, 144, 72, 109, 52, 189, 109, 245, 80, 64, 229, 196, 99, 200, 215, 204, 77, 156, 60, 196, 6, 167, 27, 227, 96, 190, 228, 57, 53, 32, 128, 67, 192, 155, 233, 163, 171, 83, 86, 81, 93, 20, 221, 52, 75, 254, 66, 42, 17, 79, 254, 35, 80, 175, 30, 100, 210, 109, 164, 150, 197, 88, 104, 152, 160, 178, 69, 78, 56, 215, 38, 180, 215, 212, 202, 233, 219, 224, 245, 184, 223, 248, 166, 91, 147, 62, 53, 61, 251, 83, 155, 92, 68, 201, 65, 92}
+	publicKey, err := PublicKeyFromBytes(expectedPublicKeyBytes, true)
+	Require(t, err)
+	publicKeyBytes := PublicKeyToBytes(publicKey)
+	if !bytes.Equal(publicKeyBytes, expectedPublicKeyBytes) {
+		Fail(t, "public key to bytes failed")
+	}
+}
 func TestValidSignature(t *testing.T) {
 	pub, priv, err := GenerateKeys()
 	Require(t, err)

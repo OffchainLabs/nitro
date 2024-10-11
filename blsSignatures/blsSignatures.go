@@ -196,7 +196,7 @@ func hashToG1Curve(message []byte, keyValidationMode bool) (*bls12381.G1Affine, 
 }
 
 func PublicKeyToBytes(pub PublicKey) []byte {
-	keyBytes := pub.key.Bytes()
+	keyBytes := pub.key.RawBytes()
 	if pub.validityProof == nil {
 		return append([]byte{0}, keyBytes[:]...)
 	}
@@ -255,7 +255,7 @@ func PrivateKeyFromBytes(in []byte) (PrivateKey, error) {
 }
 
 func SignatureToBytes(sig Signature) []byte {
-	bytes := (*sig).Bytes()
+	bytes := (*sig).RawBytes()
 	return bytes[:]
 }
 
