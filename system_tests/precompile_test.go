@@ -704,6 +704,41 @@ func TestArbSysDoesntRevert(t *testing.T) {
 	Require(t, err)
 }
 
+func TestArbOwnerPublicGetAllChainOwners(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
+	Require(t, err)
+
+	ownerAddr := builder.L2Info.GetAddress("Owner")
+	chainOwners, err := arbOwnerPublic.GetAllChainOwners(callOpts)
+	Require(t, err)
+	chainOwnerInChainOwners := false
+	for _, chainOwner := range chainOwners {
+		if chainOwner.Cmp(ownerAddr) == 0 {
+			chainOwnerInChainOwners = true
+		}
+	}
+	if !chainOwnerInChainOwners {
+		Fatal(t, "expected owner to be in chain owners")
+	}
+
+	_, err = arbOwnerPublic.RectifyChainOwner(&auth, ownerAddr)
+	if (err == nil) || (err.Error() != "execution reverted") {
+		Fatal(t, "expected rectify chain owner to revert since it is already an owner")
+	}
+}
+
 func TestArbGasInfoDoesntRevert(t *testing.T) {
 	t.Parallel()
 
