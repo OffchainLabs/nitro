@@ -639,6 +639,31 @@ func TestArbAggregatorBaseFee(t *testing.T) {
 	}
 }
 
+func TestArbAggregatorDoesntRevert(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbAggregator, err := precompilesgen.NewArbAggregator(types.ArbAggregatorAddress, builder.L2.Client)
+	Require(t, err)
+
+	tx, err := arbAggregator.SetFeeCollector(&auth, l1pricing.BatchPosterAddress, common.Address{})
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	_, err = arbAggregator.GetFeeCollector(callOpts, l1pricing.BatchPosterAddress)
+	Require(t, err)
+}
+
 func TestArbosTestDoesntRevert(t *testing.T) {
 	t.Parallel()
 
