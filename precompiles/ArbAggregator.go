@@ -91,14 +91,12 @@ func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, batchPoster addr, newF
 	return posterInfo.SetPayTo(newFeeCollector)
 }
 
-// TODO: add system test
 // GetTxBaseFee gets an aggregator's current fixed fee to submit a tx
 func (con ArbAggregator) GetTxBaseFee(c ctx, evm mech, aggregator addr) (huge, error) {
 	// This is deprecated and now always returns zero.
 	return big.NewInt(0), nil
 }
 
-// TODO: add system test
 // SetTxBaseFee sets an aggregator's fixed fee (caller must be the aggregator, its fee collector, or an owner)
 func (con ArbAggregator) SetTxBaseFee(c ctx, evm mech, aggregator addr, feeInL1Gas huge) error {
 	// This is deprecated and is now a no-op.
