@@ -5,7 +5,6 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -463,46 +462,6 @@ func TestArbRetryableTxDoesntRevert(t *testing.T) {
 
 	_, err = arbRetryableTx.GetCurrentRedeemer(callOpts)
 	Require(t, err)
-}
-
-func TestSubmitRetryable(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-
-	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
-	Require(t, err)
-
-	_, err = arbRetryableTx.SubmitRetryable(
-		&auth,
-		[32]byte{},
-		big.NewInt(0),
-		big.NewInt(0),
-		big.NewInt(0),
-		big.NewInt(0),
-		0,
-		big.NewInt(0),
-		common.Address{},
-		common.Address{},
-		common.Address{},
-		[]byte{},
-	)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	observedMessage := err.Error()
-	expectedError := "NotCallable()"
-	expectedMessage := fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
-	if observedMessage != expectedMessage {
-		Fatal(t, observedMessage)
-	}
 }
 
 func TestKeepaliveAndCancelRetryable(t *testing.T) {

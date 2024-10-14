@@ -79,6 +79,8 @@ func TestCustomSolidityErrors(t *testing.T) {
 	defer cleanup()
 
 	callOpts := &bind.CallOpts{Context: ctx}
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
 	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
 	Require(t, err, "could not bind ArbDebug contract")
 	customError := arbDebug.CustomRevert(callOpts, 1024)
@@ -101,6 +103,32 @@ func TestCustomSolidityErrors(t *testing.T) {
 	}
 	observedMessage = customError.Error()
 	expectedError = "InvalidBlockNumber(1000000000, 1)"
+	expectedMessage = fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
+	if observedMessage != expectedMessage {
+		Fatal(t, observedMessage)
+	}
+
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	Require(t, err)
+	_, err = arbRetryableTx.SubmitRetryable(
+		&auth,
+		[32]byte{},
+		big.NewInt(0),
+		big.NewInt(0),
+		big.NewInt(0),
+		big.NewInt(0),
+		0,
+		big.NewInt(0),
+		common.Address{},
+		common.Address{},
+		common.Address{},
+		[]byte{},
+	)
+	if err == nil {
+		Fatal(t, "SubmitRetryable call should have errored")
+	}
+	observedMessage = err.Error()
+	expectedError = "NotCallable()"
 	expectedMessage = fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
 	if observedMessage != expectedMessage {
 		Fatal(t, observedMessage)
