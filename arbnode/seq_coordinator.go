@@ -64,6 +64,7 @@ type SeqCoordinatorConfig struct {
 	LockoutDuration       time.Duration `koanf:"lockout-duration"`
 	LockoutSpare          time.Duration `koanf:"lockout-spare"`
 	SeqNumDuration        time.Duration `koanf:"seq-num-duration"`
+	BlockMetadataDuration time.Duration `koanf:"block-metadata-duration"`
 	UpdateInterval        time.Duration `koanf:"update-interval"`
 	RetryInterval         time.Duration `koanf:"retry-interval"`
 	HandoffTimeout        time.Duration `koanf:"handoff-timeout"`
@@ -90,6 +91,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".lockout-duration", DefaultSeqCoordinatorConfig.LockoutDuration, "")
 	f.Duration(prefix+".lockout-spare", DefaultSeqCoordinatorConfig.LockoutSpare, "")
 	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "")
+	f.Duration(prefix+".block-metadata-duration", DefaultSeqCoordinatorConfig.BlockMetadataDuration, "")
 	f.Duration(prefix+".update-interval", DefaultSeqCoordinatorConfig.UpdateInterval, "")
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
 	f.Duration(prefix+".handoff-timeout", DefaultSeqCoordinatorConfig.HandoffTimeout, "the maximum amount of time to spend waiting for another sequencer to accept the lockout when handing it off on shutdown or db compaction")
@@ -108,6 +110,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	LockoutDuration:       time.Minute,
 	LockoutSpare:          30 * time.Second,
 	SeqNumDuration:        10 * 24 * time.Hour,
+	BlockMetadataDuration: 10 * 24 * time.Hour,
 	UpdateInterval:        250 * time.Millisecond,
 	HandoffTimeout:        30 * time.Second,
 	SafeShutdownDelay:     5 * time.Second,
@@ -120,20 +123,21 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
-	Enable:              false,
-	RedisUrl:            "",
-	LockoutDuration:     time.Second * 2,
-	LockoutSpare:        time.Millisecond * 10,
-	SeqNumDuration:      time.Minute * 10,
-	UpdateInterval:      time.Millisecond * 10,
-	HandoffTimeout:      time.Millisecond * 200,
-	SafeShutdownDelay:   time.Millisecond * 100,
-	ReleaseRetries:      4,
-	RetryInterval:       time.Millisecond * 3,
-	MsgPerPoll:          20,
-	MyUrl:               redisutil.INVALID_URL,
-	DeleteFinalizedMsgs: true,
-	Signer:              signature.DefaultSignVerifyConfig,
+	Enable:                false,
+	RedisUrl:              "",
+	LockoutDuration:       time.Second * 2,
+	LockoutSpare:          time.Millisecond * 10,
+	SeqNumDuration:        time.Minute * 10,
+	BlockMetadataDuration: time.Minute * 10,
+	UpdateInterval:        time.Millisecond * 10,
+	HandoffTimeout:        time.Millisecond * 200,
+	SafeShutdownDelay:     time.Millisecond * 100,
+	ReleaseRetries:        4,
+	RetryInterval:         time.Millisecond * 3,
+	MsgPerPoll:            20,
+	MyUrl:                 redisutil.INVALID_URL,
+	DeleteFinalizedMsgs:   true,
+	Signer:                signature.DefaultSignVerifyConfig,
 }
 
 func NewSeqCoordinator(
@@ -246,7 +250,7 @@ func (c *SeqCoordinator) signedBytesToMsgCount(ctx context.Context, data []byte)
 }
 
 // Acquires or refreshes the chosen one lockout and optionally writes a message into redis atomically.
-func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbostypes.MessageWithMetadata) error {
+func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbostypes.MessageWithMetadata, blockMetadata arbostypes.BlockMetadata) error {
 	var messageData *string
 	var messageSigData *string
 	if lastmsg != nil {
@@ -316,6 +320,9 @@ func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgC
 			if messageSigData != nil {
 				pipe.Set(ctx, redisutil.MessageSigKeyFor(msgCountToWrite-1), *messageSigData, c.config.SeqNumDuration)
 			}
+		}
+		if blockMetadata != nil {
+			pipe.Set(ctx, redisutil.BlockMetadataKeyFor(msgCountToWrite-1), string(blockMetadata), c.config.BlockMetadataDuration)
 		}
 		pipe.PExpireAt(ctx, redisutil.CHOSENSEQ_KEY, lockoutUntil)
 		if setWantsLockout {
@@ -509,7 +516,7 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 		log.Error("coordinator cannot read message count", "err", err)
 		return c.config.UpdateInterval
 	}
-	err = c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil)
+	err = c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil, nil)
 	if err != nil {
 		log.Warn("coordinator failed chosen-one keepalive", "err", err)
 		return c.retryAfterRedisError()
@@ -573,6 +580,15 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	return nil
 }
 
+func (c *SeqCoordinator) blockMetadataAt(ctx context.Context, pos arbutil.MessageIndex) arbostypes.BlockMetadata {
+	blockMetadataStr, err := c.Client.Get(ctx, redisutil.BlockMetadataKeyFor(pos)).Result()
+	if err != nil {
+		log.Debug("SeqCoordinator couldn't read blockMetadata from redis", "err", err, "pos", pos)
+		return nil
+	}
+	return arbostypes.BlockMetadata(blockMetadataStr)
+}
+
 func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	chosenSeq, err := c.RecommendSequencerWantingLockout(ctx)
 	if err != nil {
@@ -618,6 +634,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	}
 	readUntil := min(localMsgCount+c.config.MsgPerPoll, remoteMsgCount)
 	var messages []arbostypes.MessageWithMetadata
+	var blockMetadataArr []arbostypes.BlockMetadata
 	msgToRead := localMsgCount
 	var msgReadErr error
 	for msgToRead < readUntil && localMsgCount >= remoteFinalizedMsgCount {
@@ -677,10 +694,11 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			}
 		}
 		messages = append(messages, message)
+		blockMetadataArr = append(blockMetadataArr, c.blockMetadataAt(ctx, msgToRead))
 		msgToRead++
 	}
 	if len(messages) > 0 {
-		if err := c.streamer.AddMessages(localMsgCount, false, messages); err != nil {
+		if err := c.streamer.AddMessages(localMsgCount, false, messages, blockMetadataArr); err != nil {
 			log.Warn("coordinator failed to add messages", "err", err, "pos", localMsgCount, "length", len(messages))
 		} else {
 			localMsgCount = msgToRead
@@ -717,7 +735,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			// we're here because we don't currently hold the lock
 			// sequencer is already either paused or forwarding
 			c.sequencer.Pause()
-			err := c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil)
+			err := c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil, nil)
 			if err != nil {
 				// this could be just new messages we didn't get yet - even then, we should retry soon
 				log.Info("sequencer failed to become chosen", "err", err, "msgcount", localMsgCount)
@@ -879,11 +897,11 @@ func (c *SeqCoordinator) CurrentlyChosen() bool {
 	return time.Now().Before(atomicTimeRead(&c.lockoutUntil))
 }
 
-func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
+func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, blockMetadata arbostypes.BlockMetadata) error {
 	if !c.CurrentlyChosen() {
 		return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)
 	}
-	if err := c.acquireLockoutAndWriteMessage(c.GetContext(), pos, pos+1, msg); err != nil {
+	if err := c.acquireLockoutAndWriteMessage(c.GetContext(), pos, pos+1, msg, blockMetadata); err != nil {
 		return err
 	}
 	return nil

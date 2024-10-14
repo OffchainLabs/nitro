@@ -182,7 +182,7 @@ func TestTransactionStreamer(t *testing.T) {
 				state.balances[dest].Add(state.balances[dest], value)
 			}
 
-			Require(t, inbox.AddMessages(state.numMessages, false, messages))
+			Require(t, inbox.AddMessages(state.numMessages, false, messages, nil))
 
 			state.numMessages += arbutil.MessageIndex(len(messages))
 			prevBlockNumber := state.blockNumber
