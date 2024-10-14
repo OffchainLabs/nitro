@@ -696,3 +696,52 @@ func TestArbGasInfoDoesntRevert(t *testing.T) {
 	_, _, _, _, _, _, err = arbGasInfo.GetPricesInWeiWithAggregator(callOpts, addr)
 	Require(t, err)
 }
+
+func TestArbAggregatorBatchPosters(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbAggregator, err := precompilesgen.NewArbAggregator(types.ArbAggregatorAddress, builder.L2.Client)
+	Require(t, err)
+
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	Require(t, err)
+
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+
+	// initially should have one batch poster
+	bps, err := arbAggregator.GetBatchPosters(callOpts)
+	Require(t, err)
+	if len(bps) != 1 {
+		Fatal(t, "expected one batch poster")
+	}
+
+	// add addr as a batch poster
+	tx, err := arbDebug.BecomeChainOwner(&auth)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbAggregator.AddBatchPoster(&auth, addr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// there should now be two batch posters, and addr should be one of them
+	bps, err = arbAggregator.GetBatchPosters(callOpts)
+	Require(t, err)
+	if len(bps) != 2 {
+		Fatal(t, "expected two batch posters")
+	}
+	if bps[0] != addr && bps[1] != addr {
+		Fatal(t, "expected addr to be a batch poster")
+	}
+}
