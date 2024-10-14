@@ -522,3 +522,48 @@ func TestArbFunctionTable(t *testing.T) {
 		t.Fatal("Should error")
 	}
 }
+
+func TestArbGasInfoDoesntRevert(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, builder.L2.Client)
+	Require(t, err)
+
+	_, err = arbGasInfo.GetGasBacklog(callOpts)
+	Require(t, err)
+
+	_, err = arbGasInfo.GetLastL1PricingUpdateTime(callOpts)
+	Require(t, err)
+
+	_, err = arbGasInfo.GetL1PricingFundsDueForRewards(callOpts)
+	Require(t, err)
+
+	_, err = arbGasInfo.GetL1PricingUnitsSinceUpdate(callOpts)
+	Require(t, err)
+
+	_, err = arbGasInfo.GetLastL1PricingSurplus(callOpts)
+	Require(t, err)
+
+	_, _, _, err = arbGasInfo.GetPricesInArbGas(callOpts)
+	Require(t, err)
+
+	_, _, _, err = arbGasInfo.GetPricesInArbGasWithAggregator(callOpts, addr)
+	Require(t, err)
+
+	_, err = arbGasInfo.GetAmortizedCostCapBips(callOpts)
+	Require(t, err)
+
+	_, err = arbGasInfo.GetL1FeesAvailable(callOpts)
+	Require(t, err)
+
+	_, _, _, _, _, _, err = arbGasInfo.GetPricesInWeiWithAggregator(callOpts, addr)
+	Require(t, err)
+}
