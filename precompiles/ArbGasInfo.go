@@ -195,7 +195,6 @@ func (con ArbGasInfo) GetL1RewardRecipient(c ctx, evm mech) (common.Address, err
 	return c.State.L1PricingState().PayRewardsTo()
 }
 
-// TODO: add system test
 // GetL1GasPriceEstimate gets the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 	return con.GetL1BaseFeeEstimate(c, evm)
