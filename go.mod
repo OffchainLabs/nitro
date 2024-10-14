@@ -1,17 +1,15 @@
 module github.com/OffchainLabs/bold
 
-go 1.21
-
-replace github.com/ethereum/go-ethereum => github.com/OffchainLabs/go-ethereum v1.13.4-0.20240509192846-9874ec397a5b
+go 1.23
 
 require (
-	github.com/ethereum/go-ethereum v1.12.0
+	github.com/ethereum/go-ethereum v1.13.15
 	github.com/gorilla/mux v1.8.0
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/mattn/go-sqlite3 v1.14.6
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/sync v0.5.0
+	golang.org/x/sync v0.8.0
 )
 
 require (
@@ -36,7 +34,6 @@ require (
 	github.com/deckarep/golang-set/v2 v2.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
 	github.com/ethereum/c-kzg-4844 v0.4.0 // indirect
-	github.com/fjl/memsize v0.0.2 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/gammazero/deque v0.2.1 // indirect
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
@@ -51,7 +48,7 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/go-bexpr v0.1.10 // indirect
-	github.com/holiman/billy v0.0.0-20230718173358-1c7e68d277a7 // indirect
+	github.com/holiman/billy v0.0.0-20240216141850-2abb0c79d3c4 // indirect
 	github.com/holiman/bloomfilter/v2 v2.0.3 // indirect
 	github.com/holiman/uint256 v1.2.4 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
@@ -100,6 +97,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-// Fix for nogo. See https://github.com/bazelbuild/rules_go/issues/3230
-// DO NOT REMOVE
-replace golang.org/x/tools => golang.org/x/tools v0.1.12
+replace github.com/ethereum/go-ethereum => github.com/OffchainLabs/go-ethereum v1.13.4-0.20241009205815-54adef6e3fbe

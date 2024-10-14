@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/stretchr/testify/require"
@@ -542,7 +542,7 @@ type testAccount struct {
 }
 
 func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *simulated.Backend) {
-	genesis := make(core.GenesisAlloc)
+	genesis := make(types.GenesisAlloc)
 	gasLimit := uint64(100000000)
 
 	accs := make([]*testAccount, numAccounts)
@@ -572,7 +572,7 @@ func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *simulated
 			"100000000000000000000000000000000000000",
 			10,
 		)
-		genesis[addr] = core.GenesisAccount{Balance: startingBalance}
+		genesis[addr] = types.Account{Balance: startingBalance}
 		accs[i] = &testAccount{
 			accountAddr: addr,
 			txOpts:      txOpts,

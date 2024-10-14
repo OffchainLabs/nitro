@@ -10,8 +10,8 @@ diff --color -ruN a/crypto/secp256k1/BUILD.bazel b/crypto/secp256k1/BUILD.bazel
      copts = [
 -        "-Icrypto/secp256k1/libsecp256k1",
 -        "-Icrypto/secp256k1/libsecp256k1/src",
-+        "-Iexternal/com_github_ethereum_go_ethereum/crypto/secp256k1/libsecp256k1",
-+        "-Iexternal/com_github_ethereum_go_ethereum/crypto/secp256k1/libsecp256k1/src",
++        "-Iexternal/gazelle~~go_deps~com_github_ethereum_go_ethereum/crypto/secp256k1/libsecp256k1",
++        "-Iexternal/gazelle~~go_deps~com_github_ethereum_go_ethereum/crypto/secp256k1/libsecp256k1/src",
      ],
      importpath = "github.com/ethereum/go-ethereum/crypto/secp256k1",
      visibility = ["//visibility:public"],
