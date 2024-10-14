@@ -223,6 +223,9 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	return con.Canceled(c, evm, ticketId)
 }
 
+// Gets the redeemer of the current retryable redeem attempt.
+// Returns the zero address if the current transaction is not a retryable redeem attempt.
+// If this is an auto-redeem, returns the fee refund address of the retryable.
 func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, error) {
 	if c.txProcessor.CurrentRefundTo != nil {
 		return *c.txProcessor.CurrentRefundTo, nil
@@ -230,6 +233,7 @@ func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, e
 	return common.Address{}, nil
 }
 
+// Do not call. This method represents a retryable submission to aid explorers. Calling it will always revert.
 func (con ArbRetryableTx) SubmitRetryable(
 	c ctx, evm mech, requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
 	gasLimit uint64, maxSubmissionFee huge,
