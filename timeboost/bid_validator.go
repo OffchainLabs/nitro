@@ -197,7 +197,7 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 			case <-ctx.Done():
 				log.Error("Context closed, autonomous auctioneer shutting down")
 				return
-			case _ = <-ticker.c:
+			case <-ticker.c:
 				rp, err := bv.auctionContract.ReservePrice(&bind.CallOpts{})
 				if err != nil {
 					log.Error("Could not get reserve price", "error", err)

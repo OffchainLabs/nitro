@@ -116,7 +116,7 @@ func TestBidValidator_validateBid(t *testing.T) {
 			bv.roundDuration = 0
 		}
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := bv.validateBid(tt.bid, setup.expressLaneAuction.BalanceOf, bv.fetchReservePrice)
+			_, err := bv.validateBid(tt.bid, setup.expressLaneAuction.BalanceOf)
 			require.ErrorIs(t, err, tt.expectedErr)
 			require.Contains(t, err.Error(), tt.errMsg)
 		})
@@ -127,9 +127,6 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 	t.Parallel()
 	balanceCheckerFn := func(_ *bind.CallOpts, _ common.Address) (*big.Int, error) {
 		return big.NewInt(10), nil
-	}
-	fetchReservePriceFn := func() *big.Int {
-		return big.NewInt(0)
 	}
 	auctionContractAddr := common.Address{'a'}
 	bv := BidValidator{
@@ -157,10 +154,10 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 
 	bid.Signature = signature
 	for i := 0; i < int(bv.maxBidsPerSenderInRound); i++ {
-		_, err := bv.validateBid(bid, balanceCheckerFn, fetchReservePriceFn)
+		_, err := bv.validateBid(bid, balanceCheckerFn)
 		require.NoError(t, err)
 	}
-	_, err = bv.validateBid(bid, balanceCheckerFn, fetchReservePriceFn)
+	_, err = bv.validateBid(bid, balanceCheckerFn)
 	require.ErrorIs(t, err, ErrTooManyBids)
 
 }
