@@ -70,6 +70,28 @@ func TestViewLogReverts(t *testing.T) {
 	}
 }
 
+func TestArbDebugPanic(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
+	Require(t, err)
+
+	_, err = arbDebug.Panic(&auth)
+	if err == nil {
+		Fatal(t, "unexpected success")
+	}
+	if err.Error() != "method handler crashed" {
+		Fatal(t, "expected method handler to crash")
+	}
+}
+
 func TestArbDebugLegacyError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
