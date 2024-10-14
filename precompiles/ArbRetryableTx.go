@@ -130,7 +130,6 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast[int64](gasToDonate))
 }
 
-// TODO: add system test
 // GetLifetime gets the default lifetime period a retryable has at creation
 func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	return big.NewInt(retryables.RetryableLifetimeSeconds), nil

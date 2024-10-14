@@ -423,6 +423,28 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	}
 }
 
+func TestGetLifetime(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	Require(t, err)
+
+	lifetime, err := arbRetryableTx.GetLifetime(callOpts)
+	Require(t, err)
+	if lifetime.Cmp(big.NewInt(retryables.RetryableLifetimeSeconds)) != 0 {
+		t.Fatal("Expected to be ", retryables.RetryableLifetimeSeconds, " but got ", lifetime)
+	}
+}
+
 func TestKeepaliveAndCancelRetryable(t *testing.T) {
 	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)

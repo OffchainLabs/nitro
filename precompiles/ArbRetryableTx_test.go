@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -25,18 +24,12 @@ func newMockEVMForTestingWithCurrentRefundTo(currentRefundTo *common.Address) *v
 	return evm
 }
 
-func TestGetLifetimeAndCurrentRedeemer(t *testing.T) {
+func TestGetCurrentRedeemer(t *testing.T) {
 	currentRefundTo := common.HexToAddress("0x030405")
 
 	evm := newMockEVMForTestingWithCurrentRefundTo(&currentRefundTo)
 	retryableTx := ArbRetryableTx{}
 	context := testContext(common.Address{}, evm)
-
-	lifetime, err := retryableTx.GetLifetime(context, evm)
-	Require(t, err)
-	if lifetime.Cmp(big.NewInt(retryables.RetryableLifetimeSeconds)) != 0 {
-		t.Fatal("Expected to be ", retryables.RetryableLifetimeSeconds, " but got ", lifetime)
-	}
 
 	currentRedeemer, err := retryableTx.GetCurrentRedeemer(context, evm)
 	Require(t, err)
