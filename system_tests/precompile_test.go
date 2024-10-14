@@ -610,6 +610,25 @@ func TestArbFunctionTable(t *testing.T) {
 	}
 }
 
+func TestArbosTestDoesntRevert(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbosTest, err := precompilesgen.NewArbosTest(types.ArbosTestAddress, builder.L2.Client)
+	Require(t, err)
+
+	err = arbosTest.BurnArbGas(callOpts, big.NewInt(1))
+	Require(t, err)
+}
+
 func TestArbSysDoesntRevert(t *testing.T) {
 	t.Parallel()
 

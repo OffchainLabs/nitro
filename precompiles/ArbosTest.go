@@ -12,7 +12,6 @@ type ArbosTest struct {
 	Address addr // 0x69
 }
 
-// TODO: add system test
 // BurnArbGas unproductively burns the amount of L2 ArbGas
 func (con ArbosTest) BurnArbGas(c ctx, gasAmount huge) error {
 	if !gasAmount.IsUint64() {
