@@ -154,25 +154,25 @@ type BatchPosterConfig struct {
 	// Batch post polling interval.
 	PollInterval time.Duration `koanf:"poll-interval" reload:"hot"`
 	// Batch posting error delay.
-	ErrorDelay                                          time.Duration               `koanf:"error-delay" reload:"hot"`
-	CompressionLevel                                    int                         `koanf:"compression-level" reload:"hot"`
-	DASRetentionPeriod                                  time.Duration               `koanf:"das-retention-period" reload:"hot"`
-	GasRefunderAddress                                  string                      `koanf:"gas-refunder-address" reload:"hot"`
-	DataPoster                                          dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
-	RedisUrl                                            string                      `koanf:"redis-url"`
-	RedisLock                                           redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
-	ExtraBatchGas                                       uint64                      `koanf:"extra-batch-gas" reload:"hot"`
-	Post4844Blobs                                       bool                        `koanf:"post-4844-blobs" reload:"hot"`
-	IgnoreBlobPrice                                     bool                        `koanf:"ignore-blob-price" reload:"hot"`
-	ParentChainWallet                                   genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	L1BlockBound                                        string                      `koanf:"l1-block-bound" reload:"hot"`
-	L1BlockBoundBypass                                  time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
-	UseAccessLists                                      bool                        `koanf:"use-access-lists" reload:"hot"`
-	GasEstimateBaseFeeMultipleBips                      arbmath.UBips               `koanf:"gas-estimate-base-fee-multiple-bips"`
-	Dangerous                                           BatchPosterDangerousConfig  `koanf:"dangerous"`
-	ReorgResistanceMargin                               time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
-	CheckBatchCorrectness                               bool                        `koanf:"check-batch-correctness"`
-	PeriodToAllowPostingBatchWithOnlyBatchPostingReport time.Duration               `koanf:"period-to-allow-posting-batch-with-only-batch-posting-report"`
+	ErrorDelay                     time.Duration               `koanf:"error-delay" reload:"hot"`
+	CompressionLevel               int                         `koanf:"compression-level" reload:"hot"`
+	DASRetentionPeriod             time.Duration               `koanf:"das-retention-period" reload:"hot"`
+	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
+	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	RedisUrl                       string                      `koanf:"redis-url"`
+	RedisLock                      redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
+	ExtraBatchGas                  uint64                      `koanf:"extra-batch-gas" reload:"hot"`
+	Post4844Blobs                  bool                        `koanf:"post-4844-blobs" reload:"hot"`
+	IgnoreBlobPrice                bool                        `koanf:"ignore-blob-price" reload:"hot"`
+	ParentChainWallet              genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
+	L1BlockBound                   string                      `koanf:"l1-block-bound" reload:"hot"`
+	L1BlockBoundBypass             time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
+	UseAccessLists                 bool                        `koanf:"use-access-lists" reload:"hot"`
+	GasEstimateBaseFeeMultipleBips arbmath.UBips               `koanf:"gas-estimate-base-fee-multiple-bips"`
+	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
+	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
+	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
+	MaxEmptyBatchDelay             time.Duration               `koanf:"max-empty-batch-delay"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -226,7 +226,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
 	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from layer 1 minimum bounds. Requires l1-block-bound option not be set to \"ignore\"")
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
-	f.Duration(prefix+".period-to-allow-posting-batch-with-only-batch-posting-report", DefaultBatchPosterConfig.PeriodToAllowPostingBatchWithOnlyBatchPostingReport, "batch poster will only be able to post a batch with only batch posting report messages if this time period building a batch has passed")
+	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -258,7 +258,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	ReorgResistanceMargin:          10 * time.Minute,
 	CheckBatchCorrectness:          true,
-	PeriodToAllowPostingBatchWithOnlyBatchPostingReport: 3 * 24 * time.Hour,
+	MaxEmptyBatchDelay:             3 * 24 * time.Hour,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -1312,7 +1312,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				b.building.muxBackend.delayedInbox = append(b.building.muxBackend.delayedInbox, msg)
 			}
 		}
-		if (msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport) || (time.Since(firstMsgTime) >= config.PeriodToAllowPostingBatchWithOnlyBatchPostingReport) {
+		if (msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport) || (time.Since(firstMsgTime) >= config.MaxEmptyBatchDelay) {
 			b.building.haveUsefulMessage = true
 		}
 		b.building.msgCount++
