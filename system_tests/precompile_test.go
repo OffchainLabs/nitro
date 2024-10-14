@@ -81,36 +81,42 @@ func TestCustomSolidityErrors(t *testing.T) {
 	callOpts := &bind.CallOpts{Context: ctx}
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
+	ensure := func(
+		customError error,
+		expectedError string,
+		scenario string,
+	) {
+		if customError == nil {
+			Fatal(t, "should have errored", "scenario", scenario)
+		}
+		observedMessage := customError.Error()
+		// The first error is server side. The second error is client side ABI decoding.
+		expectedMessage := fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
+		if observedMessage != expectedMessage {
+			Fatal(t, observedMessage, "scenario", scenario)
+		}
+	}
+
 	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
 	Require(t, err, "could not bind ArbDebug contract")
-	customError := arbDebug.CustomRevert(callOpts, 1024)
-	if customError == nil {
-		Fatal(t, "customRevert call should have errored")
-	}
-	observedMessage := customError.Error()
-	expectedError := "Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\, true)"
-	// The first error is server side. The second error is client side ABI decoding.
-	expectedMessage := fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
-	if observedMessage != expectedMessage {
-		Fatal(t, observedMessage)
-	}
+	ensure(
+		arbDebug.CustomRevert(callOpts, 1024),
+		"Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\, true)",
+		"arbDebug.CustomRevert",
+	)
 
 	arbSys, err := precompilesgen.NewArbSys(arbos.ArbSysAddress, builder.L2.Client)
 	Require(t, err, "could not bind ArbSys contract")
-	_, customError = arbSys.ArbBlockHash(callOpts, big.NewInt(1e9))
-	if customError == nil {
-		Fatal(t, "out of range ArbBlockHash call should have errored")
-	}
-	observedMessage = customError.Error()
-	expectedError = "InvalidBlockNumber(1000000000, 1)"
-	expectedMessage = fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
-	if observedMessage != expectedMessage {
-		Fatal(t, observedMessage)
-	}
+	_, customError := arbSys.ArbBlockHash(callOpts, big.NewInt(1e9))
+	ensure(
+		customError,
+		"InvalidBlockNumber(1000000000, 1)",
+		"arbSys.ArbBlockHash",
+	)
 
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
 	Require(t, err)
-	_, err = arbRetryableTx.SubmitRetryable(
+	_, customError = arbRetryableTx.SubmitRetryable(
 		&auth,
 		[32]byte{},
 		big.NewInt(0),
@@ -124,39 +130,27 @@ func TestCustomSolidityErrors(t *testing.T) {
 		common.Address{},
 		[]byte{},
 	)
-	if err == nil {
-		Fatal(t, "SubmitRetryable call should have errored")
-	}
-	observedMessage = err.Error()
-	expectedError = "NotCallable()"
-	expectedMessage = fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
-	if observedMessage != expectedMessage {
-		Fatal(t, observedMessage)
-	}
+	ensure(
+		customError,
+		"NotCallable()",
+		"arbRetryableTx.SubmitRetryable",
+	)
 
 	arbosActs, err := precompilesgen.NewArbosActs(types.ArbosAddress, builder.L2.Client)
 	Require(t, err)
-	_, err = arbosActs.StartBlock(&auth, big.NewInt(0), 0, 0, 0)
-	if err == nil {
-		Fatal(t, "StartBlock call should have errored")
-	}
-	observedMessage = err.Error()
-	expectedError = "CallerNotArbOS()"
-	expectedMessage = fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
-	if observedMessage != expectedMessage {
-		Fatal(t, observedMessage)
-	}
+	_, customError = arbosActs.StartBlock(&auth, big.NewInt(0), 0, 0, 0)
+	ensure(
+		customError,
+		"CallerNotArbOS()",
+		"arbosActs.StartBlock",
+	)
 
-	_, err = arbosActs.BatchPostingReport(&auth, big.NewInt(0), common.Address{}, 0, 0, big.NewInt(0))
-	if err == nil {
-		Fatal(t, "BatchPostingReport call should have errored")
-	}
-	observedMessage = err.Error()
-	expectedError = "CallerNotArbOS()"
-	expectedMessage = fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
-	if observedMessage != expectedMessage {
-		Fatal(t, observedMessage)
-	}
+	_, customError = arbosActs.BatchPostingReport(&auth, big.NewInt(0), common.Address{}, 0, 0, big.NewInt(0))
+	ensure(
+		customError,
+		"CallerNotArbOS()",
+		"arbosActs.BatchPostingReport",
+	)
 }
 
 func TestPrecompileErrorGasLeft(t *testing.T) {
