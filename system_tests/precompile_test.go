@@ -70,6 +70,25 @@ func TestViewLogReverts(t *testing.T) {
 	}
 }
 
+func TestArbDebugLegacyError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
+	Require(t, err)
+
+	err = arbDebug.LegacyError(callOpts)
+	if err == nil {
+		Fatal(t, "unexpected success")
+	}
+}
+
 func TestCustomSolidityErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
