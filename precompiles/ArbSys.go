@@ -105,7 +105,6 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 	return address, err
 }
 
-// TODO: add system test
 // SendTxToL1 sends a transaction to L1, adding it to the outbox
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
 	l1BlockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})
