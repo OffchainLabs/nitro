@@ -133,6 +133,30 @@ func TestCustomSolidityErrors(t *testing.T) {
 	if observedMessage != expectedMessage {
 		Fatal(t, observedMessage)
 	}
+
+	arbosActs, err := precompilesgen.NewArbosActs(types.ArbosAddress, builder.L2.Client)
+	Require(t, err)
+	_, err = arbosActs.StartBlock(&auth, big.NewInt(0), 0, 0, 0)
+	if err == nil {
+		Fatal(t, "StartBlock call should have errored")
+	}
+	observedMessage = err.Error()
+	expectedError = "CallerNotArbOS()"
+	expectedMessage = fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
+	if observedMessage != expectedMessage {
+		Fatal(t, observedMessage)
+	}
+
+	_, err = arbosActs.BatchPostingReport(&auth, big.NewInt(0), common.Address{}, 0, 0, big.NewInt(0))
+	if err == nil {
+		Fatal(t, "BatchPostingReport call should have errored")
+	}
+	observedMessage = err.Error()
+	expectedError = "CallerNotArbOS()"
+	expectedMessage = fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
+	if observedMessage != expectedMessage {
+		Fatal(t, observedMessage)
+	}
 }
 
 func TestPrecompileErrorGasLeft(t *testing.T) {
