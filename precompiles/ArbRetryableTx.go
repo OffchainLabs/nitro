@@ -222,7 +222,6 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	return con.Canceled(c, evm, ticketId)
 }
 
-// TODO: add system test
 func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, error) {
 	if c.txProcessor.CurrentRefundTo != nil {
 		return *c.txProcessor.CurrentRefundTo, nil

@@ -445,6 +445,25 @@ func TestGetLifetime(t *testing.T) {
 	}
 }
 
+func TestArbRetryableTxDoesntRevert(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	Require(t, err)
+
+	_, err = arbRetryableTx.GetCurrentRedeemer(callOpts)
+	Require(t, err)
+}
+
 func TestKeepaliveAndCancelRetryable(t *testing.T) {
 	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
