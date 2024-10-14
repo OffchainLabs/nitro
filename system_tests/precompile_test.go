@@ -610,6 +610,27 @@ func TestArbFunctionTable(t *testing.T) {
 	}
 }
 
+func TestArbSysDoesntRevert(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
+	Require(t, err)
+
+	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	addr2 := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	_, err = arbSys.MapL1SenderContractAddressToL2Alias(callOpts, addr1, addr2)
+	Require(t, err)
+}
+
 func TestArbGasInfoDoesntRevert(t *testing.T) {
 	t.Parallel()
 

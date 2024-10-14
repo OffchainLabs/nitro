@@ -75,7 +75,6 @@ func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
 	return evm.Depth() <= 2, nil
 }
 
-// TODO: add system test
 // MapL1SenderContractAddressToL2Alias gets the contract's L2 alias
 func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest addr) (addr, error) {
 	return util.RemapL1Address(sender), nil
