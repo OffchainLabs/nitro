@@ -19,14 +19,12 @@ type ArbAggregator struct {
 
 var ErrNotOwner = errors.New("must be called by chain owner")
 
-// TODO: add system test
 // GetPreferredAggregator returns the preferred aggregator address.
 // Deprecated: Do not use this method.
 func (con ArbAggregator) GetPreferredAggregator(c ctx, evm mech, address addr) (prefAgg addr, isDefault bool, err error) {
 	return l1pricing.BatchPosterAddress, true, err
 }
 
-// TODO: add system test
 // GetDefaultAggregator returns the default aggregator address.
 // Deprecated: Do not use this method.
 func (con ArbAggregator) GetDefaultAggregator(c ctx, evm mech) (addr, error) {

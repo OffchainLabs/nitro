@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -743,5 +744,38 @@ func TestArbAggregatorBatchPosters(t *testing.T) {
 	}
 	if bps[0] != addr && bps[1] != addr {
 		Fatal(t, "expected addr to be a batch poster")
+	}
+}
+
+func TestArbAggregatorGetPreferredAggregator(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbAggregator, err := precompilesgen.NewArbAggregator(types.ArbAggregatorAddress, builder.L2.Client)
+	Require(t, err)
+
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+
+	prefAgg, isDefault, err := arbAggregator.GetPreferredAggregator(callOpts, addr)
+	Require(t, err)
+	if !isDefault {
+		Fatal(t, "expected default preferred aggregator")
+	}
+	if prefAgg != l1pricing.BatchPosterAddress {
+		Fatal(t, "expected default preferred aggregator to be", l1pricing.BatchPosterAddress, "got", prefAgg)
+	}
+
+	prefAgg, err = arbAggregator.GetDefaultAggregator(callOpts)
+	Require(t, err)
+	if prefAgg != l1pricing.BatchPosterAddress {
+		Fatal(t, "expected default preferred aggregator to be", l1pricing.BatchPosterAddress, "got", prefAgg)
 	}
 }
