@@ -38,7 +38,7 @@ func TestGetCurrentRedeemer(t *testing.T) {
 	}
 }
 
-func TestRetryableRedeemAndGetBeneficiary(t *testing.T) {
+func TestRetryableRedeem(t *testing.T) {
 	evm := newMockEVMForTesting()
 	precompileCtx := testContext(common.Address{}, evm)
 
@@ -86,22 +86,5 @@ func TestRetryableRedeemAndGetBeneficiary(t *testing.T) {
 		//     use cases the precompile would cause a non-zero write. So the precompile allocates enough gas
 		//     to handle both cases, and some will be left over in this test's use case.
 		Fail(t, "didn't consume all the expected gas")
-	}
-
-	getBeneficiaryCallData, err := retryABI.Pack("getBeneficiary", id)
-	Require(t, err)
-	retrievedBeneficiary, _, err := Precompiles()[retryAddress].Call(
-		getBeneficiaryCallData,
-		retryAddress,
-		retryAddress,
-		common.Address{},
-		big.NewInt(0),
-		false,
-		1000000,
-		evm,
-	)
-	Require(t, err)
-	if common.BytesToAddress(retrievedBeneficiary).Cmp(beneficiary) != 0 {
-		Fail(t, "expected beneficiary to be ", beneficiary, " but got ", common.BytesToAddress(retrievedBeneficiary))
 	}
 }

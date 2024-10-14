@@ -502,6 +502,14 @@ func TestKeepaliveAndCancelRetryable(t *testing.T) {
 	// checks that the ticket exists and gets current timeout
 	timeoutBeforeKeepalive, err := arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
 	Require(t, err)
+
+	// checks beneficiary
+	retrievedBeneficiaryAddress, err := arbRetryableTx.GetBeneficiary(&bind.CallOpts{}, ticketId)
+	Require(t, err)
+	if retrievedBeneficiaryAddress != beneficiaryAddress {
+		Fatal(t, "expected beneficiary to be", beneficiaryAddress, "but got", retrievedBeneficiaryAddress)
+	}
+
 	// checks that keepalive increases the timeout as expected
 	_, err = arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
 	Require(t, err)
