@@ -1266,7 +1266,7 @@ func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr co
 		s.execEngine.bc,
 	)
 	if err != nil {
-		log.Crit("Failed to create express lane service", "err", err)
+		log.Crit("Failed to create express lane service", "err", err, "auctionContractAddr", auctionContractAddr)
 	}
 	s.auctioneerAddr = auctioneerAddr
 	s.expressLaneService = els

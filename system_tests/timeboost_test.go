@@ -314,7 +314,7 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builderSeq.execConfig.Sequencer.Enable = true
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
-		Enable:                true,
+		Enable:                false, // We need to start without timeboost initially to create the auction contract
 		ExpressLaneAdvantage:  time.Second * 5,
 		SequencerHTTPEndpoint: fmt.Sprintf("http://localhost:%d", seqPort),
 	}
@@ -474,6 +474,9 @@ func setupExpressLaneAuction(
 		t.Fatal(err)
 	}
 
+	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
+	// by the sequencer. This is due to needing to deploy the auction contract first.
+	builderSeq.execConfig.Sequencer.Timeboost.Enable = true
 	builderSeq.L2.ExecNode.Sequencer.StartExpressLane(ctx, proxyAddr, seqInfo.GetAddress("AuctionContract"))
 	t.Log("Started express lane service in sequencer")
 

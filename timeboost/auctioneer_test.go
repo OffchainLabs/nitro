@@ -35,7 +35,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	})
 	jwtFilePath := filepath.Join(tmpDir, "jwt.key")
 	jwtSecret := common.BytesToHash([]byte("jwt"))
-	require.NoError(t, os.WriteFile(jwtFilePath, []byte(hexutil.Encode(jwtSecret[:])), 0644))
+	require.NoError(t, os.WriteFile(jwtFilePath, []byte(hexutil.Encode(jwtSecret[:])), 0600))
 
 	// Set up multiple bid validators that will receive bids via RPC using a bidder client.
 	// They inject their validated bids into a Redis stream that a single auctioneer instance
@@ -130,9 +130,12 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	// Alice, Bob, and Charlie will submit bids to the three different bid validators instances.
 	start := time.Now()
 	for i := 1; i <= 5; i++ {
-		alice.Bid(ctx, big.NewInt(int64(i)), aliceAddr)
-		bob.Bid(ctx, big.NewInt(int64(i)+1), bobAddr)         // Bob bids 1 wei higher than Alice.
-		charlie.Bid(ctx, big.NewInt(int64(i)+2), charlieAddr) // Charlie bids 2 wei higher than the Bob.
+		_, err = alice.Bid(ctx, big.NewInt(int64(i)), aliceAddr)
+		require.NoError(t, err)
+		_, err = bob.Bid(ctx, big.NewInt(int64(i)+1), bobAddr) // Bob bids 1 wei higher than Alice.
+		require.NoError(t, err)
+		_, err = charlie.Bid(ctx, big.NewInt(int64(i)+2), charlieAddr) // Charlie bids 2 wei higher than the Bob.
+		require.NoError(t, err)
 	}
 
 	// We expect that a final submission from each fails, as the bid limit is exceeded.

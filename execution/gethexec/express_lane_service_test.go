@@ -215,7 +215,8 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, _tt := range tests {
+		tt := _tt
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.sub != nil {
 				tt.es.roundControl.Add(tt.sub.Round, &tt.control)
