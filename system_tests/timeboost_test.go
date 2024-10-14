@@ -146,19 +146,18 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage_Timebooste
 		if blockMetadataOfBlock[0] != message.TimeboostedVersion {
 			t.Fatalf("blockMetadata byte array has invalid version. Want: %d, Got: %d", message.TimeboostedVersion, blockMetadataOfBlock[0])
 		}
-		feedMsg := message.BroadcastFeedMessage{BlockMetadata: blockMetadataOfBlock}
 		userTxBlock, err := tClient.BlockByNumber(ctx, new(big.Int).SetUint64(userTxBlockNum))
 		Require(t, err)
 		var foundUserTx bool
 		for txIndex, tx := range userTxBlock.Transactions() {
 			if tx.Hash() == userTx.Hash() {
 				foundUserTx = true
-				if !isTimeboosted && feedMsg.BlockMetadata.IsTxTimeboosted(txIndex) {
+				if !isTimeboosted && blockMetadataOfBlock.IsTxTimeboosted(txIndex) {
 					t.Fatalf("incorrect timeboosted bit for %s's tx, it shouldn't be timeboosted", user)
-				} else if isTimeboosted && !feedMsg.BlockMetadata.IsTxTimeboosted(txIndex) {
+				} else if isTimeboosted && !blockMetadataOfBlock.IsTxTimeboosted(txIndex) {
 					t.Fatalf("incorrect timeboosted bit for %s's tx, it should be timeboosted", user)
 				}
-			} else if feedMsg.BlockMetadata.IsTxTimeboosted(txIndex) {
+			} else if blockMetadataOfBlock.IsTxTimeboosted(txIndex) {
 				// Other tx's right now shouln't be timeboosted
 				t.Fatalf("incorrect timeboosted bit for nonspecified tx with index: %d, it shouldn't be timeboosted", txIndex)
 			}

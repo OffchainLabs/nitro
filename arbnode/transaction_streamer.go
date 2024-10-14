@@ -1091,7 +1091,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	return nil
 }
 
-func (s *TransactionStreamer) BlockMetadataAtCount(count arbutil.MessageIndex) ([]byte, error) {
+func (s *TransactionStreamer) BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error) {
 	if count == 0 {
 		return []byte{}, nil
 	}
