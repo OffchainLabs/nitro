@@ -170,7 +170,7 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	reentrant bool,
-	runmode core.MessageRunMode,
+	runMode core.MessageRunMode,
 ) ([]byte, error) {
 	evm := interpreter.Evm()
 	contract := scope.Contract
@@ -246,7 +246,7 @@ func (p Programs) CallProgram(
 		address = *contract.CodeAddr
 	}
 	var arbos_tag uint32
-	if runmode == core.MessageCommitMode {
+	if runMode == core.MessageCommitMode {
 		arbos_tag = statedb.Database().WasmCacheTag()
 	}
 	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
