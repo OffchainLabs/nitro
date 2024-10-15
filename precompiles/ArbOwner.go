@@ -62,7 +62,6 @@ func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64)
 	return c.State.L1PricingState().SetInertia(inertia)
 }
 
-// TODO: add system test
 // SetL2BaseFee sets the L2 gas price directly, bypassing the pool calculus
 func (con ArbOwner) SetL2BaseFee(c ctx, evm mech, priceInWei huge) error {
 	return c.State.L2PricingState().SetBaseFeeWei(priceInWei)
@@ -145,7 +144,6 @@ func (con ArbOwner) SetPerBatchGasCharge(c ctx, evm mech, cost int64) error {
 	return c.State.L1PricingState().SetPerBatchGasCost(cost)
 }
 
-// TODO: add system test
 func (con ArbOwner) SetAmortizedCostCapBips(c ctx, evm mech, cap uint64) error {
 	return c.State.L1PricingState().SetAmortizedCostCapBips(cap)
 }
@@ -154,7 +152,6 @@ func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) err
 	return c.State.SetBrotliCompressionLevel(level)
 }
 
-// TODO: add system test
 func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease huge) (huge, error) {
 	balance := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
 	l1p := c.State.L1PricingState()
@@ -298,7 +295,6 @@ func (con ArbOwner) RemoveWasmCacheManager(c ctx, _ mech, manager addr) error {
 	return managers.Remove(manager, c.State.ArbOSVersion())
 }
 
-// TODO: add system test
 func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte) error {
 	if c == nil {
 		return errors.New("nil context")

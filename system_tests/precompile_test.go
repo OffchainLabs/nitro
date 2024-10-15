@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"sort"
@@ -874,6 +875,46 @@ func TestChainOwners(t *testing.T) {
 	if (err == nil) || (err.Error() != "execution reverted") {
 		Fatal(t, "expected rectify chain owner to revert since it is already an owner")
 	}
+}
+
+func TestArbOwnerDoesntRevert(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.MaxCodeSize = 100
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	Require(t, err)
+	tx, err := arbOwner.SetChainConfig(&auth, string(serializedChainConfig))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	tx, err = arbOwner.SetAmortizedCostCapBips(&auth, 77734)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	tx, err = arbOwner.ReleaseL1PricerSurplusFunds(&auth, big.NewInt(1))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	tx, err = arbOwner.SetL2BaseFee(&auth, big.NewInt(1))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 }
 
 func TestArbGasInfoDoesntRevert(t *testing.T) {
