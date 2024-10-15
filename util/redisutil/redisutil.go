@@ -118,12 +118,6 @@ func (o *queryOptions) string(name string) string {
 	return vs[len(vs)-1]
 }
 
-func (o *queryOptions) strings(name string) []string {
-	vs := o.q[name]
-	delete(o.q, name)
-	return vs
-}
-
 func (o *queryOptions) int(name string) int {
 	s := o.string(name)
 	if s == "" {
@@ -134,7 +128,7 @@ func (o *queryOptions) int(name string) int {
 		return i
 	}
 	if o.err == nil {
-		o.err = fmt.Errorf("redis: invalid %s number: %s", name, err)
+		o.err = fmt.Errorf("redis: invalid %s number: %w", name, err)
 	}
 	return 0
 }
