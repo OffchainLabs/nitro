@@ -639,6 +639,60 @@ func TestArbAggregatorBaseFee(t *testing.T) {
 	}
 }
 
+func TestArbAddressTableDoesntRevert(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbAddressTable, err := precompilesgen.NewArbAddressTable(types.ArbAddressTableAddress, builder.L2.Client)
+	Require(t, err)
+
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+
+	exists, err := arbAddressTable.AddressExists(callOpts, addr)
+	Require(t, err)
+	if exists {
+		Fatal(t, "expected address to not exist")
+	}
+
+	tx, err := arbAddressTable.Register(&auth, addr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	idx, err := arbAddressTable.Lookup(callOpts, addr)
+	Require(t, err)
+
+	retrievedAddr, err := arbAddressTable.LookupIndex(callOpts, idx)
+	Require(t, err)
+	if retrievedAddr.Cmp(addr) != 0 {
+		Fatal(t, "expected retrieved address to be", addr, "got", retrievedAddr)
+	}
+
+	size, err := arbAddressTable.Size(callOpts)
+	Require(t, err)
+	if size.Cmp(big.NewInt(1)) != 0 {
+		Fatal(t, "expected size to be 1, got", size)
+	}
+
+	tx, err = arbAddressTable.Compress(&auth, addr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	res := []uint8{128}
+	_, _, err = arbAddressTable.Decompress(callOpts, res, big.NewInt(0))
+	Require(t, err)
+}
+
 func TestArbAggregatorDoesntRevert(t *testing.T) {
 	t.Parallel()
 
