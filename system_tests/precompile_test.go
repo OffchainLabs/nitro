@@ -83,7 +83,7 @@ func TestArbDebugPanic(t *testing.T) {
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
-	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
 	Require(t, err)
 
 	_, err = arbDebug.Panic(&auth)
@@ -141,7 +141,7 @@ func TestCustomSolidityErrors(t *testing.T) {
 		}
 	}
 
-	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
 	Require(t, err, "could not bind ArbDebug contract")
 	ensure(
 		arbDebug.CustomRevert(callOpts, 1024),
@@ -158,7 +158,7 @@ func TestCustomSolidityErrors(t *testing.T) {
 		"arbSys.ArbBlockHash",
 	)
 
-	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(types.ArbRetryableTxAddress, builder.L2.Client)
 	Require(t, err)
 	_, customError = arbRetryableTx.SubmitRetryable(
 		&auth,
@@ -455,7 +455,7 @@ func TestCurrentTxL1GasFees(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, builder.L2.Client)
 	Require(t, err)
 
 	currTxL1GasFees, err := arbGasInfo.GetCurrentTxL1GasFees(&bind.CallOpts{Context: ctx})
@@ -478,11 +478,11 @@ func TestGetBrotliCompressionLevel(t *testing.T) {
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
-	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), builder.L2.Client)
-	Require(t, err, "could not bind ArbOwner contract")
+	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
+	Require(t, err)
 
-	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), builder.L2.Client)
-	Require(t, err, "could not bind ArbOwner contract")
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
 
 	brotliCompressionLevel := uint64(11)
 
@@ -495,7 +495,7 @@ func TestGetBrotliCompressionLevel(t *testing.T) {
 	// retrieves brotli compression level
 	callOpts := &bind.CallOpts{Context: ctx}
 	retrievedBrotliCompressionLevel, err := arbOwnerPublic.GetBrotliCompressionLevel(callOpts)
-	Require(t, err, "failed to call GetBrotliCompressionLevel")
+	Require(t, err)
 	if retrievedBrotliCompressionLevel != brotliCompressionLevel {
 		Fatal(t, "expected brotli compression level to be", brotliCompressionLevel, "got", retrievedBrotliCompressionLevel)
 	}
