@@ -678,6 +678,8 @@ func mainImpl() int {
 
 	execNodeConfig := execNode.ConfigFetcher()
 	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Timeboost.Enable {
+		log.Warn("TODO FIX RACE CONDITION sleeping for 10 seconds before starting express lane...")
+		time.Sleep(10 * time.Second)
 		execNode.Sequencer.StartExpressLane(
 			ctx,
 			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress),
