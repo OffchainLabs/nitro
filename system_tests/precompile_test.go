@@ -640,6 +640,48 @@ func TestArbAggregatorBaseFee(t *testing.T) {
 	}
 }
 
+func TestFeeAccounts(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+
+	builder.L2Info.GenerateAccount("User2")
+	addr := builder.L2Info.GetAddress("User2")
+
+	tx, err := arbOwner.SetNetworkFeeAccount(&auth, addr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	feeAccount, err := arbOwner.GetNetworkFeeAccount(callOpts)
+	Require(t, err)
+	if feeAccount.Cmp(addr) != 0 {
+		Fatal(t, "expected fee account to be", addr, "got", feeAccount)
+	}
+
+	tx, err = arbOwner.SetInfraFeeAccount(&auth, addr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	feeAccount, err = arbOwner.GetInfraFeeAccount(callOpts)
+	Require(t, err)
+	if feeAccount.Cmp(addr) != 0 {
+		Fatal(t, "expected fee account to be", addr, "got", feeAccount)
+	}
+}
+
 func TestArbAddressTableDoesntRevert(t *testing.T) {
 	t.Parallel()
 
