@@ -1816,7 +1816,12 @@ impl Machine {
     }
 
     #[cfg(feature = "native")]
-    pub fn call_user_func(&mut self, func: &str, args: Vec<Value>, ink: arbutil::evm::api::Ink) -> Result<Vec<Value>> {
+    pub fn call_user_func(
+        &mut self,
+        func: &str,
+        args: Vec<Value>,
+        ink: arbutil::evm::api::Ink,
+    ) -> Result<Vec<Value>> {
         self.set_ink(ink);
         self.call_function("user", func, args)
     }

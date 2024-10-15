@@ -3,7 +3,10 @@
 
 use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
 use arbutil::{
-    evm::{api::{Ink, VecReader}, user::UserOutcome},
+    evm::{
+        api::{Ink, VecReader},
+        user::UserOutcome,
+    },
     Bytes20, Bytes32, Color,
 };
 use eyre::{bail, Result};

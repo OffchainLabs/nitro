@@ -9,7 +9,14 @@ use crate::{
     value::FunctionType,
     Machine,
 };
-use arbutil::{evm::{self, api::{Gas, Ink}}, operator::OperatorInfo, Bytes32};
+use arbutil::{
+    evm::{
+        self,
+        api::{Gas, Ink},
+    },
+    operator::OperatorInfo,
+    Bytes32,
+};
 use derivative::Derivative;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
