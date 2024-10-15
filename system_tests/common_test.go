@@ -1730,6 +1730,10 @@ var (
 // This can be used as an input to the arbitrator prover to validate a block.
 func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 	t.Helper()
+	flag.Parse()
+	if !*recordBlockInputsEnable {
+		return
+	}
 	ctx := builder.ctx
 	inboxPos := arbutil.MessageIndex(block)
 	for {

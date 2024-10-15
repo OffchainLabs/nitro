@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"math"
 	"math/big"
@@ -426,10 +425,7 @@ func storageTest(t *testing.T, jit bool) {
 
 	// Captures a block_inputs json file for the block that included the
 	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
-	flag.Parse()
-	if *recordBlockInputsEnable {
-		recordBlock(t, receipt.BlockNumber.Uint64(), builder)
-	}
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder)
 }
 
 func TestProgramTransientStorage(t *testing.T) {
