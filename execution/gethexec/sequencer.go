@@ -1241,13 +1241,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		return 0
 	})
 
-	if config.Timeboost.Enable {
-		s.StartExpressLane(
-			ctxIn,
-			common.HexToAddress(config.Timeboost.AuctionContractAddress),
-			common.HexToAddress(config.Timeboost.AuctioneerAddress))
-	}
-
 	return nil
 }
 
