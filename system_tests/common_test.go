@@ -1728,7 +1728,7 @@ var (
 // recordBlock writes a json file with all of the data needed to validate a block.
 //
 // This can be used as an input to the arbitrator prover to validate a block.
-func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
+func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ethdb.WasmTarget) {
 	t.Helper()
 	flag.Parse()
 	if !*recordBlockInputsEnable {
@@ -1759,7 +1759,7 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 	}
 	validationInputsWriter, err := inputs.NewWriter(options...)
 	Require(t, err)
-	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.TargetWavm)
+	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, targets...)
 	if err != nil {
 		Fatal(t, "failed to get validation inputs", block, err)
 	}
