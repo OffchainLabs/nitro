@@ -187,10 +187,6 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 	})
 }
 
-func (es *expressLaneService) StopAndWait() {
-	es.StopWaiter.StopAndWait()
-}
-
 func (es *expressLaneService) currentRoundHasController() bool {
 	es.Lock()
 	defer es.Unlock()
