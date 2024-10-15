@@ -445,6 +445,9 @@ func TestGetLifetime(t *testing.T) {
 	}
 }
 
+// DoesntRevert tests are useful to check if precompile calls revert due to differences in the
+// return types of a contract between go and solidity.
+// They are not a substitute for unit tests, as they don't test the actual functionality of the precompile.
 func TestArbRetryableTxDoesntRevert(t *testing.T) {
 	t.Parallel()
 

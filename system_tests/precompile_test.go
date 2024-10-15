@@ -683,6 +683,9 @@ func TestFeeAccounts(t *testing.T) {
 	}
 }
 
+// DoesntRevert tests are useful to check if precompile calls revert due to differences in the
+// return types of a contract between go and solidity.
+// They are not a substitute for unit tests, as they don't test the actual functionality of the precompile.
 func TestArbAddressTableDoesntRevert(t *testing.T) {
 	t.Parallel()
 
@@ -737,6 +740,9 @@ func TestArbAddressTableDoesntRevert(t *testing.T) {
 	Require(t, err)
 }
 
+// DoesntRevert tests are useful to check if precompile calls revert due to differences in the
+// return types of a contract between go and solidity.
+// They are not a substitute for unit tests, as they don't test the actual functionality of the precompile.
 func TestArbAggregatorDoesntRevert(t *testing.T) {
 	t.Parallel()
 
@@ -762,6 +768,9 @@ func TestArbAggregatorDoesntRevert(t *testing.T) {
 	Require(t, err)
 }
 
+// DoesntRevert tests are useful to check if precompile calls revert due to differences in the
+// return types of a contract between go and solidity.
+// They are not a substitute for unit tests, as they don't test the actual functionality of the precompile.
 func TestArbosTestDoesntRevert(t *testing.T) {
 	t.Parallel()
 
@@ -781,6 +790,9 @@ func TestArbosTestDoesntRevert(t *testing.T) {
 	Require(t, err)
 }
 
+// DoesntRevert tests are useful to check if precompile calls revert due to differences in the
+// return types of a contract between go and solidity.
+// They are not a substitute for unit tests, as they don't test the actual functionality of the precompile.
 func TestArbSysDoesntRevert(t *testing.T) {
 	t.Parallel()
 
@@ -877,6 +889,9 @@ func TestChainOwners(t *testing.T) {
 	}
 }
 
+// DoesntRevert tests are useful to check if precompile calls revert due to differences in the
+// return types of a contract between go and solidity.
+// They are not a substitute for unit tests, as they don't test the actual functionality of the precompile.
 func TestArbOwnerDoesntRevert(t *testing.T) {
 	t.Parallel()
 
@@ -917,6 +932,9 @@ func TestArbOwnerDoesntRevert(t *testing.T) {
 	Require(t, err)
 }
 
+// DoesntRevert tests are useful to check if precompile calls revert due to differences in the
+// return types of a contract between go and solidity.
+// They are not a substitute for unit tests, as they don't test the actual functionality of the precompile.
 func TestArbGasInfoDoesntRevert(t *testing.T) {
 	t.Parallel()
 
