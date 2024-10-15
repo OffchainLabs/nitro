@@ -146,13 +146,11 @@ func (w *Writer) Write(json *server_api.InputJSON) error {
 	if err != nil {
 		return err
 	}
-	var fileName string
+	fileName := "block_inputs.json"
 	if w.useBlockIdInFileName {
-		fileName = filepath.Join(dir, fmt.Sprintf("block_inputs_%d.json", json.Id))
-	} else {
-		fileName = filepath.Join(dir, "block_inputs.json")
+		fileName = fmt.Sprintf("block_inputs_%d.json", json.Id)
 	}
-	if err = os.WriteFile(fileName, contents, 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(dir, fileName), contents, 0600); err != nil {
 		return err
 	}
 	return nil

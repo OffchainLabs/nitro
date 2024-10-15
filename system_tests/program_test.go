@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"math"
 	"math/big"
@@ -394,8 +393,6 @@ func errorTest(t *testing.T, jit bool) {
 	validateBlocks(t, 7, jit, builder)
 }
 
-var validatorInputsWriterBaseDir = flag.String("validator.inputswriter.basedir", "", "Base directory for validationInputsWriter")
-
 func TestProgramStorage(t *testing.T) {
 	t.Parallel()
 	storageTest(t, true)
@@ -426,12 +423,9 @@ func storageTest(t *testing.T, jit bool) {
 
 	validateBlocks(t, 2, jit, builder)
 
-	// Captures a block_input_<id>.json file for the block that included the
+	// Captures a block_inputs json file for the block that included the
 	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
-	flag.Parse()
-	if *validatorInputsWriterBaseDir != "" {
-		recordBlock(t, receipt.BlockNumber.Uint64(), builder, *validatorInputsWriterBaseDir, rawdb.TargetWavm, rawdb.LocalTarget())
-	}
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
 }
 
 func TestProgramTransientStorage(t *testing.T) {

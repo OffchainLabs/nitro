@@ -173,19 +173,19 @@ jobs:
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
         run: |
-          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 --validator.inputswriter.basedir="${{ github.workspace }}/target"
+          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target" --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
       
       - name: run arbitrator prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |
           make build-prover-bin
-          target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/block_inputs.json"
-          
+          target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/TestProgramStorage/block_inputs.json"
+      
       - name: run jit prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |
           make build-jit
-          if [ -n "$(target/bin/jit --binary target/machines/latest/replay.wasm --cranelift --json-inputs='${{ github.workspace }}/target/block_inputs.json')" ]; then
+          if [ -n "$(target/bin/jit --binary target/machines/latest/replay.wasm --cranelift --json-inputs='${{ github.workspace }}/target/TestProgramStorage/block_inputs.json')" ]; then
             echo "Error: Command produced output."
             exit 1
           fi
