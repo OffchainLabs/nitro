@@ -33,13 +33,11 @@ var (
 	ErrOutOfBounds = errors.New("value out of bounds")
 )
 
-// TODO: add system test
 // AddChainOwner adds account as a chain owner
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
 	return c.State.ChainOwners().Add(newOwner)
 }
 
-// TODO: add system test
 // RemoveChainOwner removes account from the list of chain owners
 func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 	member, _ := con.IsChainOwner(c, evm, addr)

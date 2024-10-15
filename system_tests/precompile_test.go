@@ -759,7 +759,7 @@ func TestArbSysDoesntRevert(t *testing.T) {
 	Require(t, err)
 }
 
-func TestGetAllChainOwners(t *testing.T) {
+func TestChainOwners(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -774,10 +774,22 @@ func TestGetAllChainOwners(t *testing.T) {
 
 	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
 	Require(t, err)
-
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
 
+	builder.L2Info.GenerateAccount("Owner2")
+	chainOwnerAddr2 := builder.L2Info.GetAddress("Owner2")
+	tx, err := arbOwner.AddChainOwner(&auth, chainOwnerAddr2)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	isChainOwner, err := arbOwnerPublic.IsChainOwner(callOpts, chainOwnerAddr2)
+	Require(t, err)
+	if !isChainOwner {
+		Fatal(t, "expected owner2 to be a chain owner")
+	}
+
+	// check that the chain owners retrieved from arbOwnerPublic and arbOwner are the same
 	chainOwnersArbOwnerPublic, err := arbOwnerPublic.GetAllChainOwners(callOpts)
 	Require(t, err)
 	chainOwnersArbOwner, err := arbOwner.GetAllChainOwners(callOpts)
@@ -794,11 +806,10 @@ func TestGetAllChainOwners(t *testing.T) {
 			Fatal(t, "expected chain owners to be the same")
 		}
 	}
-
-	ownerAddr := builder.L2Info.GetAddress("Owner")
+	chainOwnerAddr := builder.L2Info.GetAddress("Owner")
 	chainOwnerInChainOwners := false
 	for _, chainOwner := range chainOwnersArbOwner {
-		if chainOwner.Cmp(ownerAddr) == 0 {
+		if chainOwner.Cmp(chainOwnerAddr) == 0 {
 			chainOwnerInChainOwners = true
 		}
 	}
@@ -806,7 +817,18 @@ func TestGetAllChainOwners(t *testing.T) {
 		Fatal(t, "expected owner to be in chain owners")
 	}
 
-	_, err = arbOwnerPublic.RectifyChainOwner(&auth, ownerAddr)
+	// remove chain owner 2
+	tx, err = arbOwner.RemoveChainOwner(&auth, chainOwnerAddr2)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	isChainOwner, err = arbOwnerPublic.IsChainOwner(callOpts, chainOwnerAddr2)
+	Require(t, err)
+	if isChainOwner {
+		Fatal(t, "expected owner2 to not be a chain owner")
+	}
+
+	_, err = arbOwnerPublic.RectifyChainOwner(&auth, chainOwnerAddr)
 	if (err == nil) || (err.Error() != "execution reverted") {
 		Fatal(t, "expected rectify chain owner to revert since it is already an owner")
 	}
