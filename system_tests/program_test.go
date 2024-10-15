@@ -417,10 +417,15 @@ func storageTest(t *testing.T, jit bool) {
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
-	ensure(tx, l2client.SendTransaction(ctx, tx))
+	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
 	validateBlocks(t, 2, jit, builder)
+
+	// Captures a block_input_<id>.json file for the block that included the
+	// storage write transaction.
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder)
 }
 
 func TestProgramTransientStorage(t *testing.T) {
@@ -1380,7 +1385,7 @@ func TestProgramCacheManager(t *testing.T) {
 	isManager, err := arbWasmCache.IsCacheManager(nil, manager)
 	assert(!isManager, err)
 
-	// athorize the manager
+	// authorize the manager
 	ensure(arbOwner.AddWasmCacheManager(&ownerAuth, manager))
 	assert(arbWasmCache.IsCacheManager(nil, manager))
 	all, err := arbWasmCache.AllCacheManagers(nil)
@@ -2006,4 +2011,404 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []s
 			}()
 		}
 	}
+}
+
+func deployWasmAndGetEntrySizeEstimateBytes(
+	t *testing.T,
+	builder *NodeBuilder,
+	auth bind.TransactOpts,
+	wasmName string,
+) (common.Address, uint64) {
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+
+	wasm, _ := readWasmFile(t, rustFile(wasmName))
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err, ", wasmName:", wasmName)
+
+	programAddress := deployContract(t, ctx, auth, l2client, wasm)
+	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
+	Require(t, err, ", wasmName:", wasmName)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err, ", wasmName:", wasmName)
+
+	if len(receipt.Logs) != 1 {
+		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs), ", wasmName:", wasmName)
+	}
+	log, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
+	Require(t, err, ", wasmName:", wasmName)
+
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err, ", wasmName:", wasmName)
+
+	module, err := statedb.TryGetActivatedAsm(rawdb.LocalTarget(), log.ModuleHash)
+	Require(t, err, ", wasmName:", wasmName)
+
+	entrySizeEstimateBytes := programs.GetEntrySizeEstimateBytes(module, log.Version, true)
+	// just a sanity check
+	if entrySizeEstimateBytes == 0 {
+		Fatal(t, "entrySizeEstimateBytes is 0, wasmName:", wasmName)
+	}
+	return programAddress, entrySizeEstimateBytes
+}
+
+func TestWasmLruCache(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	auth.GasLimit = 32000000
+	auth.Value = oneEth
+
+	fallibleProgramAddress, fallibleEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "fallible")
+	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "keccak")
+	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "math")
+	t.Log(
+		"entrySizeEstimateBytes, ",
+		"fallible:", fallibleEntrySize,
+		"keccak:", keccakEntrySize,
+		"math:", mathEntrySize,
+	)
+	if fallibleEntrySize == keccakEntrySize || fallibleEntrySize == mathEntrySize || keccakEntrySize == mathEntrySize {
+		Fatal(t, "at least two programs have the same entry size")
+	}
+
+	programs.ClearWasmLruCache()
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	programs.SetWasmLruCacheCapacity(fallibleEntrySize - 1)
+	// fallible wasm program will not be cached since its size is greater than lru cache capacity
+	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	programs.SetWasmLruCacheCapacity(
+		fallibleEntrySize + keccakEntrySize + mathEntrySize - 1,
+	)
+	// fallible wasm program will be cached
+	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+
+	// keccak wasm program will be cached
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+
+	// math wasm program will be cached, but fallible will be evicted since (fallible + keccak + math) > lruCacheCapacity
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: keccakEntrySize + mathEntrySize,
+	})
+}
+
+func checkLongTermCacheMetrics(t *testing.T, expected programs.WasmLongTermCacheMetrics) {
+	t.Helper()
+	longTermMetrics := programs.GetWasmCacheMetrics().LongTerm
+	if longTermMetrics.Count != expected.Count {
+		t.Fatalf("longTermMetrics.Count, expected: %v, actual: %v", expected.Count, longTermMetrics.Count)
+	}
+	if longTermMetrics.SizeBytes != expected.SizeBytes {
+		t.Fatalf("longTermMetrics.SizeBytes, expected: %v, actual: %v", expected.SizeBytes, longTermMetrics.SizeBytes)
+	}
+}
+
+func checkLruCacheMetrics(t *testing.T, expected programs.WasmLruCacheMetrics) {
+	t.Helper()
+	lruMetrics := programs.GetWasmCacheMetrics().Lru
+	if lruMetrics.Count != expected.Count {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", expected.Count, lruMetrics.Count)
+	}
+	if lruMetrics.SizeBytes != expected.SizeBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", expected.SizeBytes, lruMetrics.SizeBytes)
+	}
+}
+
+func TestWasmLongTermCache(t *testing.T) {
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
+		builder.WithStylusLongTermCache(true)
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbWasmCache, err := pgen.NewArbWasmCache(types.ArbWasmCacheAddress, builder.L2.Client)
+	Require(t, err)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&ownerAuth, 10_000))
+
+	ownerAuth.GasLimit = 32000000
+	ownerAuth.Value = oneEth
+
+	fallibleProgramAddress, fallibleEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "fallible")
+	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "keccak")
+	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "math")
+	t.Log(
+		"entrySizeEstimateBytes, ",
+		"fallible:", fallibleEntrySize,
+		"keccak:", keccakEntrySize,
+		"math:", mathEntrySize,
+	)
+	if fallibleEntrySize == keccakEntrySize || fallibleEntrySize == mathEntrySize || keccakEntrySize == mathEntrySize {
+		Fatal(t, "at least two programs have the same entry size")
+	}
+
+	ownerAuth.Value = common.Big0
+
+	programs.ClearWasmLongTermCache()
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	// fallible wasm program will not be cached since caching is not set for this program
+	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, fallibleProgramAddress))
+	// fallible wasm program will be cached
+	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+
+	// keccak wasm program will be cached
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, keccakProgramAddress))
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+
+	// math wasm program will not be cached
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+
+	// math wasm program will be cached
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, mathProgramAddress))
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     3,
+		SizeBytes: fallibleEntrySize + keccakEntrySize + mathEntrySize,
+	})
+
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	fallibleProgramHash := statedb.GetCodeHash(fallibleProgramAddress)
+	keccakProgramHash := statedb.GetCodeHash(keccakProgramAddress)
+	mathProgramHash := statedb.GetCodeHash(mathProgramAddress)
+
+	ensure(arbWasmCache.EvictCodehash(&ownerAuth, keccakProgramHash))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + mathEntrySize,
+	})
+
+	// keccak wasm program will not be cached
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + mathEntrySize,
+	})
+
+	// keccak wasm program will be cached
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, keccakProgramAddress))
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     3,
+		SizeBytes: fallibleEntrySize + keccakEntrySize + mathEntrySize,
+	})
+
+	ensure(arbWasmCache.EvictCodehash(&ownerAuth, fallibleProgramHash))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: keccakEntrySize + mathEntrySize,
+	})
+
+	ensure(arbWasmCache.EvictCodehash(&ownerAuth, mathProgramHash))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: keccakEntrySize,
+	})
+
+	ensure(arbWasmCache.EvictCodehash(&ownerAuth, keccakProgramHash))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+}
+
+func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
+		builder.WithStylusLongTermCache(true)
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbWasmCache, err := pgen.NewArbWasmCache(types.ArbWasmCacheAddress, builder.L2.Client)
+	Require(t, err)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&ownerAuth, 10_000))
+
+	ownerAuth.GasLimit = 32000000
+	ownerAuth.Value = oneEth
+
+	fallibleProgramAddress, fallibleEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "fallible")
+	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "keccak")
+	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "math")
+	if fallibleEntrySize == keccakEntrySize || fallibleEntrySize == mathEntrySize || keccakEntrySize == mathEntrySize {
+		Fatal(t, "at least two programs have the same entry size")
+	}
+
+	ownerAuth.Value = common.Big0
+
+	programs.ClearWasmLongTermCache()
+	programs.ClearWasmLruCache()
+	// only 2 out of 3 programs should fit lru
+	programs.SetWasmLruCacheCapacity(
+		fallibleEntrySize + keccakEntrySize + mathEntrySize - 1,
+	)
+
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, fallibleProgramAddress))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+
+	// clear long term cache to emulate restart
+	programs.ClearWasmLongTermCache()
+	programs.ClearWasmLruCache()
+
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	nonce := builder.L2Info.GetInfoWithPrivKey("Owner").Nonce.Load()
+	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	_, err = arbutil.SendTxAsCall(ctx, l2client, tx, l2info.GetAddress("Owner"), nil, true)
+	Require(t, err)
+	// restore nonce in L2Info
+	builder.L2Info.GetInfoWithPrivKey("Owner").Nonce.Store(nonce)
+	// fallibleProgram should be added only to lru cache as the api call should be processed with wasm cache tag = 0
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+
+	// mathProgram should end up in lru cache and
+	// as result fallibleProgram should be evicted as least recently used item (tx that restores the program back to long term cache shouldn't promote the lru item);
+	// fallibleProgram should remain in long term cache
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: keccakEntrySize + mathEntrySize,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
 
@@ -93,7 +94,7 @@ type InboxReader struct {
 	delayedBridge  *DelayedBridge
 	sequencerInbox *SequencerInbox
 	caughtUpChan   chan struct{}
-	client         arbutil.L1Interface
+	client         *ethclient.Client
 	l1Reader       *headerreader.HeaderReader
 
 	// Atomic
@@ -101,7 +102,7 @@ type InboxReader struct {
 	lastReadBatchCount atomic.Uint64
 }
 
-func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
+func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
 	err := config().Validate()
 	if err != nil {
 		return nil, err

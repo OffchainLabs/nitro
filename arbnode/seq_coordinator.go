@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -491,7 +491,7 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 		// Before proceeding, first try deleting finalized messages from redis and setting the finalizedMsgCount key
 		finalized, err := c.sync.GetFinalizedMsgCount(ctx)
 		if err != nil {
-			log.Warn("Error getting finalizedMessageCount from syncMonitor: %w", err)
+			log.Warn("Error getting finalizedMessageCount from syncMonitor", "err", err)
 		} else if finalized == 0 {
 			log.Warn("SyncMonitor returned zero finalizedMessageCount")
 		} else if err := c.deleteFinalizedMsgsFromRedis(ctx, finalized); err != nil {

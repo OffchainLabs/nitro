@@ -8,6 +8,7 @@ use std::{
     borrow::Borrow,
     fmt,
     ops::{Deref, DerefMut},
+    str::FromStr,
 };
 
 // These values must be kept in sync with `arbutil/preimage_type.go`,
@@ -80,6 +81,32 @@ impl From<usize> for Bytes32 {
         let mut b = [0u8; 32];
         b[(32 - (usize::BITS as usize / 8))..].copy_from_slice(&x.to_be_bytes());
         Self(b)
+    }
+}
+
+impl FromStr for Bytes32 {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Remove the "0x" prefix if present
+        let s = s.strip_prefix("0x").unwrap_or(s);
+
+        // Pad with leading zeros if the string is shorter than 64 characters (32 bytes)
+        let padded = format!("{:0>64}", s);
+
+        // Decode the hex string using the hex crate
+        let decoded_bytes = hex::decode(padded).map_err(|_| "Invalid hex string")?;
+
+        // Ensure the decoded bytes is exactly 32 bytes
+        if decoded_bytes.len() != 32 {
+            return Err("Hex string too long for Bytes32");
+        }
+
+        // Create a 32-byte array and fill it with the decoded bytes.
+        let mut b = [0u8; 32];
+        b.copy_from_slice(&decoded_bytes);
+
+        Ok(Bytes32(b))
     }
 }
 
@@ -247,5 +274,79 @@ type GenericBytes20 = digest::generic_array::GenericArray<u8, digest::generic_ar
 impl From<GenericBytes20> for Bytes20 {
     fn from(x: GenericBytes20) -> Self {
         <[u8; 20]>::from(x).into()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_bytes32() {
+        let b = Bytes32::from(0x12345678u32);
+        let expected = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0x12, 0x34, 0x56, 0x78,
+        ];
+        assert_eq!(b, Bytes32(expected));
+    }
+
+    #[test]
+    fn test_from_str_short() {
+        // Short hex string
+        let b = Bytes32::from_str("0x12345678").unwrap();
+        let expected = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0x12, 0x34, 0x56, 0x78,
+        ];
+        assert_eq!(b, Bytes32(expected));
+    }
+
+    #[test]
+    fn test_from_str_very_short() {
+        // Short hex string
+        let b = Bytes32::from_str("0x1").unwrap();
+        let expected = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0x1,
+        ];
+        assert_eq!(b, Bytes32(expected));
+    }
+
+    #[test]
+    fn test_from_str_no_prefix() {
+        // Short hex string
+        let b = Bytes32::from_str("12345678").unwrap();
+        let expected = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0x12, 0x34, 0x56, 0x78,
+        ];
+        assert_eq!(b, Bytes32(expected));
+    }
+
+    #[test]
+    fn test_from_str_full() {
+        // Full-length hex string
+        let b =
+            Bytes32::from_str("0x0000000000000000000000000000000000000000000000000000000012345678")
+                .unwrap();
+        let expected = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0x12, 0x34, 0x56, 0x78,
+        ];
+        assert_eq!(b, Bytes32(expected));
+    }
+
+    #[test]
+    fn test_from_str_invalid_non_hex() {
+        let s = "0x123g5678"; // Invalid character 'g'
+        assert!(Bytes32::from_str(s).is_err());
+    }
+
+    #[test]
+    fn test_from_str_too_big() {
+        let s =
+            "0123456789ABCDEF0123456789ABCDEF01234567890123456789ABCDEF01234567890123456789ABCDEF0"; // 65 characters
+        assert!(Bytes32::from_str(s).is_err());
     }
 }

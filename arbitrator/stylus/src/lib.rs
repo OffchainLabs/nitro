@@ -11,7 +11,7 @@ use arbutil::{
     format::DebugBytes,
     Bytes32,
 };
-use cache::InitCache;
+use cache::{deserialize_module, CacheMetrics, InitCache};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
@@ -139,7 +139,8 @@ impl RustBytes {
 pub unsafe extern "C" fn stylus_activate(
     wasm: GoSliceData,
     page_limit: u16,
-    version: u16,
+    stylus_version: u16,
+    arbos_version_for_gas: u64,
     debug: bool,
     output: *mut RustBytes,
     codehash: *const Bytes32,
@@ -153,7 +154,15 @@ pub unsafe extern "C" fn stylus_activate(
     let codehash = &*codehash;
     let gas = &mut *gas;
 
-    let (module, info) = match native::activate(wasm, codehash, version, page_limit, debug, gas) {
+    let (module, info) = match native::activate(
+        wasm,
+        codehash,
+        stylus_version,
+        arbos_version_for_gas,
+        page_limit,
+        debug,
+        gas,
+    ) {
         Ok(val) => val,
         Err(err) => return output.write_err(err),
     };
@@ -300,10 +309,10 @@ pub unsafe extern "C" fn stylus_call(
     status
 }
 
-/// resize lru
+/// set lru cache capacity
 #[no_mangle]
-pub extern "C" fn stylus_cache_lru_resize(size: u32) {
-    InitCache::set_lru_size(size);
+pub extern "C" fn stylus_set_cache_lru_capacity(capacity_bytes: u64) {
+    InitCache::set_lru_capacity(capacity_bytes);
 }
 
 /// Caches an activated user program.
@@ -352,5 +361,44 @@ pub extern "C" fn stylus_reorg_vm(_block: u64, arbos_tag: u32) {
 pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
     if !vec.ptr.is_null() {
         mem::drop(vec.into_vec())
+    }
+}
+
+/// Gets cache metrics.
+///
+/// # Safety
+///
+/// `output` must not be null.
+#[no_mangle]
+pub unsafe extern "C" fn stylus_get_cache_metrics(output: *mut CacheMetrics) {
+    let output = &mut *output;
+    InitCache::get_metrics(output);
+}
+
+/// Clears lru cache.
+/// Only used for testing purposes.
+#[no_mangle]
+pub extern "C" fn stylus_clear_lru_cache() {
+    InitCache::clear_lru_cache()
+}
+
+/// Clears long term cache (for arbos_tag = 1)
+/// Only used for testing purposes.
+#[no_mangle]
+pub extern "C" fn stylus_clear_long_term_cache() {
+    InitCache::clear_long_term(1);
+}
+
+/// Gets entry size in bytes.
+/// Only used for testing purposes.
+#[no_mangle]
+pub extern "C" fn stylus_get_entry_size_estimate_bytes(
+    module: GoSliceData,
+    version: u16,
+    debug: bool,
+) -> u64 {
+    match deserialize_module(module.slice(), version, debug) {
+        Err(error) => panic!("tried to get invalid asm!: {error}"),
+        Ok((_, _, entry_size_estimate_bytes)) => entry_size_estimate_bytes.try_into().unwrap(),
     }
 }

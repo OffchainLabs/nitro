@@ -5,6 +5,8 @@ package precompiles
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
+	gethparams "github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -32,12 +34,13 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 	debug := evm.ChainConfig().DebugMode()
 	runMode := c.txProcessor.RunMode()
 	programs := c.State.Programs()
+	arbosVersion := c.State.ArbOSVersion()
 
 	// charge a fixed cost up front to begin activation
 	if err := c.Burn(1659168); err != nil {
 		return 0, nil, err
 	}
-	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, runMode, debug)
+	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, arbosVersion, runMode, debug)
 	if takeAllGas {
 		_ = c.BurnOut()
 	}
@@ -133,6 +136,9 @@ func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint64, uint64, error) {
 	params, err := c.State.Programs().Params()
 	init := uint64(params.MinInitGas) * programs.MinInitGasUnits
 	cached := uint64(params.MinCachedInitGas) * programs.MinCachedGasUnits
+	if c.State.ArbOSVersion() < gethparams.ArbosVersion_StylusChargingFixes {
+		return 0, 0, vm.ErrExecutionReverted
+	}
 	return init, cached, err
 }
 
