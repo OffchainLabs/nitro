@@ -676,6 +676,14 @@ func mainImpl() int {
 		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
 	}
 
+	execNodeConfig := execNode.ConfigFetcher()
+	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Timeboost.Enable {
+		execNode.Sequencer.StartExpressLane(
+			ctx,
+			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress),
+			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress))
+	}
+
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
