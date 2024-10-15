@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sort"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -758,7 +759,7 @@ func TestArbSysDoesntRevert(t *testing.T) {
 	Require(t, err)
 }
 
-func TestArbOwnerPublicGetAllChainOwners(t *testing.T) {
+func TestGetAllChainOwners(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -774,11 +775,29 @@ func TestArbOwnerPublicGetAllChainOwners(t *testing.T) {
 	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
 	Require(t, err)
 
-	ownerAddr := builder.L2Info.GetAddress("Owner")
-	chainOwners, err := arbOwnerPublic.GetAllChainOwners(callOpts)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
+
+	chainOwnersArbOwnerPublic, err := arbOwnerPublic.GetAllChainOwners(callOpts)
+	Require(t, err)
+	chainOwnersArbOwner, err := arbOwner.GetAllChainOwners(callOpts)
+	Require(t, err)
+	if len(chainOwnersArbOwnerPublic) != len(chainOwnersArbOwner) {
+		Fatal(t, "expected chain owners to be the same length")
+	}
+	// sort the chain owners to ensure they are in the same order
+	sort.Slice(chainOwnersArbOwnerPublic, func(i, j int) bool {
+		return chainOwnersArbOwnerPublic[i].Cmp(chainOwnersArbOwnerPublic[j]) < 0
+	})
+	for i := 0; i < len(chainOwnersArbOwnerPublic); i += 1 {
+		if chainOwnersArbOwnerPublic[i].Cmp(chainOwnersArbOwner[i]) != 0 {
+			Fatal(t, "expected chain owners to be the same")
+		}
+	}
+
+	ownerAddr := builder.L2Info.GetAddress("Owner")
 	chainOwnerInChainOwners := false
-	for _, chainOwner := range chainOwners {
+	for _, chainOwner := range chainOwnersArbOwner {
 		if chainOwner.Cmp(ownerAddr) == 0 {
 			chainOwnerInChainOwners = true
 		}

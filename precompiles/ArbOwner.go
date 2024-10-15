@@ -54,7 +54,6 @@ func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 	return c.State.ChainOwners().IsMember(addr)
 }
 
-// TODO: add system test
 // GetAllChainOwners retrieves the list of chain owners
 func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
 	return c.State.ChainOwners().AllMembers(65536)
