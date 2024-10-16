@@ -83,14 +83,14 @@ fn test_model() {
     let model = MemoryModel::new(2, 1000);
 
     for jump in 1..=128 {
-        let mut total = 0;
+        let mut total = Gas(0);
         let mut pages = 0;
         while pages < 128 {
             let jump = jump.min(128 - pages);
-            total += model.gas_cost(jump, pages, pages).0;
+            total += model.gas_cost(jump, pages, pages);
             pages += jump;
         }
-        assert_eq!(total, 31999998);
+        assert_eq!(total, Gas(31999998));
     }
 
     for jump in 1..=128 {

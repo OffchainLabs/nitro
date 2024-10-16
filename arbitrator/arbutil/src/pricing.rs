@@ -7,7 +7,7 @@ use crate::evm::api::Ink;
 pub const HOSTIO_INK: Ink = Ink(8400);
 
 /// For hostios that include pointers.
-pub const PTR_INK: Ink = Ink(13440 - HOSTIO_INK.0);
+pub const PTR_INK: Ink = Ink(13440).sub(HOSTIO_INK);
 
 /// For hostios that involve an API cost.
 pub const EVM_API_INK: Ink = Ink(59673);

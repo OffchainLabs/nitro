@@ -120,6 +120,16 @@ macro_rules! derive_math {
         }
 
         impl $t {
+            /// Equivalent to the Add trait, but const.
+            pub const fn add(self, rhs: Self) -> Self {
+                Self(self.0 + rhs.0)
+            }
+
+            /// Equivalent to the Sub trait, but const.
+            pub const fn sub(self, rhs: Self) -> Self {
+                Self(self.0 - rhs.0)
+            }
+
             pub const fn saturating_add(self, rhs: Self) -> Self {
                 Self(self.0.saturating_add(rhs.0))
             }
