@@ -653,6 +653,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		readUntil = min(readUntil, c.prevRedisMessageCount)
 		client = c.prevRedisCoordinator.Client
 	}
+	if c.prevRedisMessageCount != 0 && localMsgCount >= c.prevRedisMessageCount {
+		log.Info("coordinator caught up to prev redis coordinator", "msgcount", localMsgCount, "prevMsgCount", c.prevRedisMessageCount)
+	}
 	var messages []arbostypes.MessageWithMetadata
 	msgToRead := localMsgCount
 	var msgReadErr error
