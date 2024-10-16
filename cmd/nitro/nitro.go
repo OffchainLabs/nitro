@@ -676,16 +676,6 @@ func mainImpl() int {
 		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
 	}
 
-	execNodeConfig := execNode.ConfigFetcher()
-	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Timeboost.Enable {
-		log.Warn("TODO FIX RACE CONDITION sleeping for 10 seconds before starting express lane...")
-		time.Sleep(10 * time.Second)
-		execNode.Sequencer.StartExpressLane(
-			ctx,
-			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress),
-			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress))
-	}
-
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
@@ -696,6 +686,14 @@ func mainImpl() int {
 		} else if nodeConfig.Init.ThenQuit {
 			return 0
 		}
+	}
+
+	execNodeConfig := execNode.ConfigFetcher()
+	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Timeboost.Enable {
+		execNode.Sequencer.StartExpressLane(
+			ctx,
+			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress),
+			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress))
 	}
 
 	err = nil
