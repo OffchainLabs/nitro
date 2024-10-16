@@ -218,7 +218,7 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 			return PublicKey{}, errors.New("tried to deserialize unvalidated public key from untrusted source")
 		}
 		// The most significant bit, when set, indicates that the point is in compressed form. Otherwise, the point is in uncompressed form.
-		if (in[1] & (1 << 7)) != 0 {
+		if len(in) == 1 || (in[1]&(1<<7)) != 0 {
 			return PublicKey{}, errors.New("invalid serialized public key")
 		}
 		err := key.Unmarshal(in[1:])
@@ -233,7 +233,7 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 		validityProof := new(bls12381.G1Affine)
 		proofBytes := in[1 : 1+proofLen]
 		// The most significant bit, when set, indicates that the point is in compressed form. Otherwise, the point is in uncompressed form.
-		if (proofBytes[0] & (1 << 7)) != 0 {
+		if len(proofBytes) == 0 || (proofBytes[0]&(1<<7)) != 0 {
 			return PublicKey{}, errors.New("invalid serialized validity proof")
 		}
 		err := validityProof.Unmarshal(proofBytes)
@@ -242,7 +242,7 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 		}
 		keyBytes := in[1+proofLen:]
 		// The most significant bit, when set, indicates that the point is in compressed form. Otherwise, the point is in uncompressed form.
-		if (keyBytes[0] & (1 << 7)) != 0 {
+		if len(keyBytes) == 0 || (keyBytes[0]&(1<<7)) != 0 {
 			return PublicKey{}, errors.New("invalid serialized public key")
 		}
 		err = key.Unmarshal(keyBytes)
@@ -273,7 +273,7 @@ func SignatureToBytes(sig Signature) []byte {
 
 func SignatureFromBytes(in []byte) (Signature, error) {
 	// The most significant bit, when set, indicates that the point is in compressed form. Otherwise, the point is in uncompressed form.
-	if (in[0] & (1 << 7)) != 0 {
+	if len(in) == 0 || (in[0]&(1<<7)) != 0 {
 		return nil, errors.New("invalid serialized signature")
 	}
 	g1 := new(bls12381.G1Affine)
