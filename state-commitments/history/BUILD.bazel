@@ -2,24 +2,26 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "history",
-    srcs = ["commitments.go"],
+    srcs = ["history_commitment.go"],
     importpath = "github.com/OffchainLabs/bold/state-commitments/history",
     visibility = ["//visibility:public"],
     deps = [
-        "//state-commitments/inclusion-proofs",
-        "//state-commitments/prefix-proofs",
+        "//math",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
     ],
 )
 
 go_test(
     name = "history_test",
     size = "small",
-    srcs = ["commitments_test.go"],
+    srcs = ["history_commitment_test.go"],
     embed = [":history"],
     deps = [
-        "//state-commitments/inclusion-proofs",
+        "//state-commitments/legacy",
+        "//state-commitments/prefix-proofs",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_stretchr_testify//require",
     ],
 )

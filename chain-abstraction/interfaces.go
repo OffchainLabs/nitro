@@ -12,7 +12,7 @@ import (
 
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	commitments "github.com/OffchainLabs/bold/state-commitments/history"
+	"github.com/OffchainLabs/bold/state-commitments/history"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -289,7 +289,7 @@ type SpecChallengeManager interface {
 		ctx context.Context,
 		assertion Assertion,
 		startCommit,
-		endCommit commitments.History,
+		endCommit history.History,
 		startEndPrefixProof []byte,
 	) (VerifiedRoyalEdge, error)
 	// Adds a level-zero edge to subchallenge given a source edge and history commitments.
@@ -297,7 +297,7 @@ type SpecChallengeManager interface {
 		ctx context.Context,
 		challengedEdge SpecEdge,
 		startCommit,
-		endCommit commitments.History,
+		endCommit history.History,
 		startParentInclusionProof []common.Hash,
 		endParentInclusionProof []common.Hash,
 		startEndPrefixProof []byte,

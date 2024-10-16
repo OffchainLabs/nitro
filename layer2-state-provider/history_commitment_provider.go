@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"slices"
 	"strconv"
 	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/state-commitments/history"
 	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -15,7 +17,6 @@ import (
 	"github.com/OffchainLabs/bold/api"
 	"github.com/OffchainLabs/bold/api/db"
 	"github.com/OffchainLabs/bold/containers/option"
-	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -109,7 +110,7 @@ type HistoryCommitmentProvider struct {
 }
 
 // NewHistoryCommitmentProvider creates an instance of a struct which can compute history
-// commitments over any number of challenge levels for BOLD.
+// commitments over any number of challenge levels for BoLD.
 func NewHistoryCommitmentProvider(
 	l2MessageStateCollector L2MessageStateCollector,
 	machineHashCollector MachineHashCollector,
@@ -136,18 +137,46 @@ func (p *HistoryCommitmentProvider) UpdateAPIDatabase(apiDB db.Database) {
 	p.apiDB = apiDB
 }
 
+// virtualFrom computes the virtual value for a history commitment
+//
+// I the optional h value is None, then based on the challenge level, and given
+// slice of challenge origin heights (coh) determine the maximum number of
+// leaves for that level and return it as virtual.
+func (p *HistoryCommitmentProvider) virtualFrom(h option.Option[Height], coh []Height) (uint64, error) {
+	var virtual uint64
+	if h.IsNone() {
+		validatedHeights, err := p.validateOriginHeights(coh)
+		if err != nil {
+			return 0, err
+		}
+		if len(validatedHeights) == 0 {
+			virtual = uint64(p.challengeLeafHeights[0]) + 1
+		} else {
+			lvl := deepestRequestedChallengeLevel(validatedHeights)
+			virtual = uint64(p.challengeLeafHeights[lvl]) + 1
+		}
+	} else {
+		virtual = uint64(h.Unwrap()) + 1
+	}
+	return virtual, nil
+}
+
 // HistoryCommitment computes a Merklelized commitment over a set of hashes
 // at specified challenge levels. For block challenges, for example, this is a set
 // of machine hashes corresponding each message in a range N to M.
 func (p *HistoryCommitmentProvider) HistoryCommitment(
 	ctx context.Context,
 	req *HistoryCommitmentRequest,
-) (commitments.History, error) {
+) (history.History, error) {
 	hashes, err := p.historyCommitmentImpl(ctx, req)
 	if err != nil {
-		return commitments.History{}, err
+		return history.History{}, err
 	}
-	return commitments.New(hashes)
+	virtual, err := p.virtualFrom(req.UpToHeight, req.UpperChallengeOriginHeights)
+	if err != nil {
+		return history.History{}, err
+	}
+	return history.NewCommitment(hashes, virtual)
 }
 
 func (p *HistoryCommitmentProvider) historyCommitmentImpl(
@@ -266,7 +295,7 @@ func (p *HistoryCommitmentProvider) AgreesWithHistoryCommitment(
 	historyCommitMetadata *HistoryCommitmentRequest,
 	commit History,
 ) (bool, error) {
-	var localCommit commitments.History
+	var localCommit history.History
 	var err error
 	switch challengeLevel {
 	case protocol.NewBlockChallengeLevel():
@@ -343,68 +372,44 @@ func (p *HistoryCommitmentProvider) PrefixProof(
 	if err != nil {
 		return nil, err
 	}
+	virtual, err := p.virtualFrom(req.UpToHeight, req.UpperChallengeOriginHeights)
+	if err != nil {
+		return nil, err
+	}
 	// If no upToHeight is provided, we want to use the max number of leaves in our computation.
 	lowCommitmentNumLeaves := uint64(prefixHeight + 1)
-	var highCommitmentNumLeaves uint64
-	if req.UpToHeight.IsNone() {
-		highCommitmentNumLeaves = uint64(len(leaves))
-	} else {
-		// Else if it is provided, we expect the number of leaves to be the difference
-		// between the to and from height + 1.
-		upTo := req.UpToHeight.Unwrap()
-		if upTo < req.FromHeight {
-			return nil, fmt.Errorf("invalid range: end %d was < start %d", upTo, req.FromHeight)
-		}
-		highCommitmentNumLeaves = uint64(upTo) - uint64(req.FromHeight) + 1
-	}
-
-	// Validate we are within bounds of the leaves slice.
-	if highCommitmentNumLeaves > uint64(len(leaves)) {
-		return nil, fmt.Errorf("high prefix size out of bounds, got %d, leaves length %d", highCommitmentNumLeaves, len(leaves))
-	}
-
-	// Validate low vs high commitment.
-	if lowCommitmentNumLeaves > highCommitmentNumLeaves {
-		return nil, fmt.Errorf("low prefix size %d was greater than high prefix size %d", lowCommitmentNumLeaves, highCommitmentNumLeaves)
-	}
-
-	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(leaves[:lowCommitmentNumLeaves])
+	// The prefix proof may be over a range of leaves that include virtual ones.
+	prefixLen := min(lowCommitmentNumLeaves, uint64(len(leaves)))
+	prefixHashes := slices.Clone(leaves[:prefixLen])
+	prefixRoot, err := history.ComputeRoot(prefixHashes, lowCommitmentNumLeaves)
 	if err != nil {
 		return nil, err
 	}
-	prefixProof, err := prefixproofs.GeneratePrefixProof(
-		lowCommitmentNumLeaves,
-		prefixExpansion,
-		leaves[lowCommitmentNumLeaves:highCommitmentNumLeaves],
-		prefixproofs.RootFetcherFromExpansion,
-	)
+	fullTreeHashes := slices.Clone(leaves)
+	fullTreeRoot, err := history.ComputeRoot(fullTreeHashes, virtual)
 	if err != nil {
 		return nil, err
 	}
-	bigCommit, err := commitments.New(leaves[:highCommitmentNumLeaves])
+	hashesForProof := make([]common.Hash, len(leaves))
+	for i := uint64(0); i < uint64(len(leaves)); i++ {
+		hashesForProof[i] = leaves[i]
+	}
+	prefixExp, proof, err := history.GeneratePrefixProof(uint64(prefixHeight), hashesForProof, virtual)
 	if err != nil {
 		return nil, err
 	}
-
-	prefixCommit, err := commitments.New(leaves[:lowCommitmentNumLeaves])
-	if err != nil {
-		return nil, err
-	}
-	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, lowCommitmentNumLeaves)
-	onlyProof := prefixProof[numRead:]
-
 	// We verify our prefix proof before an onchain submission as an extra safety-check.
 	if err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
-		PreRoot:      prefixCommit.Merkle,
+		PreRoot:      prefixRoot,
 		PreSize:      lowCommitmentNumLeaves,
-		PostRoot:     bigCommit.Merkle,
-		PostSize:     highCommitmentNumLeaves,
-		PreExpansion: prefixExpansion,
-		PrefixProof:  onlyProof,
+		PostRoot:     fullTreeRoot,
+		PostSize:     virtual,
+		PreExpansion: prefixExp,
+		PrefixProof:  proof,
 	}); err != nil {
 		return nil, fmt.Errorf("could not verify prefix proof locally: %w", err)
 	}
-	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
+	return ProofArgs.Pack(&prefixExp, &proof)
 }
 
 func (p *HistoryCommitmentProvider) OneStepProofData(

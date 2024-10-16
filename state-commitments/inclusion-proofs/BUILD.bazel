@@ -1,10 +1,15 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
+package_group(
+    name = "friends",
+    packages = ["//state-commitments/legacy"],
+)
+
 go_library(
     name = "inclusion-proofs",
     srcs = ["inclusion_proofs.go"],
     importpath = "github.com/OffchainLabs/bold/state-commitments/inclusion-proofs",
-    visibility = ["//visibility:public"],
+    visibility = [":friends"],
     deps = [
         "//state-commitments/prefix-proofs",
         "@com_github_ethereum_go_ethereum//common",

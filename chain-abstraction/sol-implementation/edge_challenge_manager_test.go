@@ -13,7 +13,7 @@ import (
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	commitments "github.com/OffchainLabs/bold/state-commitments/history"
+	"github.com/OffchainLabs/bold/state-commitments/history"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	stateprovider "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
@@ -681,8 +681,8 @@ type bisectionScenario struct {
 	evilStateManager    l2stateprovider.Provider
 	honestLevelZeroEdge protocol.SpecEdge
 	evilLevelZeroEdge   protocol.SpecEdge
-	honestStartCommit   commitments.History
-	evilStartCommit     commitments.History
+	honestStartCommit   history.History
+	evilStartCommit     history.History
 }
 
 func setupBisectionScenario(
@@ -699,7 +699,7 @@ func setupBisectionScenario(
 	require.NoError(t, err)
 
 	// Honest assertion being added.
-	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) (commitments.History, protocol.SpecEdge) {
+	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) (history.History, protocol.SpecEdge) {
 		req := &l2stateprovider.HistoryCommitmentRequest{
 			WasmModuleRoot:              common.Hash{},
 			FromBatch:                   0,

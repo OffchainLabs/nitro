@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
-package history
+package legacy
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ func TestHistoryCommitment_LeafProofs(t *testing.T) {
 	for i := 0; i < len(leaves); i++ {
 		leaves[i] = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
 	}
-	history, err := New(leaves)
+	history, err := NewLegacy(leaves)
 	require.NoError(t, err)
 	require.Equal(t, history.FirstLeaf, leaves[0])
 	require.Equal(t, history.LastLeaf, leaves[len(leaves)-1])

@@ -212,7 +212,7 @@ func (s *L2StateBackend) UpdateAPIDatabase(database db.Database) {
 	s.HistoryCommitmentProvider = *commitmentProvider
 }
 
-// ExecutionStateAfterBatchCount produces the l2 state to assert at the message number specified.
+// ExecutionStateAfterPreviousState produces the l2 state to assert at the message number specified.
 func (s *L2StateBackend) ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState *protocol.GoGlobalState, maxNumberOfBlocks uint64) (*protocol.ExecutionState, error) {
 	if len(s.executionStates) == 0 {
 		return nil, errors.New("no execution states")
@@ -238,7 +238,7 @@ func (s *L2StateBackend) ExecutionStateAfterPreviousState(ctx context.Context, m
 			if err != nil {
 				return nil, err
 			}
-			commit, err := history.New(historyCommit)
+			commit, err := history.NewCommitment(historyCommit, uint64(s.challengeLeafHeights[0])+1)
 			if err != nil {
 				return nil, err
 			}
@@ -266,18 +266,13 @@ func (s *L2StateBackend) statesUpTo(blockStart, blockEnd, fromBatch, toBatch uin
 	start := startIndex + blockStart
 	end := start + blockEnd
 
-	// The size is the number of elements being committed to. For example, if the height is 7, there will
-	// be 8 elements being committed to from [0, 7] inclusive.
-	desiredStatesLen := int(blockEnd - blockStart + 1)
 	var states []common.Hash
-	var lastState common.Hash
 	for i := start; i <= end; i++ {
 		if i >= uint64(len(s.stateRoots)) {
 			break
 		}
 		state := s.stateRoots[i]
 		states = append(states, state)
-		lastState = state
 		if len(s.executionStates) == 0 {
 			// should only happen in tests
 			continue
@@ -289,9 +284,6 @@ func (s *L2StateBackend) statesUpTo(blockStart, blockEnd, fromBatch, toBatch uin
 			}
 			break
 		}
-	}
-	for len(states) < desiredStatesLen {
-		states = append(states, lastState)
 	}
 	return states, nil
 }

@@ -3,29 +3,30 @@
 //
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-package history
+package legacy
 
 import (
 	"errors"
-	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 	"sync"
+
+	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 
 	inclusionproofs "github.com/OffchainLabs/bold/state-commitments/inclusion-proofs"
 	"github.com/ethereum/go-ethereum/common"
 )
 
 var (
-	emptyCommit = History{}
+	emptyCommit = LegacyHistory{}
 )
 
-// History defines a Merkle accumulator over a list of leaves, which
+// LegacyHistory defines a Merkle accumulator over a list of leaves, which
 // are understood to be state roots in the goimpl. A history commitment contains
 // a "height" value, which can refer to a height of an assertion in the assertions
 // tree, or a "step" of WAVM states in a big step or small step subchallenge.
 // A commitment contains a Merkle root over the list of leaves, and can optionally
 // provide a proof that the last leaf in the accumulator Merkleizes into the
 // specified root hash, which is required when verifying challenge creation invariants.
-type History struct {
+type LegacyHistory struct {
 	Height         uint64
 	Merkle         common.Hash
 	FirstLeaf      common.Hash
@@ -34,7 +35,7 @@ type History struct {
 	LastLeaf       common.Hash
 }
 
-func New(leaves []common.Hash) (History, error) {
+func NewLegacy(leaves []common.Hash) (LegacyHistory, error) {
 	if len(leaves) == 0 {
 		return emptyCommit, errors.New("must commit to at least one leaf")
 	}
@@ -80,7 +81,7 @@ func New(leaves []common.Hash) (History, error) {
 		return emptyCommit, err3
 	}
 
-	return History{
+	return LegacyHistory{
 		Merkle:         root,
 		Height:         uint64(len(leaves) - 1),
 		FirstLeaf:      leaves[0],
