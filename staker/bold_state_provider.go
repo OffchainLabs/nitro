@@ -148,7 +148,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	if err != nil {
 		return nil, err
 	}
-	historyCommit, err := history.New(historyCommitStates)
+	historyCommit, err := history.NewCommitment(historyCommitStates, maxNumberOfBlocks+1)
 	if err != nil {
 		return nil, err
 	}
@@ -186,9 +186,9 @@ func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
 
 func (s *BOLDStateProvider) StatesInBatchRange(
 	ctx context.Context,
-	fromHeight,
+	fromHeight l2stateprovider.Height,
 	toHeight l2stateprovider.Height,
-	fromBatch,
+	fromBatch l2stateprovider.Batch,
 	toBatch l2stateprovider.Batch,
 ) ([]common.Hash, []validator.GoGlobalState, error) {
 	// Check the integrity of the arguments.
@@ -252,10 +252,6 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 			posInBatch++
 		}
 	}
-	for uint64(len(machineHashes)) < uint64(totalDesiredHashes) {
-		machineHashes = append(machineHashes, machineHashes[len(machineHashes)-1])
-		states = append(states, states[len(states)-1])
-	}
 	return machineHashes, states, nil
 }
 
@@ -287,9 +283,10 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 	}, nil
 }
 
-// L2MessageStatesUpTo Computes a block history commitment from a start L2 message to an end L2 message index
-// and up to a required batch index. The hashes used for this commitment are the machine hashes
-// at each message number.
+// L2MessageStatesUpTo Computes a block history commitment from a
+// start L2 message to an end L2 message index and up to a required
+// batch index. The hashes used for this commitment are the machine
+// hashes at each message number.
 func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	ctx context.Context,
 	fromHeight l2stateprovider.Height,
