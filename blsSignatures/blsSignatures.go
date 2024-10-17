@@ -269,7 +269,10 @@ func PrivateKeyFromBytes(in []byte) (PrivateKey, error) {
 
 func SignatureToBytes(sig Signature) []byte {
 	buf := new(bytes.Buffer)
-	bls12381.NewEncoder(buf).Encode(sig)
+	err := bls12381.NewEncoder(buf).Encode(sig)
+	if err != nil {
+		panic("failed to serialize signature")
+	}
 	return buf.Bytes()
 }
 
