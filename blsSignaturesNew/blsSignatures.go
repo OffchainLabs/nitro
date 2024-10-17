@@ -276,6 +276,12 @@ func SignatureFromBytes(in []byte) (Signature, error) {
 	if len(in) == 0 || (in[0]&(1<<7)) != 0 {
 		return nil, errors.New("invalid serialized signature")
 	}
+	if len(in) != 96 {
+		return nil, errors.New("input string should be equal or larger than 96")
+	}
+	if new(big.Int).SetBytes(in).Cmp(fp.Modulus()) >= 0 {
+		return nil, errors.New("must be less than modulus")
+	}
 	g1 := new(bls12381.G1Affine)
 	err := g1.Unmarshal(in)
 	if err != nil {
