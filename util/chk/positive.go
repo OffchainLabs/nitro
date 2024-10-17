@@ -106,8 +106,6 @@ import (
 	"errors"
 )
 
-type pos64 uint64
-
 // Pos64 is a type which represents a positive uint64.
 //
 // The "zero" value of Pos64 is 1.
