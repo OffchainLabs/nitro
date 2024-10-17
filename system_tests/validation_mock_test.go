@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -153,6 +154,10 @@ func (r *mockExecRun) GetProofAt(uint64) containers.PromiseInterface[[]byte] {
 
 func (r *mockExecRun) PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
+}
+
+func (r *mockExecRun) CheckAlive(ctx context.Context) error {
+	return nil
 }
 
 func (r *mockExecRun) Close() {}
