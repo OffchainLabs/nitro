@@ -63,7 +63,7 @@ func (info *TracingInfo) RecordStorageGet(key common.Hash) {
 		if tracer.OnOpcode != nil {
 			tracer.OnOpcode(0, byte(vm.SLOAD), 0, 0, scope, []byte{}, info.Depth, nil)
 		}
-	} else {
+	} else if tracer.CaptureArbitrumStorageGet != nil {
 		tracer.CaptureArbitrumStorageGet(key, info.Depth, info.Scenario == TracingBeforeEVM)
 	}
 }
@@ -79,7 +79,7 @@ func (info *TracingInfo) RecordStorageSet(key, value common.Hash) {
 		if tracer.OnOpcode != nil {
 			tracer.OnOpcode(0, byte(vm.SSTORE), 0, 0, scope, []byte{}, info.Depth, nil)
 		}
-	} else {
+	} else if tracer.CaptureArbitrumStorageSet != nil {
 		tracer.CaptureArbitrumStorageSet(key, value, info.Depth, info.Scenario == TracingBeforeEVM)
 	}
 }
@@ -122,7 +122,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 		tracer.OnOpcode(0, byte(vm.RETURN), 0, 0, retScope, []byte{}, depth+1, nil)
 	}
 	if tracer.OnExit != nil {
-		tracer.OnExit(depth+1, nil, 0, nil, false)
+		tracer.OnExit(depth, nil, 0, nil, false)
 	}
 
 	popScope := &vm.ScopeContext{
