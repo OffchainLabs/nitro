@@ -1,21 +1,24 @@
 package das
 
 import (
-	googlestorage "cloud.google.com/go/storage"
 	"context"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/google/go-cmp/cmp"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
-	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/util/pretty"
-	flag "github.com/spf13/pflag"
-	"google.golang.org/api/option"
 	"io"
 	"math"
 	"sort"
 	"time"
+
+	googlestorage "cloud.google.com/go/storage"
+	"github.com/google/go-cmp/cmp"
+	flag "github.com/spf13/pflag"
+	"google.golang.org/api/option"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type GoogleCloudStorageOperator interface {
@@ -69,7 +72,7 @@ type GoogleCloudStorageServiceConfig struct {
 var DefaultGoogleCloudStorageServiceConfig = GoogleCloudStorageServiceConfig{}
 
 func GoogleCloudConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultGoogleCloudStorageServiceConfig.Enable, "enable storage/retrieval of sequencer batch data from an Google Cloud Storage bucket")
+	f.Bool(prefix+".enable", DefaultGoogleCloudStorageServiceConfig.Enable, "EXPERIMENTAL/unsupported - enable storage/retrieval of sequencer batch data from an Google Cloud Storage bucket")
 	f.String(prefix+".access-token", DefaultGoogleCloudStorageServiceConfig.AccessToken, "Google Cloud Storage access token")
 	f.String(prefix+".bucket", DefaultGoogleCloudStorageServiceConfig.Bucket, "Google Cloud Storage bucket")
 	f.String(prefix+".object-prefix", DefaultGoogleCloudStorageServiceConfig.ObjectPrefix, "prefix to add to Google Cloud Storage objects")

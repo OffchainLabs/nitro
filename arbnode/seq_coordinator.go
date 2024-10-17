@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
