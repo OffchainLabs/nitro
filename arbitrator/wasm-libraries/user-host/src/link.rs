@@ -3,7 +3,11 @@
 
 use crate::program::Program;
 use arbutil::{
-    evm::{user::UserOutcomeKind, EvmData},
+    evm::{
+        api::{Gas, Ink},
+        user::UserOutcomeKind,
+        EvmData,
+    },
     format::DebugBytes,
     heapify, Bytes20, Bytes32,
 };
@@ -120,11 +124,11 @@ pub unsafe extern "C" fn programs__new_program(
 
     // buy ink
     let pricing = config.pricing;
-    let ink = pricing.gas_to_ink(gas);
+    let ink = pricing.gas_to_ink(Gas(gas));
 
     // link the program and ready its instrumentation
     let module = wavm_link_module(&MemoryLeaf(*module_hash));
-    program_set_ink(module, ink);
+    program_set_ink(module, ink.0);
     program_set_stack(module, config.max_depth);
 
     // provide arguments
@@ -175,7 +179,7 @@ pub unsafe extern "C" fn programs__set_response(
         id,
         STATIC_MEM.read_slice(result_ptr, result_len),
         STATIC_MEM.read_slice(raw_data_ptr, raw_data_len),
-        gas,
+        Gas(gas),
     );
 }
 
@@ -207,7 +211,7 @@ pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind)
     let program = Program::current();
     let module = program.module;
     let mut outs = program.outs.as_slice();
-    let mut ink_left = program_ink_left(module);
+    let mut ink_left = Ink(program_ink_left(module));
 
     // apply any early exit codes
     if let Some(early) = program.early_exit {
@@ -218,12 +222,12 @@ pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind)
     if program_ink_status(module) != 0 {
         status = OutOfInk;
         outs = &[];
-        ink_left = 0;
+        ink_left = Ink(0);
     }
     if program_stack_left(module) == 0 {
         status = OutOfStack;
         outs = &[];
-        ink_left = 0;
+        ink_left = Ink(0);
     }
 
     let gas_left = program.config.pricing.ink_to_gas(ink_left);
