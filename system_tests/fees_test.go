@@ -55,6 +55,12 @@ func TestSequencerFeePaid(t *testing.T) {
 	l1Estimate, err := arbGasInfo.GetL1BaseFeeEstimate(callOpts)
 	Require(t, err)
 
+	l1EstimateThroughGetL1GasPriceEstimate, err := arbGasInfo.GetL1GasPriceEstimate(callOpts)
+	Require(t, err)
+	if !arbmath.BigEquals(l1Estimate, l1EstimateThroughGetL1GasPriceEstimate) {
+		Fatal(t, "GetL1BaseFeeEstimate and GetL1GasPriceEstimate should return the same value")
+	}
+
 	baseFee := builder.L2.GetBaseFee(t)
 	builder.L2Info.GasPrice = baseFee
 
