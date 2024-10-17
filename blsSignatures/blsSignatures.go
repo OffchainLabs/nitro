@@ -4,7 +4,6 @@
 package blsSignatures
 
 import (
-	"bytes"
 	"encoding/base64"
 	"errors"
 	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
@@ -284,8 +283,7 @@ func SignatureFromBytes(in []byte) (Signature, error) {
 		return nil, errors.New("must be less than modulus")
 	}
 	g1 := new(bls12381.G1Affine)
-
-	err := bls12381.NewDecoder(bytes.NewReader(in)).Decode(g1)
+	err := g1.Unmarshal(in)
 	if err != nil {
 		return nil, err
 	}
