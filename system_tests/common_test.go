@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"io"
 	"log/slog"
 	"math/big"
@@ -1715,11 +1716,23 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 	}
 }
 
+var (
+	recordBlockInputsEnable                       = flag.Bool("recordBlockInputs.enable", true, "Whether to record block inputs as a json file")
+	recordBlockInputsWithSlug                     = flag.String("recordBlockInputs.WithSlug", "", "Slug directory for validationInputsWriter")
+	recordBlockInputsWithBaseDir                  = flag.String("recordBlockInputs.WithBaseDir", "", "Base directory for validationInputsWriter")
+	recordBlockInputsWithTimestampDirEnabled      = flag.Bool("recordBlockInputs.WithTimestampDirEnabled", true, "Whether to add timestamp directory while recording block inputs")
+	recordBlockInputsWithBlockIdInFileNameEnabled = flag.Bool("recordBlockInputs.WithBlockIdInFileNameEnabled", true, "Whether to record block inputs using test specific block_id")
+)
+
 // recordBlock writes a json file with all of the data needed to validate a block.
 //
 // This can be used as an input to the arbitrator prover to validate a block.
-func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
+func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ethdb.WasmTarget) {
 	t.Helper()
+	flag.Parse()
+	if !*recordBlockInputsEnable {
+		return
+	}
 	ctx := builder.ctx
 	inboxPos := arbutil.MessageIndex(block)
 	for {
@@ -1732,9 +1745,20 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 			break
 		}
 	}
-	validationInputsWriter, err := inputs.NewWriter(inputs.WithSlug(t.Name()))
+	var options []inputs.WriterOption
+	options = append(options, inputs.WithTimestampDirEnabled(*recordBlockInputsWithTimestampDirEnabled))
+	options = append(options, inputs.WithBlockIdInFileNameEnabled(*recordBlockInputsWithBlockIdInFileNameEnabled))
+	if *recordBlockInputsWithBaseDir != "" {
+		options = append(options, inputs.WithBaseDir(*recordBlockInputsWithBaseDir))
+	}
+	if *recordBlockInputsWithSlug != "" {
+		options = append(options, inputs.WithSlug(*recordBlockInputsWithSlug))
+	} else {
+		options = append(options, inputs.WithSlug(t.Name()))
+	}
+	validationInputsWriter, err := inputs.NewWriter(options...)
 	Require(t, err)
-	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.TargetWavm)
+	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, targets...)
 	if err != nil {
 		Fatal(t, "failed to get validation inputs", block, err)
 	}
