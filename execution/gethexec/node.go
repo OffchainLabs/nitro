@@ -188,6 +188,9 @@ func CreateExecutionNode(
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
+	if config.Caching.DisableStylusCacheMetricsCollection {
+		execEngine.DisableStylusCacheMetricsCollection()
+	}
 	if err != nil {
 		return nil, err
 	}
