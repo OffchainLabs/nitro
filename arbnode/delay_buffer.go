@@ -11,8 +11,6 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -25,13 +23,9 @@ type DelayBufferConfig struct {
 
 // GetBufferConfig gets the delay buffer config from the sequencer inbox contract.
 // If the contract doesn't support the delay buffer, it returns a config with Enabled set to false.
-func GetDelayBufferConfig(ctx context.Context, client *ethclient.Client, sequencerInboxAddress common.Address) (
+func GetDelayBufferConfig(ctx context.Context, sequencerInbox *bridgegen.SequencerInbox) (
 	*DelayBufferConfig, error) {
 
-	sequencerInbox, err := bridgegen.NewSequencerInbox(sequencerInboxAddress, client)
-	if err != nil {
-		return nil, fmt.Errorf("create sequencer inbox binding: %w", err)
-	}
 	callOpts := bind.CallOpts{
 		Context: ctx,
 	}
