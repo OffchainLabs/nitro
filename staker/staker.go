@@ -309,9 +309,6 @@ func NewStaker(
 	validatorUtilsAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
-	if err := config().Validate(); err != nil {
-		return nil, err
-	}
 	client := l1Reader.Client()
 	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts,
 		statelessBlockValidator.inboxTracker, statelessBlockValidator.streamer, blockValidator)
@@ -319,9 +316,6 @@ func NewStaker(
 		return nil, err
 	}
 	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
-	if config().StartValidationFromStaked && blockValidator != nil {
-		stakedNotifiers = append(stakedNotifiers, blockValidator)
-	}
 	inactiveValidatedNodes := btree.NewG(2, func(a, b validatedNode) bool {
 		return a.number < b.number || (a.number == b.number && a.hash.Cmp(b.hash) < 0)
 	})
@@ -510,9 +504,6 @@ func (s *Staker) StopAndWait() {
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
-	if s.Strategy() != WatchtowerStrategy {
-		s.wallet.Start(ctxIn)
-	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	isAheadOfOnChainNonceEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
