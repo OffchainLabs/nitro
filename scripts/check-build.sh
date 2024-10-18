@@ -44,7 +44,7 @@ fi
 # Step 3: Check the version tag
 VERSION_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV | sed 's/_$//' | head -n 1 | grep ^ || git show -s --pretty=%D | sed 's/, /\n/g' | grep -v '^origin/' | grep -v '^grafted\|HEAD\|master\|main$' || echo "")
 if [[ -z "${VAR}" ]]; then
-    echo -e "${YELLOW}Untagged version of Nitro checked out, not guaranteed to build successfully.${NC}"
+    echo -e "${YELLOW}Untagged version of Nitro checked out, may not be fully tested.${NC}"
 else
     echo -e "${GREEN}You are on Nitro version tag: $VERSION_TAG${NC}"
 fi
