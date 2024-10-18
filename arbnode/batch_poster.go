@@ -720,6 +720,7 @@ type buildingBatch struct {
 	haveUsefulMessage  bool
 	use4844            bool
 	muxBackend         *simulatedMuxBackend
+	firstDelayedMsg    *arbostypes.MessageWithMetadata
 	firstNonDelayedMsg *arbostypes.MessageWithMetadata
 	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
@@ -1314,7 +1315,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				b.building.firstUsefulMsg = msg
 			}
 		}
-		if !isDelayed && b.building.firstNonDelayedMsg == nil {
+		if isDelayed {
+			if b.building.firstDelayedMsg == nil {
+				b.building.firstDelayedMsg = msg
+			}
+		} else if b.building.firstNonDelayedMsg == nil {
 			b.building.firstNonDelayedMsg = msg
 		}
 		b.building.msgCount++
@@ -1325,6 +1330,26 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// #nosec G115
 		firstUsefulMsgTime = time.Unix(int64(b.building.firstUsefulMsg.Message.Header.Timestamp), 0)
 		if time.Since(firstUsefulMsgTime) >= config.MaxDelay {
+			forcePostBatch = true
+		}
+	}
+
+	delayBuffer, err := GetDelayBufferConfig(ctx, b.seqInbox)
+	if err != nil {
+		return false, err
+	}
+	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil {
+		latestHeader, err := b.l1Reader.LastHeader(ctx)
+		if err != nil {
+			return false, err
+		}
+		latestBlock := latestHeader.Number.Uint64()
+		firstDelayedMsgBlock := b.building.firstDelayedMsg.Message.Header.BlockNumber
+		if firstDelayedMsgBlock+delayBuffer.Threshold >= latestBlock {
+			log.Info("force post batch because of the delay buffer",
+				"firstDelayedMsgBlock", firstDelayedMsgBlock,
+				"threshold", delayBuffer.Threshold,
+				"latestBlock", latestBlock)
 			forcePostBatch = true
 		}
 	}
