@@ -696,11 +696,7 @@ func createNodeImpl(
 		if dp != nil {
 			stakerAddr = dp.Sender()
 		}
-		whitelisted, err := stakerObj.IsWhitelisted(ctx)
-		if err != nil {
-			return nil, err
-		}
-		log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
+		log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", wallet.Address(), "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster
@@ -904,7 +900,8 @@ func (n *Node) Start(ctx context.Context) error {
 		n.MessagePruner.Start(ctx)
 	}
 	if n.Staker != nil {
-		err = n.Staker.Initialize(ctx)
+		err = n.Staker.
+			Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing staker: %w", err)
 		}

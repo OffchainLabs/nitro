@@ -610,7 +610,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 	})
 }
 
-func (s *Staker) IsWhitelisted(ctx context.Context) (bool, error) {
+func (s *Staker) isWhitelisted(ctx context.Context) (bool, error) {
 	callOpts := s.getCallOpts(ctx)
 	whitelistDisabled, err := s.rollup.ValidatorWhitelistDisabled(callOpts)
 	if err != nil {
@@ -704,7 +704,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		if err != nil {
 			return nil, err
 		}
-		whitelisted, err := s.IsWhitelisted(ctx)
+		whitelisted, err := s.isWhitelisted(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("error checking if whitelisted: %w", err)
 		}

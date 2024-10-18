@@ -63,7 +63,7 @@ func NewMultiProtocolStaker(
 	if err != nil {
 		return nil, err
 	}
-	bridge, err := bridgegen.NewIBridge(bridgeAddress, oldStaker.client)
+	bridge, err := bridgegen.NewIBridge(bridgeAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
@@ -72,10 +72,6 @@ func NewMultiProtocolStaker(
 		boldStaker: nil,
 		bridge:     bridge,
 	}, nil
-}
-
-func (m *MultiProtocolStaker) IsWhitelisted(ctx context.Context) (bool, error) {
-	return m.oldStaker.IsWhitelisted(ctx)
 }
 
 func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
