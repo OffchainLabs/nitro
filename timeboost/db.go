@@ -129,6 +129,28 @@ func (d *SqliteDatabase) InsertBid(b *ValidatedBid) error {
 	return nil
 }
 
+func (d *SqliteDatabase) GetBidsTillRound(round uint64) ([]*SqliteDatabaseBid, error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	var sqlDBbids []*SqliteDatabaseBid
+	if err := d.sqlDB.Select(&sqlDBbids, "SELECT * FROM Bids WHERE Round < ? ORDER BY Round ASC", round); err != nil {
+		return nil, err
+	}
+	return sqlDBbids, nil
+}
+
+func (d *SqliteDatabase) GetMaxRoundFromBids() (uint64, error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	var maxRound uint64
+	query := `SELECT MAX(Round) FROM Bids`
+	err := d.sqlDB.Get(&maxRound, query)
+	if err != nil {
+		return 0, fmt.Errorf("getMaxRoundFromBids failed with: %w", err)
+	}
+	return maxRound, nil
+}
+
 func (d *SqliteDatabase) DeleteBids(round uint64) error {
 	d.lock.Lock()
 	defer d.lock.Unlock()

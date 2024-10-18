@@ -211,3 +211,14 @@ func padBigInt(bi *big.Int) []byte {
 	padded = append(padded, bb...)
 	return padded
 }
+
+type SqliteDatabaseBid struct {
+	Id                     uint64 `db:"Id"`
+	ChainId                string `db:"ChainId"`
+	Bidder                 string `db:"Bidder"`
+	ExpressLaneController  string `db:"ExpressLaneController"`
+	AuctionContractAddress string `db:"AuctionContractAddress"`
+	Round                  uint64 `db:"Round"`
+	Amount                 string `db:"Amount"`
+	Signature              string `db:"Signature"`
+}
