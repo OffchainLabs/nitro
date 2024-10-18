@@ -144,7 +144,7 @@ func mainImpl() int {
 			func() *timeboost.BidValidatorConfig { return &liveNodeConfig.Get().BidValidator },
 		)
 		if err != nil {
-			log.Error("Error creating new auctioneer", "error", err)
+			log.Error("Error creating new bid validator", "error", err)
 			return 1
 		}
 		if err = bidValidator.Initialize(ctx); err != nil {
