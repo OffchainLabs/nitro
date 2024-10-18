@@ -59,7 +59,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/dbutil"
@@ -257,7 +257,7 @@ func mainImpl() int {
 	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
 	nodeConfig.Node.Staker.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
-	defaultValidatorL1WalletConfig := staker.DefaultValidatorL1WalletConfig
+	defaultValidatorL1WalletConfig := legacystaker.DefaultValidatorL1WalletConfig
 	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
 	nodeConfig.Node.BatchPoster.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
@@ -294,7 +294,7 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("couldn't parse staker strategy", "err", err)
 		}
-		if strategy != staker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
+		if strategy != legacystaker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
