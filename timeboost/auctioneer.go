@@ -66,6 +66,7 @@ type AuctioneerServerConfig struct {
 	SequencerJWTPath       string                   `koanf:"sequencer-jwt-path"`
 	AuctionContractAddress string                   `koanf:"auction-contract-address"`
 	DbDirectory            string                   `koanf:"db-directory"`
+	S3Storage              S3StorageServiceConfig   `koanf:"s3-storage"`
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
@@ -73,6 +74,7 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 	RedisURL:       "",
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
 	StreamTimeout:  10 * time.Minute,
+	S3Storage:      DefaultS3StorageServiceConfig,
 }
 
 var TestAuctioneerServerConfig = AuctioneerServerConfig{
@@ -92,6 +94,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".sequencer-jwt-path", DefaultAuctioneerServerConfig.SequencerJWTPath, "sequencer jwt file path")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
+	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
 }
 
 // AuctioneerServer is a struct that represents an autonomous auctioneer.
