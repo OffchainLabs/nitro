@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/OffchainLabs/bold/api/backend"
-	"github.com/OffchainLabs/bold/util/stopwaiter"
+	"github.com/offchainlabs/bold/api/backend"
+	"github.com/offchainlabs/bold/util/stopwaiter"
 	"github.com/gorilla/mux"
 )
 

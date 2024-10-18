@@ -4,7 +4,7 @@ go_library(
     name = "mock",
     testonly = True,
     srcs = ["edge.go"],
-    importpath = "github.com/OffchainLabs/bold/challenge-manager/challenge-tree/mock",
+    importpath = "github.com/offchainlabs/bold/challenge-manager/challenge-tree/mock",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

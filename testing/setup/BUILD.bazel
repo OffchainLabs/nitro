@@ -7,7 +7,7 @@ go_library(
         "rollup_stack.go",
         "simulated_backend_wrapper.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/testing/setup",
+    importpath = "github.com/offchainlabs/bold/testing/setup",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

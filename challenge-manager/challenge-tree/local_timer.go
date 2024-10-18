@@ -6,9 +6,9 @@ package challengetree
 import (
 	"fmt"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers/option"
-	"github.com/OffchainLabs/bold/containers/threadsafe"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	"github.com/offchainlabs/bold/containers/option"
+	"github.com/offchainlabs/bold/containers/threadsafe"
 )
 
 // Gets the local timer of an edge at a block number, T. If T is earlier than the edge's creation,

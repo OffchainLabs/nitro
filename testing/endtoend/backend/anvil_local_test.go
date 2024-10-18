@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/OffchainLabs/bold/runtime"
+	retry "github.com/offchainlabs/bold/runtime"
 	"github.com/stretchr/testify/require"
 )
 

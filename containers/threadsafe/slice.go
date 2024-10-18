@@ -8,7 +8,7 @@ package threadsafe
 import (
 	"sync"
 
-	"github.com/OffchainLabs/bold/containers/option"
+	"github.com/offchainlabs/bold/containers/option"
 )
 
 type Slice[V any] struct {

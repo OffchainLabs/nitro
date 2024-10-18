@@ -6,7 +6,7 @@ go_library(
         "methods.go",
         "server.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/api/server",
+    importpath = "github.com/offchainlabs/bold/api/server",
     visibility = ["//visibility:public"],
     deps = [
         "//api",

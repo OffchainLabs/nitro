@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "history",
     srcs = ["history_commitment.go"],
-    importpath = "github.com/OffchainLabs/bold/state-commitments/history",
+    importpath = "github.com/offchainlabs/bold/state-commitments/history",
     visibility = ["//visibility:public"],
     deps = [
         "//math",

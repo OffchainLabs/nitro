@@ -50,7 +50,7 @@ go_library(
     name = "endtoend",
     testonly = 1,
     srcs = ["expectations.go"],
-    importpath = "github.com/OffchainLabs/bold/testing/endtoend",
+    importpath = "github.com/offchainlabs/bold/testing/endtoend",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

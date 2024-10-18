@@ -10,7 +10,7 @@ import (
 	"sort"
 	"sync"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 )

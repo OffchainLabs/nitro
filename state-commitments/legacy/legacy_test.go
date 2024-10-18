@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	inclusionproofs "github.com/OffchainLabs/bold/state-commitments/inclusion-proofs"
+	inclusionproofs "github.com/offchainlabs/bold/state-commitments/inclusion-proofs"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )

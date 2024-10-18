@@ -11,9 +11,9 @@ import (
 	"errors"
 	"math/big"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers/option"
-	"github.com/OffchainLabs/bold/state-commitments/history"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	"github.com/offchainlabs/bold/containers/option"
+	"github.com/offchainlabs/bold/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
 )
 

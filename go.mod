@@ -1,4 +1,4 @@
-module github.com/OffchainLabs/bold
+module github.com/offchainlabs/bold
 
 go 1.23
 
@@ -97,4 +97,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/ethereum/go-ethereum => github.com/OffchainLabs/go-ethereum v1.13.4-0.20241009205815-54adef6e3fbe
+replace github.com/ethereum/go-ethereum => github.com/offchainlabs/go-ethereum v1.13.4-0.20241009205815-54adef6e3fbe

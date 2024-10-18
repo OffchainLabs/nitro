@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OffchainLabs/bold/containers/option"
+	"github.com/offchainlabs/bold/containers/option"
 	"github.com/stretchr/testify/require"
 )
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OffchainLabs/bold/state-commitments/legacy"
-	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/bold/state-commitments/legacy"
+	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"

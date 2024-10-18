@@ -6,7 +6,7 @@ go_library(
         "intlog2.go",
         "math.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/math",
+    importpath = "github.com/offchainlabs/bold/math",
     visibility = ["//visibility:public"],
 )
 

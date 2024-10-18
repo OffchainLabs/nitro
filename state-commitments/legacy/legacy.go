@@ -9,9 +9,9 @@ import (
 	"errors"
 	"sync"
 
-	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
+	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 
-	inclusionproofs "github.com/OffchainLabs/bold/state-commitments/inclusion-proofs"
+	inclusionproofs "github.com/offchainlabs/bold/state-commitments/inclusion-proofs"
 	"github.com/ethereum/go-ethereum/common"
 )
 

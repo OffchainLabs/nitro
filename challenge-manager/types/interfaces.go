@@ -4,7 +4,7 @@ package types
 import (
 	"context"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 )
 
 // ChallengeManager defines an offchain, challenge manager, which will be

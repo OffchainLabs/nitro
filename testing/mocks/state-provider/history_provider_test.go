@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OffchainLabs/bold/containers/option"
-	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/offchainlabs/bold/containers/option"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )

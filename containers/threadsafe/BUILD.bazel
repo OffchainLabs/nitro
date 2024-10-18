@@ -9,7 +9,7 @@ go_library(
         "set.go",
         "slice.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/containers/threadsafe",
+    importpath = "github.com/offchainlabs/bold/containers/threadsafe",
     visibility = ["//visibility:public"],
     deps = [
         "//containers/option",

@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	retry "github.com/OffchainLabs/bold/runtime"
-	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	"github.com/OffchainLabs/bold/testing/setup"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	retry "github.com/offchainlabs/bold/runtime"
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/bold/testing/setup"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/stretchr/testify/require"
 )

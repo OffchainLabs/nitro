@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
-	"github.com/OffchainLabs/bold/challenge-manager/types"
-	"github.com/OffchainLabs/bold/containers/option"
-	retry "github.com/OffchainLabs/bold/runtime"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/bold/challenge-manager/types"
+	"github.com/offchainlabs/bold/containers/option"
+	retry "github.com/offchainlabs/bold/runtime"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/log"
 )

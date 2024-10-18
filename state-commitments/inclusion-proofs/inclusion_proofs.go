@@ -6,7 +6,7 @@
 package inclusionproofs
 
 import (
-	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
+	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"

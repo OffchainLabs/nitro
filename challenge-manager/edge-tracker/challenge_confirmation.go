@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	retry "github.com/OffchainLabs/bold/runtime"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	retry "github.com/offchainlabs/bold/runtime"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"

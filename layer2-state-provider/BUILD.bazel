@@ -6,7 +6,7 @@ go_library(
         "history_commitment_provider.go",
         "provider.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/layer2-state-provider",
+    importpath = "github.com/offchainlabs/bold/layer2-state-provider",
     visibility = ["//visibility:public"],
     deps = [
         "//api",

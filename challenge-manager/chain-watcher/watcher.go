@@ -5,7 +5,7 @@
 // The challenge watcher is a singleton service available to all spawned edge trackers
 // and it tracks common information such as the edges' ancestors and an edge's time unrivaled.
 //
-// See: [github.com/OffchainLabs/bold/challenge-manager/edge-tracker]
+// See: [github.com/offchainlabs/bold/challenge-manager/edge-tracker]
 package watcher
 
 import (
@@ -15,17 +15,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/OffchainLabs/bold/api"
-	"github.com/OffchainLabs/bold/api/db"
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
-	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
-	"github.com/OffchainLabs/bold/containers/option"
-	"github.com/OffchainLabs/bold/containers/threadsafe"
-	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	retry "github.com/OffchainLabs/bold/runtime"
-	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
-	"github.com/OffchainLabs/bold/util/stopwaiter"
+	"github.com/offchainlabs/bold/api"
+	"github.com/offchainlabs/bold/api/db"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
+	challengetree "github.com/offchainlabs/bold/challenge-manager/challenge-tree"
+	"github.com/offchainlabs/bold/containers/option"
+	"github.com/offchainlabs/bold/containers/threadsafe"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	retry "github.com/offchainlabs/bold/runtime"
+	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/bold/util/stopwaiter"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"math/big"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"

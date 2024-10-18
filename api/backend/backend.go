@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OffchainLabs/bold/api"
-	"github.com/OffchainLabs/bold/api/db"
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	watcher "github.com/OffchainLabs/bold/challenge-manager/chain-watcher"
-	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
-	"github.com/OffchainLabs/bold/containers/option"
+	"github.com/offchainlabs/bold/api"
+	"github.com/offchainlabs/bold/api/db"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	watcher "github.com/offchainlabs/bold/challenge-manager/chain-watcher"
+	edgetracker "github.com/offchainlabs/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/bold/containers/option"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )

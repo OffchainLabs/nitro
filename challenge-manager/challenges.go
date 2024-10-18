@@ -7,14 +7,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OffchainLabs/bold/containers/option"
-	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/offchainlabs/bold/containers/option"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/log"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
-	"github.com/OffchainLabs/bold/containers"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	edgetracker "github.com/offchainlabs/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/bold/containers"
 	"github.com/pkg/errors"
 )
 

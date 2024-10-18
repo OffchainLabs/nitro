@@ -39,7 +39,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/OffchainLabs/bold/math"
+	"github.com/offchainlabs/bold/math"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )

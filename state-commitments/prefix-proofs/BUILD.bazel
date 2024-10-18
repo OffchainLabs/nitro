@@ -17,7 +17,7 @@ go_library(
         "merkle_expansions.go",
         "prefix_proofs.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/state-commitments/prefix-proofs",
+    importpath = "github.com/offchainlabs/bold/state-commitments/prefix-proofs",
     visibility = [":friends"],
     deps = [
         "@com_github_ethereum_go_ethereum//common",

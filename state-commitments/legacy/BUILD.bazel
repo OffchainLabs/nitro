@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "legacy",
     srcs = ["legacy.go"],
-    importpath = "github.com/OffchainLabs/bold/state-commitments/legacy",
+    importpath = "github.com/offchainlabs/bold/state-commitments/legacy",
     visibility = ["//visibility:public"],
     deps = [
         "//state-commitments/inclusion-proofs",

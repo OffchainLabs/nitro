@@ -6,9 +6,9 @@ import (
 	"context"
 	"fmt"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers"
-	"github.com/OffchainLabs/bold/containers/option"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	"github.com/offchainlabs/bold/containers"
+	"github.com/offchainlabs/bold/containers/option"
 	"github.com/pkg/errors"
 )
 

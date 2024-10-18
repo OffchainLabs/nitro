@@ -7,8 +7,8 @@ import (
 	"context"
 	"testing"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers/threadsafe"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	"github.com/offchainlabs/bold/containers/threadsafe"
 	"github.com/stretchr/testify/require"
 )
 

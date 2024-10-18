@@ -8,7 +8,7 @@ go_library(
         "history_provider.go",
         "layer2_state_provider.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/testing/mocks/state-provider",
+    importpath = "github.com/offchainlabs/bold/testing/mocks/state-provider",
     visibility = ["//visibility:public"],
     deps = [
         "//api/db",

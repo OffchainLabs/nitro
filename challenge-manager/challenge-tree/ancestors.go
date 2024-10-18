@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers"
-	"github.com/OffchainLabs/bold/containers/threadsafe"
-	bisection "github.com/OffchainLabs/bold/math"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	"github.com/offchainlabs/bold/containers"
+	"github.com/offchainlabs/bold/containers/threadsafe"
+	bisection "github.com/offchainlabs/bold/math"
 	"github.com/pkg/errors"
 )
 

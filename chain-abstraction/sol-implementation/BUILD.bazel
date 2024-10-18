@@ -11,7 +11,7 @@ go_library(
         "transact.go",
         "types.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation",
+    importpath = "github.com/offchainlabs/bold/chain-abstraction/sol-implementation",
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",

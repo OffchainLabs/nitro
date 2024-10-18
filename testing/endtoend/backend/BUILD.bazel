@@ -9,7 +9,7 @@ go_library(
         "backend.go",
         "simulated.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/testing/endtoend/backend",
+    importpath = "github.com/offchainlabs/bold/testing/endtoend/backend",
     visibility = ["//testing/endtoend:__subpackages__"],
     deps = [
         "//chain-abstraction:protocol",

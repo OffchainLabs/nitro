@@ -8,7 +8,7 @@ package_group(
 go_library(
     name = "inclusion-proofs",
     srcs = ["inclusion_proofs.go"],
-    importpath = "github.com/OffchainLabs/bold/state-commitments/inclusion-proofs",
+    importpath = "github.com/offchainlabs/bold/state-commitments/inclusion-proofs",
     visibility = [":friends"],
     deps = [
         "//state-commitments/prefix-proofs",

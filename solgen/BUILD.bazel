@@ -6,7 +6,7 @@ go_library(
         "gen.go",
         "main.go",
     ],
-    importpath = "github.com/OffchainLabs/bold/solgen",
+    importpath = "github.com/offchainlabs/bold/solgen",
     visibility = ["//visibility:private"],
     deps = ["@com_github_ethereum_go_ethereum//accounts/abi/bind"],
 )

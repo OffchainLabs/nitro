@@ -4,7 +4,7 @@
 package edgetracker
 
 import (
-	"github.com/OffchainLabs/bold/containers/fsm"
+	"github.com/offchainlabs/bold/containers/fsm"
 )
 
 func newEdgeTrackerFsm(

@@ -5,7 +5,7 @@ package stateprovider
 import (
 	"testing"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )

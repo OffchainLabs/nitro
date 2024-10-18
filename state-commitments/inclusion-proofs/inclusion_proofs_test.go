@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
+	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )

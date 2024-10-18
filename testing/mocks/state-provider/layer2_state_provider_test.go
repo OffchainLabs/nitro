@@ -11,9 +11,9 @@ import (
 	"math"
 	"testing"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	challenge_testing "github.com/OffchainLabs/bold/testing"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	challenge_testing "github.com/offchainlabs/bold/testing"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
