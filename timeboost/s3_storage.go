@@ -172,7 +172,7 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 			}
 		}
 	}
-	if s.config.MaxBatchSize == 0 || size > 0 {
+	if (s.config.MaxBatchSize == 0 && len(bids) > 0) || size > 0 {
 		csvWriter.Flush()
 		if err := csvWriter.Error(); err != nil {
 			log.Error("Error flushing csv writer", "err", err)
