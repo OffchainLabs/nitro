@@ -8,7 +8,7 @@ use crate::{
 };
 use arbutil::{
     evm::{
-        api::{DataReader, EvmApi},
+        api::{DataReader, EvmApi, Ink},
         EvmData,
     },
     operator::OperatorCode,
@@ -270,7 +270,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         global.set(store, value.into()).map_err(ErrReport::msg)
     }
 
-    pub fn call_func<R>(&mut self, func: TypedFunction<(), R>, ink: u64) -> Result<R>
+    pub fn call_func<R>(&mut self, func: TypedFunction<(), R>, ink: Ink) -> Result<R>
     where
         R: WasmTypeList,
     {
