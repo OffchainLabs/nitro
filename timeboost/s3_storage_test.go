@@ -101,7 +101,6 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 	verifyBatchUploadCorrectness := func(firstRound uint64, wantBatch []byte) {
 		now = time.Now()
 		key = fmt.Sprintf("validated-timeboost-bids/%d/%02d/%02d/%d.csv.gzip", now.Year(), now.Month(), now.Day(), firstRound)
-		s3StorageService.uploadBatches(ctx)
 		data, err := s3StorageService.downloadBatch(ctx, key)
 		require.NoError(t, err)
 		require.Equal(t, wantBatch, data)
@@ -114,6 +113,7 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 	}
 
 	// UploadBatches should upload only the first bid and only one bid (round = 2) should remain in the sql database
+	s3StorageService.uploadBatches(ctx)
 	verifyBatchUploadCorrectness(1, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
 1,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,1,100,signature1
 `))
@@ -151,14 +151,80 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 	s3StorageService.config.MaxBatchSize = csvRecordSize(record)
 
 	// Round 2 bids should all be in the same batch even though the resulting batch exceeds MaxBatchSize
+	s3StorageService.uploadBatches(ctx)
 	verifyBatchUploadCorrectness(2, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
 2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,2,200,signature2
 1,0x0000000000000000000000000000000000000009,0x0000000000000000000000000000000000000007,0x0000000000000000000000000000000000000008,2,150,signature3
 `))
 
 	// After Batching Round 2 bids we end that batch and create a new batch for Round 3 bids to adhere to MaxBatchSize rule
+	s3StorageService.uploadBatches(ctx)
 	verifyBatchUploadCorrectness(3, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
 2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,3,250,signature4
 `))
 	checkUploadedBidsRemoval(4)
+
+	// Verify chunked reading of sql db
+	require.NoError(t, db.InsertBid(&ValidatedBid{
+		ChainId:                big.NewInt(1),
+		ExpressLaneController:  common.HexToAddress("0x0000000000000000000000000000000000000007"),
+		AuctionContractAddress: common.HexToAddress("0x0000000000000000000000000000000000000008"),
+		Bidder:                 common.HexToAddress("0x0000000000000000000000000000000000000009"),
+		Round:                  4,
+		Amount:                 big.NewInt(450),
+		Signature:              []byte("signature6"),
+	}))
+	require.NoError(t, db.InsertBid(&ValidatedBid{
+		ChainId:                big.NewInt(2),
+		ExpressLaneController:  common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		AuctionContractAddress: common.HexToAddress("0x0000000000000000000000000000000000000002"),
+		Bidder:                 common.HexToAddress("0x0000000000000000000000000000000000000003"),
+		Round:                  5,
+		Amount:                 big.NewInt(550),
+		Signature:              []byte("signature7"),
+	}))
+	require.NoError(t, db.InsertBid(&ValidatedBid{
+		ChainId:                big.NewInt(2),
+		ExpressLaneController:  common.HexToAddress("0x0000000000000000000000000000000000000004"),
+		AuctionContractAddress: common.HexToAddress("0x0000000000000000000000000000000000000005"),
+		Bidder:                 common.HexToAddress("0x0000000000000000000000000000000000000006"),
+		Round:                  5,
+		Amount:                 big.NewInt(650),
+		Signature:              []byte("signature8"),
+	}))
+	require.NoError(t, db.InsertBid(&ValidatedBid{
+		ChainId:                big.NewInt(2),
+		ExpressLaneController:  common.HexToAddress("0x0000000000000000000000000000000000000004"),
+		AuctionContractAddress: common.HexToAddress("0x0000000000000000000000000000000000000005"),
+		Bidder:                 common.HexToAddress("0x0000000000000000000000000000000000000006"),
+		Round:                  6,
+		Amount:                 big.NewInt(750),
+		Signature:              []byte("signature9"),
+	}))
+	require.NoError(t, db.InsertBid(&ValidatedBid{
+		ChainId:                big.NewInt(1),
+		ExpressLaneController:  common.HexToAddress("0x0000000000000000000000000000000000000004"),
+		AuctionContractAddress: common.HexToAddress("0x0000000000000000000000000000000000000005"),
+		Bidder:                 common.HexToAddress("0x0000000000000000000000000000000000000006"),
+		Round:                  7,
+		Amount:                 big.NewInt(850),
+		Signature:              []byte("signature10"),
+	}))
+	s3StorageService.config.MaxDbRows = 5
+
+	// Since config.MaxBatchSize is kept same and config.MaxDbRows is 5, sqldb.GetBids would return all bids from round 4 and 5, with round used for DeletBids as 6
+	// maxBatchSize would then batch bids from round 4 & 5 separately and uploads them to s3
+	s3StorageService.uploadBatches(ctx)
+	verifyBatchUploadCorrectness(4, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,4,350,signature5
+1,0x0000000000000000000000000000000000000009,0x0000000000000000000000000000000000000007,0x0000000000000000000000000000000000000008,4,450,signature6
+`))
+	verifyBatchUploadCorrectness(5, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,5,550,signature7
+2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,5,650,signature8
+`))
+	require.NoError(t, db.sqlDB.Select(&sqlDBbids, "SELECT * FROM Bids ORDER BY Round ASC"))
+	require.Equal(t, 2, len(sqlDBbids))
+	require.Equal(t, uint64(6), sqlDBbids[0].Round)
+	require.Equal(t, uint64(7), sqlDBbids[1].Round)
 }

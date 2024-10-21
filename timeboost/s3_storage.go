@@ -27,6 +27,7 @@ type S3StorageServiceConfig struct {
 	SecretKey      string        `koanf:"secret-key"`
 	UploadInterval time.Duration `koanf:"upload-interval"`
 	MaxBatchSize   int           `koanf:"max-batch-size"`
+	MaxDbRows      int           `koanf:"max-db-rows"`
 }
 
 func (c *S3StorageServiceConfig) Validate() error {
@@ -36,6 +37,9 @@ func (c *S3StorageServiceConfig) Validate() error {
 	if c.MaxBatchSize < 0 {
 		return fmt.Errorf("invalid max-batch-size value for auctioneer's s3-storage config, it should be non-negative, got: %d", c.MaxBatchSize)
 	}
+	if c.MaxDbRows < 0 {
+		return fmt.Errorf("invalid max-db-rows value for auctioneer's s3-storage config, it should be non-negative, got: %d", c.MaxDbRows)
+	}
 	return nil
 }
 
@@ -43,6 +47,7 @@ var DefaultS3StorageServiceConfig = S3StorageServiceConfig{
 	Enable:         false,
 	UploadInterval: time.Minute, // is this the right default value?
 	MaxBatchSize:   100000000,   // is this the right default value?
+	MaxDbRows:      0,           // Disabled by default
 }
 
 func S3StorageServiceConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -54,6 +59,7 @@ func S3StorageServiceConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".secret-key", DefaultS3StorageServiceConfig.SecretKey, "S3 secret key")
 	f.Duration(prefix+".upload-interval", DefaultS3StorageServiceConfig.UploadInterval, "frequency at which batches are uploaded to S3")
 	f.Int(prefix+".max-batch-size", DefaultS3StorageServiceConfig.MaxBatchSize, "max size of uncompressed batch in bytes to be uploaded to S3")
+	f.Int(prefix+".max-db-rows", DefaultS3StorageServiceConfig.MaxDbRows, "when the sql db is very large, this enables reading of db in chunks instead of all at once which might cause OOM")
 }
 
 type S3StorageService struct {
@@ -123,15 +129,14 @@ func csvRecordSize(record []string) int {
 }
 
 func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
-	round, err := s.sqlDB.GetMaxRoundFromBids()
-	if err != nil {
-		log.Error("Error finding max round from validated bids", "err", err)
-		return 0
-	}
-	bids, err := s.sqlDB.GetBidsTillRound(round)
+	bids, round, err := s.sqlDB.GetBids(s.config.MaxDbRows)
 	if err != nil {
 		log.Error("Error fetching validated bids from sql DB", "round", round, "err", err)
 		return 0
+	}
+	// Nothing to persist, exit early
+	if len(bids) == 0 {
+		return s.config.UploadInterval
 	}
 	var csvBuffer bytes.Buffer
 	var size int
@@ -172,7 +177,7 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 			}
 		}
 	}
-	if (s.config.MaxBatchSize == 0 && len(bids) > 0) || size > 0 {
+	if s.config.MaxBatchSize == 0 || size > 0 {
 		csvWriter.Flush()
 		if err := csvWriter.Error(); err != nil {
 			log.Error("Error flushing csv writer", "err", err)
@@ -184,6 +189,7 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 		}
 	}
 	if err := s.sqlDB.DeleteBids(round); err != nil {
+		log.Error("error deleting s3-persisted bids from sql db", "round", round, "err", err)
 		return 0
 	}
 	return s.config.UploadInterval
