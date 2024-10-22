@@ -579,15 +579,9 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-ifdef NODOCKERINDOCKER
-	test -f target/lib-wasm/libbrotlicommon-static.a || ./scripts/build-brotli.sh -w
-	test -f target/lib-wasm/libbrotlienc-static.a || ./scripts/build-brotli.sh -w
-	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh -w
-else
-	test -f target/lib-wasm/libbrotlicommon-static.a || ./scripts/build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlienc-static.a || ./scripts/build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh -w -d
-endif
+	test -f target/lib-wasm/libbrotlicommon-static.a || ./scripts/build-brotli.sh $(ARGS)
+	test -f target/lib-wasm/libbrotlienc-static.a || ./scripts/build-brotli.sh $(ARGS)
+	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh $(ARGS)
 	@touch $@
 
 .make/wasm-lib: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a  $(ORDER_ONLY_PREDICATE) .make

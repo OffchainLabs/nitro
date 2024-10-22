@@ -115,7 +115,7 @@ COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
 RUN apt-get update && apt-get install -y cmake
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header ARGS="-w -d"
 
 FROM scratch AS prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
