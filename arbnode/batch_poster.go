@@ -1392,7 +1392,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		latestBlock := latestHeader.Number.Uint64()
 		firstDelayedMsgBlock := b.building.firstDelayedMsg.Message.Header.BlockNumber
-		if firstDelayedMsgBlock+delayBuffer.Threshold >= latestBlock {
+		if latestBlock > firstDelayedMsgBlock+delayBuffer.Threshold {
 			log.Info("force post batch because of the delay buffer",
 				"firstDelayedMsgBlock", firstDelayedMsgBlock,
 				"threshold", delayBuffer.Threshold,
