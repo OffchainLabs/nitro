@@ -179,7 +179,7 @@ func main() {
 	defer l1Reader.StopAndWait()
 
 	nativeToken := common.HexToAddress(*nativeTokenAddressString)
-	deployedAddresses, err := deploycode.DeployOnL1(
+	deployedAddresses, err := deploycode.DeployOnParentChain(
 		ctx,
 		l1Reader,
 		l1TransactionOpts,
@@ -189,6 +189,7 @@ func main() {
 		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 		nativeToken,
 		maxDataSize,
+		true,
 	)
 	if err != nil {
 		flag.Usage()

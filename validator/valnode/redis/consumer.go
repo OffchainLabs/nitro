@@ -103,11 +103,13 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			case <-ready: // Wait until the stream exists and start consuming iteratively.
 			}
 			s.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+				log.Debug("waiting for request token", "cid", c.Id())
 				select {
 				case <-ctx.Done():
 					return 0
 				case <-requestTokenQueue:
 				}
+				log.Debug("got request token", "cid", c.Id())
 				req, err := c.Consume(ctx)
 				if err != nil {
 					log.Error("Consuming request", "error", err)
@@ -115,10 +117,12 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 					return 0
 				}
 				if req == nil {
+					log.Debug("consumed nil", "cid", c.Id())
 					// There's nothing in the queue
 					requestTokenQueue <- struct{}{}
 					return time.Second
 				}
+				log.Debug("forwarding work", "cid", c.Id(), "workid", req.ID)
 				select {
 				case <-ctx.Done():
 				case workQueue <- workUnit{req, moduleRoot}:
@@ -131,7 +135,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 		for {
 			select {
 			case <-readyStreams:
-				log.Trace("At least one stream is ready")
+				log.Debug("At least one stream is ready")
 				return // Don't block Start if at least one of the stream is ready.
 			case <-time.After(s.config.StreamTimeout):
 				log.Error("Waiting for redis streams timed out")
@@ -142,22 +146,31 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 		}
 	})
 	for i := 0; i < workers; i++ {
+		i := i
 		s.StopWaiter.LaunchThread(func(ctx context.Context) {
 			for {
+				log.Debug("waiting for work", "thread", i)
 				var work workUnit
 				select {
 				case <-ctx.Done():
 					return
 				case work = <-workQueue:
 				}
+				log.Debug("got work", "thread", i, "workid", work.req.ID)
 				valRun := s.spawner.Launch(work.req.Value, work.moduleRoot)
 				res, err := valRun.Await(ctx)
 				if err != nil {
 					log.Error("Error validating", "request value", work.req.Value, "error", err)
+					work.req.Ack()
 				} else {
-					if err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res); err != nil {
+					log.Debug("done work", "thread", i, "workid", work.req.ID)
+					err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res)
+					// Even in error we close ackNotifier as there's no retry mechanism here and closing it will alow other consumers to autoclaim
+					work.req.Ack()
+					if err != nil {
 						log.Error("Error setting result for request", "id", work.req.ID, "result", res, "error", err)
 					}
+					log.Debug("set result", "thread", i, "workid", work.req.ID)
 				}
 				select {
 				case <-ctx.Done():
