@@ -17,20 +17,25 @@ import (
 //
 // The path can be nested under a slug directory so callers can provide a
 // recognizable name to differentiate various contexts in which the InputJSON
-// is being written. If the Writer is configured by calling SetSlug, then the
+// is being written. If the Writer is configured by calling WithSlug, then the
 // path will be like:
 //
 //	$HOME/.arbuitrum/validation-inputs/<slug>/<YYYMMDD_HHMMSS>/block_inputs_<id>.json
 //
+// The inclusion of BlockId in the file's name is on by default, however that can be disabled
+// by calling WithBlockIdInFileNameEnabled(false). In which case, the path will be like:
+//
+//	$HOME/.arbuitrum/validation-inputs/<slug>/<YYYMMDD_HHMMSS>/block_inputs.json
+//
 // The inclusion of a timestamp directory is on by default to avoid conflicts which
 // would result in files being overwritten. However, the Writer can be configured
 // to not use a timestamp directory.  If the Writer is configured by calling
-// SetUseTimestampDir(false), then the path will be like:
+// WithTimestampDirEnabled(false), then the path will be like:
 //
 //	$HOME/.arbuitrum/validation-inputs/<slug>/block_inputs_<id>.json
 //
 // Finally, to give complete control to the clients, the base directory can be
-// set directly with SetBaseDir. In which case, the path will be like:
+// set directly with WithBaseDir. In which case, the path will be like:
 //
 //	<baseDir>/block_inputs_<id>.json
 //	  or
@@ -38,10 +43,11 @@ import (
 //	  or
 //	<baseDir>/<slug>/<YYYMMDD_HHMMSS>/block_inputs_<id>.json
 type Writer struct {
-	clock           Clock
-	baseDir         string
-	slug            string
-	useTimestampDir bool
+	clock                Clock
+	baseDir              string
+	slug                 string
+	useTimestampDir      bool
+	useBlockIdInFileName bool
 }
 
 // WriterOption is a function that configures a Writer.
@@ -66,10 +72,11 @@ func NewWriter(options ...WriterOption) (*Writer, error) {
 	}
 	baseDir := filepath.Join(homeDir, ".arbitrum", "validation-inputs")
 	w := &Writer{
-		clock:           realClock{},
-		baseDir:         baseDir,
-		slug:            "",
-		useTimestampDir: true,
+		clock:                realClock{},
+		baseDir:              baseDir,
+		slug:                 "",
+		useTimestampDir:      true,
+		useBlockIdInFileName: true,
 	}
 	for _, o := range options {
 		o(w)
@@ -114,6 +121,13 @@ func WithTimestampDirEnabled(useTimestampDir bool) WriterOption {
 	}
 }
 
+// WithBlockIdInFileNameEnabled controls the inclusion of Block Id in the input json file's name
+func WithBlockIdInFileNameEnabled(useBlockIdInFileName bool) WriterOption {
+	return func(w *Writer) {
+		w.useBlockIdInFileName = useBlockIdInFileName
+	}
+}
+
 // Write writes the given InputJSON to a file in JSON format.
 func (w *Writer) Write(json *server_api.InputJSON) error {
 	dir := w.baseDir
@@ -132,9 +146,11 @@ func (w *Writer) Write(json *server_api.InputJSON) error {
 	if err != nil {
 		return err
 	}
-	if err = os.WriteFile(
-		filepath.Join(dir, fmt.Sprintf("block_inputs_%d.json", json.Id)),
-		contents, 0600); err != nil {
+	fileName := "block_inputs.json"
+	if w.useBlockIdInFileName {
+		fileName = fmt.Sprintf("block_inputs_%d.json", json.Id)
+	}
+	if err = os.WriteFile(filepath.Join(dir, fileName), contents, 0600); err != nil {
 		return err
 	}
 	return nil
