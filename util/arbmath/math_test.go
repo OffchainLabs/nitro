@@ -44,6 +44,7 @@ func TestMath(t *testing.T) {
 
 	// try the first million sqrts
 	for i := 0; i < 1000000; i++ {
+		// #nosec G115
 		input := uint64(i)
 		approx := ApproxSquareRoot(input)
 		correct := math.Sqrt(float64(input))

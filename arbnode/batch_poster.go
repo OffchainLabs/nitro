@@ -98,7 +98,6 @@ type BatchPoster struct {
 	arbOSVersionGetter execution.FullExecutionClient
 	config             BatchPosterConfigFetcher
 	seqInbox           *bridgegen.SequencerInbox
-	bridge             *bridgegen.Bridge
 	syncMonitor        *SyncMonitor
 	seqInboxABI        *abi.ABI
 	seqInboxAddr       common.Address
@@ -168,7 +167,7 @@ type BatchPosterConfig struct {
 	L1BlockBound                   string                      `koanf:"l1-block-bound" reload:"hot"`
 	L1BlockBoundBypass             time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
 	UseAccessLists                 bool                        `koanf:"use-access-lists" reload:"hot"`
-	GasEstimateBaseFeeMultipleBips arbmath.Bips                `koanf:"gas-estimate-base-fee-multiple-bips"`
+	GasEstimateBaseFeeMultipleBips arbmath.UBips               `koanf:"gas-estimate-base-fee-multiple-bips"`
 	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
 	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
 	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
@@ -253,7 +252,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	L1BlockBoundBypass:             time.Hour,
 	UseAccessLists:                 true,
 	RedisLock:                      redislock.DefaultCfg,
-	GasEstimateBaseFeeMultipleBips: arbmath.OneInBips * 3 / 2,
+	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	ReorgResistanceMargin:          10 * time.Minute,
 	CheckBatchCorrectness:          true,
 }
@@ -285,7 +284,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	L1BlockBound:                   "",
 	L1BlockBoundBypass:             time.Hour,
 	UseAccessLists:                 true,
-	GasEstimateBaseFeeMultipleBips: arbmath.OneInBips * 3 / 2,
+	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	CheckBatchCorrectness:          true,
 }
 
@@ -309,10 +308,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	if err != nil {
 		return nil, err
 	}
-	bridge, err := bridgegen.NewBridge(opts.DeployInfo.Bridge, opts.L1Reader.Client())
-	if err != nil {
-		return nil, err
-	}
+
 	if err = opts.Config().Validate(); err != nil {
 		return nil, err
 	}
@@ -340,7 +336,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		arbOSVersionGetter: opts.VersionGetter,
 		syncMonitor:        opts.SyncMonitor,
 		config:             opts.Config,
-		bridge:             bridge,
 		seqInbox:           seqInbox,
 		seqInboxABI:        seqInboxABI,
 		seqInboxAddr:       opts.DeployInfo.SequencerInbox,
@@ -716,12 +711,14 @@ type batchSegments struct {
 }
 
 type buildingBatch struct {
-	segments          *batchSegments
-	startMsgCount     arbutil.MessageIndex
-	msgCount          arbutil.MessageIndex
-	haveUsefulMessage bool
-	use4844           bool
-	muxBackend        *simulatedMuxBackend
+	segments           *batchSegments
+	startMsgCount      arbutil.MessageIndex
+	msgCount           arbutil.MessageIndex
+	haveUsefulMessage  bool
+	use4844            bool
+	muxBackend         *simulatedMuxBackend
+	firstNonDelayedMsg *arbostypes.MessageWithMetadata
+	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64, use4844 bool) *batchSegments {
@@ -1035,7 +1032,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	if err != nil {
 		return 0, err
 	}
-	maxFeePerGas := arbmath.BigMulByBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
+	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
 	if useNormalEstimation {
 		_, realBlobHashes, err := blobs.ComputeCommitmentsAndHashes(realBlobs)
 		if err != nil {
@@ -1176,12 +1173,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// There's nothing after the newest batch, therefore batch posting was not required
 		return false, nil
 	}
-	firstMsg, err := b.streamer.GetMessage(batchPosition.MessageCount)
-	if err != nil {
-		return false, err
-	}
-	// #nosec G115
-	firstMsgTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
 	lastPotentialMsg, err := b.streamer.GetMessage(msgCount - 1)
 	if err != nil {
@@ -1189,7 +1180,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	config := b.config()
-	forcePostBatch := config.MaxDelay <= 0 || time.Since(firstMsgTime) >= config.MaxDelay
+	forcePostBatch := config.MaxDelay <= 0
 
 	var l1BoundMaxBlockNumber uint64 = math.MaxUint64
 	var l1BoundMaxTimestamp uint64 = math.MaxUint64
@@ -1250,7 +1241,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		l1BoundMinTimestamp = arbmath.SaturatingUSub(latestHeader.Time, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
 
 		if config.L1BlockBoundBypass > 0 {
+			// #nosec G115
 			blockNumberWithPadding := arbmath.SaturatingUAdd(latestBlockNumber, uint64(config.L1BlockBoundBypass/ethPosBlockTime))
+			// #nosec G115
 			timestampWithPadding := arbmath.SaturatingUAdd(latestHeader.Time, uint64(config.L1BlockBoundBypass/time.Second))
 			l1BoundMinBlockNumberWithBypass = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
 			l1BoundMinTimestampWithBypass = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
@@ -1299,6 +1292,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				forcePostBatch = true
 			}
 			b.building.haveUsefulMessage = true
+			if b.building.firstUsefulMsg == nil {
+				b.building.firstUsefulMsg = msg
+			}
 			break
 		}
 		if config.CheckBatchCorrectness {
@@ -1309,14 +1305,31 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		if msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport {
 			b.building.haveUsefulMessage = true
+			if b.building.firstUsefulMsg == nil {
+				b.building.firstUsefulMsg = msg
+			}
+		}
+		if !isDelayed && b.building.firstNonDelayedMsg == nil {
+			b.building.firstNonDelayedMsg = msg
 		}
 		b.building.msgCount++
 	}
 
-	if hasL1Bound && config.ReorgResistanceMargin > 0 {
-		firstMsgBlockNumber := firstMsg.Message.Header.BlockNumber
-		firstMsgTimeStamp := firstMsg.Message.Header.Timestamp
+	firstUsefulMsgTime := time.Now()
+	if b.building.firstUsefulMsg != nil {
+		// #nosec G115
+		firstUsefulMsgTime = time.Unix(int64(b.building.firstUsefulMsg.Message.Header.Timestamp), 0)
+		if time.Since(firstUsefulMsgTime) >= config.MaxDelay {
+			forcePostBatch = true
+		}
+	}
+
+	if b.building.firstNonDelayedMsg != nil && hasL1Bound && config.ReorgResistanceMargin > 0 {
+		firstMsgBlockNumber := b.building.firstNonDelayedMsg.Message.Header.BlockNumber
+		firstMsgTimeStamp := b.building.firstNonDelayedMsg.Message.Header.Timestamp
+		// #nosec G115
 		batchNearL1BoundMinBlockNumber := firstMsgBlockNumber <= arbmath.SaturatingUAdd(l1BoundMinBlockNumber, uint64(config.ReorgResistanceMargin/ethPosBlockTime))
+		// #nosec G115
 		batchNearL1BoundMinTimestamp := firstMsgTimeStamp <= arbmath.SaturatingUAdd(l1BoundMinTimestamp, uint64(config.ReorgResistanceMargin/time.Second))
 		if batchNearL1BoundMinTimestamp || batchNearL1BoundMinBlockNumber {
 			log.Error(
@@ -1361,6 +1374,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			batchPosterDAFailureCounter.Inc(1)
 			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
 		}
+		// #nosec G115
 		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
 		if err != nil {
 			batchPosterDAFailureCounter.Inc(1)
@@ -1463,7 +1477,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	tx, err := b.dataPoster.PostTransaction(ctx,
-		firstMsgTime,
+		firstUsefulMsgTime,
 		nonce,
 		newMeta,
 		b.seqInboxAddr,

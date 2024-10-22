@@ -4,7 +4,6 @@
 package util
 
 import (
-	"bytes"
 	"slices"
 	"testing"
 
@@ -76,7 +75,7 @@ func TestStorageCache(t *testing.T) {
 			{Key: keys[2], Value: values[2]},
 		}
 		sortFunc := func(a, b storageCacheStores) int {
-			return bytes.Compare(a.Key.Bytes(), b.Key.Bytes())
+			return a.Key.Cmp(b.Key)
 		}
 		slices.SortFunc(stores, sortFunc)
 		slices.SortFunc(expected, sortFunc)

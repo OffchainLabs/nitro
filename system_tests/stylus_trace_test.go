@@ -6,6 +6,7 @@ package arbtest
 import (
 	"bytes"
 	"encoding/binary"
+	"math"
 	"math/big"
 	"testing"
 
@@ -76,6 +77,7 @@ func sendAndTraceTransaction(
 }
 
 func intToBytes(v int) []byte {
+	// #nosec G115
 	return binary.BigEndian.AppendUint64(nil, uint64(v))
 }
 
@@ -476,4 +478,18 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	// outer return
 	checkOpcode(t, wasmResult, 12, vm.RETURN, offset, returnLen)
 	checkOpcode(t, evmResult, 5078, vm.RETURN, offset, returnLen)
+}
+
+func TestStylusHugeWriteResultTrace(t *testing.T) {
+	const jit = false
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	program := deployWasm(t, ctx, auth, l2client, watFile("write-result-len"))
+	const returnLen = math.MaxUint16 + 1
+	args := binary.LittleEndian.AppendUint32(nil, returnLen)
+	result := sendAndTraceTransaction(t, builder, program, nil, args)
+	checkOpcode(t, result, 3, vm.RETURN, nil, intToBe32(returnLen))
 }
