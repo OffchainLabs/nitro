@@ -709,7 +709,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 				return err
 			}
 			if notFound || haveDelayedAcc != batch.AfterDelayedAcc {
-				log.Trace(
+				log.Debug(
 					"Delayed message accumulator doesn't match sequencer batch",
 					"batch", batch.SequenceNumber,
 					"delayedPosition", batch.AfterDelayedCount-1,

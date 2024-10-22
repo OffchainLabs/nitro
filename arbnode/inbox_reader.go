@@ -353,7 +353,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				return err
 			}
 			if ourLatestDelayedCount < checkingDelayedCount {
-				log.Trace("Expecting to find delayed messages", "checkingDelayedCount", checkingDelayedCount, "ourLatestDelayedCount", ourLatestDelayedCount, "currentHeight", currentHeight)
+				log.Debug("Expecting to find delayed messages", "checkingDelayedCount", checkingDelayedCount, "ourLatestDelayedCount", ourLatestDelayedCount, "currentHeight", currentHeight)
 				checkingDelayedCount = ourLatestDelayedCount
 				missingDelayed = true
 			} else if ourLatestDelayedCount > checkingDelayedCount {
@@ -374,7 +374,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					return err
 				}
 				if dbDelayedAcc != l1DelayedAcc {
-					log.Trace("Latest delayed accumulator mismatch", "delayedSeqNum", checkingDelayedSeqNum, "dbDelayedAcc", dbDelayedAcc, "l1DelayedAcc", l1DelayedAcc)
+					log.Debug("Latest delayed accumulator mismatch", "delayedSeqNum", checkingDelayedSeqNum, "dbDelayedAcc", dbDelayedAcc, "l1DelayedAcc", l1DelayedAcc)
 					reorgingDelayed = true
 				}
 			}
@@ -392,7 +392,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				return err
 			}
 			if ourLatestBatchCount < checkingBatchCount {
-				log.Trace("Expecting to find sequencer batches", "checkingBatchCount", checkingBatchCount, "ourLatestBatchCount", ourLatestBatchCount, "currentHeight", currentHeight)
+				log.Debug("Expecting to find sequencer batches", "checkingBatchCount", checkingBatchCount, "ourLatestBatchCount", ourLatestBatchCount, "currentHeight", currentHeight)
 				checkingBatchCount = ourLatestBatchCount
 				missingSequencer = true
 			} else if ourLatestBatchCount > checkingBatchCount && config.HardReorg {
@@ -412,7 +412,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					return err
 				}
 				if dbBatchAcc != l1BatchAcc {
-					log.Trace("Latest sequencer batch accumulator mismatch", "batchSeqNum", checkingBatchSeqNum, "dbBatchAcc", dbBatchAcc, "l1BatchAcc", l1BatchAcc)
+					log.Debug("Latest sequencer batch accumulator mismatch", "batchSeqNum", checkingBatchSeqNum, "dbBatchAcc", dbBatchAcc, "l1BatchAcc", l1BatchAcc)
 					reorgingSequencer = true
 				}
 			}
@@ -455,7 +455,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			if to.Cmp(currentHeight) > 0 {
 				to.Set(currentHeight)
 			}
-			log.Trace(
+			log.Debug(
 				"Looking up messages",
 				"from", from.String(),
 				"to", to.String(),
@@ -526,7 +526,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 						}
 					}
 				}
-				log.Trace(
+				log.Debug(
 					"Found sequencer batches",
 					"firstSequenceNumber", firstBatch.SequenceNumber,
 					"newBatchesCount", len(sequencerBatches),
@@ -537,7 +537,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					"readLastAcc", readLastAcc,
 				)
 			} else if missingSequencer && to.Cmp(currentHeight) >= 0 {
-				log.Trace("Didn't find expected sequencer batches", "from", from, "to", to, "currentHeight", currentHeight)
+				log.Debug("Didn't find expected sequencer batches", "from", from, "to", to, "currentHeight", currentHeight)
 				// We were missing sequencer batches but didn't find any.
 				// This must mean that the sequencer batches are in the past.
 				reorgingSequencer = true
@@ -564,7 +564,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					}
 					havePrevAcc = haveAcc
 				}
-				log.Trace(
+				log.Debug(
 					"Found delayed messages",
 					"firstSequenceNumber", beforeCount,
 					"count", len(delayedMessages),
@@ -572,12 +572,12 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					"readBeforeAcc", beforeAcc,
 					"haveBeforeAcc", havePrevAcc,
 					"readLastAcc", lazyHashLogging{func() common.Hash {
-						// Only compute this if we need to log it, as it's expensive
+						// Only compute this if we need to log it, as it's somewhat expensive
 						return delayedMessages[len(delayedMessages)-1].AfterInboxAcc()
 					}},
 				)
 			} else if missingDelayed && to.Cmp(currentHeight) >= 0 {
-				log.Trace("Didn't find expected delayed messages", "from", from, "to", to, "currentHeight", currentHeight)
+				log.Debug("Didn't find expected delayed messages", "from", from, "to", to, "currentHeight", currentHeight)
 				// We were missing delayed messages but didn't find any.
 				// This must mean that the delayed messages are in the past.
 				reorgingDelayed = true
