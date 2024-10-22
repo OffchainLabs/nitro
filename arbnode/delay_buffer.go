@@ -61,7 +61,7 @@ func GenDelayProof(ctx context.Context, message *arbostypes.MessageWithMetadata,
 	var beforeDelayedAcc common.Hash
 	if seqNum > 0 {
 		var err error
-		beforeDelayedAcc, err = inbox.GetDelayedAcc(seqNum)
+		beforeDelayedAcc, err = inbox.GetDelayedAcc(seqNum - 1)
 		if err != nil {
 			return nil, err
 		}
