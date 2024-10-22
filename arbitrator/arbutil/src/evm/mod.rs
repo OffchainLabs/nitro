@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{Bytes20, Bytes32};
+use api::Gas;
 
 pub mod api;
 pub mod req;
@@ -9,70 +10,70 @@ pub mod storage;
 pub mod user;
 
 // params.SstoreSentryGasEIP2200
-pub const SSTORE_SENTRY_GAS: u64 = 2300;
+pub const SSTORE_SENTRY_GAS: Gas = Gas(2300);
 
 // params.ColdAccountAccessCostEIP2929
-pub const COLD_ACCOUNT_GAS: u64 = 2600;
+pub const COLD_ACCOUNT_GAS: Gas = Gas(2600);
 
 // params.ColdSloadCostEIP2929
-pub const COLD_SLOAD_GAS: u64 = 2100;
+pub const COLD_SLOAD_GAS: Gas = Gas(2100);
 
 // params.WarmStorageReadCostEIP2929
-pub const WARM_SLOAD_GAS: u64 = 100;
+pub const WARM_SLOAD_GAS: Gas = Gas(100);
 
 // params.WarmStorageReadCostEIP2929 (see enable1153 in jump_table.go)
-pub const TLOAD_GAS: u64 = WARM_SLOAD_GAS;
-pub const TSTORE_GAS: u64 = WARM_SLOAD_GAS;
+pub const TLOAD_GAS: Gas = WARM_SLOAD_GAS;
+pub const TSTORE_GAS: Gas = WARM_SLOAD_GAS;
 
 // params.LogGas and params.LogDataGas
-pub const LOG_TOPIC_GAS: u64 = 375;
-pub const LOG_DATA_GAS: u64 = 8;
+pub const LOG_TOPIC_GAS: Gas = Gas(375);
+pub const LOG_DATA_GAS: Gas = Gas(8);
 
 // params.CopyGas
-pub const COPY_WORD_GAS: u64 = 3;
+pub const COPY_WORD_GAS: Gas = Gas(3);
 
 // params.Keccak256Gas
-pub const KECCAK_256_GAS: u64 = 30;
-pub const KECCAK_WORD_GAS: u64 = 6;
+pub const KECCAK_256_GAS: Gas = Gas(30);
+pub const KECCAK_WORD_GAS: Gas = Gas(6);
 
 // vm.GasQuickStep (see gas.go)
-pub const GAS_QUICK_STEP: u64 = 2;
+pub const GAS_QUICK_STEP: Gas = Gas(2);
 
 // vm.GasQuickStep (see jump_table.go)
-pub const ADDRESS_GAS: u64 = GAS_QUICK_STEP;
+pub const ADDRESS_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see eips.go)
-pub const BASEFEE_GAS: u64 = GAS_QUICK_STEP;
+pub const BASEFEE_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see eips.go)
-pub const CHAINID_GAS: u64 = GAS_QUICK_STEP;
+pub const CHAINID_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const COINBASE_GAS: u64 = GAS_QUICK_STEP;
+pub const COINBASE_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const GASLIMIT_GAS: u64 = GAS_QUICK_STEP;
+pub const GASLIMIT_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const NUMBER_GAS: u64 = GAS_QUICK_STEP;
+pub const NUMBER_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const TIMESTAMP_GAS: u64 = GAS_QUICK_STEP;
+pub const TIMESTAMP_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const GASLEFT_GAS: u64 = GAS_QUICK_STEP;
+pub const GASLEFT_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const CALLER_GAS: u64 = GAS_QUICK_STEP;
+pub const CALLER_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const CALLVALUE_GAS: u64 = GAS_QUICK_STEP;
+pub const CALLVALUE_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const GASPRICE_GAS: u64 = GAS_QUICK_STEP;
+pub const GASPRICE_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const ORIGIN_GAS: u64 = GAS_QUICK_STEP;
+pub const ORIGIN_GAS: Gas = GAS_QUICK_STEP;
 
 pub const ARBOS_VERSION_STYLUS_CHARGING_FIXES: u64 = 32;
 

@@ -281,8 +281,6 @@ func mainImpl() int {
 		}
 	}
 
-	combinedL2ChainInfoFile := aggregateL2ChainInfoFiles(ctx, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)
-
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.ParentChainReader.Enable {
 			flag.Usage()
@@ -331,7 +329,7 @@ func mainImpl() int {
 
 		log.Info("connected to l1 chain", "l1url", nodeConfig.ParentChain.Connection.URL, "l1chainid", nodeConfig.ParentChain.ID)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
@@ -363,7 +361,7 @@ func mainImpl() int {
 			log.Crit("--node.validator.only-create-wallet-contract conflicts with --node.dangerous.no-l1-listener")
 		}
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -489,7 +487,7 @@ func mainImpl() int {
 		return 0
 	}
 
-	chainInfo, err := chaininfo.ProcessChainInfo(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+	chainInfo, err := chaininfo.ProcessChainInfo(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 	if err != nil {
 		log.Error("error processing l2 chain info", "err", err)
 		return 1
@@ -836,12 +834,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	l2ChainId := k.Int64("chain.id")
 	l2ChainName := k.String("chain.name")
-	l2ChainInfoIpfsUrl := k.String("chain.info-ipfs-url")
-	l2ChainInfoIpfsDownloadPath := k.String("chain.info-ipfs-download-path")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
 	// #nosec G115
-	err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -904,20 +900,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l2DevWallet, nil
 }
 
-func aggregateL2ChainInfoFiles(ctx context.Context, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) []string {
-	if l2ChainInfoIpfsUrl != "" {
-		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
-		if err != nil {
-			log.Error("error getting l2 chain info file from ipfs", "err", err)
-		}
-		l2ChainInfoFiles = append(l2ChainInfoFiles, l2ChainInfoIpfsFile)
-	}
-	return l2ChainInfoFiles
-}
-
-func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) error {
-	combinedL2ChainInfoFiles := aggregateL2ChainInfoFiles(ctx, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
-	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
+func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) error {
+	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err
 	}
@@ -926,7 +910,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
 	} else {
 		log.Warn("Chain info field parent-chain-is-arbitrum is missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
-		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", combinedL2ChainInfoFiles, "")
+		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", l2ChainInfoFiles, "")
 		if err == nil {
 			parentChainIsArbitrum = true
 		}
