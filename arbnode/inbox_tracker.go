@@ -462,6 +462,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 		}
 	}
 
+	firstPos := pos
 	batch := t.db.NewBatch()
 	for _, message := range messages {
 		seqNum, err := message.Message.Header.SeqNum()
@@ -504,13 +505,16 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 		pos++
 	}
 
-	return t.setDelayedCountReorgAndWriteBatch(batch, pos, true)
+	return t.setDelayedCountReorgAndWriteBatch(batch, firstPos, pos, true)
 }
 
 // All-in-one delayed message count adjuster. Can go forwards or backwards.
 // Requires the mutex is held. Sets the delayed count and performs any sequencer batch reorg necessary.
 // Also deletes any future delayed messages.
-func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newDelayedCount uint64, canReorgBatches bool) error {
+func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firstNewDelayedMessagePos uint64, newDelayedCount uint64, canReorgBatches bool) error {
+	if firstNewDelayedMessagePos > newDelayedCount {
+		return fmt.Errorf("firstNewDelayedMessagePos %v is after newDelayedCount %v", firstNewDelayedMessagePos, newDelayedCount)
+	}
 	err := deleteStartingAt(t.db, batch, rlpDelayedMessagePrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
 		return err
@@ -533,7 +537,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		return err
 	}
 
-	seqBatchIter := t.db.NewIterator(delayedSequencedPrefix, uint64ToKey(newDelayedCount+1))
+	seqBatchIter := t.db.NewIterator(delayedSequencedPrefix, uint64ToKey(firstNewDelayedMessagePos+1))
 	defer seqBatchIter.Release()
 	var reorgSeqBatchesToCount *uint64
 	for seqBatchIter.Next() {
@@ -865,7 +869,7 @@ func (t *InboxTracker) ReorgDelayedTo(count uint64) error {
 		return errors.New("attempted to reorg to future delayed count")
 	}
 
-	return t.setDelayedCountReorgAndWriteBatch(t.db.NewBatch(), count, false)
+	return t.setDelayedCountReorgAndWriteBatch(t.db.NewBatch(), count, count, false)
 }
 
 func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
