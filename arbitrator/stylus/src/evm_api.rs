@@ -3,7 +3,7 @@
 
 use crate::{GoSliceData, RustSlice};
 use arbutil::evm::{
-    api::{EvmApiMethod, EVM_API_METHOD_REQ_OFFSET},
+    api::{EvmApiMethod, Gas, EVM_API_METHOD_REQ_OFFSET},
     req::RequestHandler,
 };
 
@@ -31,7 +31,7 @@ impl RequestHandler<GoSliceData> for NativeRequestHandler {
         &mut self,
         req_type: EvmApiMethod,
         req_data: impl AsRef<[u8]>,
-    ) -> (Vec<u8>, GoSliceData, u64) {
+    ) -> (Vec<u8>, GoSliceData, Gas) {
         let mut result = GoSliceData::null();
         let mut raw_data = GoSliceData::null();
         let mut cost = 0;
@@ -45,6 +45,6 @@ impl RequestHandler<GoSliceData> for NativeRequestHandler {
                 ptr!(raw_data),
             )
         };
-        (result.slice().to_vec(), raw_data, cost)
+        (result.slice().to_vec(), raw_data, Gas(cost))
     }
 }
