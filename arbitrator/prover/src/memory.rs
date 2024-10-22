@@ -129,7 +129,7 @@ impl Memory {
             buffer: vec![0u8; size],
             merkle: None,
             max_size,
-            dirty_leaves: Mutex::new(bitvec![0; size / Self::LEAF_SIZE + 1]),
+            dirty_leaves: Mutex::new(bitvec![0; 4 * 1024 / Self::LEAF_SIZE  * 1024 * 1024 + 1]),
         };
         // println!(
         //     "Memory.new({}), len: {}",
@@ -432,7 +432,7 @@ impl Memory {
 
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
-        self.dirty_leaves.lock().resize(new_size / Self::LEAF_SIZE + 1, false);
+        // self.dirty_leaves.lock().resize(new_size / Self::LEAF_SIZE + 1, false);
         // println!(
         //     "Memory.resize(), new_size: {}, len: {}, buffer_len: {}",
         //     new_size,
