@@ -392,7 +392,8 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedSeqNum, "found", delayedSeqNum)
 				continue
 			}
-			_, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedSeqNum)
+			_, err := s.
+				sequenceDelayedMessageWithBlockMutex(msg.Message, delayedSeqNum)
 			if err != nil {
 				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
 			}
@@ -942,10 +943,14 @@ func (s *ExecutionEngine) ArbOSVersionForMessageNumber(messageNum arbutil.Messag
 	return extra.ArbOSFormatVersion, nil
 }
 
-func (s *ExecutionEngine) Start(ctx_in context.Context) {
+func (s *ExecutionEngine) Start(ctx_in context.Context, syncTillBlock uint64) {
 	s.StopWaiter.Start(ctx_in, s)
 	s.LaunchThread(func(ctx context.Context) {
 		for {
+			if syncTillBlock > 0 && s.latestBlock.NumberU64() >= syncTillBlock {
+				log.Info("stopping block creation in execution engine", "syncTillBlock", syncTillBlock)
+				return
+			}
 			select {
 			case <-ctx.Done():
 				return

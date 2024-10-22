@@ -106,9 +106,9 @@ func TestTransactionStreamer(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	err := inbox.Start(ctx)
+	err := inbox.Start(ctx, 0)
 	Require(t, err)
-	exec.Start(ctx)
+	exec.Start(ctx, 0)
 
 	maxExpectedGasCost := big.NewInt(l2pricing.InitialBaseFeeWei)
 	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))

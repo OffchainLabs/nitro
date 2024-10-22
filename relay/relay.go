@@ -86,7 +86,7 @@ func (r *Relay) Start(ctx context.Context) error {
 		return errors.New("broadcast unable to start")
 	}
 
-	r.broadcastClients.Start(ctx)
+	r.broadcastClients.Start(ctx, 0)
 
 	r.LaunchThread(func(ctx context.Context) {
 		for {
