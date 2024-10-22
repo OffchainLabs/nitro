@@ -76,6 +76,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -252,6 +253,7 @@ type NodeBuilder struct {
 	l3InitMessage               *arbostypes.ParsedInitMessage
 	withProdConfirmPeriodBlocks bool
 	wasmCacheTag                uint32
+	isDelayBufferable           bool
 
 	// Created nodes
 	L1 *TestClient
@@ -364,6 +366,11 @@ func (b *NodeBuilder) WithStylusLongTermCache(enabled bool) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) WithDelayBuffer(enabled bool) *NodeBuilder {
+	b.isDelayBufferable = enabled
+	return b
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
@@ -413,6 +420,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		locator.LatestWasmModuleRoot(),
 		b.withProdConfirmPeriodBlocks,
 		true,
+		b.isDelayBufferable,
 	)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
@@ -515,6 +523,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		b.l3Config.chainConfig,
 		locator.LatestWasmModuleRoot(),
 		b.l3Config.withProdConfirmPeriodBlocks,
+		false,
 		false,
 	)
 
@@ -1259,6 +1268,7 @@ func deployOnParentChain(
 	wasmModuleRoot common.Hash,
 	prodConfirmPeriodBlocks bool,
 	chainSupportsBlobs bool,
+	isDelayBufferable bool,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	parentChainInfo.GenerateAccount("RollupOwner")
 	parentChainInfo.GenerateAccount("Sequencer")
@@ -1281,6 +1291,11 @@ func deployOnParentChain(
 	parentChainReader.Start(ctx)
 	defer parentChainReader.StopAndWait()
 
+	var bufferConfig rollupgen.BufferConfig
+	if isDelayBufferable {
+		bufferConfig = arbnode.DefaultBufferConfig()
+	}
+
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
 	addresses, err := deploy.DeployOnParentChain(
@@ -1290,7 +1305,7 @@ func deployOnParentChain(
 		[]common.Address{parentChainInfo.GetAddress("Sequencer")},
 		parentChainInfo.GetAddress("RollupOwner"),
 		0,
-		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}, bufferConfig),
 		nativeToken,
 		maxDataSize,
 		chainSupportsBlobs,
