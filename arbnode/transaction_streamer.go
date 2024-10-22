@@ -1218,7 +1218,32 @@ func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struc
 	return s.config().ExecuteMessageLoopDelay
 }
 
-func (s *TransactionStreamer) Start(ctxIn context.Context) error {
+func (s *TransactionStreamer) Start(ctxIn context.Context, syncTillBlock uint64) error {
 	s.StopWaiter.Start(ctxIn, s)
-	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
+	return s.LaunchThreadSafe(func(ctx context.Context) {
+		var defaultVal struct{}
+		var val struct{}
+		for {
+			if syncTillBlock > 0 && uint64(s.execLastMsgCount) >= syncTillBlock {
+				log.Info("stopping block creation in transaction streamer", "syncTillBlock", syncTillBlock)
+				return
+			}
+			interval := s.executeMessages(ctx, val)
+			if ctx.Err() != nil {
+				return
+			}
+			val = defaultVal
+			if interval == time.Duration(0) {
+				continue
+			}
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			case val = <-s.newMessageNotifier:
+			}
+		}
+	})
 }

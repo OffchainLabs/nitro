@@ -131,12 +131,12 @@ func clearAndResetTicker(timer *time.Ticker, interval time.Duration) {
 	timer.Reset(interval)
 }
 
-func (bcs *BroadcastClients) Start(ctx context.Context) {
+func (bcs *BroadcastClients) Start(ctx context.Context, syncTillBlock uint64) {
 	bcs.primaryRouter.StopWaiter.Start(ctx, bcs.primaryRouter)
 	bcs.secondaryRouter.StopWaiter.Start(ctx, bcs.secondaryRouter)
 
 	for _, client := range bcs.primaryClients {
-		client.Start(ctx)
+		client.Start(ctx, syncTillBlock)
 	}
 
 	var lastConfirmed arbutil.MessageIndex
@@ -176,7 +176,12 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 		}
 
 		// Multiple select statements to prioritize reading messages from primary feeds' channels and avoid starving of timers
+		var msg m.BroadcastFeedMessage
 		for {
+			if syncTillBlock > 0 && uint64(msg.SequenceNumber) >= syncTillBlock {
+				log.Info("stopping block creation in broadcast client", "syncTillBlock", syncTillBlock)
+				return
+			}
 			select {
 			// Cycle buckets to get rid of old entries
 			case <-recentFeedItemsCleanup.C:
@@ -192,7 +197,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			// Primary feeds
-			case msg := <-bcs.primaryRouter.messageChan:
+			case msg = <-bcs.primaryRouter.messageChan:
 				if err := msgHandler(msg, bcs.primaryRouter); err != nil {
 					log.Error("Error routing message from Primary Sequencer Feeds", "err", err)
 				}
@@ -210,7 +215,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 				case <-ctx.Done():
 					return
 				// Secondary Feeds
-				case msg := <-bcs.secondaryRouter.messageChan:
+				case msg = <-bcs.secondaryRouter.messageChan:
 					if err := msgHandler(msg, bcs.secondaryRouter); err != nil {
 						log.Error("Error routing message from Secondary Sequencer Feeds", "err", err)
 					}
@@ -218,7 +223,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 				case cs := <-bcs.secondaryRouter.confirmedSequenceNumberChan:
 					confSeqHandler(cs, bcs.secondaryRouter)
 					clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
-				case msg := <-bcs.primaryRouter.messageChan:
+				case msg = <-bcs.primaryRouter.messageChan:
 					if err := msgHandler(msg, bcs.primaryRouter); err != nil {
 						log.Error("Error routing message from Primary Sequencer Feeds", "err", err)
 					}
@@ -229,7 +234,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 					clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
 					clearAndResetTicker(primaryFeedIsDownTimer, MAX_FEED_INACTIVE_TIME)
 				case <-startSecondaryFeedTimer.C:
-					bcs.startSecondaryFeed(ctx)
+					bcs.startSecondaryFeed(ctx, syncTillBlock)
 				case <-primaryFeedIsDownTimer.C:
 					clearAndResetTicker(stopSecondaryFeedTimer, PRIMARY_FEED_UPTIME)
 				}
@@ -238,7 +243,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 	})
 }
 
-func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
+func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context, syncTillBlock uint64) {
 	pos := len(bcs.secondaryClients)
 	if pos < len(bcs.secondaryURL) {
 		url := bcs.secondaryURL[pos]
@@ -249,7 +254,7 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 			return
 		}
 		bcs.secondaryClients = append(bcs.secondaryClients, client)
-		client.Start(ctx)
+		client.Start(ctx, syncTillBlock)
 		log.Info("secondary feed started", "url", url)
 	} else if len(bcs.secondaryURL) > 0 {
 		log.Warn("failed to start a new secondary feed all available secondary feeds were started")

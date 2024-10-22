@@ -339,7 +339,7 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 }
 
 // not thread safe
-func (n *ExecutionNode) Start(ctx context.Context) error {
+func (n *ExecutionNode) Start(ctx context.Context, syncTillBlock uint64) error {
 	if n.started.Swap(true) {
 		return errors.New("already started")
 	}
@@ -348,7 +348,7 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	// if err != nil {
 	// 	return fmt.Errorf("error starting geth stack: %w", err)
 	// }
-	n.ExecEngine.Start(ctx)
+	n.ExecEngine.Start(ctx, syncTillBlock)
 	err := n.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)

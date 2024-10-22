@@ -119,18 +119,36 @@ func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *h
 	}, nil
 }
 
-func (r *InboxReader) Start(ctxIn context.Context) error {
+func (r *InboxReader) Start(ctxIn context.Context, syncTillBlock uint64) error {
 	r.StopWaiter.Start(ctxIn, r)
 	hadError := false
-	r.CallIteratively(func(ctx context.Context) time.Duration {
-		err := r.run(ctx, hadError)
-		if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
-			log.Warn("error reading inbox", "err", err)
-			hadError = true
-		} else {
-			hadError = false
+	r.LaunchThread(func(ctx context.Context) {
+		for {
+			delayedCount, err := r.tracker.GetDelayedCount()
+			if err != nil {
+				log.Warn("error reading delayed count", "err", err)
+				hadError = true
+			}
+			if syncTillBlock > 0 && delayedCount >= syncTillBlock {
+				log.Info("stopping block creation in inbox reader", "syncTillBlock", syncTillBlock)
+				return
+			}
+			err = r.run(ctx, hadError)
+			if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
+				log.Warn("error reading inbox", "err", err)
+				hadError = true
+			} else {
+				hadError = false
+			}
+			interval := time.Second
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
 		}
-		return time.Second
 	})
 
 	// Ensure we read the init message before other things start up

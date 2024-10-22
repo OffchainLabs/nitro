@@ -176,7 +176,7 @@ func NewBroadcastClient(
 	}, err
 }
 
-func (bc *BroadcastClient) Start(ctxIn context.Context) {
+func (bc *BroadcastClient) Start(ctxIn context.Context, syncTillBlock uint64) {
 	bc.StopWaiter.Start(ctxIn, bc)
 	if bc.StopWaiter.Stopped() {
 		log.Info("broadcast client has already been stopped, not starting")
@@ -185,6 +185,11 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.LaunchThread(func(ctx context.Context) {
 		backoffDuration := bc.config().ReconnectInitialBackoff
 		for {
+
+			if syncTillBlock > 0 && uint64(bc.nextSeqNum) >= syncTillBlock {
+				log.Info("stopping block creation in broadcast client", "syncTillBlock", syncTillBlock)
+				return
+			}
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 			if errors.Is(err, ErrMissingChainId) ||
 				errors.Is(err, ErrIncorrectChainId) ||
