@@ -97,7 +97,10 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	}
 
 	if chainOwner != (common.Address{}) {
-		arbosState.ChainOwners().Add(chainOwner)
+		err := arbosState.ChainOwners().Add(chainOwner)
+		if err != nil {
+			return common.Hash{}, err
+		}
 	}
 	addrTable := arbosState.AddressTable()
 	addrTableSize, err := addrTable.Size()
