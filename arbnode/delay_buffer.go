@@ -57,7 +57,10 @@ func GetDelayBufferConfig(ctx context.Context, sequencerInbox *bridgegen.Sequenc
 func GenDelayProof(ctx context.Context, message *arbostypes.MessageWithMetadata, inbox *InboxTracker) (
 	*bridgegen.DelayProof, error) {
 
-	seqNum := message.DelayedMessagesRead
+	if message.DelayedMessagesRead == 0 {
+		return nil, fmt.Errorf("BUG: trying to generate delay proof without delayed message")
+	}
+	seqNum := message.DelayedMessagesRead - 1
 	var beforeDelayedAcc common.Hash
 	if seqNum > 0 {
 		var err error
