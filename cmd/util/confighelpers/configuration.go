@@ -210,7 +210,7 @@ func devFlagArgs() []string {
 		"--http.port", "8547",
 		"--http.addr", "127.0.0.1",
 		"--http.api=net,web3,eth,arb,arbdebug,debug",
-,	}
+	}
 	return args
 }
 
