@@ -14,6 +14,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -362,4 +363,54 @@ func TestAllowPostingFirstBatchWhenSequencerMessageCountMismatchEnabled(t *testi
 
 func TestAllowPostingFirstBatchWhenSequencerMessageCountMismatchDisabled(t *testing.T) {
 	testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t, false)
+}
+
+func TestBatchPosterDelayBuffer(t *testing.T) {
+	const messagesPerBatch = 10
+	const threshold = 100
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDelayBuffer(threshold)
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour // set high max-delay so we can test the delay buffer
+	cleanup := builder.Build(t)
+	defer cleanup()
+	builder.L2Info.GenerateAccount("User2")
+
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
+
+	sequenceInbox, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
+	Require(t, err)
+	getBatchCount := func() uint64 {
+		batchCount, err := sequenceInbox.BatchCount(&bind.CallOpts{Context: ctx})
+		Require(t, err)
+		return batchCount.Uint64()
+	}
+
+	t.Run("SendsDelayedMessages", func(t *testing.T) {
+		previousBatchCount := getBatchCount()
+		const numBatches = 3
+		for batch := uint64(0); batch < numBatches; batch++ {
+			txs := make(types.Transactions, messagesPerBatch)
+			for i := range txs {
+				txs[i] = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
+			}
+			SendSignedTxesInBatchViaL1(t, ctx, builder.L1Info, builder.L1.Client, builder.L2.Client, txs)
+			time.Sleep(time.Second)
+			if currBatchCount := getBatchCount(); currBatchCount != previousBatchCount+batch {
+				t.Fatalf("expected batch count %v; got %v", previousBatchCount+batch, currBatchCount)
+			}
+			// Advance L1 to force the delay buffer
+			AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, threshold)
+			if currBatchCount := getBatchCount(); currBatchCount != previousBatchCount+batch+1 {
+				t.Fatalf("expected batch count %v; got %v", previousBatchCount+batch+1, currBatchCount)
+			}
+			for _, tx := range txs {
+				_, err := testClientB.EnsureTxSucceeded(tx)
+				Require(t, err, "tx not found on second node")
+			}
+		}
+	})
 }
