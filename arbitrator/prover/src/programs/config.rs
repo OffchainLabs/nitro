@@ -4,6 +4,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
 use crate::{programs::meter, value::FunctionType};
+use arbutil::evm::api::{Gas, Ink};
 use derivative::Derivative;
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
@@ -72,12 +73,12 @@ impl PricingParams {
         Self { ink_price }
     }
 
-    pub fn gas_to_ink(&self, gas: u64) -> u64 {
-        gas.saturating_mul(self.ink_price.into())
+    pub fn gas_to_ink(&self, gas: Gas) -> Ink {
+        Ink(gas.0.saturating_mul(self.ink_price.into()))
     }
 
-    pub fn ink_to_gas(&self, ink: u64) -> u64 {
-        ink / self.ink_price as u64 // never 0
+    pub fn ink_to_gas(&self, ink: Ink) -> Gas {
+        Gas(ink.0 / self.ink_price as u64) // ink_price is never 0
     }
 }
 

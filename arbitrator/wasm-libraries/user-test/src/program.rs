@@ -4,7 +4,7 @@
 use crate::{ARGS, EVER_PAGES, EVM_DATA, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{
     evm::{
-        api::{EvmApi, VecReader},
+        api::{EvmApi, Gas, Ink, VecReader},
         user::UserOutcomeKind,
         EvmData,
     },
@@ -80,7 +80,7 @@ impl UserHost<VecReader> for Program {
         println!("{} {text}", "Stylus says:".yellow());
     }
 
-    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], _end_ink: u64) {
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], _end_ink: Ink) {
         let args = hex::encode(args);
         let outs = hex::encode(outs);
         println!("Error: unexpected hostio tracing info for {name} while proving: {args}, {outs}");
@@ -102,18 +102,18 @@ impl Program {
 pub struct MockEvmApi;
 
 impl EvmApi<VecReader> for MockEvmApi {
-    fn get_bytes32(&mut self, key: Bytes32, _evm_api_gas_to_use: u64) -> (Bytes32, u64) {
+    fn get_bytes32(&mut self, key: Bytes32, _evm_api_gas_to_use: Gas) -> (Bytes32, Gas) {
         let value = KEYS.lock().get(&key).cloned().unwrap_or_default();
-        (value, 2100) // pretend worst case
+        (value, Gas(2100)) // pretend worst case
     }
 
-    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> u64 {
+    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Gas {
         KEYS.lock().insert(key, value);
-        0
+        Gas(0)
     }
 
-    fn flush_storage_cache(&mut self, _clear: bool, _gas_left: u64) -> Result<u64> {
-        Ok(22100 * KEYS.lock().len() as u64) // pretend worst case
+    fn flush_storage_cache(&mut self, _clear: bool, _gas_left: Gas) -> Result<Gas> {
+        Ok(Gas(22100) * KEYS.lock().len() as u64) // pretend worst case
     }
 
     fn get_transient_bytes32(&mut self, _key: Bytes32) -> Bytes32 {
@@ -130,10 +130,10 @@ impl EvmApi<VecReader> for MockEvmApi {
         &mut self,
         _contract: Bytes20,
         _calldata: &[u8],
-        _gas_left: u64,
-        _gas_req: u64,
+        _gas_left: Gas,
+        _gas_req: Gas,
         _value: Bytes32,
-    ) -> (u32, u64, UserOutcomeKind) {
+    ) -> (u32, Gas, UserOutcomeKind) {
         unimplemented!()
     }
 
@@ -141,9 +141,9 @@ impl EvmApi<VecReader> for MockEvmApi {
         &mut self,
         _contract: Bytes20,
         _calldata: &[u8],
-        _gas_left: u64,
-        _gas_req: u64,
-    ) -> (u32, u64, UserOutcomeKind) {
+        _gas_left: Gas,
+        _gas_req: Gas,
+    ) -> (u32, Gas, UserOutcomeKind) {
         unimplemented!()
     }
 
@@ -151,9 +151,9 @@ impl EvmApi<VecReader> for MockEvmApi {
         &mut self,
         _contract: Bytes20,
         _calldata: &[u8],
-        _gas_left: u64,
-        _gas_req: u64,
-    ) -> (u32, u64, UserOutcomeKind) {
+        _gas_left: Gas,
+        _gas_req: Gas,
+    ) -> (u32, Gas, UserOutcomeKind) {
         unimplemented!()
     }
 
@@ -161,8 +161,8 @@ impl EvmApi<VecReader> for MockEvmApi {
         &mut self,
         _code: Vec<u8>,
         _endowment: Bytes32,
-        _gas: u64,
-    ) -> (Result<Bytes20>, u32, u64) {
+        _gas: Gas,
+    ) -> (Result<Bytes20>, u32, Gas) {
         unimplemented!()
     }
 
@@ -171,8 +171,8 @@ impl EvmApi<VecReader> for MockEvmApi {
         _code: Vec<u8>,
         _endowment: Bytes32,
         _salt: Bytes32,
-        _gas: u64,
-    ) -> (Result<Bytes20>, u32, u64) {
+        _gas: Gas,
+    ) -> (Result<Bytes20>, u32, Gas) {
         unimplemented!()
     }
 
@@ -185,19 +185,19 @@ impl EvmApi<VecReader> for MockEvmApi {
         Ok(())
     }
 
-    fn account_balance(&mut self, _address: Bytes20) -> (Bytes32, u64) {
+    fn account_balance(&mut self, _address: Bytes20) -> (Bytes32, Gas) {
         unimplemented!()
     }
 
-    fn account_code(&mut self, _address: Bytes20, _gas_left: u64) -> (VecReader, u64) {
+    fn account_code(&mut self, _address: Bytes20, _gas_left: Gas) -> (VecReader, Gas) {
         unimplemented!()
     }
 
-    fn account_codehash(&mut self, _address: Bytes20) -> (Bytes32, u64) {
+    fn account_codehash(&mut self, _address: Bytes20) -> (Bytes32, Gas) {
         unimplemented!()
     }
 
-    fn add_pages(&mut self, pages: u16) -> u64 {
+    fn add_pages(&mut self, pages: u16) -> Gas {
         let model = MemoryModel::new(2, 1000);
         unsafe {
             let (open, ever) = (OPEN_PAGES, EVER_PAGES);
@@ -212,8 +212,8 @@ impl EvmApi<VecReader> for MockEvmApi {
         _name: &str,
         _args: &[u8],
         _outs: &[u8],
-        _start_ink: u64,
-        _end_ink: u64,
+        _start_ink: Ink,
+        _end_ink: Ink,
     ) {
         unimplemented!()
     }
