@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -48,6 +49,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -182,11 +184,11 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	Require(t, blockValidatorB.Initialize(ctx))
 	Require(t, blockValidatorB.Start(ctx))
 
-	stateManager, err := staker.NewBOLDStateProvider(
+	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidatorA,
 		statelessA,
 		l2stateprovider.Height(blockChallengeLeafHeight),
-		&staker.StateProviderConfig{
+		&bold.StateProviderConfig{
 			ValidatorName:          "good",
 			MachineLeavesCachePath: "/tmp/good",
 			CheckBatchFinality:     false,
@@ -194,11 +196,11 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	)
 	Require(t, err)
 
-	stateManagerB, err := staker.NewBOLDStateProvider(
+	stateManagerB, err := bold.NewBOLDStateProvider(
 		blockValidatorB,
 		statelessB,
 		l2stateprovider.Height(blockChallengeLeafHeight),
-		&staker.StateProviderConfig{
+		&bold.StateProviderConfig{
 			ValidatorName:          "evil",
 			MachineLeavesCachePath: "/tmp/evil",
 			CheckBatchFinality:     false,
@@ -470,7 +472,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	isSequencer bool,
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
-	stackConfig *node.Config,
+	_ *node.Config,
 	l2infoIn info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
@@ -545,7 +547,8 @@ func createTestNodeOnL1ForBoldProtocol(
 	execConfig := ExecConfigDefaultNonSequencerTest(t)
 	Require(t, execConfig.Validate())
 	execConfig.Caching.StateScheme = rawdb.HashScheme
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, l2info, "", chainConfig, execConfig)
+	useWasmCache := uint32(0)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, l2info, "", chainConfig, execConfig, useWasmCache)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -818,13 +821,13 @@ func makeBoldBatch(
 	sequencer *bind.TransactOpts,
 	seqInbox *bridgegen.SequencerInbox,
 	seqInboxAddr common.Address,
-	messagesPerBatch,
+	numMessages,
 	divergeAtIndex int64,
 ) {
 	ctx := context.Background()
 
 	batchBuffer := bytes.NewBuffer([]byte{})
-	for i := int64(0); i < messagesPerBatch; i++ {
+	for i := int64(0); i < numMessages; i++ {
 		value := i
 		if i == divergeAtIndex {
 			value++
@@ -852,7 +855,8 @@ func makeBoldBatch(
 	}
 	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
 	Require(t, err)
-	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
+	batchMetaData, err := l2Node.InboxTracker.GetBatchMetadata(batches[0].SequenceNumber)
+	log.Info("Batch metadata", "md", batchMetaData)
 	Require(t, err, "failed to get batch metadata after adding batch:")
 }
 

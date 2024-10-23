@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -97,12 +97,12 @@ func createTransactOpts(t *testing.T) *bind.TransactOpts {
 	return opts
 }
 
-func createGenesisAlloc(accts ...*bind.TransactOpts) core.GenesisAlloc {
-	alloc := make(core.GenesisAlloc)
+func createGenesisAlloc(accts ...*bind.TransactOpts) types.GenesisAlloc {
+	alloc := make(types.GenesisAlloc)
 	amount := big.NewInt(10)
 	amount.Exp(amount, big.NewInt(20), nil)
 	for _, opts := range accts {
-		alloc[opts.From] = core.GenesisAccount{
+		alloc[opts.From] = types.Account{
 			Balance: new(big.Int).Set(amount),
 		}
 	}
@@ -241,7 +241,7 @@ func runChallengeTest(
 
 func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *server_arb.ArbitratorMachine {
 	_, filename, _, _ := runtime.Caller(0)
-	wasmDir := path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
+	wasmDir := path.Join(path.Dir(filename), "../../arbitrator/prover/test-cases/")
 
 	wasmPath := path.Join(wasmDir, wasmname)
 

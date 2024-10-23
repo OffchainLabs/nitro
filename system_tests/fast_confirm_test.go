@@ -10,6 +10,7 @@ package arbtest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -212,7 +213,7 @@ func TestFastConfirmation(t *testing.T) {
 	latestConfirmAfterAct, err := rollup.LatestConfirmed(&bind.CallOpts{})
 	Require(t, err)
 	if latestConfirmAfterAct <= latestConfirmBeforeAct {
-		Fatal(t, "staker A didn't advance the latest confirmed node")
+		Fatal(t, fmt.Sprintf("staker A didn't advance the latest confirmed node: want > %d, got: %d", latestConfirmBeforeAct, latestConfirmAfterAct))
 	}
 }
 
