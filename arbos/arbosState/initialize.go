@@ -54,7 +54,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
 }
 
-func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
+func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint, chainOwner common.Address) (root common.Hash, err error) {
 	triedbConfig := cacheConfig.TriedbConfig()
 	triedbConfig.Preimages = false
 	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
@@ -96,6 +96,9 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
 
+	if chainOwner != (common.Address{}) {
+		arbosState.ChainOwners().Add(chainOwner)
+	}
 	addrTable := arbosState.AddressTable()
 	addrTableSize, err := addrTable.Size()
 	if err != nil {

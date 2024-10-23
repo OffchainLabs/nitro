@@ -155,6 +155,7 @@ func FuzzStateTransition(f *testing.F) {
 			initMessage,
 			0,
 			0,
+			common.Address{},
 		)
 		if err != nil {
 			panic(err)

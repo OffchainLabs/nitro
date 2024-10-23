@@ -716,6 +716,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
+		if config.Init.DevInit && config.Init.DevMaxCodeSize != 0 {
+			chainConfig.ArbitrumChainParams.MaxCodeSize = config.Init.DevMaxCodeSize
+		}
 		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
 		ancients, err := chainDb.Ancients()
 		if err != nil {
@@ -788,7 +791,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
 			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
 		}
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
+		var chainOwner common.Address
+		if config.Init.DevInit {
+			chainOwner = common.HexToAddress(config.Init.DevInitAddress)
+		}
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync, chainOwner)
 		if err != nil {
 			return chainDb, nil, err
 		}
