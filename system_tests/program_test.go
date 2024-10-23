@@ -58,6 +58,12 @@ func TestProgramKeccak(t *testing.T) {
 			builder.WithExtraArchs(allWasmTargets)
 		})
 	})
+
+	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
+		keccakTest(t, true, func(builder *NodeBuilder) {
+			builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+		})
+	})
 }
 
 func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
@@ -161,6 +167,11 @@ func TestProgramActivateTwice(t *testing.T) {
 	t.Run("WithAllWasmTargets", func(t *testing.T) {
 		testActivateTwice(t, true, func(builder *NodeBuilder) {
 			builder.WithExtraArchs(allWasmTargets)
+		})
+	})
+	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
+		testActivateTwice(t, true, func(builder *NodeBuilder) {
+			builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
 		})
 	})
 }
