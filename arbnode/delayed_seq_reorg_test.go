@@ -333,6 +333,37 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		Fail(t, "Unexpected tracker batch count", batchCount, "(expected 3)")
 	}
 
+	// Adding an already existing message alongside a new one shouldn't cause a reorg
+	delayedRequestId3 := common.BigToHash(common.Big3)
+	userDelayed3 := &DelayedInboxMessage{
+		BlockHash:      [32]byte{},
+		BeforeInboxAcc: userDelayed2.AfterInboxAcc(),
+		Message: &arbostypes.L1IncomingMessage{
+			Header: &arbostypes.L1IncomingMessageHeader{
+				Kind:        arbostypes.L1MessageType_EndOfBlock,
+				Poster:      [20]byte{},
+				BlockNumber: 0,
+				Timestamp:   0,
+				RequestId:   &delayedRequestId3,
+				L1BaseFee:   common.Big0,
+			},
+		},
+	}
+	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayed2, userDelayed3})
+	Require(t, err)
+
+	msgCount, err = streamer.GetMessageCount()
+	Require(t, err)
+	if msgCount != 3 {
+		Fail(t, "Unexpected tx streamer message count", msgCount, "(expected 3)")
+	}
+
+	batchCount, err = tracker.GetBatchCount()
+	Require(t, err)
+	if batchCount != 3 {
+		Fail(t, "Unexpected tracker batch count", batchCount, "(expected 3)")
+	}
+
 	// By modifying the timestamp of the userDelayed2 message, and adding it again, we cause a reorg
 	userDelayed2Modified := &DelayedInboxMessage{
 		BlockHash:      [32]byte{},
@@ -351,8 +382,6 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayed2Modified})
 	Require(t, err)
 
-	// FAILS HERE
-	// userMsgBatch, and emptyBatch will be reorged out
 	msgCount, err = streamer.GetMessageCount()
 	Require(t, err)
 	if msgCount != 1 {

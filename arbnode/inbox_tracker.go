@@ -479,6 +479,22 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 		}
 		nextAcc = message.AfterInboxAcc()
 
+		if firstPos == pos {
+			// Check if this message is a duplicate
+			haveAcc, err := t.GetDelayedAcc(seqNum)
+			if err == nil {
+				if haveAcc == nextAcc {
+					// Skip this message, as we already have it in our database
+					pos++
+					firstPos++
+					messages = messages[1:]
+					continue
+				}
+			} else if !errors.Is(err, AccumulatorNotFoundErr) {
+				return err
+			}
+		}
+
 		delayedMsgKey := dbKey(rlpDelayedMessagePrefix, seqNum)
 
 		msgData, err := rlp.EncodeToBytes(message.Message)
