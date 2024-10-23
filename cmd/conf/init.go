@@ -20,7 +20,7 @@ type InitConfig struct {
 	DownloadPoll             time.Duration `koanf:"download-poll"`
 	DevInit                  bool          `koanf:"dev-init"`
 	DevInitAddress           string        `koanf:"dev-init-address"`
-	DevMaxCodeSize           uint64        `koanf:"MaxCodeSize"`
+	DevMaxCodeSize           uint64        `koanf:"dev-max-code-size"`
 	DevInitBlockNum          uint64        `koanf:"dev-init-blocknum"`
 	Empty                    bool          `koanf:"empty"`
 	ImportWasm               bool          `koanf:"import-wasm"`
