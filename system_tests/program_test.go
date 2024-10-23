@@ -1991,6 +1991,7 @@ func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
 }
 
 func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []string, numModules int) {
+	t.Helper()
 	modules := readModuleHashes(t, wasmDb)
 	if len(modules) != numModules {
 		t.Fatalf("Unexpected number of module hashes found in wasm store, want: %d, have: %d", numModules, len(modules))
@@ -2002,12 +2003,16 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []s
 				t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
 			}
 			func() {
+				t.Helper()
 				defer func() {
 					if r := recover(); r != nil {
 						t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
 					}
 				}()
-				_ = rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+				asm := rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+				if len(asm) == 0 {
+					t.Fatalf("Missing activated asm for target: %v, module: %v", target, module)
+				}
 			}()
 		}
 	}
