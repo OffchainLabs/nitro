@@ -7,7 +7,8 @@ import (
 )
 
 const (
-	V1 = 1
+	V1                 = 1
+	TimeboostedVersion = byte(0)
 )
 
 // BroadcastMessage is the base message type for messages to send over the network.
@@ -36,6 +37,7 @@ type BroadcastFeedMessage struct {
 	Message        arbostypes.MessageWithMetadata `json:"message"`
 	BlockHash      *common.Hash                   `json:"blockHash,omitempty"`
 	Signature      []byte                         `json:"signature"`
+	BlockMetadata  arbostypes.BlockMetadata       `json:"blockMetadata"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`
 }
