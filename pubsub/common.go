@@ -10,6 +10,7 @@ import (
 )
 
 func ResultKeyFor(streamName, id string) string { return fmt.Sprintf("%s.%s", streamName, id) }
+func ErrorKeyFor(streamName, id string) string  { return fmt.Sprintf("%s.%s.error", streamName, id) }
 
 // CreateStream tries to create stream with given name, if it already exists
 // does not return an error.
