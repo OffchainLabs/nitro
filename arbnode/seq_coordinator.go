@@ -854,7 +854,7 @@ func (c *SeqCoordinator) launchHealthcheckServer(ctx context.Context) {
 	}
 }
 
-func (c *SeqCoordinator) Start(ctxIn context.Context) {
+func (c *SeqCoordinator) Start(ctxIn context.Context, syncTillBlock uint64) {
 	c.StopWaiter.Start(ctxIn, c)
 	var newRedisCoordinator *redisutil.RedisCoordinator
 	if c.config.NewRedisUrl != "" {
@@ -865,7 +865,33 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 				err, "newRedisUrl", c.config.NewRedisUrl)
 		}
 	}
-	c.CallIteratively(func(ctx context.Context) time.Duration { return c.chooseRedisAndUpdate(ctx, newRedisCoordinator) })
+
+	c.LaunchThread(func(ctx context.Context) {
+		for {
+			count, err := c.streamer.GetMessageCount()
+			if err != nil {
+				log.Warn("failed to get message count", "err", err)
+			}
+			if syncTillBlock > 0 && uint64(count) >= syncTillBlock {
+				log.Info("stopping block creation in sequencer", "syncTillBlock", syncTillBlock)
+				return
+			}
+			interval := c.chooseRedisAndUpdate(ctx, newRedisCoordinator)
+			if ctx.Err() != nil {
+				return
+			}
+			if interval == time.Duration(0) {
+				continue
+			}
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+	})
 	if c.config.ChosenHealthcheckAddr != "" {
 		c.StopWaiter.LaunchThread(c.launchHealthcheckServer)
 	}

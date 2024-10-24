@@ -64,7 +64,7 @@ type FullExecutionClient interface {
 	ExecutionRecorder
 	ExecutionSequencer
 
-	Start(ctx context.Context) error
+	Start(ctx context.Context, syncTillBlock uint64) error
 	StopAndWait()
 
 	Maintenance() error

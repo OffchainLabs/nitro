@@ -211,11 +211,20 @@ func (d *DelayedSequencer) ForceSequenceDelayed(ctx context.Context) error {
 	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
 }
 
-func (d *DelayedSequencer) run(ctx context.Context) {
+func (d *DelayedSequencer) run(ctx context.Context, syncTillBlock uint64) {
 	headerChan, cancel := d.l1Reader.Subscribe(false)
 	defer cancel()
 
 	for {
+		delayedCount, err := d.inbox.GetDelayedCount()
+		if err != nil {
+			log.Warn("error reading delayed count", "err", err)
+			continue
+		}
+		if syncTillBlock > 0 && delayedCount >= syncTillBlock {
+			log.Info("stopping block creation in delayed sequencer", "syncTillBlock", syncTillBlock)
+			return
+		}
 		select {
 		case nextHeader, ok := <-headerChan:
 			if !ok {
@@ -232,7 +241,9 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 	}
 }
 
-func (d *DelayedSequencer) Start(ctxIn context.Context) {
+func (d *DelayedSequencer) Start(ctxIn context.Context, syncTillBlock uint64) {
 	d.StopWaiter.Start(ctxIn, d)
-	d.LaunchThread(d.run)
+	d.LaunchThread(func(ctx context.Context) {
+		d.run(ctx, syncTillBlock)
+	})
 }

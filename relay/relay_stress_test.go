@@ -142,7 +142,7 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 		if err != nil {
 			t.FailNow()
 		}
-		client.Start(ctx)
+		client.Start(ctx, 0)
 		defer client.StopOnly()
 	}
 
