@@ -212,6 +212,13 @@ func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) 
 	s.consensus = consensus
 }
 
+func (s *ExecutionEngine) BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error) {
+	if s.consensus != nil {
+		return s.consensus.BlockMetadataAtCount(count)
+	}
+	return nil, errors.New("FullConsensusClient is not accessible to execution")
+}
+
 func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }

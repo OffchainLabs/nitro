@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -25,15 +26,31 @@ import (
 )
 
 type ArbAPI struct {
-	txPublisher TransactionPublisher
+	txPublisher              TransactionPublisher
+	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 }
 
-func NewArbAPI(publisher TransactionPublisher) *ArbAPI {
-	return &ArbAPI{publisher}
+func NewArbAPI(publisher TransactionPublisher, bulkBlockMetadataFetcher *BulkBlockMetadataFetcher) *ArbAPI {
+	return &ArbAPI{
+		txPublisher:              publisher,
+		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+	}
+}
+
+type NumberAndBlockMetadata struct {
+	BlockNumber uint64        `json:"blockNumber"`
+	RawMetadata hexutil.Bytes `json:"rawMetadata"`
 }
 
 func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
 	return a.txPublisher.CheckHealth(ctx)
+}
+
+func (a *ArbAPI) GetRawBlockMetadata(ctx context.Context, fromBlock, toBlock hexutil.Uint64) ([]NumberAndBlockMetadata, error) {
+	if a.bulkBlockMetadataFetcher == nil {
+		return nil, errors.New("arb_getRawBlockMetadata is not available")
+	}
+	return a.bulkBlockMetadataFetcher.Fetch(fromBlock, toBlock)
 }
 
 type ArbTimeboostAuctioneerAPI struct {
