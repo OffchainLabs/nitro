@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package staker
+package legacystaker
 
 import (
 	"context"
@@ -19,19 +19,21 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/google/btree"
-	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+
+	"github.com/google/btree"
+	flag "github.com/spf13/pflag"
 )
 
 var (
@@ -143,7 +145,12 @@ func (c *L1ValidatorConfig) Validate() error {
 	return nil
 }
 
-type L1ValidatorConfigFetcher func() *L1ValidatorConfig
+func (c *L1ValidatorConfig) GasRefunder() common.Address {
+	return c.gasRefunder
+}
+func (c *L1ValidatorConfig) StrategyType() StakerStrategy {
+	return c.strategy
+}
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                    true,
@@ -252,6 +259,8 @@ type validatedNode struct {
 	hash   common.Hash
 }
 
+type L1ValidatorConfigFetcher func() *L1ValidatorConfig
+
 type Staker struct {
 	*L1Validator
 	stopwaiter.StopWaiter
@@ -266,8 +275,8 @@ type Staker struct {
 	inactiveLastCheckedNode *nodeAndHash
 	inactiveValidatedNodes  *btree.BTreeG[validatedNode]
 	bringActiveUntilNode    uint64
-	inboxReader             InboxReaderInterface
-	statelessBlockValidator *StatelessBlockValidator
+	inboxReader             staker.InboxReaderInterface
+	statelessBlockValidator *staker.StatelessBlockValidator
 	fatalErr                chan<- error
 	fastConfirmSafe         *FastConfirmSafe
 }
@@ -298,26 +307,20 @@ func NewStaker(
 	wallet ValidatorWalletInterface,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfigFetcher,
-	blockValidator *BlockValidator,
-	statelessBlockValidator *StatelessBlockValidator,
+	blockValidator *staker.BlockValidator,
+	statelessBlockValidator *staker.StatelessBlockValidator,
 	stakedNotifiers []LatestStakedNotifier,
 	confirmedNotifiers []LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
-	if err := config().Validate(); err != nil {
-		return nil, err
-	}
 	client := l1Reader.Client()
 	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts,
-		statelessBlockValidator.inboxTracker, statelessBlockValidator.streamer, blockValidator)
+		statelessBlockValidator.InboxTracker(), statelessBlockValidator.InboxStreamer(), blockValidator)
 	if err != nil {
 		return nil, err
 	}
 	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
-	if config().StartValidationFromStaked && blockValidator != nil {
-		stakedNotifiers = append(stakedNotifiers, blockValidator)
-	}
 	inactiveValidatedNodes := btree.NewG(2, func(a, b validatedNode) bool {
 		return a.number < b.number || (a.number == b.number && a.hash.Cmp(b.hash) < 0)
 	})
@@ -330,7 +333,7 @@ func NewStaker(
 		config:                  config,
 		highGasBlocksBuffer:     big.NewInt(config().PostingStrategy.HighGasDelayBlocks),
 		lastActCalledBlock:      nil,
-		inboxReader:             statelessBlockValidator.inboxReader,
+		inboxReader:             statelessBlockValidator.InboxReader(),
 		statelessBlockValidator: statelessBlockValidator,
 		fatalErr:                fatalErr,
 		inactiveValidatedNodes:  inactiveValidatedNodes,
@@ -406,7 +409,7 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 		fastConfirmer,
 		s.builder,
 		s.wallet,
-		cfg.gasRefunder,
+		cfg.GasRefunder(),
 		s.l1Reader,
 	)
 	if err != nil {
@@ -452,14 +455,14 @@ func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash,
 	return err
 }
 
-func (s *Staker) getLatestStakedState(ctx context.Context, staker common.Address) (uint64, arbutil.MessageIndex, *validator.GoGlobalState, error) {
+func (s *Staker) getLatestStakedState(ctx context.Context, stakerAddress common.Address) (uint64, arbutil.MessageIndex, *validator.GoGlobalState, error) {
 	callOpts := s.getCallOpts(ctx)
 	if s.l1Reader.UseFinalityData() {
 		callOpts.BlockNumber = big.NewInt(int64(rpc.FinalizedBlockNumber))
 	}
-	latestStaked, _, err := s.validatorUtils.LatestStaked(s.getCallOpts(ctx), s.rollupAddress, staker)
+	latestStaked, _, err := s.validatorUtils.LatestStaked(s.getCallOpts(ctx), s.rollupAddress, stakerAddress)
 	if err != nil {
-		return 0, 0, nil, fmt.Errorf("couldn't get LatestStaked(%v): %w", staker, err)
+		return 0, 0, nil, fmt.Errorf("couldn't get LatestStaked(%v): %w", stakerAddress, err)
 	}
 	if latestStaked == 0 {
 		return latestStaked, 0, nil, nil
@@ -467,21 +470,21 @@ func (s *Staker) getLatestStakedState(ctx context.Context, staker common.Address
 
 	stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
 	if err != nil {
-		return 0, 0, nil, fmt.Errorf("couldn't look up latest assertion of %v (%v): %w", staker, latestStaked, err)
+		return 0, 0, nil, fmt.Errorf("couldn't look up latest assertion of %v (%v): %w", stakerAddress, latestStaked, err)
 	}
 
 	globalState := stakedInfo.AfterState().GlobalState
-	caughtUp, count, err := GlobalStateToMsgCount(s.inboxTracker, s.txStreamer, globalState)
+	caughtUp, count, err := staker.GlobalStateToMsgCount(s.inboxTracker, s.txStreamer, globalState)
 	if err != nil {
-		if errors.Is(err, ErrGlobalStateNotInChain) && s.fatalErr != nil {
-			fatal := fmt.Errorf("latest assertion of %v (%v) not in chain: %w", staker, latestStaked, err)
+		if errors.Is(err, staker.ErrGlobalStateNotInChain) && s.fatalErr != nil {
+			fatal := fmt.Errorf("latest assertion of %v (%v) not in chain: %w", stakerAddress, latestStaked, err)
 			s.fatalErr <- fatal
 		}
-		return 0, 0, nil, fmt.Errorf("latest assertion of %v (%v): %w", staker, latestStaked, err)
+		return 0, 0, nil, fmt.Errorf("latest assertion of %v (%v): %w", stakerAddress, latestStaked, err)
 	}
 
 	if !caughtUp {
-		log.Info("latest assertion not yet in our node", "staker", staker, "assertion", latestStaked, "state", globalState)
+		log.Info("latest assertion not yet in our node", "stakerAddress", stakerAddress, "assertion", latestStaked, "state", globalState)
 		return latestStaked, 0, nil, nil
 	}
 
@@ -491,7 +494,7 @@ func (s *Staker) getLatestStakedState(ctx context.Context, staker common.Address
 	}
 
 	if processedCount < count {
-		log.Info("execution catching up to rollup", "staker", staker, "rollupCount", count, "processedCount", processedCount)
+		log.Info("execution catching up to rollup", "stakerAddress", stakerAddress, "rollupCount", count, "processedCount", processedCount)
 		return latestStaked, 0, nil, nil
 	}
 
@@ -506,9 +509,6 @@ func (s *Staker) StopAndWait() {
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
-	if s.Strategy() != WatchtowerStrategy {
-		s.wallet.Start(ctxIn)
-	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	isAheadOfOnChainNonceEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
@@ -606,7 +606,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 	})
 }
 
-func (s *Staker) IsWhitelisted(ctx context.Context) (bool, error) {
+func (s *Staker) isWhitelisted(ctx context.Context) (bool, error) {
 	callOpts := s.getCallOpts(ctx)
 	whitelistDisabled, err := s.rollup.ValidatorWhitelistDisabled(callOpts)
 	if err != nil {
@@ -695,12 +695,12 @@ func (s *Staker) confirmDataPosterIsReady(ctx context.Context) error {
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	cfg := s.config()
-	if cfg.strategy != WatchtowerStrategy {
+	if cfg.StrategyType() != WatchtowerStrategy {
 		err := s.confirmDataPosterIsReady(ctx)
 		if err != nil {
 			return nil, err
 		}
-		whitelisted, err := s.IsWhitelisted(ctx)
+		whitelisted, err := s.isWhitelisted(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("error checking if whitelisted: %w", err)
 		}
@@ -714,7 +714,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 	callOpts := s.getCallOpts(ctx)
 	s.builder.ClearTransactions()
-	var rawInfo *StakerInfo
+	var rawInfo *staker.StakerInfo
 	walletAddressOrZero := s.wallet.AddressOrZero()
 	if walletAddressOrZero != (common.Address{}) {
 		var err error
@@ -750,7 +750,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		StakeExists:          rawInfo != nil,
 	}
 
-	effectiveStrategy := cfg.strategy
+	effectiveStrategy := cfg.StrategyType()
 	nodesLinear, err := s.validatorUtils.AreUnresolvedNodesLinear(callOpts, s.rollupAddress)
 	if err != nil {
 		return nil, fmt.Errorf("error checking for rollup assertion fork: %w", err)
@@ -817,7 +817,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				}
 				if s.builder.BuildingTransactionCount() > 0 {
 					// Try to fast confirm previous nodes before working on new ones
-					return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.gasRefunder)
+					return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.GasRefunder())
 				}
 			}
 		}
@@ -904,7 +904,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				return nil, fmt.Errorf("error withdrawing staker funds from our staker %v: %w", walletAddressOrZero, err)
 			}
 			log.Info("removing old stake and withdrawing funds")
-			return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.gasRefunder)
+			return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.GasRefunder())
 		}
 	}
 
@@ -958,10 +958,10 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if info.StakerInfo == nil && info.StakeExists {
 		log.Info("staking to execute transactions")
 	}
-	return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.gasRefunder)
+	return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.GasRefunder())
 }
 
-func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
+func (s *Staker) handleConflict(ctx context.Context, info *staker.StakerInfo) error {
 	if info.CurrentChallenge == nil {
 		s.activeChallenge = nil
 		return nil
@@ -1125,7 +1125,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 	}
 }
 
-func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
+func (s *Staker) createConflict(ctx context.Context, info *staker.StakerInfo) error {
 	if info.CurrentChallenge != nil {
 		return nil
 	}
@@ -1211,10 +1211,10 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 }
 
 func (s *Staker) Strategy() StakerStrategy {
-	return s.config().strategy
+	return s.config().StrategyType()
 }
 
-func (s *Staker) Rollup() *RollupWatcher {
+func (s *Staker) Rollup() *staker.RollupWatcher {
 	return s.rollup
 }
 
