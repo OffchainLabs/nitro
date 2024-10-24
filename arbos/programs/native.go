@@ -70,7 +70,9 @@ func activateProgram(
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
-	info, asmMap, err := activateProgramInternal(db, program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, burner.GasLeft())
+	targets := db.Database().WasmTargets()
+	moduleActivationMandatory := true
+	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, burner.GasLeft(), targets, moduleActivationMandatory)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +80,7 @@ func activateProgram(
 	return info, nil
 }
 
-func activateProgramInternal(
-	db vm.StateDB,
+func activateModule(
 	addressForLogging common.Address,
 	codehash common.Hash,
 	wasm []byte,
@@ -88,7 +89,7 @@ func activateProgramInternal(
 	arbosVersionForGas uint64,
 	debug bool,
 	gasLeft *uint64,
-) (*activationInfo, map[ethdb.WasmTarget][]byte, error) {
+) (*activationInfo, []byte, error) {
 	output := &rustBytes{}
 	moduleHash := &bytes32{}
 	stylusData := &C.StylusData{}
@@ -106,7 +107,6 @@ func activateProgramInternal(
 		stylusData,
 		(*u64)(gasLeft),
 	))
-
 	module, msg, err := status_mod.toResult(output.intoBytes(), debug)
 	if err != nil {
 		if debug {
@@ -114,72 +114,143 @@ func activateProgramInternal(
 		}
 		if errors.Is(err, vm.ErrExecutionReverted) {
 			return nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
-		}
-		return nil, nil, err
-	}
-	hash := moduleHash.toHash()
-	targets := db.Database().WasmTargets()
-	type result struct {
-		target ethdb.WasmTarget
-		asm    []byte
-		err    error
-	}
-	results := make(chan result, len(targets))
-	for _, target := range targets {
-		target := target
-		if target == rawdb.TargetWavm {
-			results <- result{target, module, nil}
 		} else {
-			go func() {
-				output := &rustBytes{}
-				status_asm := C.stylus_compile(
-					goSlice(wasm),
-					u16(stylusVersion),
-					cbool(debug),
-					goSlice([]byte(target)),
-					output,
-				)
-				asm := output.intoBytes()
-				if status_asm != 0 {
-					results <- result{target, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))}
-					return
-				}
-				results <- result{target, asm, nil}
-			}()
+			return nil, nil, err
 		}
 	}
-	asmMap := make(map[ethdb.WasmTarget][]byte, len(targets))
-	for range targets {
-		res := <-results
-		if res.err != nil {
-			err = errors.Join(res.err, err)
-		} else {
-			asmMap[res.target] = res.asm
-		}
-	}
-	if err != nil {
-		log.Error(
-			"Compilation failed for one or more targets despite activation succeeding",
-			"address", addressForLogging,
-			"codeHash", codeHash,
-			"moduleHash", hash,
-			"targets", targets,
-			"err", err,
-		)
-		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding: %v", addressForLogging, err))
-	}
-
 	info := &activationInfo{
-		moduleHash:    hash,
+		moduleHash:    moduleHash.toHash(),
 		initGas:       uint16(stylusData.init_cost),
 		cachedInitGas: uint16(stylusData.cached_init_cost),
 		asmEstimate:   uint32(stylusData.asm_estimate),
 		footprint:     uint16(stylusData.footprint),
 	}
+	return info, module, nil
+}
+
+func compileNative(
+	wasm []byte,
+	stylusVersion uint16,
+	debug bool,
+	target ethdb.WasmTarget,
+) ([]byte, error) {
+	output := &rustBytes{}
+	status_asm := C.stylus_compile(
+		goSlice(wasm),
+		u16(stylusVersion),
+		cbool(debug),
+		goSlice([]byte(target)),
+		output,
+	)
+	asm := output.intoBytes()
+	if status_asm != 0 {
+		return nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
+	}
+	return asm, nil
+}
+
+func activateProgramInternal(
+	addressForLogging common.Address,
+	codehash common.Hash,
+	wasm []byte,
+	page_limit uint16,
+	stylusVersion uint16,
+	arbosVersionForGas uint64,
+	debug bool,
+	gasLeft *uint64,
+	targets []ethdb.WasmTarget,
+	moduleActivationMandatory bool,
+) (*activationInfo, map[ethdb.WasmTarget][]byte, error) {
+	var wavmFound bool
+	for _, target := range targets {
+		if target == rawdb.TargetWavm {
+			wavmFound = true
+			break
+		}
+	}
+	type result struct {
+		target ethdb.WasmTarget
+		asm    []byte
+		err    error
+	}
+	asmMap := make(map[ethdb.WasmTarget][]byte, len(targets))
+
+	// info can be set in separate thread, make sure to wait before reading
+	var info *activationInfo
+	var moduleActivationStarted bool
+	if moduleActivationMandatory {
+		moduleActivationStarted = true
+		var err error
+		var module []byte
+		info, module, err = activateModule(addressForLogging, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, gasLeft)
+		if err != nil {
+			return nil, nil, err
+		}
+		if wavmFound {
+			asmMap[rawdb.TargetWavm] = module
+		}
+	}
+
+	results := make(chan result, len(targets))
+	for _, target := range targets {
+		target := target
+		if target == rawdb.TargetWavm {
+			if moduleActivationStarted {
+				// skip if already started or activated because of moduleActivationMandatory
+				results <- result{target, nil, nil}
+				continue
+			}
+			go func() {
+				var err error
+				var module []byte
+				info, module, err = activateModule(addressForLogging, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, gasLeft)
+				results <- result{target, module, err}
+			}()
+			moduleActivationStarted = true
+		} else {
+			go func() {
+				asm, err := compileNative(wasm, stylusVersion, debug, target)
+				results <- result{target, asm, err}
+			}()
+		}
+	}
+	var err error
+	for range targets {
+		res := <-results
+		if res.asm == nil {
+			continue
+		} else if res.err != nil {
+			err = errors.Join(res.err, fmt.Errorf("%s:%w", res.target, err))
+		} else {
+			asmMap[res.target] = res.asm
+		}
+	}
+	if err != nil && moduleActivationMandatory {
+		if info != nil {
+			log.Error(
+				"Compilation failed for one or more targets despite activation succeeding",
+				"address", addressForLogging,
+				"codehash", codehash,
+				"moduleHash", info.moduleHash,
+				"targets", targets,
+				"err", err,
+			)
+		} else {
+			log.Error(
+				"Compilation failed for one or more targets despite activation succeeding",
+				"address", addressForLogging,
+				"codehash", codehash,
+				"targets", targets,
+				"err", err,
+			)
+		}
+		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding: %v", addressForLogging, err))
+	}
+
 	return info, asmMap, err
 }
 
-func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
+func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
 	localTarget := rawdb.LocalTarget()
 	localAsm, err := statedb.TryGetActivatedAsm(localTarget, moduleHash)
 	if err == nil && len(localAsm) > 0 {
@@ -197,8 +268,10 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 	zeroArbosVersion := uint64(0)
 	zeroGas := uint64(0)
 
+	targets := statedb.Database().WasmTargets()
 	// we know program is activated, so it must be in correct version and not use too much memory
-	info, asmMap, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas)
+	moduleActivationMandatory := false
+	info, asmMap, err := activateProgramInternal(addressForLogging, codehash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas, targets, moduleActivationMandatory)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -300,10 +373,10 @@ func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out
 
 // Caches a program in Rust. We write a record so that we can undo on revert.
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
-func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codeHash common.Hash, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
+func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
 	if runMode == core.MessageCommitMode {
 		// address is only used for logging
-		asm, err := getLocalAsm(db, module, addressForLogging, code, codeHash, params.PageLimit, time, debug, program)
+		asm, err := getLocalAsm(db, module, addressForLogging, code, codehash, params.PageLimit, time, debug, program)
 		if err != nil {
 			panic("unable to recreate wasm")
 		}
