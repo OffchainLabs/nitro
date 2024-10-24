@@ -83,6 +83,9 @@ func (c *Config) Validate() error {
 	if c.forwardingTarget != "" && c.Sequencer.Enable {
 		return errors.New("ForwardingTarget set and sequencer enabled")
 	}
+	if c.BlockMetadataApiCacheSize < 0 {
+		return errors.New("block-metadata-api-cache-size cannot be negative")
+	}
 	return nil
 }
 
