@@ -423,9 +423,9 @@ func storageTest(t *testing.T, jit bool) {
 
 	validateBlocks(t, 2, jit, builder)
 
-	// Captures a block_input_<id>.json file for the block that included the
-	// storage write transaction.
-	recordBlock(t, receipt.BlockNumber.Uint64(), builder)
+	// Captures a block_inputs json file for the block that included the
+	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
 }
 
 func TestProgramTransientStorage(t *testing.T) {
@@ -534,6 +534,16 @@ func testCalls(t *testing.T, jit bool) {
 	l2client := builder.L2.Client
 	defer cleanup()
 	callsAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+
+	// checks that ArbInfo.GetCode works properly
+	codeFromFile, _ := readWasmFile(t, rustFile("multicall"))
+	arbInfo, err := pgen.NewArbInfo(types.ArbInfoAddress, l2client)
+	Require(t, err)
+	codeFromArbInfo, err := arbInfo.GetCode(nil, callsAddr)
+	Require(t, err)
+	if !bytes.Equal(codeFromFile, codeFromArbInfo) {
+		t.Fatal("ArbInfo.GetCode returned wrong code")
+	}
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -712,6 +722,13 @@ func testCalls(t *testing.T, jit bool) {
 	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, value, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	balance := GetBalance(t, ctx, l2client, eoa)
+	if !arbmath.BigEquals(balance, value) {
+		Fatal(t, balance, value)
+	}
+
+	// checks that ArbInfo.GetBalance works properly
+	balance, err = arbInfo.GetBalance(nil, eoa)
+	Require(t, err)
 	if !arbmath.BigEquals(balance, value) {
 		Fatal(t, balance, value)
 	}
