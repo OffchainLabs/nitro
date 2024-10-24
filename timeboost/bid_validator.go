@@ -211,6 +211,10 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 
 				log.Info("Reserve price updated", "old", currentReservePrice.String(), "new", rp.String())
 				bv.setReservePrice(rp)
+
+				bv.Lock()
+				bv.bidsPerSenderInRound = make(map[common.Address]uint8)
+				bv.Unlock()
 			}
 		}
 	})
