@@ -99,4 +99,5 @@ type FullConsensusClient interface {
 	BatchFetcher
 	ConsensusInfo
 	ConsensusSequencer
+	BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error)
 }

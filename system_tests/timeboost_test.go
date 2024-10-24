@@ -1,8 +1,10 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"encoding/binary"
 	"fmt"
 	"math/big"
 	"net"
@@ -40,6 +42,90 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/stretchr/testify/require"
 )
+
+func TestTimeboosBulkBlockMetadataAPI(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbDb := builder.L2.ConsensusNode.ArbDB
+	dbKey := func(prefix []byte, pos uint64) []byte {
+		var key []byte
+		key = append(key, prefix...)
+		data := make([]byte, 8)
+		binary.BigEndian.PutUint64(data, pos)
+		key = append(key, data...)
+		return key
+	}
+
+	start := 1
+	end := 20
+	var sampleBulkData []gethexec.NumberAndBlockMetadata
+	for i := start; i <= end; i += 2 {
+		sampleData := gethexec.NumberAndBlockMetadata{
+			BlockNumber: uint64(i),
+			RawMetadata: []byte{0, uint8(i)},
+		}
+		sampleBulkData = append(sampleBulkData, sampleData)
+		arbDb.Put(dbKey([]byte("t"), sampleData.BlockNumber), sampleData.RawMetadata)
+	}
+
+	l2rpc := builder.L2.Stack.Attach()
+	var result []gethexec.NumberAndBlockMetadata
+	err := l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", hexutil.Uint64(start), hexutil.Uint64(end))
+	Require(t, err)
+
+	if len(result) != len(sampleBulkData) {
+		t.Fatalf("number of entries in arb_getRawBlockMetadata is incorrect. Got: %d, Want: %d", len(result), len(sampleBulkData))
+	}
+	for i, data := range result {
+		if data.BlockNumber != sampleBulkData[i].BlockNumber {
+			t.Fatalf("BlockNumber mismatch. Got: %d, Want: %d", data.BlockNumber, sampleBulkData[i].BlockNumber)
+		}
+		if !bytes.Equal(data.RawMetadata, sampleBulkData[i].RawMetadata) {
+			t.Fatalf("RawMetadata. Got: %s, Want: %s", data.RawMetadata, sampleBulkData[i].RawMetadata)
+		}
+	}
+
+	// Test that without cache the result returned is always in sync with ArbDB
+	sampleBulkData[0].RawMetadata = []byte{1, 11}
+	arbDb.Put(dbKey([]byte("t"), 1), sampleBulkData[0].RawMetadata)
+
+	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", hexutil.Uint64(1), hexutil.Uint64(1))
+	Require(t, err)
+	if len(result) != 1 {
+		t.Fatal("result returned with more than one entry")
+	}
+	if !bytes.Equal(sampleBulkData[0].RawMetadata, result[0].RawMetadata) {
+		t.Fatal("BlockMetadata gotten from API doesn't match the latest entry in ArbDB")
+	}
+
+	// Test that LRU caching works
+	builder.execConfig.BlockMetadataApiCacheSize = 10
+	builder.RestartL2Node(t)
+	l2rpc = builder.L2.Stack.Attach()
+	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", hexutil.Uint64(start), hexutil.Uint64(end))
+	Require(t, err)
+
+	arbDb = builder.L2.ConsensusNode.ArbDB
+	updatedBlockMetadata := []byte{2, 12}
+	arbDb.Put(dbKey([]byte("t"), 1), updatedBlockMetadata)
+
+	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", hexutil.Uint64(1), hexutil.Uint64(1))
+	Require(t, err)
+	if len(result) != 1 {
+		t.Fatal("result returned with more than one entry")
+	}
+	if bytes.Equal(updatedBlockMetadata, result[0].RawMetadata) {
+		t.Fatal("BlockMetadata should've been fetched from cache and not the db")
+	}
+	if !bytes.Equal(sampleBulkData[0].RawMetadata, result[0].RawMetadata) {
+		t.Fatal("incorrect caching of BlockMetadata")
+	}
+}
 
 func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage_TimeboostedFieldIsCorrect(t *testing.T) {
 	t.Parallel()

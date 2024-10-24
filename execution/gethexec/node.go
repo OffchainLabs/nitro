@@ -60,6 +60,7 @@ type Config struct {
 	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
 	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
 	StylusTarget              StylusTargetConfig               `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize int                              `koanf:"block-metadata-api-cache-size"`
 
 	forwardingTarget string
 }
@@ -99,6 +100,9 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
+	f.Int(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size of lru cache storing the blockMetadata to service arb_getRawBlockMetadata.\n"+
+		"Note: setting a non-zero value would mean the blockMetadata might be outdated (if the block was reorged out).\n"+
+		"Default is set to 0 which disables caching")
 }
 
 var ConfigDefault = Config{
@@ -114,6 +118,7 @@ var ConfigDefault = Config{
 	Forwarder:                 DefaultNodeForwarderConfig,
 	EnablePrefetchBlock:       true,
 	StylusTarget:              DefaultStylusTargetConfig,
+	BlockMetadataApiCacheSize: 0,
 }
 
 type ConfigFetcher func() *Config
@@ -221,7 +226,7 @@ func CreateExecutionNode(
 	apis := []rpc.API{{
 		Namespace: "arb",
 		Version:   "1.0",
-		Service:   NewArbAPI(txPublisher),
+		Service:   NewArbAPI(txPublisher, NewBulkBlockMetadataFetcher(execEngine, config.BlockMetadataApiCacheSize)),
 		Public:    false,
 	}}
 	apis = append(apis, rpc.API{
