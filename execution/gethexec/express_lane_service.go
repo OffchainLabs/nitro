@@ -9,16 +9,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -30,33 +33,71 @@ type expressLaneControl struct {
 	controller common.Address
 }
 
+type HeaderByNumberClient interface {
+	HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error)
+}
+
 type expressLaneService struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
 	auctionContractAddr      common.Address
+	apiBackend               *arbitrum.APIBackend
 	initialTimestamp         time.Time
 	roundDuration            time.Duration
 	auctionClosing           time.Duration
 	chainConfig              *params.ChainConfig
 	logs                     chan []*types.Log
-	seqClient                *ethclient.Client
 	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
 	roundControl             lru.BasicLRU[uint64, *expressLaneControl]
 	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
 }
 
+type contractFiltererAdapter struct {
+	*filters.FilterAPI
+
+	// We should be able to leave this interface
+	bind.ContractTransactor // member unset as it is not used.
+
+	apiBackend *arbitrum.APIBackend
+}
+
+func (a *contractFiltererAdapter) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	logPointers, err := a.GetLogs(ctx, filters.FilterCriteria(q))
+	if err != nil {
+		return nil, err
+	}
+	logs := make([]types.Log, 0, len(logPointers))
+	for _, log := range logPointers {
+		logs = append(logs, *log)
+	}
+	return logs, nil
+}
+
+func (a *contractFiltererAdapter) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
+	panic("contractFiltererAdapter doesn't implement SubscribeFilterLogs - shouldn't be needed")
+}
+
+func (a *contractFiltererAdapter) CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error) {
+	panic("contractFiltererAdapter doesn't implement CodeAt - shouldn't be needed")
+}
+
 func newExpressLaneService(
+	apiBackend *arbitrum.APIBackend,
+	filterSystem *filters.FilterSystem,
 	auctionContractAddr common.Address,
-	sequencerClient *ethclient.Client,
 	bc *core.BlockChain,
 ) (*expressLaneService, error) {
 	chainConfig := bc.Config()
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
+
+	var contractBackend bind.ContractBackend = &contractFiltererAdapter{filters.NewFilterAPI(filterSystem, false), nil, nil}
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, contractBackend)
 	if err != nil {
 		return nil, err
 	}
 
 	retries := 0
+
 pending:
 	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
@@ -70,18 +111,31 @@ pending:
 		}
 		return nil, err
 	}
+
+	/*
+		var roundTimingInfo struct {
+			OffsetTimestamp          uint64
+			RoundDurationSeconds     uint64
+			AuctionClosingSeconds    uint64
+			ReserveSubmissionSeconds uint64
+		}
+		// roundTimingInfo.OffsetTimestamp //<-- this is needed
+		roundTimingInfo.RoundDurationSeconds = 60
+		roundTimingInfo.AuctionClosingSeconds = 45
+	*/
+
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
 	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
 	return &expressLaneService{
 		auctionContract:          auctionContract,
+		apiBackend:               apiBackend,
 		chainConfig:              chainConfig,
 		initialTimestamp:         initialTimestamp,
 		auctionClosing:           auctionClosingDuration,
 		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
 		auctionContractAddr:      auctionContractAddr,
 		roundDuration:            roundDuration,
-		seqClient:                sequencerClient,
 		logs:                     make(chan []*types.Log, 10_000),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}, nil
@@ -120,7 +174,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 		log.Info("Monitoring express lane auction contract")
 		// Monitor for auction resolutions from the auction manager smart contract
 		// and set the express lane controller for the upcoming round accordingly.
-		latestBlock, err := es.seqClient.HeaderByNumber(ctx, nil)
+		latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
 		if err != nil {
 			// TODO: Should not be a crit.
 			log.Crit("Could not get latest header", "err", err)
@@ -131,7 +185,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(time.Millisecond * 250):
-				latestBlock, err := es.seqClient.HeaderByNumber(ctx, nil)
+				latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
 				if err != nil {
 					log.Crit("Could not get latest header", "err", err)
 				}

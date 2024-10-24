@@ -32,11 +32,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -1237,19 +1236,15 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr common.Address, auctioneerAddr common.Address) {
+func (s *Sequencer) StartExpressLane(ctx context.Context, apiBackend *arbitrum.APIBackend, filterSystem *filters.FilterSystem, auctionContractAddr common.Address, auctioneerAddr common.Address) {
 	if !s.config().Timeboost.Enable {
 		log.Crit("Timeboost is not enabled, but StartExpressLane was called")
 	}
-	rpcClient, err := rpc.DialContext(ctx, s.config().Timeboost.SequencerHTTPEndpoint)
-	if err != nil {
-		log.Crit("Failed to connect to sequencer RPC client", "err", err)
-	}
-	seqClient := ethclient.NewClient(rpcClient)
 
 	els, err := newExpressLaneService(
+		apiBackend,
+		filterSystem,
 		auctionContractAddr,
-		seqClient,
 		s.execEngine.bc,
 	)
 	if err != nil {
