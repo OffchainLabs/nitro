@@ -140,6 +140,24 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 			return 0
 		}
 		checked++
+		// First check if there is an error for this promise
+		errorKey := ErrorKeyFor(p.redisStream, id)
+		errorResponse, err := p.client.Get(ctx, errorKey).Result()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			log.Error("Error reading error in redis", "key", errorKey, "error", err)
+			continue
+		}
+		// If there is an error, then delete the error key and return the error
+		// There will always be and error even if the response is present, its just that the error will be empty
+		p.client.Del(ctx, errorKey)
+		if errorResponse != "" {
+			promise.ProduceError(errors.New(errorResponse))
+			log.Error("error getting response", "error", errorResponse)
+			errored++
+			delete(p.promises, id)
+			continue
+		}
+		// If there is no error, then check if there is a response
 		resultKey := ResultKeyFor(p.redisStream, id)
 		res, err := p.client.Get(ctx, resultKey).Result()
 		if err != nil {

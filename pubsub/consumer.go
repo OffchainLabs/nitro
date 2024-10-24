@@ -231,3 +231,24 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID s
 	}
 	return nil
 }
+
+func (c *Consumer[Request, Response]) SetError(ctx context.Context, messageID string, error string) error {
+	resp, err := json.Marshal(error)
+	if err != nil {
+		return fmt.Errorf("marshaling result: %w", err)
+	}
+	errorKey := ErrorKeyFor(c.StreamName(), messageID)
+	log.Debug("consumer: setting error", "cid", c.id, "msgIdInStream", messageID, "errorKeyInRedis", errorKey)
+	acquired, err := c.client.SetNX(ctx, errorKey, resp, c.cfg.ResponseEntryTimeout).Result()
+	if err != nil || !acquired {
+		return fmt.Errorf("setting error for message with message-id in stream: %v, error: %w", messageID, err)
+	}
+	log.Debug("consumer: xack", "cid", c.id, "messageId", messageID)
+	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {
+		return fmt.Errorf("acking message: %v, error: %w", messageID, err)
+	}
+	if _, err := c.client.XDel(ctx, c.redisStream, messageID).Result(); err != nil {
+		return fmt.Errorf("deleting message: %v, error: %w", messageID, err)
+	}
+	return nil
+}
