@@ -107,7 +107,7 @@ func (c *Cache) Get(
 ) ([]common.Hash, error) {
 	// TODO cache seems broken around virtual hashes: "wanted to read 1025 hashes, but only read 4 hashes"
 	// Also see Put stubbed out because of this
-	// return nil, ErrNotFoundInCache
+	return nil, ErrNotFoundInCache
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return nil, err
@@ -136,7 +136,7 @@ func (c *Cache) Get(
 func (c *Cache) Put(lookup *Key, hashes []common.Hash) error {
 	// TODO cache seems broken around virtual hashes: "wanted to read 1025 hashes, but only read 4 hashes"
 	// Also see Get stubbed out because of this
-	//return nil
+	return nil
 	// We should error if trying to put 0 hashes to disk.
 	if len(hashes) == 0 {
 		return ErrNoHashes
