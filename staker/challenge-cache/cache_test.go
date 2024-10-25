@@ -18,17 +18,12 @@ import (
 var _ HistoryCommitmentCacher = (*Cache)(nil)
 
 func TestCache(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	basePath := t.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
 		t.Fatal(err)
 	}
 	cache, err := New(basePath)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err = cache.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
 	key := &Key{
@@ -79,9 +74,6 @@ func TestPrune(t *testing.T) {
 	}
 	cache, err := New(basePath)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err = cache.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
 	key := &Key{
@@ -424,8 +416,6 @@ func Test_determineFilePath(t *testing.T) {
 }
 
 func BenchmarkCache_Read_32Mb(b *testing.B) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	b.StopTimer()
 	basePath := os.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
@@ -433,9 +423,6 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	}
 	cache, err := New(basePath)
 	if err != nil {
-		b.Fatal(err)
-	}
-	if err = cache.Init(ctx); err != nil {
 		b.Fatal(err)
 	}
 	key := &Key{

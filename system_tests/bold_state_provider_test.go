@@ -81,23 +81,23 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	totalBatches := totalBatchesBig.Uint64()
 	totalMessageCount, err := l2node.InboxTracker.GetBatchMessageCount(totalBatches - 1)
 	Require(t, err)
+	log.Info("Status", "totalBatches", totalBatches, "totalMessageCount", totalMessageCount)
 	t.Logf("totalBatches: %v, totalMessageCount: %v\n", totalBatches, totalMessageCount)
 
 	// Wait until the validator has validated the batches.
 	for {
-		// This was previously 100ms, but increasing it for getting the tests working.
-		time.Sleep(time.Millisecond * 1000)
+		time.Sleep(time.Millisecond * 100)
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
 		if lastInfo == nil || err != nil {
 			continue
 		}
-		t.Logf("lastInfo: %v\n", lastInfo)
+		if lastInfo.GlobalState.Batch >= totalBatches {
+			break
+		}
 		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
 		if err != nil {
 			continue
 		}
-		Require(t, err)
-		t.Log("lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
 		if batchMsgCount >= totalMessageCount {
 			break
 		}
@@ -198,13 +198,11 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 
 	// Wait until the validator has validated the batches.
 	for {
-		// This was previously 100ms, but increasing it for getting the tests working.
-		time.Sleep(time.Millisecond * 1000)
+		time.Sleep(time.Millisecond * 100)
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
 		if lastInfo == nil || err != nil {
 			continue
 		}
-		log.Info("loop 1:", "lastInfo", lastInfo)
 		if lastInfo.GlobalState.Batch >= totalBatches {
 			break
 		}
@@ -212,8 +210,6 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		log.Info("loop 2:", "lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
-		t.Log("lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
 		if batchMsgCount >= totalMessageCount {
 			break
 		}
@@ -223,22 +219,24 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 
 	t.Run("StatesInBatchRange", func(t *testing.T) {
 		toBatch := uint64(3)
-		toHeight := l2stateprovider.Height(14)
+		toHeight := l2stateprovider.Height(10)
 		fromState := protocol.GoGlobalState{
 			Batch: 1,
 		}
 		stateRoots, states, err := stateManager.StatesInBatchRange(ctx, fromState, toBatch, toHeight)
 		Require(t, err)
+		want := 11
+		got := len(stateRoots)
 
-		if len(stateRoots) != 15 {
-			Fatal(t, "wrong number of state roots")
+		if got != want {
+			t.Errorf("len(stateRoots): got %v, want %v", got, want)
 		}
 		firstState := states[0]
 		if firstState.Batch != 1 && firstState.PosInBatch != 0 {
 			Fatal(t, "wrong first state")
 		}
 		lastState := states[len(states)-1]
-		if lastState.Batch != 1 && lastState.PosInBatch != 0 {
+		if lastState.Batch != 3 && lastState.PosInBatch != 0 {
 			Fatal(t, "wrong last state")
 		}
 	})
