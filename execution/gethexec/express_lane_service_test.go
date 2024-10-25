@@ -242,7 +242,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 		sequence: 1,
 	})
 	msg := &timeboost.ExpressLaneSubmission{
-		Sequence: 0,
+		SequenceNumber: 0,
 	}
 	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
 		return nil
@@ -262,7 +262,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 		sequence: 1,
 	})
 	msg := &timeboost.ExpressLaneSubmission{
-		Sequence: 2,
+		SequenceNumber: 2,
 	}
 	numPublished := 0
 	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
@@ -299,19 +299,19 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	}
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
-			Sequence: 10,
+			SequenceNumber: 10,
 		},
 		{
-			Sequence: 5,
+			SequenceNumber: 5,
 		},
 		{
-			Sequence: 1,
+			SequenceNumber: 1,
 		},
 		{
-			Sequence: 4,
+			SequenceNumber: 4,
 		},
 		{
-			Sequence: 2,
+			SequenceNumber: 2,
 		},
 	}
 	for _, msg := range messages {
@@ -322,7 +322,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	require.Equal(t, 2, numPublished)
 	require.Equal(t, len(messages), len(els.messagesBySequenceNumber))
 
-	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{Sequence: 3}, publishFn)
+	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3}, publishFn)
 	require.NoError(t, err)
 	require.Equal(t, 5, numPublished)
 }
@@ -350,19 +350,19 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	}
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
-			Sequence:    1,
+			SequenceNumber:    1,
 			Transaction: &types.Transaction{},
 		},
 		{
-			Sequence:    3,
+			SequenceNumber:    3,
 			Transaction: &types.Transaction{},
 		},
 		{
-			Sequence:    2,
+			SequenceNumber:    2,
 			Transaction: nil,
 		},
 		{
-			Sequence:    2,
+			SequenceNumber:    2,
 			Transaction: &types.Transaction{},
 		},
 	}

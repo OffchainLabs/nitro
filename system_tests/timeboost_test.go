@@ -676,7 +676,7 @@ func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *
 		Round:                  hexutil.Uint64(timeboost.CurrentRound(elc.initialRoundTimestamp, elc.roundDuration)),
 		AuctionContractAddress: elc.auctionContractAddr,
 		Transaction:            encodedTx,
-		Sequence:               hexutil.Uint64(elc.sequence),
+		SequenceNumber:         hexutil.Uint64(elc.sequence),
 		Signature:              hexutil.Bytes{},
 	}
 	msgGo, err := timeboost.JsonSubmissionToGo(msg)

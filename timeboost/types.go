@@ -139,7 +139,7 @@ type JsonExpressLaneSubmission struct {
 	AuctionContractAddress common.Address                     `json:"auctionContractAddress"`
 	Transaction            hexutil.Bytes                      `json:"transaction"`
 	Options                *arbitrum_types.ConditionalOptions `json:"options"`
-	Sequence               hexutil.Uint64
+	SequenceNumber         hexutil.Uint64
 	Signature              hexutil.Bytes `json:"signature"`
 }
 
@@ -149,7 +149,7 @@ type ExpressLaneSubmission struct {
 	AuctionContractAddress common.Address
 	Transaction            *types.Transaction
 	Options                *arbitrum_types.ConditionalOptions `json:"options"`
-	Sequence               uint64
+	SequenceNumber         uint64
 	Signature              []byte
 }
 
@@ -164,7 +164,7 @@ func JsonSubmissionToGo(submission *JsonExpressLaneSubmission) (*ExpressLaneSubm
 		AuctionContractAddress: submission.AuctionContractAddress,
 		Transaction:            tx,
 		Options:                submission.Options,
-		Sequence:               uint64(submission.Sequence),
+		SequenceNumber:         uint64(submission.SequenceNumber),
 		Signature:              submission.Signature,
 	}, nil
 }
@@ -180,7 +180,7 @@ func (els *ExpressLaneSubmission) ToJson() (*JsonExpressLaneSubmission, error) {
 		AuctionContractAddress: els.AuctionContractAddress,
 		Transaction:            encoded,
 		Options:                els.Options,
-		Sequence:               hexutil.Uint64(els.Sequence),
+		SequenceNumber:         hexutil.Uint64(els.SequenceNumber),
 		Signature:              els.Signature,
 	}, nil
 }
@@ -189,13 +189,13 @@ func (els *ExpressLaneSubmission) ToMessageBytes() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	buf.Write(domainValue)
 	buf.Write(padBigInt(els.ChainId))
-	seqBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(seqBuf, els.Sequence)
-	buf.Write(seqBuf)
 	buf.Write(els.AuctionContractAddress[:])
 	roundBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBuf, els.Round)
 	buf.Write(roundBuf)
+	seqBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(seqBuf, els.SequenceNumber)
+	buf.Write(seqBuf)
 	rlpTx, err := els.Transaction.MarshalBinary()
 	if err != nil {
 		return nil, err
