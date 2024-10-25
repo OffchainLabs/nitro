@@ -116,11 +116,14 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	)
 	bisectionHeight := l2stateprovider.Height(16)
 	request := &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              common.Hash{},
-		FromBatch:                   1,
-		ToBatch:                     3,
+		AssertionMetadata: &l2stateprovider.AssociatedAssertionMetadata{
+			FromState: protocol.GoGlobalState{
+				Batch: 1,
+			},
+			BatchLimit:     3,
+			WasmModuleRoot: common.Hash{},
+		},
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		FromHeight:                  0,
 		UpToHeight:                  option.Some(bisectionHeight),
 	}
 	bisectionCommitment, err := historyCommitter.HistoryCommitment(ctx, request)
@@ -219,11 +222,12 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	maxBlocks := uint64(1 << 14)
 
 	t.Run("StatesInBatchRange", func(t *testing.T) {
-		fromBatch := l2stateprovider.Batch(1)
-		toBatch := l2stateprovider.Batch(3)
-		fromHeight := l2stateprovider.Height(0)
+		toBatch := uint64(3)
 		toHeight := l2stateprovider.Height(14)
-		stateRoots, states, err := stateManager.StatesInBatchRange(ctx, fromHeight, toHeight, fromBatch, toBatch)
+		fromState := protocol.GoGlobalState{
+			Batch: 1,
+		}
+		stateRoots, states, err := stateManager.StatesInBatchRange(ctx, fromState, toBatch, toHeight)
 		Require(t, err)
 
 		if len(stateRoots) != 15 {
@@ -401,7 +405,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 		l2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "",
-			MachineLeavesCachePath: "",
+			MachineLeavesCachePath: t.TempDir(),
 			CheckBatchFinality:     false,
 		},
 	)

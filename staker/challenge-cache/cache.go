@@ -79,29 +79,23 @@ type Cache struct {
 
 // New cache from a base directory path.
 func New(baseDir string) (*Cache, error) {
-	return &Cache{
-		baseDir:       baseDir,
-		tempWritesDir: "",
-	}, nil
-}
-
-// Init a cache by verifying its base directory exists.
-func (c *Cache) Init(_ context.Context) error {
-	if _, err := os.Stat(c.baseDir); err != nil {
-		if err := os.MkdirAll(c.baseDir, os.ModePerm); err != nil {
-			return fmt.Errorf("could not make initialize challenge cache directory %s: %w", c.baseDir, err)
+	if _, err := os.Stat(baseDir); err != nil {
+		if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("could not make initialize challenge cache directory %s: %w", baseDir, err)
 		}
 	}
 	// We create a temp directory to write our hashes to first when putting to the cache.
 	// Once writing succeeds, we rename in an atomic operation to the correct file name
 	// in the cache directory hierarchy in the `Put` function. All of these temporary writes
 	// will occur in a subdir of the base directory called temp.
-	tempWritesDir, err := os.MkdirTemp(c.baseDir, "temp")
+	tempWritesDir, err := os.MkdirTemp(baseDir, "temp")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	c.tempWritesDir = tempWritesDir
-	return nil
+	return &Cache{
+		baseDir:       baseDir,
+		tempWritesDir: tempWritesDir,
+	}, nil
 }
 
 // Get a list of hashes from the cache from index 0 up to a certain index. Hashes are saved as files in the directory
@@ -111,6 +105,9 @@ func (c *Cache) Get(
 	lookup *Key,
 	numToRead uint64,
 ) ([]common.Hash, error) {
+	// TODO cache seems broken around virtual hashes: "wanted to read 1025 hashes, but only read 4 hashes"
+	// Also see Put stubbed out because of this
+	return nil, ErrNotFoundInCache
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return nil, err
@@ -137,6 +134,9 @@ func (c *Cache) Get(
 // This function first creates a temporary file, writes the hashes to it, and then renames the file
 // to the final directory to ensure atomic writes.
 func (c *Cache) Put(lookup *Key, hashes []common.Hash) error {
+	// TODO cache seems broken around virtual hashes: "wanted to read 1025 hashes, but only read 4 hashes"
+	// Also see Get stubbed out because of this
+	return nil
 	// We should error if trying to put 0 hashes to disk.
 	if len(hashes) == 0 {
 		return ErrNoHashes

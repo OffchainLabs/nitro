@@ -83,8 +83,8 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	if maxInboxCount == 0 {
 		return nil, errors.New("max inbox count cannot be zero")
 	}
-	batchIndex := maxInboxCount - 1
-	messageCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(batchIndex)
+	batchIndex := maxInboxCount
+	messageCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(batchIndex - 1)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
@@ -92,14 +92,17 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		return nil, err
 	}
 	if previousGlobalState != nil {
-		// TODO: Use safer sub here.
-		previousMessageCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(previousGlobalState.Batch - 1)
-		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
+		var previousMessageCount arbutil.MessageIndex
+		if previousGlobalState.Batch > 0 {
+			previousMessageCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(previousGlobalState.Batch - 1)
+			if err != nil {
+				if strings.Contains(err.Error(), "not found") {
+					return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
+				}
+				return nil, err
 			}
-			return nil, err
 		}
+		previousMessageCount += arbutil.MessageIndex(previousGlobalState.PosInBatch)
 		messageDiffBetweenBatches := messageCount - previousMessageCount
 		maxMessageCount := previousMessageCount + arbutil.MessageIndex(maxNumberOfBlocks)
 		if messageDiffBetweenBatches > maxMessageCount {
@@ -127,24 +130,17 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		GlobalState:   protocol.GoGlobalState(globalState),
 		MachineStatus: protocol.MachineStatusFinished,
 	}
-	// If the execution state did not consume all messages in a batch, we then return
-	// the next batch's execution state.
-	if executionState.GlobalState.PosInBatch != 0 {
-		executionState.GlobalState.Batch += 1
-		executionState.GlobalState.PosInBatch = 0
-	}
 
-	fromBatch := uint64(0)
+	var previousGlobalStateOrDefault protocol.GoGlobalState
 	if previousGlobalState != nil {
-		fromBatch = previousGlobalState.Batch
+		previousGlobalStateOrDefault = *previousGlobalState
 	}
 	toBatch := executionState.GlobalState.Batch
 	historyCommitStates, _, err := s.StatesInBatchRange(
 		ctx,
-		0,
-		l2stateprovider.Height(maxNumberOfBlocks)+1,
-		l2stateprovider.Batch(fromBatch),
-		l2stateprovider.Batch(toBatch),
+		previousGlobalStateOrDefault,
+		toBatch,
+		l2stateprovider.Height(maxNumberOfBlocks),
 	)
 	if err != nil {
 		return nil, err
@@ -154,6 +150,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		return nil, err
 	}
 	executionState.EndHistoryRoot = historyCommit.Merkle
+	fmt.Printf("ExecutionStateAfterPreviousState for previous state batch %v pos %v got end batch %v pos %v last leaf %v hash %v\n", previousGlobalStateOrDefault.Batch, previousGlobalStateOrDefault.PosInBatch, executionState.GlobalState.Batch, executionState.GlobalState.PosInBatch, historyCommitStates[len(historyCommitStates)-1], executionState.EndHistoryRoot)
 	return executionState, nil
 }
 
@@ -187,46 +184,39 @@ func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
 
 func (s *BOLDStateProvider) StatesInBatchRange(
 	ctx context.Context,
-	fromHeight l2stateprovider.Height,
+	fromState protocol.GoGlobalState,
+	batchLimit uint64,
 	toHeight l2stateprovider.Height,
-	fromBatch l2stateprovider.Batch,
-	toBatch l2stateprovider.Batch,
 ) ([]common.Hash, []validator.GoGlobalState, error) {
 	// Check the integrity of the arguments.
-	if fromBatch >= toBatch {
-		return nil, nil, fmt.Errorf("from batch %v cannot be greater than or equal to batch %v", fromBatch, toBatch)
-	}
-	if fromHeight > toHeight {
-		return nil, nil, fmt.Errorf("from height %v cannot be greater than to height %v", fromHeight, toHeight)
+	if batchLimit < fromState.Batch || (batchLimit == fromState.Batch && fromState.PosInBatch > 0) {
+		return nil, nil, fmt.Errorf("batch limit %v cannot be less than from batch %v", batchLimit, fromState.Batch)
 	}
 	// Compute the total desired hashes from this request.
-	totalDesiredHashes := (toHeight - fromHeight) + 1
-	machineHashes := make([]common.Hash, 0, totalDesiredHashes)
-	states := make([]validator.GoGlobalState, 0, totalDesiredHashes)
+	totalDesiredHashes := uint64(toHeight + 1)
+	machineHashes := make([]common.Hash, 0)
+	states := make([]validator.GoGlobalState, 0)
 
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
-	batchNum, found, err := s.statelessValidator.InboxTracker().FindInboxBatchContainingMessage(arbutil.MessageIndex(fromHeight))
-	if err != nil {
-		return nil, nil, err
+	if fromState.Batch > 0 {
+		prevBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(fromState.Batch) - 1)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
-	if !found {
-		return nil, nil, fmt.Errorf("could not find batch containing message %d", fromHeight)
-	}
-	if batchNum == 0 {
-		prevBatchMsgCount = 0
-	} else {
-		prevBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(batchNum - 1)
-	}
-	if err != nil {
-		return nil, nil, err
-	}
+
+	batchNum := fromState.Batch
 	currBatchMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(batchNum)
 	if err != nil {
 		return nil, nil, err
 	}
-	posInBatch := uint64(fromHeight) - uint64(prevBatchMsgCount)
-	for pos := fromHeight; pos <= toHeight; pos++ {
+	posInBatch := fromState.PosInBatch
+	initialPos := prevBatchMsgCount + arbutil.MessageIndex(posInBatch)
+	if initialPos >= currBatchMsgCount {
+		return nil, nil, fmt.Errorf("initial position %v is past end of from batch %v message count %v", initialPos, batchNum, currBatchMsgCount)
+	}
+	for pos := initialPos; uint64(len(states)) < totalDesiredHashes; pos++ {
 		if ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
@@ -242,17 +232,31 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 		}
 		states = append(states, state)
 		machineHashes = append(machineHashes, machineHash(state))
-		if uint64(pos) == uint64(currBatchMsgCount) {
+		if batchNum >= batchLimit {
+			break
+		}
+		// Check if the next message is in the next batch.
+		if uint64(pos+1) == uint64(currBatchMsgCount) {
 			posInBatch = 0
 			batchNum++
-			currBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(batchNum)
-			if err != nil {
-				return nil, nil, err
+			// Only get the next batch metadata if it'll be needed.
+			// Otherwise, we might try to read too many batches, and hit an error that the next batch isn't found.
+			if uint64(len(states)) < totalDesiredHashes && batchNum < batchLimit {
+				currBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(batchNum)
+				if err != nil {
+					return nil, nil, err
+				}
 			}
 		} else {
 			posInBatch++
 		}
 	}
+	fmt.Printf("got states from batch %v pos %v up to batch %v height %v\n", fromState.Batch, fromState.PosInBatch, batchLimit, toHeight)
+	println("----- states -----")
+	for i, state := range states {
+		fmt.Printf("batch %v pos %v hash %v\n", state.Batch, state.PosInBatch, machineHashes[i])
+	}
+	println("------------------")
 	return machineHashes, states, nil
 }
 
@@ -269,7 +273,16 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 			return validator.GoGlobalState{}, err
 		}
 		if prevBatchMsgCount > count {
-			return validator.GoGlobalState{}, errors.New("bad batch provided")
+			return validator.GoGlobalState{}, fmt.Errorf("bad batch %v provided for message count %v as previous batch ended at message count %v", batchIndex, count, prevBatchMsgCount)
+		}
+	}
+	if count != prevBatchMsgCount {
+		batchMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(batchIndex))
+		if err != nil {
+			return validator.GoGlobalState{}, err
+		}
+		if count > batchMsgCount {
+			return validator.GoGlobalState{}, fmt.Errorf("message count %v is past end of batch %v message count %v", count, batchIndex, batchMsgCount)
 		}
 	}
 	res, err := s.statelessValidator.InboxStreamer().ResultAtCount(count)
@@ -290,10 +303,9 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 // hashes at each message number.
 func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	ctx context.Context,
-	fromHeight l2stateprovider.Height,
+	fromState protocol.GoGlobalState,
+	batchLimit l2stateprovider.Batch,
 	toHeight option.Option[l2stateprovider.Height],
-	fromBatch,
-	toBatch l2stateprovider.Batch,
 ) ([]common.Hash, error) {
 	var to l2stateprovider.Height
 	if !toHeight.IsNone() {
@@ -301,7 +313,7 @@ func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	} else {
 		to = s.blockChallengeLeafHeight
 	}
-	items, _, err := s.StatesInBatchRange(ctx, fromHeight, to, fromBatch, toBatch)
+	items, _, err := s.StatesInBatchRange(ctx, fromState, uint64(batchLimit), to)
 	if err != nil {
 		return nil, err
 	}
@@ -314,21 +326,26 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 ) ([]common.Hash, error) {
 	s.Lock()
 	defer s.Unlock()
-	prevBatchMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(cfg.FromBatch - 1))
-	if err != nil {
-		return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromBatch, err)
+	var prevBatchMsgCount arbutil.MessageIndex
+	if cfg.FromState.Batch > 0 {
+		var err error
+		prevBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(cfg.FromState.Batch - 1))
+		if err != nil {
+			return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromState.Batch-1, err)
+		}
 	}
-	messageNum := prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight)
+	// cfg.BlockChallengeHeight is the index of the last correct block, before the block we're challenging.
+	messageNum := prevBatchMsgCount + arbutil.MessageIndex(cfg.FromState.PosInBatch) + arbutil.MessageIndex(cfg.BlockChallengeHeight)
 	stepHeights := make([]uint64, len(cfg.StepHeights))
 	for i, h := range cfg.StepHeights {
 		stepHeights[i] = uint64(h)
 	}
-	globalState, err := s.findGlobalStateFromMessageCountAndBatch(prevBatchMsgCount, cfg.FromBatch-1)
+	messageResult, err := s.statelessValidator.InboxStreamer().ResultAtCount(arbutil.MessageIndex(messageNum + 1))
 	if err != nil {
 		return nil, err
 	}
 	cacheKey := &challengecache.Key{
-		RollupBlockHash: globalState.BlockHash,
+		RollupBlockHash: messageResult.BlockHash,
 		WavmModuleRoot:  cfg.WasmModuleRoot,
 		MessageHeight:   uint64(messageNum),
 		StepHeights:     stepHeights,
@@ -361,6 +378,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
+	defer execRun.Close()
 	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
 	defer cancelCheckAlive()
 	stepLeaves := execRun.GetMachineHashesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
@@ -377,6 +395,12 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 			}
 		}
 	}
+	fmt.Printf("got machine hashes for message %v start %v step size %v num %v\n", messageNum, cfg.MachineStartIndex, cfg.StepSize, cfg.NumDesiredHashes)
+	println("----- hashes -----")
+	for i, h := range result {
+		fmt.Printf("hash %v = %v\n", i, h)
+	}
+	println("------------------")
 	return result, nil
 }
 
@@ -418,16 +442,17 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 // CollectProof Collects osp of at a message number and OpcodeIndex .
 func (s *BOLDStateProvider) CollectProof(
 	ctx context.Context,
+	fromState protocol.GoGlobalState,
 	wasmModuleRoot common.Hash,
-	fromBatch l2stateprovider.Batch,
 	blockChallengeHeight l2stateprovider.Height,
 	machineIndex l2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
-	prevBatchMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(fromBatch) - 1)
+	prevBatchMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(fromState.Batch) - 1)
 	if err != nil {
 		return nil, err
 	}
-	messageNum := prevBatchMsgCount + arbutil.MessageIndex(blockChallengeHeight)
+	// blockChallengeHeight is the index of the last correct block, before the block we're challenging.
+	messageNum := prevBatchMsgCount + arbutil.MessageIndex(fromState.PosInBatch) + arbutil.MessageIndex(blockChallengeHeight)
 	entry, err := s.statelessValidator.CreateReadyValidationEntry(ctx, messageNum)
 	if err != nil {
 		return nil, err
@@ -438,7 +463,8 @@ func (s *BOLDStateProvider) CollectProof(
 	}
 	log.Info(
 		"Getting machine OSP",
-		"fromBatch", fromBatch,
+		"fromBatch", fromState.Batch,
+		"fromPosInBatch", fromState.PosInBatch,
 		"prevBatchMsgCount", prevBatchMsgCount,
 		"blockChallengeHeight", blockChallengeHeight,
 		"messageNum", messageNum,
@@ -448,6 +474,7 @@ func (s *BOLDStateProvider) CollectProof(
 	if err != nil {
 		return nil, err
 	}
+	defer execRun.Close()
 	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
 	defer cancelCheckAlive()
 	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))

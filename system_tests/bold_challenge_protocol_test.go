@@ -122,6 +122,14 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, l2nodeConfig, nil, stakeTokenAddr)
 	defer l2nodeB.StopAndWait()
 
+	genesisA, err := l2nodeA.Execution.ResultAtPos(0)
+	Require(t, err)
+	genesisB, err := l2nodeB.Execution.ResultAtPos(0)
+	Require(t, err)
+	if genesisA.BlockHash != genesisB.BlockHash {
+		Fatal(t, "genesis blocks mismatch between nodes")
+	}
+
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
 	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
