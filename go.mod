@@ -6,12 +6,12 @@ replace github.com/VictoriaMetrics/fastcache => ./fastcache
 
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
-replace github.com/OffchainLabs/bold => ./bold
+replace github.com/offchainlabs/bold => ./bold
 
 require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible
-	github.com/OffchainLabs/bold v0.0.0-00010101000000-000000000000
+	github.com/offchainlabs/bold v0.0.0-00010101000000-000000000000
 	github.com/Shopify/toxiproxy v2.1.4+incompatible
 	github.com/alicebob/miniredis/v2 v2.32.1
 	github.com/andybalholm/brotli v1.0.4

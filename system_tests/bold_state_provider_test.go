@@ -29,13 +29,13 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	"github.com/OffchainLabs/bold/containers/option"
-	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
-	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
-	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
-	mockmanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	"github.com/offchainlabs/bold/containers/option"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	"github.com/offchainlabs/bold/solgen/go/bridgegen"
+	"github.com/offchainlabs/bold/solgen/go/mocksgen"
+	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
+	mockmanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 )
 
 func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
