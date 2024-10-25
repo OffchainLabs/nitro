@@ -9,12 +9,12 @@ import (
 	"math/big"
 	"time"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
-	boldtypes "github.com/OffchainLabs/bold/challenge-manager/types"
-	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	boldrollup "github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
+	challengemanager "github.com/offchainlabs/bold/challenge-manager"
+	boldtypes "github.com/offchainlabs/bold/challenge-manager/types"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"

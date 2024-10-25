@@ -5,8 +5,8 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"time"
 
-	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
-	boldrollup "github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/bold/solgen/go/bridgegen"
+	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
