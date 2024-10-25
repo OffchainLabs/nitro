@@ -1306,6 +1306,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				b.building.muxBackend.delayedInbox = append(b.building.muxBackend.delayedInbox, msg)
 			}
 		}
+		// #nosec G115
 		timeSinceMsg := time.Since(time.Unix(int64(msg.Message.Header.Timestamp), 0))
 		if (msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport) || (timeSinceMsg >= config.MaxEmptyBatchDelay) {
 			b.building.haveUsefulMessage = true
