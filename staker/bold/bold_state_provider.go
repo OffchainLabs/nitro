@@ -395,12 +395,6 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 			}
 		}
 	}
-	fmt.Printf("got machine hashes for message %v start %v step size %v num %v\n", messageNum, cfg.MachineStartIndex, cfg.StepSize, cfg.NumDesiredHashes)
-	println("----- hashes -----")
-	for i, h := range result {
-		fmt.Printf("hash %v = %v\n", i, h)
-	}
-	println("------------------")
 	return result, nil
 }
 

@@ -105,9 +105,6 @@ func (c *Cache) Get(
 	lookup *Key,
 	numToRead uint64,
 ) ([]common.Hash, error) {
-	// TODO cache seems broken around virtual hashes: "wanted to read 1025 hashes, but only read 4 hashes"
-	// Also see Put stubbed out because of this
-	return nil, ErrNotFoundInCache
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return nil, err
@@ -134,9 +131,6 @@ func (c *Cache) Get(
 // This function first creates a temporary file, writes the hashes to it, and then renames the file
 // to the final directory to ensure atomic writes.
 func (c *Cache) Put(lookup *Key, hashes []common.Hash) error {
-	// TODO cache seems broken around virtual hashes: "wanted to read 1025 hashes, but only read 4 hashes"
-	// Also see Get stubbed out because of this
-	return nil
 	// We should error if trying to put 0 hashes to disk.
 	if len(hashes) == 0 {
 		return ErrNoHashes
@@ -217,11 +211,11 @@ func (c *Cache) Prune(ctx context.Context, messageNumber uint64) error {
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
-func readHashes(r io.Reader, numToRead uint64) ([]common.Hash, error) {
+func readHashes(r io.Reader, toReadLimit uint64) ([]common.Hash, error) {
 	br := bufio.NewReader(r)
 	hashes := make([]common.Hash, 0)
 	buf := make([]byte, 0, common.HashLength)
-	for totalRead := uint64(0); totalRead < numToRead; totalRead++ {
+	for totalRead := uint64(0); totalRead < toReadLimit; totalRead++ {
 		n, err := br.Read(buf[:cap(buf)])
 		if err != nil {
 			// If we try to read but reach EOF, we break out of the loop.
@@ -235,13 +229,6 @@ func readHashes(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 			return nil, fmt.Errorf("expected to read %d bytes, got %d bytes", common.HashLength, n)
 		}
 		hashes = append(hashes, common.BytesToHash(buf))
-	}
-	if numToRead > uint64(len(hashes)) {
-		return nil, fmt.Errorf(
-			"wanted to read %d hashes, but only read %d hashes",
-			numToRead,
-			len(hashes),
-		)
 	}
 	return hashes, nil
 }

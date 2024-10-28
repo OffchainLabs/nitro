@@ -204,16 +204,6 @@ func TestPrune(t *testing.T) {
 }
 
 func TestReadWriteStatehashes(t *testing.T) {
-	t.Run("read up to, but had empty reader", func(t *testing.T) {
-		b := bytes.NewBuffer([]byte{})
-		_, err := readHashes(b, 100)
-		if err == nil {
-			t.Fatal("Wanted error")
-		}
-		if !strings.Contains(err.Error(), "only read 0 hashes") {
-			t.Fatal("Unexpected error")
-		}
-	})
 	t.Run("read single root", func(t *testing.T) {
 		b := bytes.NewBuffer([]byte{})
 		want := common.BytesToHash([]byte("foo"))
@@ -316,19 +306,19 @@ func Test_readHashes(t *testing.T) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 	})
-	t.Run("EOF, but did not read as much as was expected", func(t *testing.T) {
+	t.Run("EOF, but did not read as much as was possible", func(t *testing.T) {
 		want := []common.Hash{
 			common.BytesToHash([]byte("foo")),
 			common.BytesToHash([]byte("bar")),
 			common.BytesToHash([]byte("baz")),
 		}
-		m := &mockReader{wantErr: true, hashes: want, err: io.EOF}
-		_, err := readHashes(m, 100)
-		if err == nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(err.Error(), "wanted to read 100") {
+		m := &mockReader{wantErr: false, hashes: want, bytesRead: 32}
+		hashes, err := readHashes(m, 100)
+		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
+		}
+		if len(hashes) != len(want) {
+			t.Fatalf("Wrong number of hashes. Expected %d, got %d", len(want), len(hashes))
 		}
 	})
 	t.Run("Reads wrong number of bytes", func(t *testing.T) {
