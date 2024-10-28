@@ -47,20 +47,21 @@ func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader         headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                 SequencerConfig                  `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase         arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
-	TxPreChecker              TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                 ForwarderConfig                  `koanf:"forwarder"`
-	ForwardingTarget          string                           `koanf:"forwarding-target"`
-	SecondaryForwardingTarget []string                         `koanf:"secondary-forwarding-target"`
-	Caching                   CachingConfig                    `koanf:"caching"`
-	RPC                       arbitrum.Config                  `koanf:"rpc"`
-	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
-	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
-	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
-	StylusTarget              StylusTargetConfig               `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize int                              `koanf:"block-metadata-api-cache-size"`
+	ParentChainReader           headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig                  `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                   ForwarderConfig                  `koanf:"forwarder"`
+	ForwardingTarget            string                           `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string                         `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig                    `koanf:"caching"`
+	RPC                         arbitrum.Config                  `koanf:"rpc"`
+	TxLookupLimit               uint64                           `koanf:"tx-lookup-limit"`
+	EnablePrefetchBlock         bool                             `koanf:"enable-prefetch-block"`
+	SyncMonitor                 SyncMonitorConfig                `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig               `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   int                              `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit int                              `koanf:"block-metadata-api-blocks-limit"`
 
 	forwardingTarget string
 }
@@ -86,6 +87,9 @@ func (c *Config) Validate() error {
 	if c.BlockMetadataApiCacheSize < 0 {
 		return errors.New("block-metadata-api-cache-size cannot be negative")
 	}
+	if c.BlockMetadataApiBlocksLimit < 0 {
+		return errors.New("block-metadata-api-blocks-limit cannot be negative")
+	}
 	return nil
 }
 
@@ -104,22 +108,24 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 	f.Int(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
+	f.Int(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable")
 }
 
 var ConfigDefault = Config{
-	RPC:                       arbitrum.DefaultConfig,
-	Sequencer:                 DefaultSequencerConfig,
-	ParentChainReader:         headerreader.DefaultConfig,
-	RecordingDatabase:         arbitrum.DefaultRecordingDatabaseConfig,
-	ForwardingTarget:          "",
-	SecondaryForwardingTarget: []string{},
-	TxPreChecker:              DefaultTxPreCheckerConfig,
-	TxLookupLimit:             126_230_400, // 1 year at 4 blocks per second
-	Caching:                   DefaultCachingConfig,
-	Forwarder:                 DefaultNodeForwarderConfig,
-	EnablePrefetchBlock:       true,
-	StylusTarget:              DefaultStylusTargetConfig,
-	BlockMetadataApiCacheSize: 10000,
+	RPC:                         arbitrum.DefaultConfig,
+	Sequencer:                   DefaultSequencerConfig,
+	ParentChainReader:           headerreader.DefaultConfig,
+	RecordingDatabase:           arbitrum.DefaultRecordingDatabaseConfig,
+	ForwardingTarget:            "",
+	SecondaryForwardingTarget:   []string{},
+	TxPreChecker:                DefaultTxPreCheckerConfig,
+	TxLookupLimit:               126_230_400, // 1 year at 4 blocks per second
+	Caching:                     DefaultCachingConfig,
+	Forwarder:                   DefaultNodeForwarderConfig,
+	EnablePrefetchBlock:         true,
+	StylusTarget:                DefaultStylusTargetConfig,
+	BlockMetadataApiCacheSize:   10000,
+	BlockMetadataApiBlocksLimit: 100,
 }
 
 type ConfigFetcher func() *Config
@@ -225,7 +231,7 @@ func CreateExecutionNode(
 		}
 	}
 
-	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize)
+	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
 	apis := []rpc.API{{
 		Namespace: "arb",

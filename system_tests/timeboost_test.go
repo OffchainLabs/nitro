@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -75,7 +76,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 		Require(t, err)
 		// Clean BlockMetadata from arbDB so that we can modify it at will
 		Require(t, arbDb.Delete(blockMetadataInputFeedKey(latestL2)))
-		if latestL2 > uint64(end) {
+		if latestL2 > uint64(end)+10 {
 			break
 		}
 	}
@@ -121,6 +122,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 
 	// Test that LRU caching works
 	builder.execConfig.BlockMetadataApiCacheSize = 10
+	builder.execConfig.BlockMetadataApiBlocksLimit = 25
 	builder.RestartL2Node(t)
 	l2rpc = builder.L2.Stack.Attach()
 	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
@@ -140,6 +142,12 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	}
 	if !bytes.Equal(sampleBulkData[0].RawMetadata, result[0].RawMetadata) {
 		t.Fatal("incorrect caching of BlockMetadata")
+	}
+
+	// Test that ErrBlockMetadataApiBlocksLimitExceeded is thrown when query range exceeds the limit
+	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(26))
+	if !strings.Contains(err.Error(), gethexec.ErrBlockMetadataApiBlocksLimitExceeded.Error()) {
+		t.Fatalf("expecting ErrBlockMetadataApiBlocksLimitExceeded error, got: %v", err)
 	}
 
 	// A Reorg event should clear the cache, hence the data fetched now should be accurate

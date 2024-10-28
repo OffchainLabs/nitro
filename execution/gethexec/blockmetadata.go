@@ -2,6 +2,7 @@ package gethexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
+
+var ErrBlockMetadataApiBlocksLimitExceeded = errors.New("number of blocks requested for blockMetadata exceeded")
 
 type BlockMetadataFetcher interface {
 	BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error)
@@ -26,11 +29,12 @@ type BulkBlockMetadataFetcher struct {
 	bc            *core.BlockChain
 	fetcher       BlockMetadataFetcher
 	reorgDetector chan struct{}
+	blocksLimit   int
 	cacheMutex    sync.RWMutex
 	cache         *containers.LruCache[arbutil.MessageIndex, arbostypes.BlockMetadata]
 }
 
-func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetcher, cacheSize int) *BulkBlockMetadataFetcher {
+func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetcher, cacheSize, blocksLimit int) *BulkBlockMetadataFetcher {
 	var cache *containers.LruCache[arbutil.MessageIndex, arbostypes.BlockMetadata]
 	var reorgDetector chan struct{}
 	if cacheSize != 0 {
@@ -43,6 +47,7 @@ func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetch
 		fetcher:       fetcher,
 		cache:         cache,
 		reorgDetector: reorgDetector,
+		blocksLimit:   blocksLimit,
 	}
 }
 
@@ -56,6 +61,12 @@ func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]
 	end, err := b.fetcher.BlockNumberToMessageIndex(uint64(toBlock))
 	if err != nil {
 		return nil, fmt.Errorf("error converting toBlock blocknumber to message index: %w", err)
+	}
+	if start > end {
+		return nil, fmt.Errorf("invalid inputs, fromBlock: %d is greater than toBlock: %d", fromBlock, toBlock)
+	}
+	if b.blocksLimit > 0 && end-start+1 > arbutil.MessageIndex(b.blocksLimit) {
+		return nil, fmt.Errorf("%w. Range requested- %d", ErrBlockMetadataApiBlocksLimitExceeded, end-start+1)
 	}
 	var result []NumberAndBlockMetadata
 	for i := start; i <= end; i++ {
