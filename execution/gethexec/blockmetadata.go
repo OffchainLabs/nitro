@@ -2,6 +2,7 @@ package gethexec
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
@@ -18,9 +19,10 @@ type BlockMetadataFetcher interface {
 }
 
 type BulkBlockMetadataFetcher struct {
-	bc      *core.BlockChain
-	fetcher BlockMetadataFetcher
-	cache   *containers.LruCache[arbutil.MessageIndex, arbostypes.BlockMetadata]
+	bc         *core.BlockChain
+	fetcher    BlockMetadataFetcher
+	cacheMutex sync.RWMutex
+	cache      *containers.LruCache[arbutil.MessageIndex, arbostypes.BlockMetadata]
 }
 
 func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetcher, cacheSize int) *BulkBlockMetadataFetcher {
@@ -51,7 +53,9 @@ func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]
 		var data arbostypes.BlockMetadata
 		var found bool
 		if b.cache != nil {
+			b.cacheMutex.RLock()
 			data, found = b.cache.Get(i)
+			b.cacheMutex.RUnlock()
 		}
 		if !found {
 			data, err = b.fetcher.BlockMetadataAtCount(i + 1)
@@ -59,7 +63,9 @@ func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]
 				return nil, err
 			}
 			if data != nil && b.cache != nil {
+				b.cacheMutex.Lock()
 				b.cache.Add(i, data)
+				b.cacheMutex.Unlock()
 			}
 		}
 		if data != nil {
