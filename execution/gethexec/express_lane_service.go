@@ -6,6 +6,8 @@ package gethexec
 import (
 	"context"
 	"fmt"
+	"math"
+	"math/big"
 	"sync"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
@@ -52,7 +55,7 @@ type expressLaneService struct {
 	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
 }
 
-type contractFiltererAdapter struct {
+type contractAdapter struct {
 	*filters.FilterAPI
 
 	// We should be able to leave this interface
@@ -61,7 +64,7 @@ type contractFiltererAdapter struct {
 	apiBackend *arbitrum.APIBackend
 }
 
-func (a *contractFiltererAdapter) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+func (a *contractAdapter) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
 	logPointers, err := a.GetLogs(ctx, filters.FilterCriteria(q))
 	if err != nil {
 		return nil, err
@@ -73,12 +76,48 @@ func (a *contractFiltererAdapter) FilterLogs(ctx context.Context, q ethereum.Fil
 	return logs, nil
 }
 
-func (a *contractFiltererAdapter) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
-	panic("contractFiltererAdapter doesn't implement SubscribeFilterLogs - shouldn't be needed")
+func (a *contractAdapter) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
+	panic("contractAdapter doesn't implement SubscribeFilterLogs - shouldn't be needed")
 }
 
-func (a *contractFiltererAdapter) CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error) {
-	panic("contractFiltererAdapter doesn't implement CodeAt - shouldn't be needed")
+func (a *contractAdapter) CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error) {
+	panic("contractAdapter doesn't implement CodeAt - shouldn't be needed")
+}
+
+func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
+	var num rpc.BlockNumber = rpc.LatestBlockNumber
+	if blockNumber != nil {
+		num = rpc.BlockNumber(blockNumber.Int64())
+	}
+
+	state, header, err := a.apiBackend.StateAndHeaderByNumber(ctx, num)
+	if err != nil {
+		return nil, err
+	}
+
+	msg := &core.Message{
+		From:              call.From,
+		To:                call.To,
+		Value:             big.NewInt(0),
+		GasLimit:          math.MaxUint64,
+		GasPrice:          big.NewInt(0),
+		GasFeeCap:         big.NewInt(0),
+		GasTipCap:         big.NewInt(0),
+		Data:              call.Data,
+		AccessList:        call.AccessList,
+		SkipAccountChecks: true,
+		TxRunMode:         core.MessageEthcallMode, // Indicate this is an eth_call
+		SkipL1Charging:    true,                    // Skip L1 data fees
+	}
+
+	evm := a.apiBackend.GetEVM(ctx, msg, state, header, &vm.Config{NoBaseFee: true}, nil)
+	gp := new(core.GasPool).AddGas(math.MaxUint64)
+	result, err := core.ApplyMessage(evm, msg, gp)
+	if err != nil {
+		return nil, err
+	}
+
+	return result.ReturnData, nil
 }
 
 func newExpressLaneService(
@@ -89,7 +128,7 @@ func newExpressLaneService(
 ) (*expressLaneService, error) {
 	chainConfig := bc.Config()
 
-	var contractBackend bind.ContractBackend = &contractFiltererAdapter{filters.NewFilterAPI(filterSystem, false), nil, nil}
+	var contractBackend bind.ContractBackend = &contractAdapter{filters.NewFilterAPI(filterSystem, false), nil, apiBackend}
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, contractBackend)
 	if err != nil {
@@ -111,18 +150,6 @@ pending:
 		}
 		return nil, err
 	}
-
-	/*
-		var roundTimingInfo struct {
-			OffsetTimestamp          uint64
-			RoundDurationSeconds     uint64
-			AuctionClosingSeconds    uint64
-			ReserveSubmissionSeconds uint64
-		}
-		// roundTimingInfo.OffsetTimestamp //<-- this is needed
-		roundTimingInfo.RoundDurationSeconds = 60
-		roundTimingInfo.AuctionClosingSeconds = 45
-	*/
 
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
