@@ -1241,13 +1241,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		return 0
 	})
 
-	if config.Timeboost.Enable {
-		s.StartExpressLane(
-			ctxIn,
-			common.HexToAddress(config.Timeboost.AuctionContractAddress),
-			common.HexToAddress(config.Timeboost.AuctioneerAddress))
-	}
-
 	return nil
 }
 
@@ -1260,6 +1253,7 @@ func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr co
 		log.Crit("Failed to connect to sequencer RPC client", "err", err)
 	}
 	seqClient := ethclient.NewClient(rpcClient)
+
 	els, err := newExpressLaneService(
 		auctionContractAddr,
 		seqClient,
@@ -1275,8 +1269,8 @@ func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr co
 
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
-	if s.config().Timeboost.Enable {
-		s.expressLaneService.StopWaiter.StopAndWait()
+	if s.config().Timeboost.Enable && s.expressLaneService != nil {
+		s.expressLaneService.StopAndWait()
 	}
 	if s.txRetryQueue.Len() == 0 && len(s.txQueue) == 0 && s.nonceFailures.Len() == 0 {
 		return

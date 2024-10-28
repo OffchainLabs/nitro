@@ -11,10 +11,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
+	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -29,6 +31,8 @@ type BidderClientConfig struct {
 	ArbitrumNodeEndpoint   string                   `koanf:"arbitrum-node-endpoint"`
 	BidValidatorEndpoint   string                   `koanf:"bid-validator-endpoint"`
 	AuctionContractAddress string                   `koanf:"auction-contract-address"`
+	DepositGwei            int                      `koanf:"deposit-gwei"`
+	BidGwei                int                      `koanf:"bid-gwei"`
 }
 
 var DefaultBidderClientConfig = BidderClientConfig{
@@ -41,21 +45,25 @@ var TestBidderClientConfig = BidderClientConfig{
 	BidValidatorEndpoint: "http://localhost:9372",
 }
 
-func BidderClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet for auctioneer server")
-	f.String(prefix+".arbitrum-node-endpoint", DefaultBidderClientConfig.ArbitrumNodeEndpoint, "arbitrum node RPC http endpoint")
-	f.String(prefix+".bid-validator-endpoint", DefaultBidderClientConfig.BidValidatorEndpoint, "bid validator http endpoint")
-	f.String(prefix+".auction-contract-address", DefaultBidderClientConfig.AuctionContractAddress, "express lane auction contract address")
+func BidderClientConfigAddOptions(f *pflag.FlagSet) {
+	genericconf.WalletConfigAddOptions("wallet", f, "wallet for bidder")
+	f.String("arbitrum-node-endpoint", DefaultBidderClientConfig.ArbitrumNodeEndpoint, "arbitrum node RPC http endpoint")
+	f.String("bid-validator-endpoint", DefaultBidderClientConfig.BidValidatorEndpoint, "bid validator http endpoint")
+	f.String("auction-contract-address", DefaultBidderClientConfig.AuctionContractAddress, "express lane auction contract address")
+	f.Int("deposit-gwei", DefaultBidderClientConfig.DepositGwei, "deposit amount in gwei to take from bidder's account and send to auction contract")
+	f.Int("bid-gwei", DefaultBidderClientConfig.BidGwei, "bid amount in gwei, bidder must have already deposited enough into the auction contract")
 }
 
 type BidderClient struct {
 	stopwaiter.StopWaiter
 	chainId                *big.Int
 	auctionContractAddress common.Address
+	biddingTokenAddress    common.Address
 	txOpts                 *bind.TransactOpts
 	client                 *ethclient.Client
 	signer                 signature.DataSignerFunc
 	auctionContract        *express_lane_auctiongen.ExpressLaneAuction
+	biddingTokenContract   *bindings.MockERC20
 	auctioneerClient       *rpc.Client
 	initialRoundTimestamp  time.Time
 	roundDuration          time.Duration
@@ -97,6 +105,17 @@ func NewBidderClient(
 		return nil, errors.Wrap(err, "opening wallet")
 	}
 
+	biddingTokenAddr, err := auctionContract.BiddingToken(&bind.CallOpts{
+		Context: ctx,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching bidding token")
+	}
+	biddingTokenContract, err := bindings.NewMockERC20(biddingTokenAddr, arbClient)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating bindings to bidding token contract")
+	}
+
 	bidValidatorClient, err := rpc.DialContext(ctx, cfg.BidValidatorEndpoint)
 	if err != nil {
 		return nil, err
@@ -104,10 +123,12 @@ func NewBidderClient(
 	return &BidderClient{
 		chainId:                chainId,
 		auctionContractAddress: auctionContractAddr,
+		biddingTokenAddress:    biddingTokenAddr,
 		client:                 arbClient,
 		txOpts:                 txOpts,
 		signer:                 signer,
 		auctionContract:        auctionContract,
+		biddingTokenContract:   biddingTokenContract,
 		auctioneerClient:       bidValidatorClient,
 		initialRoundTimestamp:  initialTimestamp,
 		roundDuration:          roundDuration,
@@ -119,7 +140,32 @@ func (bd *BidderClient) Start(ctx_in context.Context) {
 	bd.StopWaiter.Start(ctx_in, bd)
 }
 
+// Deposit into the auction contract for the account configured by the BidderClient wallet.
+// Handles approving the auction contract to spend the erc20 on behalf of the account.
 func (bd *BidderClient) Deposit(ctx context.Context, amount *big.Int) error {
+	allowance, err := bd.biddingTokenContract.Allowance(&bind.CallOpts{
+		Context: ctx,
+	}, bd.txOpts.From, bd.auctionContractAddress)
+	if err != nil {
+		return err
+	}
+
+	if amount.Cmp(allowance) > 0 {
+		log.Info("Spend allowance of bidding token from auction contract is insufficient, increasing allowance", "from", bd.txOpts.From, "auctionContract", bd.auctionContractAddress, "biddingToken", bd.biddingTokenAddress, "amount", amount.Int64())
+		//		defecit := arbmath.BigSub(allowance, amount)
+		tx, err := bd.biddingTokenContract.Approve(bd.txOpts, bd.auctionContractAddress, amount)
+		if err != nil {
+			return err
+		}
+		receipt, err := bind.WaitMined(ctx, bd.client, tx)
+		if err != nil {
+			return err
+		}
+		if receipt.Status != types.ReceiptStatusSuccessful {
+			return errors.New("approval failed")
+		}
+	}
+
 	tx, err := bd.auctionContract.Deposit(bd.txOpts, amount)
 	if err != nil {
 		return err
@@ -137,6 +183,9 @@ func (bd *BidderClient) Deposit(ctx context.Context, amount *big.Int) error {
 func (bd *BidderClient) Bid(
 	ctx context.Context, amount *big.Int, expressLaneController common.Address,
 ) (*Bid, error) {
+	if (expressLaneController == common.Address{}) {
+		expressLaneController = bd.txOpts.From
+	}
 	newBid := &Bid{
 		ChainId:                bd.chainId,
 		ExpressLaneController:  expressLaneController,

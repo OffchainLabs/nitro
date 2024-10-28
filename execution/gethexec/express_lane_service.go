@@ -55,8 +55,19 @@ func newExpressLaneService(
 	if err != nil {
 		return nil, err
 	}
+
+	retries := 0
+pending:
 	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
+		const maxRetries = 5
+		if errors.Is(err, bind.ErrNoCode) && retries < maxRetries {
+			wait := time.Millisecond * 250 * (1 << retries)
+			log.Info("ExpressLaneAuction contract not ready, will retry afer wait", "err", err, "auctionContractAddr", auctionContractAddr, "wait", wait, "maxRetries", maxRetries)
+			retries++
+			time.Sleep(wait)
+			goto pending
+		}
 		return nil, err
 	}
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
@@ -185,10 +196,6 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 			}
 		}
 	})
-}
-
-func (es *expressLaneService) StopAndWait() {
-	es.StopWaiter.StopAndWait()
 }
 
 func (es *expressLaneService) currentRoundHasController() bool {

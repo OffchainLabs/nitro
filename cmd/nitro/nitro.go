@@ -688,6 +688,14 @@ func mainImpl() int {
 		}
 	}
 
+	execNodeConfig := execNode.ConfigFetcher()
+	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Timeboost.Enable {
+		execNode.Sequencer.StartExpressLane(
+			ctx,
+			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress),
+			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress))
+	}
+
 	err = nil
 	select {
 	case err = <-fatalErrChan:
