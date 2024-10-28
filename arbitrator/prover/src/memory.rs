@@ -67,7 +67,7 @@ impl TryFrom<&wasmparser::MemoryType> for MemoryType {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Memory {
     buffer: Vec<u8>,
     #[serde(skip)]
@@ -75,6 +75,18 @@ pub struct Memory {
     pub max_size: u64,
     #[serde(skip)]
     dirty_leaves: Mutex<BitVec>,
+}
+
+
+impl Default for Memory {
+    fn default() -> Memory {
+        Memory {
+            buffer: Vec::default(),
+            merkle: Option::default(),
+            max_size: u64::default(),
+            dirty_leaves: Mutex::new(bitvec![0; 4 * 1024 / Self::LEAF_SIZE  * 1024 * 1024 + 1]),
+        }
+    }
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
@@ -105,14 +117,12 @@ fn div_round_up(num: usize, denom: usize) -> usize {
 
 impl Clone for Memory {
     fn clone(&self) -> Self {
-        let mem = Memory {
+        Memory {
             buffer: self.buffer.clone(),
             merkle: self.merkle.clone(),
             max_size: self.max_size,
             dirty_leaves: Mutex::new(self.dirty_leaves.lock().clone()),
-        };
-        // println!("Memory.clone(), len: {}", mem.dirty_leaves.lock().len());
-        mem
+        }
     }
 }
 
@@ -125,18 +135,12 @@ impl Memory {
     const MEMORY_LAYERS: usize = 1 + 32 - 5;
 
     pub fn new(size: usize, max_size: u64) -> Memory {
-        let mem = Memory {
+        Memory {
             buffer: vec![0u8; size],
             merkle: None,
             max_size,
             dirty_leaves: Mutex::new(bitvec![0; 4 * 1024 / Self::LEAF_SIZE  * 1024 * 1024 + 1]),
-        };
-        // println!(
-        //     "Memory.new({}), len: {}",
-        //     size,
-        //     mem.dirty_leaves.lock().len()
-        // );
-        mem
+        }
     }
 
     pub fn size(&self) -> u64 {
@@ -147,30 +151,19 @@ impl Memory {
         if let Some(m) = &self.merkle {
             let mut dirt = self.dirty_leaves.lock();
             for leaf_idx in dirt.iter_ones() {
-                // println!("Memory.merkelize(), leaf_idx: {}", leaf_idx);
                 m.set(leaf_idx, hash_leaf(self.get_leaf_data(leaf_idx)));
             }
-            // dirt.clear();
             dirt.fill(false);
-            // println!(
-            //     "Memory.merkelize()1, len: {}, buffer_len: {}",
-            //     dirt.len(),
-            //     self.buffer.len()
-            // );
             return Cow::Borrowed(m);
         }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
         let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
-
-        // println!("Memory.merkelize()1.1, buffer_len: {}", self.buffer.len());
 
         #[cfg(feature = "rayon")]
         let leaf_hashes = self.buffer.par_chunks(Self::LEAF_SIZE);
 
         #[cfg(not(feature = "rayon"))]
         let leaf_hashes = self.buffer.chunks(Self::LEAF_SIZE);
-
-        // println!("Memory.merkelize()1.2, buffer_len: {}", self.buffer.len());
 
         let leaf_hashes: Vec<Bytes32> = leaf_hashes
             .map(|leaf| {
@@ -185,20 +178,10 @@ impl Memory {
             m.resize(leaves).unwrap_or_else(|_| {
                 panic!("Couldn't resize merkle tree from {} to {}", size, leaves)
             });
-            // println!("Memory.merkelize()2, leaves: {}, len: {}, buffer_len: {}", leaves, self.dirty_leaves.lock().len(), self.buffer.len());
         }
 
-        let mut dirt = self.dirty_leaves.lock();
-        dirt.fill(false);
-        if leaves > dirt.len() {
-            dirt.resize(leaves, false);
-        }
+        self.dirty_leaves.lock().fill(false);
 
-        // println!(
-        //     "Memory.merkelize()3, len: {}, buffer_len: {}",
-        //     self.dirty_leaves.lock().len(),
-        //     self.buffer.len()
-        // );
         Cow::Owned(m)
     }
 
@@ -209,15 +192,7 @@ impl Memory {
             _ => return buf,
         };
         let size = std::cmp::min(Self::LEAF_SIZE, self.buffer.len() - idx);
-        // println!(
-        //     "get_leaf_data.before self.buffer.len(): {}",
-        //     self.buffer.len()
-        // );
         buf[..size].copy_from_slice(&self.buffer[idx..(idx + size)]);
-        // println!(
-        //     "get_leaf_data.after self.buffer.len(): {}",
-        //     self.buffer.len()
-        // );
         buf
     }
 
@@ -247,9 +222,7 @@ impl Memory {
             None
         } else {
             let mut buf = [0u8; 2];
-            // println!("get_u16.before self.buffer.len(): {}", self.buffer.len());
             buf.copy_from_slice(&self.buffer[(idx as usize)..(end_idx as usize)]);
-            // println!("get_u16.after self.buffer.len(): {}", self.buffer.len());
             Some(u16::from_le_bytes(buf))
         }
     }
@@ -260,9 +233,7 @@ impl Memory {
             None
         } else {
             let mut buf = [0u8; 4];
-            // println!("get_u32.before self.buffer.len(): {}", self.buffer.len());
             buf.copy_from_slice(&self.buffer[(idx as usize)..(end_idx as usize)]);
-            // println!("get_u32.after self.buffer.len(): {}", self.buffer.len());
             Some(u32::from_le_bytes(buf))
         }
     }
@@ -273,9 +244,7 @@ impl Memory {
             None
         } else {
             let mut buf = [0u8; 8];
-            // println!("get_u64.before self.buffer.len(): {}", self.buffer.len());
             buf.copy_from_slice(&self.buffer[(idx as usize)..(end_idx as usize)]);
-            // println!("get_u64.after self.buffer.len(): {}", self.buffer.len());
             Some(u64::from_le_bytes(buf))
         }
     }
@@ -324,32 +293,8 @@ impl Memory {
         let idx = idx as usize;
         let end_idx = end_idx as usize;
         let buf = value.to_le_bytes();
-        // println!(
-        //     "store_value.before self.buffer.len(): {}",
-        //     self.buffer.len()
-        // );
         self.buffer[idx..end_idx].copy_from_slice(&buf[..bytes.into()]);
-        // println!("after.before self.buffer.len(): {}", self.buffer.len());
         let mut dirty_leaves = self.dirty_leaves.lock();
-        // if (idx / Self::LEAF_SIZE == 2088) || ((end_idx - 1) / Self::LEAF_SIZE == 2088) {
-        // if (idx / Self::LEAF_SIZE == 256) || ((end_idx - 1) / Self::LEAF_SIZE == 256) {
-        //     println!(
-        //         "Memory.store_value(), idx: {}, end_idx: {}, len: {}, buffer_len: {}",
-        //         idx / Self::LEAF_SIZE,
-        //         (end_idx - 1) / Self::LEAF_SIZE,
-        //         dirty_leaves.len(),
-        //         self.buffer.len()
-        //     );
-        // }
-
-        // let dirty_leaves_new_size = cmp::max(
-        //     dirty_leaves.len(),
-        //     cmp::max(idx / Self::LEAF_SIZE + 1, (end_idx - 1) / Self::LEAF_SIZE + 1),
-        // );
-        // if dirty_leaves_new_size > dirty_leaves.len() {
-        //     dirty_leaves.resize(dirty_leaves_new_size, false);
-        // }
-
         dirty_leaves.set(idx / Self::LEAF_SIZE, true);
         dirty_leaves.set((end_idx - 1) / Self::LEAF_SIZE, true);
 
@@ -373,19 +318,7 @@ impl Memory {
         }
         let idx = idx as usize;
         let end_idx = end_idx as usize;
-        // println!(
-        //     "store_slice_aligned.before self.buffer.len(): {}",
-        //     self.buffer.len()
-        // );
         self.buffer[idx..end_idx].copy_from_slice(value);
-        // println!(
-        //     "store_slice_aligned.after self.buffer.len(): {}",
-        //     self.buffer.len()
-        // );
-        // println!("Memory.store_slice_aligned(), idx: {}", idx / Self::LEAF_SIZE);
-        // if idx / Self::LEAF_SIZE + 1> self.dirty_leaves.lock().len() {
-        //     self.dirty_leaves.lock().resize(idx / Self::LEAF_SIZE + 1, false);
-        // }
         self.dirty_leaves.lock().set(idx / Self::LEAF_SIZE, true);
 
         true
@@ -411,7 +344,6 @@ impl Memory {
         if end > self.buffer.len() {
             return None;
         }
-        // println!("get_range.before self.buffer.len(): {}", self.buffer.len());
         Some(&self.buffer[offset..end])
     }
 
@@ -420,9 +352,7 @@ impl Memory {
         let Some(end) = offset.checked_add(data.len()) else {
             bail!("Overflow in offset+data.len() in Memory::set_range")
         };
-        // println!("set_range.before self.buffer.len(): {}", self.buffer.len());
         self.buffer[offset..end].copy_from_slice(data);
-        // println!("set_range.after self.buffer.len(): {}", self.buffer.len());
         Ok(())
     }
 
@@ -430,15 +360,12 @@ impl Memory {
         self.merkle = Some(self.merkelize().into_owned());
     }
 
+    pub fn resize_dirty_leaves(&mut self) {
+        self.dirty_leaves.lock().resize(4 * 1024 / Self::LEAF_SIZE  * 1024 * 1024 + 1, false);
+    }
+
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
-        // self.dirty_leaves.lock().resize(new_size / Self::LEAF_SIZE + 1, false);
-        // println!(
-        //     "Memory.resize(), new_size: {}, len: {}, buffer_len: {}",
-        //     new_size,
-        //     self.dirty_leaves.lock().len(),
-        //     self.buffer.len()
-        // );
         if let Some(merkle) = &mut self.merkle {
             merkle
                 .resize(new_size / Self::LEAF_SIZE)

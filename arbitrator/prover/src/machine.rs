@@ -721,8 +721,9 @@ pub struct ModuleSerdeAll {
 }
 
 impl From<ModuleSerdeAll> for Module {
-    fn from(module: ModuleSerdeAll) -> Self {
+    fn from(mut module: ModuleSerdeAll) -> Self {
         let funcs = module.funcs.into_iter().map(Function::from).collect();
+        module.memory.resize_dirty_leaves();
         Self {
             globals: module.globals,
             memory: module.memory,
@@ -1591,6 +1592,7 @@ impl Machine {
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
             ));
+            module.memory.resize_dirty_leaves();
             module.memory.cache_merkle_tree();
         }
         let modules_merkle = Some(Merkle::new(
@@ -1685,6 +1687,7 @@ impl Machine {
         {
             module.globals = new_module_state.globals.into_owned();
             module.memory = new_module_state.memory.into_owned();
+            module.memory.resize_dirty_leaves();
         }
         self.steps = new_state.steps;
         self.status = new_state.status;
