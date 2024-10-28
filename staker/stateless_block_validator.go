@@ -286,6 +286,22 @@ func (v *StatelessBlockValidator) readPostedBatch(ctx context.Context, batchNum 
 	return postedData, err
 }
 
+func (v *StatelessBlockValidator) InboxTracker() InboxTrackerInterface {
+	return v.inboxTracker
+}
+
+func (v *StatelessBlockValidator) InboxReader() InboxReaderInterface {
+	return v.inboxReader
+}
+
+func (v *StatelessBlockValidator) InboxStreamer() TransactionStreamerInterface {
+	return v.streamer
+}
+
+func (v *StatelessBlockValidator) ExecutionSpawners() []validator.ExecutionSpawner {
+	return v.execSpawners
+}
+
 func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum uint64) (bool, *FullBatchInfo, error) {
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
@@ -384,7 +400,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	return nil
 }
 
-func buildGlobalState(res execution.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
+func BuildGlobalState(res execution.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
 		SendRoot:   res.SendRoot,
@@ -436,8 +452,8 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, fmt.Errorf("failed calculating position for validation: %w", err)
 	}
-	start := buildGlobalState(*prevResult, startPos)
-	end := buildGlobalState(*result, endPos)
+	start := BuildGlobalState(*prevResult, startPos)
+	end := BuildGlobalState(*result, endPos)
 	found, fullBatchInfo, err := v.readFullBatch(ctx, start.Batch)
 	if err != nil {
 		return nil, err
@@ -515,12 +531,12 @@ func (v *StatelessBlockValidator) ValidateResult(
 	return true, &entry.End, nil
 }
 
-func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, target ethdb.WasmTarget) (server_api.InputJSON, error) {
+func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, targets ...ethdb.WasmTarget) (server_api.InputJSON, error) {
 	entry, err := v.CreateReadyValidationEntry(ctx, pos)
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}
-	input, err := entry.ToInput([]ethdb.WasmTarget{target})
+	input, err := entry.ToInput(targets)
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}
