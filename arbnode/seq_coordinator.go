@@ -580,13 +580,15 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	return nil
 }
 
-func (c *SeqCoordinator) blockMetadataAt(ctx context.Context, pos arbutil.MessageIndex) arbostypes.BlockMetadata {
+func (c *SeqCoordinator) blockMetadataAt(ctx context.Context, pos arbutil.MessageIndex) (arbostypes.BlockMetadata, error) {
 	blockMetadataStr, err := c.Client.Get(ctx, redisutil.BlockMetadataKeyFor(pos)).Result()
 	if err != nil {
-		log.Debug("SeqCoordinator couldn't read blockMetadata from redis", "err", err, "pos", pos)
-		return nil
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		return nil, err
 	}
-	return arbostypes.BlockMetadata(blockMetadataStr)
+	return arbostypes.BlockMetadata(blockMetadataStr), nil
 }
 
 func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
@@ -694,7 +696,13 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			}
 		}
 		messages = append(messages, message)
-		blockMetadataArr = append(blockMetadataArr, c.blockMetadataAt(ctx, msgToRead))
+		blockMetadata, err := c.blockMetadataAt(ctx, msgToRead)
+		if err != nil {
+			log.Warn("SeqCoordinator failed reading blockMetadata from redis", "pos", msgToRead, "err", err)
+			msgReadErr = err
+			break
+		}
+		blockMetadataArr = append(blockMetadataArr, blockMetadata)
 		msgToRead++
 	}
 	if len(messages) > 0 {

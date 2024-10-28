@@ -281,7 +281,8 @@ func TestSeqCoordinatorAddsBlockMetadata(t *testing.T) {
 	pos := arbutil.MessageIndex(1)
 	blockMetadataWant := arbostypes.BlockMetadata{0, 4}
 	Require(t, coordinator.acquireLockoutAndWriteMessage(ctx, pos, pos+1, &arbostypes.EmptyTestMessageWithMetadata, blockMetadataWant))
-	blockMetadataGot := coordinator.blockMetadataAt(ctx, pos)
+	blockMetadataGot, err := coordinator.blockMetadataAt(ctx, pos)
+	Require(t, err)
 	if !bytes.Equal(blockMetadataWant, blockMetadataGot) {
 		t.Fatal("got incorrect blockMetadata")
 	}

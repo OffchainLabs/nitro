@@ -688,7 +688,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, m
 			messagesWithBlockInfo[i].BlockMetadata = blockMetadata
 		}
 	} else if len(blockMetadataArr) > 0 {
-		log.Warn("Size of blockMetadata array doesn't match the size of messages array", "lockMetadataArrSize", len(blockMetadataArr), "messagesSize", len(messages))
+		return fmt.Errorf("size of blockMetadata array doesn't match the size of messages array. lockMetadataArrSize: %d, messagesSize: %d", len(blockMetadataArr), len(messages))
 	}
 
 	if messagesAreConfirmed {
