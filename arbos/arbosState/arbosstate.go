@@ -15,6 +15,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/triedb"
+	"github.com/ethereum/go-ethereum/triedb/hashdb"
+	"github.com/ethereum/go-ethereum/triedb/pathdb"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
@@ -29,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 // ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
@@ -37,28 +41,29 @@ import (
 // persisted beyond the end of the test.)
 
 type ArbosState struct {
-	arbosVersion                  uint64                      // version of the ArbOS storage format and semantics
-	maxArbosVersionSupported      uint64                      // maximum ArbOS version supported by this code
-	maxDebugArbosVersionSupported uint64                      // maximum ArbOS version supported by this code in debug mode
-	upgradeVersion                storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
-	upgradeTimestamp              storage.StorageBackedUint64 // when to do the planned upgrade
-	networkFeeAccount             storage.StorageBackedAddress
-	l1PricingState                *l1pricing.L1PricingState
-	l2PricingState                *l2pricing.L2PricingState
-	retryableState                *retryables.RetryableState
-	addressTable                  *addressTable.AddressTable
-	chainOwners                   *addressSet.AddressSet
-	sendMerkle                    *merkleAccumulator.MerkleAccumulator
-	programs                      *programs.Programs
-	blockhashes                   *blockhash.Blockhashes
-	chainId                       storage.StorageBackedBigInt
-	chainConfig                   storage.StorageBackedBytes
-	genesisBlockNum               storage.StorageBackedUint64
-	infraFeeAccount               storage.StorageBackedAddress
-	brotliCompressionLevel        storage.StorageBackedUint64 // brotli compression level used for pricing
-	backingStorage                *storage.Storage
-	Burner                        burn.Burner
+	arbosVersion           uint64                      // version of the ArbOS storage format and semantics
+	upgradeVersion         storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
+	upgradeTimestamp       storage.StorageBackedUint64 // when to do the planned upgrade
+	networkFeeAccount      storage.StorageBackedAddress
+	l1PricingState         *l1pricing.L1PricingState
+	l2PricingState         *l2pricing.L2PricingState
+	retryableState         *retryables.RetryableState
+	addressTable           *addressTable.AddressTable
+	chainOwners            *addressSet.AddressSet
+	sendMerkle             *merkleAccumulator.MerkleAccumulator
+	programs               *programs.Programs
+	blockhashes            *blockhash.Blockhashes
+	chainId                storage.StorageBackedBigInt
+	chainConfig            storage.StorageBackedBytes
+	genesisBlockNum        storage.StorageBackedUint64
+	infraFeeAccount        storage.StorageBackedAddress
+	brotliCompressionLevel storage.StorageBackedUint64 // brotli compression level used for pricing
+	backingStorage         *storage.Storage
+	Burner                 burn.Burner
 }
+
+const MaxArbosVersionSupported uint64 = params.ArbosVersion_StylusChargingFixes
+const MaxDebugArbosVersionSupported uint64 = params.ArbosVersion_StylusChargingFixes
 
 var ErrUninitializedArbOS = errors.New("ArbOS uninitialized")
 var ErrAlreadyInitialized = errors.New("ArbOS is already initialized")
@@ -74,8 +79,6 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	}
 	return &ArbosState{
 		arbosVersion,
-		35,
-		35,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
@@ -115,7 +118,11 @@ func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingIn
 // NewArbosMemoryBackedArbOSState creates and initializes a memory-backed ArbOS state (for testing only)
 func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	raw := rawdb.NewMemoryDatabase()
-	db := state.NewDatabase(raw)
+	trieConfig := &triedb.Config{Preimages: false, PathDB: pathdb.Defaults}
+	if env.GetTestStateScheme() == rawdb.HashScheme {
+		trieConfig = &triedb.Config{Preimages: false, HashDB: hashdb.Defaults}
+	}
+	db := state.NewDatabaseWithConfig(raw, trieConfig)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
 		log.Crit("failed to init empty statedb", "error", err)
@@ -324,7 +331,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(params.UpgradeToVersion(2))
 			ensure(params.Save())
 
-		case 32, 33, 34:
+		case 32:
+			// no change state needed
+
+		case 33, 34:
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case 35:
@@ -414,14 +424,6 @@ func (state *ArbosState) SetBrotliCompressionLevel(val uint64) error {
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {
 	return state.retryableState
-}
-
-func (state *ArbosState) MaxArbosVersionSupported() uint64 {
-	return state.maxArbosVersionSupported
-}
-
-func (state *ArbosState) MaxDebugArbosVersionSupported() uint64 {
-	return state.maxDebugArbosVersionSupported
 }
 
 func (state *ArbosState) L1PricingState() *l1pricing.L1PricingState {

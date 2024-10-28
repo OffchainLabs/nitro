@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/cavaliergopher/grab/v3"
-	extract "github.com/codeclysm/extract/v3"
+	"github.com/codeclysm/extract/v3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -46,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/dbutil"
 )
 
 var notFoundError = errors.New("file not found")
@@ -300,6 +301,7 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestBase, err)
 	}
 	latestFileUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
+	latestFileUrl = strings.ToLower(latestFileUrl)
 	latestFileBytes, err := httpGet(ctx, latestFileUrl)
 	if err != nil {
 		return fmt.Errorf("failed to get latest file at \"%s\": %w", latestFileUrl, err)
@@ -311,6 +313,7 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	} else {
 		initConfig.Url = baseUrl.JoinPath(latestFile).String()
 	}
+	initConfig.Url = strings.ToLower(initConfig.Url)
 	log.Info("Set latest snapshot url", "url", initConfig.Url)
 	return nil
 }
@@ -351,12 +354,12 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 	}
 	// Make sure we don't allow accidentally downgrading ArbOS
 	if chainConfig.DebugMode() {
-		if currentArbosState.ArbOSVersion() > currentArbosState.MaxDebugArbosVersionSupported() {
-			return fmt.Errorf("attempted to launch node in debug mode with ArbOS version %v on ArbOS state with version %v", currentArbosState.MaxDebugArbosVersionSupported(), currentArbosState.ArbOSVersion())
+		if currentArbosState.ArbOSVersion() > arbosState.MaxDebugArbosVersionSupported {
+			return fmt.Errorf("attempted to launch node in debug mode with ArbOS version %v on ArbOS state with version %v", arbosState.MaxDebugArbosVersionSupported, currentArbosState.ArbOSVersion())
 		}
 	} else {
-		if currentArbosState.ArbOSVersion() > currentArbosState.MaxArbosVersionSupported() {
-			return fmt.Errorf("attempted to launch node with ArbOS version %v on ArbOS state with version %v", currentArbosState.MaxArbosVersionSupported(), currentArbosState.ArbOSVersion())
+		if currentArbosState.ArbOSVersion() > arbosState.MaxArbosVersionSupported {
+			return fmt.Errorf("attempted to launch node with ArbOS version %v on ArbOS state with version %v", arbosState.MaxArbosVersionSupported, currentArbosState.ArbOSVersion())
 		}
 
 	}
@@ -396,17 +399,168 @@ func checkEmptyDatabaseDir(dir string, force bool) error {
 	return nil
 }
 
-var pebbleNotExistErrorRegex = regexp.MustCompile("pebble: database .* does not exist")
-
-func isPebbleNotExistError(err error) bool {
-	return pebbleNotExistErrorRegex.MatchString(err.Error())
+func databaseIsEmpty(db ethdb.Database) bool {
+	it := db.NewIterator(nil, nil)
+	defer it.Release()
+	return !it.Next()
 }
 
-func isLeveldbNotExistError(err error) bool {
-	return os.IsNotExist(err)
+func isWasmDb(path string) bool {
+	path = strings.ToLower(path) // lowers the path to handle case-insensitive file systems
+	path = filepath.Clean(path)
+	parts := strings.Split(path, string(filepath.Separator))
+	if len(parts) >= 1 && parts[0] == "wasm" {
+		return true
+	}
+	if len(parts) >= 2 && parts[0] == "" && parts[1] == "wasm" { // Cover "/wasm" case
+		return true
+	}
+	return false
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func extractSnapshot(archive string, location string, importWasm bool) error {
+	reader, err := os.Open(archive)
+	if err != nil {
+		return fmt.Errorf("couln't open init '%v' archive: %w", archive, err)
+	}
+	defer reader.Close()
+	stat, err := reader.Stat()
+	if err != nil {
+		return err
+	}
+	log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
+	var rename extract.Renamer
+	if !importWasm {
+		rename = func(path string) string {
+			if isWasmDb(path) {
+				return "" // do not extract wasm files
+			}
+			return path
+		}
+	}
+	err = extract.Archive(context.Background(), reader, location, rename)
+	if err != nil {
+		return fmt.Errorf("couln't extract init archive '%v' err: %w", archive, err)
+	}
+	return nil
+}
+
+// removes all entries with keys prefixed with prefixes and of length used in initial version of wasm store schema
+func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
+	prefixes, keyLength := rawdb.DeprecatedPrefixesV0()
+	batch := db.NewBatch()
+	notMatchingLengthKeyLogged := false
+	for _, prefix := range prefixes {
+		it := db.NewIterator(prefix, nil)
+		defer it.Release()
+		for it.Next() {
+			key := it.Key()
+			if len(key) != keyLength {
+				if !notMatchingLengthKeyLogged {
+					log.Warn("Found key with deprecated prefix but not matching length, skipping removal. (this warning is logged only once)", "key", key)
+					notMatchingLengthKeyLogged = true
+				}
+				continue
+			}
+			if err := batch.Delete(key); err != nil {
+				return fmt.Errorf("Failed to remove key %v : %w", key, err)
+			}
+
+			// Recreate the iterator after every batch commit in order
+			// to allow the underlying compactor to delete the entries.
+			if batch.ValueSize() >= ethdb.IdealBatchSize {
+				if err := batch.Write(); err != nil {
+					return fmt.Errorf("Failed to write batch: %w", err)
+				}
+				batch.Reset()
+				it.Release()
+				it = db.NewIterator(prefix, key)
+			}
+		}
+	}
+	if batch.ValueSize() > 0 {
+		if err := batch.Write(); err != nil {
+			return fmt.Errorf("Failed to write batch: %w", err)
+		}
+		batch.Reset()
+	}
+	return nil
+}
+
+// if db is not empty, validates if wasm database schema version matches current version
+// otherwise persists current version
+func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
+	if !databaseIsEmpty(db) {
+		version, err := rawdb.ReadWasmSchemaVersion(db)
+		if err != nil {
+			if dbutil.IsErrNotFound(err) {
+				version = []byte{0}
+			} else {
+				return fmt.Errorf("Failed to retrieve wasm schema version: %w", err)
+			}
+		}
+		if len(version) != 1 || version[0] > rawdb.WasmSchemaVersion {
+			return fmt.Errorf("Unsupported wasm database schema version, current version: %v, read from wasm database: %v", rawdb.WasmSchemaVersion, version)
+		}
+		// special step for upgrading from version 0 - remove all entries added in version 0
+		if version[0] == 0 {
+			log.Warn("Detected wasm store schema version 0 - removing all old wasm store entries")
+			if err := purgeVersion0WasmStoreEntries(db); err != nil {
+				return fmt.Errorf("Failed to purge wasm store version 0 entries: %w", err)
+			}
+			log.Info("Wasm store schama version 0 entries successfully removed.")
+		}
+	}
+	rawdb.WriteWasmSchemaVersion(db)
+	return nil
+}
+
+func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain *core.BlockChain, chainDb, wasmDb ethdb.Database, rebuildMode string) (ethdb.Database, *core.BlockChain, error) {
+	var err error
+	latestBlock := l2BlockChain.CurrentBlock()
+	if latestBlock == nil || latestBlock.Number.Uint64() <= l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum ||
+		types.DeserializeHeaderExtraInformation(latestBlock).ArbOSFormatVersion < params.ArbosVersion_Stylus {
+		// If there is only genesis block or no blocks in the blockchain, set Rebuilding of wasm store to Done
+		// If Stylus upgrade hasn't yet happened, skipping rebuilding of wasm store
+		log.Info("Setting rebuilding of wasm store to done")
+		if err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone); err != nil {
+			return nil, nil, fmt.Errorf("unable to set rebuilding status of wasm store to done: %w", err)
+		}
+	} else if rebuildMode != "false" {
+		var position common.Hash
+		if rebuildMode == "force" {
+			log.Info("Commencing force rebuilding of wasm store by setting codehash position in rebuilding to beginning")
+			if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
+				return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
+			}
+		} else {
+			position, err = gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
+			if err != nil {
+				log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
+				if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
+					return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
+				}
+			}
+		}
+		if position != gethexec.RebuildingDone {
+			startBlockHash, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingStartBlockHashKey)
+			if err != nil {
+				log.Info("Unable to get start block hash in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it to latest block hash", "err", err)
+				if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingStartBlockHashKey, latestBlock.Hash()); err != nil {
+					return nil, nil, fmt.Errorf("unable to initialize start block hash in rebuilding of wasm store to latest block hash: %w", err)
+				}
+				startBlockHash = latestBlock.Hash()
+			}
+			log.Info("Starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
+			if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.RPC.MaxRecreateStateDepth, &config.StylusTarget, l2BlockChain, position, startBlockHash); err != nil {
+				return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
+			}
+		}
+	}
+	return chainDb, l2BlockChain, nil
+}
+
+func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, targetConfig *gethexec.StylusTargetConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, config.Persistent.Ancient, "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
@@ -418,11 +572,24 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return nil, nil, err
 				}
+				if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
+					return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
+				}
 				wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
 				if err != nil {
 					return nil, nil, err
 				}
-				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
+				if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
+					return nil, nil, err
+				}
+				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
+					return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
+				}
+				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1, targetConfig.WasmTargets())
+				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
+				if err != nil {
+					return nil, nil, err
+				}
 				err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
@@ -441,43 +608,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
 					}
 				}
-				latestBlock := l2BlockChain.CurrentBlock()
-				if latestBlock == nil || latestBlock.Number.Uint64() <= chainConfig.ArbitrumChainParams.GenesisBlockNum ||
-					types.DeserializeHeaderExtraInformation(latestBlock).ArbOSFormatVersion < params.ArbosVersion_Stylus {
-					// If there is only genesis block or no blocks in the blockchain, set Rebuilding of wasm store to Done
-					// If Stylus upgrade hasn't yet happened, skipping rebuilding of wasm store
-					log.Info("Setting rebuilding of wasm store to done")
-					if err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone); err != nil {
-						return nil, nil, fmt.Errorf("unable to set rebuilding status of wasm store to done: %w", err)
-					}
-				} else if config.Init.RebuildLocalWasm {
-					position, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
-					if err != nil {
-						log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
-						if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
-							return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
-						}
-					}
-					if position != gethexec.RebuildingDone {
-						startBlockHash, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingStartBlockHashKey)
-						if err != nil {
-							log.Info("Unable to get start block hash in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it to latest block hash", "err", err)
-							if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingStartBlockHashKey, latestBlock.Hash()); err != nil {
-								return nil, nil, fmt.Errorf("unable to initialize start block hash in rebuilding of wasm store to latest block hash: %w", err)
-							}
-							startBlockHash = latestBlock.Hash()
-						}
-						log.Info("Starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
-						if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.Execution.RPC.MaxRecreateStateDepth, l2BlockChain, position, startBlockHash); err != nil {
-							return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
-						}
-					}
-				}
-				return chainDb, l2BlockChain, nil
+				return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
 			}
 			readOnlyDb.Close()
-		} else if !isLeveldbNotExistError(err) && !isPebbleNotExistError(err) {
-			// we only want to continue if the error is pebble or leveldb not exist error
+		} else if !dbutil.IsNotExistError(err) {
+			// we only want to continue if the database does not exist
 			return nil, nil, fmt.Errorf("Failed to open database: %w", err)
 		}
 	}
@@ -507,18 +642,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	if initFile != "" {
-		reader, err := os.Open(initFile)
-		if err != nil {
-			return nil, nil, fmt.Errorf("couln't open init '%v' archive: %w", initFile, err)
-		}
-		stat, err := reader.Stat()
-		if err != nil {
+		if err := extractSnapshot(initFile, stack.InstanceDir(), config.Init.ImportWasm); err != nil {
 			return nil, nil, err
-		}
-		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
-		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
-		if err != nil {
-			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
 		}
 	}
 
@@ -532,7 +657,14 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err != nil {
 		return nil, nil, err
 	}
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
+	if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
+		return nil, nil, err
+	}
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1, targetConfig.WasmTargets())
+	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Rebuilding wasm store is not required when just starting out
 	err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone)
@@ -673,6 +805,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
 		}
 
+		emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil
+		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
+			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
+		}
 		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
@@ -694,7 +830,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return chainDb, l2BlockChain, err
 	}
 
-	return chainDb, l2BlockChain, nil
+	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
 }
 
 func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
@@ -740,6 +876,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 		localWg.Add(1)
 		go func() {
 			batch := chainDb.NewBatch()
+			// #nosec G115
 			for blockNum := uint64(thread); blockNum <= lastBlock; blockNum += uint64(threads) {
 				blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
 				block := rawdb.ReadBlock(chainDb, blockHash, blockNum)

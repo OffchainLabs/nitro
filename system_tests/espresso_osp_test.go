@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/test_helpersgen"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -37,7 +38,7 @@ func TestEspressoOsp(t *testing.T) {
 
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	rollup, _ := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig, locator.LatestWasmModuleRoot(), hotshotAddr)
+	rollup, _ := deployOnParentChain(t, ctx, l1Info, l1Backend, &headerreader.TestConfig, chainConfig, locator.LatestWasmModuleRoot(), false, false, hotshotAddr)
 
 	ospEntryAddr := common.HexToAddress("0xffd0c2C95214aa9980D7419bd87c260C80Ce2546")
 

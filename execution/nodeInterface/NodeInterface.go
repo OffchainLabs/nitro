@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 
@@ -234,6 +235,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	}
 
 	balanced := size == arbmath.NextPowerOf2(size)/2
+	// #nosec G115
 	treeLevels := int(arbmath.Log2ceil(size)) // the # of levels in the tree
 	proofLevels := treeLevels - 1             // the # of levels where a hash is needed (all but root)
 	walkLevels := treeLevels                  // the # of levels we need to consider when building walks
@@ -249,6 +251,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	place := leaf                             // where we are in the tree
 	for level := 0; level < walkLevels; level++ {
 		sibling := place ^ which
+		// #nosec G115
 		position := merkletree.NewLevelAndLeaf(uint64(level), sibling)
 
 		if sibling < size {
@@ -272,6 +275,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 				total += power    // The leaf for a given partial is the sum of the powers
 				leaf := total - 1 // of 2 preceding it. It's 1 less since we count from 0
 
+				// #nosec G115
 				partial := merkletree.NewLevelAndLeaf(uint64(level), leaf)
 
 				query = append(query, partial)
@@ -297,6 +301,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 		mid := (lo + hi) / 2
 
+		// #nosec G115
 		block, err := n.backend.BlockByNumber(n.context, rpc.BlockNumber(mid))
 		if err != nil {
 			searchErr = err
@@ -405,6 +410,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 		step.Leaf += 1 << step.Level // we start on the min partial's zero-hash sibling
 		known[step] = hash0
 
+		// #nosec G115
 		for step.Level < uint64(treeLevels) {
 
 			curr, ok := known[step]
@@ -643,6 +649,10 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 // L2BlockRangeForL1 fetches the L1 block number of a given l2 block number.
 // c ctx and evm mech arguments are not used but supplied to match the precompile function type in NodeInterface contract
 func (n NodeInterface) BlockL1Num(c ctx, evm mech, l2BlockNum uint64) (uint64, error) {
+	if l2BlockNum > math.MaxInt64 {
+		return 0, fmt.Errorf("requested l2 block number %d out of range for int64", l2BlockNum)
+	}
+	// #nosec G115
 	blockHeader, err := n.backend.HeaderByNumber(n.context, rpc.BlockNumber(l2BlockNum))
 	if err != nil {
 		return 0, err

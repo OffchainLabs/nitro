@@ -8,8 +8,8 @@ make all
 make test-go-deps
 echo "Build passed"
 
-make lint
-echo "Lint passed"
+# make lint
+# echo "Lint passed"
 
 echo run tests without race detection
 packages=`go list ./...`

@@ -82,13 +82,13 @@ struct RemoteRefType(pub [u8; 3]);
 
 impl From<RefType> for RemoteRefType {
     fn from(value: RefType) -> Self {
-        unsafe { std::mem::transmute(value) }
+        unsafe { std::mem::transmute::<RefType, RemoteRefType>(value) }
     }
 }
 
 impl From<RemoteRefType> for RefType {
     fn from(value: RemoteRefType) -> Self {
-        unsafe { std::mem::transmute(value) }
+        unsafe { std::mem::transmute::<RemoteRefType, RefType>(value) }
     }
 }
 

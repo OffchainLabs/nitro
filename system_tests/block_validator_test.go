@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 
@@ -62,12 +63,13 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	var delayEvery int
 	if opts.workloadLoops > 1 {
-		l1NodeConfigA.BatchPoster.MaxDelay = time.Millisecond * 500
 		delayEvery = opts.workloadLoops / 3
 	}
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder = builder.WithWasmRootDir(opts.wasmRootDir)
+	// For now PathDB is not supported when using block validation
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
@@ -89,7 +91,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.ValidationClientConfig{}
 	}
 
-	AddDefaultValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
+	AddValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer cleanupB()
@@ -256,6 +258,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	Require(t, err)
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
 	largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
+	// #nosec G115
 	if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
 		Fatal(t, "unexpected refcount:", finalRefCount)
 	}
@@ -277,6 +280,20 @@ func TestBlockValidatorSimpleOnchain(t *testing.T) {
 		workloadLoops: 1,
 		workload:      ethSend,
 		arbitrator:    true,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
+	cr, err := github.LatestConsensusRelease(context.Background())
+	Require(t, err)
+	machPath := populateMachineDir(t, cr)
+	opts := Options{
+		dasModeString: "onchain",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    false,
+		wasmRootDir:   machPath,
 	}
 	testBlockValidatorSimple(t, opts)
 }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -110,17 +111,21 @@ func (s *LocalFileStorageService) Close(ctx context.Context) error {
 
 func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
 	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s)
-	var batchPath string
-	if s.enableLegacyLayout {
-		batchPath = s.legacyLayout.batchPath(key)
-	} else {
-		batchPath = s.layout.batchPath(key)
-	}
+
+	legacyBatchPath := s.legacyLayout.batchPath(key)
+	batchPath := s.layout.batchPath(key)
 
 	data, err := os.ReadFile(batchPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, ErrNotFound
+			data, err = os.ReadFile(legacyBatchPath)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return nil, ErrNotFound
+				}
+				return nil, err
+			}
+			return data, nil
 		}
 		return nil, err
 	}
@@ -129,6 +134,10 @@ func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry uint64) error {
 	logPut("das.LocalFileStorageService.Store", data, expiry, s)
+	if expiry > math.MaxInt64 {
+		return fmt.Errorf("request expiry time (%v) exceeds max int64", expiry)
+	}
+	// #nosec G115
 	expiryTime := time.Unix(int64(expiry), 0)
 	currentTimePlusRetention := time.Now().Add(s.config.MaxRetention)
 	if expiryTime.After(currentTimePlusRetention) {
@@ -178,6 +187,7 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 	// new flat layout files, set their modification time accordingly.
 	if s.enableLegacyLayout {
 		tv := syscall.Timeval{
+			// #nosec G115
 			Sec:  int64(expiry - uint64(s.legacyLayout.retention.Seconds())),
 			Usec: 0,
 		}
@@ -224,8 +234,15 @@ func (s *LocalFileStorageService) String() string {
 }
 
 func (s *LocalFileStorageService) HealthCheck(ctx context.Context) error {
-	testData := []byte("Test-Data")
-	err := s.Put(ctx, testData, uint64(time.Now().Add(time.Minute).Unix()))
+	testData := []byte("Test Data")
+	// Store some data with an expiry time at the start of the epoch.
+	// If expiry is disabled it will only create an index entry for the
+	// same timestamp each time the health check happens.
+	// If expiry is enabled, it will be cleaned up each time the pruning
+	// runs. There is a slight chance of a race between pruning and the
+	// Put and Get calls, but systems using the HealthCheck will just retry
+	// and succeed the next time.
+	err := s.Put(ctx, testData, 0 /* start of epoch */)
 	if err != nil {
 		return err
 	}
@@ -360,6 +377,7 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 				return err
 			}
 
+			// #nosec G115
 			expiryPath := tl.expiryPath(batch.key, uint64(batch.expiry.Unix()))
 			if err = createHardLink(newPath, expiryPath); err != nil {
 				return err
@@ -726,6 +744,8 @@ func (l *trieLayout) commitMigration() error {
 		return err
 	}
 
+	// in OSX - syscall.Sync() returns an error, but in linux it does not.
+	// nolint:errcheck
 	syscall.Sync()
 
 	// Done migrating

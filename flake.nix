@@ -1,7 +1,12 @@
 {
   description = "A Nix-flake-based Go 1.21 development environment";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  # go v1.21 has been removed from nixpkgs-unstable due to end-of-life so we pin
+  # an older revision because as of nitro v3.2.1 they still use go-lang v1.21,
+  # when upgrading the go-lang version this pinnning should be removed, e. g.
+  # changed back to:
+  # inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/aae672db41edf5e11c970db7089191877db3fd7f";
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.flake-compat.url = "github:edolstra/flake-compat";
   inputs.flake-compat.flake = false;
@@ -13,14 +18,13 @@
       goVersion = 21; # Change this to update the whole stack
       overlays = [
         (import rust-overlay)
-        (final: prev: {
+        (final: prev: rec {
           go = prev."go_1_${toString goVersion}";
           # Overlaying nodejs here to ensure nodePackages use the desired
-          # version of nodejs. Arbitrum use nodejs v16 but that's EOL and has
-          # been removed from nixpkgs, v18 also works.
-          nodejs = prev.nodejs-18_x;
-          pnpm = prev.nodePackages.pnpm;
-          yarn = prev.nodePackages.yarn;
+          # version of nodejs. Offchainlabs suggests nodejs v18 in the docs.
+          nodejs = prev.nodejs_18;
+          yarn = (prev.yarn.override { inherit nodejs; });
+          pnpm = (prev.pnpm.override { inherit nodejs; });
         })
         foundry.overlay
       ];
@@ -29,17 +33,15 @@
       let
         pkgs = import nixpkgs {
           inherit overlays system;
-          config = {
-            permittedInsecurePackages = [ "nodejs-16.20.2" ];
-          };
         };
         stableToolchain = pkgs.rust-bin.stable.latest.minimal.override {
           extensions = [ "rustfmt" "clippy" "llvm-tools-preview" "rust-src" ];
           targets = [ "wasm32-unknown-unknown" "wasm32-wasi" ];
         };
-        nightlyToolchain = pkgs.rust-bin.selectLatestNightlyWith (
-          toolchain: toolchain.default.override { extensions = [ "rust-src" ]; }
-        );
+        nightlyToolchain = pkgs.rust-bin.nightly."2024-08-06".minimal.override {
+          extensions = [ "rust-src" ];
+          targets = [ "wasm32-unknown-unknown" "wasm32-wasi" ];
+        };
         # A script that calls nightly cargo if invoked with `+nightly`
         # as the first argument, otherwise it calls stable cargo.
         cargo-with-nightly = pkgs.writeShellScriptBin "cargo" ''
@@ -108,13 +110,17 @@
 
             # mkShell brings in a `cc` that points to gcc, stdenv.mkDerivation from llvm avoids this.
             default = let llvmPkgs = pkgs.llvmPackages_16; in llvmPkgs.stdenv.mkDerivation {
-              # By default stack protection is enabled by the clang wrapper but I
-              # think it's not supported for wasm compilation. It causes this
-              # error:
-              #
-              #   Undefined stack protector symbols: __stack_chk_guard ...
-              #   in arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/extF80_div.o
-              hardeningDisable = [ "stackprotector" ];
+              hardeningDisable = [
+                # By default stack protection is enabled by the clang wrapper but I
+                # think it's not supported for wasm compilation. It causes this
+                # error:
+                #
+                #   Undefined stack protector symbols: __stack_chk_guard ...
+                #   in arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/extF80_div.o
+                "stackprotector"
+                # See https://github.com/NixOS/nixpkgs/pull/256956#issuecomment-2351143479
+                "zerocallusedregs"
+              ];
 
               name = "espresso-nitro-dev-shell";
               buildInputs = with pkgs; [

@@ -62,7 +62,6 @@ func main() {
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
 	hotshotAddr := flag.String("hotshot", "", "the address of hotshot contract in L1")
-	isUsingFeeToken := flag.Bool("isUsingFeeToken", false, "true if the chain uses custom fee token")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	maxDataSize := new(big.Int).SetUint64(*maxDataSizeUint)
@@ -182,7 +181,7 @@ func main() {
 
 	nativeToken := common.HexToAddress(*nativeTokenAddressString)
 	hotshot := common.HexToAddress(*hotshotAddr)
-	deployedAddresses, err := deploycode.DeployOnL1(
+	deployedAddresses, err := deploycode.DeployOnParentChain(
 		ctx,
 		l1Reader,
 		l1TransactionOpts,
@@ -192,8 +191,8 @@ func main() {
 		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 		nativeToken,
 		maxDataSize,
+		true,
 		hotshot,
-		*isUsingFeeToken,
 	)
 	if err != nil {
 		flag.Usage()

@@ -2,13 +2,17 @@ package rpcclient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"regexp"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -46,10 +50,13 @@ func createTestNode(t *testing.T, ctx context.Context, stuckOrFailed int64) *nod
 	stack, err := node.New(&stackConf)
 	Require(t, err)
 
+	service := &testAPI{}
+	service.stuckCalls.Store(stuckOrFailed)
+	service.failedCalls.Store(stuckOrFailed)
 	testAPIs := []rpc.API{{
 		Namespace:     "test",
 		Version:       "1.0",
-		Service:       &testAPI{stuckOrFailed, stuckOrFailed},
+		Service:       service,
 		Public:        true,
 		Authenticated: false,
 	}}
@@ -67,12 +74,12 @@ func createTestNode(t *testing.T, ctx context.Context, stuckOrFailed int64) *nod
 }
 
 type testAPI struct {
-	stuckCalls  int64
-	failedCalls int64
+	stuckCalls  atomic.Int64
+	failedCalls atomic.Int64
 }
 
 func (t *testAPI) StuckAtFirst(ctx context.Context) error {
-	stuckRemaining := atomic.AddInt64(&t.stuckCalls, -1) + 1
+	stuckRemaining := t.stuckCalls.Add(-1) + 1
 	if stuckRemaining <= 0 {
 		return nil
 	}
@@ -81,7 +88,7 @@ func (t *testAPI) StuckAtFirst(ctx context.Context) error {
 }
 
 func (t *testAPI) FailAtFirst(ctx context.Context) error {
-	failedRemaining := atomic.AddInt64(&t.failedCalls, -1) + 1
+	failedRemaining := t.failedCalls.Add(-1) + 1
 	if failedRemaining <= 0 {
 		return nil
 	}
@@ -198,6 +205,21 @@ func TestIsAlreadyKnownError(t *testing.T) {
 		if got != testCase.expected {
 			t.Errorf("IsAlreadyKnownError(%q) = %v expected %v", testCase.input, got, testCase.expected)
 		}
+	}
+}
+
+func TestUnmarshalClientConfig(t *testing.T) {
+	exampleJson := `[{"jwtsecret":"/tmp/nitro-val.jwt","url":"http://127.0.0.10:52000"}, {"jwtsecret":"/tmp/nitro-val.jwt","url":"http://127.0.0.10:52001"}]`
+	var clientConfigs []ClientConfig
+	Require(t, json.Unmarshal([]byte(exampleJson), &clientConfigs))
+	expectedClientConfigs := []ClientConfig{DefaultClientConfig, DefaultClientConfig}
+	expectedClientConfigs[0].JWTSecret = "/tmp/nitro-val.jwt"
+	expectedClientConfigs[0].URL = "http://127.0.0.10:52000"
+	expectedClientConfigs[1].JWTSecret = "/tmp/nitro-val.jwt"
+	expectedClientConfigs[1].URL = "http://127.0.0.10:52001"
+	// Ensure the configs are equivalent to the expected configs, ignoring the retryErrors regexp as cmp can't compare it
+	if diff := cmp.Diff(expectedClientConfigs, clientConfigs, cmpopts.IgnoreTypes(&regexp.Regexp{})); diff != "" {
+		t.Errorf("unmarshalling example JSON unexpected diff:\n%s", diff)
 	}
 }
 

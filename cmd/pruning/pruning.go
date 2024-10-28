@@ -212,6 +212,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			}
 			if meta.ParentChainBlock <= l1BlockNum {
 				signedBlockNum := arbutil.MessageCountToBlockNumber(meta.MessageCount, genesisNum)
+				// #nosec G115
 				blockNum := uint64(signedBlockNum)
 				l2Hash := rawdb.ReadCanonicalHash(chainDb, blockNum)
 				l2Header := rawdb.ReadHeader(chainDb, l2Hash, blockNum)
@@ -233,6 +234,10 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 }
 
 func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) error {
+	if cacheConfig.StateScheme == rawdb.PathScheme {
+		return nil
+	}
+
 	if initConfig.Prune == "" {
 		return pruner.RecoverPruning(stack.InstanceDir(), chainDb, initConfig.PruneThreads)
 	}

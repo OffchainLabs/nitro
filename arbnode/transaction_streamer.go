@@ -18,7 +18,6 @@ import (
 
 	tagged_base64 "github.com/EspressoSystems/espresso-sequencer-go/tagged-base64"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/offchainlabs/nitro/util/signature"
 
 	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
@@ -26,14 +25,12 @@ import (
 
 	"errors"
 
-	"github.com/cockroachdb/pebble"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	flag "github.com/spf13/pflag"
-	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -43,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -72,7 +70,7 @@ type TransactionStreamer struct {
 	nextAllowedFeedReorgLog time.Time
 
 	broadcasterQueuedMessages            []arbostypes.MessageWithMetadataAndBlockHash
-	broadcasterQueuedMessagesPos         uint64
+	broadcasterQueuedMessagesPos         atomic.Uint64
 	broadcasterQueuedMessagesActiveReorg bool
 
 	coordinator     *SeqCoordinator
@@ -167,7 +165,8 @@ type blockHashDBValue struct {
 }
 
 const (
-	BlockHashMismatchLogMsg = "BlockHash from feed doesn't match locally computed hash. Check feed source."
+	BlockHashMismatchLogMsg    = "BlockHash from feed doesn't match locally computed hash. Check feed source."
+	FailedToGetMsgResultFromDB = "Reading message result remotely."
 )
 
 // Encodes an uint64 as bytes in a lexically sortable manner for database iteration.
@@ -316,6 +315,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		return err
 	}
 	config := s.config()
+	// #nosec G115
 	maxResequenceMsgCount := count + arbutil.MessageIndex(config.MaxReorgResequenceDepth)
 	if config.MaxReorgResequenceDepth >= 0 && maxResequenceMsgCount < targetMsgCount {
 		log.Error(
@@ -355,7 +355,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 				// oldMessage, accumulator stored in tracker, and the message re-read from l1
 				expectedAcc, err := s.inboxReader.tracker.GetDelayedAcc(delayedSeqNum)
 				if err != nil {
-					if !isErrNotFound(err) {
+					if !dbutil.IsErrNotFound(err) {
 						log.Error("reorg-resequence: failed to read expected accumulator", "err", err)
 					}
 					continue
@@ -411,6 +411,10 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		}
 	}
 
+	err = deleteStartingAt(s.db, batch, messageResultPrefix, uint64ToKey(uint64(count)))
+	if err != nil {
+		return err
+	}
 	err = deleteStartingAt(s.db, batch, blockHashInputFeedPrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
@@ -418,6 +422,15 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
+	}
+
+	for i := 0; i < len(messagesResults); i++ {
+		// #nosec G115
+		pos := count + arbutil.MessageIndex(i)
+		err = s.storeResult(pos, *messagesResults[i], batch)
+		if err != nil {
+			return err
+		}
 	}
 
 	return setMessageCount(batch, count)
@@ -444,10 +457,6 @@ func dbKey(prefix []byte, pos uint64) []byte {
 	return key
 }
 
-func isErrNotFound(err error) bool {
-	return errors.Is(err, leveldb.ErrNotFound) || errors.Is(err, pebble.ErrNotFound) || errors.Is(err, memorydb.ErrMemorydbNotFound)
-}
-
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
 func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error) {
 	key := dbKey(messagePrefix, uint64(seqNum))
@@ -457,6 +466,18 @@ func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbostyp
 	}
 	var message arbostypes.MessageWithMetadata
 	err = rlp.DecodeBytes(data, &message)
+	if err != nil {
+		return nil, err
+	}
+
+	err = message.Message.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+		ctx, err := s.GetContextSafe()
+		if err != nil {
+			return nil, err
+		}
+		data, _, err := s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		return data, err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -483,7 +504,7 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockHash(seqNum arbutil.
 			return nil, err
 		}
 		blockHash = blockHashDBVal.BlockHash
-	} else if !isErrNotFound(err) {
+	} else if !dbutil.IsErrNotFound(err) {
 		return nil, err
 	}
 
@@ -528,14 +549,14 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreC
 }
 
 func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
-	pos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	pos := s.broadcasterQueuedMessagesPos.Load()
 	if pos == 0 {
 		return 0
 	}
 
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	pos = atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	pos = s.broadcasterQueuedMessagesPos.Load()
 	if pos == 0 {
 		return 0
 	}
@@ -589,14 +610,14 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	if len(s.broadcasterQueuedMessages) == 0 || (feedReorg && !s.broadcasterQueuedMessagesActiveReorg) {
 		// Empty cache or feed different from database, save current feed messages until confirmed L1 messages catch up.
 		s.broadcasterQueuedMessages = messages
-		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos))
+		s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos))
 		s.broadcasterQueuedMessagesActiveReorg = feedReorg
 	} else {
-		broadcasterQueuedMessagesPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
+		broadcasterQueuedMessagesPos := arbutil.MessageIndex(s.broadcasterQueuedMessagesPos.Load())
 		if broadcasterQueuedMessagesPos >= broadcastStartPos {
 			// Feed messages older than cache
 			s.broadcasterQueuedMessages = messages
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos))
+			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos))
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		} else if broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
 			// Feed messages can be added directly to end of cache
@@ -616,7 +637,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 				)
 			}
 			s.broadcasterQueuedMessages = messages
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos))
+			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos))
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		}
 	}
@@ -629,7 +650,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	if broadcastStartPos > 0 {
 		_, err := s.GetMessage(broadcastStartPos - 1)
 		if err != nil {
-			if !isErrNotFound(err) {
+			if !dbutil.IsErrNotFound(err) {
 				return err
 			}
 			// Message before current message doesn't exist in database, so don't add current messages yet
@@ -697,7 +718,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, m
 		if err != nil {
 			return err
 		}
-		if dups == len(messages) {
+		if dups == uint64(len(messages)) {
 			return endBatch(batch)
 		}
 		// cant keep reorg lock when catching insertionMutex.
@@ -732,10 +753,10 @@ func (s *TransactionStreamer) countDuplicateMessages(
 	pos arbutil.MessageIndex,
 	messages []arbostypes.MessageWithMetadataAndBlockHash,
 	batch *ethdb.Batch,
-) (int, bool, *arbostypes.MessageWithMetadata, error) {
-	curMsg := 0
+) (uint64, bool, *arbostypes.MessageWithMetadata, error) {
+	var curMsg uint64
 	for {
-		if len(messages) == curMsg {
+		if uint64(len(messages)) == curMsg {
 			break
 		}
 		key := dbKey(messagePrefix, uint64(pos))
@@ -862,10 +883,10 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	var cacheClearLen int
 
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
-	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
+	broadcastStartPos := arbutil.MessageIndex(s.broadcasterQueuedMessagesPos.Load())
 
 	if messagesAreConfirmed {
-		var duplicates int
+		var duplicates uint64
 		var err error
 		duplicates, confirmedReorg, oldMsg, err = s.countDuplicateMessages(messageStartPos, messages, &batch)
 		if err != nil {
@@ -887,6 +908,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		// Active broadcast reorg and L1 messages at or before start of broadcast messages
 		// Or no active broadcast reorg and broadcast messages start before or immediately after last L1 message
 		if messagesAfterPos >= broadcastStartPos {
+			// #nosec G115
 			broadcastSliceIndex := int(messagesAfterPos - broadcastStartPos)
 			messagesOldLen := len(messages)
 			if broadcastSliceIndex < len(s.broadcasterQueuedMessages) {
@@ -903,7 +925,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 
 	var feedReorg bool
 	if !hasNewConfirmedMessages {
-		var duplicates int
+		var duplicates uint64
 		var err error
 		duplicates, feedReorg, oldMsg, err = s.countDuplicateMessages(messageStartPos, messages, nil)
 		if err != nil {
@@ -935,6 +957,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 
 	// Validate delayed message counts of remaining messages
 	for i, msg := range messages {
+		// #nosec G115
 		msgPos := messageStartPos + arbutil.MessageIndex(i)
 		diff := msg.MessageWithMeta.DelayedMessagesRead - lastDelayedRead
 		if diff != 0 && diff != 1 {
@@ -970,10 +993,11 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		// Check if new messages were added at the end of cache, if they were, then don't remove those particular messages
 		if len(s.broadcasterQueuedMessages) > cacheClearLen {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[cacheClearLen:]
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos)+uint64(cacheClearLen))
+			// #nosec G115
+			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos) + uint64(cacheClearLen))
 		} else {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
+			s.broadcasterQueuedMessagesPos.Store(0)
 		}
 		s.broadcasterQueuedMessagesActiveReorg = false
 	}
@@ -1090,6 +1114,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 		batch = s.db.NewBatch()
 	}
 	for i, msg := range messages {
+		// #nosec G115
 		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg, batch)
 		if err != nil {
 			return err
@@ -1113,12 +1138,43 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	return nil
 }
 
-// TODO: eventually there will be a table maintained by txStreamer itself
 func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error) {
 	if count == 0 {
 		return &execution.MessageResult{}, nil
 	}
-	return s.exec.ResultAtPos(count - 1)
+	pos := count - 1
+
+	key := dbKey(messageResultPrefix, uint64(pos))
+	data, err := s.db.Get(key)
+	if err == nil {
+		var msgResult execution.MessageResult
+		err = rlp.DecodeBytes(data, &msgResult)
+		if err == nil {
+			return &msgResult, nil
+		}
+	} else if !dbutil.IsErrNotFound(err) {
+		return nil, err
+	}
+	log.Info(FailedToGetMsgResultFromDB, "count", count)
+
+	msgResult, err := s.exec.ResultAtPos(pos)
+	if err != nil {
+		return nil, err
+	}
+	// Stores result in Consensus DB in a best-effort manner
+	batch := s.db.NewBatch()
+	err = s.storeResult(pos, *msgResult, batch)
+	if err != nil {
+		log.Warn("Failed to store result at ResultAtCount", "err", err)
+		return msgResult, nil
+	}
+	err = batch.Write()
+	if err != nil {
+		log.Warn("Failed to store result at ResultAtCount", "err", err)
+		return msgResult, nil
+	}
+
+	return msgResult, nil
 }
 
 func (s *TransactionStreamer) checkResult(msgResult *execution.MessageResult, expectedBlockHash *common.Hash) {
@@ -1133,6 +1189,19 @@ func (s *TransactionStreamer) checkResult(msgResult *execution.MessageResult, ex
 		)
 		return
 	}
+}
+
+func (s *TransactionStreamer) storeResult(
+	pos arbutil.MessageIndex,
+	msgResult execution.MessageResult,
+	batch ethdb.Batch,
+) error {
+	msgResultBytes, err := rlp.EncodeToBytes(msgResult)
+	if err != nil {
+		return err
+	}
+	key := dbKey(messageResultPrefix, uint64(pos))
+	return batch.Put(key, msgResultBytes)
 }
 
 // exposed for testing
@@ -1186,6 +1255,18 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 	}
 
 	s.checkResult(msgResult, msgAndBlockHash.BlockHash)
+
+	batch := s.db.NewBatch()
+	err = s.storeResult(pos, *msgResult, batch)
+	if err != nil {
+		log.Error("feedOneMsg failed to store result", "err", err)
+		return false
+	}
+	err = batch.Write()
+	if err != nil {
+		log.Error("feedOneMsg failed to store result", "err", err)
+		return false
+	}
 
 	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
 		MessageWithMeta: msgAndBlockHash.MessageWithMeta,
@@ -1400,12 +1481,12 @@ func (s *TransactionStreamer) setEspressoPendingTxnsPos(batch ethdb.KeyValueWrit
 
 func (s *TransactionStreamer) SubmitEspressoTransactionPos(pos arbutil.MessageIndex, batch ethdb.Batch) error {
 	pendingTxnsPos, err := s.getEspressoPendingTxnsPos()
-	if err != nil && !isErrNotFound(err) {
+	if err != nil && !dbutil.IsErrNotFound(err) {
 		log.Error("failed to get the pending txns position", "err", err)
 		return err
 	}
 
-	if err != nil && isErrNotFound(err) {
+	if err != nil && dbutil.IsErrNotFound(err) {
 		// if the key doesn't exist, create a new array with the pos
 		pendingTxnsPos = []*arbutil.MessageIndex{&pos}
 	} else {
@@ -1429,7 +1510,7 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context, ig
 
 	_, err := s.getEspressoSubmittedPos()
 
-	if err != nil && !isErrNotFound(err) {
+	if err != nil && !dbutil.IsErrNotFound(err) {
 		log.Warn("error getting submitted pos", "err", err)
 		return s.config().EspressoTxnsPollingInterval
 	}
