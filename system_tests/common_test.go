@@ -71,10 +71,11 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/bold/solgen/go/mocksgen"
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbnode"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -252,6 +253,7 @@ type NodeBuilder struct {
 	l3InitMessage               *arbostypes.ParsedInitMessage
 	withProdConfirmPeriodBlocks bool
 	wasmCacheTag                uint32
+	deployBoldContracts         bool
 	delayBufferThreshold        uint64
 
 	// Created nodes
@@ -365,10 +367,15 @@ func (b *NodeBuilder) WithStylusLongTermCache(enabled bool) *NodeBuilder {
 	return b
 }
 
-// WithDelayBuffer sets the delay-buffer threshold, which is the number of blocks the batch-poster
+func (b *NodeBuilder) WithBoldContracts() *NodeBuilder {
+	b.deployBoldContracts = true
+	return b
+}
+
+// WithDelayBufferThreshold sets the delay-buffer threshold, which is the number of blocks the batch-poster
 // is allowed to delay a batch with a delayed message.
 // Setting the threshold to zero disabled the delay buffer (default behaviour).
-func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
+func (b *NodeBuilder) WithDelayBufferThreshold(threshold uint64) *NodeBuilder {
 	b.delayBufferThreshold = threshold
 	return b
 }
@@ -422,6 +429,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		locator.LatestWasmModuleRoot(),
 		b.withProdConfirmPeriodBlocks,
 		true,
+		b.deployBoldContracts,
 		b.delayBufferThreshold,
 	)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
@@ -525,6 +533,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		b.l3Config.chainConfig,
 		locator.LatestWasmModuleRoot(),
 		b.l3Config.withProdConfirmPeriodBlocks,
+		false,
 		false,
 		0,
 	)
@@ -1270,6 +1279,7 @@ func deployOnParentChain(
 	wasmModuleRoot common.Hash,
 	prodConfirmPeriodBlocks bool,
 	chainSupportsBlobs bool,
+	deployBoldContracts bool,
 	delayBufferThreshold uint64,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	parentChainInfo.GenerateAccount("RollupOwner")
@@ -1293,24 +1303,62 @@ func deployOnParentChain(
 	parentChainReader.Start(ctx)
 	defer parentChainReader.StopAndWait()
 
-	bufferConfig := arbnode.DefaultBufferConfig()
-	bufferConfig.Threshold = delayBufferThreshold
-
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
-	addresses, err := deploy.DeployOnParentChain(
-		ctx,
-		parentChainReader,
-		&parentChainTransactionOpts,
-		[]common.Address{parentChainInfo.GetAddress("Sequencer")},
-		parentChainInfo.GetAddress("RollupOwner"),
-		0,
-		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}, bufferConfig),
-		nativeToken,
-		maxDataSize,
-		chainSupportsBlobs,
-	)
+	var addresses *chaininfo.RollupAddresses
+	if deployBoldContracts {
+		miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2), big.NewInt(1)}
+		opts := deploy.RollupConfigOpts{
+			Prod:                  prodConfirmPeriodBlocks,
+			WasmModuleRoot:        wasmModuleRoot,
+			RollupOwner:           parentChainInfo.GetAddress("RollupOwner"),
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: serializedChainConfig,
+			LoserStakeEscrow:      parentChainInfo.GetAddress("RollupOwner"),
+			MiniStakeValues:       miniStakeValues,
+			StakeToken:            deployStakeToken(t, ctx, parentChainInfo, parentChainClient),
+			GenesisExecutionState: rollupgen.AssertionState{
+				GlobalState:    rollupgen.GlobalState{},
+				MachineStatus:  1,
+				EndHistoryRoot: [32]byte{},
+			},
+			GenesisInboxCount:            big.NewInt(0),
+			AnyTrustFastConfirmer:        common.Address{},
+			LayerZeroBlockEdgeHeight:     1 << 5,
+			LayerZeroBigStepEdgeHeight:   1 << 10,
+			LayerZeroSmallStepEdgeHeight: 1 << 10,
+			NumBigStepLevel:              3,
+			BufferConfig:                 deploy.DefaultBufferConfig(),
+		}
+		opts.BufferConfig.Threshold = delayBufferThreshold
+		addresses, err = deploy.DeployOnParentChain(
+			ctx,
+			parentChainReader,
+			&parentChainTransactionOpts,
+			[]common.Address{parentChainInfo.GetAddress("Sequencer")},
+			parentChainInfo.GetAddress("RollupOwner"),
+			0,
+			deploy.GenerateRollupConfig(&opts),
+			nativeToken,
+			maxDataSize,
+			chainSupportsBlobs,
+		)
+	} else {
+		addresses, err = deploy.DeployLegacyOnParentChain(
+			ctx,
+			parentChainReader,
+			&parentChainTransactionOpts,
+			[]common.Address{parentChainInfo.GetAddress("Sequencer")},
+			parentChainInfo.GetAddress("RollupOwner"),
+			0,
+			deploy.GenerateLegacyRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+			nativeToken,
+			maxDataSize,
+			chainSupportsBlobs,
+		)
+	}
 	Require(t, err)
+
 	parentChainInfo.SetContract("Bridge", addresses.Bridge)
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
 	parentChainInfo.SetContract("Inbox", addresses.Inbox)
@@ -1615,6 +1663,25 @@ func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duratio
 	}
 
 	return timeout
+}
+
+func deployStakeToken(t *testing.T, ctx context.Context, info *BlockchainTestInfo, client *ethclient.Client) common.Address {
+	transactionOpts := info.GetDefaultTransactOpts("RollupOwner", ctx)
+	stakeToken, tx, tokenBindings, err := mocksgen.DeployTestWETH9(
+		&transactionOpts,
+		client,
+		"Weth",
+		"WETH",
+	)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+	transactionOpts.Value = big.NewInt(10000)
+	tx, err = tokenBindings.Deposit(&transactionOpts)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+	return stakeToken
 }
 
 func deploySimple(

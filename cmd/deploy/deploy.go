@@ -17,7 +17,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator/server_common"
 
@@ -26,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/util"
 	deploycode "github.com/offchainlabs/nitro/deploy"
 )
@@ -62,7 +60,6 @@ func main() {
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
-	isDelayBufferable := flag.Bool("delayBufferable", false, "Whether the sequencer-inbox delay buffer is enabled")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	maxDataSize := new(big.Int).SetUint64(*maxDataSizeUint)
@@ -172,11 +169,6 @@ func main() {
 		panic(fmt.Errorf("failed to deserialize chain config: %w", err))
 	}
 
-	var bufferConfig rollupgen.BufferConfig
-	if *isDelayBufferable {
-		bufferConfig = arbnode.DefaultBufferConfig()
-	}
-
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
 	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerReaderConfig }, arbSys)
 	if err != nil {
@@ -186,14 +178,14 @@ func main() {
 	defer l1Reader.StopAndWait()
 
 	nativeToken := common.HexToAddress(*nativeTokenAddressString)
-	deployedAddresses, err := deploycode.DeployOnParentChain(
+	deployedAddresses, err := deploycode.DeployLegacyOnParentChain(
 		ctx,
 		l1Reader,
 		l1TransactionOpts,
 		batchPosters,
 		batchPosterManagerAddress,
 		*authorizevalidators,
-		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress, bufferConfig),
+		deploycode.GenerateLegacyRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 		nativeToken,
 		maxDataSize,
 		true,

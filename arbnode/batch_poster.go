@@ -34,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
@@ -44,7 +45,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
@@ -317,7 +317,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	if err = opts.Config().Validate(); err != nil {
 		return nil, err
 	}
-	// TODO(delaybuffer) use new bridgegen
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
 		return nil, err

@@ -392,7 +392,10 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDelayBuffer(threshold)
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithBoldContracts().
+		WithDelayBufferThreshold(threshold)
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour // set high max-delay so we can test the delay buffer
 	cleanup := builder.Build(t)
@@ -446,7 +449,10 @@ func TestBatchPosterDelayBufferDontForceNonDelayedMessages(t *testing.T) {
 	defer cancel()
 
 	const threshold = 100
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDelayBuffer(threshold)
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithBoldContracts().
+		WithDelayBufferThreshold(threshold)
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour // set high max-delay so we can test the delay buffer
 	cleanup := builder.Build(t)
