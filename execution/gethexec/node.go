@@ -103,9 +103,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
-	f.Int(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size of lru cache storing the blockMetadata to service arb_getRawBlockMetadata.\n"+
-		"Note: setting a non-zero value would mean the blockMetadata might be outdated (if the block was reorged out).\n"+
-		"Default is set to 0 which disables caching")
+	f.Int(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 }
 
 var ConfigDefault = Config{
@@ -121,25 +119,26 @@ var ConfigDefault = Config{
 	Forwarder:                 DefaultNodeForwarderConfig,
 	EnablePrefetchBlock:       true,
 	StylusTarget:              DefaultStylusTargetConfig,
-	BlockMetadataApiCacheSize: 0,
+	BlockMetadataApiCacheSize: 10000,
 }
 
 type ConfigFetcher func() *Config
 
 type ExecutionNode struct {
-	ChainDB           ethdb.Database
-	Backend           *arbitrum.Backend
-	FilterSystem      *filters.FilterSystem
-	ArbInterface      *ArbInterface
-	ExecEngine        *ExecutionEngine
-	Recorder          *BlockRecorder
-	Sequencer         *Sequencer // either nil or same as TxPublisher
-	TxPublisher       TransactionPublisher
-	ConfigFetcher     ConfigFetcher
-	SyncMonitor       *SyncMonitor
-	ParentChainReader *headerreader.HeaderReader
-	ClassicOutbox     *ClassicOutboxRetriever
-	started           atomic.Bool
+	ChainDB                  ethdb.Database
+	Backend                  *arbitrum.Backend
+	FilterSystem             *filters.FilterSystem
+	ArbInterface             *ArbInterface
+	ExecEngine               *ExecutionEngine
+	Recorder                 *BlockRecorder
+	Sequencer                *Sequencer // either nil or same as TxPublisher
+	TxPublisher              TransactionPublisher
+	ConfigFetcher            ConfigFetcher
+	SyncMonitor              *SyncMonitor
+	ParentChainReader        *headerreader.HeaderReader
+	ClassicOutbox            *ClassicOutboxRetriever
+	started                  atomic.Bool
+	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 }
 
 func CreateExecutionNode(
@@ -226,10 +225,12 @@ func CreateExecutionNode(
 		}
 	}
 
+	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize)
+
 	apis := []rpc.API{{
 		Namespace: "arb",
 		Version:   "1.0",
-		Service:   NewArbAPI(txPublisher, NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize)),
+		Service:   NewArbAPI(txPublisher, bulkBlockMetadataFetcher),
 		Public:    false,
 	}}
 	apis = append(apis, rpc.API{
@@ -273,18 +274,19 @@ func CreateExecutionNode(
 	stack.RegisterAPIs(apis)
 
 	return &ExecutionNode{
-		ChainDB:           chainDB,
-		Backend:           backend,
-		FilterSystem:      filterSystem,
-		ArbInterface:      arbInterface,
-		ExecEngine:        execEngine,
-		Recorder:          recorder,
-		Sequencer:         sequencer,
-		TxPublisher:       txPublisher,
-		ConfigFetcher:     configFetcher,
-		SyncMonitor:       syncMon,
-		ParentChainReader: parentChainReader,
-		ClassicOutbox:     classicOutbox,
+		ChainDB:                  chainDB,
+		Backend:                  backend,
+		FilterSystem:             filterSystem,
+		ArbInterface:             arbInterface,
+		ExecEngine:               execEngine,
+		Recorder:                 recorder,
+		Sequencer:                sequencer,
+		TxPublisher:              txPublisher,
+		ConfigFetcher:            configFetcher,
+		SyncMonitor:              syncMon,
+		ParentChainReader:        parentChainReader,
+		ClassicOutbox:            classicOutbox,
+		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
 	}, nil
 
 }
@@ -333,6 +335,7 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	if n.ParentChainReader != nil {
 		n.ParentChainReader.Start(ctx)
 	}
+	n.bulkBlockMetadataFetcher.Start(ctx)
 	return nil
 }
 
@@ -340,6 +343,7 @@ func (n *ExecutionNode) StopAndWait() {
 	if !n.started.Load() {
 		return
 	}
+	n.bulkBlockMetadataFetcher.StopAndWait()
 	// TODO after separation
 	// n.Stack.StopRPC() // does nothing if not running
 	if n.TxPublisher.Started() {

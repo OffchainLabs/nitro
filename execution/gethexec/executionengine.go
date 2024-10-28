@@ -80,9 +80,10 @@ type ExecutionEngine struct {
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
 
-	newBlockNotifier chan struct{}
-	latestBlockMutex sync.Mutex
-	latestBlock      *types.Block
+	newBlockNotifier  chan struct{}
+	reorgEventsReader chan struct{}
+	latestBlockMutex  sync.Mutex
+	latestBlock       *types.Block
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
@@ -132,6 +133,10 @@ func (s *ExecutionEngine) backlogL1GasCharged() uint64 {
 	return (s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeL1GasCharged -
 		s.cachedL1PriceData.msgToL1PriceData[0].cummulativeL1GasCharged +
 		s.cachedL1PriceData.msgToL1PriceData[0].l1GasCharged)
+}
+
+func (s *ExecutionEngine) SetReorgEventsReader(reorgEventsReader chan struct{}) {
+	s.reorgEventsReader = reorgEventsReader
 }
 
 func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
@@ -271,6 +276,12 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	if len(oldMessages) > 0 {
 		s.resequenceChan <- oldMessages
 		resequencing = true
+	}
+	if s.reorgEventsReader != nil {
+		select {
+		case s.reorgEventsReader <- struct{}{}:
+		default:
+		}
 	}
 	return newMessagesResults, nil
 }

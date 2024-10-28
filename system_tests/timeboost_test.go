@@ -49,6 +49,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.BlockMetadataApiCacheSize = 0 // Caching is disabled
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -139,6 +140,17 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	}
 	if !bytes.Equal(sampleBulkData[0].RawMetadata, result[0].RawMetadata) {
 		t.Fatal("incorrect caching of BlockMetadata")
+	}
+
+	// A Reorg event should clear the cache, hence the data fetched now should be accurate
+	builder.L2.ConsensusNode.TxStreamer.ReorgTo(10)
+	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
+	Require(t, err)
+	if len(result) != 5 {
+		t.Fatalf("Reorg should've cleared out messages starting at number 10. Want: 5, Got: %d", len(result))
+	}
+	if !bytes.Equal(updatedBlockMetadata, result[0].RawMetadata) {
+		t.Fatal("BlockMetadata should've been fetched from db and not the cache")
 	}
 }
 
