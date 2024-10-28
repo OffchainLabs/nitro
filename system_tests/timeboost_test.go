@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster/message"
@@ -43,7 +44,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTimeboosBulkBlockMetadataAPI(t *testing.T) {
+func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -52,8 +53,9 @@ func TestTimeboosBulkBlockMetadataAPI(t *testing.T) {
 	defer cleanup()
 
 	arbDb := builder.L2.ConsensusNode.ArbDB
-	dbKey := func(prefix []byte, pos uint64) []byte {
+	blockMetadataInputFeedKey := func(pos uint64) []byte {
 		var key []byte
+		prefix := []byte("t")
 		key = append(key, prefix...)
 		data := make([]byte, 8)
 		binary.BigEndian.PutUint64(data, pos)
@@ -61,8 +63,21 @@ func TestTimeboosBulkBlockMetadataAPI(t *testing.T) {
 		return key
 	}
 
+	// Generate blocks until current block is end
 	start := 1
 	end := 20
+	builder.L2Info.GenerateAccount("User")
+	user := builder.L2Info.GetDefaultTransactOpts("User", ctx)
+	for i := 0; ; i++ {
+		builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+		latestL2, err := builder.L2.Client.BlockNumber(ctx)
+		Require(t, err)
+		// Clean BlockMetadata from arbDB so that we can modify it at will
+		Require(t, arbDb.Delete(blockMetadataInputFeedKey(latestL2)))
+		if latestL2 > uint64(end) {
+			break
+		}
+	}
 	var sampleBulkData []gethexec.NumberAndBlockMetadata
 	for i := start; i <= end; i += 2 {
 		sampleData := gethexec.NumberAndBlockMetadata{
@@ -70,12 +85,12 @@ func TestTimeboosBulkBlockMetadataAPI(t *testing.T) {
 			RawMetadata: []byte{0, uint8(i)},
 		}
 		sampleBulkData = append(sampleBulkData, sampleData)
-		arbDb.Put(dbKey([]byte("t"), sampleData.BlockNumber), sampleData.RawMetadata)
+		arbDb.Put(blockMetadataInputFeedKey(sampleData.BlockNumber), sampleData.RawMetadata)
 	}
 
 	l2rpc := builder.L2.Stack.Attach()
 	var result []gethexec.NumberAndBlockMetadata
-	err := l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", hexutil.Uint64(start), hexutil.Uint64(end))
+	err := l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), "latest") // Test rpc.BlockNumber feature, send "latest" as an arg instead of blockNumber
 	Require(t, err)
 
 	if len(result) != len(sampleBulkData) {
@@ -92,9 +107,9 @@ func TestTimeboosBulkBlockMetadataAPI(t *testing.T) {
 
 	// Test that without cache the result returned is always in sync with ArbDB
 	sampleBulkData[0].RawMetadata = []byte{1, 11}
-	arbDb.Put(dbKey([]byte("t"), 1), sampleBulkData[0].RawMetadata)
+	arbDb.Put(blockMetadataInputFeedKey(1), sampleBulkData[0].RawMetadata)
 
-	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", hexutil.Uint64(1), hexutil.Uint64(1))
+	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(1), rpc.BlockNumber(1))
 	Require(t, err)
 	if len(result) != 1 {
 		t.Fatal("result returned with more than one entry")
@@ -107,14 +122,14 @@ func TestTimeboosBulkBlockMetadataAPI(t *testing.T) {
 	builder.execConfig.BlockMetadataApiCacheSize = 10
 	builder.RestartL2Node(t)
 	l2rpc = builder.L2.Stack.Attach()
-	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", hexutil.Uint64(start), hexutil.Uint64(end))
+	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
 	Require(t, err)
 
 	arbDb = builder.L2.ConsensusNode.ArbDB
 	updatedBlockMetadata := []byte{2, 12}
-	arbDb.Put(dbKey([]byte("t"), 1), updatedBlockMetadata)
+	arbDb.Put(blockMetadataInputFeedKey(1), updatedBlockMetadata)
 
-	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", hexutil.Uint64(1), hexutil.Uint64(1))
+	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(1), rpc.BlockNumber(1))
 	Require(t, err)
 	if len(result) != 1 {
 		t.Fatal("result returned with more than one entry")

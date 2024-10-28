@@ -46,7 +46,7 @@ func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
 	return a.txPublisher.CheckHealth(ctx)
 }
 
-func (a *ArbAPI) GetRawBlockMetadata(ctx context.Context, fromBlock, toBlock hexutil.Uint64) ([]NumberAndBlockMetadata, error) {
+func (a *ArbAPI) GetRawBlockMetadata(ctx context.Context, fromBlock, toBlock rpc.BlockNumber) ([]NumberAndBlockMetadata, error) {
 	if a.bulkBlockMetadataFetcher == nil {
 		return nil, errors.New("arb_getRawBlockMetadata is not available")
 	}

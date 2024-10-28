@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -16,22 +18,26 @@ type BlockMetadataFetcher interface {
 }
 
 type BulkBlockMetadataFetcher struct {
+	bc      *core.BlockChain
 	fetcher BlockMetadataFetcher
 	cache   *containers.LruCache[arbutil.MessageIndex, arbostypes.BlockMetadata]
 }
 
-func NewBulkBlockMetadataFetcher(fetcher BlockMetadataFetcher, cacheSize int) *BulkBlockMetadataFetcher {
+func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetcher, cacheSize int) *BulkBlockMetadataFetcher {
 	var cache *containers.LruCache[arbutil.MessageIndex, arbostypes.BlockMetadata]
 	if cacheSize != 0 {
 		cache = containers.NewLruCache[arbutil.MessageIndex, arbostypes.BlockMetadata](cacheSize)
 	}
 	return &BulkBlockMetadataFetcher{
+		bc:      bc,
 		fetcher: fetcher,
 		cache:   cache,
 	}
 }
 
-func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock hexutil.Uint64) ([]NumberAndBlockMetadata, error) {
+func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]NumberAndBlockMetadata, error) {
+	fromBlock, _ = b.bc.ClipToPostNitroGenesis(fromBlock)
+	toBlock, _ = b.bc.ClipToPostNitroGenesis(toBlock)
 	start, err := b.fetcher.BlockNumberToMessageIndex(uint64(fromBlock))
 	if err != nil {
 		return nil, fmt.Errorf("error converting fromBlock blocknumber to message index: %w", err)
