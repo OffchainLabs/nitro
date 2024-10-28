@@ -219,8 +219,9 @@ func (p *Producer[Request, Response]) clearMessages(ctx context.Context) time.Du
 			}
 			if _, err := p.client.XDel(ctx, p.redisStream, pelData.Lower).Result(); err != nil {
 				log.Error("error deleting PEL's lower message thats past its TTL", "msgID", pelData.Lower, "err", err)
-				return 0
+				return 5 * p.cfg.CheckResultInterval
 			}
+			return 0
 		}
 	}
 	return 5 * p.cfg.CheckResultInterval
