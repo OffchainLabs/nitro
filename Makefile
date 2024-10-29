@@ -429,7 +429,7 @@ $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/m
 
 $(output_latest)/espresso_crypto.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/espresso-crypto/src/*)
 	mkdir -p $(output_root)/machines/latest
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package espresso-crypto
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --config $(wasm_lib_cargo) --package espresso-crypto
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/espresso_crypto.wasm $@
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
