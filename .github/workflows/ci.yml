@@ -208,7 +208,7 @@ jobs:
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- ./... -race -skip "$skip_tests" -timeout=40m > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- ./... -race -skip "$skip_tests" -timeout=40m > >(stdbuf -oL tee full.log | grep -vE "INFO|seal"); then
               exit 1
             fi
           done
