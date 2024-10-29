@@ -27,7 +27,7 @@ echo -e "${BLUE}Checking prerequisites for building Nitro locally...${NC}"
 if command_exists docker; then
     echo -e "${GREEN}Docker is installed.${NC}"
 else
-    echo -e "${RED}Docker is not installed. $INSTALLATION_DOCS_URL${NC}"
+    echo -e "${RED}Docker is not installed.${NC}"
     EXIT_CODE=1
 fi
 
@@ -58,51 +58,31 @@ fi
 if docker images | grep -q "nitro-node"; then
     echo -e "${GREEN}Nitro Docker image is built.${NC}"
 else
-    echo -e "${RED}Nitro Docker image is not built. Build it using: docker build . --tag nitro-node${NC}"
-    EXIT_CODE=1
+    echo -e "${YELLOW}Nitro Docker image is not built. Build it using: docker build . --tag nitro-node${NC}"
 fi
 
 # Step 5: Check prerequisites for building binaries
 echo -e "${BLUE}Checking prerequisites for building Nitro's binaries...${NC}"
 if [[ "$OS" == "Linux" ]]; then
-    prerequisites=(git curl build-essential cmake npm golang clang make gotestsum wasm2wat lld-13 python3 yarn)
+    prerequisites=(git curl make cmake npm golang clang make gotestsum wasm2wat wasm-ld python3 yarn)
 else
-    prerequisites=(git curl make cmake npm go gvm golangci-lint wasm2wat clang gotestsum yarn)
+    prerequisites=(git curl make cmake npm go golangci-lint wasm2wat clang wasm-ld gotestsum yarn)
 fi
 
 for pkg in "${prerequisites[@]}"; do
-    if command_exists "$pkg"; then
+    EXISTS=$(command_exists "$pkg")
+    [[ "$pkg" == "make" ]] && pkg="build-essential"
+    [[ "$pkg" == "wasm2wat" ]] && pkg="wabt"
+    [[ "$pkg" == "clang" ]] && pkg="llvm"
+    [[ "$pkg" == "wasm-ld" ]] && pkg="lld"
+    if $EXISTS; then
         # There is no way to check for wabt / llvm directly, since they install multiple tools
         # So instead, we check for wasm2wat and clang, which are part of wabt and llvm respectively
         # and if they are installed, we assume wabt / llvm is installed else we ask the user to install wabt / llvm
-        [[ "$pkg" == "wasm2wat" ]] && pkg="wabt"
-        [[ "$pkg" == "clang" ]] && pkg="llvm"
-
-        # Check for specific symbolic links related to wasm-ld on Linux and macOS
-        if [[ "$pkg" == "llvm" ]]; then
-            if [[ "$OS" == "Linux" ]]; then
-                if [ ! -L /usr/local/bin/wasm-ld ]; then
-                    echo -e "${YELLOW}Creating symbolic link for wasm-ld on Linux.${NC}"
-                    sudo ln -s /usr/bin/wasm-ld-13 /usr/local/bin/wasm-ld
-                else
-                    echo -e "${GREEN}Symbolic link for wasm-ld on Linux is already present.${NC}"
-                fi
-            elif [[ "$OS" == "Darwin" ]]; then
-                if [ ! -L /usr/local/bin/wasm-ld ]; then
-                    echo -e "${YELLOW}Creating symbolic link for wasm-ld on macOS.${NC}"
-                    sudo mkdir -p /usr/local/bin
-                    sudo ln -s /opt/homebrew/opt/llvm/bin/wasm-ld /usr/local/bin/wasm-ld
-                else
-                    echo -e "${GREEN}Symbolic link for wasm-ld on macOS is already present.${NC}"
-                fi
-            fi
-        fi
 
         echo -e "${GREEN}$pkg is installed.${NC}"
     else
-        [[ "$pkg" == "wasm2wat" ]] && pkg="wabt"
-        [[ "$pkg" == "clang" ]] && pkg="llvm"
-        echo -e "${RED}$pkg is not installed. Please install $pkg. $INSTALLATION_DOCS_URL${NC}"
+        echo -e "${RED}$pkg is not installed. Please install $pkg.${NC}"
         EXIT_CODE=1
     fi
 done
@@ -111,7 +91,7 @@ done
 if command_exists node && node -v | grep -q "v18"; then
     echo -e "${GREEN}Node.js version 18 is installed.${NC}"
 else
-    echo -e "${RED}Node.js version 18 not installed. $INSTALLATION_DOCS_URL${NC}"
+    echo -e "${RED}Node.js version 18 not installed.${NC}"
     EXIT_CODE=1
 fi
 
@@ -119,7 +99,7 @@ fi
 if command_exists rustc && rustc --version | grep -q "1.80.1"; then
     echo -e "${GREEN}Rust version 1.80.1 is installed.${NC}"
 else
-    echo -e "${RED}Rust version 1.80.1 not installed. $INSTALLATION_DOCS_URL${NC}"
+    echo -e "${RED}Rust version 1.80.1 not installed.${NC}"
     EXIT_CODE=1
 fi
 
@@ -136,7 +116,7 @@ go_version_needed=$(grep "^go " go.mod | awk '{print $2}')
 if command_exists go && go version | grep -q "$go_version_needed"; then
     echo -e "${GREEN}Go version $go_version_needed is installed.${NC}"
 else
-    echo -e "${RED}Go version $go_version_needed not installed. $INSTALLATION_DOCS_URL${NC}"
+    echo -e "${RED}Go version $go_version_needed not installed.${NC}"
     EXIT_CODE=1
 fi
 
@@ -144,11 +124,15 @@ fi
 if command_exists foundryup; then
     echo -e "${GREEN}Foundry is installed.${NC}"
 else
-    echo -e "${RED}Foundry is not installed. $INSTALLATION_DOCS_URL${NC}"
+    echo -e "${RED}Foundry is not installed.${NC}"
     EXIT_CODE=1
 fi
 
 echo -e "${BLUE}Verification complete.${NC}"
+
+if [ $EXIT_CODE != 0 ]; then
+    echo -e "${RED}One or more dependencies missing. $INSTALLATION_DOCS_URL${NC}"
+fi
 
 exit $EXIT_CODE
 
