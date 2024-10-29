@@ -88,7 +88,6 @@ type TimeboostConfig struct {
 	AuctionContractAddress string        `koanf:"auction-contract-address"`
 	AuctioneerAddress      string        `koanf:"auctioneer-address"`
 	ExpressLaneAdvantage   time.Duration `koanf:"express-lane-advantage"`
-	SequencerHTTPEndpoint  string        `koanf:"sequencer-http-endpoint"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
@@ -96,7 +95,6 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	AuctionContractAddress: "",
 	AuctioneerAddress:      "",
 	ExpressLaneAdvantage:   time.Millisecond * 200,
-	SequencerHTTPEndpoint:  "http://localhost:8547",
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -189,7 +187,6 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".auction-contract-address", DefaultTimeboostConfig.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
 	f.String(prefix+".auctioneer-address", DefaultTimeboostConfig.AuctioneerAddress, "Address of the Timeboost Autonomous Auctioneer")
 	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
-	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 }
 
 type txQueueItem struct {

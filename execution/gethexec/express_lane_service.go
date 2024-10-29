@@ -36,10 +36,6 @@ type expressLaneControl struct {
 	controller common.Address
 }
 
-type HeaderByNumberClient interface {
-	HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error)
-}
-
 type expressLaneService struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
@@ -57,9 +53,7 @@ type expressLaneService struct {
 
 type contractAdapter struct {
 	*filters.FilterAPI
-
-	// We should be able to leave this interface
-	bind.ContractTransactor // member unset as it is not used.
+	bind.ContractTransactor // We leave this member unset as it is not used.
 
 	apiBackend *arbitrum.APIBackend
 }

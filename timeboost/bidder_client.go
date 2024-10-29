@@ -75,6 +75,8 @@ func NewBidderClient(
 	configFetcher BidderClientConfigFetcher,
 ) (*BidderClient, error) {
 	cfg := configFetcher()
+	_ = cfg.BidGwei     // These fields are used from cmd/bidder-client
+	_ = cfg.DepositGwei // this marks them as used for the linter.
 	if cfg.AuctionContractAddress == "" {
 		return nil, fmt.Errorf("auction contract address cannot be empty")
 	}
