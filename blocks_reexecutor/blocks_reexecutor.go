@@ -261,7 +261,7 @@ func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *sta
 	var block *types.Block
 	var err error
 	for ctx.Err() == nil {
-		state, block, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, targetHeader, blockToRecreate, prevHash, nil)
+		state, block, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil)
 		if err != nil {
 			return err
 		}
