@@ -3,7 +3,7 @@
 
 use arbutil::{
     evm::{
-        api::DataReader,
+        api::{DataReader, Gas, Ink},
         req::EvmApiRequestor,
         user::{UserOutcome, UserOutcomeKind},
         EvmData,
@@ -11,7 +11,7 @@ use arbutil::{
     format::DebugBytes,
     Bytes32,
 };
-use cache::{deserialize_module, InitCache, LruCacheMetrics};
+use cache::{deserialize_module, CacheMetrics, InitCache};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
@@ -279,7 +279,7 @@ pub unsafe extern "C" fn stylus_call(
     let evm_api = EvmApiRequestor::new(req_handler);
     let pricing = config.pricing;
     let output = &mut *output;
-    let ink = pricing.gas_to_ink(*gas);
+    let ink = pricing.gas_to_ink(Gas(*gas));
 
     // Safety: module came from compile_user_wasm and we've paid for memory expansion
     let instance = unsafe {
@@ -302,10 +302,10 @@ pub unsafe extern "C" fn stylus_call(
         Ok(outcome) => output.write_outcome(outcome),
     };
     let ink_left = match status {
-        UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
+        UserOutcomeKind::OutOfStack => Ink(0), // take all gas when out of stack
         _ => instance.ink_left().into(),
     };
-    *gas = pricing.ink_to_gas(ink_left);
+    *gas = pricing.ink_to_gas(ink_left).0;
     status
 }
 
@@ -364,10 +364,15 @@ pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
     }
 }
 
-/// Gets lru cache metrics.
+/// Gets cache metrics.
+///
+/// # Safety
+///
+/// `output` must not be null.
 #[no_mangle]
-pub extern "C" fn stylus_get_lru_cache_metrics() -> LruCacheMetrics {
-    InitCache::get_lru_metrics()
+pub unsafe extern "C" fn stylus_get_cache_metrics(output: *mut CacheMetrics) {
+    let output = &mut *output;
+    InitCache::get_metrics(output);
 }
 
 /// Clears lru cache.
@@ -377,18 +382,23 @@ pub extern "C" fn stylus_clear_lru_cache() {
     InitCache::clear_lru_cache()
 }
 
-/// Gets lru entry size in bytes.
+/// Clears long term cache (for arbos_tag = 1)
 /// Only used for testing purposes.
 #[no_mangle]
-pub extern "C" fn stylus_get_lru_entry_size_estimate_bytes(
+pub extern "C" fn stylus_clear_long_term_cache() {
+    InitCache::clear_long_term(1);
+}
+
+/// Gets entry size in bytes.
+/// Only used for testing purposes.
+#[no_mangle]
+pub extern "C" fn stylus_get_entry_size_estimate_bytes(
     module: GoSliceData,
     version: u16,
     debug: bool,
 ) -> u64 {
     match deserialize_module(module.slice(), version, debug) {
         Err(error) => panic!("tried to get invalid asm!: {error}"),
-        Ok((_, _, lru_entry_size_estimate_bytes)) => {
-            lru_entry_size_estimate_bytes.try_into().unwrap()
-        }
+        Ok((_, _, entry_size_estimate_bytes)) => entry_size_estimate_bytes.try_into().unwrap(),
     }
 }

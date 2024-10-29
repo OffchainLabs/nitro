@@ -18,7 +18,8 @@ jobs:
         with:
           fetch-depth: 0
           submodules: true
-          ref: "${{ github.event.pull_request.merge_commit_sha }}"
+          persist-credentials: false
+          ref: "${{ github.event.pull_request.head.sha }}"
 
       - name: Check all submodules are ancestors of origin/HEAD or configured branch
         run: |
