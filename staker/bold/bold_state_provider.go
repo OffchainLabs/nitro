@@ -356,7 +356,6 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Enable Redis streams.
 	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
