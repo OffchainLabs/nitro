@@ -66,7 +66,7 @@ func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]
 		return nil, fmt.Errorf("invalid inputs, fromBlock: %d is greater than toBlock: %d", fromBlock, toBlock)
 	}
 	if b.blocksLimit > 0 && end-start+1 > arbutil.MessageIndex(b.blocksLimit) {
-		return nil, fmt.Errorf("%w. Range requested- %d", ErrBlockMetadataApiBlocksLimitExceeded, end-start+1)
+		return nil, fmt.Errorf("%w. Range requested- %d, Limit- %d", ErrBlockMetadataApiBlocksLimitExceeded, end-start+1, b.blocksLimit)
 	}
 	var result []NumberAndBlockMetadata
 	for i := start; i <= end; i++ {
