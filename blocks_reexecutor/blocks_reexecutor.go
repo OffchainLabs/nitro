@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -82,6 +83,7 @@ type BlocksReExecutor struct {
 	startBlock         uint64
 	currentBlock       uint64
 	minBlocksPerThread uint64
+	mutex              sync.Mutex
 }
 
 func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrChan chan error) (*BlocksReExecutor, error) {
@@ -126,7 +128,7 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 	// Divide work equally among available threads when MinBlocksPerThread is zero
 	if c.MinBlocksPerThread == 0 {
 		// #nosec G115
-		work := (end - start) / uint64(c.Room)
+		work := (end - start) / uint64(c.Room*2)
 		if work > 0 {
 			minBlocksPerThread = work
 		}
@@ -148,13 +150,12 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 		fatalErrChan:       fatalErrChan,
 	}
 	blocksReExecutor.stateFor = func(header *types.Header) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
-		sdb, err := state.NewDeterministic(header.Root, blocksReExecutor.db)
+		blocksReExecutor.mutex.Lock()
+		defer blocksReExecutor.mutex.Unlock()
+		sdb, err := state.New(header.Root, blocksReExecutor.db, nil)
 		if err == nil {
 			_ = blocksReExecutor.db.TrieDB().Reference(header.Root, common.Hash{}) // Will be dereferenced later in advanceStateUpToBlock
-			stateReleaseFunc := func() {
-				_ = blocksReExecutor.db.TrieDB().Dereference(header.Root)
-			}
-			return sdb, stateReleaseFunc, nil
+			return sdb, func() { blocksReExecutor.dereferenceRoot(header.Root) }, nil
 		}
 		return sdb, arbitrum.NoopStateRelease, err
 	}
@@ -225,7 +226,15 @@ func (s *BlocksReExecutor) StopAndWait() {
 	s.StopWaiter.StopAndWait()
 }
 
+func (s *BlocksReExecutor) dereferenceRoot(root common.Hash) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	_ = s.db.TrieDB().Dereference(root)
+}
+
 func (s *BlocksReExecutor) commitStateAndVerify(statedb *state.StateDB, expected common.Hash, blockNumber uint64) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	result, err := statedb.Commit(blockNumber, true)
 	if err != nil {
 		return nil, arbitrum.NoopStateRelease, err
@@ -233,13 +242,10 @@ func (s *BlocksReExecutor) commitStateAndVerify(statedb *state.StateDB, expected
 	if result != expected {
 		return nil, arbitrum.NoopStateRelease, fmt.Errorf("bad root hash expected: %v got: %v", expected, result)
 	}
-	sdb, err := state.New(result, statedb.Database(), nil)
+	sdb, err := state.New(result, s.db, nil)
 	if err == nil {
 		_ = s.db.TrieDB().Reference(result, common.Hash{})
-		stateReleaseFunc := func() {
-			_ = s.db.TrieDB().Dereference(result)
-		}
-		return sdb, stateReleaseFunc, nil
+		return sdb, func() { s.dereferenceRoot(result) }, nil
 	}
 	return sdb, arbitrum.NoopStateRelease, err
 }
