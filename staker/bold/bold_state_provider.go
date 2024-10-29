@@ -361,6 +361,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
+	defer execRun.Close()
 	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
 	defer cancelCheckAlive()
 	stepLeaves := execRun.GetMachineHashesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
@@ -448,6 +449,7 @@ func (s *BOLDStateProvider) CollectProof(
 	if err != nil {
 		return nil, err
 	}
+	defer execRun.Close()
 	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
 	defer cancelCheckAlive()
 	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
