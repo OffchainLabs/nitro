@@ -34,7 +34,7 @@
         pkgs = import nixpkgs {
           inherit overlays system;
         };
-        stableToolchain = pkgs.rust-bin.stable.latest.minimal.override {
+        stableToolchain = pkgs.rust-bin.stable."1.81.0".minimal.override {
           extensions = [ "rustfmt" "clippy" "llvm-tools-preview" "rust-src" ];
           targets = [ "wasm32-unknown-unknown" "wasm32-wasi" ];
         };

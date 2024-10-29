@@ -89,7 +89,8 @@ jobs:
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 'stable'
+          # TODO: remove pinning: https://github.com/EspressoSystems/nitro-espresso-integration/issues/257
+          toolchain: '1.81.0'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
