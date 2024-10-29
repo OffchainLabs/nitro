@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"io"
 	"math/big"
 	"net"
@@ -20,11 +21,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -41,6 +42,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -70,7 +72,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbutil"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -84,15 +85,15 @@ import (
 )
 
 type info = *BlockchainTestInfo
-type client = arbutil.L1Interface
 
 type SecondNodeParams struct {
-	nodeConfig  *arbnode.Config
-	execConfig  *gethexec.Config
-	stackConfig *node.Config
-	dasConfig   *das.DataAvailabilityConfig
-	initData    *statetransfer.ArbosInitializationInfo
-	addresses   *chaininfo.RollupAddresses
+	nodeConfig   *arbnode.Config
+	execConfig   *gethexec.Config
+	stackConfig  *node.Config
+	dasConfig    *das.DataAvailabilityConfig
+	initData     *statetransfer.ArbosInitializationInfo
+	addresses    *chaininfo.RollupAddresses
+	wasmCacheTag uint32
 }
 
 type TestClient struct {
@@ -139,8 +140,8 @@ func (tc *TestClient) GetBaseFeeAt(t *testing.T, blockNum *big.Int) *big.Int {
 	return GetBaseFeeAt(t, tc.Client, tc.ctx, blockNum)
 }
 
-func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transaction) {
-	SendWaitTestTransactions(t, tc.ctx, tc.Client, txs)
+func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transaction) []*types.Receipt {
+	return SendWaitTestTransactions(t, tc.ctx, tc.Client, txs)
 }
 
 func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
@@ -156,19 +157,20 @@ func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transactio
 }
 
 var TestCachingConfig = gethexec.CachingConfig{
-	Archive:                            false,
-	BlockCount:                         128,
-	BlockAge:                           30 * time.Minute,
-	TrieTimeLimit:                      time.Hour,
-	TrieDirtyCache:                     1024,
-	TrieCleanCache:                     600,
-	SnapshotCache:                      400,
-	DatabaseCache:                      2048,
-	SnapshotRestoreGasLimit:            300_000_000_000,
-	MaxNumberOfBlocksToSkipStateSaving: 0,
-	MaxAmountOfGasToSkipStateSaving:    0,
-	StylusLRUCacheCapacity:             0,
-	StateScheme:                        env.GetTestStateScheme(),
+	Archive:                             false,
+	BlockCount:                          128,
+	BlockAge:                            30 * time.Minute,
+	TrieTimeLimit:                       time.Hour,
+	TrieDirtyCache:                      1024,
+	TrieCleanCache:                      600,
+	SnapshotCache:                       400,
+	DatabaseCache:                       2048,
+	SnapshotRestoreGasLimit:             300_000_000_000,
+	MaxNumberOfBlocksToSkipStateSaving:  0,
+	MaxAmountOfGasToSkipStateSaving:     0,
+	StylusLRUCacheCapacity:              0,
+	DisableStylusCacheMetricsCollection: true,
+	StateScheme:                         env.GetTestStateScheme(),
 }
 
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
@@ -249,6 +251,7 @@ type NodeBuilder struct {
 	initMessage                 *arbostypes.ParsedInitMessage
 	l3InitMessage               *arbostypes.ParsedInitMessage
 	withProdConfirmPeriodBlocks bool
+	wasmCacheTag                uint32
 
 	// Created nodes
 	L1 *TestClient
@@ -352,6 +355,15 @@ func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) WithStylusLongTermCache(enabled bool) *NodeBuilder {
+	if enabled {
+		b.wasmCacheTag = 1
+	} else {
+		b.wasmCacheTag = 0
+	}
+	return b
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
@@ -425,6 +437,8 @@ func buildOnParentChain(
 
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
+
+	wasmCacheTag uint32,
 ) *TestClient {
 	if parentChainTestClient == nil {
 		t.Fatal("must build parent chain before building chain")
@@ -436,7 +450,7 @@ func buildOnParentChain(
 	var arbDb ethdb.Database
 	var blockchain *core.BlockChain
 	_, chainTestClient.Stack, chainDb, arbDb, blockchain = createNonL1BlockChainWithStackConfig(
-		t, chainInfo, dataDir, chainConfig, initMessage, stackConfig, execConfig)
+		t, chainInfo, dataDir, chainConfig, initMessage, stackConfig, execConfig, wasmCacheTag)
 
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
@@ -524,6 +538,8 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 		b.l3InitMessage,
 		b.l3Addresses,
+
+		b.wasmCacheTag,
 	)
 
 	return func() {
@@ -552,6 +568,8 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		b.initMessage,
 		b.addresses,
+
+		b.wasmCacheTag,
 	)
 
 	return func() {
@@ -573,7 +591,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	var arbDb ethdb.Database
 	var blockchain *core.BlockChain
 	b.L2Info, b.L2.Stack, chainDb, arbDb, blockchain = createL2BlockChain(
-		t, b.L2Info, b.dataDir, b.chainConfig, b.execConfig)
+		t, b.L2Info, b.dataDir, b.chainConfig, b.execConfig, b.wasmCacheTag)
 
 	Require(t, b.execConfig.Validate())
 	execConfig := b.execConfig
@@ -624,7 +642,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	}
 	b.L2.cleanup()
 
-	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.execConfig)
+	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.execConfig, b.wasmCacheTag)
 
 	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
@@ -701,7 +719,7 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.wasmCacheTag)
 	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
 	return testClient, func() { testClient.cleanup() }
@@ -764,26 +782,29 @@ func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.In
 	return BridgeBalance(t, account, amount, b.L1Info, b.L2Info, b.L1.Client, b.L2.Client, b.ctx)
 }
 
-func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {
+func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclient.Client, txs []*types.Transaction) []*types.Receipt {
 	t.Helper()
+	receipts := make([]*types.Receipt, len(txs))
 	for _, tx := range txs {
 		Require(t, client.SendTransaction(ctx, tx))
 	}
-	for _, tx := range txs {
-		_, err := EnsureTxSucceeded(ctx, client, tx)
+	for i, tx := range txs {
+		var err error
+		receipts[i], err = EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
+	return receipts
 }
 
 func TransferBalance(
-	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context,
+	t *testing.T, from, to string, amount *big.Int, l2info info, client *ethclient.Client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
 }
 
 func TransferBalanceTo(
-	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client client, ctx context.Context,
+	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client *ethclient.Client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 	tx := l2info.PrepareTxTo(from, &to, l2info.TransferGas, amount, nil)
@@ -796,7 +817,7 @@ func TransferBalanceTo(
 
 // if l2client is not nil - will wait until balance appears in l2
 func BridgeBalance(
-	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client client, l2client client, ctx context.Context,
+	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client *ethclient.Client, l2client *ethclient.Client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 
@@ -856,8 +877,8 @@ func SendSignedTxesInBatchViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client arbutil.L1Interface,
-	l2client arbutil.L1Interface,
+	l1client *ethclient.Client,
+	l2client *ethclient.Client,
 	delayedTxes types.Transactions,
 ) types.Receipts {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -907,8 +928,8 @@ func SendSignedTxViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client arbutil.L1Interface,
-	l2client arbutil.L1Interface,
+	l1client *ethclient.Client,
+	l2client *ethclient.Client,
 	delayedTx *types.Transaction,
 ) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -938,8 +959,8 @@ func SendUnsignedTxViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client arbutil.L1Interface,
-	l2client arbutil.L1Interface,
+	l1client *ethclient.Client,
+	l2client *ethclient.Client,
 	templateTx *types.Transaction,
 ) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -985,13 +1006,13 @@ func SendUnsignedTxViaL1(
 	return receipt
 }
 
-func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
+func GetBaseFee(t *testing.T, client *ethclient.Client, ctx context.Context) *big.Int {
 	header, err := client.HeaderByNumber(ctx, nil)
 	Require(t, err)
 	return header.BaseFee
 }
 
-func GetBaseFeeAt(t *testing.T, client client, ctx context.Context, blockNum *big.Int) *big.Int {
+func GetBaseFeeAt(t *testing.T, client *ethclient.Client, ctx context.Context, blockNum *big.Int) *big.Int {
 	header, err := client.HeaderByNumber(ctx, blockNum)
 	Require(t, err)
 	return header.BaseFee
@@ -1213,7 +1234,7 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	return l1info, l1Client, l1backend, stack
 }
 
-func getInitMessage(ctx context.Context, t *testing.T, parentChainClient client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
+func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
 	bridge, err := arbnode.NewDelayedBridge(parentChainClient, addresses.Bridge, addresses.DeployedAt)
 	Require(t, err)
 	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
@@ -1232,7 +1253,7 @@ func deployOnParentChain(
 	t *testing.T,
 	ctx context.Context,
 	parentChainInfo info,
-	parentChainClient client,
+	parentChainClient *ethclient.Client,
 	parentChainReaderConfig *headerreader.Config,
 	chainConfig *params.ChainConfig,
 	wasmModuleRoot common.Hash,
@@ -1284,13 +1305,13 @@ func deployOnParentChain(
 }
 
 func createL2BlockChain(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, execConfig *gethexec.Config,
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, execConfig *gethexec.Config, wasmCacheTag uint32,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	return createNonL1BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, execConfig)
+	return createNonL1BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, execConfig, wasmCacheTag)
 }
 
 func createNonL1BlockChainWithStackConfig(
-	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config,
+	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config, wasmCacheTag uint32,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if info == nil {
 		info = NewArbTestInfo(t, chainConfig.ChainID)
@@ -1309,7 +1330,7 @@ func createNonL1BlockChainWithStackConfig(
 	Require(t, err)
 	wasmData, err := stack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
 	Require(t, err)
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, 0, execConfig.StylusTarget.WasmTargets())
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, wasmCacheTag, execConfig.StylusTarget.WasmTargets())
 	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
 
@@ -1380,6 +1401,7 @@ func Create2ndNodeWithConfig(
 	valnodeConfig *valnode.Config,
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
+	wasmCacheTag uint32,
 ) (*ethclient.Client, *arbnode.Node) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1401,7 +1423,7 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 	wasmData, err := chainStack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
 	Require(t, err)
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, 0, execConfig.StylusTarget.WasmTargets())
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, wasmCacheTag, execConfig.StylusTarget.WasmTargets())
 
 	arbDb, err := chainStack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
@@ -1455,7 +1477,7 @@ func authorizeDASKeyset(
 	ctx context.Context,
 	dasSignerKey *blsSignatures.PublicKey,
 	l1info info,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 ) {
 	if dasSignerKey == nil {
 		return
@@ -1695,11 +1717,23 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 	}
 }
 
+var (
+	recordBlockInputsEnable                       = flag.Bool("recordBlockInputs.enable", true, "Whether to record block inputs as a json file")
+	recordBlockInputsWithSlug                     = flag.String("recordBlockInputs.WithSlug", "", "Slug directory for validationInputsWriter")
+	recordBlockInputsWithBaseDir                  = flag.String("recordBlockInputs.WithBaseDir", "", "Base directory for validationInputsWriter")
+	recordBlockInputsWithTimestampDirEnabled      = flag.Bool("recordBlockInputs.WithTimestampDirEnabled", true, "Whether to add timestamp directory while recording block inputs")
+	recordBlockInputsWithBlockIdInFileNameEnabled = flag.Bool("recordBlockInputs.WithBlockIdInFileNameEnabled", true, "Whether to record block inputs using test specific block_id")
+)
+
 // recordBlock writes a json file with all of the data needed to validate a block.
 //
 // This can be used as an input to the arbitrator prover to validate a block.
-func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
+func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ethdb.WasmTarget) {
 	t.Helper()
+	flag.Parse()
+	if !*recordBlockInputsEnable {
+		return
+	}
 	ctx := builder.ctx
 	inboxPos := arbutil.MessageIndex(block)
 	for {
@@ -1712,9 +1746,20 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 			break
 		}
 	}
-	validationInputsWriter, err := inputs.NewWriter(inputs.WithSlug(t.Name()))
+	var options []inputs.WriterOption
+	options = append(options, inputs.WithTimestampDirEnabled(*recordBlockInputsWithTimestampDirEnabled))
+	options = append(options, inputs.WithBlockIdInFileNameEnabled(*recordBlockInputsWithBlockIdInFileNameEnabled))
+	if *recordBlockInputsWithBaseDir != "" {
+		options = append(options, inputs.WithBaseDir(*recordBlockInputsWithBaseDir))
+	}
+	if *recordBlockInputsWithSlug != "" {
+		options = append(options, inputs.WithSlug(*recordBlockInputsWithSlug))
+	} else {
+		options = append(options, inputs.WithSlug(t.Name()))
+	}
+	validationInputsWriter, err := inputs.NewWriter(options...)
 	Require(t, err)
-	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.TargetWavm)
+	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, targets...)
 	if err != nil {
 		Fatal(t, "failed to get validation inputs", block, err)
 	}
