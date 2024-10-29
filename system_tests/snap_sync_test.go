@@ -104,7 +104,7 @@ func TestSnapSync(t *testing.T) {
 		t.Error("Block hash mismatch")
 	}
 	// This to ensure that the node did a snap sync and did not sync the batch before the snap sync batch.
-	_, err = nodeC.ConsensusNode.InboxTracker.GetBatchMetadata(nodeConfig.SnapSyncTest.BatchCount - 3)
+	_, err = nodeC.ConsensusNode.InboxTracker.GetBatchMetadata(nodeConfig.InboxReader.SnapSyncTest.BatchCount - 3)
 	if err == nil {
 		t.Error("Batch metadata should not be present for the batch before the snap sync batch")
 	}
@@ -191,10 +191,11 @@ func createNodeConfigWithSnapSync(t *testing.T, builder *NodeBuilder) *arbnode.C
 	Require(t, err)
 	// Create a config with snap sync enabled and same database directory as the 2nd node
 	nodeConfig := builder.nodeConfig
-	nodeConfig.SnapSyncTest.Enabled = true
-	nodeConfig.SnapSyncTest.BatchCount = batchCount
-	nodeConfig.SnapSyncTest.DelayedCount = prevBatchMetaData.DelayedMessageCount - 1
-	nodeConfig.SnapSyncTest.PrevDelayedRead = prevMessage.DelayedMessagesRead
-	nodeConfig.SnapSyncTest.PrevBatchMessageCount = uint64(prevBatchMetaData.MessageCount)
+	nodeConfig.InboxReader.EnableSnapSync = true
+	nodeConfig.InboxReader.SnapSyncTest.Enabled = true
+	nodeConfig.InboxReader.SnapSyncTest.BatchCount = batchCount
+	nodeConfig.InboxReader.SnapSyncTest.DelayedCount = prevBatchMetaData.DelayedMessageCount - 1
+	nodeConfig.InboxReader.SnapSyncTest.PrevDelayedRead = prevMessage.DelayedMessagesRead
+	nodeConfig.InboxReader.SnapSyncTest.PrevBatchMessageCount = uint64(prevBatchMetaData.MessageCount)
 	return nodeConfig
 }
