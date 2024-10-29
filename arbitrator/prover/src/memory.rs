@@ -74,9 +74,8 @@ pub struct Memory {
     pub merkle: Option<Merkle>,
     pub max_size: u64,
     #[serde(skip)]
-    dirty_leaves: Mutex<BitVec>,
+    dirty_leaves: Mutex<(BitVec, usize)>,
 }
-
 
 impl Default for Memory {
     fn default() -> Memory {
@@ -84,7 +83,10 @@ impl Default for Memory {
             buffer: Vec::default(),
             merkle: Option::default(),
             max_size: u64::default(),
-            dirty_leaves: Mutex::new(bitvec![0; 4 * 1024 / Self::LEAF_SIZE  * 1024 * 1024 + 1]),
+            dirty_leaves: Mutex::new((
+                bitvec![0; 4 * 1024 / Self::LEAF_SIZE  * 1024 * 1024 + 1],
+                0,
+            )),
         }
     }
 }
@@ -139,7 +141,10 @@ impl Memory {
             buffer: vec![0u8; size],
             merkle: None,
             max_size,
-            dirty_leaves: Mutex::new(bitvec![0; 4 * 1024 / Self::LEAF_SIZE  * 1024 * 1024 + 1]),
+            dirty_leaves: Mutex::new((
+                bitvec![0; 4 * 1024 / Self::LEAF_SIZE  * 1024 * 1024 + 1],
+                0,
+            )),
         }
     }
 
@@ -150,10 +155,13 @@ impl Memory {
     pub fn merkelize(&self) -> Cow<'_, Merkle> {
         if let Some(m) = &self.merkle {
             let mut dirt = self.dirty_leaves.lock();
-            for leaf_idx in dirt.iter_ones() {
+            for leaf_idx in dirt.0.iter_ones() {
                 m.set(leaf_idx, hash_leaf(self.get_leaf_data(leaf_idx)));
             }
-            dirt.fill(false);
+            for leaf_idx in 0..dirt.1 {
+                dirt.0.set(leaf_idx, false);
+            }
+            dirt.1 = 0;
             return Cow::Borrowed(m);
         }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
@@ -180,7 +188,11 @@ impl Memory {
             });
         }
 
-        self.dirty_leaves.lock().fill(false);
+        let mut dirt = self.dirty_leaves.lock();
+        for leaf_idx in 0..dirt.1 {
+            dirt.0.set(leaf_idx, false);
+        }
+        dirt.1 = 0;
 
         Cow::Owned(m)
     }
@@ -295,8 +307,10 @@ impl Memory {
         let buf = value.to_le_bytes();
         self.buffer[idx..end_idx].copy_from_slice(&buf[..bytes.into()]);
         let mut dirty_leaves = self.dirty_leaves.lock();
-        dirty_leaves.set(idx / Self::LEAF_SIZE, true);
-        dirty_leaves.set((end_idx - 1) / Self::LEAF_SIZE, true);
+        dirty_leaves.0.set(idx / Self::LEAF_SIZE, true);
+        dirty_leaves.1 = cmp::max(dirty_leaves.1, idx / Self::LEAF_SIZE + 1);
+        dirty_leaves.0.set((end_idx - 1) / Self::LEAF_SIZE, true);
+        dirty_leaves.1 = cmp::max(dirty_leaves.1, (end_idx - 1) / Self::LEAF_SIZE + 1);
 
         true
     }
@@ -319,7 +333,10 @@ impl Memory {
         let idx = idx as usize;
         let end_idx = end_idx as usize;
         self.buffer[idx..end_idx].copy_from_slice(value);
-        self.dirty_leaves.lock().set(idx / Self::LEAF_SIZE, true);
+
+        let mut dirty_leaves = self.dirty_leaves.lock();
+        dirty_leaves.0.set(idx / Self::LEAF_SIZE, true);
+        dirty_leaves.1 = cmp::max(dirty_leaves.1, idx / Self::LEAF_SIZE + 1);
 
         true
     }
@@ -361,7 +378,10 @@ impl Memory {
     }
 
     pub fn resize_dirty_leaves(&mut self) {
-        self.dirty_leaves.lock().resize(4 * 1024 / Self::LEAF_SIZE  * 1024 * 1024 + 1, false);
+        self.dirty_leaves
+            .lock()
+            .0
+            .resize(4 * 1024 / Self::LEAF_SIZE * 1024 * 1024 + 1, false);
     }
 
     pub fn resize(&mut self, new_size: usize) {
