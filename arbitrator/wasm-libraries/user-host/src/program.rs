@@ -3,7 +3,7 @@
 
 use arbutil::{
     evm::{
-        api::{EvmApiMethod, VecReader, EVM_API_METHOD_REQ_OFFSET},
+        api::{EvmApiMethod, Gas, Ink, VecReader, EVM_API_METHOD_REQ_OFFSET},
         req::{EvmApiRequestor, RequestHandler},
         user::UserOutcomeKind,
         EvmData,
@@ -49,7 +49,7 @@ static mut LAST_REQUEST_ID: u32 = 0x10000;
 #[derive(Clone)]
 pub(crate) struct UserHostRequester {
     data: Option<Vec<u8>>,
-    answer: Option<(Vec<u8>, VecReader, u64)>,
+    answer: Option<(Vec<u8>, VecReader, Gas)>,
     req_type: u32,
     id: u32,
 }
@@ -95,7 +95,7 @@ impl UserHostRequester {
         req_id: u32,
         result: Vec<u8>,
         raw_data: Vec<u8>,
-        gas: u64,
+        gas: Gas,
     ) {
         self.answer = Some((result, VecReader::new(raw_data), gas));
         if req_id != self.id {
@@ -130,7 +130,7 @@ impl UserHostRequester {
     }
 
     #[no_mangle]
-    unsafe fn send_request(&mut self, req_type: u32, data: Vec<u8>) -> (Vec<u8>, VecReader, u64) {
+    unsafe fn send_request(&mut self, req_type: u32, data: Vec<u8>) -> (Vec<u8>, VecReader, Gas) {
         let req_id = self.set_request(req_type, &data);
         compiler_fence(Ordering::SeqCst);
 
@@ -149,7 +149,7 @@ impl RequestHandler<VecReader> for UserHostRequester {
         &mut self,
         req_type: EvmApiMethod,
         req_data: impl AsRef<[u8]>,
-    ) -> (Vec<u8>, VecReader, u64) {
+    ) -> (Vec<u8>, VecReader, Gas) {
         unsafe {
             self.send_request(
                 req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
@@ -265,7 +265,7 @@ impl UserHost<VecReader> for Program {
         println!("{} {text}", "Stylus says:".yellow());
     }
 
-    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], _end_ink: u64) {
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], _end_ink: Ink) {
         let args = hex::encode(args);
         let outs = hex::encode(outs);
         println!("Error: unexpected hostio tracing info for {name} while proving: {args}, {outs}");
