@@ -760,7 +760,7 @@ func createNodeImpl(
 	}, nil
 }
 
-func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Address, l1Client arbutil.L1Interface, parentChainAssertionBlock uint64, batchCount uint64) (uint64, error) {
+func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Address, l1Client *ethclient.Client, parentChainAssertionBlock uint64, batchCount uint64) (uint64, error) {
 	bridge, err := bridgegen.NewIBridge(bridgeAddress, l1Client)
 	if err != nil {
 		return 0, err
