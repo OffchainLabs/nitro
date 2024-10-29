@@ -72,24 +72,29 @@ func newRedisStorage(ctx context.Context, t *testing.T, encF storage.EncoderDeco
 
 func valueOf(t *testing.T, i int) *storage.QueuedTransaction {
 	t.Helper()
+	// #nosec G115
 	meta, err := rlp.EncodeToBytes(storage.BatchPosterPosition{DelayedMessageCount: uint64(i)})
 	if err != nil {
 		t.Fatalf("Encoding batch poster position, error: %v", err)
 	}
 	return &storage.QueuedTransaction{
 		FullTx: types.NewTransaction(
+			// #nosec G115
 			uint64(i),
 			common.Address{},
 			big.NewInt(int64(i)),
+			// #nosec G115
 			uint64(i),
 			big.NewInt(int64(i)),
 			[]byte{byte(i)}),
 		Meta: meta,
 		DeprecatedData: types.DynamicFeeTx{
-			ChainID:    big.NewInt(int64(i)),
-			Nonce:      uint64(i),
-			GasTipCap:  big.NewInt(int64(i)),
-			GasFeeCap:  big.NewInt(int64(i)),
+			ChainID: big.NewInt(int64(i)),
+			// #nosec G115
+			Nonce:     uint64(i),
+			GasTipCap: big.NewInt(int64(i)),
+			GasFeeCap: big.NewInt(int64(i)),
+			// #nosec G115
 			Gas:        uint64(i),
 			Value:      big.NewInt(int64(i)),
 			Data:       []byte{byte(i % 8)},
@@ -113,6 +118,7 @@ func values(t *testing.T, from, to int) []*storage.QueuedTransaction {
 func initStorage(ctx context.Context, t *testing.T, s QueueStorage) QueueStorage {
 	t.Helper()
 	for i := 0; i < 20; i++ {
+		// #nosec G115
 		if err := s.Put(ctx, uint64(i), nil, valueOf(t, i)); err != nil {
 			t.Fatalf("Error putting a key/value: %v", err)
 		}
@@ -153,6 +159,7 @@ func TestPruneAll(t *testing.T) {
 	s := newLevelDBStorage(t, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	ctx := context.Background()
 	for i := 0; i < 20; i++ {
+		// #nosec G115
 		if err := s.Put(ctx, uint64(i), nil, valueOf(t, i)); err != nil {
 			t.Fatalf("Error putting a key/value: %v", err)
 		}
@@ -236,6 +243,7 @@ func TestLast(t *testing.T) {
 			ctx := context.Background()
 			for i := 0; i < cnt; i++ {
 				val := valueOf(t, i)
+				// #nosec G115
 				if err := s.Put(ctx, uint64(i), nil, val); err != nil {
 					t.Fatalf("Error putting a key/value: %v", err)
 				}
@@ -255,6 +263,7 @@ func TestLast(t *testing.T) {
 			for i := 0; i < cnt-1; i++ {
 				prev := valueOf(t, i)
 				newVal := valueOf(t, cnt+i)
+				// #nosec G115
 				if err := s.Put(ctx, uint64(i), prev, newVal); err != nil {
 					t.Fatalf("Error putting a key/value: %v, prev: %v, new: %v", err, prev, newVal)
 				}
@@ -362,6 +371,7 @@ func TestLength(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Length() unexpected error: %v", err)
 				}
+				// #nosec G115
 				if want := arbmath.MaxInt(0, 20-int(tc.pruneFrom)); got != want {
 					t.Errorf("Length() = %d want %d", got, want)
 				}

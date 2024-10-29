@@ -10,6 +10,7 @@ use structopt::StructOpt;
 mod arbcompress;
 mod caller_env;
 mod machine;
+mod prepare;
 mod program;
 mod socket;
 mod stylus_backend;
@@ -46,6 +47,10 @@ pub struct Opts {
     debug: bool,
     #[structopt(long)]
     require_success: bool,
+    // JSON inputs supercede any of the command-line inputs which could
+    // be specified in the JSON file.
+    #[structopt(long)]
+    json_inputs: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {

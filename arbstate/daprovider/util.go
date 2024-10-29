@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -30,8 +31,14 @@ type DASReader interface {
 
 type DASWriter interface {
 	// Store requests that the message be stored until timeout (UTC time in unix epoch seconds).
-	Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*DataAvailabilityCertificate, error)
+	Store(ctx context.Context, message []byte, timeout uint64) (*DataAvailabilityCertificate, error)
 	fmt.Stringer
+}
+
+var DefaultDASRetentionPeriod time.Duration = time.Hour * 24 * 15
+
+type DASKeysetFetcher interface {
+	GetKeysetByHash(context.Context, common.Hash) ([]byte, error)
 }
 
 type BlobReader interface {
@@ -138,6 +145,7 @@ func RecoverPayloadFromDasBatch(
 	batchNum uint64,
 	sequencerMsg []byte,
 	dasReader DASReader,
+	keysetFetcher DASKeysetFetcher,
 	preimageRecorder PreimageRecorder,
 	validateSeqMsg bool,
 ) ([]byte, error) {
@@ -181,9 +189,9 @@ func RecoverPayloadFromDasBatch(
 		return preimage, nil
 	}
 
-	keysetPreimage, err := getByHash(ctx, cert.KeysetHash)
+	keysetPreimage, err := keysetFetcher.GetKeysetByHash(ctx, cert.KeysetHash)
 	if err != nil {
-		log.Error("Couldn't get keyset", "err", err)
+		log.Error("Couldn't get keyset", "err", err, "keysetHash", common.Bytes2Hex(cert.KeysetHash[:]))
 		return nil, err
 	}
 	if preimageRecorder != nil {

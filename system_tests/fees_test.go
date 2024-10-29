@@ -2,8 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // these tests seems to consume too much memory with race detection
-//go:build !race
-// +build !race
+// Test randomly fails with L1 gas price estimate should tend toward the basefee
+// so skipping locally, but running on CI
+//go:build !race && cionly
+// +build !race,cionly
 
 package arbtest
 
@@ -52,6 +54,12 @@ func TestSequencerFeePaid(t *testing.T) {
 
 	l1Estimate, err := arbGasInfo.GetL1BaseFeeEstimate(callOpts)
 	Require(t, err)
+
+	l1EstimateThroughGetL1GasPriceEstimate, err := arbGasInfo.GetL1GasPriceEstimate(callOpts)
+	Require(t, err)
+	if !arbmath.BigEquals(l1Estimate, l1EstimateThroughGetL1GasPriceEstimate) {
+		Fatal(t, "GetL1BaseFeeEstimate and GetL1GasPriceEstimate should return the same value")
+	}
 
 	baseFee := builder.L2.GetBaseFee(t)
 	builder.L2Info.GasPrice = baseFee

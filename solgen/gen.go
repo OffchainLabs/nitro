@@ -68,10 +68,22 @@ func main() {
 	}
 	root := filepath.Dir(filename)
 	parent := filepath.Dir(root)
-	filePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "build", "contracts", "src", "*", "*", "*.json"))
+	filePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "build", "contracts", "src", "*", "*.sol", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	filePathsSafeSmartAccount, err := filepath.Glob(filepath.Join(parent, "safe-smart-account", "build", "artifacts", "contracts", "*", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	filePathsSafeSmartAccountOuter, err := filepath.Glob(filepath.Join(parent, "safe-smart-account", "build", "artifacts", "contracts", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	filePaths = append(filePaths, filePathsSafeSmartAccount...)
+	filePaths = append(filePaths, filePathsSafeSmartAccountOuter...)
 
 	modules := make(map[string]*moduleInfo)
 
@@ -105,7 +117,7 @@ func main() {
 		modInfo.addArtifact(artifact)
 	}
 
-	yulFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "yul", "*", "*.json"))
+	yulFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "*", "*.yul", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}

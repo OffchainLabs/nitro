@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -42,6 +43,10 @@ func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.In
 
 func (a *ValidationServerAPI) WasmModuleRoots() ([]common.Hash, error) {
 	return a.spawner.WasmModuleRoots()
+}
+
+func (a *ValidationServerAPI) StylusArchs() ([]ethdb.WasmTarget, error) {
+	return a.spawner.StylusArchs(), nil
 }
 
 func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServerAPI {
@@ -113,15 +118,6 @@ func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.CallIteratively(a.removeOldRuns)
 }
 
-func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *server_api.InputJSON, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
-	input, err := server_api.ValidationInputFromJson(jsonInput)
-	if err != nil {
-		return err
-	}
-	_, err = a.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(ctx)
-	return err
-}
-
 var errRunNotFound error = errors.New("run not found")
 
 func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
@@ -146,6 +142,19 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 		return nil, err
 	}
 	return server_api.MachineStepResultToJson(res), nil
+}
+
+func (a *ExecServerAPI) GetMachineHashesWithStepSize(ctx context.Context, execid, fromStep, stepSize, maxIterations uint64) ([]common.Hash, error) {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return nil, err
+	}
+	hashesInRange := run.GetMachineHashesWithStepSize(fromStep, stepSize, maxIterations)
+	res, err := hashesInRange.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {

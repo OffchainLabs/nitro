@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/validator"
 )
 
 type MessageResult struct {
@@ -21,7 +20,6 @@ type RecordResult struct {
 	Pos       arbutil.MessageIndex
 	BlockHash common.Hash
 	Preimages map[common.Hash][]byte
-	BatchInfo []validator.BatchInfo
 	UserWasms state.UserWasms
 }
 
@@ -56,7 +54,9 @@ type ExecutionSequencer interface {
 	ForwardTo(url string) error
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
-	GetL1GasPriceEstimate() (uint64, error)
+	MarkFeedStart(to arbutil.MessageIndex)
+	Synced() bool
+	FullSyncProgressMap() map[string]interface{}
 }
 
 type FullExecutionClient interface {
@@ -75,7 +75,6 @@ type FullExecutionClient interface {
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FetchBatch(ctx context.Context, batchNum uint64) ([]byte, common.Hash, error)
 	FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error)
 	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
 }
@@ -94,9 +93,6 @@ type ConsensusInfo interface {
 type ConsensusSequencer interface {
 	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult) error
 	ExpectChosenSequencer() error
-	CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64)
-	BacklogL1GasCharged() uint64
-	BacklogCallDataUnits() uint64
 }
 
 type FullConsensusClient interface {

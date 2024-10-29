@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -60,6 +61,10 @@ func (s *mockSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return mockWasmModuleRoots, nil
 }
 
+func (s *mockSpawner) StylusArchs() []ethdb.WasmTarget {
+	return []ethdb.WasmTarget{"mock"}
+}
+
 func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	run := &mockValRun{
 		Promise: containers.NewPromise[validator.GoGlobalState](nil),
@@ -91,10 +96,6 @@ func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.
 	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoots[0], nil)
 }
 
-func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
-}
-
 type mockValRun struct {
 	containers.Promise[validator.GoGlobalState]
 	root common.Hash
@@ -124,6 +125,20 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 		Status:      status,
 		GlobalState: resState,
 	}, nil)
+}
+
+func (r *mockExecRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash] {
+	ctx := context.Background()
+	hashes := make([]common.Hash, 0)
+	for i := uint64(0); i < maxIterations; i++ {
+		absoluteMachineIndex := machineStartIndex + stepSize*(i+1)
+		stepResult, err := r.GetStepAt(absoluteMachineIndex).Await(ctx)
+		if err != nil {
+			return containers.NewReadyPromise[[]common.Hash](nil, err)
+		}
+		hashes = append(hashes, stepResult.Hash)
+	}
+	return containers.NewReadyPromise[[]common.Hash](hashes, nil)
 }
 
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {

@@ -36,7 +36,7 @@ type rustConfig byte
 type rustModule byte
 type rustEvmData byte
 
-//go:wasmimport programs activate
+//go:wasmimport programs activate_v2
 func programActivate(
 	wasm_ptr unsafe.Pointer,
 	wasm_size uint32,
@@ -44,7 +44,8 @@ func programActivate(
 	asm_estimation_ptr unsafe.Pointer,
 	init_gas_ptr unsafe.Pointer,
 	cached_init_gas_ptr unsafe.Pointer,
-	version uint32,
+	stylusVersion uint32,
+	arbosVersion uint64,
 	debug uint32,
 	codehash unsafe.Pointer,
 	module_hash_ptr unsafe.Pointer,
@@ -59,7 +60,8 @@ func activateProgram(
 	codehash common.Hash,
 	wasm []byte,
 	pageLimit u16,
-	version u16,
+	stylusVersion u16,
+	arbosVersion uint64,
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
@@ -79,7 +81,8 @@ func activateProgram(
 		unsafe.Pointer(&asmEstimate),
 		unsafe.Pointer(&initGas),
 		unsafe.Pointer(&cachedInitGas),
-		uint32(version),
+		uint32(stylusVersion),
+		arbosVersion,
 		debugMode,
 		arbutil.SliceToUnsafePointer(codehash[:]),
 		arbutil.SliceToUnsafePointer(moduleHash[:]),
@@ -95,7 +98,7 @@ func activateProgram(
 }
 
 // stub any non-consensus, Rust-side caching updates
-func cacheProgram(db vm.StateDB, module common.Hash, program Program, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
+func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codeHash common.Hash, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
 }
 func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, mode core.MessageRunMode, forever bool) {
 }
@@ -128,7 +131,7 @@ func startProgram(module uint32) uint32
 //go:wasmimport programs send_response
 func sendResponse(req_id uint32) uint32
 
-func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, address common.Address, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
+func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
 	return nil, nil
 }
 
@@ -150,6 +153,8 @@ func callProgram(
 	scope.Contract.Gas = gasLeft
 	return retData, err
 }
+
+func GetWasmLruCacheMetrics() {}
 
 func CallProgramLoop(
 	moduleHash common.Hash,

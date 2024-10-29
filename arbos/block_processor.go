@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -144,26 +143,10 @@ func ProduceBlock(
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
-	batchFetcher arbostypes.FallibleBatchFetcher,
 	isMsgForPrefetch bool,
+	runMode core.MessageRunMode,
 ) (*types.Block, types.Receipts, error) {
-	var batchFetchErr error
-	txes, err := ParseL2Transactions(message, chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
-		data, err := batchFetcher(batchNum)
-		if err != nil {
-			batchFetchErr = err
-			return nil
-		}
-		dataHash := crypto.Keccak256Hash(data)
-		if dataHash != batchHash {
-			batchFetchErr = fmt.Errorf("expecting batch %v hash %v but got data with hash %v", batchNum, batchHash, dataHash)
-			return nil
-		}
-		return data
-	})
-	if batchFetchErr != nil {
-		return nil, nil, batchFetchErr
-	}
+	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
@@ -171,7 +154,7 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch, runMode,
 	)
 }
 
@@ -186,6 +169,7 @@ func ProduceBlockAdvanced(
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
+	runMode core.MessageRunMode,
 ) (*types.Block, types.Receipts, error) {
 
 	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -336,6 +320,7 @@ func ProduceBlockAdvanced(
 				tx,
 				&header.GasUsed,
 				vm.Config{},
+				runMode,
 				func(result *core.ExecutionResult) error {
 					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
 				},

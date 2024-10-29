@@ -7,7 +7,7 @@
 package programs
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
@@ -34,7 +34,7 @@ import (
 )
 
 var apiObjects sync.Map
-var apiIds uintptr // atomic and sequential
+var apiIds atomic.Uintptr // atomic and sequential
 
 type NativeApi struct {
 	handler RequestHandler
@@ -49,7 +49,7 @@ func newApi(
 	memoryModel *MemoryModel,
 ) NativeApi {
 	handler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
-	apiId := atomic.AddUintptr(&apiIds, 1)
+	apiId := apiIds.Add(1)
 	id := usize(apiId)
 	api := NativeApi{
 		handler: handler,

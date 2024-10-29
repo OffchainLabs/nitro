@@ -23,10 +23,10 @@ import (
 )
 
 var (
-	conditionalTxRejectedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/currentstate/rejected", nil)
-	conditionalTxAcceptedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/currentstate/accepted", nil)
-	conditionalTxRejectedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/oldstate/rejected", nil)
-	conditionalTxAcceptedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/oldstate/accepted", nil)
+	conditionalTxRejectedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/currentstate/rejected", nil)
+	conditionalTxAcceptedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/currentstate/accepted", nil)
+	conditionalTxRejectedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/rejected", nil)
+	conditionalTxAcceptedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/accepted", nil)
 )
 
 const TxPreCheckerStrictnessNone uint = 0
@@ -43,7 +43,7 @@ type TxPreCheckerConfig struct {
 type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
 
 var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
-	Strictness:             TxPreCheckerStrictnessNone,
+	Strictness:             TxPreCheckerStrictnessLikelyCompatible,
 	RequiredStateAge:       2,
 	RequiredStateMaxBlocks: 4,
 }
@@ -161,6 +161,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			oldHeader := header
 			blocksTraversed := uint(0)
 			// find a block that's old enough
+			// #nosec G115
 			for now-int64(oldHeader.Time) < config.RequiredStateAge &&
 				(config.RequiredStateMaxBlocks <= 0 || blocksTraversed < config.RequiredStateMaxBlocks) &&
 				oldHeader.Number.Uint64() > 0 {

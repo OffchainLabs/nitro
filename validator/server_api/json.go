@@ -6,11 +6,12 @@ package server_api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/offchainlabs/nitro/util/jsonapi"
@@ -45,8 +46,8 @@ func MachineStepResultFromJson(resultJson *MachineStepResultJson) (*validator.Ma
 	}, nil
 }
 
-func RedisStreamForRoot(moduleRoot common.Hash) string {
-	return fmt.Sprintf("stream:%s", moduleRoot.Hex())
+func RedisStreamForRoot(prefix string, moduleRoot common.Hash) string {
+	return fmt.Sprintf("%sstream:%s", prefix, moduleRoot.Hex())
 }
 
 type Request struct {
@@ -62,24 +63,13 @@ type InputJSON struct {
 	BatchInfo     []BatchInfoJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
-	UserWasms     map[common.Hash]UserWasmJson
+	UserWasms     map[ethdb.WasmTarget]map[common.Hash]string
 	DebugChain    bool
 }
 
-func (i *InputJSON) WriteToFile() error {
-	contents, err := json.MarshalIndent(i, "", "    ")
-	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(fmt.Sprintf("block_inputs_%d.json", i.Id), contents, 0600); err != nil {
-		return err
-	}
-	return nil
-}
-
-type UserWasmJson struct {
-	Module string
-	Asm    string
+// Marshal returns the JSON encoding of the InputJSON.
+func (i *InputJSON) Marshal() ([]byte, error) {
+	return json.MarshalIndent(i, "", "    ")
 }
 
 type BatchInfoJson struct {
@@ -99,19 +89,23 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
 		PreimagesB64:  jsonPreimagesMap,
-		UserWasms:     make(map[common.Hash]UserWasmJson),
+		UserWasms:     make(map[ethdb.WasmTarget]map[common.Hash]string),
 		DebugChain:    entry.DebugChain,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
 	}
-	for moduleHash, info := range entry.UserWasms {
-		encWasm := UserWasmJson{
-			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
-			Module: base64.StdEncoding.EncodeToString(info.Module),
+	for target, wasms := range entry.UserWasms {
+		archWasms := make(map[common.Hash]string)
+		for moduleHash, data := range wasms {
+			compressed, err := arbcompress.CompressLevel(data, 1)
+			if err != nil {
+				continue
+			}
+			archWasms[moduleHash] = base64.StdEncoding.EncodeToString(compressed)
 		}
-		res.UserWasms[moduleHash] = encWasm
+		res.UserWasms[target] = archWasms
 	}
 	return res
 }
@@ -127,7 +121,7 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
 		Preimages:     preimages,
-		UserWasms:     make(state.UserWasms),
+		UserWasms:     make(map[ethdb.WasmTarget]map[common.Hash][]byte),
 		DebugChain:    entry.DebugChain,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
@@ -146,20 +140,32 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}
-	for moduleHash, info := range entry.UserWasms {
-		asm, err := base64.StdEncoding.DecodeString(info.Asm)
-		if err != nil {
-			return nil, err
+	for target, wasms := range entry.UserWasms {
+		archWasms := make(map[common.Hash][]byte)
+		for moduleHash, encoded := range wasms {
+			decoded, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				return nil, err
+			}
+			maxSize := 2_000_000
+			var uncompressed []byte
+			for {
+				uncompressed, err = arbcompress.Decompress(decoded, maxSize)
+				if errors.Is(err, arbcompress.ErrOutputWontFit) {
+					if maxSize >= 512_000_000 {
+						return nil, errors.New("failed decompression: too large")
+					}
+					maxSize = maxSize * 4
+					continue
+				}
+				if err != nil {
+					return nil, err
+				}
+				break
+			}
+			archWasms[moduleHash] = uncompressed
 		}
-		module, err := base64.StdEncoding.DecodeString(info.Module)
-		if err != nil {
-			return nil, err
-		}
-		decInfo := state.ActivatedWasm{
-			Asm:    asm,
-			Module: module,
-		}
-		valInput.UserWasms[moduleHash] = decInfo
+		valInput.UserWasms[target] = archWasms
 	}
 	return valInput, nil
 }

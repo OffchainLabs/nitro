@@ -63,6 +63,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	builder.L2Info.GenerateAccount("ErrorTxSender")
 
 	builder.L2.SendWaitTestTransactions(t, []*types.Transaction{
+		// #nosec G115
 		builder.L2Info.PrepareTx("Faucet", "ErrorTxSender", builder.L2Info.TransferGas, big.NewInt(l2pricing.InitialBaseFeeWei*int64(builder.L2Info.TransferGas)), nil),
 	})
 
@@ -120,7 +121,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			}
 		}
 		// create bad tx on delayed inbox
-		builder.L2Info.GetInfoWithPrivKey("ErrorTxSender").Nonce = 10
+		builder.L2Info.GetInfoWithPrivKey("ErrorTxSender").Nonce.Store(10)
 		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 			WrapL2ForDelayed(t, builder.L2Info.PrepareTx("ErrorTxSender", "DelayedReceiver", 30002, delayedFaucetNeeds, nil), builder.L1Info, "User", 100000),
 		})

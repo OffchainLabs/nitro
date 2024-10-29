@@ -54,7 +54,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
+	cert, err := aggregator.Store(ctx, rawMsg, 0)
 	Require(t, err, "Error storing message")
 
 	for _, storageService := range storageServices {
@@ -123,17 +123,17 @@ type WrapStore struct {
 	DataAvailabilityServiceWriter
 }
 
-func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error) {
+func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
-		return w.DataAvailabilityServiceWriter.Store(ctx, message, timeout, sig)
+		return w.DataAvailabilityServiceWriter.Store(ctx, message, timeout)
 	case immediateError:
 		return nil, errors.New("expected Store failure")
 	case tooSlow:
 		<-ctx.Done()
 		return nil, ctx.Err()
 	case dataCorruption:
-		cert, err := w.DataAvailabilityServiceWriter.Store(ctx, message, timeout, sig)
+		cert, err := w.DataAvailabilityServiceWriter.Store(ctx, message, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -214,7 +214,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
+	cert, err := aggregator.Store(ctx, rawMsg, 0)
 	if !shouldFailAggregation {
 		Require(t, err, "Error storing message")
 	} else {

@@ -44,7 +44,7 @@ type ClientManager struct {
 	stopwaiter.StopWaiter
 
 	clientPtrMap  map[*ClientConnection]bool
-	clientCount   int32
+	clientCount   atomic.Int32
 	pool          *gopool.Pool
 	poller        netpoll.Poller
 	broadcastChan chan *m.BroadcastMessage
@@ -85,7 +85,7 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 	clientsCurrentGauge.Inc(1)
 	clientsConnectCount.Inc(1)
 
-	atomic.AddInt32(&cm.clientCount, 1)
+	cm.clientCount.Add(1)
 	cm.clientPtrMap[clientConnection] = true
 	clientsTotalSuccessCounter.Inc(1)
 
@@ -120,7 +120,7 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 	clientsDurationHistogram.Update(clientConnection.Age().Microseconds())
 	clientsCurrentGauge.Dec(1)
 	clientsDisconnectCount.Inc(1)
-	atomic.AddInt32(&cm.clientCount, -1)
+	cm.clientCount.Add(-1)
 }
 
 func (cm *ClientManager) removeClient(clientConnection *ClientConnection) {
@@ -137,7 +137,7 @@ func (cm *ClientManager) removeClient(clientConnection *ClientConnection) {
 }
 
 func (cm *ClientManager) ClientCount() int32 {
-	return atomic.LoadInt32(&cm.clientCount)
+	return cm.clientCount.Load()
 }
 
 // Broadcast sends batch item to all clients.

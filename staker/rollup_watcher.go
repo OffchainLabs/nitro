@@ -4,22 +4,26 @@
 package staker
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 var rollupInitializedID common.Hash
@@ -47,12 +51,19 @@ type RollupWatcher struct {
 	*rollupgen.RollupUserLogic
 	address             common.Address
 	fromBlock           *big.Int
-	client              arbutil.L1Interface
+	client              RollupWatcherL1Interface
 	baseCallOpts        bind.CallOpts
 	unSupportedL3Method atomic.Bool
+	supportedL3Method   atomic.Bool
 }
 
-func NewRollupWatcher(address common.Address, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
+type RollupWatcherL1Interface interface {
+	bind.ContractBackend
+	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
+	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+}
+
+func NewRollupWatcher(address common.Address, client RollupWatcherL1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
 	con, err := rollupgen.NewRollupUserLogic(address, client)
 	if err != nil {
 		return nil, err
@@ -72,15 +83,41 @@ func (r *RollupWatcher) getCallOpts(ctx context.Context) *bind.CallOpts {
 	return &opts
 }
 
+const noNodeErr string = "NO_NODE"
+
+func looksLikeNoNodeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if strings.Contains(err.Error(), noNodeErr) {
+		return true
+	}
+	var errWithData rpc.DataError
+	ok := errors.As(err, &errWithData)
+	if !ok {
+		return false
+	}
+	dataString, ok := errWithData.ErrorData().(string)
+	if !ok {
+		return false
+	}
+	data := common.FromHex(dataString)
+	return bytes.Contains(data, []byte(noNodeErr))
+}
+
 func (r *RollupWatcher) getNodeCreationBlock(ctx context.Context, nodeNum uint64) (*big.Int, error) {
 	callOpts := r.getCallOpts(ctx)
 	if !r.unSupportedL3Method.Load() {
 		createdAtBlock, err := r.GetNodeCreationBlockForLogLookup(callOpts, nodeNum)
 		if err == nil {
+			r.supportedL3Method.Store(true)
 			return createdAtBlock, nil
 		}
-		log.Trace("failed to call getNodeCreationBlockForLogLookup, falling back on node CreatedAtBlock field", "err", err)
-		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) && !looksLikeNoNodeError(err) {
+			if r.supportedL3Method.Load() {
+				return nil, fmt.Errorf("getNodeCreationBlockForLogLookup failed despite previously succeeding: %w", err)
+			}
+			log.Info("getNodeCreationBlockForLogLookup does not seem to exist, falling back on node CreatedAtBlock field", "err", err)
 			r.unSupportedL3Method.Store(true)
 		} else {
 			return nil, err
@@ -165,7 +202,7 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 	}, nil
 }
 
-func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, nodeHash common.Hash) ([]*NodeInfo, error) {
+func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, logQueryRangeSize uint64, nodeHash common.Hash) ([]*NodeInfo, error) {
 	node, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), nodeNum)
 	if err != nil {
 		return nil, err
@@ -180,17 +217,32 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 		Addresses: []common.Address{r.address},
 		Topics:    [][]common.Hash{{nodeCreatedID}, nil, {nodeHash}},
 	}
-	query.FromBlock, err = r.getNodeCreationBlock(ctx, nodeNum)
+	fromBlock, err := r.getNodeCreationBlock(ctx, nodeNum)
 	if err != nil {
 		return nil, err
 	}
-	query.ToBlock, err = r.getNodeCreationBlock(ctx, node.LatestChildNumber)
+	toBlock, err := r.getNodeCreationBlock(ctx, node.LatestChildNumber)
 	if err != nil {
 		return nil, err
 	}
-	logs, err := r.client.FilterLogs(ctx, query)
-	if err != nil {
-		return nil, err
+	var logs []types.Log
+	// break down the query to avoid eth_getLogs query limit
+	for toBlock.Cmp(fromBlock) > 0 {
+		query.FromBlock = fromBlock
+		if logQueryRangeSize == 0 {
+			query.ToBlock = toBlock
+		} else {
+			query.ToBlock = new(big.Int).Add(fromBlock, new(big.Int).SetUint64(logQueryRangeSize))
+		}
+		if query.ToBlock.Cmp(toBlock) > 0 {
+			query.ToBlock = toBlock
+		}
+		segment, err := r.client.FilterLogs(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, segment...)
+		fromBlock = new(big.Int).Add(query.ToBlock, big.NewInt(1))
 	}
 	infos := make([]*NodeInfo, 0, len(logs))
 	lastHash := nodeHash

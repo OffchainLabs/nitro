@@ -32,3 +32,6 @@
 [submodule "arbitrator/langs/bf"]
 	path = arbitrator/langs/bf
 	url = https://github.com/OffchainLabs/stylus-sdk-bf.git
+[submodule "safe-smart-account"]
+	path = safe-smart-account
+	url = https://github.com/safe-global/safe-smart-account.git

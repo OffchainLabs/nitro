@@ -4,24 +4,17 @@
 package gethexec
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
-	"os"
-	"path"
 	"runtime/debug"
-	"runtime/pprof"
-	"runtime/trace"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -58,8 +51,8 @@ var (
 	nonceFailureCacheOverflowCounter        = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/overflow", nil)
 	blockCreationTimer                      = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
 	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
-	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/condtionaltx/rejected", nil)
-	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/condtionaltx/accepted", nil)
+	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/rejected", nil)
+	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/accepted", nil)
 	l1GasPriceGauge                         = metrics.NewRegisteredGauge("arb/sequencer/l1gasprice", nil)
 	callDataUnitsBacklogGauge               = metrics.NewRegisteredGauge("arb/sequencer/calldataunitsbacklog", nil)
 	unusedL1GasChargeGauge                  = metrics.NewRegisteredGauge("arb/sequencer/unusedl1gascharge", nil)
@@ -72,7 +65,7 @@ type SequencerConfig struct {
 	MaxBlockSpeed                time.Duration   `koanf:"max-block-speed" reload:"hot"`
 	MaxRevertGasReject           uint64          `koanf:"max-revert-gas-reject" reload:"hot"`
 	MaxAcceptableTimestampDelta  time.Duration   `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist              string          `koanf:"sender-whitelist"`
+	SenderWhitelist              []string        `koanf:"sender-whitelist"`
 	Forwarder                    ForwarderConfig `koanf:"forwarder"`
 	QueueSize                    int             `koanf:"queue-size"`
 	QueueTimeout                 time.Duration   `koanf:"queue-timeout" reload:"hot"`
@@ -82,14 +75,13 @@ type SequencerConfig struct {
 	NonceFailureCacheExpiry      time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
 	ExpectedSurplusSoftThreshold string          `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
-	EnableProfiling              bool            `koanf:"enable-profiling"`
+	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
 
 func (c *SequencerConfig) Validate() error {
-	entries := strings.Split(c.SenderWhitelist, ",")
-	for _, address := range entries {
+	for _, address := range c.SenderWhitelist {
 		if len(address) == 0 {
 			continue
 		}
@@ -111,6 +103,9 @@ func (c *SequencerConfig) Validate() error {
 	if c.expectedSurplusSoftThreshold < c.expectedSurplusHardThreshold {
 		return errors.New("expected-surplus-soft-threshold cannot be lower than expected-surplus-hard-threshold")
 	}
+	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
+		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
+	}
 	return nil
 }
 
@@ -121,30 +116,13 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxBlockSpeed:               time.Millisecond * 250,
 	MaxRevertGasReject:          0,
 	MaxAcceptableTimestampDelta: time.Hour,
+	SenderWhitelist:             []string{},
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
 	QueueTimeout:                time.Second * 12,
 	NonceCacheSize:              1024,
 	// 95% of the default batch poster limit, leaving 5KB for headers and such
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
-	MaxTxDataSize:                95000,
-	NonceFailureCacheSize:        1024,
-	NonceFailureCacheExpiry:      time.Second,
-	ExpectedSurplusSoftThreshold: "default",
-	ExpectedSurplusHardThreshold: "default",
-	EnableProfiling:              true,
-}
-
-var TestSequencerConfig = SequencerConfig{
-	Enable:                       true,
-	MaxBlockSpeed:                time.Millisecond * 10,
-	MaxRevertGasReject:           params.TxGas + 10000,
-	MaxAcceptableTimestampDelta:  time.Hour,
-	SenderWhitelist:              "",
-	Forwarder:                    DefaultTestForwarderConfig,
-	QueueSize:                    128,
-	QueueTimeout:                 time.Second * 5,
-	NonceCacheSize:               4,
 	MaxTxDataSize:                95000,
 	NonceFailureCacheSize:        1024,
 	NonceFailureCacheExpiry:      time.Second,
@@ -158,7 +136,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
-	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
+	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
@@ -176,17 +154,16 @@ type txQueueItem struct {
 	txSize          int // size in bytes of the marshalled transaction
 	options         *arbitrum_types.ConditionalOptions
 	resultChan      chan<- error
-	returnedResult  bool
+	returnedResult  *atomic.Bool
 	ctx             context.Context
 	firstAppearance time.Time
 }
 
 func (i *txQueueItem) returnResult(err error) {
-	if i.returnedResult {
+	if i.returnedResult.Swap(true) {
 		log.Error("attempting to return result to already finished queue item", "err", err)
 		return
 	}
-	i.returnedResult = true
 	i.resultChan <- err
 	close(i.resultChan)
 }
@@ -325,7 +302,7 @@ type Sequencer struct {
 	onForwarderSet  chan struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
-	l1BlockNumber       uint64
+	l1BlockNumber       atomic.Uint64
 	l1Timestamp         uint64
 
 	// activeMutex manages pauseChan (pauses execution) and forwarder
@@ -338,7 +315,6 @@ type Sequencer struct {
 	expectedSurplusMutex   sync.RWMutex
 	expectedSurplus        int64
 	expectedSurplusUpdated bool
-	enableProfiling        bool
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -347,8 +323,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		return nil, err
 	}
 	senderWhitelist := make(map[common.Address]struct{})
-	entries := strings.Split(config.SenderWhitelist, ",")
-	for _, address := range entries {
+	for _, address := range config.SenderWhitelist {
 		if len(address) == 0 {
 			continue
 		}
@@ -361,11 +336,9 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
 		nonceCache:      newNonceCache(config.NonceCacheSize),
-		l1BlockNumber:   0,
 		l1Timestamp:     0,
 		pauseChan:       nil,
 		onForwarderSet:  make(chan struct{}, 1),
-		enableProfiling: config.EnableProfiling,
 	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
@@ -413,11 +386,12 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	config := s.config()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
 	// And hard threshold was enabled, this prevents spamming of read locks when not needed
-	if s.l1Reader != nil && s.config().ExpectedSurplusHardThreshold != "default" {
+	if s.l1Reader != nil && config.ExpectedSurplusHardThreshold != "default" {
 		s.expectedSurplusMutex.RLock()
-		if s.expectedSurplusUpdated && s.expectedSurplus < int64(s.config().expectedSurplusHardThreshold) {
+		if s.expectedSurplusUpdated && s.expectedSurplus < int64(config.expectedSurplusHardThreshold) {
 			return errors.New("currently not accepting transactions due to expected surplus being below threshold")
 		}
 		s.expectedSurplusMutex.RUnlock()
@@ -456,7 +430,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		return err
 	}
 
-	queueTimeout := s.config().QueueTimeout
+	queueTimeout := config.QueueTimeout
 	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
 	defer cancelFunc()
 
@@ -470,7 +444,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		len(txBytes),
 		options,
 		resultChan,
-		false,
+		&atomic.Bool{},
 		queueCtx,
 		time.Now(),
 	}
@@ -744,12 +718,12 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 				if err != nil {
 					revivingFailure.queueItem.returnResult(err)
 				} else {
-					if arbmath.SaturatingAdd(totalBlockSize, queueItem.txSize) > config.MaxTxDataSize {
+					if arbmath.SaturatingAdd(totalBlockSize, revivingFailure.queueItem.txSize) > config.MaxTxDataSize {
 						// This tx would be too large to add to this block
-						s.txRetryQueue.Push(queueItem)
+						s.txRetryQueue.Push(revivingFailure.queueItem)
 					} else {
 						nextQueueItem = &revivingFailure.queueItem
-						totalBlockSize += queueItem.txSize
+						totalBlockSize += revivingFailure.queueItem.txSize
 					}
 				}
 			}
@@ -784,44 +758,6 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 	return outputQueueItems
 }
 
-// createBlockWithProfiling runs create block with tracing and CPU profiling
-// enabled. If the block creation takes longer than 5 seconds, it keeps both
-// and prints out filenames in an error log line.
-func (s *Sequencer) createBlockWithProfiling(ctx context.Context) bool {
-	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
-	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
-		log.Error("Starting CPU profiling", "error", err)
-	}
-	if err := trace.Start(traceBuf); err != nil {
-		log.Error("Starting tracing", "error", err)
-	}
-	start := time.Now()
-	res := s.createBlock(ctx)
-	elapsed := time.Since(start)
-	pprof.StopCPUProfile()
-	trace.Stop()
-	if elapsed > 2*time.Second {
-		writeAndLog(pprofBuf, traceBuf)
-		return res
-	}
-	return res
-}
-
-func writeAndLog(pprof, trace *bytes.Buffer) {
-	id := uuid.NewString()
-	pprofFile := path.Join(os.TempDir(), id+".pprof")
-	if err := os.WriteFile(pprofFile, pprof.Bytes(), 0o600); err != nil {
-		log.Error("Creating temporary file for pprof", "fileName", pprofFile, "error", err)
-		return
-	}
-	traceFile := path.Join(os.TempDir(), id+".trace")
-	if err := os.WriteFile(traceFile, trace.Bytes(), 0o600); err != nil {
-		log.Error("Creating temporary file for trace", "fileName", traceFile, "error", err)
-		return
-	}
-	log.Debug("Block creation took longer than 5 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
-}
-
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var queueItems []txQueueItem
 	var totalBlockSize int
@@ -832,7 +768,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			log.Error("sequencer block creation panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
 			// Return an internal error to any queue items we were trying to process
 			for _, item := range queueItems {
-				if !item.returnedResult {
+				// This can race, but that's alright, worst case is a log line in returnResult
+				if !item.returnedResult.Load() {
 					item.returnResult(sequencerInternalError)
 				}
 			}
@@ -942,7 +879,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	timestamp := time.Now().Unix()
 	s.L1BlockAndTimeMutex.Lock()
-	l1Block := s.l1BlockNumber
+	l1Block := s.l1BlockNumber.Load()
 	l1Timestamp := s.l1Timestamp
 	s.L1BlockAndTimeMutex.Unlock()
 
@@ -950,11 +887,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		for _, queueItem := range queueItems {
 			s.txRetryQueue.Push(queueItem)
 		}
+		// #nosec G115
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
 			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
-			"localTimestamp", time.Unix(int64(timestamp), 0),
+			"localTimestamp", time.Unix(timestamp, 0),
 		)
 		return true
 	}
@@ -963,13 +901,21 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		Kind:        arbostypes.L1MessageType_L2Message,
 		Poster:      l1pricing.BatchPosterAddress,
 		BlockNumber: l1Block,
-		Timestamp:   uint64(timestamp),
+		Timestamp:   arbmath.SaturatingUCast[uint64](timestamp),
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
 
 	start := time.Now()
-	block, err := s.execEngine.SequenceTransactions(header, txes, hooks)
+	var (
+		block *types.Block
+		err   error
+	)
+	if config.EnableProfiling {
+		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks)
+	} else {
+		block, err = s.execEngine.SequenceTransactions(header, txes, hooks)
+	}
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed)
 	if elapsed >= time.Second*5 {
@@ -1048,9 +994,9 @@ func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {
 	defer s.L1BlockAndTimeMutex.Unlock()
 
 	l1BlockNumber := arbutil.ParentHeaderToL1BlockNumber(header)
-	if header.Time > s.l1Timestamp || (header.Time == s.l1Timestamp && l1BlockNumber > s.l1BlockNumber) {
+	if header.Time > s.l1Timestamp || (header.Time == s.l1Timestamp && l1BlockNumber > s.l1BlockNumber.Load()) {
 		s.l1Timestamp = header.Time
-		s.l1BlockNumber = l1BlockNumber
+		s.l1BlockNumber.Store(l1BlockNumber)
 	}
 }
 
@@ -1092,37 +1038,42 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error encountered getting l1 pricing surplus while updating expectedSurplus: %w", err)
 	}
-	backlogL1GasCharged := int64(s.execEngine.consensus.BacklogL1GasCharged())
-	backlogCallDataUnits := int64(s.execEngine.consensus.BacklogCallDataUnits())
+	// #nosec G115
+	backlogL1GasCharged := int64(s.execEngine.backlogL1GasCharged())
+	// #nosec G115
+	backlogCallDataUnits := int64(s.execEngine.backlogCallDataUnits())
+	// #nosec G115
 	expectedSurplus := int64(surplus) + backlogL1GasCharged - backlogCallDataUnits*int64(l1GasPrice)
 	// update metrics
+	// #nosec G115
 	l1GasPriceGauge.Update(int64(l1GasPrice))
 	callDataUnitsBacklogGauge.Update(backlogCallDataUnits)
 	unusedL1GasChargeGauge.Update(backlogL1GasCharged)
 	currentSurplusGauge.Update(surplus)
 	expectedSurplusGauge.Update(expectedSurplus)
-	if s.config().ExpectedSurplusSoftThreshold != "default" && expectedSurplus < int64(s.config().expectedSurplusSoftThreshold) {
-		log.Warn("expected surplus is below soft threshold", "value", expectedSurplus, "threshold", s.config().expectedSurplusSoftThreshold)
+	config := s.config()
+	if config.ExpectedSurplusSoftThreshold != "default" && expectedSurplus < int64(config.expectedSurplusSoftThreshold) {
+		log.Warn("expected surplus is below soft threshold", "value", expectedSurplus, "threshold", config.expectedSurplusSoftThreshold)
 	}
 	return expectedSurplus, nil
 }
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
-
-	if (s.config().ExpectedSurplusHardThreshold != "default" || s.config().ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
+	config := s.config()
+	if (config.ExpectedSurplusHardThreshold != "default" || config.ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
 		return errors.New("expected surplus soft/hard thresholds are enabled but l1Reader is nil")
 	}
 
 	if s.l1Reader != nil {
-		initialBlockNr := atomic.LoadUint64(&s.l1BlockNumber)
+		initialBlockNr := s.l1BlockNumber.Load()
 		if initialBlockNr == 0 {
 			return errors.New("sequencer not initialized")
 		}
 
 		expectedSurplus, err := s.updateExpectedSurplus(ctxIn)
 		if err != nil {
-			if s.config().ExpectedSurplusHardThreshold != "default" {
+			if config.ExpectedSurplusHardThreshold != "default" {
 				return fmt.Errorf("expected-surplus-hard-threshold is enabled but error fetching initial expected surplus value: %w", err)
 			}
 			log.Error("expected-surplus-soft-threshold is enabled but error fetching initial expected surplus value", "err", err)
@@ -1165,13 +1116,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
-		var madeBlock bool
-		if s.enableProfiling {
-			madeBlock = s.createBlockWithProfiling(ctx)
-		} else {
-			madeBlock = s.createBlock(ctx)
-		}
-		if madeBlock {
+		if s.createBlock(ctx) {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
 			return time.Until(nextBlock)
 		}
