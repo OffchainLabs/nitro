@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
@@ -40,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
@@ -51,6 +53,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -59,7 +62,9 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -165,7 +170,7 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
-	nodeConfig, l1Wallet, l2DevWallet, err := ParseNode(ctx, args)
+	nodeConfig, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
@@ -181,7 +186,9 @@ func mainImpl() int {
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
-	nodeConfig.P2P.Apply(&stackConf)
+	stackConf.P2P.ListenAddr = ""
+	stackConf.P2P.NoDial = true
+	stackConf.P2P.NoDiscovery = true
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
@@ -231,19 +238,21 @@ func mainImpl() int {
 	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
+	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
+		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
+		return 1
+	}
 
-	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
 	// If sequencer and signing is enabled or batchposter is enabled without
 	// external signing sequencer will need a key.
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
-		(nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "")
+		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DataAvailability.Enable))
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
-	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultL1WalletConfig := conf.DefaultL1WalletConfig
 	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
@@ -255,46 +264,26 @@ func mainImpl() int {
 	defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
 	defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
-	if nodeConfig.Node.Staker.ParentChainWallet == defaultValidatorL1WalletConfig && nodeConfig.Node.BatchPoster.ParentChainWallet == defaultBatchPosterL1WalletConfig {
-		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
-			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-			if err != nil {
-				flag.Usage()
-				log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
-			}
-			if l1Wallet.OnlyCreateKey {
-				return 0
-			}
-			l1TransactionOptsBatchPoster = l1TransactionOpts
-			l1TransactionOptsValidator = l1TransactionOpts
+	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
+		l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+		if err != nil {
+			flag.Usage()
+			log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.ParentChainWallet.Pathname, "account", nodeConfig.Node.BatchPoster.ParentChainWallet.Account, "err", err)
 		}
-	} else {
-		if *l1Wallet != defaultL1WalletConfig {
-			log.Crit("--parent-chain.wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
-		}
-		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
-			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-			if err != nil {
-				flag.Usage()
-				log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.ParentChainWallet.Pathname, "account", nodeConfig.Node.BatchPoster.ParentChainWallet.Account, "err", err)
-			}
-			if nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
-				return 0
-			}
-		}
-		if validatorNeedsKey || nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
-			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-			if err != nil {
-				flag.Usage()
-				log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
-			}
-			if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
-				return 0
-			}
+		if nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
+			return 0
 		}
 	}
-
-	combinedL2ChainInfoFile := aggregateL2ChainInfoFiles(ctx, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)
+	if validatorNeedsKey || nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
+		l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+		if err != nil {
+			flag.Usage()
+			log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
+		}
+		if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
+			return 0
+		}
+	}
 
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.ParentChainReader.Enable {
@@ -318,7 +307,7 @@ func mainImpl() int {
 		}
 	}
 	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*NodeConfig, error) {
-		nodeConfig, _, _, err := ParseNode(ctx, args)
+		nodeConfig, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
 
@@ -344,7 +333,7 @@ func mainImpl() int {
 
 		log.Info("connected to l1 chain", "l1url", nodeConfig.ParentChain.Connection.URL, "l1chainid", nodeConfig.ParentChain.ID)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
@@ -376,21 +365,30 @@ func mainImpl() int {
 			log.Crit("--node.validator.only-create-wallet-contract conflicts with --node.dangerous.no-l1-listener")
 		}
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
-		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
+
+		dataPoster, err := arbnode.DataposterOnlyUsedToCreateValidatorWalletContract(
+			ctx,
+			l1Reader,
+			l1TransactionOptsValidator,
+			&nodeConfig.Node.Staker.DataPoster,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+		)
+		if err != nil {
+			log.Crit("error creating data poster to create validator wallet contract", "err", err)
+		}
+		getExtraGas := func() uint64 { return nodeConfig.Node.Staker.ExtraGas }
+
+		// #nosec G115
+		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1Reader, true, dataPoster, getExtraGas)
 		if err != nil {
 			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOptsValidator.From.Hex())
 		}
 		fmt.Printf("Created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
 		return 0
-	}
-
-	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
-		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
-		nodeConfig.Execution.TxLookupLimit = 0
 	}
 
 	if err := resourcemanager.Init(&nodeConfig.Node.ResourceMgmt); err != nil {
@@ -424,6 +422,10 @@ func mainImpl() int {
 		return 1
 	}
 
+	if nodeConfig.Metrics {
+		go iostat.RegisterAndPopulateMetrics(ctx, 1, 5)
+	}
+
 	var deferFuncs []func()
 	defer func() {
 		for i := range deferFuncs {
@@ -433,65 +435,13 @@ func mainImpl() int {
 
 	// Check that node is compatible with on-chain WASM module root on startup and before any ArbOS upgrades take effect to prevent divergences
 	if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
-		// Fetch current on-chain WASM module root
-		rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
+		err := checkWasmModuleRootCompatibility(ctx, nodeConfig.Validation.Wasm, l1Client, rollupAddrs)
 		if err != nil {
-			log.Error("failed to create rollupUserLogic", "err", err)
-			return 1
-		}
-		moduleRoot, err := rollupUserLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
-		if err != nil {
-			log.Error("failed to get on-chain WASM module root", "err", err)
-			return 1
-		}
-		if (moduleRoot == common.Hash{}) {
-			log.Error("on-chain WASM module root is zero")
-			return 1
-		}
-		// Check if the on-chain WASM module root belongs to the set of allowed module roots
-		allowedWasmModuleRoots := nodeConfig.Validation.Wasm.AllowedWasmModuleRoots
-		if len(allowedWasmModuleRoots) > 0 {
-			moduleRootMatched := false
-			for _, root := range allowedWasmModuleRoots {
-				bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
-				if err == nil {
-					if common.HexToHash(root) == common.BytesToHash(bytes) {
-						moduleRootMatched = true
-						break
-					}
-					continue
-				}
-				locator, locatorErr := server_common.NewMachineLocator(root)
-				if locatorErr != nil {
-					log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
-					continue
-				}
-				path := locator.GetMachinePath(moduleRoot)
-				if _, err := os.Stat(path); err == nil {
-					moduleRootMatched = true
-					break
-				}
-			}
-			if !moduleRootMatched {
-				log.Error("on-chain WASM module root did not match with any of the allowed WASM module roots")
-				return 1
-			}
-		} else {
-			// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
-			locator, err := server_common.NewMachineLocator(nodeConfig.Validation.Wasm.RootPath)
-			if err != nil {
-				log.Warn("failed to create machine locator. Skipping the check for compatibility with on-chain WASM module root", "err", err)
-			} else {
-				path := locator.GetMachinePath(moduleRoot)
-				if _, err := os.Stat(path); err != nil {
-					log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
-					return 1
-				}
-			}
+			log.Warn("failed to check if node is compatible with on-chain WASM module root", "err", err)
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Persistent, l1Client, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -506,6 +456,11 @@ func mainImpl() int {
 	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
+		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
+		return 1
+	}
+	if err := dbutil.UnfinishedConversionCheck(arbDb); err != nil {
+		log.Error("arbitrumdata unfinished conversion check error", "err", err)
 		return 1
 	}
 
@@ -515,6 +470,10 @@ func mainImpl() int {
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		blocksReExecutor = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
 		if nodeConfig.Init.ThenQuit {
+			if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+				log.Error("error populating stylus target cache", "err", err)
+				return 1
+			}
 			success := make(chan struct{})
 			blocksReExecutor.Start(ctx, success)
 			deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
@@ -528,11 +487,11 @@ func mainImpl() int {
 		}
 	}
 
-	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToMessage < 0 {
+	if nodeConfig.Init.ThenQuit && !nodeConfig.Init.IsReorgRequested() {
 		return 0
 	}
 
-	chainInfo, err := chaininfo.ProcessChainInfo(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+	chainInfo, err := chaininfo.ProcessChainInfo(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 	if err != nil {
 		log.Error("error processing l2 chain info", "err", err)
 		return 1
@@ -587,7 +546,7 @@ func mainImpl() int {
 		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
-		big.NewInt(int64(nodeConfig.ParentChain.ID)),
+		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
 	)
 	if err != nil {
@@ -684,34 +643,34 @@ func mainImpl() int {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
-	exitCode := 0
-
-	if err == nil && nodeConfig.Init.ResetToMessage > 0 {
-		err = currentNode.TxStreamer.ReorgTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMessage))
+	if err == nil && nodeConfig.Init.IsReorgRequested() {
+		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, currentNode.InboxTracker)
 		if err != nil {
-			fatalErrChan <- fmt.Errorf("error reseting message: %w", err)
-			exitCode = 1
-		}
-		if nodeConfig.Init.ThenQuit {
-			close(sigint)
-
-			return exitCode
+			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
+		} else if nodeConfig.Init.ThenQuit {
+			return 0
 		}
 	}
 
+	err = nil
 	select {
-	case err := <-fatalErrChan:
+	case err = <-fatalErrChan:
+	case <-sigint:
+		// If there was both a sigint and a fatal error, we want to log the fatal error
+		select {
+		case err = <-fatalErrChan:
+		default:
+			log.Info("shutting down because of sigint")
+		}
+	}
+
+	if err != nil {
 		log.Error("shutting down due to fatal error", "err", err)
 		defer log.Error("shut down due to fatal error", "err", err)
-		exitCode = 1
-	case <-sigint:
-		log.Info("shutting down because of sigint")
+		return 1
 	}
 
-	// cause future ctrl+c's to panic
-	close(sigint)
-
-	return exitCode
+	return 0
 }
 
 type NodeConfig struct {
@@ -730,7 +689,6 @@ type NodeConfig struct {
 	IPC              genericconf.IPCConfig           `koanf:"ipc"`
 	Auth             genericconf.AuthRPCConfig       `koanf:"auth"`
 	GraphQL          genericconf.GraphQLConfig       `koanf:"graphql"`
-	P2P              genericconf.P2PConfig           `koanf:"p2p"`
 	Metrics          bool                            `koanf:"metrics"`
 	MetricsServer    genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	PProf            bool                            `koanf:"pprof"`
@@ -756,7 +714,6 @@ var NodeConfigDefault = NodeConfig{
 	IPC:              genericconf.IPCConfigDefault,
 	Auth:             genericconf.AuthRPCConfigDefault,
 	GraphQL:          genericconf.GraphQLConfigDefault,
-	P2P:              genericconf.P2PConfigDefault,
 	Metrics:          false,
 	MetricsServer:    genericconf.MetricsServerConfigDefault,
 	Init:             conf.InitConfigDefault,
@@ -781,7 +738,6 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.AuthRPCConfigAddOptions("auth", f)
-	genericconf.P2PConfigAddOptions("p2p", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
@@ -798,7 +754,6 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	if err != nil {
 		return err
 	}
-	c.ParentChain.ResolveDirectoryNames(c.Persistent.Chain)
 	c.Chain.ResolveDirectoryNames(c.Persistent.Chain)
 
 	return nil
@@ -861,6 +816,9 @@ func (c *NodeConfig) Validate() error {
 	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
 	}
+	if c.Node.ValidatorRequired() && (c.Execution.Caching.StateScheme == rawdb.PathScheme) {
+		return errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
+	}
 	return c.Persistent.Validate()
 }
 
@@ -868,89 +826,86 @@ func (c *NodeConfig) GetReloadInterval() time.Duration {
 	return c.Conf.ReloadInterval
 }
 
-func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, error) {
+func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	l2ChainId := k.Int64("chain.id")
 	l2ChainName := k.String("chain.name")
-	l2ChainInfoIpfsUrl := k.String("chain.info-ipfs-url")
-	l2ChainInfoIpfsDownloadPath := k.String("chain.info-ipfs-download-path")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
-	err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	// #nosec G115
+	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	err = confighelpers.ApplyOverrides(f, k)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
+	}
+
+	if err = das.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k); err != nil {
+		return nil, nil, err
 	}
 
 	var nodeConfig NodeConfig
 	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"parent-chain.wallet.password":    "",
-			"parent-chain.wallet.private-key": "",
-			"chain.dev-wallet.password":       "",
-			"chain.dev-wallet.private-key":    "",
+			"node.batch-poster.parent-chain-wallet.password":    "",
+			"node.batch-poster.parent-chain-wallet.private-key": "",
+			"node.staker.parent-chain-wallet.password":          "",
+			"node.staker.parent-chain-wallet.private-key":       "",
+			"chain.dev-wallet.password":                         "",
+			"chain.dev-wallet.private-key":                      "",
 		})
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 	}
 
 	if nodeConfig.Persistent.Chain == "" {
-		return nil, nil, nil, errors.New("--persistent.chain not specified")
+		return nil, nil, errors.New("--persistent.chain not specified")
 	}
 
 	err = nodeConfig.ResolveDirectoryNames()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	// Don't pass around wallet contents with normal configuration
-	l1Wallet := nodeConfig.ParentChain.Wallet
 	l2DevWallet := nodeConfig.Chain.DevWallet
-	nodeConfig.ParentChain.Wallet = genericconf.WalletConfigDefault
 	nodeConfig.Chain.DevWallet = genericconf.WalletConfigDefault
 
 	if nodeConfig.Execution.Caching.Archive {
 		nodeConfig.Node.MessagePruner.Enable = false
 	}
+
+	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
+		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
+		nodeConfig.Execution.TxLookupLimit = 0
+	}
+
 	err = nodeConfig.Validate()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
+	return &nodeConfig, &l2DevWallet, nil
 }
 
-func aggregateL2ChainInfoFiles(ctx context.Context, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) []string {
-	if l2ChainInfoIpfsUrl != "" {
-		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
-		if err != nil {
-			log.Error("error getting l2 chain info file from ipfs", "err", err)
-		}
-		l2ChainInfoFiles = append(l2ChainInfoFiles, l2ChainInfoIpfsFile)
-	}
-	return l2ChainInfoFiles
-}
-
-func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) error {
-	combinedL2ChainInfoFiles := aggregateL2ChainInfoFiles(ctx, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
-	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
+func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) error {
+	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err
 	}
@@ -959,13 +914,14 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
 	} else {
 		log.Warn("Chain info field parent-chain-is-arbitrum is missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
-		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", combinedL2ChainInfoFiles, "")
+		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", l2ChainInfoFiles, "")
 		if err == nil {
 			parentChainIsArbitrum = true
 		}
 	}
 	chainDefaults := map[string]interface{}{
 		"persistent.chain": chainInfo.ChainName,
+		"chain.name":       chainInfo.ChainName,
 		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
@@ -1015,10 +971,101 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	return nil
 }
 
+func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
+	var batchCount uint64
+	if initConfig.ReorgToBatch >= 0 {
+		// #nosec G115
+		batchCount = uint64(initConfig.ReorgToBatch) + 1
+	} else {
+		var messageIndex arbutil.MessageIndex
+		if initConfig.ReorgToMessageBatch >= 0 {
+			// #nosec G115
+			messageIndex = arbutil.MessageIndex(initConfig.ReorgToMessageBatch)
+		} else if initConfig.ReorgToBlockBatch > 0 {
+			genesis := chainConfig.ArbitrumChainParams.GenesisBlockNum
+			// #nosec G115
+			blockNum := uint64(initConfig.ReorgToBlockBatch)
+			if blockNum < genesis {
+				return fmt.Errorf("ReorgToBlockBatch %d before genesis %d", blockNum, genesis)
+			}
+			messageIndex = arbutil.MessageIndex(blockNum - genesis)
+		} else {
+			log.Warn("Tried to do init reorg, but no init reorg options specified")
+			return nil
+		}
+		// Reorg out the batch containing the next message
+		var found bool
+		var err error
+		batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		if err != nil {
+			return err
+		}
+		if !found {
+			log.Warn("init-reorg: no need to reorg, because message ahead of chain", "messageIndex", messageIndex)
+			return nil
+		}
+	}
+	return inboxTracker.ReorgBatchesTo(batchCount)
+}
+
 type NodeConfigFetcher struct {
 	*genericconf.LiveConfig[*NodeConfig]
 }
 
 func (f *NodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveConfig.Get().Node
+}
+
+func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {
+	// Fetch current on-chain WASM module root
+	rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
+	if err != nil {
+		return fmt.Errorf("failed to create RollupUserLogic: %w", err)
+	}
+	moduleRoot, err := rollupUserLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return fmt.Errorf("failed to get on-chain WASM module root: %w", err)
+	}
+	if (moduleRoot == common.Hash{}) {
+		return errors.New("on-chain WASM module root is zero")
+	}
+	// Check if the on-chain WASM module root belongs to the set of allowed module roots
+	allowedWasmModuleRoots := wasmConfig.AllowedWasmModuleRoots
+	if len(allowedWasmModuleRoots) > 0 {
+		moduleRootMatched := false
+		for _, root := range allowedWasmModuleRoots {
+			bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
+			if err == nil {
+				if common.HexToHash(root) == common.BytesToHash(bytes) {
+					moduleRootMatched = true
+					break
+				}
+				continue
+			}
+			locator, locatorErr := server_common.NewMachineLocator(root)
+			if locatorErr != nil {
+				log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
+				continue
+			}
+			path := locator.GetMachinePath(moduleRoot)
+			if _, err := os.Stat(path); err == nil {
+				moduleRootMatched = true
+				break
+			}
+		}
+		if !moduleRootMatched {
+			return errors.New("on-chain WASM module root did not match with any of the allowed WASM module roots")
+		}
+	} else {
+		// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
+		locator, err := server_common.NewMachineLocator(wasmConfig.RootPath)
+		if err != nil {
+			return fmt.Errorf("failed to create machine locator: %w", err)
+		}
+		path := locator.GetMachinePath(moduleRoot)
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("unable to find validator machine directory for the on-chain WASM module root: %w", err)
+		}
+	}
+	return nil
 }

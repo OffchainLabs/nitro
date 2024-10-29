@@ -3,7 +3,10 @@
 
 use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
 use arbutil::{
-    evm::{api::VecReader, user::UserOutcome},
+    evm::{
+        api::{Ink, VecReader},
+        user::UserOutcome,
+    },
     Bytes20, Bytes32, Color,
 };
 use eyre::{bail, Result};
@@ -16,7 +19,7 @@ use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
     imports, wasmparser::Operator, CompilerConfig, Function, FunctionEnv, Imports, Instance,
-    Module, Store,
+    Module, Store, Target,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -33,7 +36,7 @@ type TestInstance = NativeInstance<VecReader, TestEvmApi>;
 
 impl TestInstance {
     fn new_test(path: &str, compile: CompileConfig) -> Result<Self> {
-        let mut store = compile.store();
+        let mut store = compile.store(Target::default());
         let imports = imports! {
             "test" => {
                 "noop" => Function::new_typed(&mut store, || {}),
@@ -41,7 +44,7 @@ impl TestInstance {
         };
         let mut native = Self::new_from_store(path, store, imports)?;
         native.set_meter_data();
-        native.set_ink(u64::MAX);
+        native.set_ink(Ink(u64::MAX));
         native.set_stack(u32::MAX);
         Ok(native)
     }
@@ -86,7 +89,14 @@ impl TestInstance {
         config: StylusConfig,
     ) -> Result<(Self, TestEvmApi)> {
         let (mut evm, evm_data) = TestEvmApi::new(compile.clone());
-        let native = Self::from_path(path, evm.clone(), evm_data, compile, config)?;
+        let native = Self::from_path(
+            path,
+            evm.clone(),
+            evm_data,
+            compile,
+            config,
+            Target::default(),
+        )?;
         let footprint = native.memory().ty(&native.store).minimum.0 as u16;
         evm.set_pages(footprint);
         Ok((native, evm))
@@ -100,8 +110,8 @@ fn expensive_add(op: &Operator, _tys: &SigMap) -> u64 {
     }
 }
 
-pub fn random_ink(min: u64) -> u64 {
-    rand::thread_rng().gen_range(min..=u64::MAX)
+pub fn random_ink(min: u64) -> Ink {
+    Ink(rand::thread_rng().gen_range(min..=u64::MAX))
 }
 
 pub fn random_bytes20() -> Bytes20 {
@@ -128,7 +138,7 @@ fn uniform_cost_config() -> StylusConfig {
     stylus_config
 }
 
-fn test_configs() -> (CompileConfig, StylusConfig, u64) {
+fn test_configs() -> (CompileConfig, StylusConfig, Ink) {
     (
         test_compile_config(),
         uniform_cost_config(),
@@ -150,7 +160,6 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
         &[lib],
         bin,
         false,
-        false,
         true,
         compile.debug.debug_funcs,
         true,
@@ -159,12 +168,12 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
         Arc::new(|_, _, _| panic!("tried to read preimage")),
         Some(stylus_data),
     )?;
-    mach.set_ink(u64::MAX);
+    mach.set_ink(Ink(u64::MAX));
     mach.set_stack(u32::MAX);
     Ok(mach)
 }
 
-fn run_native(native: &mut TestInstance, args: &[u8], ink: u64) -> Result<Vec<u8>> {
+fn run_native(native: &mut TestInstance, args: &[u8], ink: Ink) -> Result<Vec<u8>> {
     let config = native.env().config.expect("no config");
     match native.run_main(args, config, ink)? {
         UserOutcome::Success(output) => Ok(output),
@@ -176,7 +185,7 @@ fn run_machine(
     machine: &mut Machine,
     args: &[u8],
     config: StylusConfig,
-    ink: u64,
+    ink: Ink,
 ) -> Result<Vec<u8>> {
     match machine.run_main(args, config, ink)? {
         UserOutcome::Success(output) => Ok(output),

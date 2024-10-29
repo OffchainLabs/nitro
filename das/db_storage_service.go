@@ -7,6 +7,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
@@ -20,11 +24,9 @@ import (
 )
 
 type LocalDBStorageConfig struct {
-	Enable                 bool   `koanf:"enable"`
-	DataDir                string `koanf:"data-dir"`
-	DiscardAfterTimeout    bool   `koanf:"discard-after-timeout"`
-	SyncFromStorageService bool   `koanf:"sync-from-storage-service"`
-	SyncToStorageService   bool   `koanf:"sync-to-storage-service"`
+	Enable              bool   `koanf:"enable"`
+	DataDir             string `koanf:"data-dir"`
+	DiscardAfterTimeout bool   `koanf:"discard-after-timeout"`
 
 	// BadgerDB options
 	NumMemtables            int   `koanf:"num-memtables"`
@@ -37,12 +39,12 @@ type LocalDBStorageConfig struct {
 
 var badgerDefaultOptions = badger.DefaultOptions("")
 
+const migratedMarker = "MIGRATED"
+
 var DefaultLocalDBStorageConfig = LocalDBStorageConfig{
-	Enable:                 false,
-	DataDir:                "",
-	DiscardAfterTimeout:    false,
-	SyncFromStorageService: false,
-	SyncToStorageService:   false,
+	Enable:              false,
+	DataDir:             "",
+	DiscardAfterTimeout: false,
 
 	NumMemtables:            badgerDefaultOptions.NumMemtables,
 	NumLevelZeroTables:      badgerDefaultOptions.NumLevelZeroTables,
@@ -53,11 +55,9 @@ var DefaultLocalDBStorageConfig = LocalDBStorageConfig{
 }
 
 func LocalDBStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultLocalDBStorageConfig.Enable, "enable storage/retrieval of sequencer batch data from a database on the local filesystem")
+	f.Bool(prefix+".enable", DefaultLocalDBStorageConfig.Enable, "!!!DEPRECATED, USE local-file-storage!!! enable storage/retrieval of sequencer batch data from a database on the local filesystem")
 	f.String(prefix+".data-dir", DefaultLocalDBStorageConfig.DataDir, "directory in which to store the database")
 	f.Bool(prefix+".discard-after-timeout", DefaultLocalDBStorageConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
-	f.Bool(prefix+".sync-from-storage-service", DefaultLocalDBStorageConfig.SyncFromStorageService, "enable db storage to be used as a source for regular sync storage")
-	f.Bool(prefix+".sync-to-storage-service", DefaultLocalDBStorageConfig.SyncToStorageService, "enable db storage to be used as a sink for regular sync storage")
 
 	f.Int(prefix+".num-memtables", DefaultLocalDBStorageConfig.NumMemtables, "BadgerDB option: sets the maximum number of tables to keep in memory before stalling")
 	f.Int(prefix+".num-level-zero-tables", DefaultLocalDBStorageConfig.NumLevelZeroTables, "BadgerDB option: sets the maximum number of Level 0 tables before compaction starts")
@@ -75,7 +75,17 @@ type DBStorageService struct {
 	stopWaiter          stopwaiter.StopWaiterSafe
 }
 
-func NewDBStorageService(ctx context.Context, config *LocalDBStorageConfig) (StorageService, error) {
+// The DBStorageService is deprecated. This function will migrate data to the target
+// LocalFileStorageService if it is provided and migration hasn't already happened.
+func NewDBStorageService(ctx context.Context, config *LocalDBStorageConfig, target *LocalFileStorageService) (*DBStorageService, error) {
+	if alreadyMigrated(config.DataDir) {
+		log.Warn("local-db-storage already migrated, please remove it from the daserver configuration and restart. data-dir can be cleaned up manually now")
+		return nil, nil
+	}
+	if target == nil {
+		log.Error("local-db-storage is DEPRECATED, please use use the local-file-storage and migrate-local-db-to-file-storage options. This error will be made fatal in future, continuing for now...")
+	}
+
 	options := badger.DefaultOptions(config.DataDir).
 		WithNumMemtables(config.NumMemtables).
 		WithNumLevelZeroTables(config.NumLevelZeroTables).
@@ -93,9 +103,21 @@ func NewDBStorageService(ctx context.Context, config *LocalDBStorageConfig) (Sto
 		discardAfterTimeout: config.DiscardAfterTimeout,
 		dirPath:             config.DataDir,
 	}
+
+	if target != nil {
+		if err = ret.migrateTo(ctx, target); err != nil {
+			return nil, fmt.Errorf("error migrating local-db-storage to %s: %w", target, err)
+		}
+		if err = ret.setMigrated(); err != nil {
+			return nil, fmt.Errorf("error finalizing migration of local-db-storage to %s: %w", target, err)
+		}
+		return nil, nil
+	}
+
 	if err := ret.stopWaiter.Start(ctx, ret); err != nil {
 		return nil, err
 	}
+
 	err = ret.stopWaiter.LaunchThreadSafe(func(myCtx context.Context) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -151,17 +173,53 @@ func (dbs *DBStorageService) Put(ctx context.Context, data []byte, timeout uint6
 
 	return dbs.db.Update(func(txn *badger.Txn) error {
 		e := badger.NewEntry(dastree.HashBytes(data), data)
-		if dbs.discardAfterTimeout {
+		if dbs.discardAfterTimeout && timeout <= math.MaxInt64 {
+			// #nosec G115
 			e = e.WithTTL(time.Until(time.Unix(int64(timeout), 0)))
 		}
 		return txn.SetEntry(e)
 	})
 }
 
-func (dbs *DBStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	return dbs.db.Update(func(txn *badger.Txn) error {
-		e := badger.NewEntry(key.Bytes(), value)
-		return txn.SetEntry(e)
+func (dbs *DBStorageService) migrateTo(ctx context.Context, s StorageService) error {
+	originExpirationPolicy, err := dbs.ExpirationPolicy(ctx)
+	if err != nil {
+		return err
+	}
+	targetExpirationPolicy, err := s.ExpirationPolicy(ctx)
+	if err != nil {
+		return err
+	}
+
+	if originExpirationPolicy == daprovider.KeepForever && targetExpirationPolicy == daprovider.DiscardAfterDataTimeout {
+		return errors.New("can't migrate from DBStorageService to target, incompatible expiration policies - can't migrate from non-expiring to expiring since non-expiring DB lacks expiry time metadata")
+	}
+
+	return dbs.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		log.Info("Migrating from DBStorageService", "target", s)
+		migrationStart := time.Now()
+		count := 0
+		for it.Rewind(); it.Valid(); it.Next() {
+			if count%1000 == 0 {
+				log.Info("Migration in progress", "migrated", count)
+			}
+			item := it.Item()
+			k := item.Key()
+			expiry := item.ExpiresAt()
+			err := item.Value(func(v []byte) error {
+				log.Trace("migrated", "key", pretty.FirstFewBytes(k), "value", pretty.FirstFewBytes(v), "expiry", expiry)
+				return s.Put(ctx, v, expiry)
+			})
+			if err != nil {
+				return err
+			}
+			count++
+		}
+		log.Info("Migration from DBStorageService complete", "target", s, "migrated", count, "duration", time.Since(migrationStart))
+		return nil
 	})
 }
 
@@ -171,6 +229,29 @@ func (dbs *DBStorageService) Sync(ctx context.Context) error {
 
 func (dbs *DBStorageService) Close(ctx context.Context) error {
 	return dbs.stopWaiter.StopAndWait()
+}
+
+func alreadyMigrated(dirPath string) bool {
+	migratedMarkerFile := filepath.Join(dirPath, migratedMarker)
+	_, err := os.Stat(migratedMarkerFile)
+	if os.IsNotExist(err) {
+		return false
+	}
+	if err != nil {
+		log.Error("error checking if local-db-storage is already migrated", "err", err)
+		return false
+	}
+	return true
+}
+
+func (dbs *DBStorageService) setMigrated() error {
+	migratedMarkerFile := filepath.Join(dbs.dirPath, migratedMarker)
+	file, err := os.OpenFile(migratedMarkerFile, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	file.Close()
+	return nil
 }
 
 func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
@@ -186,6 +267,7 @@ func (dbs *DBStorageService) String() string {
 
 func (dbs *DBStorageService) HealthCheck(ctx context.Context) error {
 	testData := []byte("Test-Data")
+	// #nosec G115
 	err := dbs.Put(ctx, testData, uint64(time.Now().Add(time.Minute).Unix()))
 	if err != nil {
 		return err

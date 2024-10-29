@@ -9,7 +9,9 @@ use crate::{
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
-use arbutil::{math::SaturatingSum, Bytes32, Color, DebugColor};
+use arbutil::{
+    evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color, DebugColor,
+};
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
@@ -616,7 +618,10 @@ impl<'a> WasmBinary<'a> {
         cached_init = cached_init.saturating_add(data_len.saturating_mul(75244) / 100_000);
         cached_init = cached_init.saturating_add(footprint as u64 * 5);
 
-        let mut init = cached_init;
+        let mut init: u64 = 0;
+        if compile.version == 1 {
+            init = cached_init; // in version 1 cached cost is part of init cost
+        }
         init = init.saturating_add(funcs.saturating_mul(8252) / 1000);
         init = init.saturating_add(type_len.saturating_mul(1059) / 1000);
         init = init.saturating_add(wasm_len.saturating_mul(1286) / 10_000);
@@ -638,6 +643,7 @@ impl<'a> WasmBinary<'a> {
     /// Parses and instruments a user wasm
     pub fn parse_user(
         wasm: &'a [u8],
+        arbos_version_for_gas: u64,
         page_limit: u16,
         compile: &CompileConfig,
         codehash: &Bytes32,
@@ -673,6 +679,10 @@ impl<'a> WasmBinary<'a> {
         for code in &bin.codes {
             limit!(348, code.locals.len(), "locals");
             limit!(65536, code.expr.len(), "opcodes in func body");
+        }
+
+        if arbos_version_for_gas >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+            limit!(513, bin.imports.len(), "imports")
         }
 
         let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();

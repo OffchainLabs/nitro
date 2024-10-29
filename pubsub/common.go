@@ -2,10 +2,14 @@ package pubsub
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
+
+func ResultKeyFor(streamName, id string) string { return fmt.Sprintf("%s.%s", streamName, id) }
 
 // CreateStream tries to create stream with given name, if it already exists
 // does not return an error.
@@ -22,7 +26,9 @@ func CreateStream(ctx context.Context, streamName string, client redis.Universal
 func StreamExists(ctx context.Context, streamName string, client redis.UniversalClient) bool {
 	got, err := client.Do(ctx, "XINFO", "STREAM", streamName).Result()
 	if err != nil {
-		log.Error("Reading redis streams", "error", err)
+		if !strings.Contains(err.Error(), "no such key") {
+			log.Error("redis error", "err", err, "searching stream", streamName)
+		}
 		return false
 	}
 	return got != nil

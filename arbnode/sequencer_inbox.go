@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 
@@ -52,10 +53,10 @@ type SequencerInbox struct {
 	con       *bridgegen.SequencerInbox
 	address   common.Address
 	fromBlock int64
-	client    arbutil.L1Interface
+	client    *ethclient.Client
 }
 
-func NewSequencerInbox(client arbutil.L1Interface, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
+func NewSequencerInbox(client *ethclient.Client, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
 	con, err := bridgegen.NewSequencerInbox(addr, client)
 	if err != nil {
 		return nil, err
@@ -111,7 +112,7 @@ type SequencerInboxBatch struct {
 	serialized             []byte // nil if serialization isn't cached yet
 }
 
-func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
+func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethclient.Client) ([]byte, error) {
 	switch m.dataLocation {
 	case batchDataTxInput:
 		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.rawLog)
@@ -169,7 +170,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 	}
 }
 
-func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
+func (m *SequencerInboxBatch) Serialize(ctx context.Context, client *ethclient.Client) ([]byte, error) {
 	if m.serialized != nil {
 		return m.serialized, nil
 	}
@@ -232,7 +233,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 		seqNum := parsedLog.BatchSequenceNumber.Uint64()
 		if lastSeqNum != nil {
 			if seqNum != *lastSeqNum+1 {
-				return nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", lastSeqNum, seqNum)
+				return nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", *lastSeqNum, seqNum)
 			}
 		}
 		lastSeqNum = &seqNum

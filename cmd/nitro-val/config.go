@@ -27,7 +27,6 @@ type ValidationNodeConfig struct {
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
 	IPC           genericconf.IPCConfig           `koanf:"ipc"`
-	P2P           genericconf.P2PConfig           `koanf:"p2p"`
 	Auth          genericconf.AuthRPCConfig       `koanf:"auth"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -67,7 +66,6 @@ var ValidationNodeConfigDefault = ValidationNodeConfig{
 	HTTP:          HTTPConfigDefault,
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
-	P2P:           genericconf.P2PConfigDefault,
 	Auth:          genericconf.AuthRPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
@@ -87,7 +85,6 @@ func ValidationNodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.AuthRPCConfigAddOptions("auth", f)
-	genericconf.P2PConfigAddOptions("p2p", f)
 	f.Bool("metrics", ValidationNodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 	f.Bool("pprof", ValidationNodeConfigDefault.PProf, "enable pprof")

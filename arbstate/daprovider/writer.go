@@ -17,7 +17,6 @@ type Writer interface {
 		ctx context.Context,
 		message []byte,
 		timeout uint64,
-		sig []byte,
 		disableFallbackStoreDataOnChain bool,
 	) ([]byte, error)
 }
@@ -32,8 +31,8 @@ type writerForDAS struct {
 	dasWriter DASWriter
 }
 
-func (d *writerForDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte, disableFallbackStoreDataOnChain bool) ([]byte, error) {
-	cert, err := d.dasWriter.Store(ctx, message, timeout, []byte{})
+func (d *writerForDAS) Store(ctx context.Context, message []byte, timeout uint64, disableFallbackStoreDataOnChain bool) ([]byte, error) {
+	cert, err := d.dasWriter.Store(ctx, message, timeout)
 	if errors.Is(err, ErrBatchToDasFailed) {
 		if disableFallbackStoreDataOnChain {
 			return nil, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")

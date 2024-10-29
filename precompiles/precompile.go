@@ -72,11 +72,12 @@ type Precompile struct {
 }
 
 type PrecompileMethod struct {
-	name         string
-	template     abi.Method
-	purity       purity
-	handler      reflect.Method
-	arbosVersion uint64
+	name            string
+	template        abi.Method
+	purity          purity
+	handler         reflect.Method
+	arbosVersion    uint64
+	maxArbosVersion uint64
 }
 
 type PrecompileEvent struct {
@@ -226,6 +227,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 			purity,
 			handler,
 			0,
+			0,
 		}
 		methods[id] = &method
 		methodsByName[name] = &method
@@ -327,6 +329,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 		gascost := func(args []reflect.Value) []reflect.Value {
 
 			cost := params.LogGas
+			// #nosec G115
 			cost += params.LogTopicGas * uint64(1+len(topicInputs))
 
 			var dataValues []interface{}
@@ -575,6 +578,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 	for _, method := range ArbWasmCache.methods {
 		method.arbosVersion = ArbWasmCache.arbosVersion
 	}
+	ArbWasmCache.methodsByName["CacheCodehash"].maxArbosVersion = params.ArbosVersion_Stylus
+	ArbWasmCache.methodsByName["CacheProgram"].arbosVersion = params.ArbosVersion_StylusFixes
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(pgen.ArbRetryableTxMetaData, ArbRetryableImpl))
@@ -680,7 +685,7 @@ func (p *Precompile) Call(
 	}
 	id := *(*[4]byte)(input)
 	method, ok := p.methods[id]
-	if !ok || arbosVersion < method.arbosVersion {
+	if !ok || arbosVersion < method.arbosVersion || (method.maxArbosVersion > 0 && arbosVersion > method.maxArbosVersion) {
 		// method does not exist or hasn't yet been activated
 		return nil, 0, vm.ErrExecutionReverted
 	}
@@ -708,6 +713,8 @@ func (p *Precompile) Call(
 		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
 	}
 
+	// len(input) must be at least 4 because of the check near the start of this function
+	// #nosec G115
 	argsCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(input)-4))
 	if err := callerCtx.Burn(argsCost); err != nil {
 		// user cannot afford the argument data supplied

@@ -43,8 +43,8 @@ func NewLevelAndLeaf(level, leaf uint64) LevelAndLeaf {
 
 func (place LevelAndLeaf) ToBigInt() *big.Int {
 	return new(big.Int).Add(
-		new(big.Int).Lsh(big.NewInt(int64(place.Level)), 192),
-		big.NewInt(int64(place.Leaf)),
+		new(big.Int).Lsh(new(big.Int).SetUint64(place.Level), 192),
+		new(big.Int).SetUint64(place.Leaf),
 	)
 }
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -18,38 +19,56 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/valnode"
-	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
 var oneEth = arbmath.UintToBig(1e18)
 
+var allWasmTargets = []string{string(rawdb.TargetWavm), string(rawdb.TargetArm64), string(rawdb.TargetAmd64), string(rawdb.TargetHost)}
+
 func TestProgramKeccak(t *testing.T) {
 	t.Parallel()
-	keccakTest(t, true)
+	t.Run("WithDefaultWasmTargets", func(t *testing.T) {
+		keccakTest(t, true)
+	})
+
+	t.Run("WithAllWasmTargets", func(t *testing.T) {
+		keccakTest(t, true, func(builder *NodeBuilder) {
+			builder.WithExtraArchs(allWasmTargets)
+		})
+	})
 }
 
-func keccakTest(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
+
+	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
@@ -62,6 +81,7 @@ func keccakTest(t *testing.T, jit bool) {
 			Fatal(t, "activate should have failed with ProgramUpToDate", err)
 		}
 	})
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
 
 	if programAddress == otherAddressSameCode {
 		Fatal(t, "expected to deploy at two separate program addresses")
@@ -135,11 +155,18 @@ func keccakTest(t *testing.T, jit bool) {
 
 func TestProgramActivateTwice(t *testing.T) {
 	t.Parallel()
-	testActivateTwice(t, true)
+	t.Run("WithDefaultWasmTargets", func(t *testing.T) {
+		testActivateTwice(t, true)
+	})
+	t.Run("WithAllWasmTargets", func(t *testing.T) {
+		testActivateTwice(t, true, func(builder *NodeBuilder) {
+			builder.WithExtraArchs(allWasmTargets)
+		})
+	})
 }
 
-func testActivateTwice(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -165,6 +192,10 @@ func testActivateTwice(t *testing.T, jit bool) {
 	colors.PrintBlue("keccak program B deployed to ", keccakB)
 
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+
+	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+
 	preimage := []byte("it's time to du-du-du-du d-d-d-d-d-d-d de-duplicate")
 
 	keccakArgs := []byte{0x01} // keccak the preimage once
@@ -188,6 +219,7 @@ func testActivateTwice(t *testing.T, jit bool) {
 
 	// Calling the contract pre-activation should fail.
 	checkReverts()
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
 
 	// mechanisms for creating calldata
 	activateProgram, _ := util.NewCallParser(pgen.ArbWasmABI, "activateProgram")
@@ -210,6 +242,7 @@ func testActivateTwice(t *testing.T, jit bool) {
 
 	// Ensure the revert also reverted keccak's activation
 	checkReverts()
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
 
 	// Activate keccak program A, then call into B, which should succeed due to being the same codehash
 	args = argsForMulticall(vm.CALL, types.ArbWasmAddress, oneEth, pack(activateProgram(keccakA)))
@@ -217,8 +250,105 @@ func testActivateTwice(t *testing.T, jit bool) {
 
 	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, oneEth, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 2)
 
 	validateBlocks(t, 7, jit, builder)
+}
+
+func TestStylusUpgrade(t *testing.T) {
+	t.Parallel()
+	testStylusUpgrade(t, true)
+}
+
+func testStylusUpgrade(t *testing.T, jit bool) {
+	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
+	defer cleanup()
+
+	ctx := builder.ctx
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&auth, 1))
+
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
+	keccakAddr := deployContract(t, ctx, auth, l2client, wasm)
+
+	colors.PrintBlue("keccak program deployed to ", keccakAddr)
+
+	preimage := []byte("hello, you fool")
+
+	keccakArgs := []byte{0x01} // keccak the preimage once
+	keccakArgs = append(keccakArgs, preimage...)
+
+	checkFailWith := func(errMessage string) uint64 {
+		msg := ethereum.CallMsg{
+			To:   &keccakAddr,
+			Data: keccakArgs,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err == nil || !strings.Contains(err.Error(), errMessage) {
+			Fatal(t, "call should have failed with "+errMessage, " got: "+err.Error())
+		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &keccakAddr, 1e9, nil, keccakArgs)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		return EnsureTxFailed(t, ctx, l2client, tx).BlockNumber.Uint64()
+	}
+
+	checkSucceeds := func() uint64 {
+		msg := ethereum.CallMsg{
+			To:   &keccakAddr,
+			Data: keccakArgs,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err != nil {
+			Fatal(t, err)
+		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &keccakAddr, 1e9, nil, keccakArgs)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		if err != nil {
+			Fatal(t, err)
+		}
+		return receipt.BlockNumber.Uint64()
+	}
+
+	// Calling the contract pre-activation should fail.
+	blockFail1 := checkFailWith("ProgramNotActivated")
+
+	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+
+	blockSuccess1 := checkSucceeds()
+
+	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, 31, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// generate traffic to perform the upgrade
+	TransferBalance(t, "Owner", "Owner", big.NewInt(1), builder.L2Info, builder.L2.Client, ctx)
+
+	blockFail2 := checkFailWith("ProgramNeedsUpgrade")
+
+	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+
+	blockSuccess2 := checkSucceeds()
+
+	validateBlockRange(t, []uint64{blockFail1, blockSuccess1, blockFail2, blockSuccess2}, jit, builder)
 }
 
 func TestProgramErrors(t *testing.T) {
@@ -287,14 +417,18 @@ func storageTest(t *testing.T, jit bool) {
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
-	ensure(tx, l2client.SendTransaction(ctx, tx))
+	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
 	validateBlocks(t, 2, jit, builder)
+
+	// Captures a block_inputs json file for the block that included the
+	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
 }
 
 func TestProgramTransientStorage(t *testing.T) {
-	t.Parallel()
 	transientStorageTest(t, true)
 }
 
@@ -401,6 +535,16 @@ func testCalls(t *testing.T, jit bool) {
 	defer cleanup()
 	callsAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
+	// checks that ArbInfo.GetCode works properly
+	codeFromFile, _ := readWasmFile(t, rustFile("multicall"))
+	arbInfo, err := pgen.NewArbInfo(types.ArbInfoAddress, l2client)
+	Require(t, err)
+	codeFromArbInfo, err := arbInfo.GetCode(nil, callsAddr)
+	Require(t, err)
+	if !bytes.Equal(codeFromFile, codeFromArbInfo) {
+		t.Fatal("ArbInfo.GetCode returned wrong code")
+	}
+
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
@@ -481,6 +625,7 @@ func testCalls(t *testing.T, jit bool) {
 
 			for i := 0; i < 2; i++ {
 				inner := nest(level - 1)
+				// #nosec G115
 				args = append(args, arbmath.Uint32ToBytes(uint32(len(inner)))...)
 				args = append(args, inner...)
 			}
@@ -536,6 +681,7 @@ func testCalls(t *testing.T, jit bool) {
 	colors.PrintBlue("Calling the ArbosTest precompile (Rust => precompile)")
 	testPrecompile := func(gas uint64) uint64 {
 		// Call the burnArbGas() precompile from Rust
+		// #nosec G115
 		burn := pack(burnArbGas(big.NewInt(int64(gas))))
 		args := argsForMulticall(vm.CALL, types.ArbosTestAddress, nil, burn)
 		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, args)
@@ -549,6 +695,7 @@ func testCalls(t *testing.T, jit bool) {
 	large := testPrecompile(largeGas)
 
 	if !arbmath.Within(large-small, largeGas-smallGas, 2) {
+		// #nosec G115
 		ratio := float64(int64(large)-int64(small)) / float64(int64(largeGas)-int64(smallGas))
 		Fatal(t, "inconsistent burns", large, small, largeGas, smallGas, ratio)
 	}
@@ -575,6 +722,13 @@ func testCalls(t *testing.T, jit bool) {
 	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, value, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	balance := GetBalance(t, ctx, l2client, eoa)
+	if !arbmath.BigEquals(balance, value) {
+		Fatal(t, balance, value)
+	}
+
+	// checks that ArbInfo.GetBalance works properly
+	balance, err = arbInfo.GetBalance(nil, eoa)
+	Require(t, err)
 	if !arbmath.BigEquals(balance, value) {
 		Fatal(t, balance, value)
 	}
@@ -638,10 +792,15 @@ func testReturnData(t *testing.T, jit bool) {
 
 func TestProgramLogs(t *testing.T) {
 	t.Parallel()
-	testLogs(t, true)
+	testLogs(t, true, false)
 }
 
-func testLogs(t *testing.T, jit bool) {
+func TestProgramLogsWithTracing(t *testing.T) {
+	t.Parallel()
+	testLogs(t, true, true)
+}
+
+func testLogs(t *testing.T, jit, tracing bool) {
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -650,6 +809,27 @@ func testLogs(t *testing.T, jit bool) {
 	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
+	type traceLog struct {
+		Address common.Address `json:"address"`
+		Topics  []common.Hash  `json:"topics"`
+		Data    hexutil.Bytes  `json:"data"`
+	}
+	traceTx := func(tx *types.Transaction) []traceLog {
+		type traceLogs struct {
+			Logs []traceLog `json:"logs"`
+		}
+		var trace traceLogs
+		traceConfig := map[string]interface{}{
+			"tracer": "callTracer",
+			"tracerConfig": map[string]interface{}{
+				"withLog": true,
+			},
+		}
+		rpc := l2client.Client()
+		err := rpc.CallContext(ctx, &trace, "debug_traceTransaction", tx.Hash(), traceConfig)
+		Require(t, err)
+		return trace.Logs
+	}
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
@@ -676,6 +856,20 @@ func testLogs(t *testing.T, jit bool) {
 			topics[j] = testhelpers.RandomHash()
 		}
 		data := randBytes(0, 48)
+		verifyLogTopicsAndData := func(logData []byte, logTopics []common.Hash) {
+			if !bytes.Equal(logData, data) {
+				Fatal(t, "data mismatch", logData, data)
+			}
+			if len(logTopics) != len(topics) {
+				Fatal(t, "topics mismatch", len(logTopics), len(topics))
+			}
+			for j := 0; j < i; j++ {
+				if logTopics[j] != topics[j] {
+					Fatal(t, "topic mismatch", logTopics, topics)
+				}
+			}
+		}
+
 		args := encode(topics, data)
 		tx := l2info.PrepareTxTo("Owner", &logAddr, 1e9, nil, args)
 		receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
@@ -684,16 +878,14 @@ func testLogs(t *testing.T, jit bool) {
 			Fatal(t, "wrong number of logs", len(receipt.Logs))
 		}
 		log := receipt.Logs[0]
-		if !bytes.Equal(log.Data, data) {
-			Fatal(t, "data mismatch", log.Data, data)
-		}
-		if len(log.Topics) != len(topics) {
-			Fatal(t, "topics mismatch", len(log.Topics), len(topics))
-		}
-		for j := 0; j < i; j++ {
-			if log.Topics[j] != topics[j] {
-				Fatal(t, "topic mismatch", log.Topics, topics)
+		verifyLogTopicsAndData(log.Data, log.Topics)
+		if tracing {
+			logs := traceTx(tx)
+			if len(logs) != 1 {
+				Fatal(t, "wrong number of logs in trace", len(logs))
 			}
+			log := logs[0]
+			verifyLogTopicsAndData(log.Data, log.Topics)
 		}
 	}
 
@@ -1067,6 +1259,140 @@ func testSdkStorage(t *testing.T, jit bool) {
 	check()
 }
 
+func TestStylusPrecompileMethodsSimple(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	arbDebug, err := pgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	Require(t, err)
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, builder.L2.Client)
+	Require(t, err)
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	ownerAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	ensure(arbDebug.BecomeChainOwner(&ownerAuth))
+
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
+	programAddress := deployContract(t, ctx, ownerAuth, builder.L2.Client, wasm)
+
+	activateAuth := ownerAuth
+	activateAuth.Value = oneEth
+	ensure(arbWasm.ActivateProgram(&activateAuth, programAddress))
+
+	expectedExpiryDays := uint16(1)
+	ensure(arbOwner.SetWasmExpiryDays(&ownerAuth, expectedExpiryDays))
+	ed, err := arbWasm.ExpiryDays(nil)
+	Require(t, err)
+	if ed != expectedExpiryDays {
+		t.Errorf("ExpiryDays from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ed, expectedExpiryDays)
+	}
+	ptl, err := arbWasm.ProgramTimeLeft(nil, programAddress)
+	Require(t, err)
+	expectedExpirySeconds := (uint64(expectedExpiryDays) * 24 * 3600)
+	// ProgramTimeLeft returns time in seconds to expiry and the current ExpiryDays is set to 1 day
+	// We expect the lag of 3600 seconds to exist because program.activatedAt uses hoursSinceArbitrum that
+	// rounds down (the current time since ArbitrumStartTime in hours)/3600
+	if expectedExpirySeconds-ptl > 3600 {
+		t.Errorf("ProgramTimeLeft from arbWasm precompile returned value lesser than expected. %d <= want <= %d, have: %d", expectedExpirySeconds-3600, expectedExpirySeconds, ptl)
+	}
+
+	ensure(arbOwner.SetWasmBlockCacheSize(&ownerAuth, 100))
+	bcs, err := arbWasm.BlockCacheSize(nil)
+	Require(t, err)
+	if bcs != 100 {
+		t.Errorf("BlockCacheSize from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", bcs, 100)
+	}
+
+	ensure(arbOwner.SetWasmFreePages(&ownerAuth, 3))
+	fp, err := arbWasm.FreePages(nil)
+	Require(t, err)
+	if fp != 3 {
+		t.Errorf("FreePages from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", fp, 3)
+	}
+
+	ensure(arbOwner.SetWasmInitCostScalar(&ownerAuth, uint64(4)))
+	ics, err := arbWasm.InitCostScalar(nil)
+	Require(t, err)
+	if ics != uint64(4) {
+		t.Errorf("InitCostScalar from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ics, 4)
+	}
+
+	ensure(arbOwner.SetInkPrice(&ownerAuth, uint32(5)))
+	ip, err := arbWasm.InkPrice(nil)
+	Require(t, err)
+	if ip != uint32(5) {
+		t.Errorf("InkPrice from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ip, 5)
+	}
+
+	ensure(arbOwner.SetWasmKeepaliveDays(&ownerAuth, 0))
+	kad, err := arbWasm.KeepaliveDays(nil)
+	Require(t, err)
+	if kad != 0 {
+		t.Errorf("KeepaliveDays from arbWasm precompile didnt match the value set by arbowner. have: %d, want: 0", kad)
+	}
+
+	ensure(arbOwner.SetWasmMaxStackDepth(&ownerAuth, uint32(6)))
+	msd, err := arbWasm.MaxStackDepth(nil)
+	Require(t, err)
+	if msd != uint32(6) {
+		t.Errorf("MaxStackDepth from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", msd, 6)
+	}
+
+	// Setting low values of gas and cached parameters ensures when MinInitGas is called on ArbWasm precompile,
+	// the returned values would be programs.MinInitGasUnits and programs.MinCachedGasUnits
+	ensure(arbOwner.SetWasmMinInitGas(&ownerAuth, 1, 1))
+	mig, err := arbWasm.MinInitGas(nil)
+	Require(t, err)
+	if mig.Gas != programs.MinInitGasUnits {
+		t.Errorf("MinInitGas from arbWasm precompile didnt match the Gas value set by arbowner. have: %d, want: %d", mig.Gas, programs.MinInitGasUnits)
+	}
+	if mig.Cached != programs.MinCachedGasUnits {
+		t.Errorf("MinInitGas from arbWasm precompile didnt match the Cached value set by arbowner. have: %d, want: %d", mig.Cached, programs.MinCachedGasUnits)
+	}
+
+	ensure(arbOwner.SetWasmPageGas(&ownerAuth, 7))
+	pg, err := arbWasm.PageGas(nil)
+	Require(t, err)
+	if pg != 7 {
+		t.Errorf("PageGas from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", pg, 7)
+	}
+
+	ensure(arbOwner.SetWasmPageLimit(&ownerAuth, 8))
+	pl, err := arbWasm.PageLimit(nil)
+	Require(t, err)
+	if pl != 8 {
+		t.Errorf("PageLimit from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", pl, 8)
+	}
+
+	// pageramp currently is initialPageRamp = 620674314 value in programs package
+	_, err = arbWasm.PageRamp(nil)
+	Require(t, err)
+
+	codehash := crypto.Keccak256Hash(wasm)
+	cas, err := arbWasm.CodehashAsmSize(nil, codehash)
+	Require(t, err)
+	if cas == 0 {
+		t.Error("CodehashAsmSize from arbWasm precompile returned 0 value")
+	}
+	// Since ArbOwner has set wasm KeepaliveDays to 0, it enables us to do this, though this shouldn't have any effect
+	codehashKeepaliveAuth := ownerAuth
+	codehashKeepaliveAuth.Value = oneEth
+	ensure(arbWasm.CodehashKeepalive(&codehashKeepaliveAuth, codehash))
+}
+
 func TestProgramActivationLogs(t *testing.T) {
 	t.Parallel()
 	builder, auth, cleanup := setupProgramTest(t, true)
@@ -1210,7 +1536,7 @@ func TestProgramCacheManager(t *testing.T) {
 	isManager, err := arbWasmCache.IsCacheManager(nil, manager)
 	assert(!isManager, err)
 
-	// athorize the manager
+	// authorize the manager
 	ensure(arbOwner.AddWasmCacheManager(&ownerAuth, manager))
 	assert(arbWasmCache.IsCacheManager(nil, manager))
 	all, err := arbWasmCache.AllCacheManagers(nil)
@@ -1248,7 +1574,7 @@ func TestProgramCacheManager(t *testing.T) {
 	// check ownership
 	assert(arbOwner.IsChainOwner(nil, ownerAuth.From))
 	ensure(arbWasmCache.EvictCodehash(&ownerAuth, codehash))
-	ensure(arbWasmCache.CacheCodehash(&ownerAuth, codehash))
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, program))
 
 	// de-authorize manager
 	ensure(arbOwner.RemoveWasmCacheManager(&ownerAuth, manager))
@@ -1258,13 +1584,85 @@ func TestProgramCacheManager(t *testing.T) {
 	assert(len(all) == 0, err)
 }
 
-func setupProgramTest(t *testing.T, jit bool) (
+func testReturnDataCost(t *testing.T, arbosVersion uint64) {
+	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(arbosVersion) })
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// use a consistent ink price
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	tx, err := arbOwner.SetInkPrice(&auth, 10000)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+
+	returnSize := big.NewInt(1024 * 1024) // 1MiB
+	returnSizeBytes := arbmath.U256Bytes(returnSize)
+
+	testCall := func(to common.Address) uint64 {
+		msg := ethereum.CallMsg{
+			To:             &to,
+			Data:           returnSizeBytes,
+			SkipL1Charging: true,
+		}
+		ret, err := l2client.CallContract(ctx, msg, nil)
+		Require(t, err)
+
+		if !arbmath.BigEquals(big.NewInt(int64(len(ret))), returnSize) {
+			Fatal(t, "unexpected return length", len(ret), "expected", returnSize)
+		}
+
+		gas, err := l2client.EstimateGas(ctx, msg)
+		Require(t, err)
+
+		return gas
+	}
+
+	stylusReturnSizeAddr := deployWasm(t, ctx, auth, l2client, watFile("return-size"))
+
+	stylusGas := testCall(stylusReturnSizeAddr)
+
+	// PUSH32 [returnSizeBytes]
+	evmBytecode := append([]byte{0x7F}, returnSizeBytes...)
+	// PUSH0 RETURN
+	evmBytecode = append(evmBytecode, 0x5F, 0xF3)
+	evmReturnSizeAddr := deployContract(t, ctx, auth, l2client, evmBytecode)
+
+	evmGas := testCall(evmReturnSizeAddr)
+
+	colors.PrintGrey(fmt.Sprintf("arbosVersion=%v stylusGas=%v evmGas=%v", arbosVersion, stylusGas, evmGas))
+	// a bit of gas difference is expected due to EVM PUSH32 and PUSH0 cost (in practice this is 5 gas)
+	similarGas := math.Abs(float64(stylusGas)-float64(evmGas)) <= 100
+	if arbosVersion >= params.ArbosVersion_StylusFixes {
+		if !similarGas {
+			Fatal(t, "unexpected gas difference for return data: stylus", stylusGas, ", evm", evmGas)
+		}
+	} else if similarGas {
+		Fatal(t, "gas unexpectedly similar for return data: stylus", stylusGas, ", evm", evmGas)
+	}
+}
+
+func TestReturnDataCost(t *testing.T) {
+	testReturnDataCost(t, params.ArbosVersion_Stylus)
+	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
+}
+
+func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
+	for _, opt := range builderOpts {
+		opt(builder)
+	}
+
+	// setupProgramTest is being called by tests that validate blocks.
+	// For now validation only works with HashScheme set.
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true
@@ -1316,9 +1714,10 @@ func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 	Require(t, err)
 
 	// chose a random dictionary for testing, but keep the same files consistent
+	// #nosec G115
 	randDict := arbcompress.Dictionary((len(file) + len(t.Name())) % 2)
 
-	wasmSource, err := wasmer.Wat2Wasm(string(source))
+	wasmSource, err := programs.Wat2Wasm(source)
 	Require(t, err)
 	wasm, err := arbcompress.Compress(wasmSource, arbcompress.LEVEL_WELL, randDict)
 	Require(t, err)
@@ -1386,6 +1785,7 @@ func argsForMulticall(opcode vm.OpCode, address common.Address, value *big.Int, 
 	if opcode == vm.CALL {
 		length += 32
 	}
+	// #nosec G115
 	args = append(args, arbmath.Uint32ToBytes(uint32(length))...)
 	args = append(args, kinds[opcode])
 	if opcode == vm.CALL {
@@ -1403,6 +1803,35 @@ func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inn
 	calls[0] += 1 // add another call
 	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
 	return calls
+}
+
+func multicallEmptyArgs() []byte {
+	return []byte{0} // number of actions
+}
+
+func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
+	var action byte = 0x10
+	if emitLog {
+		action |= 0x08
+	}
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1+64) // length
+	args = append(args, action)
+	args = append(args, key.Bytes()...)
+	args = append(args, value.Bytes()...)
+	return args
+}
+
+func multicallAppendLoad(args []byte, key common.Hash, emitLog bool) []byte {
+	var action byte = 0x11
+	if emitLog {
+		action |= 0x08
+	}
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1+32) // length
+	args = append(args, action)
+	args = append(args, key.Bytes()...)
+	return args
 }
 
 func assertStorageAt(
@@ -1459,37 +1888,28 @@ func formatTime(duration time.Duration) string {
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
 
-func TestWasmRecreate(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+func testWasmRecreate(t *testing.T, builder *NodeBuilder, storeTx *types.Transaction, loadTx *types.Transaction, want []byte) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
-	defer cleanup()
-
-	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
-
-	zero := common.Hash{}
-	val := common.HexToHash("0x121233445566")
 
 	// do an onchain call - store value
-	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
 	Require(t, l2client.SendTransaction(ctx, storeTx))
 	_, err := EnsureTxSucceeded(ctx, l2client, storeTx)
 	Require(t, err)
 
 	testDir := t.TempDir()
-	nodeBStack := createStackConfigForTest(testDir)
+	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
 	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
 	Require(t, err)
 
 	// make sure reading 2nd value succeeds from 2nd node
-	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
 	result, err := arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
 	Require(t, err)
-	if common.BytesToHash(result) != val {
-		Fatal(t, "got wrong value")
+	if !bytes.Equal(result, want) {
+		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
 	// close nodeB
 	cleanupB()
@@ -1514,8 +1934,8 @@ func TestWasmRecreate(t *testing.T) {
 	// test nodeB - answers eth_call (requires reloading wasm)
 	result, err = arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
 	Require(t, err)
-	if common.BytesToHash(result) != val {
-		Fatal(t, "got wrong value")
+	if !bytes.Equal(result, want) {
+		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
 
 	// send new tx (requires wasm) and check nodeB sees it as well
@@ -1534,5 +1954,612 @@ func TestWasmRecreate(t *testing.T) {
 		Fatal(t, "not contents found before delete")
 	}
 	os.RemoveAll(wasmPath)
+}
 
+func TestWasmRecreate(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
+	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
+
+	testWasmRecreate(t, builder, storeTx, loadTx, val[:])
+}
+
+func TestWasmRecreateWithDelegatecall(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	multicall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	data := argsForMulticall(vm.DELEGATECALL, storage, big.NewInt(0), argsForStorageWrite(zero, val))
+	storeTx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, data)
+
+	data = argsForMulticall(vm.DELEGATECALL, storage, big.NewInt(0), argsForStorageRead(zero))
+	loadTx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, data)
+
+	testWasmRecreate(t, builder, storeTx, loadTx, val[:])
+}
+
+// createMapFromDb is used in verifying if wasm store rebuilding works
+func createMapFromDb(db ethdb.KeyValueStore) (map[string][]byte, error) {
+	iter := db.NewIterator(nil, nil)
+	defer iter.Release()
+
+	dataMap := make(map[string][]byte)
+
+	for iter.Next() {
+		key := iter.Key()
+		value := iter.Value()
+
+		dataMap[string(key)] = value
+	}
+
+	if err := iter.Error(); err != nil {
+		return nil, fmt.Errorf("iterator error: %w", err)
+	}
+
+	return dataMap, nil
+}
+
+func TestWasmStoreRebuilding(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.WithExtraArchs(allWasmTargets)
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	// do an onchain call - store value
+	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
+	Require(t, l2client.SendTransaction(ctx, storeTx))
+	_, err := EnsureTxSucceeded(ctx, l2client, storeTx)
+	Require(t, err)
+
+	testDir := t.TempDir()
+	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
+	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+
+	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
+	Require(t, err)
+
+	// make sure reading 2nd value succeeds from 2nd node
+	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
+	result, err := arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
+	Require(t, err)
+	if common.BytesToHash(result) != val {
+		Fatal(t, "got wrong value")
+	}
+
+	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+
+	storeMap, err := createMapFromDb(wasmDb)
+	Require(t, err)
+
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	// close nodeB
+	cleanupB()
+
+	// delete wasm dir of nodeB
+	wasmPath := filepath.Join(testDir, "system_tests.test", "wasm")
+	dirContents, err := os.ReadDir(wasmPath)
+	Require(t, err)
+	if len(dirContents) == 0 {
+		Fatal(t, "not contents found before delete")
+	}
+	os.RemoveAll(wasmPath)
+
+	// recreate nodeB - using same source dir (wasm deleted)
+	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+	bc := nodeB.ExecNode.Backend.ArbInterface().BlockChain()
+
+	wasmDbAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	storeMapAfterDelete, err := createMapFromDb(wasmDbAfterDelete)
+	Require(t, err)
+	if len(storeMapAfterDelete) != 0 {
+		Fatal(t, "non-empty wasm store after it was previously deleted")
+	}
+
+	// Start rebuilding and wait for it to finish
+	log.Info("starting rebuilding of wasm store")
+	execConfig := nodeB.ExecNode.ConfigFetcher()
+	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, nodeB.ExecNode.ChainDB, execConfig.RPC.MaxRecreateStateDepth, &execConfig.StylusTarget, bc, common.Hash{}, bc.CurrentBlock().Hash()))
+
+	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+
+	// Before comparing, check if rebuilding was set to done and then delete the keys that are used to track rebuilding status
+	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDbAfterRebuild, gethexec.RebuildingPositionKey)
+	Require(t, err)
+	if status != gethexec.RebuildingDone {
+		Fatal(t, "rebuilding was not set to done after successful completion")
+	}
+	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingPositionKey))
+	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingStartBlockHashKey))
+
+	rebuiltStoreMap, err := createMapFromDb(wasmDbAfterRebuild)
+	Require(t, err)
+
+	// Check if rebuilding worked
+	if len(storeMap) != len(rebuiltStoreMap) {
+		Fatal(t, "size mismatch while rebuilding wasm store:", "want", len(storeMap), "got", len(rebuiltStoreMap))
+	}
+	for key, value1 := range storeMap {
+		value2, exists := rebuiltStoreMap[key]
+		if !exists {
+			Fatal(t, "rebuilt wasm store doesn't have key from original")
+		}
+		if !bytes.Equal(value1, value2) {
+			Fatal(t, "rebuilt wasm store has incorrect value from original")
+		}
+	}
+
+	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	cleanupB()
+}
+
+func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
+	modulesSet := make(map[common.Hash]struct{})
+	asmPrefix := []byte{0x00, 'w'}
+	it := wasmDb.NewIterator(asmPrefix, nil)
+	defer it.Release()
+	for it.Next() {
+		key := it.Key()
+		if len(key) != rawdb.WasmKeyLen {
+			t.Fatalf("unexpected activated module key length, len: %d, key: %v", len(key), key)
+		}
+		moduleHash := key[rawdb.WasmPrefixLen:]
+		if len(moduleHash) != common.HashLength {
+			t.Fatalf("Invalid moduleHash length in key: %v, moduleHash: %v", key, moduleHash)
+		}
+		modulesSet[common.BytesToHash(moduleHash)] = struct{}{}
+	}
+	modules := make([]common.Hash, 0, len(modulesSet))
+	for module := range modulesSet {
+		modules = append(modules, module)
+	}
+	return modules
+}
+
+func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []string, numModules int) {
+	modules := readModuleHashes(t, wasmDb)
+	if len(modules) != numModules {
+		t.Fatalf("Unexpected number of module hashes found in wasm store, want: %d, have: %d", numModules, len(modules))
+	}
+	for _, module := range modules {
+		for _, target := range targets {
+			wasmTarget := ethdb.WasmTarget(target)
+			if !rawdb.IsSupportedWasmTarget(wasmTarget) {
+				t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
+			}
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
+					}
+				}()
+				_ = rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+			}()
+		}
+	}
+}
+
+func deployWasmAndGetEntrySizeEstimateBytes(
+	t *testing.T,
+	builder *NodeBuilder,
+	auth bind.TransactOpts,
+	wasmName string,
+) (common.Address, uint64) {
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+
+	wasm, _ := readWasmFile(t, rustFile(wasmName))
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err, ", wasmName:", wasmName)
+
+	programAddress := deployContract(t, ctx, auth, l2client, wasm)
+	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
+	Require(t, err, ", wasmName:", wasmName)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err, ", wasmName:", wasmName)
+
+	if len(receipt.Logs) != 1 {
+		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs), ", wasmName:", wasmName)
+	}
+	log, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
+	Require(t, err, ", wasmName:", wasmName)
+
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err, ", wasmName:", wasmName)
+
+	module, err := statedb.TryGetActivatedAsm(rawdb.LocalTarget(), log.ModuleHash)
+	Require(t, err, ", wasmName:", wasmName)
+
+	entrySizeEstimateBytes := programs.GetEntrySizeEstimateBytes(module, log.Version, true)
+	// just a sanity check
+	if entrySizeEstimateBytes == 0 {
+		Fatal(t, "entrySizeEstimateBytes is 0, wasmName:", wasmName)
+	}
+	return programAddress, entrySizeEstimateBytes
+}
+
+func TestWasmLruCache(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	auth.GasLimit = 32000000
+	auth.Value = oneEth
+
+	fallibleProgramAddress, fallibleEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "fallible")
+	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "keccak")
+	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, auth, "math")
+	t.Log(
+		"entrySizeEstimateBytes, ",
+		"fallible:", fallibleEntrySize,
+		"keccak:", keccakEntrySize,
+		"math:", mathEntrySize,
+	)
+	if fallibleEntrySize == keccakEntrySize || fallibleEntrySize == mathEntrySize || keccakEntrySize == mathEntrySize {
+		Fatal(t, "at least two programs have the same entry size")
+	}
+
+	programs.ClearWasmLruCache()
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	programs.SetWasmLruCacheCapacity(fallibleEntrySize - 1)
+	// fallible wasm program will not be cached since its size is greater than lru cache capacity
+	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	programs.SetWasmLruCacheCapacity(
+		fallibleEntrySize + keccakEntrySize + mathEntrySize - 1,
+	)
+	// fallible wasm program will be cached
+	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+
+	// keccak wasm program will be cached
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+
+	// math wasm program will be cached, but fallible will be evicted since (fallible + keccak + math) > lruCacheCapacity
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: keccakEntrySize + mathEntrySize,
+	})
+}
+
+func checkLongTermCacheMetrics(t *testing.T, expected programs.WasmLongTermCacheMetrics) {
+	t.Helper()
+	longTermMetrics := programs.GetWasmCacheMetrics().LongTerm
+	if longTermMetrics.Count != expected.Count {
+		t.Fatalf("longTermMetrics.Count, expected: %v, actual: %v", expected.Count, longTermMetrics.Count)
+	}
+	if longTermMetrics.SizeBytes != expected.SizeBytes {
+		t.Fatalf("longTermMetrics.SizeBytes, expected: %v, actual: %v", expected.SizeBytes, longTermMetrics.SizeBytes)
+	}
+}
+
+func checkLruCacheMetrics(t *testing.T, expected programs.WasmLruCacheMetrics) {
+	t.Helper()
+	lruMetrics := programs.GetWasmCacheMetrics().Lru
+	if lruMetrics.Count != expected.Count {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", expected.Count, lruMetrics.Count)
+	}
+	if lruMetrics.SizeBytes != expected.SizeBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", expected.SizeBytes, lruMetrics.SizeBytes)
+	}
+}
+
+func TestWasmLongTermCache(t *testing.T) {
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
+		builder.WithStylusLongTermCache(true)
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbWasmCache, err := pgen.NewArbWasmCache(types.ArbWasmCacheAddress, builder.L2.Client)
+	Require(t, err)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&ownerAuth, 10_000))
+
+	ownerAuth.GasLimit = 32000000
+	ownerAuth.Value = oneEth
+
+	fallibleProgramAddress, fallibleEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "fallible")
+	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "keccak")
+	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "math")
+	t.Log(
+		"entrySizeEstimateBytes, ",
+		"fallible:", fallibleEntrySize,
+		"keccak:", keccakEntrySize,
+		"math:", mathEntrySize,
+	)
+	if fallibleEntrySize == keccakEntrySize || fallibleEntrySize == mathEntrySize || keccakEntrySize == mathEntrySize {
+		Fatal(t, "at least two programs have the same entry size")
+	}
+
+	ownerAuth.Value = common.Big0
+
+	programs.ClearWasmLongTermCache()
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	// fallible wasm program will not be cached since caching is not set for this program
+	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, fallibleProgramAddress))
+	// fallible wasm program will be cached
+	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+
+	// keccak wasm program will be cached
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, keccakProgramAddress))
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+
+	// math wasm program will not be cached
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+
+	// math wasm program will be cached
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, mathProgramAddress))
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     3,
+		SizeBytes: fallibleEntrySize + keccakEntrySize + mathEntrySize,
+	})
+
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	fallibleProgramHash := statedb.GetCodeHash(fallibleProgramAddress)
+	keccakProgramHash := statedb.GetCodeHash(keccakProgramAddress)
+	mathProgramHash := statedb.GetCodeHash(mathProgramAddress)
+
+	ensure(arbWasmCache.EvictCodehash(&ownerAuth, keccakProgramHash))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + mathEntrySize,
+	})
+
+	// keccak wasm program will not be cached
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + mathEntrySize,
+	})
+
+	// keccak wasm program will be cached
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, keccakProgramAddress))
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     3,
+		SizeBytes: fallibleEntrySize + keccakEntrySize + mathEntrySize,
+	})
+
+	ensure(arbWasmCache.EvictCodehash(&ownerAuth, fallibleProgramHash))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     2,
+		SizeBytes: keccakEntrySize + mathEntrySize,
+	})
+
+	ensure(arbWasmCache.EvictCodehash(&ownerAuth, mathProgramHash))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: keccakEntrySize,
+	})
+
+	ensure(arbWasmCache.EvictCodehash(&ownerAuth, keccakProgramHash))
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+}
+
+func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
+		builder.WithStylusLongTermCache(true)
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbWasmCache, err := pgen.NewArbWasmCache(types.ArbWasmCacheAddress, builder.L2.Client)
+	Require(t, err)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&ownerAuth, 10_000))
+
+	ownerAuth.GasLimit = 32000000
+	ownerAuth.Value = oneEth
+
+	fallibleProgramAddress, fallibleEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "fallible")
+	keccakProgramAddress, keccakEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "keccak")
+	mathProgramAddress, mathEntrySize := deployWasmAndGetEntrySizeEstimateBytes(t, builder, ownerAuth, "math")
+	if fallibleEntrySize == keccakEntrySize || fallibleEntrySize == mathEntrySize || keccakEntrySize == mathEntrySize {
+		Fatal(t, "at least two programs have the same entry size")
+	}
+
+	ownerAuth.Value = common.Big0
+
+	programs.ClearWasmLongTermCache()
+	programs.ClearWasmLruCache()
+	// only 2 out of 3 programs should fit lru
+	programs.SetWasmLruCacheCapacity(
+		fallibleEntrySize + keccakEntrySize + mathEntrySize - 1,
+	)
+
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, fallibleProgramAddress))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+
+	// clear long term cache to emulate restart
+	programs.ClearWasmLongTermCache()
+	programs.ClearWasmLruCache()
+
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	nonce := builder.L2Info.GetInfoWithPrivKey("Owner").Nonce.Load()
+	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	_, err = arbutil.SendTxAsCall(ctx, l2client, tx, l2info.GetAddress("Owner"), nil, true)
+	Require(t, err)
+	// restore nonce in L2Info
+	builder.L2Info.GetInfoWithPrivKey("Owner").Nonce.Store(nonce)
+	// fallibleProgram should be added only to lru cache as the api call should be processed with wasm cache tag = 0
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     0,
+		SizeBytes: 0,
+	})
+
+	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: fallibleEntrySize + keccakEntrySize,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
+
+	// mathProgram should end up in lru cache and
+	// as result fallibleProgram should be evicted as least recently used item (tx that restores the program back to long term cache shouldn't promote the lru item);
+	// fallibleProgram should remain in long term cache
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	checkLruCacheMetrics(t, programs.WasmLruCacheMetrics{
+		Count:     2,
+		SizeBytes: keccakEntrySize + mathEntrySize,
+	})
+	checkLongTermCacheMetrics(t, programs.WasmLongTermCacheMetrics{
+		Count:     1,
+		SizeBytes: fallibleEntrySize,
+	})
 }

@@ -59,12 +59,8 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 }
 
 func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
-	if s.consensus.Synced() {
-		built, err := s.exec.HeadMessageNumber()
-		consensusSyncTarget := s.consensus.SyncTargetMessageCount()
-		if err == nil && built+1 >= consensusSyncTarget {
-			return make(map[string]interface{})
-		}
+	if s.Synced() {
+		return make(map[string]interface{})
 	}
 	return s.FullSyncProgressMap()
 }
@@ -112,7 +108,14 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 }
 
 func (s *SyncMonitor) Synced() bool {
-	return len(s.SyncProgressMap()) == 0
+	if s.consensus.Synced() {
+		built, err := s.exec.HeadMessageNumber()
+		consensusSyncTarget := s.consensus.SyncTargetMessageCount()
+		if err == nil && built+1 >= consensusSyncTarget {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
