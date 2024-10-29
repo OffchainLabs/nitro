@@ -45,7 +45,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "nil msg",
 			sub:  nil,
 			es: &expressLaneService{
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			expectedErr: timeboost.ErrMalformedData,
 		},
@@ -53,7 +53,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "nil tx",
 			sub:  &timeboost.ExpressLaneSubmission{},
 			es: &expressLaneService{
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			expectedErr: timeboost.ErrMalformedData,
 		},
@@ -63,7 +63,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				Transaction: &types.Transaction{},
 			},
 			es: &expressLaneService{
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			expectedErr: timeboost.ErrMalformedData,
 		},
@@ -73,7 +73,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			sub: &timeboost.ExpressLaneSubmission{
 				ChainId:     big.NewInt(2),
@@ -89,7 +89,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			sub: &timeboost.ExpressLaneSubmission{
 				ChainId:                big.NewInt(1),
@@ -106,7 +106,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			sub: &timeboost.ExpressLaneSubmission{
 				ChainId:                big.NewInt(1),
@@ -125,7 +125,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			control: expressLaneControl{
 				controller: common.Address{'b'},
@@ -148,7 +148,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			control: expressLaneControl{
 				controller: common.Address{'b'},
@@ -171,7 +171,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			control: expressLaneControl{
 				controller: common.Address{'b'},
@@ -188,7 +188,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			control: expressLaneControl{
 				controller: common.Address{'b'},
@@ -205,7 +205,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+				roundControl: lru.NewCache[uint64, *expressLaneControl](8),
 			},
 			control: expressLaneControl{
 				controller: crypto.PubkeyToAddress(testPriv.PublicKey),
@@ -236,7 +236,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 	defer cancel()
 	els := &expressLaneService{
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
-		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
+		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
 	}
 	els.roundControl.Add(0, &expressLaneControl{
 		sequence: 1,
@@ -255,7 +255,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
+		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}
 	els.roundControl.Add(0, &expressLaneControl{
@@ -283,7 +283,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
+		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}
 	els.roundControl.Add(0, &expressLaneControl{
@@ -331,7 +331,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
+		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}
 	els.roundControl.Add(0, &expressLaneControl{
@@ -440,7 +440,7 @@ func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 		auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
 		initialTimestamp:    time.Now(),
 		roundDuration:       time.Minute,
-		roundControl:        lru.NewBasicLRU[uint64, *expressLaneControl](8),
+		roundControl:        lru.NewCache[uint64, *expressLaneControl](8),
 		chainConfig: &params.ChainConfig{
 			ChainID: big.NewInt(1),
 		},

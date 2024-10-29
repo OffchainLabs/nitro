@@ -41,7 +41,7 @@ type expressLaneService struct {
 	logs                     chan []*types.Log
 	seqClient                *ethclient.Client
 	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
-	roundControl             lru.BasicLRU[uint64, *expressLaneControl]
+	roundControl             *lru.Cache[uint64, *expressLaneControl]
 	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
 }
 
@@ -78,7 +78,7 @@ pending:
 		chainConfig:              chainConfig,
 		initialTimestamp:         initialTimestamp,
 		auctionClosing:           auctionClosingDuration,
-		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
+		roundControl:             lru.NewCache[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
 		auctionContractAddr:      auctionContractAddr,
 		roundDuration:            roundDuration,
 		seqClient:                sequencerClient,
@@ -155,12 +155,10 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 						"round", it.Event.Round,
 						"controller", it.Event.FirstPriceExpressLaneController,
 					)
-					es.Lock()
 					es.roundControl.Add(it.Event.Round, &expressLaneControl{
 						controller: it.Event.FirstPriceExpressLaneController,
 						sequence:   0,
 					})
-					es.Unlock()
 				}
 				setExpressLaneIterator, err := es.auctionContract.FilterSetExpressLaneController(filterOpts, nil, nil, nil)
 				if err != nil {
@@ -169,9 +167,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 				}
 				for setExpressLaneIterator.Next() {
 					round := setExpressLaneIterator.Event.Round
-					es.RLock()
 					roundInfo, ok := es.roundControl.Get(round)
-					es.RUnlock()
 					if !ok {
 						log.Warn("Could not find round info for express lane controller transfer event", "round", round)
 						continue
@@ -184,13 +180,11 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 							"new", setExpressLaneIterator.Event.NewExpressLaneController)
 						continue
 					}
-					es.Lock()
 					newController := setExpressLaneIterator.Event.NewExpressLaneController
 					es.roundControl.Add(it.Event.Round, &expressLaneControl{
 						controller: newController,
 						sequence:   0,
 					})
-					es.Unlock()
 				}
 				fromBlock = toBlock
 			}
@@ -317,8 +311,6 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 		return timeboost.ErrMalformedData
 	}
 	sender := crypto.PubkeyToAddress(*pubkey)
-	es.RLock()
-	defer es.RUnlock()
 	control, ok := es.roundControl.Get(msg.Round)
 	if !ok {
 		return timeboost.ErrNoOnchainController
