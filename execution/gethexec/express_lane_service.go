@@ -233,19 +233,19 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		return timeboost.ErrNoOnchainController
 	}
 	// Check if the submission nonce is too low.
-	if msg.Sequence < control.sequence {
+	if msg.SequenceNumber < control.sequence {
 		return timeboost.ErrSequenceNumberTooLow
 	}
 	// Check if a duplicate submission exists already, and reject if so.
-	if _, exists := es.messagesBySequenceNumber[msg.Sequence]; exists {
+	if _, exists := es.messagesBySequenceNumber[msg.SequenceNumber]; exists {
 		return timeboost.ErrDuplicateSequenceNumber
 	}
 	// Log an informational warning if the message's sequence number is in the future.
-	if msg.Sequence > control.sequence {
-		log.Warn("Received express lane submission with future sequence number", "sequence", msg.Sequence)
+	if msg.SequenceNumber > control.sequence {
+		log.Warn("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
 	// Put into the sequence number map.
-	es.messagesBySequenceNumber[msg.Sequence] = msg
+	es.messagesBySequenceNumber[msg.SequenceNumber] = msg
 
 	for {
 		// Get the next message in the sequence.
@@ -260,7 +260,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 			false, /* no delay, as it should go through express lane */
 		); err != nil {
 			// If the tx failed, clear it from the sequence map.
-			delete(es.messagesBySequenceNumber, msg.Sequence)
+			delete(es.messagesBySequenceNumber, msg.SequenceNumber)
 			return err
 		}
 		// Increase the global round sequence number.
