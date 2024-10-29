@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net"
@@ -39,11 +40,97 @@ import (
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/stretchr/testify/require"
 )
+
+var blockMetadataInputFeedKey = func(pos uint64) []byte {
+	var key []byte
+	prefix := []byte("t")
+	key = append(key, prefix...)
+	data := make([]byte, 8)
+	binary.BigEndian.PutUint64(data, pos)
+	key = append(key, data...)
+	return key
+}
+
+func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.BlockMetadataApiCacheSize = 0 // Caching is disabled
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Generate blocks until current block is totalBlocks
+	arbDb := builder.L2.ConsensusNode.ArbDB
+	blockNum := big.NewInt(2)
+	builder.L2Info.GenerateAccount("User")
+	user := builder.L2Info.GetDefaultTransactOpts("User", ctx)
+	for i := 0; ; i++ {
+		builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+		latestL2, err := builder.L2.Client.BlockNumber(ctx)
+		Require(t, err)
+		// Clean BlockMetadata from arbDB so that we can modify it at will
+		Require(t, arbDb.Delete(blockMetadataInputFeedKey(latestL2)))
+		if latestL2 >= blockNum.Uint64() {
+			break
+		}
+	}
+
+	block, err := builder.L2.Client.BlockByNumber(ctx, blockNum)
+	Require(t, err)
+	if len(block.Transactions()) != 2 {
+		t.Fatalf("expecting two txs in the second block, but found: %d txs", len(block.Transactions()))
+	}
+
+	// Set first tx (internal tx anyway) to not timeboosted and Second one to timeboosted- BlockMetadata (in bits)-> 00000000 00000010
+	arbDb.Put(blockMetadataInputFeedKey(blockNum.Uint64()), []byte{0, 2})
+	l2rpc := builder.L2.Stack.Attach()
+	// Extra timeboosted field in pointer form to check for its existence
+	type timeboostedFromReceipt struct {
+		Timeboosted *bool `json:"timeboosted"`
+	}
+	var receiptResult []timeboostedFromReceipt
+	err = l2rpc.CallContext(ctx, &receiptResult, "eth_getBlockReceipts", rpc.BlockNumber(blockNum.Int64()))
+	Require(t, err)
+	if receiptResult[0].Timeboosted != nil {
+		t.Fatal("timeboosted field shouldn't exist in the receipt object of first tx")
+	}
+	if receiptResult[1].Timeboosted == nil {
+		t.Fatal("timeboosted field should exist in the receipt object of second tx")
+	}
+	if *receiptResult[1].Timeboosted != true {
+		t.Fatal("second tx was timeboosted, but the field indicates otherwise")
+	}
+
+	// Check that timeboosted is accurate for eth_getTransactionReceipt as well
+	var txReceipt timeboostedFromReceipt
+	err = l2rpc.CallContext(ctx, &txReceipt, "eth_getTransactionReceipt", block.Transactions()[0].Hash())
+	Require(t, err)
+	if txReceipt.Timeboosted != nil {
+		t.Fatal("timeboosted field shouldn't exist in the receipt object of first tx")
+	}
+	err = l2rpc.CallContext(ctx, &txReceipt, "eth_getTransactionReceipt", block.Transactions()[1].Hash())
+	Require(t, err)
+	if txReceipt.Timeboosted == nil {
+		t.Fatal("timeboosted field should exist in the receipt object of second tx")
+	}
+	if *txReceipt.Timeboosted != true {
+		t.Fatal("second tx was timeboosted, but the field indicates otherwise")
+	}
+
+	// Print the receipt object for reference
+	var receiptResultRaw json.RawMessage
+	err = l2rpc.CallContext(ctx, &receiptResultRaw, "eth_getBlockReceipts", rpc.BlockNumber(blockNum.Int64()))
+	Require(t, err)
+	colors.PrintGrey("receipt object- ", string(receiptResultRaw))
+
+}
 
 func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -55,15 +142,6 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	defer cleanup()
 
 	arbDb := builder.L2.ConsensusNode.ArbDB
-	blockMetadataInputFeedKey := func(pos uint64) []byte {
-		var key []byte
-		prefix := []byte("t")
-		key = append(key, prefix...)
-		data := make([]byte, 8)
-		binary.BigEndian.PutUint64(data, pos)
-		key = append(key, data...)
-		return key
-	}
 
 	// Generate blocks until current block is end
 	start := 1

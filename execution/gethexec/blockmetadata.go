@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -18,7 +18,7 @@ import (
 var ErrBlockMetadataApiBlocksLimitExceeded = errors.New("number of blocks requested for blockMetadata exceeded")
 
 type BlockMetadataFetcher interface {
-	BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error)
+	BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error)
 	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
 	SetReorgEventsReader(reorgEventsReader chan struct{})
@@ -31,14 +31,14 @@ type BulkBlockMetadataFetcher struct {
 	reorgDetector chan struct{}
 	blocksLimit   int
 	cacheMutex    sync.RWMutex
-	cache         *containers.LruCache[arbutil.MessageIndex, arbostypes.BlockMetadata]
+	cache         *containers.LruCache[arbutil.MessageIndex, common.BlockMetadata]
 }
 
 func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetcher, cacheSize, blocksLimit int) *BulkBlockMetadataFetcher {
-	var cache *containers.LruCache[arbutil.MessageIndex, arbostypes.BlockMetadata]
+	var cache *containers.LruCache[arbutil.MessageIndex, common.BlockMetadata]
 	var reorgDetector chan struct{}
 	if cacheSize != 0 {
-		cache = containers.NewLruCache[arbutil.MessageIndex, arbostypes.BlockMetadata](cacheSize)
+		cache = containers.NewLruCache[arbutil.MessageIndex, common.BlockMetadata](cacheSize)
 		reorgDetector = make(chan struct{})
 		fetcher.SetReorgEventsReader(reorgDetector)
 	}
@@ -70,7 +70,7 @@ func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]
 	}
 	var result []NumberAndBlockMetadata
 	for i := start; i <= end; i++ {
-		var data arbostypes.BlockMetadata
+		var data common.BlockMetadata
 		var found bool
 		if b.cache != nil {
 			b.cacheMutex.RLock()

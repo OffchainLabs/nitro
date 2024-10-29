@@ -37,7 +37,7 @@ type BroadcastFeedMessage struct {
 	Message        arbostypes.MessageWithMetadata `json:"message"`
 	BlockHash      *common.Hash                   `json:"blockHash,omitempty"`
 	Signature      []byte                         `json:"signature"`
-	BlockMetadata  arbostypes.BlockMetadata       `json:"blockMetadata"`
+	BlockMetadata  common.BlockMetadata           `json:"blockMetadata"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`
 }

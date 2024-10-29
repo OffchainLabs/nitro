@@ -217,7 +217,7 @@ func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) 
 	s.consensus = consensus
 }
 
-func (s *ExecutionEngine) BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error) {
+func (s *ExecutionEngine) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
 	if s.consensus != nil {
 		return s.consensus.BlockMetadataAtCount(count)
 	}
@@ -568,8 +568,8 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 // starting from the second byte, (N)th bit would represent if (N)th tx is timeboosted or not, 1 means yes and 0 means no
 // blockMetadata[index / 8 + 1] & (1 << (index % 8)) != 0; where index = (N - 1), implies whether (N)th tx in a block is timeboosted
 // note that number of txs in a block will always lag behind (len(blockMetadata) - 1) * 8 but it wont lag more than a value of 7
-func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboostedTxs map[common.Hash]struct{}) arbostypes.BlockMetadata {
-	bits := make(arbostypes.BlockMetadata, 1+arbmath.DivCeil(uint64(len(block.Transactions())), 8))
+func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboostedTxs map[common.Hash]struct{}) common.BlockMetadata {
+	bits := make(common.BlockMetadata, 1+arbmath.DivCeil(uint64(len(block.Transactions())), 8))
 	if len(timeboostedTxs) == 0 {
 		return bits
 	}
