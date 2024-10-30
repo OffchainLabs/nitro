@@ -64,12 +64,12 @@ func TestEntriesAreDeletedFromPreimageResolversGlobalMap(t *testing.T) {
 	machine1_clone1.Destroy()
 	checkKeys([]int64{machine1.contextId, machine2.contextId}, "after machine1_clone1 destroy")
 
+	machine1.Destroy()
+	checkKeys([]int64{machine1.contextId, machine2.contextId}, "after machine1 destroy")
+
 	machine1_clone2.Destroy()
-	checkKeys([]int64{machine1.contextId, machine2.contextId}, "after machine1_clone2 destroy")
+	checkKeys([]int64{machine2.contextId}, "after machine1_clone2 destroy")
 
 	machine2.Destroy()
-	checkKeys([]int64{machine1.contextId}, "after machine2 destroy")
-
-	machine1.Destroy()
-	checkKeys([]int64{}, "after machine1 destroy")
+	checkKeys([]int64{}, "after machine2 destroy")
 }
