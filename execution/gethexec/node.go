@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/params"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -281,6 +282,30 @@ func CreateExecutionNode(
 		ClassicOutbox:     classicOutbox,
 	}, nil
 
+}
+
+// GetArbOSConfigAtHeight is a data retrieval function on the execution engine.
+// Params:
+//
+//	height: An optional unsinged 64 bit integer that represents the block height at which we wish to view the
+//	ArbOS config. This must be less than or equal to the current block height.
+//
+// Returns:
+//
+//	A reference to a params.ChainConfig struct that contains the cannonical ArbOS chain config at the given block
+//	height,	the current block height if height was 0, or an error if the execution engine was unable to obtain the
+//	chain config.
+//
+// Safety:
+//
+//	This function should be thread safe as the functions it calls in the execution engine are thread safe.
+func (n *ExecutionNode) GetArbOSConfigAtHeight(height uint64) (*params.ChainConfig, error) {
+	config, err := n.ExecEngine.GetArbOSConfigAtHeight(height)
+	if err != nil {
+		log.Error("GetArbOSConfigAtHeight", "height", height, "err", err)
+		return nil, err
+	}
+	return config, nil
 }
 
 func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {

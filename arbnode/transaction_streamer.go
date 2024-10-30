@@ -1519,14 +1519,30 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context, ig
 	return s.config().EspressoTxnsPollingInterval
 }
 
+func (s *TransactionStreamer) espressoSwitch(ctx context.Context, ignored struct{}) time.Duration {
+	retryRate := s.config().EspressoTxnsPollingInterval * 50
+	config, err := s.exec.GetArbOSConfigAtHeight(0) // Pass 0 to get the ArbOS config at current block height.
+	if err != nil {
+		log.Error("Error Obtaining ArbOS Config ", "err", err)
+		return retryRate
+	}
+	if config == nil {
+		log.Error("ArbOS Config is nil")
+		return retryRate
+	}
+	if config.ArbitrumChainParams.EnableEspresso {
+		return s.submitEspressoTransactions(ctx, ignored)
+	} else {
+		return retryRate
+	}
+}
+
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 
-	if s.config().SovereignSequencerEnabled {
-		err := stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.submitEspressoTransactions, s.newSovereignTxNotifier)
-		if err != nil {
-			return err
-		}
+	err := stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.espressoSwitch, s.newSovereignTxNotifier)
+	if err != nil {
+		return err
 	}
 
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)

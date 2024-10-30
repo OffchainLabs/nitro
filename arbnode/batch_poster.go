@@ -496,7 +496,21 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 	ctx context.Context,
 	msg *arbostypes.MessageWithMetadata,
 ) error {
+
 	if arbos.IsEspressoMsg(msg.Message) {
+		arbOSConfig, err := b.arbOSVersionGetter.GetArbOSConfigAtHeight(0)
+		if err != nil {
+			return fmt.Errorf("Failed call to GetArbOSConfigAtHeight: %w", err)
+		}
+		if arbOSConfig == nil {
+			return fmt.Errorf("Cannot use a nil ArbOSConfig")
+		}
+		if !arbOSConfig.ArbitrumChainParams.EnableEspresso {
+			// This case should be highly unlikely, as espresso messages are not produced while ArbitrumChainParams.EnableEspresso is false
+			// However, in the event that an espresso message was created, and then Enable Espresso was set to false, we should ensure
+			// the transaction streamer doesn't send any more messages to the espresso network.
+			return fmt.Errorf("Cannot process Espresso messages when Espresso is not enabled in the ArbOS chain config")
+		}
 		txs, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return err
