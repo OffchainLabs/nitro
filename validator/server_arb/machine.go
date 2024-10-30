@@ -58,8 +58,7 @@ type ArbitratorMachine struct {
 // Assert that ArbitratorMachine implements MachineInterface
 var _ MachineInterface = (*ArbitratorMachine)(nil)
 
-var preimageResolvers containers.SyncMap[int64, GoPreimageResolver]
-var preimageResolverRefCounter containers.SyncMap[int64, *atomic.Int64]
+var preimageResolvers containers.SyncMap[int64, goPreimageResolverWithRefCounter]
 var lastPreimageResolverId atomic.Int64 // atomic
 
 // Any future calls to this machine will result in a panic
@@ -70,10 +69,9 @@ func (m *ArbitratorMachine) Destroy() {
 		C.arbitrator_free_machine(m.ptr)
 		m.ptr = nil
 	}
-	refCounter, ok := preimageResolverRefCounter.Load(m.contextId)
+	resolverWithRefCounter, ok := preimageResolvers.Load(m.contextId)
 	if ok {
-		if refCounter.Add(-1) == 0 {
-			preimageResolverRefCounter.Delete(m.contextId)
+		if resolverWithRefCounter.refCounter.Add(-1) == 0 {
 			preimageResolvers.Delete(m.contextId)
 		}
 	}
@@ -113,10 +111,12 @@ func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	defer m.mutex.Unlock()
 	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
 	newMach.contextId = m.contextId
-	refCounter, ok := preimageResolverRefCounter.Load(m.contextId)
+
+	resolverWithRefCounter, ok := preimageResolvers.Load(m.contextId)
 	if ok {
-		refCounter.Add(1)
+		resolverWithRefCounter.refCounter.Add(1)
 	}
+
 	return newMach
 }
 
@@ -355,19 +355,23 @@ func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) er
 }
 
 type GoPreimageResolver = func(arbutil.PreimageType, common.Hash) ([]byte, error)
+type goPreimageResolverWithRefCounter struct {
+	resolver   GoPreimageResolver
+	refCounter *atomic.Int64
+}
 
 //export preimageResolver
 func preimageResolver(context C.size_t, ty C.uint8_t, ptr unsafe.Pointer) C.ResolvedPreimage {
 	var hash common.Hash
 	input := (*[1 << 30]byte)(ptr)[:32]
 	copy(hash[:], input)
-	resolver, ok := preimageResolvers.Load(int64(context))
+	resolverWithRefCounter, ok := preimageResolvers.Load(int64(context))
 	if !ok {
 		return C.ResolvedPreimage{
 			len: -1,
 		}
 	}
-	preimage, err := resolver(arbutil.PreimageType(ty), hash)
+	preimage, err := resolverWithRefCounter.resolver(arbutil.PreimageType(ty), hash)
 	if err != nil {
 		log.Error("preimage resolution failed", "err", err)
 		return C.ResolvedPreimage{
@@ -388,10 +392,15 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 		return errors.New("machine frozen")
 	}
 	id := lastPreimageResolverId.Add(1)
-	preimageResolvers.Store(id, resolver)
+
 	refCounter := atomic.Int64{}
 	refCounter.Store(1)
-	preimageResolverRefCounter.Store(id, &refCounter)
+	resolverWithRefCounter := goPreimageResolverWithRefCounter{
+		resolver:   resolver,
+		refCounter: &refCounter,
+	}
+	preimageResolvers.Store(id, resolverWithRefCounter)
+
 	m.contextId = id
 	C.arbitrator_set_context(m.ptr, u64(id))
 	return nil
