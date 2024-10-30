@@ -10,14 +10,8 @@ import (
 func createEspressoFinalityNode(t *testing.T, builder *NodeBuilder) (*TestClient, func()) {
 	nodeConfig := builder.nodeConfig
 	execConfig := builder.execConfig
-	// poster config
-	nodeConfig.BatchPoster.Enable = true
-	nodeConfig.BatchPoster.ErrorDelay = 5 * time.Second
-	nodeConfig.BatchPoster.MaxSize = 41
-	nodeConfig.BatchPoster.PollInterval = 10 * time.Second
-	nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
-	nodeConfig.BatchPoster.LightClientAddress = lightClientAddress
-	nodeConfig.BatchPoster.HotShotUrl = hotShotUrl
+	// Disable the batch poster because it requires redis if enabled on the 2nd node
+	nodeConfig.BatchPoster.Enable = false
 
 	nodeConfig.BlockValidator.Enable = true
 	nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
