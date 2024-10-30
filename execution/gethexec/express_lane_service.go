@@ -181,7 +181,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 						continue
 					}
 					newController := setExpressLaneIterator.Event.NewExpressLaneController
-					es.roundControl.Add(it.Event.Round, &expressLaneControl{
+					es.roundControl.Add(round, &expressLaneControl{
 						controller: newController,
 						sequence:   0,
 					})
