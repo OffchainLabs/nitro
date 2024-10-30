@@ -53,7 +53,6 @@ type ArbitratorMachine struct {
 	ptr       *C.struct_Machine
 	contextId *int64 // has a finalizer attached to remove the preimage resolver from the global map
 	frozen    bool   // does not allow anything that changes machine state, not cloned with the machine
-	isHostIo  bool
 }
 
 // Assert that ArbitratorMachine implements MachineInterface
@@ -72,14 +71,7 @@ func (m *ArbitratorMachine) Destroy() {
 		// We no longer need a finalizer
 		runtime.SetFinalizer(m, nil)
 	}
-
-	// there is no finalizer related to contextId when the machine is HostIo,
-	// so we need to manually remove the preimage resolver
-	if m.isHostIo && (m.contextId != nil) {
-		preimageResolvers.Delete(*m.contextId)
-	} else {
-		m.contextId = nil
-	}
+	m.contextId = nil
 }
 
 func freeContextId(context *int64) {
@@ -118,11 +110,6 @@ func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-
-	if m.isHostIo {
-		panic("it is not allowed to clone a hostio machine")
-	}
-
 	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
 	newMach.contextId = m.contextId
 	return newMach
@@ -398,9 +385,7 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	id := lastPreimageResolverId.Add(1)
 	preimageResolvers.Store(id, resolver)
 	m.contextId = &id
-	if !m.isHostIo {
-		runtime.SetFinalizer(m.contextId, freeContextId)
-	}
+	runtime.SetFinalizer(m.contextId, freeContextId)
 	C.arbitrator_set_context(m.ptr, u64(id))
 	return nil
 }

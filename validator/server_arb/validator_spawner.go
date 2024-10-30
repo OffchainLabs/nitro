@@ -160,7 +160,6 @@ func (v *ArbitratorSpawner) execute(
 	}
 
 	mach := basemachine.Clone()
-	mach.isHostIo = true
 	defer mach.Destroy()
 	err = v.loadEntryToMachine(ctx, entry, mach)
 	if err != nil {
