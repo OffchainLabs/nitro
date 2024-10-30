@@ -38,9 +38,9 @@ func TestEspressoOsp(t *testing.T) {
 
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	rollup, _ := deployOnParentChain(t, ctx, l1Info, l1Backend, &headerreader.TestConfig, chainConfig, locator.LatestWasmModuleRoot(), false, false, hotshotAddr)
+	rollup, _ := deployOnParentChain(t, ctx, l1Info, l1Backend, &headerreader.TestConfig, chainConfig, locator.LatestWasmModuleRoot(), false, true, hotshotAddr)
 
-	ospEntryAddr := common.HexToAddress("0xffd0c2C95214aa9980D7419bd87c260C80Ce2546")
+	ospEntryAddr := common.HexToAddress("0x5B68312416aEC3496385914A5F589e2aA429412A")
 
 	wasmModuleRoot := locator.LatestWasmModuleRoot()
 	if (wasmModuleRoot == common.Hash{}) {
