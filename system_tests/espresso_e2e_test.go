@@ -74,6 +74,7 @@ func createValidationNode(ctx context.Context, t *testing.T, jit bool) func() {
 	stackConf.WSModules = []string{server_api.Namespace}
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.ListenAddr = ""
+	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
 
 	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 	config := &valnode.TestValidationConfig
