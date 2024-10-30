@@ -68,6 +68,8 @@ func (m *ArbitratorMachine) Destroy() {
 	if m.ptr != nil {
 		C.arbitrator_free_machine(m.ptr)
 		m.ptr = nil
+		// We no longer need a finalizer
+		runtime.SetFinalizer(m, nil)
 	}
 	resolverWithRefCounter, ok := preimageResolvers.Load(m.contextId)
 	if ok {
