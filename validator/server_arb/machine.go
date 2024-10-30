@@ -51,14 +51,15 @@ type MachineInterface interface {
 type ArbitratorMachine struct {
 	mutex     sync.Mutex // needed because go finalizers don't synchronize (meaning they aren't thread safe)
 	ptr       *C.struct_Machine
-	contextId *int64 // has a finalizer attached to remove the preimage resolver from the global map
-	frozen    bool   // does not allow anything that changes machine state, not cloned with the machine
+	contextId int64
+	frozen    bool // does not allow anything that changes machine state, not cloned with the machine
 }
 
 // Assert that ArbitratorMachine implements MachineInterface
 var _ MachineInterface = (*ArbitratorMachine)(nil)
 
 var preimageResolvers containers.SyncMap[int64, GoPreimageResolver]
+var preimageResolverRefCounter containers.SyncMap[int64, *atomic.Int64]
 var lastPreimageResolverId atomic.Int64 // atomic
 
 // Any future calls to this machine will result in a panic
@@ -68,14 +69,14 @@ func (m *ArbitratorMachine) Destroy() {
 	if m.ptr != nil {
 		C.arbitrator_free_machine(m.ptr)
 		m.ptr = nil
-		// We no longer need a finalizer
-		runtime.SetFinalizer(m, nil)
 	}
-	m.contextId = nil
-}
-
-func freeContextId(context *int64) {
-	preimageResolvers.Delete(*context)
+	refCounter, ok := preimageResolverRefCounter.Load(m.contextId)
+	if ok {
+		if refCounter.Add(-1) == 0 {
+			preimageResolverRefCounter.Delete(m.contextId)
+			preimageResolvers.Delete(m.contextId)
+		}
+	}
 }
 
 func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
@@ -112,6 +113,10 @@ func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	defer m.mutex.Unlock()
 	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
 	newMach.contextId = m.contextId
+	refCounter, ok := preimageResolverRefCounter.Load(m.contextId)
+	if ok {
+		refCounter.Add(1)
+	}
 	return newMach
 }
 
@@ -384,8 +389,10 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	}
 	id := lastPreimageResolverId.Add(1)
 	preimageResolvers.Store(id, resolver)
-	m.contextId = &id
-	runtime.SetFinalizer(m.contextId, freeContextId)
+	refCounter := atomic.Int64{}
+	refCounter.Store(1)
+	preimageResolverRefCounter.Store(id, &refCounter)
+	m.contextId = id
 	C.arbitrator_set_context(m.ptr, u64(id))
 	return nil
 }
