@@ -30,7 +30,7 @@ func TestEspressoOsp(t *testing.T) {
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	l1Info, l1Backend, _, _ := createTestL1BlockChain(t, l1Info)
+	l1Info, l1Backend, _, _ := createTestL1BlockChain(t, l1Info, nil)
 	hotshotAddr, tx, hotShotConn, err := test_helpersgen.DeployMockHotShot(&deployerTxOpts, l1Backend)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)

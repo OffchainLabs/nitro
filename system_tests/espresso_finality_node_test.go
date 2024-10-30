@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 func createEspressoFinalityNode(t *testing.T, builder *NodeBuilder) (*TestClient, func()) {
@@ -62,8 +64,9 @@ func TestEspressoFinalityNode(t *testing.T) {
 	msgCnt, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 
-	err = waitForWith(t, ctx, 6*time.Minute, 60*time.Second, func() bool {
+	err = waitForWith(t, ctx, 6*time.Minute, 5*time.Second, func() bool {
 		validatedCnt := builder.L2.ConsensusNode.BlockValidator.Validated(t)
+		log.Info("L2 validated count", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
 		return validatedCnt == msgCnt
 	})
 	Require(t, err)
@@ -72,8 +75,9 @@ func TestEspressoFinalityNode(t *testing.T) {
 	builderEspressoFinalityNode, cleanupEspressoFinalityNode := createEspressoFinalityNode(t, builder)
 	defer cleanupEspressoFinalityNode()
 
-	err = waitForWith(t, ctx, 6*time.Minute, 60*time.Second, func() bool {
+	err = waitForWith(t, ctx, 6*time.Minute, 5*time.Second, func() bool {
 		msgCntFinalityNode, err := builderEspressoFinalityNode.ConsensusNode.TxStreamer.GetMessageCount()
+		log.Info("Finality node validated count", "msgCntFinalityNode", msgCntFinalityNode, "msgCnt", msgCnt)
 		Require(t, err)
 		return msgCntFinalityNode == msgCnt
 	})

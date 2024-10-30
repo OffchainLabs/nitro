@@ -355,6 +355,9 @@ func checkTransferTxOnL2(
 	return waitForWith(t, ctx, time.Second*300, time.Second*1, func() bool {
 		balance := l2Node.GetBalance(t, addr)
 		log.Info("waiting for balance", "account", account, "addr", addr, "balance", balance)
-		return balance.Cmp(transferAmount) >= 0
+		if balance.Cmp(transferAmount) >= 0 {
+			log.Info("target balance reached", "account", account, "addr", addr, "balance", balance)
+		}
+		return true
 	})
 }
