@@ -37,7 +37,9 @@ func TransferBalance(
 		}
 
 		if scenario != TracingDuringEVM {
-			tracer.CaptureArbitrumTransfer(from, to, amount, scenario == TracingBeforeEVM, purpose)
+			if tracer.CaptureArbitrumTransfer != nil {
+				tracer.CaptureArbitrumTransfer(from, to, amount, scenario == TracingBeforeEVM, purpose)
+			}
 		} else {
 			fromCopy := from
 			toCopy := to
