@@ -14,16 +14,6 @@ import (
 
 func TestInsertAndFetchBids(t *testing.T) {
 	t.Parallel()
-	type DatabaseBid struct {
-		Id                     uint64 `db:"Id"`
-		ChainId                string `db:"ChainId"`
-		Bidder                 string `db:"Bidder"`
-		ExpressLaneController  string `db:"ExpressLaneController"`
-		AuctionContractAddress string `db:"AuctionContractAddress"`
-		Round                  uint64 `db:"Round"`
-		Amount                 string `db:"Amount"`
-		Signature              string `db:"Signature"`
-	}
 
 	tmpDir, err := os.MkdirTemp("", "*")
 	require.NoError(t, err)
@@ -56,7 +46,7 @@ func TestInsertAndFetchBids(t *testing.T) {
 	for _, bid := range bids {
 		require.NoError(t, db.InsertBid(bid))
 	}
-	gotBids := make([]*DatabaseBid, 2)
+	gotBids := make([]*SqliteDatabaseBid, 2)
 	err = db.sqlDB.Select(&gotBids, "SELECT * FROM Bids ORDER BY Id")
 	require.NoError(t, err)
 	require.Equal(t, bids[0].Amount.String(), gotBids[0].Amount)

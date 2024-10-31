@@ -66,6 +66,7 @@ type AuctioneerServerConfig struct {
 	SequencerJWTPath       string                   `koanf:"sequencer-jwt-path"`
 	AuctionContractAddress string                   `koanf:"auction-contract-address"`
 	DbDirectory            string                   `koanf:"db-directory"`
+	S3Storage              S3StorageServiceConfig   `koanf:"s3-storage"`
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
@@ -73,6 +74,7 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 	RedisURL:       "",
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
 	StreamTimeout:  10 * time.Minute,
+	S3Storage:      DefaultS3StorageServiceConfig,
 }
 
 var TestAuctioneerServerConfig = AuctioneerServerConfig{
@@ -92,6 +94,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".sequencer-jwt-path", DefaultAuctioneerServerConfig.SequencerJWTPath, "sequencer jwt file path")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
+	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
 }
 
 // AuctioneerServer is a struct that represents an autonomous auctioneer.
@@ -112,6 +115,7 @@ type AuctioneerServer struct {
 	roundDuration          time.Duration
 	streamTimeout          time.Duration
 	database               *SqliteDatabase
+	s3StorageService       *S3StorageService
 }
 
 // NewAuctioneerServer creates a new autonomous auctioneer struct.
@@ -132,6 +136,13 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	database, err := NewDatabase(cfg.DbDirectory)
 	if err != nil {
 		return nil, err
+	}
+	var s3StorageService *S3StorageService
+	if cfg.S3Storage.Enable {
+		s3StorageService, err = NewS3StorageService(&cfg.S3Storage, database)
+		if err != nil {
+			return nil, err
+		}
 	}
 	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
 	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
@@ -194,6 +205,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		chainId:                chainId,
 		client:                 sequencerClient,
 		database:               database,
+		s3StorageService:       s3StorageService,
 		consumer:               c,
 		auctionContract:        auctionContract,
 		auctionContractAddr:    auctionContractAddr,
@@ -207,6 +219,10 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 
 func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
+	// Start S3 storage service to persist validated bids to s3
+	if a.s3StorageService != nil {
+		a.s3StorageService.Start(ctx_in)
+	}
 	// Channel that consumer uses to indicate its readiness.
 	readyStream := make(chan struct{}, 1)
 	a.consumer.Start(ctx_in)
