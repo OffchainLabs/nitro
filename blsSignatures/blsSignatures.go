@@ -7,8 +7,10 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/base64"
 	"errors"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/crypto"
-	bls12381 "github.com/kilic/bls12-381"
+	"github.com/ethereum/go-ethereum/crypto/bls12381"
 )
 
 type PublicKey struct {
@@ -16,13 +18,13 @@ type PublicKey struct {
 	validityProof *bls12381.PointG1 // if this is nil, key came from a trusted source
 }
 
-type PrivateKey *bls12381.Fr
+type PrivateKey *big.Int
 
 type Signature *bls12381.PointG1
 
 func GeneratePrivKeyString() (string, error) {
-	fr := bls12381.NewFr()
-	privKey, err := fr.Rand(cryptorand.Reader)
+	g2 := bls12381.NewG2()
+	privKey, err := cryptorand.Int(cryptorand.Reader, g2.Q())
 	if err != nil {
 		return "", err
 	}
@@ -33,8 +35,8 @@ func GeneratePrivKeyString() (string, error) {
 }
 
 func GenerateKeys() (PublicKey, PrivateKey, error) {
-	fr := bls12381.NewFr()
-	privateKey, err := fr.Rand(cryptorand.Reader)
+	g2 := bls12381.NewG2()
+	privateKey, err := cryptorand.Int(cryptorand.Reader, g2.Q())
 	if err != nil {
 		return PublicKey{}, nil, err
 	}
@@ -118,7 +120,7 @@ func verifySignature2(sig Signature, message []byte, publicKey PublicKey, keyVal
 		return false, err
 	}
 
-	engine := bls12381.NewEngine()
+	engine := bls12381.NewPairingEngine()
 	engine.Reset()
 	engine.AddPair(pointOnCurve, publicKey.key)
 	leftSide := engine.Result()
@@ -154,7 +156,7 @@ func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte
 	if len(messages) != len(pubKeys) {
 		return false, errors.New("len(messages) does not match (len(pub keys) in verification")
 	}
-	engine := bls12381.NewEngine()
+	engine := bls12381.NewPairingEngine()
 	engine.Reset()
 	for i, msg := range messages {
 		pointOnCurve, err := hashToG1Curve(msg, false)
@@ -240,11 +242,11 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 }
 
 func PrivateKeyToBytes(priv PrivateKey) []byte {
-	return bls12381.NewFr().Set(priv).ToBytes()
+	return ((*big.Int)(priv)).Bytes()
 }
 
 func PrivateKeyFromBytes(in []byte) (PrivateKey, error) {
-	return bls12381.NewFr().FromBytes(in), nil
+	return new(big.Int).SetBytes(in), nil
 }
 
 func SignatureToBytes(sig Signature) []byte {
