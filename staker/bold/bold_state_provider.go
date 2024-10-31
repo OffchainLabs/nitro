@@ -387,6 +387,12 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		return nil, err
 	}
 	log.Info(fmt.Sprintf("Finished gathering machine hashes for request %+v", cfg))
+	fmt.Printf("got machine hashes from message num %v start index %v step size %v desired hashes %v\n", messageNum, cfg.MachineStartIndex, cfg.StepSize, cfg.NumDesiredHashes)
+	println("----- hashes -----")
+	for i, h := range result {
+		fmt.Printf("index %v hash %v\n", i, h)
+	}
+	println("------------------")
 	// Do not save a history commitment of length 1 to the cache.
 	if len(result) > 1 && s.historyCache != nil {
 		if err := s.historyCache.Put(cacheKey, result); err != nil {
@@ -462,6 +468,7 @@ func (s *BOLDStateProvider) CollectProof(
 		"prevBatchMsgCount", prevBatchMsgCount,
 		"blockChallengeHeight", blockChallengeHeight,
 		"messageNum", messageNum,
+		"machineIndex", machineIndex,
 		"startState", fmt.Sprintf("%+v", input.StartState),
 	)
 	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModuleRoot, input).Await(ctx)

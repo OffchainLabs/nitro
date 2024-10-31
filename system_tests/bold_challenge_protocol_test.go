@@ -54,6 +54,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -64,7 +65,17 @@ var (
 	smallStepChallengeLeafHeight = uint64(1 << 10)
 )
 
-func TestChallengeProtocolBOLD(t *testing.T) {
+func TestChallengeProtocolBOLDReadInboxChallenge(t *testing.T) {
+	testChallengeProtocolBOLDWithMachineMock(t, nil)
+}
+
+func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
+	testChallengeProtocolBOLDWithMachineMock(t, func(honest server_arb.MachineInterface) server_arb.MachineInterface {
+		return NewIncorrectIntermediateMachine(honest, 0)
+	})
+}
+
+func testChallengeProtocolBOLDWithMachineMock(t *testing.T, machineMock func(server_arb.MachineInterface) server_arb.MachineInterface) {
 	Require(t, os.RemoveAll("/tmp/good"))
 	Require(t, os.RemoveAll("/tmp/evil"))
 	t.Cleanup(func() {
@@ -137,7 +148,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 
 	valCfg := valnode.TestValidationConfig
 	valCfg.UseJit = false
-	_, valStack := createTestValidationNode(t, ctx, &valCfg)
+	_, valStack := createTestValidationNode(t, ctx, &valCfg, nil)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	statelessA, err := staker.NewStatelessBlockValidator(
@@ -154,7 +165,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	err = statelessA.Start(ctx)
 	Require(t, err)
 
-	_, valStackB := createTestValidationNode(t, ctx, &valCfg)
+	_, valStackB := createTestValidationNode(t, ctx, &valCfg, machineMock)
 
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
@@ -464,6 +475,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 				if address == l1info.GetDefaultTransactOpts("Asserter", ctx).From {
 					t.Log("Honest party won OSP, impossible for evil party to win if honest party continues")
 					Require(t, it.Close())
+					time.Sleep(time.Second * 10)
 					return
 				}
 			}

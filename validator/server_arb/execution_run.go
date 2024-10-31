@@ -105,7 +105,8 @@ func (e *executionRun) machineHashesWithStepSize(
 	if err != nil {
 		return nil, err
 	}
-	log.Debug(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
+	log.Info(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
+	fmt.Printf("got machine type %T\n", machine)
 
 	// In BOLD, the hash of a machine at index 0 is a special hash that is computed as the
 	// `machineFinishedHash(gs)` where `gs` is the global state of the machine at index 0.
@@ -114,7 +115,7 @@ func (e *executionRun) machineHashesWithStepSize(
 	var machineHashes []common.Hash
 	if machineStartIndex == 0 {
 		gs := machine.GetGlobalState()
-		log.Debug(fmt.Sprintf("Start global state for machine index 0: %+v", gs))
+		log.Info(fmt.Sprintf("Start global state for machine index 0: %+v", gs))
 		machineHashes = append(machineHashes, machineFinishedHash(gs))
 	} else {
 		// Otherwise, we simply append the machine hash at the specified start index.

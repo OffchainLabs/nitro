@@ -265,7 +265,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	} else {
 		// For now validation only works with HashScheme set
 		builder.execConfig.Caching.StateScheme = rawdb.HashScheme
-		_, valStack = createTestValidationNode(t, ctx, builder.valnodeConfig)
+		_, valStack = createTestValidationNode(t, ctx, builder.valnodeConfig, nil)
 	}
 	configByValidationNode(conf, valStack)
 

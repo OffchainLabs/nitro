@@ -47,6 +47,9 @@ func (m *mockMachine) GetStepCount() uint64 {
 func (m *mockMachine) IsRunning() bool {
 	return m.gs.PosInBatch < m.totalSteps-1
 }
+func (m *mockMachine) IsErrored() bool {
+	return false
+}
 func (m *mockMachine) ValidForStep(uint64) bool {
 	return true
 }

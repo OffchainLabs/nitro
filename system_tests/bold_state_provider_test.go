@@ -370,7 +370,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 	_, l2node, _, _, l1info, _, l1client, l1stack, _, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, false, nil, l2chainConfig, nil, l2info)
 
 	valnode.TestValidationConfig.UseJit = false
-	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig, nil)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	stateless, err := staker.NewStatelessBlockValidator(

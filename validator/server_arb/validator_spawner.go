@@ -61,14 +61,16 @@ type ArbitratorSpawner struct {
 	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
+	machineMock   func(MachineInterface) MachineInterface
 	config        ArbitratorSpawnerConfigFecher
 }
 
-func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {
+func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher, machineMock func(MachineInterface) MachineInterface) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
 	spawner := &ArbitratorSpawner{
 		locator:       locator,
 		machineLoader: NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
+		machineMock:   machineMock,
 		config:        config,
 	}
 	return spawner, nil
@@ -159,11 +161,15 @@ func (v *ArbitratorSpawner) execute(
 		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
-	mach := basemachine.Clone()
-	defer mach.Destroy()
-	err = v.loadEntryToMachine(ctx, entry, mach)
+	arbMach := basemachine.Clone()
+	defer arbMach.Destroy()
+	err = v.loadEntryToMachine(ctx, entry, arbMach)
 	if err != nil {
 		return validator.GoGlobalState{}, err
+	}
+	var mach MachineInterface = arbMach
+	if v.machineMock != nil {
+		mach = v.machineMock(mach)
 	}
 	var steps uint64
 	for mach.IsRunning() {
@@ -218,7 +224,11 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 			machine.Destroy()
 			return nil, err
 		}
-		return machine, nil
+		if v.machineMock != nil {
+			return v.machineMock(machine), nil
+		} else {
+			return machine, nil
+		}
 	}
 	currentExecConfig := v.config().Execution
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](v, func(ctx context.Context) (validator.ExecutionRun, error) {

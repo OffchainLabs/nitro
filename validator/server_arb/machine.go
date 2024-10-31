@@ -37,6 +37,7 @@ type MachineInterface interface {
 	CloneMachineInterface() MachineInterface
 	GetStepCount() uint64
 	IsRunning() bool
+	IsErrored() bool
 	ValidForStep(uint64) bool
 	Status() uint8
 	Step(context.Context, uint64) error

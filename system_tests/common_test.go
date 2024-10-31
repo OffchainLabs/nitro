@@ -39,6 +39,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
+	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
@@ -1079,7 +1080,7 @@ func destroyRedisGroup(ctx context.Context, t *testing.T, streamName string, cli
 	}
 }
 
-func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode.Config) (*valnode.ValidationNode, *node.Node) {
+func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode.Config, arbitratorMachineMock func(server_arb.MachineInterface) server_arb.MachineInterface) (*valnode.ValidationNode, *node.Node) {
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.DataDir = ""
@@ -1096,7 +1097,7 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	Require(t, err)
 
 	configFetcher := func() *valnode.Config { return config }
-	valnode, err := valnode.CreateValidationNode(configFetcher, stack, nil)
+	valnode, err := valnode.CreateValidationNode(configFetcher, stack, nil, arbitratorMachineMock)
 	Require(t, err)
 
 	err = stack.Start()
@@ -1168,7 +1169,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 		t.Cleanup(func() { destroyRedisGroup(ctx, t, redisStream, redisClient) })
 		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
 	}
-	_, valStack := createTestValidationNode(t, ctx, &conf)
+	_, valStack := createTestValidationNode(t, ctx, &conf, nil)
 	configByValidationNode(nodeConfig, valStack)
 }
 

@@ -1520,7 +1520,7 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 
 	valConf := valnode.TestValidationConfig
 	valConf.UseJit = jit
-	_, valStack := createTestValidationNode(t, ctx, &valConf)
+	_, valStack := createTestValidationNode(t, ctx, &valConf, nil)
 	configByValidationNode(builder.nodeConfig, valStack)
 
 	builder.execConfig.Sequencer.MaxRevertGasReject = 0

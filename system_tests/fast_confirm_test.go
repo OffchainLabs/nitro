@@ -140,7 +140,7 @@ func TestFastConfirmation(t *testing.T) {
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig, nil)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	stateless, err := staker.NewStatelessBlockValidator(
@@ -341,7 +341,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig, nil)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	statelessA, err := staker.NewStatelessBlockValidator(
