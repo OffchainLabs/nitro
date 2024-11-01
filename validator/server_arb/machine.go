@@ -74,10 +74,8 @@ func (m *ArbitratorMachine) Destroy() {
 
 	if m.contextId != nil {
 		resolverWithRefCounter, ok := preimageResolvers.Load(*m.contextId)
-		if ok {
-			if resolverWithRefCounter.refCounter.Add(-1) == 0 {
-				preimageResolvers.Delete(*m.contextId)
-			}
+		if ok && (resolverWithRefCounter.refCounter.Add(-1) == 0) {
+			preimageResolvers.Delete(*m.contextId)
 		}
 	}
 	m.contextId = nil
