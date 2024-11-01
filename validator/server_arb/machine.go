@@ -77,6 +77,7 @@ func (m *ArbitratorMachine) Destroy() {
 			preimageResolvers.Delete(m.contextId)
 		}
 	}
+	m.contextId = 0
 }
 
 func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {

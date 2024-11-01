@@ -49,8 +49,8 @@ func TestEntriesAreDeletedFromPreimageResolversGlobalMap(t *testing.T) {
 	err = machine2.SetPreimageResolver(resolver)
 	testhelpers.RequireImpl(t, err)
 
-	machine1_clone1 := machine1.Clone()
-	machine1_clone2 := machine1.Clone()
+	machine1Clone1 := machine1.Clone()
+	machine1Clone2 := machine1.Clone()
 
 	checkKeys := func(expectedKeys []int64, scenario string) {
 		keys := sortedKeys()
@@ -59,17 +59,23 @@ func TestEntriesAreDeletedFromPreimageResolversGlobalMap(t *testing.T) {
 		}
 	}
 
-	checkKeys([]int64{machine1.contextId, machine2.contextId}, "initial")
+	machine1ContextId := machine1.contextId
+	machine2ContextId := machine2.contextId
 
-	machine1_clone1.Destroy()
-	checkKeys([]int64{machine1.contextId, machine2.contextId}, "after machine1_clone1 destroy")
+	checkKeys([]int64{machine1ContextId, machine2ContextId}, "initial")
+
+	machine1Clone1.Destroy()
+	checkKeys([]int64{machine1ContextId, machine2ContextId}, "after machine1Clone1 is destroyed")
 
 	machine1.Destroy()
-	checkKeys([]int64{machine1.contextId, machine2.contextId}, "after machine1 destroy")
+	checkKeys([]int64{machine1ContextId, machine2ContextId}, "after machine1 is destroyed")
 
-	machine1_clone2.Destroy()
-	checkKeys([]int64{machine2.contextId}, "after machine1_clone2 destroy")
+	machine1.Destroy()
+	checkKeys([]int64{machine1ContextId, machine2ContextId}, "after machine1 is destroyed again")
+
+	machine1Clone2.Destroy()
+	checkKeys([]int64{machine2ContextId}, "after machine1Clone2 is destroyed")
 
 	machine2.Destroy()
-	checkKeys([]int64{}, "after machine2 destroy")
+	checkKeys([]int64{}, "after machine2 is destroyed")
 }
