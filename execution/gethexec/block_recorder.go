@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -16,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	flag "github.com/spf13/pflag"
 )
 
 // BlockRecorder uses a separate statedatabase from the blockchain.
@@ -25,6 +27,8 @@ import (
 // Most recent/advanced header we ever computed (lastHdr)
 // Hopefully - some recent valid block. For that we always keep one candidate block until it becomes validated.
 type BlockRecorder struct {
+	config *BlockRecorderConfig
+
 	recordingDatabase *arbitrum.RecordingDatabase
 	execEngine        *ExecutionEngine
 
@@ -39,10 +43,33 @@ type BlockRecorder struct {
 	preparedLock  sync.Mutex
 }
 
-func NewBlockRecorder(config *arbitrum.RecordingDatabaseConfig, execEngine *ExecutionEngine, ethDb ethdb.Database) *BlockRecorder {
+type BlockRecorderConfig struct {
+	TrieDirtyCache int `koanf:"trie-dirty-cache"`
+	TrieCleanCache int `koanf:"trie-clean-cache"`
+	MaxPrepared    int `koanf:"max-prepared"`
+}
+
+var DefaultBlockRecorderConfig = BlockRecorderConfig{
+	TrieDirtyCache: 1024,
+	TrieCleanCache: 16,
+	MaxPrepared:    1000,
+}
+
+func BlockRecorderConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Int(prefix+".trie-dirty-cache", DefaultBlockRecorderConfig.TrieDirtyCache, "like trie-dirty-cache for the separate, recording database (used for validation)")
+	f.Int(prefix+".trie-clean-cache", DefaultBlockRecorderConfig.TrieCleanCache, "like trie-clean-cache for the separate, recording database (used for validation)")
+	f.Int(prefix+".max-prepared", DefaultBlockRecorderConfig.MaxPrepared, "max references to store in the recording database")
+}
+
+func NewBlockRecorder(config *BlockRecorderConfig, execEngine *ExecutionEngine, ethDb ethdb.Database) *BlockRecorder {
+	dbConfig := arbitrum.RecordingDatabaseConfig{
+		TrieDirtyCache: config.TrieDirtyCache,
+		TrieCleanCache: config.TrieCleanCache,
+	}
 	recorder := &BlockRecorder{
+		config:            config,
 		execEngine:        execEngine,
-		recordingDatabase: arbitrum.NewRecordingDatabase(config, ethDb, execEngine.bc),
+		recordingDatabase: arbitrum.NewRecordingDatabase(&dbConfig, ethDb, execEngine.bc),
 	}
 	execEngine.SetRecorder(recorder)
 	return recorder
@@ -128,6 +155,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 			chaincontext,
 			chainConfig,
 			false,
+			core.MessageReplayMode,
 		)
 		if err != nil {
 			return nil, err
@@ -303,7 +331,7 @@ func (r *BlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil
 		r.updateLastHdr(header)
 		hdrNum++
 	}
-	r.preparedAddTrim(references, 1000)
+	r.preparedAddTrim(references, r.config.MaxPrepared)
 	return nil
 }
 

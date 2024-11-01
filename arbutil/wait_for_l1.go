@@ -10,27 +10,13 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-type L1Interface interface {
-	bind.ContractBackend
-	bind.BlockHashContractCaller
-	ethereum.ChainReader
-	ethereum.ChainStateReader
-	ethereum.TransactionReader
-	TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error)
-	BlockNumber(ctx context.Context) (uint64, error)
-	PendingCallContract(ctx context.Context, msg ethereum.CallMsg) ([]byte, error)
-	ChainID(ctx context.Context) (*big.Int, error)
-	Client() rpc.ClientInterface
-}
-
-func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction, from common.Address, blockNum *big.Int, unlimitedGas bool) ([]byte, error) {
+func SendTxAsCall(ctx context.Context, client *ethclient.Client, tx *types.Transaction, from common.Address, blockNum *big.Int, unlimitedGas bool) ([]byte, error) {
 	var gas uint64
 	if unlimitedGas {
 		gas = 0
@@ -50,7 +36,7 @@ func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction
 	return client.CallContract(ctx, callMsg, blockNum)
 }
 
-func GetPendingCallBlockNumber(ctx context.Context, client L1Interface) (*big.Int, error) {
+func GetPendingCallBlockNumber(ctx context.Context, client *ethclient.Client) (*big.Int, error) {
 	msg := ethereum.CallMsg{
 		// Pretend to be a contract deployment to execute EVM code without calling a contract.
 		To: nil,
@@ -70,7 +56,7 @@ func GetPendingCallBlockNumber(ctx context.Context, client L1Interface) (*big.In
 	return new(big.Int).SetBytes(callRes), nil
 }
 
-func DetailTxError(ctx context.Context, client L1Interface, tx *types.Transaction, txRes *types.Receipt) error {
+func DetailTxError(ctx context.Context, client *ethclient.Client, tx *types.Transaction, txRes *types.Receipt) error {
 	// Re-execute the transaction as a call to get a better error
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -96,7 +82,7 @@ func DetailTxError(ctx context.Context, client L1Interface, tx *types.Transactio
 	return fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, tx.Hash())
 }
 
-func DetailTxErrorUsingCallMsg(ctx context.Context, client L1Interface, txHash common.Hash, txRes *types.Receipt, callMsg ethereum.CallMsg) error {
+func DetailTxErrorUsingCallMsg(ctx context.Context, client *ethclient.Client, txHash common.Hash, txRes *types.Receipt, callMsg ethereum.CallMsg) error {
 	// Re-execute the transaction as a call to get a better error
 	if ctx.Err() != nil {
 		return ctx.Err()

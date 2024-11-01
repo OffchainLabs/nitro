@@ -71,7 +71,7 @@ func TestEthSyncing(t *testing.T) {
 	if progress == nil {
 		Fatal(t, "eth_syncing returned nil but shouldn't have")
 	}
-	for testClientB.ConsensusNode.TxStreamer.ExecuteNextMsg(ctx, testClientB.ExecNode) {
+	for testClientB.ConsensusNode.TxStreamer.ExecuteNextMsg(ctx) {
 	}
 	progress, err = testClientB.Client.SyncProgress(ctx)
 	Require(t, err)
