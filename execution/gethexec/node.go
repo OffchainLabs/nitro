@@ -439,6 +439,9 @@ func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClie
 func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
 	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
 }
+func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
+	return n.ExecEngine.BlockNumberToMessageIndex(blockNum)
+}
 
 func (n *ExecutionNode) Maintenance() error {
 	return n.ChainDB.Compact(nil, nil)

@@ -129,6 +129,9 @@ func (c *Config) Validate() error {
 	if err := c.Staker.Validate(); err != nil {
 		return err
 	}
+	if c.Sequencer && c.TransactionStreamer.TrackBlockMetadataFrom == 0 {
+		return errors.New("when sequencer is enabled track-missing-block-metadata should be enabled as well")
+	}
 	return nil
 }
 

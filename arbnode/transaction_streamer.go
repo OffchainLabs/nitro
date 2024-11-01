@@ -68,12 +68,15 @@ type TransactionStreamer struct {
 	broadcastServer *broadcaster.Broadcaster
 	inboxReader     *InboxReader
 	delayedBridge   *DelayedBridge
+
+	trackBlockMetadataFrom arbutil.MessageIndex
 }
 
 type TransactionStreamerConfig struct {
 	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
 	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
 	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
+	TrackBlockMetadataFrom  uint64        `koanf:"track-block-metadata-from"`
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
@@ -82,18 +85,21 @@ var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 50_000,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
+	TrackBlockMetadataFrom:  0,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
 	ExecuteMessageLoopDelay: time.Millisecond,
+	TrackBlockMetadataFrom:  0,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
+	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "block number starting from which the missing of blockmetadata is being tracked in the local disk. Disabled by default")
 }
 
 func NewTransactionStreamer(
@@ -118,6 +124,13 @@ func NewTransactionStreamer(
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
 		return nil, err
+	}
+	if config().TrackBlockMetadataFrom != 0 {
+		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom)
+		if err != nil {
+			return nil, err
+		}
+		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
 	}
 	return streamer, nil
 }
@@ -1045,6 +1058,9 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 		// This also allows update of BatchGasCost in message without mistakenly erasing BlockMetadata
 		key = dbKey(blockMetadataInputFeedPrefix, uint64(pos))
 		return batch.Put(key, msg.BlockMetadata)
+	} else if s.trackBlockMetadataFrom != 0 && pos >= s.trackBlockMetadataFrom {
+		key = dbKey(missingBlockMetadataInputFeedPrefix, uint64(pos))
+		return batch.Put(key, nil)
 	}
 	return nil
 }
