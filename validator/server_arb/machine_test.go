@@ -59,8 +59,8 @@ func TestEntriesAreDeletedFromPreimageResolversGlobalMap(t *testing.T) {
 		}
 	}
 
-	machine1ContextId := machine1.contextId
-	machine2ContextId := machine2.contextId
+	machine1ContextId := *machine1.contextId
+	machine2ContextId := *machine2.contextId
 
 	checkKeys([]int64{machine1ContextId, machine2ContextId}, "initial")
 
