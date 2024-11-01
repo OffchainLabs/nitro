@@ -93,7 +93,7 @@ func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
 	}
 }
 
-func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Node, fatalErrChan chan error, arbitratorMachineMock func(server_arb.MachineInterface) server_arb.MachineInterface) (*ValidationNode, error) {
+func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Node, fatalErrChan chan error, spawnerOpts ...server_arb.SpawnerOption) (*ValidationNode, error) {
 	config := configFetcher()
 	locator, err := server_common.NewMachineLocator(config.Wasm.RootPath)
 	if err != nil {
@@ -102,7 +102,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
 		return &configFetcher().Arbitrator
 	}
-	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher, arbitratorMachineMock)
+	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher, spawnerOpts...)
 	if err != nil {
 		return nil, err
 	}

@@ -1565,6 +1565,36 @@ impl Machine {
         Ok(mach)
     }
 
+    // new_finished returns a Machine in the Finished state.
+    //
+    // This allows the Mahine to be set up to model the final state of the
+    // machine at the end of the execution of a block.
+    //
+    // Callers should use set_global_state to set the global state of the
+    // machine to the global state at the end of the block.
+    pub fn new_finished() -> Machine {
+        Machine {
+            steps: 0,
+            thread_state: ThreadState::Main,
+            status: MachineStatus::Finished,
+            value_stacks: Default::default(),
+            internal_stack: Default::default(),
+            frame_stacks: Default::default(),
+            modules: Default::default(),
+            modules_merkle: Default::default(),
+            global_state: Default::default(),
+            pc: Default::default(),
+            stdio_output: Default::default(),
+            inbox_contents: Default::default(),
+            first_too_far: Default::default(),
+            preimage_resolver: PreimageResolverWrapper::new(Arc::new(|_, _, _| None)),
+            stylus_modules: Default::default(),
+            initial_hash: Default::default(),
+            context: Default::default(),
+            debug_info: Default::default(),
+        }
+    }
+
     pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let mut modules: Vec<Module> = {
             let compressed = std::fs::read(wavm_binary)?;

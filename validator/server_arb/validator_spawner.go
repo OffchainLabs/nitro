@@ -56,22 +56,42 @@ func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
 	return &DefaultArbitratorSpawnerConfig
 }
 
+// MachineWrapper is a function that wraps a MachineInterface
+//
+// This is a mechanism to allow clients of the AribtratorSpawner to inject
+// functionality around the arbitrator machine. Possible use cases include
+// mocking out the machine for testing purposes, or having the machine behave
+// differently when certain features (like BoLD) are enabled.
+type MachineWrapper func(MachineInterface) MachineInterface
+
+type SpawnerOption func(*ArbitratorSpawner)
+
 type ArbitratorSpawner struct {
 	stopwaiter.StopWaiter
 	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
-	machineMock   func(MachineInterface) MachineInterface
-	config        ArbitratorSpawnerConfigFecher
+	// Oreder of wrappers is important. The first wrapper is the innermost.
+	machineWrappers []MachineWrapper
+	config          ArbitratorSpawnerConfigFecher
 }
 
-func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher, machineMock func(MachineInterface) MachineInterface) (*ArbitratorSpawner, error) {
+func WithWrapper(wrapper MachineWrapper) SpawnerOption {
+	return func(s *ArbitratorSpawner) {
+		s.machineWrappers = append(s.machineWrappers, wrapper)
+	}
+}
+
+func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
 	spawner := &ArbitratorSpawner{
-		locator:       locator,
-		machineLoader: NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
-		machineMock:   machineMock,
-		config:        config,
+		locator:         locator,
+		machineLoader:   NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
+		machineWrappers: make([]MachineWrapper, 0),
+		config:          config,
+	}
+	for _, opt := range opts {
+		opt(spawner)
 	}
 	return spawner, nil
 }
@@ -168,8 +188,8 @@ func (v *ArbitratorSpawner) execute(
 		return validator.GoGlobalState{}, err
 	}
 	var mach MachineInterface = arbMach
-	if v.machineMock != nil {
-		mach = v.machineMock(mach)
+	for _, wrapper := range v.machineWrappers {
+		mach = wrapper(mach)
 	}
 	var steps uint64
 	for mach.IsRunning() {
@@ -224,11 +244,11 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 			machine.Destroy()
 			return nil, err
 		}
-		if v.machineMock != nil {
-			return v.machineMock(machine), nil
-		} else {
-			return machine, nil
+		wrapped := MachineInterface(machine)
+		for _, wrapper := range v.machineWrappers {
+			wrapped = wrapper(wrapped)
 		}
+		return wrapped, nil
 	}
 	currentExecConfig := v.config().Execution
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](v, func(ctx context.Context) (validator.ExecutionRun, error) {

@@ -55,6 +55,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/server_arb/boldmach"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -66,16 +67,19 @@ var (
 )
 
 func TestChallengeProtocolBOLDReadInboxChallenge(t *testing.T) {
-	testChallengeProtocolBOLDWithMachineMock(t, nil)
+	testChallengeProtocolBOLD(t)
 }
 
 func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
-	testChallengeProtocolBOLDWithMachineMock(t, func(honest server_arb.MachineInterface) server_arb.MachineInterface {
-		return NewIncorrectIntermediateMachine(honest, 0)
-	})
+	opts := []server_arb.SpawnerOption{
+		server_arb.WithWrapper(func(inner server_arb.MachineInterface) server_arb.MachineInterface {
+			return NewIncorrectIntermediateMachine(inner, 0)
+		}),
+	}
+	testChallengeProtocolBOLD(t, opts...)
 }
 
-func testChallengeProtocolBOLDWithMachineMock(t *testing.T, machineMock func(server_arb.MachineInterface) server_arb.MachineInterface) {
+func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
 	Require(t, os.RemoveAll("/tmp/good"))
 	Require(t, os.RemoveAll("/tmp/evil"))
 	t.Cleanup(func() {
@@ -148,7 +152,11 @@ func testChallengeProtocolBOLDWithMachineMock(t *testing.T, machineMock func(ser
 
 	valCfg := valnode.TestValidationConfig
 	valCfg.UseJit = false
-	_, valStack := createTestValidationNode(t, ctx, &valCfg, nil)
+	boldWrapperOpt := server_arb.WithWrapper(
+		func(inner server_arb.MachineInterface) server_arb.MachineInterface {
+			return boldmach.MachineWrapper(inner)
+		})
+	_, valStack := createTestValidationNode(t, ctx, &valCfg, boldWrapperOpt)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	statelessA, err := staker.NewStatelessBlockValidator(
@@ -164,8 +172,8 @@ func testChallengeProtocolBOLDWithMachineMock(t *testing.T, machineMock func(ser
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
-
-	_, valStackB := createTestValidationNode(t, ctx, &valCfg, machineMock)
+	spawnerOpts = append([]server_arb.SpawnerOption{boldWrapperOpt}, spawnerOpts...)
+	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,

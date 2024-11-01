@@ -102,6 +102,14 @@ func LoadSimpleMachine(wasm string, libraries []string, debugChain bool) (*Arbit
 	return machineFromPointer(mach), nil
 }
 
+func NewFinishedMachine() *ArbitratorMachine {
+	mach := C.arbitrator_new_finished()
+	if mach == nil {
+		return nil
+	}
+	return machineFromPointer(mach)
+}
+
 func (m *ArbitratorMachine) Freeze() {
 	m.frozen = true
 }

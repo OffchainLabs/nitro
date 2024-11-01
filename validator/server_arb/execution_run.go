@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -112,15 +111,7 @@ func (e *executionRun) machineHashesWithStepSize(
 	// `machineFinishedHash(gs)` where `gs` is the global state of the machine at index 0.
 	// This is so that the hash aligns with the start state of the claimed challenge edge
 	// at the level above, as required by the BOLD protocol.
-	var machineHashes []common.Hash
-	if machineStartIndex == 0 {
-		gs := machine.GetGlobalState()
-		log.Info(fmt.Sprintf("Start global state for machine index 0: %+v", gs))
-		machineHashes = append(machineHashes, machineFinishedHash(gs))
-	} else {
-		// Otherwise, we simply append the machine hash at the specified start index.
-		machineHashes = append(machineHashes, machine.Hash())
-	}
+	machineHashes := []common.Hash{machine.Hash()}
 	startHash := machineHashes[0]
 
 	// If we only want 1 hash, we can return early.
@@ -198,8 +189,4 @@ func (e *executionRun) GetLastStep() containers.PromiseInterface[*validator.Mach
 
 func (e *executionRun) CheckAlive(ctx context.Context) error {
 	return nil
-}
-
-func machineFinishedHash(gs validator.GoGlobalState) common.Hash {
-	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 }
