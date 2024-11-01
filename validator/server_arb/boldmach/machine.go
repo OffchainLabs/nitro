@@ -11,7 +11,7 @@ import (
 
 // boldMachine wraps a server_arb.MachineInterface.
 type boldMachine struct {
-	server_arb.MachineInterface
+	inner       server_arb.MachineInterface
 	zeroMachine *server_arb.ArbitratorMachine
 	hasStepped  bool
 }
@@ -29,15 +29,15 @@ func MachineWrapper(inner server_arb.MachineInterface) server_arb.MachineInterfa
 	z := server_arb.NewFinishedMachine()
 	z.SetGlobalState(inner.GetGlobalState())
 	return &boldMachine{
-		MachineInterface: inner,
-		zeroMachine:      z,
-		hasStepped:       false,
+		inner:       inner,
+		zeroMachine: z,
+		hasStepped:  false,
 	}
 }
 
 // CloneMachineInterface returns a new boldMachine with the same inner machine.
 func (m *boldMachine) CloneMachineInterface() server_arb.MachineInterface {
-	c := MachineWrapper(m.MachineInterface.CloneMachineInterface())
+	c := MachineWrapper(m.inner.CloneMachineInterface())
 	c.(*boldMachine).hasStepped = m.hasStepped
 	return c
 }
@@ -48,27 +48,27 @@ func (m *boldMachine) GetStepCount() uint64 {
 	if !m.hasStepped {
 		return 0
 	}
-	return m.MachineInterface.GetStepCount() + 1
+	return m.inner.GetStepCount() + 1
 }
 
 // Hash returns the hash of the inner machine if the machine has not stepped,
 // otherwise it returns the hash of the zeroth step machine.
 func (m *boldMachine) Hash() common.Hash {
 	if !m.hasStepped {
-		return m.MachineInterface.Hash()
+		return m.zeroMachine.Hash()
 	}
-	return m.zeroMachine.Hash()
+	return m.inner.Hash()
 }
 
 // Destroy destroys the inner machine and the zeroth step machine.
 func (m *boldMachine) Destroy() {
-	m.MachineInterface.Destroy()
+	m.inner.Destroy()
 	m.zeroMachine.Destroy()
 }
 
 // Freeze freezes the inner machine and the zeroth step machine.
 func (m *boldMachine) Freeze() {
-	m.MachineInterface.Freeze()
+	m.inner.Freeze()
 	m.zeroMachine.Freeze()
 }
 
@@ -76,9 +76,9 @@ func (m *boldMachine) Freeze() {
 // stepped, otherwise it returns the status of the zeroth step machine.
 func (m *boldMachine) Status() uint8 {
 	if !m.hasStepped {
-		return m.MachineInterface.Status()
+		return m.zeroMachine.Status()
 	}
-	return m.zeroMachine.Status()
+	return m.inner.Status()
 }
 
 // IsRunning returns the running state of the zeroeth state machine if the
@@ -88,7 +88,7 @@ func (m *boldMachine) IsRunning() bool {
 	if !m.hasStepped {
 		return m.zeroMachine.IsRunning()
 	}
-	return m.MachineInterface.IsRunning()
+	return m.inner.IsRunning()
 }
 
 // IsErrored returns the errored state of the inner machine, or false if the
@@ -97,7 +97,7 @@ func (m *boldMachine) IsErrored() bool {
 	if !m.hasStepped {
 		return false
 	}
-	return m.MachineInterface.IsErrored()
+	return m.inner.IsErrored()
 }
 
 // Step steps the inner machine if the machine has not stepped, otherwise it
@@ -112,7 +112,7 @@ func (m *boldMachine) Step(ctx context.Context, steps uint64) error {
 		// Only the first step or set of steps needs to be adjusted.
 		steps = steps - 1
 	}
-	return m.MachineInterface.Step(ctx, steps)
+	return m.inner.Step(ctx, steps)
 }
 
 // ValidForStep returns true for step 0, and the inner machine's ValidForStep
@@ -121,7 +121,7 @@ func (m *boldMachine) ValidForStep(step uint64) bool {
 	if step == 0 {
 		return true
 	}
-	return m.MachineInterface.ValidForStep(step - 1)
+	return m.inner.ValidForStep(step - 1)
 }
 
 // GetGlobalState returns the global state of the inner machine if the machine
@@ -130,7 +130,7 @@ func (m *boldMachine) GetGlobalState() validator.GoGlobalState {
 	if !m.hasStepped {
 		return m.zeroMachine.GetGlobalState()
 	}
-	return m.MachineInterface.GetGlobalState()
+	return m.inner.GetGlobalState()
 }
 
 // ProveNextStep returns the proof of the next step of the inner machine if the
@@ -141,5 +141,5 @@ func (m *boldMachine) ProveNextStep() []byte {
 		// NOT AT ALL SURE ABOUT THIS.  I THINK IT'S WRONG.
 		return m.zeroMachine.ProveNextStep()
 	}
-	return m.MachineInterface.ProveNextStep()
+	return m.inner.ProveNextStep()
 }
