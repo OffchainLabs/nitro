@@ -149,7 +149,7 @@ type BatchPosterDangerousConfig struct {
 type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
 	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
-	EnableEigenDAFailover    bool `koanf:"eigenda-failover-to-anytrust" reload:"hot"`
+	EnableEigenDAFailover              bool `koanf:"eigenda-failover-to-anytrust" reload:"hot"`
 	// Max batch size.
 	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
@@ -248,8 +248,8 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	DisableDapFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	EnableEigenDAFailover: false,
-	MaxSize:                         100000,
-	MaxEigenDABatchSize:             16_777_216,
+	MaxSize:               100000,
+	MaxEigenDABatchSize:   16_777_216,
 	// Try to fill 3 blobs per batch
 	Max4844BatchSize:               blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)/2 - 2000,
 	PollInterval:                   time.Second * 10,
