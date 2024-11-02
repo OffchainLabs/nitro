@@ -11,6 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
+var (
+	SvcUnavailableErr = fmt.Errorf("eigenda service is unavailable")
+)
+
 type EigenDAProxyClient struct {
 	client ProxyClient
 }
@@ -121,6 +125,10 @@ func (c *client) GetData(ctx context.Context, comm []byte) ([]byte, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("received unexpected response code: %d", resp.StatusCode)
+	}
+
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		return nil, SvcUnavailableErr
 	}
 
 	return io.ReadAll(resp.Body)

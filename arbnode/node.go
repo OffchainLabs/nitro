@@ -210,6 +210,11 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	return &config
 }
 
+func (cfg *Config) WithEigenDATestConfigParams() *Config {
+	cfg.EigenDA.Enable = true
+	cfg.EigenDA.Rpc = "http://localhost:4242"
+	return cfg
+}
 func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
 	config.Dangerous = TestDangerousConfig
@@ -576,7 +581,13 @@ func createNodeImpl(
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
-	} else if config.EigenDA.Enable {
+	}
+
+	if config.EigenDA.Enable && config.DataAvailability.Enable && !config.BatchPoster.EnableEigenDAFailover {
+		return nil, errors.New("eigenDA and anytrust cannot both be enabled without EnableEigenDAFailover=true in batch poster config")
+	}
+
+	if config.EigenDA.Enable { // anytrust is enabled as an EigenDA failover
 		log.Info("EigenDA enabled")
 		eigenDAService, err := eigenda.NewEigenDA(&config.EigenDA)
 		if err != nil {
