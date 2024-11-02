@@ -14,6 +14,17 @@ type mockMachine struct {
 	totalSteps uint64
 }
 
+func machineFinishedHash(gs validator.GoGlobalState) common.Hash {
+	mach := NewFinishedMachine()
+	err := mach.SetGlobalState(gs)
+	if err != nil {
+		panic(err)
+	}
+	hash := mach.Hash()
+	mach.Destroy()
+	return hash
+}
+
 func (m *mockMachine) Hash() common.Hash {
 	if m.gs.PosInBatch == m.totalSteps-1 {
 		return machineFinishedHash(m.gs)

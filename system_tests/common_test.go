@@ -1169,7 +1169,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 		t.Cleanup(func() { destroyRedisGroup(ctx, t, redisStream, redisClient) })
 		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
 	}
-	_, valStack := createTestValidationNode(t, ctx, &conf, nil)
+	_, valStack := createTestValidationNode(t, ctx, &conf)
 	configByValidationNode(nodeConfig, valStack)
 }
 

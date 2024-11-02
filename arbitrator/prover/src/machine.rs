@@ -1565,7 +1565,7 @@ impl Machine {
         Ok(mach)
     }
 
-    // new_finished returns a Machine in the Finished state.
+    // new_finished returns a Machine in the Finished state at step 0.
     //
     // This allows the Mahine to be set up to model the final state of the
     // machine at the end of the execution of a block.
@@ -1575,14 +1575,17 @@ impl Machine {
     pub fn new_finished() -> Machine {
         Machine {
             steps: 0,
-            thread_state: ThreadState::Main,
             status: MachineStatus::Finished,
-            value_stacks: Default::default(),
+            global_state: Default::default(),
+            // The machine is in the Finished state, so nothing else really matters.
+            // values_stacks and frame_stacks cannot be empty for proof serialization,
+            // but everything else can just be entirely blank.
+            thread_state: ThreadState::Main,
+            value_stacks: vec![Vec::new()],
+            frame_stacks: vec![Vec::new()],
             internal_stack: Default::default(),
-            frame_stacks: Default::default(),
             modules: Default::default(),
             modules_merkle: Default::default(),
-            global_state: Default::default(),
             pc: Default::default(),
             stdio_output: Default::default(),
             inbox_contents: Default::default(),
@@ -2896,6 +2899,15 @@ impl Machine {
 
         let mod_merkle = self.get_modules_merkle();
         out!(mod_merkle.root());
+
+        if self.is_halted() {
+            // If the machine is halted, instead of serializing the module,
+            // serialize the global state and return.
+            // This is for the "kickstart" BoLD proof, but it's backwards compatible
+            // with the old OSP behavior which reads no further.
+            out!(self.global_state.serialize());
+            return data;
+        }
 
         // End machine serialization, serialize module
 

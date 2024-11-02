@@ -27,7 +27,12 @@ var _ server_arb.MachineInterface = (*boldMachine)(nil)
 // the Running state.
 func MachineWrapper(inner server_arb.MachineInterface) server_arb.MachineInterface {
 	z := server_arb.NewFinishedMachine()
-	z.SetGlobalState(inner.GetGlobalState())
+	err := z.SetGlobalState(inner.GetGlobalState())
+	if err != nil {
+		// This should only occur if the machine is frozen,
+		// which it isn't because we just created it.
+		panic(err)
+	}
 	return &boldMachine{
 		inner:       inner,
 		zeroMachine: z,
@@ -63,13 +68,17 @@ func (m *boldMachine) Hash() common.Hash {
 // Destroy destroys the inner machine and the zeroth step machine.
 func (m *boldMachine) Destroy() {
 	m.inner.Destroy()
-	m.zeroMachine.Destroy()
+	if !m.hasStepped {
+		m.zeroMachine.Destroy()
+	}
 }
 
 // Freeze freezes the inner machine and the zeroth step machine.
 func (m *boldMachine) Freeze() {
 	m.inner.Freeze()
-	m.zeroMachine.Freeze()
+	if !m.hasStepped {
+		m.zeroMachine.Freeze()
+	}
 }
 
 // Status returns the status of the inner machine if the machine has not
@@ -81,12 +90,11 @@ func (m *boldMachine) Status() uint8 {
 	return m.inner.Status()
 }
 
-// IsRunning returns the running state of the zeroeth state machine if the
-// machine has not stepped, otherwise it returns the running state of the
-// inner machine.
+// IsRunning returns true if the machine has not stepped, otherwise it
+// returns the running state of the inner machine.
 func (m *boldMachine) IsRunning() bool {
 	if !m.hasStepped {
-		return m.zeroMachine.IsRunning()
+		return true
 	}
 	return m.inner.IsRunning()
 }
@@ -109,17 +117,18 @@ func (m *boldMachine) Step(ctx context.Context, steps uint64) error {
 			return nil
 		}
 		m.hasStepped = true
+		m.zeroMachine.Destroy()
 		// Only the first step or set of steps needs to be adjusted.
 		steps = steps - 1
 	}
 	return m.inner.Step(ctx, steps)
 }
 
-// ValidForStep returns true for step 0, and the inner machine's ValidForStep
-// for the step minus one.
+// ValidForStep returns true for step 0 if and only if the machine has not stepped yet,
+// and the inner machine's ValidForStep for the step minus one otherwise.
 func (m *boldMachine) ValidForStep(step uint64) bool {
 	if step == 0 {
-		return true
+		return !m.hasStepped
 	}
 	return m.inner.ValidForStep(step - 1)
 }
@@ -138,7 +147,6 @@ func (m *boldMachine) GetGlobalState() validator.GoGlobalState {
 // results in the inner machine's initial global state.
 func (m *boldMachine) ProveNextStep() []byte {
 	if !m.hasStepped {
-		// NOT AT ALL SURE ABOUT THIS.  I THINK IT'S WRONG.
 		return m.zeroMachine.ProveNextStep()
 	}
 	return m.inner.ProveNextStep()

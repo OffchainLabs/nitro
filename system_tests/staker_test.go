@@ -193,7 +193,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig, nil)
+	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	statelessA, err := staker.NewStatelessBlockValidator(
