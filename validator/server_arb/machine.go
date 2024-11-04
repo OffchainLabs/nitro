@@ -68,10 +68,10 @@ func dereferenceContextId(contextId *int64) {
 			panic(fmt.Sprintf("dereferenceContextId: resolver with ref counter not found, contextId: %v", *contextId))
 		}
 
-		refCounterAfter := resolverWithRefCounter.refCounter.Add(-1)
-		if refCounterAfter < 0 {
+		refCount := resolverWithRefCounter.refCounter.Add(-1)
+		if refCount < 0 {
 			panic(fmt.Sprintf("dereferenceContextId: ref counter is negative, contextId: %v", *contextId))
-		} else if refCounterAfter == 0 {
+		} else if refCount == 0 {
 			preimageResolvers.Delete(*contextId)
 		}
 	}
