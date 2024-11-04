@@ -1,5 +1,6 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// For license information, see
+// https://github.com/offchainlabs/bold/blob/main/LICENSE
 package bold
 
 import (
@@ -10,11 +11,6 @@ import (
 	"sync"
 	"time"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/state-commitments/history"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -22,10 +18,15 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
+	"github.com/offchainlabs/bold/containers/option"
+	"github.com/offchainlabs/bold/state-commitments/history"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
-	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
+
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 )
 
 var (
@@ -70,10 +71,13 @@ func NewBOLDStateProvider(
 	return sp, nil
 }
 
-// ExecutionStateAfterPreviousState Produces the L2 execution state for the next assertion.
-// Returns the state at maxInboxCount or maxNumberOfBlocks after the previous state, whichever is earlier.
-// If previousGlobalState is nil, defaults to returning the state at maxInboxCount.
-// TODO: Check the block validator has validated the execution state we are proposing.
+// ExecutionStateAfterPreviousState Produces the L2 execution state for the next
+// assertion. Returns the state at maxInboxCount or maxNumberOfBlocks after the
+// previous state, whichever is earlier. If previousGlobalState is nil, defaults
+// to returning the state at maxInboxCount.
+//
+// TODO: Check the block validator has validated the execution state we are
+// proposing.
 func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
@@ -117,7 +121,8 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	if err != nil {
 		return nil, err
 	}
-	// If the state we are requested to produce is neither validated nor past threshold, we return ErrChainCatchingUp as an error.
+	// If the state we are requested to produce is neither validated nor past
+	// threshold, we return ErrChainCatchingUp as an error.
 	stateValidatedAndMessageCountPastThreshold, err := s.isStateValidatedAndMessageCountPastThreshold(ctx, globalState, messageCount)
 	if err != nil {
 		return nil, err
@@ -160,7 +165,6 @@ func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
 	if s.validator == nil {
 		// If we do not have a validator, we cannot check if the state is validated.
 		// So we assume it is validated and return true.
-		// This is a dangerous option, only users
 		return true, nil
 	}
 	lastValidatedGs, err := s.validator.ReadLastValidatedInfo()
@@ -240,7 +244,8 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 			posInBatch = 0
 			batchNum++
 			// Only get the next batch metadata if it'll be needed.
-			// Otherwise, we might try to read too many batches, and hit an error that the next batch isn't found.
+			// Otherwise, we might try to read too many batches, and hit an error that
+			// the next batch isn't found.
 			if uint64(len(states)) < totalDesiredHashes && batchNum < batchLimit {
 				currBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(batchNum)
 				if err != nil {
@@ -297,10 +302,10 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 	}, nil
 }
 
-// L2MessageStatesUpTo Computes a block history commitment from a
-// start L2 message to an end L2 message index and up to a required
-// batch index. The hashes used for this commitment are the machine
-// hashes at each message number.
+// L2MessageStatesUpTo Computes a block history commitment from a start L2
+// message to an end L2 message index and up to a required batch index. The
+// hashes used for this commitment are the machine hashes at each message
+// number.
 func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	ctx context.Context,
 	fromState protocol.GoGlobalState,
@@ -320,22 +325,21 @@ func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	return items, nil
 }
 
-// CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.
+// CollectMachineHashes Collects a list of machine hashes at a message number
+// based on some configuration parameters.
 func (s *BOLDStateProvider) CollectMachineHashes(
 	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
 ) ([]common.Hash, error) {
 	s.Lock()
 	defer s.Unlock()
-	var prevBatchMsgCount arbutil.MessageIndex
-	if cfg.FromState.Batch > 0 {
-		var err error
-		prevBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(cfg.FromState.Batch - 1))
-		if err != nil {
-			return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromState.Batch-1, err)
-		}
+	fromState := cfg.FromState
+	// cfg.BlockChallengeHeight is the index of the last correct block, before the
+	// block we're challenging.
+	chalHeight := cfg.BlockChallengeHeight
+	messageNum, _, err := s.messageNum(fromState, chalHeight)
+	if err != nil {
+		return nil, err
 	}
-	// cfg.BlockChallengeHeight is the index of the last correct block, before the block we're challenging.
-	messageNum := prevBatchMsgCount + arbutil.MessageIndex(cfg.FromState.PosInBatch) + arbutil.MessageIndex(cfg.BlockChallengeHeight)
 	stepHeights := make([]uint64, len(cfg.StepHeights))
 	for i, h := range cfg.StepHeights {
 		stepHeights[i] = uint64(h)
@@ -404,18 +408,47 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	return result, nil
 }
 
-// CtxWithCheckAlive Creates a context with a check alive routine
-// that will cancel the context if the check alive routine fails.
+// messageNum finds the effective message number (or l2 block index)
+// where the challenge is occurring.
+func (s *BOLDStateProvider) messageNum(fromState protocol.GoGlobalState, chalHeight l2stateprovider.Height) (arbutil.MessageIndex, arbutil.MessageIndex, error) {
+	var prevBatchMsgCount arbutil.MessageIndex
+	if fromState.Batch > 0 {
+		var err error
+		prevBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(fromState.Batch - 1))
+		if err != nil {
+			return 0, 0, fmt.Errorf("could not get prevBatchMsgCount at %d: %w", fromState.Batch-1, err)
+		}
+	}
+	currBatchMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(fromState.Batch))
+	if err != nil {
+		return 0, 0, fmt.Errorf("could not get currBatchMsgCount at %d: %w", fromState, err)
+	}
+	messageNum := prevBatchMsgCount + arbutil.MessageIndex(fromState.PosInBatch) + arbutil.MessageIndex(chalHeight)
+	if messageNum > currBatchMsgCount {
+		// This can happen in the BoLD protocol when the rival block-level challenge
+		// edge has committed to more blocks that this validator expected for the
+		// current batch. In that case, the BlockChallengeHeight will be a block in
+		// the virtual padding of the history commitment of this validator. It will
+		// therefore be the same as the end state of the last block in the in the
+		// current batch.
+		messageNum = currBatchMsgCount
+	}
+	return messageNum, prevBatchMsgCount, nil
+}
+
+// CtxWithCheckAlive Creates a context with a check alive routine that will
+// cancel the context if the check alive routine fails.
 func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (context.Context, context.CancelFunc) {
 	// Create a context that will cancel if the check alive routine fails.
-	// This is to ensure that we do not have the validator froze indefinitely if the execution run
-	// is no longer alive.
+	// This is to ensure that we do not have the validator froze indefinitely if
+	// the execution run is no longer alive.
 	ctx, cancel := context.WithCancel(ctxIn)
 	// Create a context with cancel, so that we can cancel the check alive routine
 	// once the calling function returns.
 	ctxCheckAlive, cancelCheckAlive := context.WithCancel(ctxIn)
 	go func() {
-		// Call cancel so that the calling function is canceled if the check alive routine fails/returns.
+		// Call cancel so that the calling function is canceled if the check alive
+		// routine fails/returns.
 		defer cancel()
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
@@ -424,7 +457,8 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 			case <-ctxCheckAlive.Done():
 				return
 			case <-ticker.C:
-				// Create a context with a timeout, so that the check alive routine does not run indefinitely.
+				// Create a context with a timeout, so that the check alive routine does
+				// not run indefinitely.
 				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctxCheckAlive, 5*time.Second)
 				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
 				if err != nil {
@@ -439,7 +473,7 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 	return ctx, cancelCheckAlive
 }
 
-// CollectProof Collects osp of at a message number and OpcodeIndex .
+// CollectProof collects a one-step proof at a message number and OpcodeIndex.
 func (s *BOLDStateProvider) CollectProof(
 	ctx context.Context,
 	fromState protocol.GoGlobalState,
@@ -447,12 +481,7 @@ func (s *BOLDStateProvider) CollectProof(
 	blockChallengeHeight l2stateprovider.Height,
 	machineIndex l2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
-	prevBatchMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(fromState.Batch) - 1)
-	if err != nil {
-		return nil, err
-	}
-	// blockChallengeHeight is the index of the last correct block, before the block we're challenging.
-	messageNum := prevBatchMsgCount + arbutil.MessageIndex(fromState.PosInBatch) + arbutil.MessageIndex(blockChallengeHeight)
+	messageNum, prevBatchMsgCount, err := s.messageNum(fromState, blockChallengeHeight)
 	entry, err := s.statelessValidator.CreateReadyValidationEntry(ctx, messageNum)
 	if err != nil {
 		return nil, err
