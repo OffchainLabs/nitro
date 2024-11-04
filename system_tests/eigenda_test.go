@@ -247,7 +247,6 @@ func TestEigenDAProxyFailOverToAnyTrust(t *testing.T) {
 	Require(t, err)
 
 	builder.L2.ConsensusNode.BatchPoster.SetEigenDAWriter(eigenWriter)
-
 	checkEigenDABatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(1e12*3), l2B.Client)
 
 	err = restServer.Shutdown()

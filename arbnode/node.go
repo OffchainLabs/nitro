@@ -587,8 +587,8 @@ func createNodeImpl(
 		return nil, errors.New("eigenDA and anytrust cannot both be enabled without EnableEigenDAFailover=true in batch poster config")
 	}
 
-	if config.EigenDA.Enable { // anytrust is enabled as an EigenDA failover
-		log.Info("EigenDA enabled")
+	if config.EigenDA.Enable {
+		log.Info("EigenDA enabled", "failover", config.BatchPoster.EnableEigenDAFailover, "anytrust", config.DataAvailability.Enable)
 		eigenDAService, err := eigenda.NewEigenDA(&config.EigenDA)
 		if err != nil {
 			return nil, err
