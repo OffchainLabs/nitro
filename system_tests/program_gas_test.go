@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -22,6 +23,54 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
+
+func TestHostioWithoutEVMEquivalentCosts(t *testing.T) {
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+	matchSnake := regexp.MustCompile("_[a-z]")
+
+	for _, tc := range []struct {
+		hostio      string
+		expectedInc uint64
+	}{
+		{hostio: "read_args", expectedInc: 8400 + 5040},
+		{hostio: "write_result", expectedInc: 8400 + (16381+55*(10000-32))*2},
+		{hostio: "storage_cache_bytes32", expectedInc: 8400 + (13440-8400)*2},
+		{hostio: "msg_reentrant", expectedInc: 8400},
+		{hostio: "pay_for_memory_grow", expectedInc: 9320660000},
+	} {
+		t.Run(tc.hostio, func(t *testing.T) {
+			funcName := matchSnake.ReplaceAllStringFunc(tc.hostio, func(s string) string {
+				return strings.ToUpper(strings.TrimPrefix(s, "_"))
+			})
+			signature := fmt.Sprintf("%v()", funcName)
+			data := crypto.Keccak256([]byte(signature))[:4]
+
+			const txGas uint64 = 32_000_000
+			tx := builder.L2Info.PrepareTxTo("Owner", &stylusProgram, txGas, nil, data)
+
+			err := builder.L2.Client.SendTransaction(builder.ctx, tx)
+			Require(t, err)
+			_, err = builder.L2.EnsureTxSucceeded(tx)
+			Require(t, err)
+
+			stylusGasUsage, err := stylusHostiosGasUsage(builder.ctx, builder.L2.Client.Client(), tx)
+			Require(t, err)
+
+			_, ok := stylusGasUsage[tc.hostio]
+			if !ok {
+				Fatal(t, "hostio not found in gas usage", "hostio", tc.hostio, "stylusGasUsage", stylusGasUsage)
+			}
+
+			expectedGas := float64(tc.expectedInc) / 10000
+			returnedGas := stylusGasUsage[tc.hostio][0]
+			if math.Abs(expectedGas-returnedGas) > 1e-9 {
+				Fatal(t, "unexpected gas usage", "hostio", tc.hostio, "expected", expectedGas, "returned", returnedGas)
+			}
+		})
+	}
+}
 
 func TestProgramSimpleCost(t *testing.T) {
 	builder := setupGasCostTest(t)
