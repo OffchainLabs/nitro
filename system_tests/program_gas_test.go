@@ -24,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestHostioWithoutEVMEquivalentCosts(t *testing.T) {
+func TestGasUsageOfHostiosThatDontHaveGoodEVMEquivalents(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
