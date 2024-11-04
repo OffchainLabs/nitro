@@ -67,8 +67,8 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	expressLaneClient := newExpressLaneClient(
 		bobPriv,
 		chainId,
-		time.Unix(int64(info.OffsetTimestamp), 0),
-		time.Duration(info.RoundDurationSeconds)*time.Second,
+		time.Unix(info.OffsetTimestamp, 0),
+		arbmath.SaturatingCast[time.Duration](info.RoundDurationSeconds)*time.Second,
 		auctionContractAddr,
 		seqDial,
 	)
@@ -158,7 +158,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 		bobPriv,
 		chainId,
 		time.Unix(int64(info.OffsetTimestamp), 0),
-		time.Duration(info.RoundDurationSeconds)*time.Second,
+		arbmath.SaturatingCast[time.Duration](info.RoundDurationSeconds)*time.Second,
 		auctionContractAddr,
 		seqDial,
 	)
@@ -357,7 +357,7 @@ func setupExpressLaneAuction(
 			BiddingToken: biddingToken,
 			Beneficiary:  beneficiary,
 			RoundTimingInfo: express_lane_auctiongen.RoundTimingInfo{
-				OffsetTimestamp:          initialTimestamp.Uint64(),
+				OffsetTimestamp:          initialTimestamp.Int64(),
 				RoundDurationSeconds:     bidRoundSeconds,
 				AuctionClosingSeconds:    auctionClosingSeconds,
 				ReserveSubmissionSeconds: reserveSubmissionSeconds,
