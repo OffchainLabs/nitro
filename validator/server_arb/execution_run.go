@@ -24,7 +24,8 @@ type executionRun struct {
 }
 
 // NewExecutionRun creates a backend with the given arguments.
-// Note: machineCache may be nil, but if present, it must not have a restricted range.
+// Note: machineCache may be nil, but if present, it must not have a restricted
+// range.
 func NewExecutionRun(
 	ctxIn context.Context,
 	initialMachineGetter func(context.Context) (MachineInterface, error),
@@ -107,10 +108,6 @@ func (e *executionRun) machineHashesWithStepSize(
 	log.Info(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
 	fmt.Printf("got machine type %T\n", machine)
 
-	// In BOLD, the hash of a machine at index 0 is a special hash that is computed as the
-	// `machineFinishedHash(gs)` where `gs` is the global state of the machine at index 0.
-	// This is so that the hash aligns with the start state of the claimed challenge edge
-	// at the level above, as required by the BOLD protocol.
 	machineHashes := []common.Hash{machine.Hash()}
 	startHash := machineHashes[0]
 

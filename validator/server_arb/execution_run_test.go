@@ -14,21 +14,7 @@ type mockMachine struct {
 	totalSteps uint64
 }
 
-func machineFinishedHash(gs validator.GoGlobalState) common.Hash {
-	mach := NewFinishedMachine()
-	err := mach.SetGlobalState(gs)
-	if err != nil {
-		panic(err)
-	}
-	hash := mach.Hash()
-	mach.Destroy()
-	return hash
-}
-
 func (m *mockMachine) Hash() common.Hash {
-	if m.gs.PosInBatch == m.totalSteps-1 {
-		return machineFinishedHash(m.gs)
-	}
 	return m.gs.Hash()
 }
 
@@ -116,7 +102,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		expected := machineFinishedHash(mm.gs)
+		expected := mm.gs.Hash()
 		if len(hashes) != 1 {
 			t.Error("Wanted one hash")
 		}
@@ -150,7 +136,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 		expectedHashes := make([]common.Hash, 0)
 		for i := uint64(0); i < 4; i++ {
 			if i == 0 {
-				expectedHashes = append(expectedHashes, machineFinishedHash(initialGs))
+				expectedHashes = append(expectedHashes, initialGs.Hash())
 				continue
 			}
 			gs := validator.GoGlobalState{
@@ -195,7 +181,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 		expectedHashes := make([]common.Hash, 0)
 		for i := uint64(0); i < 4; i++ {
 			if i == 0 {
-				expectedHashes = append(expectedHashes, machineFinishedHash(initialGs))
+				expectedHashes = append(expectedHashes, initialGs.Hash())
 				continue
 			}
 			gs := validator.GoGlobalState{
@@ -204,10 +190,10 @@ func Test_machineHashesWithStep(t *testing.T) {
 			}
 			expectedHashes = append(expectedHashes, gs.Hash())
 		}
-		expectedHashes = append(expectedHashes, machineFinishedHash(validator.GoGlobalState{
+		expectedHashes = append(expectedHashes, validator.GoGlobalState{
 			Batch:      1,
 			PosInBatch: mm.totalSteps - 1,
-		}))
+		}.Hash())
 		if uint64(len(hashes)) >= maxIterations {
 			t.Fatal("Wanted fewer hashes than the max iterations")
 		}
