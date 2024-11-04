@@ -61,6 +61,15 @@ var _ MachineInterface = (*ArbitratorMachine)(nil)
 var preimageResolvers containers.SyncMap[int64, goPreimageResolverWithRefCounter]
 var lastPreimageResolverId atomic.Int64 // atomic
 
+func dereferenceContextId(contextId *int64) {
+	if contextId != nil {
+		resolverWithRefCounter, ok := preimageResolvers.Load(*contextId)
+		if ok && (resolverWithRefCounter.refCounter.Add(-1) == 0) {
+			preimageResolvers.Delete(*contextId)
+		}
+	}
+}
+
 // Any future calls to this machine will result in a panic
 func (m *ArbitratorMachine) Destroy() {
 	m.mutex.Lock()
@@ -72,12 +81,7 @@ func (m *ArbitratorMachine) Destroy() {
 		runtime.SetFinalizer(m, nil)
 	}
 
-	if m.contextId != nil {
-		resolverWithRefCounter, ok := preimageResolvers.Load(*m.contextId)
-		if ok && (resolverWithRefCounter.refCounter.Add(-1) == 0) {
-			preimageResolvers.Delete(*m.contextId)
-		}
-	}
+	dereferenceContextId(m.contextId)
 	m.contextId = nil
 }
 
@@ -397,8 +401,9 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
-	id := lastPreimageResolverId.Add(1)
+	dereferenceContextId(m.contextId)
 
+	id := lastPreimageResolverId.Add(1)
 	refCounter := atomic.Int64{}
 	refCounter.Store(1)
 	resolverWithRefCounter := goPreimageResolverWithRefCounter{

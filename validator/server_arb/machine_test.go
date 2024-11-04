@@ -64,15 +64,27 @@ func TestEntriesAreDeletedFromPreimageResolversGlobalMap(t *testing.T) {
 
 	checkKeys([]int64{machine1ContextId, machine2ContextId}, "initial")
 
+	// the machine's contextId should change when setting preimage resolver for the second time,
+	// and the entry for the old context id should be deleted
+	err = machine2.SetPreimageResolver(resolver)
+	testhelpers.RequireImpl(t, err)
+	if machine2ContextId == *machine2.contextId {
+		t.Fatal("Context id didn't change after setting preimage resolver for the second time")
+	}
+	machine2ContextId = *machine2.contextId
+	checkKeys([]int64{machine1ContextId, machine2ContextId}, "after setting preimage resolver for machine2 for the second time")
+
 	machine1Clone1.Destroy()
 	checkKeys([]int64{machine1ContextId, machine2ContextId}, "after machine1Clone1 is destroyed")
 
 	machine1.Destroy()
 	checkKeys([]int64{machine1ContextId, machine2ContextId}, "after machine1 is destroyed")
 
+	// it is possible to destroy the same machine multiple times
 	machine1.Destroy()
 	checkKeys([]int64{machine1ContextId, machine2ContextId}, "after machine1 is destroyed again")
 
+	// entry for machine1ContextId should be deleted only after machine1 and all its clones are destroyed
 	machine1Clone2.Destroy()
 	checkKeys([]int64{machine2ContextId}, "after machine1Clone2 is destroyed")
 
