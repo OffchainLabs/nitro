@@ -32,13 +32,13 @@ func TestGasUsageOfHostiosThatDontHaveGoodEVMEquivalents(t *testing.T) {
 
 	for _, tc := range []struct {
 		hostio      string
-		expectedInc uint64
+		expectedInk uint64
 	}{
-		{hostio: "read_args", expectedInc: 8400 + 5040},
-		{hostio: "write_result", expectedInc: 8400 + (16381+55*(10000-32))*2},
-		{hostio: "storage_cache_bytes32", expectedInc: 8400 + (13440-8400)*2},
-		{hostio: "msg_reentrant", expectedInc: 8400},
-		{hostio: "pay_for_memory_grow", expectedInc: 9320660000},
+		{hostio: "read_args", expectedInk: 8400 + 5040},
+		{hostio: "write_result", expectedInk: 8400 + (16381+55*(10000-32))*2},
+		{hostio: "storage_cache_bytes32", expectedInk: 8400 + (13440-8400)*2},
+		{hostio: "msg_reentrant", expectedInk: 8400},
+		{hostio: "pay_for_memory_grow", expectedInk: 9320660000},
 	} {
 		t.Run(tc.hostio, func(t *testing.T) {
 			funcName := matchSnake.ReplaceAllStringFunc(tc.hostio, func(s string) string {
@@ -63,7 +63,7 @@ func TestGasUsageOfHostiosThatDontHaveGoodEVMEquivalents(t *testing.T) {
 				Fatal(t, "hostio not found in gas usage", "hostio", tc.hostio, "stylusGasUsage", stylusGasUsage)
 			}
 
-			expectedGas := float64(tc.expectedInc) / 10000
+			expectedGas := float64(tc.expectedInk) / 10000
 			returnedGas := stylusGasUsage[tc.hostio][0]
 			if math.Abs(expectedGas-returnedGas) > 1e-9 {
 				Fatal(t, "unexpected gas usage", "hostio", tc.hostio, "expected", expectedGas, "returned", returnedGas)
