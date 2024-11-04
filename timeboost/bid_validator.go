@@ -109,8 +109,12 @@ func NewBidValidator(
 	if err != nil {
 		return nil, err
 	}
-	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	var roundTimingInfo RoundTimingInfo
+	roundTimingInfo, err = auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
+		return nil, err
+	}
+	if err = roundTimingInfo.Validate(nil); err != nil {
 		return nil, err
 	}
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)

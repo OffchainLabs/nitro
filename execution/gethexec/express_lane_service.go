@@ -59,7 +59,8 @@ func newExpressLaneService(
 
 	retries := 0
 pending:
-	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	var roundTimingInfo timeboost.RoundTimingInfo
+	roundTimingInfo, err = auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
 		const maxRetries = 5
 		if errors.Is(err, bind.ErrNoCode) && retries < maxRetries {
@@ -69,6 +70,9 @@ pending:
 			time.Sleep(wait)
 			goto pending
 		}
+		return nil, err
+	}
+	if err = roundTimingInfo.Validate(nil); err != nil {
 		return nil, err
 	}
 	initialTimestamp := time.Unix(roundTimingInfo.OffsetTimestamp, 0)
@@ -94,11 +98,18 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 	// Log every new express lane auction round.
 	es.LaunchThread(func(ctx context.Context) {
 		log.Info("Watching for new express lane rounds")
-		now := time.Now()
-		waitTime := es.roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
-		time.Sleep(waitTime)
-		ticker := time.NewTicker(time.Minute)
+		waitTime := timeboost.TimeTilNextRound(es.initialTimestamp, es.roundDuration)
+		// Wait until the next round starts
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(waitTime):
+			// First tick happened, now set up regular ticks
+		}
+
+		ticker := time.NewTicker(es.roundDuration)
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ctx.Done():
