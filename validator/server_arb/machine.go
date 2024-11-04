@@ -64,7 +64,14 @@ var lastPreimageResolverId atomic.Int64 // atomic
 func dereferenceContextId(contextId *int64) {
 	if contextId != nil {
 		resolverWithRefCounter, ok := preimageResolvers.Load(*contextId)
-		if ok && (resolverWithRefCounter.refCounter.Add(-1) == 0) {
+		if !ok {
+			panic(fmt.Sprintf("dereferenceContextId: resolver with ref counter not found, contextId: %v", *contextId))
+		}
+
+		refCounterAfter := resolverWithRefCounter.refCounter.Add(-1)
+		if refCounterAfter < 0 {
+			panic(fmt.Sprintf("dereferenceContextId: ref counter is negative, contextId: %v", *contextId))
+		} else if refCounterAfter == 0 {
 			preimageResolvers.Delete(*contextId)
 		}
 	}
@@ -124,6 +131,8 @@ func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 		resolverWithRefCounter, ok := preimageResolvers.Load(*m.contextId)
 		if ok {
 			resolverWithRefCounter.refCounter.Add(1)
+		} else {
+			panic(fmt.Sprintf("Clone: resolver with ref counter not found, contextId: %v", *m.contextId))
 		}
 	}
 
@@ -377,6 +386,7 @@ func preimageResolver(context C.size_t, ty C.uint8_t, ptr unsafe.Pointer) C.Reso
 	copy(hash[:], input)
 	resolverWithRefCounter, ok := preimageResolvers.Load(int64(context))
 	if !ok {
+		log.Error("preimageResolver: resolver with ref counter not found", "context", int64(context))
 		return C.ResolvedPreimage{
 			len: -1,
 		}
