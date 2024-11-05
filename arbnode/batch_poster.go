@@ -280,7 +280,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	DASRetentionPeriod:             daprovider.DefaultDASRetentionPeriod,
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  10_000,
-	Post4844Blobs:                  true,
+	Post4844Blobs:                  false,
 	IgnoreBlobPrice:                false,
 	DataPoster:                     dataposter.TestDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
