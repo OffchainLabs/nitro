@@ -12,6 +12,7 @@ use prover::{
 };
 use std::{time::{Instant, Duration}, fs, io::{Read, Write}};
 use stylus::native;
+use arbutil::evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES;
 
 pub fn activate(target: Target) -> Result<()> {
 
@@ -23,7 +24,7 @@ pub fn activate(target: Target) -> Result<()> {
     compile.debug.count_ops = false;
 
     let timer = Instant::now();
-    let (bin, stylus_data) = WasmBinary::parse_user(&wasm, 128, &compile, &Bytes32::default())?;
+    let (bin, stylus_data) = WasmBinary::parse_user(&wasm, ARBOS_VERSION_STYLUS_CHARGING_FIXES, 128, &compile, &Bytes32::default())?;
     let parse_time = timer.elapsed();
 
     let timer = Instant::now();
@@ -41,7 +42,7 @@ pub fn activate(target: Target) -> Result<()> {
     let timer = Instant::now();
     let b2_asm = compress(&asm)?;
     let b2_asm_time = timer.elapsed();
-    
+
     let module = module.into_bytes();
 
     let timer = Instant::now();

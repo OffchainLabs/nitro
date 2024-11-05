@@ -12,16 +12,17 @@ use std::fs;
 use wabt::wat2wasm;
 use wasmer::Target;
 use stylus::target_cache::target_from_string;
+use arbutil::evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES;
 
 pub fn benchmark(target :String) -> Result<()> {
-    
+
     #[cfg(feature = "affinity")]
     {
         affinity::set_thread_affinity([1]).unwrap();
         let core = affinity::get_thread_affinity().unwrap();
         println!("Affinity {}: {core:?}", std::process::id());
     }
-    
+
     let target=target_from_string(target)?;
 
     let add64 = excute("i64-add", 20_000, 0., &target)?;
@@ -80,7 +81,7 @@ pub fn benchmark(target :String) -> Result<()> {
 }
 
 fn excute(file: &str, count: usize, discount: f64, target: &Target) -> Result<f64> {
-    
+
     print!("executing {file}..");
     let wasm = fs::read(format!("../benchmarks/wasm-benchmarks/{file}.wat"))?;
     let wasm = wat2wasm(&wasm)?;
@@ -99,7 +100,7 @@ fn excute(file: &str, count: usize, discount: f64, target: &Target) -> Result<f6
     compile.debug.count_ops = true;
 
     // ensure the wasm passes onchain instrumentation
-    WasmBinary::parse_user(&wasm, 128, &compile, &Bytes32::default())?;
+    WasmBinary::parse_user(&wasm, ARBOS_VERSION_STYLUS_CHARGING_FIXES, 128, &compile, &Bytes32::default())?;
     _ = Runtime::new(&wasm, compile.clone(), Target::default())?;
 
     let trials = 8;

@@ -139,7 +139,7 @@ impl Runtime {
     }
 
     pub fn run(&mut self, config: StylusConfig, ink: u64) -> Result<Escape> {
-        self.set_ink(ink);
+        self.set_ink(arbutil::evm::api::Ink(ink));
         self.set_stack(config.max_depth);
 
         let start = self.get_start()?;
