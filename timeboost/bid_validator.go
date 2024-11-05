@@ -334,9 +334,9 @@ func (bv *BidValidator) validateBid(
 	bv.Lock()
 	numBids, ok := bv.bidsPerSenderInRound[bidder]
 	if !ok {
-		bv.bidsPerSenderInRound[bidder] = 1
+		bv.bidsPerSenderInRound[bidder] = 0
 	}
-	if numBids > bv.maxBidsPerSenderInRound {
+	if numBids >= bv.maxBidsPerSenderInRound {
 		bv.Unlock()
 		return nil, errors.Wrapf(ErrTooManyBids, "bidder %s has already sent the maximum allowed bids = %d in this round", bidder.Hex(), numBids)
 	}
