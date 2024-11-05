@@ -51,15 +51,31 @@ type MachineInterface interface {
 type ArbitratorMachine struct {
 	mutex     sync.Mutex // needed because go finalizers don't synchronize (meaning they aren't thread safe)
 	ptr       *C.struct_Machine
-	contextId *int64 // has a finalizer attached to remove the preimage resolver from the global map
-	frozen    bool   // does not allow anything that changes machine state, not cloned with the machine
+	contextId *int64
+	frozen    bool // does not allow anything that changes machine state, not cloned with the machine
 }
 
 // Assert that ArbitratorMachine implements MachineInterface
 var _ MachineInterface = (*ArbitratorMachine)(nil)
 
-var preimageResolvers containers.SyncMap[int64, GoPreimageResolver]
+var preimageResolvers containers.SyncMap[int64, goPreimageResolverWithRefCounter]
 var lastPreimageResolverId atomic.Int64 // atomic
+
+func dereferenceContextId(contextId *int64) {
+	if contextId != nil {
+		resolverWithRefCounter, ok := preimageResolvers.Load(*contextId)
+		if !ok {
+			panic(fmt.Sprintf("dereferenceContextId: resolver with ref counter not found, contextId: %v", *contextId))
+		}
+
+		refCount := resolverWithRefCounter.refCounter.Add(-1)
+		if refCount < 0 {
+			panic(fmt.Sprintf("dereferenceContextId: ref counter is negative, contextId: %v", *contextId))
+		} else if refCount == 0 {
+			preimageResolvers.Delete(*contextId)
+		}
+	}
+}
 
 // Any future calls to this machine will result in a panic
 func (m *ArbitratorMachine) Destroy() {
@@ -71,11 +87,9 @@ func (m *ArbitratorMachine) Destroy() {
 		// We no longer need a finalizer
 		runtime.SetFinalizer(m, nil)
 	}
-	m.contextId = nil
-}
 
-func freeContextId(context *int64) {
-	preimageResolvers.Delete(*context)
+	dereferenceContextId(m.contextId)
+	m.contextId = nil
 }
 
 func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
@@ -112,6 +126,16 @@ func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	defer m.mutex.Unlock()
 	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
 	newMach.contextId = m.contextId
+
+	if m.contextId != nil {
+		resolverWithRefCounter, ok := preimageResolvers.Load(*m.contextId)
+		if ok {
+			resolverWithRefCounter.refCounter.Add(1)
+		} else {
+			panic(fmt.Sprintf("Clone: resolver with ref counter not found, contextId: %v", *m.contextId))
+		}
+	}
+
 	return newMach
 }
 
@@ -350,19 +374,24 @@ func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) er
 }
 
 type GoPreimageResolver = func(arbutil.PreimageType, common.Hash) ([]byte, error)
+type goPreimageResolverWithRefCounter struct {
+	resolver   GoPreimageResolver
+	refCounter *atomic.Int64
+}
 
 //export preimageResolver
 func preimageResolver(context C.size_t, ty C.uint8_t, ptr unsafe.Pointer) C.ResolvedPreimage {
 	var hash common.Hash
 	input := (*[1 << 30]byte)(ptr)[:32]
 	copy(hash[:], input)
-	resolver, ok := preimageResolvers.Load(int64(context))
+	resolverWithRefCounter, ok := preimageResolvers.Load(int64(context))
 	if !ok {
+		log.Error("preimageResolver: resolver with ref counter not found", "context", int64(context))
 		return C.ResolvedPreimage{
 			len: -1,
 		}
 	}
-	preimage, err := resolver(arbutil.PreimageType(ty), hash)
+	preimage, err := resolverWithRefCounter.resolver(arbutil.PreimageType(ty), hash)
 	if err != nil {
 		log.Error("preimage resolution failed", "err", err)
 		return C.ResolvedPreimage{
@@ -382,10 +411,18 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
+	dereferenceContextId(m.contextId)
+
 	id := lastPreimageResolverId.Add(1)
-	preimageResolvers.Store(id, resolver)
+	refCounter := atomic.Int64{}
+	refCounter.Store(1)
+	resolverWithRefCounter := goPreimageResolverWithRefCounter{
+		resolver:   resolver,
+		refCounter: &refCounter,
+	}
+	preimageResolvers.Store(id, resolverWithRefCounter)
+
 	m.contextId = &id
-	runtime.SetFinalizer(m.contextId, freeContextId)
 	C.arbitrator_set_context(m.ptr, u64(id))
 	return nil
 }

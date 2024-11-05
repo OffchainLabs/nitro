@@ -112,6 +112,10 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 	}
 	msgCount := endBatchMetadata.MessageCount
 	delayedCount := endBatchMetadata.DelayedMessageCount
+	if delayedCount > 0 {
+		// keep an extra delayed message for the inbox reader to use
+		delayedCount--
+	}
 
 	return m.deleteOldMessagesFromDB(ctx, msgCount, delayedCount)
 }
