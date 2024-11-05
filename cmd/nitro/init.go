@@ -681,6 +681,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					Nonce:      0,
 				},
 			},
+			ChainOwner: common.HexToAddress(config.Init.DevInitAddress),
 		}
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
@@ -791,11 +792,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
 			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
 		}
-		var chainOwner common.Address
-		if config.Init.DevInit {
-			chainOwner = common.HexToAddress(config.Init.DevInitAddress)
-		}
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync, chainOwner)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}
