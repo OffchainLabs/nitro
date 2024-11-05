@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/bold/testing/setup"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -72,6 +73,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	boldMocksgen "github.com/offchainlabs/bold/solgen/go/mocksgen"
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbnode"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -238,6 +241,7 @@ type NodeBuilder struct {
 	l2StackConfig *node.Config
 	valnodeConfig *valnode.Config
 	l3Config      *NitroConfig
+	deployBold    bool
 	L1Info        info
 	L2Info        info
 	L3Info        info
@@ -346,6 +350,11 @@ func (b *NodeBuilder) WithProdConfirmPeriodBlocks() *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) WithBoldDeployment() *NodeBuilder {
+	b.deployBold = true
+	return b
+}
+
 func (b *NodeBuilder) WithWasmRootDir(wasmRootDir string) *NodeBuilder {
 	b.valnodeConfig.Wasm.RootPath = wasmRootDir
 	return b
@@ -414,6 +423,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		locator.LatestWasmModuleRoot(),
 		b.withProdConfirmPeriodBlocks,
 		true,
+		b.deployBold,
 	)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
@@ -517,6 +527,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		locator.LatestWasmModuleRoot(),
 		b.l3Config.withProdConfirmPeriodBlocks,
 		false,
+		b.deployBold,
 	)
 
 	b.L3 = buildOnParentChain(
@@ -1250,6 +1261,12 @@ func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethcli
 	return initMessage
 }
 
+var (
+	blockChallengeLeafHeight     = uint64(1 << 5) // 32
+	bigStepChallengeLeafHeight   = uint64(1 << 10)
+	smallStepChallengeLeafHeight = uint64(1 << 10)
+)
+
 func deployOnParentChain(
 	t *testing.T,
 	ctx context.Context,
@@ -1260,6 +1277,7 @@ func deployOnParentChain(
 	wasmModuleRoot common.Hash,
 	prodConfirmPeriodBlocks bool,
 	chainSupportsBlobs bool,
+	deployBold bool,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	parentChainInfo.GenerateAccount("RollupOwner")
 	parentChainInfo.GenerateAccount("Sequencer")
@@ -1284,18 +1302,84 @@ func deployOnParentChain(
 
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
-	addresses, err := deploy.DeployOnParentChain(
-		ctx,
-		parentChainReader,
-		&parentChainTransactionOpts,
-		[]common.Address{parentChainInfo.GetAddress("Sequencer")},
-		parentChainInfo.GetAddress("RollupOwner"),
-		0,
-		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
-		nativeToken,
-		maxDataSize,
-		chainSupportsBlobs,
-	)
+	var addresses *chaininfo.RollupAddresses
+	if deployBold {
+		stakeToken, tx, _, err := boldMocksgen.DeployTestWETH9(
+			&parentChainTransactionOpts,
+			parentChainReader.Client(),
+			"Weth",
+			"WETH",
+		)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+		Require(t, err)
+		miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2), big.NewInt(1)}
+		genesisExecutionState := rollupgen.AssertionState{
+			GlobalState:    rollupgen.GlobalState{},
+			MachineStatus:  1, // Finished
+			EndHistoryRoot: [32]byte{},
+		}
+		cfg := rollupgen.Config{
+			MiniStakeValues:     miniStakeValues,
+			ConfirmPeriodBlocks: 120,
+			StakeToken:          stakeToken,
+			BaseStake:           big.NewInt(1),
+			WasmModuleRoot:      wasmModuleRoot,
+			Owner:               parentChainTransactionOpts.From,
+			LoserStakeEscrow:    parentChainTransactionOpts.From,
+			ChainId:             chainConfig.ChainID,
+			ChainConfig:         string(serializedChainConfig),
+			SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
+				DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
+				FutureBlocks:  big.NewInt(12),
+				DelaySeconds:  big.NewInt(60 * 60 * 24),
+				FutureSeconds: big.NewInt(60 * 60),
+			},
+			LayerZeroBlockEdgeHeight:     new(big.Int).SetUint64(blockChallengeLeafHeight),
+			LayerZeroBigStepEdgeHeight:   new(big.Int).SetUint64(bigStepChallengeLeafHeight),
+			LayerZeroSmallStepEdgeHeight: new(big.Int).SetUint64(smallStepChallengeLeafHeight),
+			GenesisAssertionState:        genesisExecutionState,
+			GenesisInboxCount:            common.Big0,
+			AnyTrustFastConfirmer:        common.Address{},
+			NumBigStepLevel:              3,
+			ChallengeGracePeriodBlocks:   3,
+		}
+		boldAddresses, err := setup.DeployFullRollupStack(
+			ctx,
+			parentChainReader.Client(),
+			&parentChainTransactionOpts,
+			parentChainInfo.GetAddress("Sequencer"),
+			cfg,
+			false, // do not use mock bridge.
+			false, // do not use a mock one-step prover
+		)
+		Require(t, err)
+		addresses = &chaininfo.RollupAddresses{
+			Bridge:                 boldAddresses.Bridge,
+			Inbox:                  boldAddresses.Inbox,
+			SequencerInbox:         boldAddresses.SequencerInbox,
+			Rollup:                 boldAddresses.Rollup,
+			NativeToken:            nativeToken,
+			UpgradeExecutor:        boldAddresses.UpgradeExecutor,
+			ValidatorUtils:         boldAddresses.ValidatorUtils,
+			ValidatorWalletCreator: boldAddresses.ValidatorWalletCreator,
+			StakeToken:             stakeToken,
+			DeployedAt:             boldAddresses.DeployedAt,
+		}
+	} else {
+		addresses, err = deploy.DeployOnParentChain(
+			ctx,
+			parentChainReader,
+			&parentChainTransactionOpts,
+			[]common.Address{parentChainInfo.GetAddress("Sequencer")},
+			parentChainInfo.GetAddress("RollupOwner"),
+			0,
+			arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+			nativeToken,
+			maxDataSize,
+			chainSupportsBlobs,
+		)
+	}
 	Require(t, err)
 	parentChainInfo.SetContract("Bridge", addresses.Bridge)
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)

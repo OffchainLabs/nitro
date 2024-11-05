@@ -60,12 +60,6 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-var (
-	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 10)
-	smallStepChallengeLeafHeight = uint64(1 << 10)
-)
-
 func TestChallengeProtocolBOLDReadInboxChallenge(t *testing.T) {
 	testChallengeProtocolBOLD(t)
 }
@@ -110,31 +104,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	// Every 3 seconds, send an L1 transaction to keep the chain moving.
-	go func() {
-		delay := time.Second * 3
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				time.Sleep(delay)
-				balance := big.NewInt(params.GWei)
-				if ctx.Err() != nil {
-					break
-				}
-				TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
-				latestBlock, err := l1client.BlockNumber(ctx)
-				if ctx.Err() != nil {
-					break
-				}
-				Require(t, err)
-				if latestBlock > 150 {
-					delay = time.Second
-				}
-			}
-		}
-	}()
+	go keepChainMoving(t, ctx, l1info, l1client)
 
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
 	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, l2nodeConfig, nil, stakeTokenAddr)
@@ -493,6 +463,31 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 			fromBlock = toBlock
 		case <-ctx.Done():
 			return
+		}
+	}
+}
+
+// Every 3 seconds, send an L1 transaction to keep the chain moving.
+func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestInfo, l1Client *ethclient.Client) {
+	delay := time.Second * 3
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			time.Sleep(delay)
+			if ctx.Err() != nil {
+				break
+			}
+			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1Info, l1Client, ctx)
+			latestBlock, err := l1Client.BlockNumber(ctx)
+			if ctx.Err() != nil {
+				break
+			}
+			Require(t, err)
+			if latestBlock > 150 {
+				delay = time.Second
+			}
 		}
 	}
 }
