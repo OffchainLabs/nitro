@@ -159,7 +159,7 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
-		trieDBConfig := cacheConfig.TriedbConfig(chainConfig.IsVerkle(new(big.Int), 0))
+		trieDBConfig := cacheConfig.TriedbConfig()
 		statedb, err := state.New(stateRoot, state.NewDatabaseWithConfig(chainDb, trieDBConfig), nil)
 		if err != nil {
 			panic(err)
