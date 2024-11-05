@@ -135,6 +135,7 @@ func mainImpl() int {
 		func() *valnode.Config { return &liveNodeConfig.Get().Validation },
 		stack,
 		fatalErrChan,
+		nil,
 	)
 	if err != nil {
 		log.Error("couldn't init validation node", "err", err)

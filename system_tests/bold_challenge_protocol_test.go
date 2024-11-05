@@ -54,17 +54,29 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/server_arb/boldmach"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-var (
-	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 10)
-	smallStepChallengeLeafHeight = uint64(1 << 10)
-)
+func TestChallengeProtocolBOLDReadInboxChallenge(t *testing.T) {
+	testChallengeProtocolBOLD(t)
+}
 
-func TestChallengeProtocolBOLD(t *testing.T) {
+func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
+	opts := []server_arb.SpawnerOption{
+		server_arb.WithWrapper(func(inner server_arb.MachineInterface) server_arb.MachineInterface {
+			// This wrapper is applied after the BOLD wrapper, so step 0 is the finished machine.
+			// Modifying its hash results in invalid inclusion proofs for the evil validator,
+			// so we start modifying hashes at step 1 (the first machine step in the running state).
+			return NewIncorrectIntermediateMachine(inner, 1)
+		}),
+	}
+	testChallengeProtocolBOLD(t, opts...)
+}
+
+func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
 	Require(t, os.RemoveAll("/tmp/good"))
 	Require(t, os.RemoveAll("/tmp/evil"))
 	t.Cleanup(func() {
@@ -92,31 +104,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	// Every 3 seconds, send an L1 transaction to keep the chain moving.
-	go func() {
-		delay := time.Second * 3
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				time.Sleep(delay)
-				balance := big.NewInt(params.GWei)
-				if ctx.Err() != nil {
-					break
-				}
-				TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
-				latestBlock, err := l1client.BlockNumber(ctx)
-				if ctx.Err() != nil {
-					break
-				}
-				Require(t, err)
-				if latestBlock > 150 {
-					delay = time.Second
-				}
-			}
-		}
-	}()
+	go keepChainMoving(t, ctx, l1info, l1client)
 
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
 	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, l2nodeConfig, nil, stakeTokenAddr)
@@ -137,7 +125,11 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 
 	valCfg := valnode.TestValidationConfig
 	valCfg.UseJit = false
-	_, valStack := createTestValidationNode(t, ctx, &valCfg)
+	boldWrapperOpt := server_arb.WithWrapper(
+		func(inner server_arb.MachineInterface) server_arb.MachineInterface {
+			return boldmach.MachineWrapper(inner)
+		})
+	_, valStack := createTestValidationNode(t, ctx, &valCfg, boldWrapperOpt)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	statelessA, err := staker.NewStatelessBlockValidator(
@@ -153,8 +145,8 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
-
-	_, valStackB := createTestValidationNode(t, ctx, &valCfg)
+	spawnerOpts = append([]server_arb.SpawnerOption{boldWrapperOpt}, spawnerOpts...)
+	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
@@ -464,12 +456,38 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 				if address == l1info.GetDefaultTransactOpts("Asserter", ctx).From {
 					t.Log("Honest party won OSP, impossible for evil party to win if honest party continues")
 					Require(t, it.Close())
+					time.Sleep(time.Second * 10)
 					return
 				}
 			}
 			fromBlock = toBlock
 		case <-ctx.Done():
 			return
+		}
+	}
+}
+
+// Every 3 seconds, send an L1 transaction to keep the chain moving.
+func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestInfo, l1Client *ethclient.Client) {
+	delay := time.Second * 3
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			time.Sleep(delay)
+			if ctx.Err() != nil {
+				break
+			}
+			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1Info, l1Client, ctx)
+			latestBlock, err := l1Client.BlockNumber(ctx)
+			if ctx.Err() != nil {
+				break
+			}
+			Require(t, err)
+			if latestBlock > 150 {
+				delay = time.Second
+			}
 		}
 	}
 }
