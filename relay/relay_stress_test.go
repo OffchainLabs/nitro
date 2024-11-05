@@ -138,11 +138,11 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 	for i := 0; i < numClients; i++ {
 		ts := &dummyTxStreamer{id: i}
 		streamers = append(streamers, ts)
-		client, err := broadcastclient.NewBroadcastClient(func() *broadcastclient.Config { return &clientConfig }, relayURL, relayConfig.Chain.ID, 0, ts, nil, fatalErrChan, nil, func(_ int32) {})
+		client, err := broadcastclient.NewBroadcastClient(func() *broadcastclient.Config { return &clientConfig }, relayURL, relayConfig.Chain.ID, 0, ts, nil, fatalErrChan, nil, func(_ int32) {}, 0)
 		if err != nil {
 			t.FailNow()
 		}
-		client.Start(ctx, 0)
+		client.Start(ctx)
 		defer client.StopOnly()
 	}
 

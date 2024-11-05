@@ -51,6 +51,7 @@ type SeqCoordinator struct {
 
 	prevChosenSequencer  string
 	reportedWantsLockout bool
+	syncTillBlock        uint64
 
 	lockoutUntil atomic.Int64 // atomic
 
@@ -150,6 +151,7 @@ func NewSeqCoordinator(
 	sequencer execution.ExecutionSequencer,
 	sync *SyncMonitor,
 	config SeqCoordinatorConfig,
+	syncTillBlock uint64,
 ) (*SeqCoordinator, error) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
@@ -166,6 +168,7 @@ func NewSeqCoordinator(
 		sequencer:        sequencer,
 		config:           config,
 		signer:           signer,
+		syncTillBlock:    syncTillBlock,
 	}
 	streamer.SetSeqCoordinator(coordinator)
 	return coordinator, nil
@@ -854,7 +857,7 @@ func (c *SeqCoordinator) launchHealthcheckServer(ctx context.Context) {
 	}
 }
 
-func (c *SeqCoordinator) Start(ctxIn context.Context, syncTillBlock uint64) {
+func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	c.StopWaiter.Start(ctxIn, c)
 	var newRedisCoordinator *redisutil.RedisCoordinator
 	if c.config.NewRedisUrl != "" {
@@ -872,8 +875,8 @@ func (c *SeqCoordinator) Start(ctxIn context.Context, syncTillBlock uint64) {
 			if err != nil {
 				log.Warn("failed to get message count", "err", err)
 			}
-			if syncTillBlock > 0 && uint64(count) >= syncTillBlock {
-				log.Info("stopping block creation in sequencer", "syncTillBlock", syncTillBlock)
+			if c.syncTillBlock > 0 && uint64(count) >= c.syncTillBlock {
+				log.Info("stopping block creation in sequencer", "syncTillBlock", c.syncTillBlock)
 				return
 			}
 			interval := c.chooseRedisAndUpdate(ctx, newRedisCoordinator)

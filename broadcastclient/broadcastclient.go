@@ -135,6 +135,8 @@ type BroadcastClient struct {
 
 	retryCount atomic.Int64
 
+	syncTillBlock uint64
+
 	retrying                        bool
 	shuttingDown                    bool
 	confirmedSequenceNumberListener chan arbutil.MessageIndex
@@ -158,6 +160,7 @@ func NewBroadcastClient(
 	fatalErrChan chan error,
 	addrVerifier contracts.AddressVerifierInterface,
 	adjustCount func(int32),
+	syncTillBlock uint64,
 ) (*BroadcastClient, error) {
 	sigVerifier, err := signature.NewVerifier(&config().Verify, addrVerifier)
 	if err != nil {
@@ -173,10 +176,11 @@ func NewBroadcastClient(
 		fatalErrChan:                    fatalErrChan,
 		sigVerifier:                     sigVerifier,
 		adjustCount:                     adjustCount,
+		syncTillBlock:                   syncTillBlock,
 	}, err
 }
 
-func (bc *BroadcastClient) Start(ctxIn context.Context, syncTillBlock uint64) {
+func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn, bc)
 	if bc.StopWaiter.Stopped() {
 		log.Info("broadcast client has already been stopped, not starting")
@@ -186,8 +190,8 @@ func (bc *BroadcastClient) Start(ctxIn context.Context, syncTillBlock uint64) {
 		backoffDuration := bc.config().ReconnectInitialBackoff
 		for {
 
-			if syncTillBlock > 0 && uint64(bc.nextSeqNum) >= syncTillBlock {
-				log.Info("stopping block creation in broadcast client", "syncTillBlock", syncTillBlock)
+			if bc.syncTillBlock > 0 && uint64(bc.nextSeqNum) >= bc.syncTillBlock {
+				log.Info("stopping block creation in broadcast client", "syncTillBlock", bc.syncTillBlock)
 				return
 			}
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)

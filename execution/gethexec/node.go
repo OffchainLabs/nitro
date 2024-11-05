@@ -173,6 +173,7 @@ type ExecutionNode struct {
 	ParentChainReader *headerreader.HeaderReader
 	ClassicOutbox     *ClassicOutboxRetriever
 	started           atomic.Bool
+	syncTillBlock     uint64
 }
 
 func CreateExecutionNode(
@@ -182,9 +183,10 @@ func CreateExecutionNode(
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
+	syncTillBlock uint64,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain)
+	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -308,6 +310,7 @@ func CreateExecutionNode(
 		SyncMonitor:       syncMon,
 		ParentChainReader: parentChainReader,
 		ClassicOutbox:     classicOutbox,
+		syncTillBlock:     syncTillBlock,
 	}, nil
 
 }
@@ -339,7 +342,7 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 }
 
 // not thread safe
-func (n *ExecutionNode) Start(ctx context.Context, syncTillBlock uint64) error {
+func (n *ExecutionNode) Start(ctx context.Context) error {
 	if n.started.Swap(true) {
 		return errors.New("already started")
 	}
@@ -348,7 +351,7 @@ func (n *ExecutionNode) Start(ctx context.Context, syncTillBlock uint64) error {
 	// if err != nil {
 	// 	return fmt.Errorf("error starting geth stack: %w", err)
 	// }
-	n.ExecEngine.Start(ctx, syncTillBlock)
+	n.ExecEngine.Start(ctx)
 	err := n.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)

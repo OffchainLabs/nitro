@@ -68,7 +68,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := gethexec.NewExecutionEngine(bc)
+	execEngine, err := gethexec.NewExecutionEngine(bc, 0)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -106,9 +106,9 @@ func TestTransactionStreamer(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	err := inbox.Start(ctx, 0)
+	err := inbox.Start(ctx)
 	Require(t, err)
-	exec.Start(ctx, 0)
+	exec.Start(ctx)
 
 	maxExpectedGasCost := big.NewInt(l2pricing.InitialBaseFeeWei)
 	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))

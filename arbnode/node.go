@@ -79,7 +79,6 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 
 type Config struct {
 	Sequencer           bool                        `koanf:"sequencer"`
-	SyncTillBlock       uint64                      `koanf:"sync-till-block"`
 	ParentChainReader   headerreader.Config         `koanf:"parent-chain-reader" reload:"hot"`
 	InboxReader         InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer    DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
@@ -146,7 +145,6 @@ func (c *Config) ValidatorRequired() bool {
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	f.Bool(prefix+".sequencer", ConfigDefault.Sequencer, "enable sequencer")
-	f.Uint64(prefix+".sync-till-block", ConfigDefault.SyncTillBlock, "sync till block")
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
@@ -165,7 +163,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 
 var ConfigDefault = Config{
 	Sequencer:           false,
-	SyncTillBlock:       0,
 	ParentChainReader:   headerreader.DefaultConfig,
 	InboxReader:         DefaultInboxReaderConfig,
 	DelayedSequencer:    DefaultDelayedSequencerConfig,
@@ -473,7 +470,7 @@ func createNodeImpl(
 	}
 
 	if config.SeqCoordinator.Enable {
-		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec, syncMonitor, config.SeqCoordinator)
+		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec, syncMonitor, config.SeqCoordinator, config.TransactionStreamer.SyncTillBlock)
 		if err != nil {
 			return nil, err
 		}
@@ -501,6 +498,7 @@ func createNodeImpl(
 			nil,
 			fatalErrChan,
 			bpVerifier,
+			config.TransactionStreamer.SyncTillBlock,
 		)
 		if err != nil {
 			return nil, err
@@ -592,7 +590,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader }, configFetcher.Get().TransactionStreamer.SyncTillBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +739,7 @@ func createNodeImpl(
 	}
 
 	// always create DelayedSequencer, it won't do anything if it is disabled
-	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer }, configFetcher.Get().TransactionStreamer.SyncTillBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -842,7 +840,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if execClient != nil {
 		execClient.SetConsensusClient(n)
 	}
-	err = n.Execution.Start(ctx, n.configFetcher.Get().SyncTillBlock)
+	err = n.Execution.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting exec client: %w", err)
 	}
@@ -872,12 +870,12 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error populating feed backlog on startup: %w", err)
 		}
 	}
-	err = n.TxStreamer.Start(ctx, n.configFetcher.Get().SyncTillBlock)
+	err = n.TxStreamer.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction streamer: %w", err)
 	}
 	if n.InboxReader != nil {
-		err = n.InboxReader.Start(ctx, n.configFetcher.Get().SyncTillBlock)
+		err = n.InboxReader.Start(ctx)
 		if err != nil {
 			return fmt.Errorf("error starting inbox reader: %w", err)
 		}
@@ -890,7 +888,7 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if n.SeqCoordinator != nil {
-		n.SeqCoordinator.Start(ctx, n.configFetcher.Get().SyncTillBlock)
+		n.SeqCoordinator.Start(ctx)
 	} else {
 		n.Execution.Activate()
 	}
@@ -898,7 +896,7 @@ func (n *Node) Start(ctx context.Context) error {
 		n.MaintenanceRunner.Start(ctx)
 	}
 	if n.DelayedSequencer != nil {
-		n.DelayedSequencer.Start(ctx, n.configFetcher.Get().SyncTillBlock)
+		n.DelayedSequencer.Start(ctx)
 	}
 	if n.BatchPoster != nil {
 		n.BatchPoster.Start(ctx)
@@ -948,7 +946,7 @@ func (n *Node) Start(ctx context.Context) error {
 					return
 				}
 			}
-			n.BroadcastClients.Start(ctx, n.configFetcher.Get().SyncTillBlock)
+			n.BroadcastClients.Start(ctx)
 		}()
 	}
 	if n.configFetcher != nil {

@@ -74,6 +74,7 @@ type TransactionStreamerConfig struct {
 	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
 	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
 	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
+	SyncTillBlock           uint64        `koanf:"sync-till-block"`
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
@@ -82,18 +83,21 @@ var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 50_000,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
+	SyncTillBlock:           0,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
 	ExecuteMessageLoopDelay: time.Millisecond,
+	SyncTillBlock:           0,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
+	f.Uint64(prefix+".sync-till-block", DefaultTransactionStreamerConfig.SyncTillBlock, "node will not sync past this block")
 }
 
 func NewTransactionStreamer(
@@ -1218,14 +1222,14 @@ func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struc
 	return s.config().ExecuteMessageLoopDelay
 }
 
-func (s *TransactionStreamer) Start(ctxIn context.Context, syncTillBlock uint64) error {
+func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 	return s.LaunchThreadSafe(func(ctx context.Context) {
 		var defaultVal struct{}
 		var val struct{}
 		for {
-			if syncTillBlock > 0 && uint64(s.execLastMsgCount) >= syncTillBlock {
-				log.Info("stopping block creation in transaction streamer", "syncTillBlock", syncTillBlock)
+			if s.config().SyncTillBlock > 0 && uint64(s.execLastMsgCount) >= s.config().SyncTillBlock {
+				log.Info("stopping block creation in transaction streamer", "syncTillBlock", s.config().SyncTillBlock)
 				return
 			}
 			interval := s.executeMessages(ctx, val)

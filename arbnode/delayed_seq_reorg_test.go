@@ -22,9 +22,9 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig)
 	Require(t, err)
 
-	err = streamer.Start(ctx, 0)
+	err = streamer.Start(ctx)
 	Require(t, err)
-	exec.Start(ctx, 0)
+	exec.Start(ctx)
 	init, err := streamer.GetMessage(0)
 	Require(t, err)
 

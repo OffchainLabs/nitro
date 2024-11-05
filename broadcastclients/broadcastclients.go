@@ -48,6 +48,8 @@ type BroadcastClients struct {
 	primaryRouter   *Router
 	secondaryRouter *Router
 
+	syncTillBlock uint64
+
 	// Use atomic access
 	connected atomic.Int32
 }
@@ -60,6 +62,7 @@ func NewBroadcastClients(
 	confirmedSequenceNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
 	addrVerifier contracts.AddressVerifierInterface,
+	syncTillBlock uint64,
 ) (*BroadcastClients, error) {
 	config := configFetcher()
 	if len(config.URL) == 0 && len(config.SecondaryURL) == 0 {
@@ -79,6 +82,7 @@ func NewBroadcastClients(
 		primaryClients:   make([]*broadcastclient.BroadcastClient, 0, len(config.URL)),
 		secondaryClients: make([]*broadcastclient.BroadcastClient, 0, len(config.SecondaryURL)),
 		secondaryURL:     config.SecondaryURL,
+		syncTillBlock:    syncTillBlock,
 	}
 	clients.makeClient = func(url string, router *Router) (*broadcastclient.BroadcastClient, error) {
 		return broadcastclient.NewBroadcastClient(
@@ -91,6 +95,7 @@ func NewBroadcastClients(
 			fatalErrChan,
 			addrVerifier,
 			func(delta int32) { clients.adjustCount(delta) },
+			syncTillBlock,
 		)
 	}
 
@@ -131,12 +136,12 @@ func clearAndResetTicker(timer *time.Ticker, interval time.Duration) {
 	timer.Reset(interval)
 }
 
-func (bcs *BroadcastClients) Start(ctx context.Context, syncTillBlock uint64) {
+func (bcs *BroadcastClients) Start(ctx context.Context) {
 	bcs.primaryRouter.StopWaiter.Start(ctx, bcs.primaryRouter)
 	bcs.secondaryRouter.StopWaiter.Start(ctx, bcs.secondaryRouter)
 
 	for _, client := range bcs.primaryClients {
-		client.Start(ctx, syncTillBlock)
+		client.Start(ctx)
 	}
 
 	var lastConfirmed arbutil.MessageIndex
@@ -178,8 +183,8 @@ func (bcs *BroadcastClients) Start(ctx context.Context, syncTillBlock uint64) {
 		// Multiple select statements to prioritize reading messages from primary feeds' channels and avoid starving of timers
 		var msg m.BroadcastFeedMessage
 		for {
-			if syncTillBlock > 0 && uint64(msg.SequenceNumber) >= syncTillBlock {
-				log.Info("stopping block creation in broadcast client", "syncTillBlock", syncTillBlock)
+			if bcs.syncTillBlock > 0 && uint64(msg.SequenceNumber) >= bcs.syncTillBlock {
+				log.Info("stopping block creation in broadcast client", "syncTillBlock", bcs.syncTillBlock)
 				return
 			}
 			select {
@@ -234,7 +239,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context, syncTillBlock uint64) {
 					clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
 					clearAndResetTicker(primaryFeedIsDownTimer, MAX_FEED_INACTIVE_TIME)
 				case <-startSecondaryFeedTimer.C:
-					bcs.startSecondaryFeed(ctx, syncTillBlock)
+					bcs.startSecondaryFeed(ctx)
 				case <-primaryFeedIsDownTimer.C:
 					clearAndResetTicker(stopSecondaryFeedTimer, PRIMARY_FEED_UPTIME)
 				}
@@ -243,7 +248,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context, syncTillBlock uint64) {
 	})
 }
 
-func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context, syncTillBlock uint64) {
+func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 	pos := len(bcs.secondaryClients)
 	if pos < len(bcs.secondaryURL) {
 		url := bcs.secondaryURL[pos]
@@ -254,7 +259,7 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context, syncTillBlo
 			return
 		}
 		bcs.secondaryClients = append(bcs.secondaryClients, client)
-		client.Start(ctx, syncTillBlock)
+		client.Start(ctx)
 		log.Info("secondary feed started", "url", url)
 	} else if len(bcs.secondaryURL) > 0 {
 		log.Warn("failed to start a new secondary feed all available secondary feeds were started")

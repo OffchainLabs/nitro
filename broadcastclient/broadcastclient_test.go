@@ -153,7 +153,7 @@ func TestInvalidSignature(t *testing.T) {
 		&badSequencerAddr,
 	)
 	Require(t, err)
-	broadcastClient.Start(ctx, 0)
+	broadcastClient.Start(ctx)
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
@@ -210,7 +210,7 @@ func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uin
 	} else {
 		config.Verify.AcceptSequencer = false
 	}
-	return NewBroadcastClient(func() *Config { return &config }, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, confirmedSequenceNumberListener, feedErrChan, av, func(_ int32) {})
+	return NewBroadcastClient(func() *Config { return &config }, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, confirmedSequenceNumberListener, feedErrChan, av, func(_ int32) {}, 0)
 }
 
 func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Config, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, sequencerAddr *common.Address) {
@@ -227,7 +227,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 		sequencerAddr,
 	)
 	Require(t, err)
-	broadcastClient.Start(ctx, 0)
+	broadcastClient.Start(ctx)
 	messageCount := 0
 
 	wg.Add(1)
@@ -315,7 +315,7 @@ func TestServerClientDisconnect(t *testing.T) {
 		&sequencerAddr,
 	)
 	Require(t, err)
-	broadcastClient.Start(ctx, 0)
+	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
 	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0, nil))
@@ -386,7 +386,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 		&sequencerAddr,
 	)
 	Require(t, err)
-	broadcastClient.Start(ctx, 0)
+	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
 	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0, nil))
@@ -458,7 +458,7 @@ func TestServerIncorrectChainId(t *testing.T) {
 		&sequencerAddr,
 	)
 	Require(t, err)
-	badBroadcastClient.Start(ctx, 0)
+	badBroadcastClient.Start(ctx)
 	badTimer := time.NewTimer(5 * time.Second)
 	select {
 	case err := <-feedErrChan:
@@ -517,7 +517,7 @@ func TestServerMissingChainId(t *testing.T) {
 		&sequencerAddr,
 	)
 	Require(t, err)
-	badBroadcastClient.Start(ctx, 0)
+	badBroadcastClient.Start(ctx)
 	badTimer := time.NewTimer(5 * time.Second)
 	select {
 	case err := <-feedErrChan:
@@ -574,7 +574,7 @@ func TestServerIncorrectFeedServerVersion(t *testing.T) {
 		&sequencerAddr,
 	)
 	Require(t, err)
-	badBroadcastClient.Start(ctx, 0)
+	badBroadcastClient.Start(ctx)
 	badTimer := time.NewTimer(5 * time.Second)
 	select {
 	case err := <-feedErrChan:
@@ -633,7 +633,7 @@ func TestServerMissingFeedServerVersion(t *testing.T) {
 		&sequencerAddr,
 	)
 	Require(t, err)
-	badBroadcastClient.Start(ctx, 0)
+	badBroadcastClient.Start(ctx)
 	badTimer := time.NewTimer(5 * time.Second)
 	select {
 	case err := <-feedErrChan:
@@ -684,7 +684,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 		&sequencerAddr,
 	)
 	Require(t, err)
-	broadcastClient.Start(ctx, 0)
+	broadcastClient.Start(ctx)
 	defer broadcastClient.StopAndWait()
 
 	// Client set to timeout connection at 200 milliseconds, and server set to send ping every 50 seconds,
@@ -796,7 +796,7 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uin
 		sequencerAddr,
 	)
 	Require(t, err)
-	broadcastClient.Start(ctx, 0)
+	broadcastClient.Start(ctx)
 
 	go func() {
 		defer wg.Done()

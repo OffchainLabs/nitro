@@ -96,13 +96,14 @@ type InboxReader struct {
 	caughtUpChan   chan struct{}
 	client         *ethclient.Client
 	l1Reader       *headerreader.HeaderReader
+	syncTillBlock  uint64
 
 	// Atomic
 	lastSeenBatchCount atomic.Uint64
 	lastReadBatchCount atomic.Uint64
 }
 
-func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
+func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher, syncTillBlock uint64) (*InboxReader, error) {
 	err := config().Validate()
 	if err != nil {
 		return nil, err
@@ -116,10 +117,11 @@ func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *h
 		firstMessageBlock: firstMessageBlock,
 		caughtUpChan:      make(chan struct{}),
 		config:            config,
+		syncTillBlock:     syncTillBlock,
 	}, nil
 }
 
-func (r *InboxReader) Start(ctxIn context.Context, syncTillBlock uint64) error {
+func (r *InboxReader) Start(ctxIn context.Context) error {
 	r.StopWaiter.Start(ctxIn, r)
 	hadError := false
 	r.LaunchThread(func(ctx context.Context) {
@@ -129,8 +131,8 @@ func (r *InboxReader) Start(ctxIn context.Context, syncTillBlock uint64) error {
 				log.Warn("error reading delayed count", "err", err)
 				hadError = true
 			}
-			if syncTillBlock > 0 && delayedCount >= syncTillBlock {
-				log.Info("stopping block creation in inbox reader", "syncTillBlock", syncTillBlock)
+			if r.syncTillBlock > 0 && delayedCount >= r.syncTillBlock {
+				log.Info("stopping block creation in inbox reader", "syncTillBlock", r.syncTillBlock)
 				return
 			}
 			err = r.run(ctx, hadError)

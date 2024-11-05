@@ -92,6 +92,7 @@ type ExecutionEngine struct {
 	prefetchBlock bool
 
 	cachedL1PriceData *L1PriceData
+	syncTillBlock     uint64
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -100,12 +101,13 @@ func NewL1PriceData() *L1PriceData {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
+func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
 		bc:                bc,
 		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier:  make(chan struct{}, 1),
 		cachedL1PriceData: NewL1PriceData(),
+		syncTillBlock:     syncTillBlock,
 	}, nil
 }
 
@@ -943,12 +945,12 @@ func (s *ExecutionEngine) ArbOSVersionForMessageNumber(messageNum arbutil.Messag
 	return extra.ArbOSFormatVersion, nil
 }
 
-func (s *ExecutionEngine) Start(ctx_in context.Context, syncTillBlock uint64) {
+func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 	s.LaunchThread(func(ctx context.Context) {
 		for {
-			if syncTillBlock > 0 && s.latestBlock.NumberU64() >= syncTillBlock {
-				log.Info("stopping block creation in execution engine", "syncTillBlock", syncTillBlock)
+			if s.syncTillBlock > 0 && s.latestBlock.NumberU64() >= s.syncTillBlock {
+				log.Info("stopping block creation in execution engine", "syncTillBlock", s.syncTillBlock)
 				return
 			}
 			select {

@@ -32,6 +32,7 @@ type DelayedSequencer struct {
 	waitingForFinalizedBlock uint64
 	mutex                    sync.Mutex
 	config                   DelayedSequencerConfigFetcher
+	syncTillBlock            uint64
 }
 
 type DelayedSequencerConfig struct {
@@ -64,15 +65,16 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	UseMergeFinality:    false,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher, syncTillBlock uint64) (*DelayedSequencer, error) {
 	d := &DelayedSequencer{
-		l1Reader:    l1Reader,
-		bridge:      reader.DelayedBridge(),
-		inbox:       reader.Tracker(),
-		reader:      reader,
-		coordinator: coordinator,
-		exec:        exec,
-		config:      config,
+		l1Reader:      l1Reader,
+		bridge:        reader.DelayedBridge(),
+		inbox:         reader.Tracker(),
+		reader:        reader,
+		coordinator:   coordinator,
+		exec:          exec,
+		config:        config,
+		syncTillBlock: syncTillBlock,
 	}
 	if coordinator != nil {
 		coordinator.SetDelayedSequencer(d)
@@ -211,7 +213,7 @@ func (d *DelayedSequencer) ForceSequenceDelayed(ctx context.Context) error {
 	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
 }
 
-func (d *DelayedSequencer) run(ctx context.Context, syncTillBlock uint64) {
+func (d *DelayedSequencer) run(ctx context.Context) {
 	headerChan, cancel := d.l1Reader.Subscribe(false)
 	defer cancel()
 
@@ -221,8 +223,8 @@ func (d *DelayedSequencer) run(ctx context.Context, syncTillBlock uint64) {
 			log.Warn("error reading delayed count", "err", err)
 			continue
 		}
-		if syncTillBlock > 0 && delayedCount >= syncTillBlock {
-			log.Info("stopping block creation in delayed sequencer", "syncTillBlock", syncTillBlock)
+		if d.syncTillBlock > 0 && delayedCount >= d.syncTillBlock {
+			log.Info("stopping block creation in delayed sequencer", "syncTillBlock", d.syncTillBlock)
 			return
 		}
 		select {
@@ -241,9 +243,9 @@ func (d *DelayedSequencer) run(ctx context.Context, syncTillBlock uint64) {
 	}
 }
 
-func (d *DelayedSequencer) Start(ctxIn context.Context, syncTillBlock uint64) {
+func (d *DelayedSequencer) Start(ctxIn context.Context) {
 	d.StopWaiter.Start(ctxIn, d)
 	d.LaunchThread(func(ctx context.Context) {
-		d.run(ctx, syncTillBlock)
+		d.run(ctx)
 	})
 }

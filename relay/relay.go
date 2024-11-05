@@ -56,6 +56,7 @@ func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 		confirmedSequenceNumberListener,
 		feedErrChan,
 		nil,
+		0,
 	)
 	if err != nil {
 		return nil, err
@@ -86,7 +87,7 @@ func (r *Relay) Start(ctx context.Context) error {
 		return errors.New("broadcast unable to start")
 	}
 
-	r.broadcastClients.Start(ctx, 0)
+	r.broadcastClients.Start(ctx)
 
 	r.LaunchThread(func(ctx context.Context) {
 		for {
