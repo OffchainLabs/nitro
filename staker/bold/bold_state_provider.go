@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
@@ -332,13 +333,19 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 ) ([]common.Hash, error) {
 	s.Lock()
 	defer s.Unlock()
-	fromState := cfg.FromState
-	// cfg.BlockChallengeHeight is the index of the last correct block, before the
-	// block we're challenging.
-	chalHeight := cfg.BlockChallengeHeight
-	messageNum, _, err := s.messageNum(fromState, chalHeight)
+	batchLimit := cfg.AssertionMetadata.BatchLimit
+	messageNum, err := s.messageNum(cfg.AssertionMetadata, cfg.BlockChallengeHeight)
 	if err != nil {
 		return nil, err
+	}
+	useFinishedMachine, err := s.useFinishedMachine(messageNum, batchLimit)
+	if err != nil {
+		return nil, err
+	}
+	if useFinishedMachine {
+		m := server_arb.NewFinishedMachine()
+		defer m.Destroy()
+		return []common.Hash{m.Hash()}, nil
 	}
 	stepHeights := make([]uint64, len(cfg.StepHeights))
 	for i, h := range cfg.StepHeights {
@@ -350,7 +357,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	}
 	cacheKey := &challengecache.Key{
 		RollupBlockHash: messageResult.BlockHash,
-		WavmModuleRoot:  cfg.WasmModuleRoot,
+		WavmModuleRoot:  cfg.AssertionMetadata.WasmModuleRoot,
 		MessageHeight:   uint64(messageNum),
 		StepHeights:     stepHeights,
 	}
@@ -378,7 +385,8 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		return nil, err
 	}
 	// TODO: Enable Redis streams.
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
+	wasmModRoot := cfg.AssertionMetadata.WasmModuleRoot
+	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -408,32 +416,40 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	return result, nil
 }
 
-// messageNum finds the effective message number (or l2 block index)
-// where the challenge is occurring.
-func (s *BOLDStateProvider) messageNum(fromState protocol.GoGlobalState, chalHeight l2stateprovider.Height) (arbutil.MessageIndex, arbutil.MessageIndex, error) {
+// messageNum returns the message number at which the BoLD protocol should
+// process machine hashes based on the AssociatedAssertionMetadata and
+// chalHeight.
+func (s *BOLDStateProvider) messageNum(md *l2stateprovider.AssociatedAssertionMetadata, chalHeight l2stateprovider.Height) (arbutil.MessageIndex, error) {
 	var prevBatchMsgCount arbutil.MessageIndex
-	if fromState.Batch > 0 {
+	bNum := md.FromState.Batch
+	posInBatch := md.FromState.PosInBatch
+	if bNum > 0 {
 		var err error
-		prevBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(fromState.Batch - 1))
+		prevBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(bNum - 1))
 		if err != nil {
-			return 0, 0, fmt.Errorf("could not get prevBatchMsgCount at %d: %w", fromState.Batch-1, err)
+			return 0, fmt.Errorf("could not get prevBatchMsgCount at %d: %w", bNum-1, err)
 		}
 	}
-	currBatchMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(fromState.Batch))
+	return prevBatchMsgCount + arbutil.MessageIndex(posInBatch) + arbutil.MessageIndex(chalHeight), nil
+}
+
+// useFinishedMachine returns true if messageNum is a virtual block or the
+// last real block to which this validator's assertion committed.
+//
+// This can happen in the BoLD protocol when the rival block-level challenge
+// edge has committed to more blocks that this validator expected for the
+// current batch. In that case, the chalHeight will be a block in the virtual
+// padding of the history commitment of this validator.
+//
+// A return value of true means that callers don't need to actually step through
+// a machine to produce a series of hashes, because all of the hashes can just
+// be "virtual" copies of a single machine in the FINISHED state's hash.
+func (s *BOLDStateProvider) useFinishedMachine(msgNum arbutil.MessageIndex, limit l2stateprovider.Batch) (bool, error) {
+	limitMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(limit) - 1)
 	if err != nil {
-		return 0, 0, fmt.Errorf("could not get currBatchMsgCount at %d: %w", fromState, err)
+		return false, fmt.Errorf("could not get limitMsgCount at %d: %w", limit, err)
 	}
-	messageNum := prevBatchMsgCount + arbutil.MessageIndex(fromState.PosInBatch) + arbutil.MessageIndex(chalHeight)
-	if messageNum > currBatchMsgCount {
-		// This can happen in the BoLD protocol when the rival block-level challenge
-		// edge has committed to more blocks that this validator expected for the
-		// current batch. In that case, the BlockChallengeHeight will be a block in
-		// the virtual padding of the history commitment of this validator. It will
-		// therefore be the same as the end state of the last block in the in the
-		// current batch.
-		messageNum = currBatchMsgCount
-	}
-	return messageNum, prevBatchMsgCount, nil
+	return msgNum > limitMsgCount, nil
 }
 
 // CtxWithCheckAlive Creates a context with a check alive routine that will
@@ -476,12 +492,20 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 // CollectProof collects a one-step proof at a message number and OpcodeIndex.
 func (s *BOLDStateProvider) CollectProof(
 	ctx context.Context,
-	fromState protocol.GoGlobalState,
-	wasmModuleRoot common.Hash,
+	assertionMetadata *l2stateprovider.AssociatedAssertionMetadata,
 	blockChallengeHeight l2stateprovider.Height,
 	machineIndex l2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
-	messageNum, prevBatchMsgCount, err := s.messageNum(fromState, blockChallengeHeight)
+	messageNum, err := s.messageNum(assertionMetadata, blockChallengeHeight)
+	useFinishedMachine, err := s.useFinishedMachine(messageNum, assertionMetadata.BatchLimit)
+	if err != nil {
+		return nil, err
+	}
+	if useFinishedMachine {
+		m := server_arb.NewFinishedMachine()
+		defer m.Destroy()
+		return m.ProveNextStep(), nil
+	}
 	entry, err := s.statelessValidator.CreateReadyValidationEntry(ctx, messageNum)
 	if err != nil {
 		return nil, err
@@ -492,15 +516,15 @@ func (s *BOLDStateProvider) CollectProof(
 	}
 	log.Info(
 		"Getting machine OSP",
-		"fromBatch", fromState.Batch,
-		"fromPosInBatch", fromState.PosInBatch,
-		"prevBatchMsgCount", prevBatchMsgCount,
+		"fromBatch", assertionMetadata.FromState.Batch,
+		"fromPosInBatch", assertionMetadata.FromState.PosInBatch,
 		"blockChallengeHeight", blockChallengeHeight,
 		"messageNum", messageNum,
 		"machineIndex", machineIndex,
 		"startState", fmt.Sprintf("%+v", input.StartState),
 	)
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	wasmModRoot := assertionMetadata.WasmModuleRoot
+	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
