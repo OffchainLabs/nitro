@@ -456,7 +456,6 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 				if address == l1info.GetDefaultTransactOpts("Asserter", ctx).From {
 					t.Log("Honest party won OSP, impossible for evil party to win if honest party continues")
 					Require(t, it.Close())
-					time.Sleep(time.Second * 10)
 					return
 				}
 			}

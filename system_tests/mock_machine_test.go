@@ -34,7 +34,7 @@ func (m *IncorrectIntermediateMachine) CloneMachineInterface() server_arb.Machin
 func (m *IncorrectIntermediateMachine) Hash() common.Hash {
 	h := m.MachineInterface.Hash()
 	if m.GetStepCount() >= m.incorrectStep && m.IsRunning() {
-		h[0] = 0xFF
+		h[0] ^= 0xFF
 	}
 	return h
 }
