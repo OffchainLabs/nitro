@@ -72,18 +72,18 @@ func (s *incorrectBlockStateProvider) L2MessageStatesUpTo(
 	if err != nil {
 		return nil, err
 	}
+	// Double check that virtual blocks aren't being enumerated by the honest impl
+	for i := len(states) - 1; i >= 1; i-- {
+		if states[i] == states[i-1] {
+			panic("Virtual block found repeated in honest impl (test case currently doesn't accomodate this)")
+		} else {
+			break
+		}
+	}
 	if s.wrongAtFirstVirtual && (toHeight.IsNone() || uint64(len(states)) < uint64(toHeight.Unwrap())) {
 		// We've found the first virtual block, now let's make it wrong
 		s.wrongAtFirstVirtual = false
 		s.wrongAtBlockHeight = uint64(len(states))
-		// Double check that the first virtual block isn't earlier
-		for i := len(states) - 1; i >= 1; i-- {
-			if states[i] == states[i-1] {
-				s.wrongAtBlockHeight = uint64(i)
-			} else {
-				break
-			}
-		}
 	}
 	if toHeight.IsNone() || uint64(toHeight.Unwrap()) >= s.wrongAtBlockHeight {
 		for uint64(len(states)) <= s.wrongAtBlockHeight {
