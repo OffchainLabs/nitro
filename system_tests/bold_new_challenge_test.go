@@ -105,12 +105,11 @@ func (s *incorrectBlockStateProvider) CollectMachineHashes(
 
 func (s *incorrectBlockStateProvider) CollectProof(
 	ctx context.Context,
-	fromState protocol.GoGlobalState,
-	wasmModuleRoot common.Hash,
+	assertionMetadata *l2stateprovider.AssociatedAssertionMetadata,
 	blockChallengeHeight l2stateprovider.Height,
 	machineIndex l2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
-	return s.honest.CollectProof(ctx, fromState, wasmModuleRoot, blockChallengeHeight, machineIndex)
+	return s.honest.CollectProof(ctx, assertionMetadata, blockChallengeHeight, machineIndex)
 }
 
 func TestChallengeProtocolBOLDVirtualBlocks(t *testing.T) {
