@@ -4,6 +4,7 @@
 package arbos
 
 import (
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
 	"testing"
 
@@ -172,7 +173,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	// create some fake collection
 	balanceAdded := new(big.Int).SetUint64(testParams.fundsCollectedPerSecond * 3)
 	unitsAdded := testParams.unitsPerSecond * 3
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(balanceAdded))
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(balanceAdded), tracing.BalanceChangeUnspecified)
 	err = l1p.SetL1FeesAvailable(balanceAdded)
 	Require(t, err)
 	err = l1p.SetUnitsSinceUpdate(unitsAdded)
@@ -279,7 +280,9 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 			evm.StateDB,
 			evm,
 			3,
+			// #nosec G115
 			uint64(10*(i+1)),
+			// #nosec G115
 			uint64(10*(i+1)+5),
 			bpAddr,
 			arbmath.BigMulByUint(equilibriumL1BasefeeEstimate, unitsToAdd),

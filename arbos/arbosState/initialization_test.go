@@ -66,7 +66,6 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
 	stateroot, err := InitializeArbosInDatabase(raw, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
-
 	triedbConfig := cacheConfig.TriedbConfig()
 	stateDb, err := state.New(stateroot, state.NewDatabaseWithConfig(raw, triedbConfig), nil)
 	Require(t, err)
@@ -126,6 +125,7 @@ func checkAddressTable(arbState *ArbosState, addrTable []common.Address, t *test
 		Fail(t)
 	}
 	for i, addr := range addrTable {
+		// #nosec G115
 		res, exists, err := atab.LookupIndex(uint64(i))
 		Require(t, err)
 		if !exists {
