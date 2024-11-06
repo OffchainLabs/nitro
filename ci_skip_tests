@@ -39,3 +39,4 @@ TestBlockValidatorSimpleOnchainWithPublishedMachine
 # CI workflow for them. See: .github/workflows/espresso-e2e.yml
 TestEspressoE2E
 TestSovereignSequencer
+TestEspressoFinalityNode
