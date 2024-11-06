@@ -96,14 +96,13 @@ type InboxReader struct {
 	caughtUpChan   chan struct{}
 	client         *ethclient.Client
 	l1Reader       *headerreader.HeaderReader
-	syncTillBlock  uint64
 
 	// Atomic
 	lastSeenBatchCount atomic.Uint64
 	lastReadBatchCount atomic.Uint64
 }
 
-func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher, syncTillBlock uint64) (*InboxReader, error) {
+func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
 	err := config().Validate()
 	if err != nil {
 		return nil, err
@@ -117,7 +116,6 @@ func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *h
 		firstMessageBlock: firstMessageBlock,
 		caughtUpChan:      make(chan struct{}),
 		config:            config,
-		syncTillBlock:     syncTillBlock,
 	}, nil
 }
 
@@ -126,16 +124,11 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 	hadError := false
 	r.LaunchThread(func(ctx context.Context) {
 		for {
-			delayedCount, err := r.tracker.GetDelayedCount()
-			if err != nil {
-				log.Warn("error reading delayed count", "err", err)
-				hadError = true
-			}
-			if r.syncTillBlock > 0 && delayedCount >= r.syncTillBlock {
-				log.Info("stopping block creation in inbox reader", "syncTillBlock", r.syncTillBlock)
+			if r.tracker.txStreamer.Stopped() {
+				log.Info("stopping block creation in inbox reader because transaction streamer has stopped")
 				return
 			}
-			err = r.run(ctx, hadError)
+			err := r.run(ctx, hadError)
 			if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
 				log.Warn("error reading inbox", "err", err)
 				hadError = true

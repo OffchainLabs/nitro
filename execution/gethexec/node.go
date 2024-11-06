@@ -173,7 +173,6 @@ type ExecutionNode struct {
 	ParentChainReader *headerreader.HeaderReader
 	ClassicOutbox     *ClassicOutboxRetriever
 	started           atomic.Bool
-	syncTillBlock     uint64
 }
 
 func CreateExecutionNode(
@@ -310,7 +309,6 @@ func CreateExecutionNode(
 		SyncMonitor:       syncMon,
 		ParentChainReader: parentChainReader,
 		ClassicOutbox:     classicOutbox,
-		syncTillBlock:     syncTillBlock,
 	}, nil
 
 }

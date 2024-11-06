@@ -51,7 +51,6 @@ type SeqCoordinator struct {
 
 	prevChosenSequencer  string
 	reportedWantsLockout bool
-	syncTillBlock        uint64
 
 	lockoutUntil atomic.Int64 // atomic
 
@@ -151,7 +150,6 @@ func NewSeqCoordinator(
 	sequencer execution.ExecutionSequencer,
 	sync *SyncMonitor,
 	config SeqCoordinatorConfig,
-	syncTillBlock uint64,
 ) (*SeqCoordinator, error) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
@@ -168,7 +166,6 @@ func NewSeqCoordinator(
 		sequencer:        sequencer,
 		config:           config,
 		signer:           signer,
-		syncTillBlock:    syncTillBlock,
 	}
 	streamer.SetSeqCoordinator(coordinator)
 	return coordinator, nil
@@ -871,12 +868,8 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 
 	c.LaunchThread(func(ctx context.Context) {
 		for {
-			count, err := c.streamer.GetMessageCount()
-			if err != nil {
-				log.Warn("failed to get message count", "err", err)
-			}
-			if c.syncTillBlock > 0 && uint64(count) >= c.syncTillBlock {
-				log.Info("stopping block creation in sequencer", "syncTillBlock", c.syncTillBlock)
+			if c.streamer.Stopped() {
+				log.Info("stopping block creation in sequencer because transaction streamer has stopped")
 				return
 			}
 			interval := c.chooseRedisAndUpdate(ctx, newRedisCoordinator)

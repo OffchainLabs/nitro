@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -218,15 +219,6 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 	defer cancel()
 
 	for {
-		delayedCount, err := d.inbox.GetDelayedCount()
-		if err != nil {
-			log.Warn("error reading delayed count", "err", err)
-			continue
-		}
-		if d.syncTillBlock > 0 && delayedCount >= d.syncTillBlock {
-			log.Info("stopping block creation in delayed sequencer", "syncTillBlock", d.syncTillBlock)
-			return
-		}
 		select {
 		case nextHeader, ok := <-headerChan:
 			if !ok {
@@ -234,6 +226,10 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 				return
 			}
 			if err := d.trySequence(ctx, nextHeader); err != nil {
+				if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
+					log.Info("stopping block creation in delayed sequencer", "syncTillBlock", d.syncTillBlock)
+					return
+				}
 				log.Error("Delayed sequencer error", "err", err)
 			}
 		case <-ctx.Done():

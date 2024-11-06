@@ -55,6 +55,8 @@ var (
 	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 )
 
+var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
+
 type L1PriceDataOfMsg struct {
 	callDataUnits            uint64
 	cummulativeCallDataUnits uint64
@@ -588,6 +590,10 @@ func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingM
 }
 
 func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*types.Block, error) {
+	if s.syncTillBlock > 0 && s.latestBlock.NumberU64() >= s.syncTillBlock {
+		return nil, ExecutionEngineBlockCreationStopped
+	}
+
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err
