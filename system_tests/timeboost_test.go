@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -42,8 +43,128 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/stretchr/testify/require"
 )
+
+var blockMetadataInputFeedKey = func(pos uint64) []byte {
+	var key []byte
+	prefix := []byte("t")
+	key = append(key, prefix...)
+	data := make([]byte, 8)
+	binary.BigEndian.PutUint64(data, pos)
+	key = append(key, data...)
+	return key
+}
+
+func TestTimeboostBulkBlockMetadataRebuilder(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	httpConfig := genericconf.HTTPConfigDefault
+	httpConfig.Addr = "127.0.0.1"
+	httpConfig.Apply(builder.l2StackConfig)
+	builder.execConfig.BlockMetadataApiCacheSize = 0 // Caching is disabled
+	builder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
+	cleanupSeq := builder.Build(t)
+	defer cleanupSeq()
+
+	// Generate blocks until current block is > 20
+	arbDb := builder.L2.ConsensusNode.ArbDB
+	builder.L2Info.GenerateAccount("User")
+	user := builder.L2Info.GetDefaultTransactOpts("User", ctx)
+	var latestL2 uint64
+	var err error
+	for i := 0; ; i++ {
+		builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+		latestL2, err = builder.L2.Client.BlockNumber(ctx)
+		Require(t, err)
+		// Clean BlockMetadata from arbDB so that we can modify it at will
+		Require(t, arbDb.Delete(blockMetadataInputFeedKey(latestL2)))
+		if latestL2 > uint64(20) {
+			break
+		}
+	}
+	var sampleBulkData []arbostypes.BlockMetadata
+	for i := 1; i <= int(latestL2); i++ {
+		blockMetadata := []byte{0, uint8(i)}
+		sampleBulkData = append(sampleBulkData, blockMetadata)
+		arbDb.Put(blockMetadataInputFeedKey(uint64(i)), blockMetadata)
+	}
+
+	ndcfg := arbnode.ConfigDefaultL1NonSequencerTest()
+	ndcfg.TransactionStreamer.TrackBlockMetadataFrom = 1
+	newNode, cleanupNewNode := builder.Build2ndNode(t, &SecondNodeParams{
+		nodeConfig:  ndcfg,
+		stackConfig: testhelpers.CreateStackConfigForTest(t.TempDir()),
+	})
+	defer cleanupNewNode()
+
+	// Wait for second node to catchup via L1, since L1 doesn't have the blockMetadata, we ensure that messages are tracked with missingBlockMetadataInputFeedPrefix prefix
+	for {
+		current, err := newNode.Client.BlockNumber(ctx)
+		Require(t, err)
+		if current == latestL2 {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+
+	blockMetadataInputFeedPrefix := []byte("t")
+	missingBlockMetadataInputFeedPrefix := []byte("mt")
+	arbDb = newNode.ConsensusNode.ArbDB
+
+	// Check if all block numbers with missingBlockMetadataInputFeedPrefix are present as keys in arbDB and that no keys with blockMetadataInputFeedPrefix
+	iter := arbDb.NewIterator(blockMetadataInputFeedPrefix, nil)
+	for iter.Next() {
+		keyBytes := bytes.TrimPrefix(iter.Key(), blockMetadataInputFeedPrefix)
+		t.Fatalf("unexpected presence of blockMetadata when blocks are synced via L1. msgSeqNum: %d", binary.BigEndian.Uint64(keyBytes))
+	}
+	iter.Release()
+	iter = arbDb.NewIterator(missingBlockMetadataInputFeedPrefix, nil)
+	pos := uint64(1)
+	for iter.Next() {
+		keyBytes := bytes.TrimPrefix(iter.Key(), missingBlockMetadataInputFeedPrefix)
+		if pos != binary.BigEndian.Uint64(keyBytes) {
+			t.Fatalf("unexpected msgSeqNum with missingBlockMetadataInputFeedPrefix for blockMetadata. Want: %d, Got: %d", pos, binary.BigEndian.Uint64(keyBytes))
+		}
+		pos++
+	}
+	if pos-1 != latestL2 {
+		t.Fatalf("number of keys with missingBlockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", latestL2, pos-1)
+	}
+	iter.Release()
+
+	// Rebuild blockMetadata and cleanup trackers from ArbDB
+	blockMetadataRebuilder, err := arbnode.NewBlockMetadataRebuilder(ctx, arbnode.BlockMetadataRebuilderConfig{Url: "http://127.0.0.1:8547"}, arbDb, newNode.ExecNode)
+	Require(t, err)
+	blockMetadataRebuilder.Update(ctx)
+
+	// Check if all blockMetadata was synced from bulk BlockMetadata API via the blockMetadataRebuilder and that trackers for missing blockMetadata were cleared
+	iter = arbDb.NewIterator(blockMetadataInputFeedPrefix, nil)
+	pos = uint64(1)
+	for iter.Next() {
+		keyBytes := bytes.TrimPrefix(iter.Key(), blockMetadataInputFeedPrefix)
+		if binary.BigEndian.Uint64(keyBytes) != pos {
+			t.Fatalf("unexpected msgSeqNum with blockMetadataInputFeedPrefix for blockMetadata. Want: %d, Got: %d", pos, binary.BigEndian.Uint64(keyBytes))
+		}
+		if !bytes.Equal(sampleBulkData[pos-1], iter.Value()) {
+			t.Fatalf("blockMetadata mismatch. Want: %v, Got: %v", sampleBulkData[pos-1], iter.Value())
+		}
+		pos++
+	}
+	if pos-1 != latestL2 {
+		t.Fatalf("number of keys with blockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", latestL2, pos-1)
+	}
+	iter.Release()
+	iter = arbDb.NewIterator(missingBlockMetadataInputFeedPrefix, nil)
+	for iter.Next() {
+		keyBytes := bytes.TrimPrefix(iter.Key(), missingBlockMetadataInputFeedPrefix)
+		t.Fatalf("unexpected presence of msgSeqNum with missingBlockMetadataInputFeedPrefix, indicating missing of some blockMetadata after rebuilding. msgSeqNum: %d", binary.BigEndian.Uint64(keyBytes))
+	}
+	iter.Release()
+}
 
 func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -55,15 +176,6 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	defer cleanup()
 
 	arbDb := builder.L2.ConsensusNode.ArbDB
-	blockMetadataInputFeedKey := func(pos uint64) []byte {
-		var key []byte
-		prefix := []byte("t")
-		key = append(key, prefix...)
-		data := make([]byte, 8)
-		binary.BigEndian.PutUint64(data, pos)
-		key = append(key, data...)
-		return key
-	}
 
 	// Generate blocks until current block is end
 	start := 1
