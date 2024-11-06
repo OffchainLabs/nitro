@@ -33,10 +33,11 @@ import (
 )
 
 type incorrectBlockStateProvider struct {
-	honest             *bold.BOLDStateProvider
-	wrongAtBlockHeight uint64
-	honestMachineHash  common.Hash
-	evilMachineHash    common.Hash
+	honest              *bold.BOLDStateProvider
+	wrongAtFirstVirtual bool
+	wrongAtBlockHeight  uint64
+	honestMachineHash   common.Hash
+	evilMachineHash     common.Hash
 }
 
 func (s *incorrectBlockStateProvider) ExecutionStateAfterPreviousState(
@@ -70,6 +71,19 @@ func (s *incorrectBlockStateProvider) L2MessageStatesUpTo(
 	states, err := s.honest.L2MessageStatesUpTo(ctx, fromState, batchLimit, toHeight)
 	if err != nil {
 		return nil, err
+	}
+	if s.wrongAtFirstVirtual && (toHeight.IsNone() || uint64(len(states)) < uint64(toHeight.Unwrap())) {
+		// We've found the first virtual block, now let's make it wrong
+		s.wrongAtFirstVirtual = false
+		s.wrongAtBlockHeight = uint64(len(states))
+		// Double check that the first virtual block isn't earlier
+		for i := len(states) - 1; i >= 1; i-- {
+			if states[i] == states[i-1] {
+				s.wrongAtBlockHeight = uint64(i)
+			} else {
+				break
+			}
+		}
 	}
 	if toHeight.IsNone() || uint64(toHeight.Unwrap()) >= s.wrongAtBlockHeight {
 		for uint64(len(states)) <= s.wrongAtBlockHeight {
@@ -112,7 +126,7 @@ func (s *incorrectBlockStateProvider) CollectProof(
 	return s.honest.CollectProof(ctx, assertionMetadata, blockChallengeHeight, machineIndex)
 }
 
-func TestChallengeProtocolBOLDVirtualBlocks(t *testing.T) {
+func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -144,10 +158,14 @@ func TestChallengeProtocolBOLDVirtualBlocks(t *testing.T) {
 	defer cleanupHonestChallengeManager()
 
 	_, cleanupEvilChallengeManager := startBoldChallengeManager(t, ctx, builder, evilNode, "EvilAsserter", func(stateManager BoldStateProviderInterface) BoldStateProviderInterface {
-		return &incorrectBlockStateProvider{
-			honest:             stateManager.(*bold.BOLDStateProvider),
-			wrongAtBlockHeight: blockChallengeLeafHeight - 2,
+		p := &incorrectBlockStateProvider{
+			honest:              stateManager.(*bold.BOLDStateProvider),
+			wrongAtFirstVirtual: wrongAtFirstVirtual,
 		}
+		if !wrongAtFirstVirtual {
+			p.wrongAtBlockHeight = blockChallengeLeafHeight - 2
+		}
+		return p
 	})
 	defer cleanupEvilChallengeManager()
 
@@ -233,6 +251,14 @@ func fundBoldStaker(t *testing.T, ctx context.Context, builder *NodeBuilder, nam
 	tx, err = stakeTokenWeth.Approve(&txOpts, challengeManager, balance)
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
+}
+
+func TestChallengeProtocolBOLDNearLastVirtualBlock(t *testing.T) {
+	testChallengeProtocolBOLDVirtualBlocks(t, false)
+}
+
+func TestChallengeProtocolBOLDFirstVirtualBlock(t *testing.T) {
+	testChallengeProtocolBOLDVirtualBlocks(t, true)
 }
 
 type BoldStateProviderInterface interface {
