@@ -29,6 +29,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
@@ -1048,6 +1049,10 @@ func (s *TransactionStreamer) broadcastMessages(
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockHash, batch ethdb.Batch) error {
+	if s.config().SyncTillBlock > 0 && uint64(pos) > s.config().SyncTillBlock {
+		return broadcastclient.TransactionStreamerBlockCreationStopped
+	}
+
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}
@@ -1216,6 +1221,10 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 }
 
 func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struct{}) time.Duration {
+	if s.config().SyncTillBlock > 0 && uint64(s.execLastMsgCount) >= s.config().SyncTillBlock {
+		log.Info("stopping block creation in transaction streamer", "syncTillBlock", s.config().SyncTillBlock)
+		return s.config().ExecuteMessageLoopDelay
+	}
 	if s.ExecuteNextMsg(ctx) {
 		return 0
 	}
@@ -1224,30 +1233,5 @@ func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struc
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
-	return s.LaunchThreadSafe(func(ctx context.Context) {
-		var defaultVal struct{}
-		var val struct{}
-		for {
-			if s.config().SyncTillBlock > 0 && uint64(s.execLastMsgCount) >= s.config().SyncTillBlock {
-				log.Info("stopping block creation in transaction streamer", "syncTillBlock", s.config().SyncTillBlock)
-				return
-			}
-			interval := s.executeMessages(ctx, val)
-			if ctx.Err() != nil {
-				return
-			}
-			val = defaultVal
-			if interval == time.Duration(0) {
-				continue
-			}
-			timer := time.NewTimer(interval)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
-			case val = <-s.newMessageNotifier:
-			}
-		}
-	})
+	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }

@@ -38,6 +38,8 @@ var (
 	sourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
 )
 
+var TransactionStreamerBlockCreationStopped = errors.New("block creation stopped in transaction streamer")
+
 type FeedConfig struct {
 	Output wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
 	Input  Config                              `koanf:"input" reload:"hot"`
@@ -135,8 +137,6 @@ type BroadcastClient struct {
 
 	retryCount atomic.Int64
 
-	syncTillBlock uint64
-
 	retrying                        bool
 	shuttingDown                    bool
 	confirmedSequenceNumberListener chan arbutil.MessageIndex
@@ -160,7 +160,6 @@ func NewBroadcastClient(
 	fatalErrChan chan error,
 	addrVerifier contracts.AddressVerifierInterface,
 	adjustCount func(int32),
-	syncTillBlock uint64,
 ) (*BroadcastClient, error) {
 	sigVerifier, err := signature.NewVerifier(&config().Verify, addrVerifier)
 	if err != nil {
@@ -176,7 +175,6 @@ func NewBroadcastClient(
 		fatalErrChan:                    fatalErrChan,
 		sigVerifier:                     sigVerifier,
 		adjustCount:                     adjustCount,
-		syncTillBlock:                   syncTillBlock,
 	}, err
 }
 
@@ -189,11 +187,6 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.LaunchThread(func(ctx context.Context) {
 		backoffDuration := bc.config().ReconnectInitialBackoff
 		for {
-
-			if bc.syncTillBlock > 0 && uint64(bc.nextSeqNum) >= bc.syncTillBlock {
-				log.Info("stopping block creation in broadcast client", "syncTillBlock", bc.syncTillBlock)
-				return
-			}
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 			if errors.Is(err, ErrMissingChainId) ||
 				errors.Is(err, ErrIncorrectChainId) ||
@@ -443,6 +436,10 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							bc.nextSeqNum = message.SequenceNumber + 1
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
+							if errors.Is(err, TransactionStreamerBlockCreationStopped) {
+								log.Info("stopping block creation in broadcast client because transaction streamer is stopped")
+								return
+							}
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}

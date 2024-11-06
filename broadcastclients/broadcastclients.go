@@ -5,6 +5,7 @@ package broadcastclients
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -48,8 +49,6 @@ type BroadcastClients struct {
 	primaryRouter   *Router
 	secondaryRouter *Router
 
-	syncTillBlock uint64
-
 	// Use atomic access
 	connected atomic.Int32
 }
@@ -62,7 +61,6 @@ func NewBroadcastClients(
 	confirmedSequenceNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
 	addrVerifier contracts.AddressVerifierInterface,
-	syncTillBlock uint64,
 ) (*BroadcastClients, error) {
 	config := configFetcher()
 	if len(config.URL) == 0 && len(config.SecondaryURL) == 0 {
@@ -82,7 +80,6 @@ func NewBroadcastClients(
 		primaryClients:   make([]*broadcastclient.BroadcastClient, 0, len(config.URL)),
 		secondaryClients: make([]*broadcastclient.BroadcastClient, 0, len(config.SecondaryURL)),
 		secondaryURL:     config.SecondaryURL,
-		syncTillBlock:    syncTillBlock,
 	}
 	clients.makeClient = func(url string, router *Router) (*broadcastclient.BroadcastClient, error) {
 		return broadcastclient.NewBroadcastClient(
@@ -95,7 +92,6 @@ func NewBroadcastClients(
 			fatalErrChan,
 			addrVerifier,
 			func(delta int32) { clients.adjustCount(delta) },
-			syncTillBlock,
 		)
 	}
 
@@ -183,10 +179,6 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 		// Multiple select statements to prioritize reading messages from primary feeds' channels and avoid starving of timers
 		var msg m.BroadcastFeedMessage
 		for {
-			if bcs.syncTillBlock > 0 && uint64(msg.SequenceNumber) >= bcs.syncTillBlock {
-				log.Info("stopping block creation in broadcast client", "syncTillBlock", bcs.syncTillBlock)
-				return
-			}
 			select {
 			// Cycle buckets to get rid of old entries
 			case <-recentFeedItemsCleanup.C:
@@ -204,6 +196,10 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 			// Primary feeds
 			case msg = <-bcs.primaryRouter.messageChan:
 				if err := msgHandler(msg, bcs.primaryRouter); err != nil {
+					if errors.Is(err, broadcastclient.TransactionStreamerBlockCreationStopped) {
+						log.Info("stopping block creation in broadcast clients because transaction streamer is stopped")
+						return
+					}
 					log.Error("Error routing message from Primary Sequencer Feeds", "err", err)
 				}
 				clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)

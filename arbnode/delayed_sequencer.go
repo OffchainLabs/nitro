@@ -33,7 +33,6 @@ type DelayedSequencer struct {
 	waitingForFinalizedBlock uint64
 	mutex                    sync.Mutex
 	config                   DelayedSequencerConfigFetcher
-	syncTillBlock            uint64
 }
 
 type DelayedSequencerConfig struct {
@@ -66,16 +65,15 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	UseMergeFinality:    false,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher, syncTillBlock uint64) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
 	d := &DelayedSequencer{
-		l1Reader:      l1Reader,
-		bridge:        reader.DelayedBridge(),
-		inbox:         reader.Tracker(),
-		reader:        reader,
-		coordinator:   coordinator,
-		exec:          exec,
-		config:        config,
-		syncTillBlock: syncTillBlock,
+		l1Reader:    l1Reader,
+		bridge:      reader.DelayedBridge(),
+		inbox:       reader.Tracker(),
+		reader:      reader,
+		coordinator: coordinator,
+		exec:        exec,
+		config:      config,
 	}
 	if coordinator != nil {
 		coordinator.SetDelayedSequencer(d)
@@ -227,7 +225,7 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 			}
 			if err := d.trySequence(ctx, nextHeader); err != nil {
 				if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
-					log.Info("stopping block creation in delayed sequencer", "syncTillBlock", d.syncTillBlock)
+					log.Info("stopping block creation in delayed sequencer because execution engine is stopped")
 					return
 				}
 				log.Error("Delayed sequencer error", "err", err)

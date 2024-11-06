@@ -498,7 +498,6 @@ func createNodeImpl(
 			nil,
 			fatalErrChan,
 			bpVerifier,
-			config.TransactionStreamer.SyncTillBlock,
 		)
 		if err != nil {
 			return nil, err
@@ -739,7 +738,7 @@ func createNodeImpl(
 	}
 
 	// always create DelayedSequencer, it won't do anything if it is disabled
-	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer }, configFetcher.Get().TransactionStreamer.SyncTillBlock)
+	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 	if err != nil {
 		return nil, err
 	}

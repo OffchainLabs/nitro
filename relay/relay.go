@@ -56,7 +56,6 @@ func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 		confirmedSequenceNumberListener,
 		feedErrChan,
 		nil,
-		0,
 	)
 	if err != nil {
 		return nil, err
