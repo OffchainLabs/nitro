@@ -3,7 +3,7 @@
 
 use arbutil::{
     evm::{
-        api::{DataReader, EvmApi},
+        api::{DataReader, EvmApi, Ink},
         EvmData,
     },
     pricing,
@@ -74,7 +74,7 @@ impl<D: DataReader, E: EvmApi<D>> WasmEnv<D, E> {
 
     pub fn start<'a>(
         env: &'a mut WasmEnvMut<'_, D, E>,
-        ink: u64,
+        ink: Ink,
     ) -> Result<HostioInfo<'a, D, E>, Escape> {
         let mut info = Self::program(env)?;
         info.buy_ink(pricing::HOSTIO_INK + ink)?;
@@ -88,7 +88,7 @@ impl<D: DataReader, E: EvmApi<D>> WasmEnv<D, E> {
             env,
             memory,
             store,
-            start_ink: 0,
+            start_ink: Ink(0),
         };
         if info.env.evm_data.tracing {
             info.start_ink = info.ink_ready()?;
@@ -114,16 +114,16 @@ pub struct MeterData {
 }
 
 impl MeterData {
-    pub fn ink(&self) -> u64 {
-        unsafe { self.ink_left.as_ref().val.u64 }
+    pub fn ink(&self) -> Ink {
+        Ink(unsafe { self.ink_left.as_ref().val.u64 })
     }
 
     pub fn status(&self) -> u32 {
         unsafe { self.ink_status.as_ref().val.u32 }
     }
 
-    pub fn set_ink(&mut self, ink: u64) {
-        unsafe { self.ink_left.as_mut().val = RawValue { u64: ink } }
+    pub fn set_ink(&mut self, ink: Ink) {
+        unsafe { self.ink_left.as_mut().val = RawValue { u64: ink.0 } }
     }
 
     pub fn set_status(&mut self, status: u32) {
@@ -140,7 +140,7 @@ pub struct HostioInfo<'a, D: DataReader, E: EvmApi<D>> {
     pub env: &'a mut WasmEnv<D, E>,
     pub memory: Memory,
     pub store: StoreMut<'a>,
-    pub start_ink: u64,
+    pub start_ink: Ink,
 }
 
 impl<'a, D: DataReader, E: EvmApi<D>> HostioInfo<'a, D, E> {

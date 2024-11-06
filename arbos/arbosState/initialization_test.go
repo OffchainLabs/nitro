@@ -66,7 +66,6 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
 	stateroot, err := InitializeArbosInDatabase(raw, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
-
 	triedbConfig := cacheConfig.TriedbConfig()
 	stateDb, err := state.New(stateroot, state.NewDatabaseWithConfig(raw, triedbConfig), nil)
 	Require(t, err)

@@ -29,8 +29,16 @@ pub struct LruCounters {
     pub does_not_fit: u32,
 }
 
+pub struct LongTermCounters {
+    pub hits: u32,
+    pub misses: u32,
+}
+
 pub struct InitCache {
     long_term: HashMap<CacheKey, CacheItem>,
+    long_term_size_bytes: usize,
+    long_term_counters: LongTermCounters,
+
     lru: CLruCache<CacheKey, CacheItem, RandomState, CustomWeightScale>,
     lru_counters: LruCounters,
 }
@@ -91,6 +99,20 @@ pub struct LruCacheMetrics {
     pub does_not_fit: u32,
 }
 
+#[repr(C)]
+pub struct LongTermCacheMetrics {
+    pub size_bytes: u64,
+    pub count: u32,
+    pub hits: u32,
+    pub misses: u32,
+}
+
+#[repr(C)]
+pub struct CacheMetrics {
+    pub lru: LruCacheMetrics,
+    pub long_term: LongTermCacheMetrics,
+}
+
 pub fn deserialize_module(
     module: &[u8],
     version: u16,
@@ -117,6 +139,9 @@ impl InitCache {
     fn new(size_bytes: usize) -> Self {
         Self {
             long_term: HashMap::new(),
+            long_term_size_bytes: 0,
+            long_term_counters: LongTermCounters { hits: 0, misses: 0 },
+
             lru: CLruCache::with_config(
                 CLruCacheConfig::new(NonZeroUsize::new(size_bytes).unwrap())
                     .with_scale(CustomWeightScale),
@@ -136,22 +161,41 @@ impl InitCache {
     }
 
     /// Retrieves a cached value, updating items as necessary.
-    pub fn get(module_hash: Bytes32, version: u16, debug: bool) -> Option<(Module, Store)> {
-        let mut cache = cache!();
+    /// If long_term_tag is 1 and the item is only in LRU will insert to long term cache.
+    pub fn get(
+        module_hash: Bytes32,
+        version: u16,
+        long_term_tag: u32,
+        debug: bool,
+    ) -> Option<(Module, Store)> {
         let key = CacheKey::new(module_hash, version, debug);
+        let mut cache = cache!();
 
         // See if the item is in the long term cache
         if let Some(item) = cache.long_term.get(&key) {
-            return Some(item.data());
+            let data = item.data();
+            cache.long_term_counters.hits += 1;
+            return Some(data);
+        }
+        if long_term_tag == Self::ARBOS_TAG {
+            // only count misses only when we can expect to find the item in long term cache
+            cache.long_term_counters.misses += 1;
         }
 
         // See if the item is in the LRU cache, promoting if so
-        if let Some(item) = cache.lru.get(&key) {
-            let data = item.data();
+        if let Some(item) = cache.lru.peek(&key).cloned() {
             cache.lru_counters.hits += 1;
-            return Some(data);
+            if long_term_tag == Self::ARBOS_TAG {
+                cache.long_term_size_bytes += item.entry_size_estimate_bytes;
+                cache.long_term.insert(key, item.clone());
+            } else {
+                // only calls get to move the key to the head of the LRU list
+                cache.lru.get(&key);
+            }
+            return Some((item.module, Store::new(item.engine)));
         }
         cache.lru_counters.misses += 1;
+
         None
     }
 
@@ -174,6 +218,7 @@ impl InitCache {
         if let Some(item) = cache.lru.peek(&key).cloned() {
             if long_term_tag == Self::ARBOS_TAG {
                 cache.long_term.insert(key, item.clone());
+                cache.long_term_size_bytes += item.entry_size_estimate_bytes;
             } else {
                 // only calls get to move the key to the head of the LRU list
                 cache.lru.get(&key);
@@ -195,6 +240,7 @@ impl InitCache {
             };
         } else {
             cache.long_term.insert(key, item);
+            cache.long_term_size_bytes += entry_size_estimate_bytes;
         }
         Ok(data)
     }
@@ -207,6 +253,7 @@ impl InitCache {
         let key = CacheKey::new(module_hash, version, debug);
         let mut cache = cache!();
         if let Some(item) = cache.long_term.remove(&key) {
+            cache.long_term_size_bytes -= item.entry_size_estimate_bytes;
             if cache.lru.put_with_weight(key, item).is_err() {
                 eprintln!("{}", Self::DOES_NOT_FIT_MSG);
             }
@@ -225,22 +272,24 @@ impl InitCache {
                 eprintln!("{}", Self::DOES_NOT_FIT_MSG);
             }
         }
+        cache.long_term_size_bytes = 0;
     }
 
-    pub fn get_lru_metrics() -> LruCacheMetrics {
+    pub fn get_metrics(output: &mut CacheMetrics) {
         let mut cache = cache!();
 
-        let count = cache.lru.len();
-        let metrics = LruCacheMetrics {
-            // add 1 to each entry to account that we subtracted 1 in the weight calculation
-            size_bytes: (cache.lru.weight() + count).try_into().unwrap(),
+        let lru_count = cache.lru.len();
+        // adds 1 to each entry to account that we subtracted 1 in the weight calculation
+        output.lru.size_bytes = (cache.lru.weight() + lru_count).try_into().unwrap();
+        output.lru.count = lru_count.try_into().unwrap();
+        output.lru.hits = cache.lru_counters.hits;
+        output.lru.misses = cache.lru_counters.misses;
+        output.lru.does_not_fit = cache.lru_counters.does_not_fit;
 
-            count: count.try_into().unwrap(),
-
-            hits: cache.lru_counters.hits,
-            misses: cache.lru_counters.misses,
-            does_not_fit: cache.lru_counters.does_not_fit,
-        };
+        output.long_term.size_bytes = cache.long_term_size_bytes.try_into().unwrap();
+        output.long_term.count = cache.long_term.len().try_into().unwrap();
+        output.long_term.hits = cache.long_term_counters.hits;
+        output.long_term.misses = cache.long_term_counters.misses;
 
         // Empty counters.
         // go side, which is the only consumer of this function besides tests,
@@ -250,8 +299,7 @@ impl InitCache {
             misses: 0,
             does_not_fit: 0,
         };
-
-        metrics
+        cache.long_term_counters = LongTermCounters { hits: 0, misses: 0 };
     }
 
     // only used for testing

@@ -9,7 +9,14 @@ use crate::{
     value::FunctionType,
     Machine,
 };
-use arbutil::{evm, operator::OperatorInfo, Bytes32};
+use arbutil::{
+    evm::{
+        self,
+        api::{Gas, Ink},
+    },
+    operator::OperatorInfo,
+    Bytes32,
+};
 use derivative::Derivative;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
@@ -188,15 +195,15 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MachineMeter {
-    Ready(u64),
+    Ready(Ink),
     Exhausted,
 }
 
 impl MachineMeter {
-    pub fn ink(self) -> u64 {
+    pub fn ink(self) -> Ink {
         match self {
             Self::Ready(ink) => ink,
-            Self::Exhausted => 0,
+            Self::Exhausted => Ink(0),
         }
     }
 
@@ -210,8 +217,8 @@ impl MachineMeter {
 
 /// We don't implement `From` since it's unclear what 0 would map to
 #[allow(clippy::from_over_into)]
-impl Into<u64> for MachineMeter {
-    fn into(self) -> u64 {
+impl Into<Ink> for MachineMeter {
+    fn into(self) -> Ink {
         self.ink()
     }
 }
@@ -219,7 +226,7 @@ impl Into<u64> for MachineMeter {
 impl Display for MachineMeter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Ready(ink) => write!(f, "{ink} ink"),
+            Self::Ready(ink) => write!(f, "{} ink", ink.0),
             Self::Exhausted => write!(f, "exhausted"),
         }
     }
@@ -241,7 +248,7 @@ pub trait MeteredMachine {
     fn ink_left(&self) -> MachineMeter;
     fn set_meter(&mut self, meter: MachineMeter);
 
-    fn set_ink(&mut self, ink: u64) {
+    fn set_ink(&mut self, ink: Ink) {
         self.set_meter(MachineMeter::Ready(ink));
     }
 
@@ -250,14 +257,14 @@ pub trait MeteredMachine {
         Err(OutOfInkError)
     }
 
-    fn ink_ready(&mut self) -> Result<u64, OutOfInkError> {
+    fn ink_ready(&mut self) -> Result<Ink, OutOfInkError> {
         let MachineMeter::Ready(ink_left) = self.ink_left() else {
             return self.out_of_ink();
         };
         Ok(ink_left)
     }
 
-    fn buy_ink(&mut self, ink: u64) -> Result<(), OutOfInkError> {
+    fn buy_ink(&mut self, ink: Ink) -> Result<(), OutOfInkError> {
         let ink_left = self.ink_ready()?;
         if ink_left < ink {
             return self.out_of_ink();
@@ -267,7 +274,7 @@ pub trait MeteredMachine {
     }
 
     /// Checks if the user has enough ink, but doesn't burn any
-    fn require_ink(&mut self, ink: u64) -> Result<(), OutOfInkError> {
+    fn require_ink(&mut self, ink: Ink) -> Result<(), OutOfInkError> {
         let ink_left = self.ink_ready()?;
         if ink_left < ink {
             return self.out_of_ink();
@@ -277,18 +284,18 @@ pub trait MeteredMachine {
 
     /// Pays for a write into the client.
     fn pay_for_write(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(sat_add_mul(5040, 30, bytes.saturating_sub(32)))
+        self.buy_ink(Ink(sat_add_mul(5040, 30, bytes.saturating_sub(32))))
     }
 
     /// Pays for a read into the host.
     fn pay_for_read(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(sat_add_mul(16381, 55, bytes.saturating_sub(32)))
+        self.buy_ink(Ink(sat_add_mul(16381, 55, bytes.saturating_sub(32))))
     }
 
     /// Pays for both I/O and keccak.
     fn pay_for_keccak(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
         let words = evm::evm_words(bytes).saturating_sub(2);
-        self.buy_ink(sat_add_mul(121800, 21000, words))
+        self.buy_ink(Ink(sat_add_mul(121800, 21000, words)))
     }
 
     /// Pays for copying bytes from geth.
@@ -305,14 +312,14 @@ pub trait MeteredMachine {
                 false => break,
             }
         }
-        self.buy_ink(3000 + exp * 17500)
+        self.buy_ink(Ink(3000 + exp * 17500))
     }
 }
 
 pub trait GasMeteredMachine: MeteredMachine {
     fn pricing(&self) -> PricingParams;
 
-    fn gas_left(&self) -> Result<u64, OutOfInkError> {
+    fn gas_left(&self) -> Result<Gas, OutOfInkError> {
         let pricing = self.pricing();
         match self.ink_left() {
             MachineMeter::Ready(ink) => Ok(pricing.ink_to_gas(ink)),
@@ -320,13 +327,13 @@ pub trait GasMeteredMachine: MeteredMachine {
         }
     }
 
-    fn buy_gas(&mut self, gas: u64) -> Result<(), OutOfInkError> {
+    fn buy_gas(&mut self, gas: Gas) -> Result<(), OutOfInkError> {
         let pricing = self.pricing();
         self.buy_ink(pricing.gas_to_ink(gas))
     }
 
     /// Checks if the user has enough gas, but doesn't burn any
-    fn require_gas(&mut self, gas: u64) -> Result<(), OutOfInkError> {
+    fn require_gas(&mut self, gas: Gas) -> Result<(), OutOfInkError> {
         let pricing = self.pricing();
         self.require_ink(pricing.gas_to_ink(gas))
     }
@@ -350,7 +357,7 @@ impl MeteredMachine for Machine {
             }};
         }
 
-        let ink = || convert!(self.get_global(STYLUS_INK_LEFT));
+        let ink = || Ink(convert!(self.get_global(STYLUS_INK_LEFT)));
         let status: u32 = convert!(self.get_global(STYLUS_INK_STATUS));
 
         match status {
@@ -362,7 +369,7 @@ impl MeteredMachine for Machine {
     fn set_meter(&mut self, meter: MachineMeter) {
         let ink = meter.ink();
         let status = meter.status();
-        self.set_global(STYLUS_INK_LEFT, ink.into()).unwrap();
+        self.set_global(STYLUS_INK_LEFT, ink.0.into()).unwrap();
         self.set_global(STYLUS_INK_STATUS, status.into()).unwrap();
     }
 }
