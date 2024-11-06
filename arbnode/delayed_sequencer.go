@@ -239,7 +239,5 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 
 func (d *DelayedSequencer) Start(ctxIn context.Context) {
 	d.StopWaiter.Start(ctxIn, d)
-	d.LaunchThread(func(ctx context.Context) {
-		d.run(ctx)
-	})
+	d.LaunchThread(d.run)
 }

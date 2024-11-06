@@ -177,7 +177,6 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 		}
 
 		// Multiple select statements to prioritize reading messages from primary feeds' channels and avoid starving of timers
-		var msg m.BroadcastFeedMessage
 		for {
 			select {
 			// Cycle buckets to get rid of old entries
@@ -194,7 +193,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			// Primary feeds
-			case msg = <-bcs.primaryRouter.messageChan:
+			case msg := <-bcs.primaryRouter.messageChan:
 				if err := msgHandler(msg, bcs.primaryRouter); err != nil {
 					if errors.Is(err, broadcastclient.TransactionStreamerBlockCreationStopped) {
 						log.Info("stopping block creation in broadcast clients because transaction streamer is stopped")
@@ -216,7 +215,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 				case <-ctx.Done():
 					return
 				// Secondary Feeds
-				case msg = <-bcs.secondaryRouter.messageChan:
+				case msg := <-bcs.secondaryRouter.messageChan:
 					if err := msgHandler(msg, bcs.secondaryRouter); err != nil {
 						log.Error("Error routing message from Secondary Sequencer Feeds", "err", err)
 					}
@@ -224,7 +223,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 				case cs := <-bcs.secondaryRouter.confirmedSequenceNumberChan:
 					confSeqHandler(cs, bcs.secondaryRouter)
 					clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)
-				case msg = <-bcs.primaryRouter.messageChan:
+				case msg := <-bcs.primaryRouter.messageChan:
 					if err := msgHandler(msg, bcs.primaryRouter); err != nil {
 						log.Error("Error routing message from Primary Sequencer Feeds", "err", err)
 					}
