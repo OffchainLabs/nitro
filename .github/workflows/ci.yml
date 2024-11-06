@@ -41,7 +41,7 @@ jobs:
             test-state-scheme: hash
 
           - test-mode: race
-            test-state-scheme: race
+            test-state-scheme: path
 
           - test-mode: race
             test-state-scheme: hash
