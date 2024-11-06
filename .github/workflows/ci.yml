@@ -30,7 +30,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race, challenge, stylus, long, redis]
+        # Run the defaults and race tests with `path` and `hash` state scheme.
+        # the others we run with the default test-state-scheme which at the time
+        # of writing this is `path`.
+        include:
+          - test-mode: defaults
+            test-state-scheme: path
+
+          - test-mode: defaults
+            test-state-scheme: hash
+
+          - test-mode: race
+            test-state-scheme: race
+
+          - test-mode: race
+            test-state-scheme: hash
+
+          - test-mode: challenge
+          - test-mode: stylus
+          - test-mode: long
+          - test-mode: redis
 
     steps:
       - name: Checkout
@@ -183,11 +202,11 @@ jobs:
           echo "GOGC=80" >> "$GITHUB_ENV"
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
 
-      - name: run tests without race detection and path state scheme
+      - name: run tests without race detection (path and hash state scheme)
         if: matrix.test-mode == 'defaults'
         shell: bash
         env:
-          TEST_STATE_SCHEME: path
+          TEST_STATE_SCHEME: ${{ matrix.test-state-scheme }}
         run: |
           skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
           packages=`go list ./...`
@@ -198,45 +217,17 @@ jobs:
             fi
           done
 
-      - name: run tests with race detection
+      - name: run tests with race detection (path and hash state scheme)
         if: matrix.test-mode == 'race'
         shell: bash
         env:
-          TEST_STATE_SCHEME: hash
+          TEST_STATE_SCHEME: ${{ matrix.test-state-scheme }}
         run: |
           skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
             if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- ./... -race -skip "$skip_tests" -timeout=40m > >(stdbuf -oL tee full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
-
-      - name: run tests with race detection and path state scheme
-        if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: path
-        run: |
-          skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -skip "$skip_tests" -timeout 30m > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
-
-      - name: run tests with race detection and hash state scheme
-        if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: hash
-        run: |
-          skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -skip "$skip_tests" -timeout 30m; then
               exit 1
             fi
           done
