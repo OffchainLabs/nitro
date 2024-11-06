@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -28,6 +30,13 @@ type BlockMetadataRebuilderConfig struct {
 	APIBlocksLimit  int           `koanf:"api-blocks-limit"`
 }
 
+func (c *BlockMetadataRebuilderConfig) Validate() error {
+	if c.APIBlocksLimit < 0 {
+		return errors.New("api-blocks-limit cannot be negative")
+	}
+	return nil
+}
+
 var DefaultBlockMetadataRebuilderConfig = BlockMetadataRebuilderConfig{
 	Enable:          false,
 	RebuildInterval: time.Minute * 5,
@@ -45,19 +54,19 @@ func BlockMetadataRebuilderConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type BlockMetadataRebuilder struct {
 	stopwaiter.StopWaiter
-	config *BlockMetadataRebuilderConfig
+	config BlockMetadataRebuilderConfig
 	db     ethdb.Database
 	client *rpc.Client
 	exec   execution.ExecutionClient
 }
 
-func NewBlockMetadataRebuilder(ctx context.Context, c *BlockMetadataRebuilderConfig, db ethdb.Database, exec execution.ExecutionClient) (*BlockMetadataRebuilder, error) {
+func NewBlockMetadataRebuilder(ctx context.Context, c BlockMetadataRebuilderConfig, db ethdb.Database, exec execution.ExecutionClient) (*BlockMetadataRebuilder, error) {
 	var err error
 	var jwt *common.Hash
 	if c.JWTSecret != "" {
 		jwt, err = signature.LoadSigningKey(c.JWTSecret)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("BlockMetadataRebuilder: error loading jwt secret: %w", err)
 		}
 	}
 	var client *rpc.Client
@@ -67,7 +76,7 @@ func NewBlockMetadataRebuilder(ctx context.Context, c *BlockMetadataRebuilderCon
 		client, err = rpc.DialOptions(ctx, c.Url, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(*jwt))))
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("BlockMetadataRebuilder: error connecting to bulk blockMetadata API: %w", err)
 	}
 	return &BlockMetadataRebuilder{
 		config: c,
