@@ -44,22 +44,22 @@ func EspressoTestChainParams() params.ArbitrumChainParams {
 		DataAvailabilityCommittee: false,
 		InitialArbOSVersion:       31,
 		InitialChainOwner:         common.Address{},
-		EnableEspresso: 		   false,
+		EnableEspresso:            false,
 	}
 }
 
-func waitForConfigUpdate(t *testing.T, ctx context.Context, builder *NodeBuilder) error{
+func waitForConfigUpdate(t *testing.T, ctx context.Context, builder *NodeBuilder) error {
 
-    return waitForWith(t, ctx, 120*time.Second, 1*time.Second, func() bool{
-      newArbOSConfig, err := builder.L2.ExecNode.GetArbOSConfigAtHeight(0)
-      Require(t, err)
+	return waitForWith(t, ctx, 120*time.Second, 1*time.Second, func() bool {
+		newArbOSConfig, err := builder.L2.ExecNode.GetArbOSConfigAtHeight(0)
+		Require(t, err)
 
-      if newArbOSConfig.ArbitrumChainParams.EnableEspresso != false{
-        return false
-      }
-      Require(t,err)
-      return true
-    })
+		if newArbOSConfig.ArbitrumChainParams.EnableEspresso != false {
+			return false
+		}
+		Require(t, err)
+		return true
+	})
 }
 
 func TestEspressoArbOSConfig(t *testing.T) {
@@ -93,36 +93,36 @@ func TestEspressoArbOSConfig(t *testing.T) {
 		return msgCnt >= expected && validatedCnt >= expected
 	})
 	Require(t, err)
-  
 
-  initialArbOSConfig, err := builder.L2.ExecNode.GetArbOSConfigAtHeight(0)
-  Require(t,err)
+	initialArbOSConfig, err := builder.L2.ExecNode.GetArbOSConfigAtHeight(0)
+	Require(t, err)
 
-  //assert that espresso is initially enabled
-  if initialArbOSConfig.ArbitrumChainParams.EnableEspresso != true{
-    err = fmt.Errorf("Initial config should have EnableEspresso == true!")
-    
-  } 
-  Require(t,err)
+	// assert that espresso is initially enabled
+	if initialArbOSConfig.ArbitrumChainParams.EnableEspresso != true {
+		err = fmt.Errorf("Initial config should have EnableEspresso == true!")
 
-  newArbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x070"), builder.L2.Client)
-  Require(t, err)
+	}
+	Require(t, err)
 
-  newArbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
-  Require(t, err)
-  
-  l2auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	newArbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x070"), builder.L2.Client)
+	Require(t, err)
 
-  _, err = newArbDebug.BecomeChainOwner(&l2auth)
-  Require(t, err)
-  chainConfig, err := json.Marshal(EspressoArbOSTestChainConfig())
-  Require(t, err)
-  
-  chainConfigString := string(chainConfig)
+	newArbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
+	Require(t, err)
 
-  _, err = newArbOwner.SetChainConfig(&l2auth, chainConfigString)
-  Require(t, err)
-  // check if chain config is updated TODO replace this with a wait for with to poll for some time potentially
-  
-  waitForConfigUpdate(t, ctx, builder)
+	l2auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	_, err = newArbDebug.BecomeChainOwner(&l2auth)
+	Require(t, err)
+	chainConfig, err := json.Marshal(EspressoArbOSTestChainConfig())
+	Require(t, err)
+
+	chainConfigString := string(chainConfig)
+
+	_, err = newArbOwner.SetChainConfig(&l2auth, chainConfigString)
+	Require(t, err)
+	// check if chain config is updated TODO replace this with a wait for with to poll for some time potentially
+
+	err = waitForConfigUpdate(t, ctx, builder)
+	Require(t, err)
 }
