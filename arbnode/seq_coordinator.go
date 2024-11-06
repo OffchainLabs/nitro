@@ -802,6 +802,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	}
 
 	if (wantsLockoutErr != nil) || (msgReadErr != nil) {
+		//lint:ignore nilerr we want to retry after redis error
 		return c.retryAfterRedisError(), nil
 	}
 	return c.noRedisError(), nil
