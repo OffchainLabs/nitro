@@ -22,6 +22,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -593,14 +594,14 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	return nil
 }
 
-func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
+func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	chosenSeq, err := c.RedisCoordinator().RecommendSequencerWantingLockout(ctx)
 	if err != nil {
 		log.Warn("coordinator failed finding sequencer wanting lockout", "err", err)
-		return c.retryAfterRedisError()
+		return c.retryAfterRedisError(), nil
 	}
 	if c.prevChosenSequencer == c.config.Url() {
-		return c.updateWithLockout(ctx, chosenSeq)
+		return c.updateWithLockout(ctx, chosenSeq), nil
 	}
 	if chosenSeq != c.config.Url() && chosenSeq != c.prevChosenSequencer {
 		var err error
@@ -621,14 +622,14 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	localMsgCount, err := c.streamer.GetMessageCount()
 	if err != nil {
 		log.Error("cannot read message count", "err", err)
-		return c.config.UpdateInterval
+		return c.config.UpdateInterval, nil
 	}
 	// Cache the previous redis coordinator's message count
 	if c.prevRedisCoordinator != nil && c.prevRedisMessageCount == 0 {
 		prevRemoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, c.prevRedisCoordinator.Client)
 		if err != nil {
 			log.Warn("cannot get remote message count", "err", err)
-			return c.retryAfterRedisError()
+			return c.retryAfterRedisError(), nil
 		}
 		c.prevRedisMessageCount = prevRemoteMsgCount
 	}
@@ -643,7 +644,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	remoteMsgCount, err := c.GetRemoteMsgCount()
 	if err != nil {
 		log.Warn("cannot get remote message count", "err", err)
-		return c.retryAfterRedisError()
+		return c.retryAfterRedisError(), nil
 	}
 	readUntil := min(localMsgCount+c.config.MsgPerPoll, remoteMsgCount)
 	client := c.RedisCoordinator().Client
@@ -720,6 +721,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	}
 	if len(messages) > 0 {
 		if err := c.streamer.AddMessages(localMsgCount, false, messages); err != nil {
+			if errors.Is(err, broadcastclient.TransactionStreamerBlockCreationStopped) {
+				return time.Duration(0), broadcastclient.TransactionStreamerBlockCreationStopped
+			}
 			log.Warn("coordinator failed to add messages", "err", err, "pos", localMsgCount, "length", len(messages))
 		} else {
 			localMsgCount = msgToRead
@@ -727,7 +731,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	}
 
 	if c.config.Url() == redisutil.INVALID_URL {
-		return c.noRedisError()
+		return c.noRedisError(), nil
 	}
 
 	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and execution processed every message that consensus had 1 second ago
@@ -745,7 +749,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	if synced && localMsgCount >= remoteMsgCount && chosenSeq == c.config.Url() {
 		if c.sequencer == nil {
 			log.Error("myurl main sequencer, but no sequencer exists")
-			return c.noRedisError()
+			return c.noRedisError(), nil
 		}
 		processedMessages, err := c.streamer.GetProcessedMessageCount()
 		if err != nil {
@@ -765,7 +769,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 					log.Warn("failed to update wants lockout key", "err", err)
 				}
 				c.prevChosenSequencer = ""
-				return c.retryAfterRedisError()
+				return c.retryAfterRedisError(), nil
 			}
 			log.Info("caught chosen-coordinator lock", "myUrl", c.config.Url())
 			if c.delayedSequencer != nil {
@@ -782,7 +786,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			}
 			c.sequencer.Activate()
 			c.prevChosenSequencer = c.config.Url()
-			return c.noRedisError()
+			return c.noRedisError(), nil
 		}
 	}
 
@@ -798,9 +802,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	}
 
 	if (wantsLockoutErr != nil) || (msgReadErr != nil) {
-		return c.retryAfterRedisError()
+		return c.retryAfterRedisError(), nil
 	}
-	return c.noRedisError()
+	return c.noRedisError(), nil
 }
 
 // Warning: acquires the wantsLockoutMutex
@@ -868,11 +872,11 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 
 	c.LaunchThread(func(ctx context.Context) {
 		for {
-			if c.streamer.Stopped() {
+			interval, err := c.chooseRedisAndUpdate(ctx, newRedisCoordinator)
+			if errors.Is(err, broadcastclient.TransactionStreamerBlockCreationStopped) {
 				log.Info("stopping block creation in sequencer because transaction streamer has stopped")
 				return
 			}
-			interval := c.chooseRedisAndUpdate(ctx, newRedisCoordinator)
 			if ctx.Err() != nil {
 				return
 			}
@@ -893,13 +897,13 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	}
 }
 
-func (c *SeqCoordinator) chooseRedisAndUpdate(ctx context.Context, newRedisCoordinator *redisutil.RedisCoordinator) time.Duration {
+func (c *SeqCoordinator) chooseRedisAndUpdate(ctx context.Context, newRedisCoordinator *redisutil.RedisCoordinator) (time.Duration, error) {
 	// If we have a new redis coordinator, and we haven't switched to it yet, try to switch.
 	if c.config.NewRedisUrl != "" && c.prevRedisCoordinator == nil {
 		// If we fail to try to switch, we'll retry soon.
 		if err := c.trySwitchingRedis(ctx, newRedisCoordinator); err != nil {
 			log.Warn("error while trying to switch redis coordinator", "err", err)
-			return c.retryAfterRedisError()
+			return c.retryAfterRedisError(), nil
 		}
 	}
 	return c.update(ctx)

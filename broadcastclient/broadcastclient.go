@@ -437,7 +437,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
 							if errors.Is(err, TransactionStreamerBlockCreationStopped) {
-								log.Info("stopping block creation in broadcast client because transaction streamer is stopped")
+								log.Info("stopping block creation in broadcast client because transaction streamer has stopped")
 								return
 							}
 							log.Error("Error adding message from Sequencer Feed", "err", err)

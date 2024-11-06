@@ -196,7 +196,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 			case msg := <-bcs.primaryRouter.messageChan:
 				if err := msgHandler(msg, bcs.primaryRouter); err != nil {
 					if errors.Is(err, broadcastclient.TransactionStreamerBlockCreationStopped) {
-						log.Info("stopping block creation in broadcast clients because transaction streamer is stopped")
+						log.Info("stopping block creation in broadcast clients because transaction streamer has stopped")
 						return
 					}
 					log.Error("Error routing message from Primary Sequencer Feeds", "err", err)

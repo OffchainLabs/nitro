@@ -225,7 +225,7 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 			}
 			if err := d.trySequence(ctx, nextHeader); err != nil {
 				if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
-					log.Info("stopping block creation in delayed sequencer because execution engine is stopped")
+					log.Info("stopping block creation in delayed sequencer because execution engine has stopped")
 					return
 				}
 				log.Error("Delayed sequencer error", "err", err)

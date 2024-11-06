@@ -19,6 +19,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -124,11 +125,11 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 	hadError := false
 	r.LaunchThread(func(ctx context.Context) {
 		for {
-			if r.tracker.txStreamer.Stopped() {
+			err := r.run(ctx, hadError)
+			if errors.Is(err, broadcastclient.TransactionStreamerBlockCreationStopped) {
 				log.Info("stopping block creation in inbox reader because transaction streamer has stopped")
 				return
 			}
-			err := r.run(ctx, hadError)
 			if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
 				log.Warn("error reading inbox", "err", err)
 				hadError = true
