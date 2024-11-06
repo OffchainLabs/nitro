@@ -1224,7 +1224,6 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	stack.RegisterAPIs(tracers.APIs(l1backend.APIBackend))
 
 	Require(t, stack.Start())
-	Require(t, l1backend.Start())
 
 	rpcClient := stack.Attach()
 
