@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/redis/go-redis/v9"
 )
 
 // RedisCoordinator builds upon RedisCoordinator of redisutil with additional functionality

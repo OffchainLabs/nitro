@@ -8,7 +8,7 @@ use crate::{
 };
 use arbutil::{
     evm::{
-        api::{DataReader, EvmApi},
+        api::{DataReader, EvmApi, Ink},
         EvmData,
     },
     operator::OperatorCode,
@@ -121,12 +121,11 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         let compile = CompileConfig::version(version, debug);
         let env = WasmEnv::new(compile, None, evm, evm_data);
         let module_hash = env.evm_data.module_hash;
-
-        if let Some((module, store)) = InitCache::get(module_hash, version, debug) {
-            return Self::from_module(module, store, env);
-        }
         if !env.evm_data.cached {
             long_term_tag = 0;
+        }
+        if let Some((module, store)) = InitCache::get(module_hash, version, long_term_tag, debug) {
+            return Self::from_module(module, store, env);
         }
         let (module, store) =
             InitCache::insert(module_hash, module, version, long_term_tag, debug)?;
@@ -271,7 +270,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         global.set(store, value.into()).map_err(ErrReport::msg)
     }
 
-    pub fn call_func<R>(&mut self, func: TypedFunction<(), R>, ink: u64) -> Result<R>
+    pub fn call_func<R>(&mut self, func: TypedFunction<(), R>, ink: Ink) -> Result<R>
     where
         R: WasmTypeList,
     {
