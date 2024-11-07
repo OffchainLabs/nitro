@@ -212,7 +212,7 @@ jobs:
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
-          if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 35m -skip "$skip_tests"  > >(stdbuf -oL tee full.log | grep -vE "INFO|seal"); then
+          if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 35m -skip "$skip_tests" -tags=cionly > >(stdbuf -oL tee full.log | grep -vE "INFO|seal"); then
               exit 1
             fi
           done
