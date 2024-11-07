@@ -139,6 +139,7 @@ func TestPrestateTracerArbitrumStorage(t *testing.T) {
 
 	hourNow := (time.Now().Unix() - programs.ArbitrumStartTime) / 3600
 	hourActivatedFromTrace := arbmath.BytesToUint24(postData[8:11])
+	// #nosec G115
 	assert(uint64(hourActivatedFromTrace) == uint64(hourNow), nil, "wrong activated time in trace")
 
 	// compare gas costs
