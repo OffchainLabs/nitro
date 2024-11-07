@@ -433,12 +433,15 @@ func TestGasAccountingParams(t *testing.T) {
 	Require(t, err)
 	arbGasInfoSpeedLimit, arbGasInfoPoolSize, arbGasInfoTxGasLimit, err := arbGasInfo.GetGasAccountingParams(&bind.CallOpts{Context: ctx})
 	Require(t, err)
+	// #nosec G115
 	if arbGasInfoSpeedLimit.Cmp(big.NewInt(int64(speedLimit))) != 0 {
 		Fatal(t, "expected speed limit to be", speedLimit, "got", arbGasInfoSpeedLimit)
 	}
+	// #nosec G115
 	if arbGasInfoPoolSize.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
 		Fatal(t, "expected pool size to be", txGasLimit, "got", arbGasInfoPoolSize)
 	}
+	// #nosec G115
 	if arbGasInfoTxGasLimit.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
 		Fatal(t, "expected tx gas limit to be", txGasLimit, "got", arbGasInfoTxGasLimit)
 	}
