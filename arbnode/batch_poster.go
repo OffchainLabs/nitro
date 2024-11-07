@@ -1509,9 +1509,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 
 		if failOver {
 			batchPosterDAFailoverCount.Inc(1)
-		}
-
-		if err == nil {
+		} else {
 			batchPosterDASuccessCounter.Inc(1)
 			batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
 			eigenDADispersed = true
