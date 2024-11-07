@@ -63,7 +63,9 @@ func (info *TracingInfo) RecordStorageGet(key, mappedKey common.Hash) {
 	// Since CaptureArbitrumStorageGet is only implemented for prestateTracer there's no harm in calling it along with opcode tracing
 	// during TracingDuringEVM scenario (as prestate tracer fails to record any meaningful change due to the reason given above),
 	// prestateTracer now supports in removing opcode tracing from this function but other tracers don't, and that should be changed
-	tracer.CaptureArbitrumStorageGet(info.Contract.Address(), key, mappedKey, info.Depth, info.Scenario == TracingBeforeEVM)
+	if tracer.CaptureArbitrumStorageGet != nil {
+		tracer.CaptureArbitrumStorageGet(info.Contract.Address(), key, mappedKey, info.Depth, info.Scenario == TracingBeforeEVM)
+	}
 	if info.Scenario == TracingDuringEVM {
 		scope := &vm.ScopeContext{
 			Memory:   vm.NewMemory(),
@@ -87,7 +89,9 @@ func (info *TracingInfo) RecordStorageSet(key, mappedKey, value common.Hash) {
 	// Since CaptureArbitrumStorageSet is only implemented for prestateTracer there's no harm in calling it along with opcode tracing
 	// during TracingDuringEVM scenario (as prestate tracer fails to record any meaningful change due to the reason given above),
 	// prestateTracer now supports in removing opcode tracing from this function but other tracers don't, and that should be changed
-	tracer.CaptureArbitrumStorageSet(info.Contract.Address(), key, mappedKey, value, info.Depth, info.Scenario == TracingBeforeEVM)
+	if tracer.CaptureArbitrumStorageSet != nil {
+		tracer.CaptureArbitrumStorageSet(info.Contract.Address(), key, mappedKey, value, info.Depth, info.Scenario == TracingBeforeEVM)
+	}
 	if info.Scenario == TracingDuringEVM {
 		scope := &vm.ScopeContext{
 			Memory:   vm.NewMemory(),
@@ -138,7 +142,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 		tracer.OnOpcode(0, byte(vm.RETURN), 0, 0, retScope, []byte{}, depth+1, nil)
 	}
 	if tracer.OnExit != nil {
-		tracer.OnExit(depth+1, nil, 0, nil, false)
+		tracer.OnExit(depth, nil, 0, nil, false)
 	}
 
 	popScope := &vm.ScopeContext{

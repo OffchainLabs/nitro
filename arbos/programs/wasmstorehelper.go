@@ -17,12 +17,12 @@ import (
 
 // SaveActiveProgramToWasmStore is used to save active stylus programs to wasm store during rebuilding
 func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash common.Hash, code []byte, time uint64, debugMode bool, rebuildingStartBlockTime uint64) error {
-	params, err := p.Params()
+	progParams, err := p.Params()
 	if err != nil {
 		return err
 	}
 
-	program, err := p.getActiveProgram(codeHash, time, params)
+	program, err := p.getActiveProgram(codeHash, time, progParams)
 	if err != nil {
 		// The program is not active so return early
 		log.Info("program is not active, getActiveProgram returned error, hence do not include in rebuilding", "err", err)
@@ -43,8 +43,9 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return err
 	}
 
+	targets := statedb.Database().WasmTargets()
 	// If already in wasm store then return early
-	_, err = statedb.TryGetActivatedAsmMap([]rawdb.Target{rawdb.TargetWavm, rawdb.LocalTarget()}, moduleHash)
+	_, err = statedb.TryGetActivatedAsmMap(targets, moduleHash)
 	if err == nil {
 		return nil
 	}
@@ -55,10 +56,13 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
 	}
 
-	unlimitedGas := uint64(0xffffffffffff)
+	// don't charge gas
+	zeroArbosVersion := uint64(0)
+	zeroGas := uint64(0)
+
 	// We know program is activated, so it must be in correct version and not use too much memory
 	// Empty program address is supplied because we dont have access to this during rebuilding of wasm store
-	info, asmMap, err := activateProgramInternal(statedb, common.Address{}, codeHash, wasm, params.PageLimit, program.version, debugMode, &unlimitedGas)
+	info, asmMap, err := activateProgramInternal(statedb, common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas)
 	if err != nil {
 		log.Error("failed to reactivate program while rebuilding wasm store", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
