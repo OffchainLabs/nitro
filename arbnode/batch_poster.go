@@ -150,7 +150,8 @@ type BatchPosterDangerousConfig struct {
 type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
 	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
-	EnableEigenDAFailover              bool `koanf:"eigenda-failover" reload:"hot"`
+	// Enable failover to AnyTrust (if enabled) or native ETH DA if EigenDA fails.
+	EnableEigenDAFailover              bool `koanf:"enable-eigenda-failover" reload:"hot"`
 	// Max batch size.
 	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
@@ -217,7 +218,7 @@ type BatchPosterConfigFetcher func() *BatchPosterConfig
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
-	f.Bool(prefix+".eigenda-failover", DefaultBatchPosterConfig.EnableEigenDAFailover, "If EigenDA fails, failover to AnyTrust (if enabled) or native ETH DA")
+	f.Bool(prefix+".enable-eigenda-failover", DefaultBatchPosterConfig.EnableEigenDAFailover, "If EigenDA fails, failover to AnyTrust (if enabled) or native ETH DA")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum 4844 blob enabled batch size")
 	f.Int(prefix+".max-eigenda-batch-size", DefaultBatchPosterConfig.MaxEigenDABatchSize, "maximum EigenDA blob enabled batch size")
@@ -330,7 +331,7 @@ var EigenDABatchPosterConfig = BatchPosterConfig{
 	L1BlockBoundBypass:             time.Hour,
 	UseAccessLists:                 true,
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
-	CheckBatchCorrectness:          false,
+	CheckBatchCorrectness:          true,
 }
 
 type BatchPosterOpts struct {

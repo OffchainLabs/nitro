@@ -194,6 +194,7 @@ func TestEigenDAProxyFailOverToAnyTrust(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
 	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
 
+	// set EigenDA params into L2 sequencer config
 	builder.nodeConfig.EigenDA.Enable = true
 	builder.nodeConfig.EigenDA.Rpc = proxyURL
 	builder.nodeConfig.BatchPoster.EnableEigenDAFailover = true
@@ -225,6 +226,7 @@ func TestEigenDAProxyFailOverToAnyTrust(t *testing.T) {
 	childNodeConfigB.EigenDA.Enable = true
 	childNodeConfigB.EigenDA.Rpc = proxyURL
 	childNodeConfigB.BatchPoster.EnableEigenDAFailover = true
+	childNodeConfigB.BatchPoster.CheckBatchCorrectness = true
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: childNodeConfigB,
