@@ -22,3 +22,13 @@ func (m *SyncMap[K, V]) Store(key K, val V) {
 func (m *SyncMap[K, V]) Delete(key K) {
 	m.internal.Delete(key)
 }
+
+// Only used for testing
+func (m *SyncMap[K, V]) Keys() []K {
+	s := make([]K, 0)
+	m.internal.Range(func(k, v interface{}) bool {
+		s = append(s, k.(K))
+		return true
+	})
+	return s
+}

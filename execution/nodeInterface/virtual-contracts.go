@@ -23,7 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type addr = common.Address
@@ -115,35 +114,28 @@ func init() {
 		return msg, nil, nil
 	}
 
-	core.InterceptRPCGasCap = func(gascap *uint64, msg *core.Message, header *types.Header, statedb *state.StateDB) {
-		if *gascap == 0 {
-			// It's already unlimited
-			return
-		}
+	core.RPCPostingGasHook = func(msg *core.Message, header *types.Header, statedb *state.StateDB) (uint64, error) {
 		arbosVersion := arbosState.ArbOSVersion(statedb)
 		if arbosVersion == 0 {
 			// ArbOS hasn't been installed, so use the vanilla gas cap
-			return
+			return 0, nil
 		}
 		state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 		if err != nil {
-			log.Error("failed to open ArbOS state", "err", err)
-			return
+			return 0, err
 		}
 		if header.BaseFee.Sign() == 0 {
 			// if gas is free or there's no reimbursable poster, the user won't pay for L1 data costs
-			return
+			return 0, nil
 		}
 
 		brotliCompressionLevel, err := state.BrotliCompressionLevel()
 		if err != nil {
-			log.Error("failed to get brotli compression level", "err", err)
-			return
+			return 0, err
 		}
 		posterCost, _ := state.L1PricingState().PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 		// Use estimate mode because this is used to raise the gas cap, so we don't want to underestimate.
-		posterCostInL2Gas := arbos.GetPosterGas(state, header.BaseFee, core.MessageGasEstimationMode, posterCost)
-		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
+		return arbos.GetPosterGas(state, header.BaseFee, core.MessageGasEstimationMode, posterCost), nil
 	}
 
 	core.GetArbOSSpeedLimitPerSecond = func(statedb *state.StateDB) (uint64, error) {

@@ -56,11 +56,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 }
 
 func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
-	number, err := initData.GetNextBlockNumber()
-	if err != nil {
-		return common.Hash{}, err
-	}
-	triedbConfig := cacheConfig.TriedbConfig(chainConfig.IsVerkle(new(big.Int).SetUint64(number), timestamp))
+	triedbConfig := cacheConfig.TriedbConfig()
 	triedbConfig.Preimages = false
 	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
 	defer func() {
@@ -113,7 +109,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	if err != nil {
 		return common.Hash{}, err
 	}
-	for i := 0; addressReader.More(); i++ {
+	for i := uint64(0); addressReader.More(); i++ {
 		addr, err := addressReader.GetNext()
 		if err != nil {
 			return common.Hash{}, err
@@ -122,7 +118,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		if err != nil {
 			return common.Hash{}, err
 		}
-		if uint64(i) != slot {
+		if i != slot {
 			return common.Hash{}, errors.New("address table slot mismatch")
 		}
 	}
