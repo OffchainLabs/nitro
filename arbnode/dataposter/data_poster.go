@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -1087,7 +1088,7 @@ func (p *DataPoster) updateBalance(ctx context.Context) error {
 	return nil
 }
 
-const maxConsecutiveIntermittentErrors = 10
+const maxConsecutiveIntermittentErrors = 20
 
 func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg string) {
 	nonce := tx.FullTx.Nonce()
@@ -1096,10 +1097,17 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 		return
 	}
 	logLevel := log.Error
-	if errors.Is(err, storage.ErrStorageRace) {
+	isStorageRace := errors.Is(err, storage.ErrStorageRace)
+	if isStorageRace || strings.Contains(err.Error(), txpool.ErrFutureReplacePending.Error()) {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
-			logLevel = log.Debug
+			if isStorageRace {
+				logLevel = log.Debug
+			} else {
+				logLevel = log.Info
+			}
+		} else if isStorageRace {
+			logLevel = log.Warn
 		}
 	} else {
 		delete(p.errorCount, nonce)
