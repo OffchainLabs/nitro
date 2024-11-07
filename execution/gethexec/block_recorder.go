@@ -75,19 +75,21 @@ func NewBlockRecorder(config *BlockRecorderConfig, execEngine *ExecutionEngine, 
 	return recorder
 }
 
-func stateLogFunc(targetHeader, header *types.Header, hasState bool) {
-	if targetHeader == nil || header == nil {
-		return
-	}
-	gap := targetHeader.Number.Int64() - header.Number.Int64()
-	step := int64(500)
-	stage := "computing state"
-	if !hasState {
-		step = 3000
-		stage = "looking for full block"
-	}
-	if (gap >= step) && (gap%step == 0) {
-		log.Info("Setting up validation", "stage", stage, "current", header.Number, "target", targetHeader.Number)
+func stateLogFunc(targetHeader *types.Header) arbitrum.StateBuildingLogFunction {
+	return func(header *types.Header, hasState bool) {
+		if targetHeader == nil || header == nil {
+			return
+		}
+		gap := targetHeader.Number.Int64() - header.Number.Int64()
+		step := int64(500)
+		stage := "computing state"
+		if !hasState {
+			step = 3000
+			stage = "looking for full block"
+		}
+		if (gap >= step) && (gap%step == 0) {
+			log.Info("Setting up validation", "stage", stage, "current", header.Number, "target", targetHeader.Number)
+		}
 	}
 }
 
@@ -109,7 +111,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 		}
 	}
 
-	recordingdb, chaincontext, recordingKV, err := r.recordingDatabase.PrepareRecording(ctx, prevHeader, stateLogFunc)
+	recordingdb, chaincontext, recordingKV, err := r.recordingDatabase.PrepareRecording(ctx, prevHeader, stateLogFunc(prevHeader))
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +323,7 @@ func (r *BlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil
 			log.Warn("prepareblocks asked for non-found block", "hdrNum", hdrNum)
 			break
 		}
-		_, err := r.recordingDatabase.GetOrRecreateState(ctx, header, stateLogFunc)
+		_, err := r.recordingDatabase.GetOrRecreateState(ctx, header, stateLogFunc(header))
 		if err != nil {
 			log.Warn("prepareblocks failed to get state for block", "hdrNum", hdrNum, "err", err)
 			break
