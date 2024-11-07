@@ -114,7 +114,7 @@ func init() {
 		return msg, nil, nil
 	}
 
-	core.PostingGasHook = func(msg *core.Message, header *types.Header, statedb *state.StateDB) (uint64, error) {
+	core.RPCPostingGasHook = func(msg *core.Message, header *types.Header, statedb *state.StateDB) (uint64, error) {
 		arbosVersion := arbosState.ArbOSVersion(statedb)
 		if arbosVersion == 0 {
 			// ArbOS hasn't been installed, so use the vanilla gas cap
