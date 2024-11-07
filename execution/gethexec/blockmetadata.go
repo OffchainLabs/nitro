@@ -20,7 +20,7 @@ type BlockMetadataFetcher interface {
 	BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error)
 	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
-	SetReorgEventsReader(reorgEventsReader chan struct{})
+	SetReorgEventsNotifier(reorgEventsNotifier chan struct{})
 }
 
 type BulkBlockMetadataFetcher struct {
@@ -38,7 +38,7 @@ func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetch
 	if cacheSize != 0 {
 		cache = lru.NewSizeConstrainedCache[arbutil.MessageIndex, arbostypes.BlockMetadata](cacheSize)
 		reorgDetector = make(chan struct{})
-		fetcher.SetReorgEventsReader(reorgDetector)
+		fetcher.SetReorgEventsNotifier(reorgDetector)
 	}
 	return &BulkBlockMetadataFetcher{
 		bc:            bc,
