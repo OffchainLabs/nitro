@@ -1,6 +1,7 @@
 [workspace]
 members = [
         "arbutil",
+        "bench",
         "brotli",
         "brotli/fuzz",
         "caller-env",

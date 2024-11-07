@@ -191,7 +191,8 @@ fn forward_stub(file: &mut File) -> Result<()> {
         "{s};; allows user_host to request a trap\n\
         {s}(global $trap (mut i32) (i32.const 0))\n\
         {s}(func $check unreachable)\n\
-        {s}(func (export \"forward__set_trap\") unreachable)"
+        {s};; stub for the forward__set_trap function\n\
+        {s}(func $forward__set_trap unreachable)"
     );
 
     wln!("{s};; user linkage");

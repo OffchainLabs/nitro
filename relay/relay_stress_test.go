@@ -47,6 +47,7 @@ func (r *DummyUpStream) PopulateFeedBacklogByNumber(ctx context.Context, backlog
 	was := r.broadcaster.GetCachedMessageCount()
 	var seqNums []arbutil.MessageIndex
 	for i := was; i < was+backlogSize; i++ {
+		// #nosec G115
 		seqNums = append(seqNums, arbutil.MessageIndex(i))
 	}
 
@@ -160,7 +161,7 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 			connected++
 		}
 	}
-	if int32(connected) != int32(numClients) {
+	if connected != numClients {
 		t.Fail()
 	}
 	log.Info("number of clients connected", "expected", numClients, "got", connected)

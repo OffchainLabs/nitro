@@ -2,8 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // these tests seems to consume too much memory with race detection
-//go:build !race
-// +build !race
+// Test randomly fails with L1 gas price estimate should tend toward the basefee
+// so skipping locally, but running on CI
+//go:build !race && cionly
+// +build !race,cionly
 
 package arbtest
 

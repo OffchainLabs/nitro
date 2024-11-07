@@ -21,7 +21,7 @@ type Simple struct {
 	stopwaiter.StopWaiter
 	client      redis.UniversalClient
 	config      SimpleCfgFetcher
-	lockedUntil int64
+	lockedUntil atomic.Int64
 	mutex       sync.Mutex
 	stopping    bool
 	readyToLock func() bool
@@ -239,12 +239,12 @@ func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
 }
 
 // notice: It is possible for two consecutive reads to get decreasing values. That shouldn't matter.
-func atomicTimeRead(addr *int64) time.Time {
-	asint64 := atomic.LoadInt64(addr)
+func atomicTimeRead(addr *atomic.Int64) time.Time {
+	asint64 := addr.Load()
 	return time.UnixMilli(asint64)
 }
 
-func atomicTimeWrite(addr *int64, t time.Time) {
+func atomicTimeWrite(addr *atomic.Int64, t time.Time) {
 	asint64 := t.UnixMilli()
-	atomic.StoreInt64(addr, asint64)
+	addr.Store(asint64)
 }

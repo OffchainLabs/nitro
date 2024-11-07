@@ -381,7 +381,7 @@ fn test_storage() -> Result<()> {
 
     let (mut native, mut evm) = TestInstance::new_with_evm(filename, &compile, config)?;
     run_native(&mut native, &store_args, ink)?;
-    assert_eq!(evm.get_bytes32(key.into()).0, Bytes32(value));
+    assert_eq!(evm.get_bytes32(key.into(), 0).0, Bytes32(value));
     assert_eq!(run_native(&mut native, &load_args, ink)?, value);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
@@ -465,7 +465,7 @@ fn test_calls() -> Result<()> {
     run_native(&mut native, &args, ink)?;
 
     for (key, value) in slots {
-        assert_eq!(evm.get_bytes32(key).0, value);
+        assert_eq!(evm.get_bytes32(key, 0).0, value);
     }
     Ok(())
 }

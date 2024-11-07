@@ -247,6 +247,7 @@ func (v *L1Validator) generateNodeAction(
 			startStateProposedParentChain, err,
 		)
 	}
+	// #nosec G115
 	startStateProposedTime := time.Unix(int64(startStateProposedHeader.Time), 0)
 
 	v.txStreamer.PauseReorgs()
@@ -375,6 +376,7 @@ func (v *L1Validator) generateNodeAction(
 		return nil, false, fmt.Errorf("error getting rollup minimum assertion period: %w", err)
 	}
 
+	// #nosec G115
 	timeSinceProposed := big.NewInt(int64(l1BlockNumber) - int64(startStateProposedL1))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert

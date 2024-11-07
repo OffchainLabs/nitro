@@ -3,14 +3,13 @@ package validator
 import (
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type BatchInfo struct {
-	Number    uint64
-	BlockHash common.Hash
-	Data      []byte
+	Number uint64
+	Data   []byte
 }
 
 type ValidationInput struct {
@@ -18,7 +17,7 @@ type ValidationInput struct {
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
 	Preimages     map[arbutil.PreimageType]map[common.Hash][]byte
-	UserWasms     state.UserWasms
+	UserWasms     map[ethdb.WasmTarget]map[common.Hash][]byte
 	BatchInfo     []BatchInfo
 	DelayedMsg    []byte
 	StartState    GoGlobalState

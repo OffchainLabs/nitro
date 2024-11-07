@@ -112,8 +112,8 @@ func TestBlobAndInternalTxsAsDelayedMsgReject(t *testing.T) {
 
 	blocknum, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
-	for i := int64(0); i <= int64(blocknum); i++ {
-		block, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(i))
+	for i := uint64(0); i <= blocknum; i++ {
+		block, err := builder.L2.Client.BlockByNumber(ctx, new(big.Int).SetUint64(i))
 		Require(t, err)
 		for _, tx := range block.Transactions() {
 			if _, ok := txAcceptStatus[tx.Hash()]; ok {

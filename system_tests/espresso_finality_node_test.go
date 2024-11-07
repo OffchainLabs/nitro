@@ -5,19 +5,15 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 func createEspressoFinalityNode(t *testing.T, builder *NodeBuilder) (*TestClient, func()) {
 	nodeConfig := builder.nodeConfig
 	execConfig := builder.execConfig
-	// poster config
-	nodeConfig.BatchPoster.Enable = true
-	nodeConfig.BatchPoster.ErrorDelay = 5 * time.Second
-	nodeConfig.BatchPoster.MaxSize = 41
-	nodeConfig.BatchPoster.PollInterval = 10 * time.Second
-	nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
-	nodeConfig.BatchPoster.LightClientAddress = lightClientAddress
-	nodeConfig.BatchPoster.HotShotUrl = hotShotUrl
+	// Disable the batch poster because it requires redis if enabled on the 2nd node
+	nodeConfig.BatchPoster.Enable = false
 
 	nodeConfig.BlockValidator.Enable = true
 	nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
@@ -68,8 +64,9 @@ func TestEspressoFinalityNode(t *testing.T) {
 	msgCnt, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 
-	err = waitForWith(t, ctx, 6*time.Minute, 60*time.Second, func() bool {
+	err = waitForWith(t, ctx, 6*time.Minute, 5*time.Second, func() bool {
 		validatedCnt := builder.L2.ConsensusNode.BlockValidator.Validated(t)
+		log.Info("L2 validated count", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
 		return validatedCnt == msgCnt
 	})
 	Require(t, err)
@@ -78,8 +75,9 @@ func TestEspressoFinalityNode(t *testing.T) {
 	builderEspressoFinalityNode, cleanupEspressoFinalityNode := createEspressoFinalityNode(t, builder)
 	defer cleanupEspressoFinalityNode()
 
-	err = waitForWith(t, ctx, 6*time.Minute, 60*time.Second, func() bool {
+	err = waitForWith(t, ctx, 6*time.Minute, 5*time.Second, func() bool {
 		msgCntFinalityNode, err := builderEspressoFinalityNode.ConsensusNode.TxStreamer.GetMessageCount()
+		log.Info("Finality node validated count", "msgCntFinalityNode", msgCntFinalityNode, "msgCnt", msgCnt)
 		Require(t, err)
 		return msgCntFinalityNode == msgCnt
 	})

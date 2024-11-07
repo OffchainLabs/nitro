@@ -40,6 +40,7 @@ func TestPricingModelExp(t *testing.T) {
 	// show that running at the speed limit with a full pool is a steady-state
 	colors.PrintBlue("full pool & speed limit")
 	for seconds := 0; seconds < 4; seconds++ {
+		// #nosec G115
 		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds))
 		if getPrice(t, pricing) != minPrice {
 			Fail(t, "price changed when it shouldn't have")
@@ -50,6 +51,7 @@ func TestPricingModelExp(t *testing.T) {
 	// note that for large enough spans of time the price will rise a miniscule amount due to the pool's avg
 	colors.PrintBlue("pool target & speed limit")
 	for seconds := 0; seconds < 4; seconds++ {
+		// #nosec G115
 		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds))
 		if getPrice(t, pricing) != minPrice {
 			Fail(t, "price changed when it shouldn't have")
@@ -59,6 +61,7 @@ func TestPricingModelExp(t *testing.T) {
 	// show that running over the speed limit escalates the price before the pool drains
 	colors.PrintBlue("exceeding the speed limit")
 	for {
+		// #nosec G115
 		fakeBlockUpdate(t, pricing, 8*int64(limit), 1)
 		newPrice := getPrice(t, pricing)
 		if newPrice < price {

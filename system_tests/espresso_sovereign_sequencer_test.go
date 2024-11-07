@@ -3,15 +3,17 @@ package arbtest
 import (
 	"context"
 	"fmt"
-	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"testing"
 	"time"
+
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func()) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.useL1StackConfig = true // Do not overwrite the L1 stack config when building
 	builder.l1StackConfig.HTTPPort = 8545
 	builder.l1StackConfig.WSPort = 8546
 	builder.l1StackConfig.HTTPHost = "0.0.0.0"
@@ -46,6 +48,8 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func())
 	builder.execConfig.Sequencer.EnableEspressoSovereign = true
 	builder.execConfig.Sequencer.Enable = true
 	builder.execConfig.Sequencer.LightClientAddress = lightClientAddress
+	builder.execConfig.Caching.StateScheme = "hash"
+	builder.execConfig.Caching.Archive = true
 
 	// transaction stream config
 	builder.nodeConfig.TransactionStreamer.SovereignSequencerEnabled = true
@@ -62,7 +66,7 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func())
 	return builder, cleanup
 }
 
-func TestSovereignSequencer(t *testing.T) {
+func TestEspressoSovereignSequencer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

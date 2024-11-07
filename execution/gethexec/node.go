@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/params"
 	"reflect"
+	"sort"
 	"sync/atomic"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/filters"
@@ -20,44 +22,90 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
 )
 
-type DangerousConfig struct {
-	ReorgToBlock int64 `koanf:"reorg-to-block"`
+type StylusTargetConfig struct {
+	Arm64      string   `koanf:"arm64"`
+	Amd64      string   `koanf:"amd64"`
+	Host       string   `koanf:"host"`
+	ExtraArchs []string `koanf:"extra-archs"`
+
+	wasmTargets []ethdb.WasmTarget
 }
 
-var DefaultDangerousConfig = DangerousConfig{
-	ReorgToBlock: -1,
+func (c *StylusTargetConfig) WasmTargets() []ethdb.WasmTarget {
+	return c.wasmTargets
 }
 
-func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int64(prefix+".reorg-to-block", DefaultDangerousConfig.ReorgToBlock, "DANGEROUS! forces a reorg to an old block height. To be used for testing only. -1 to disable")
+func (c *StylusTargetConfig) Validate() error {
+	targetsSet := make(map[ethdb.WasmTarget]bool, len(c.ExtraArchs))
+	for _, arch := range c.ExtraArchs {
+		target := ethdb.WasmTarget(arch)
+		if !rawdb.IsSupportedWasmTarget(target) {
+			return fmt.Errorf("unsupported architecture: %v, possible values: %s, %s, %s, %s", arch, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost)
+		}
+		targetsSet[target] = true
+	}
+	if !targetsSet[rawdb.TargetWavm] {
+		return fmt.Errorf("%s target not found in archs list, archs: %v", rawdb.TargetWavm, c.ExtraArchs)
+	}
+	targetsSet[rawdb.LocalTarget()] = true
+	targets := make([]ethdb.WasmTarget, 0, len(c.ExtraArchs)+1)
+	for target := range targetsSet {
+		targets = append(targets, target)
+	}
+	sort.Slice(
+		targets,
+		func(i, j int) bool {
+			return targets[i] < targets[j]
+		})
+	c.wasmTargets = targets
+	return nil
+}
+
+var DefaultStylusTargetConfig = StylusTargetConfig{
+	Arm64:      programs.DefaultTargetDescriptionArm,
+	Amd64:      programs.DefaultTargetDescriptionX86,
+	Host:       "",
+	ExtraArchs: []string{string(rawdb.TargetWavm)},
+}
+
+func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".arm64", DefaultStylusTargetConfig.Arm64, "stylus programs compilation target for arm64 linux")
+	f.String(prefix+".amd64", DefaultStylusTargetConfig.Amd64, "stylus programs compilation target for amd64 linux")
+	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
+	f.StringSlice(prefix+".extra-archs", DefaultStylusTargetConfig.ExtraArchs, fmt.Sprintf("Comma separated list of extra architectures to cross-compile stylus program to and cache in wasm store (additionally to local target). Currently must include at least %s. (supported targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
 }
 
 type Config struct {
-	ParentChainReader         headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                 SequencerConfig                  `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase         arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
-	TxPreChecker              TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                 ForwarderConfig                  `koanf:"forwarder"`
-	ForwardingTarget          string                           `koanf:"forwarding-target"`
-	SecondaryForwardingTarget []string                         `koanf:"secondary-forwarding-target"`
-	Caching                   CachingConfig                    `koanf:"caching"`
-	RPC                       arbitrum.Config                  `koanf:"rpc"`
-	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
-	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
-	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
-	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
+	ParentChainReader         headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                 SequencerConfig     `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase         BlockRecorderConfig `koanf:"recording-database"`
+	TxPreChecker              TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                 ForwarderConfig     `koanf:"forwarder"`
+	ForwardingTarget          string              `koanf:"forwarding-target"`
+	SecondaryForwardingTarget []string            `koanf:"secondary-forwarding-target"`
+	Caching                   CachingConfig       `koanf:"caching"`
+	RPC                       arbitrum.Config     `koanf:"rpc"`
+	TxLookupLimit             uint64              `koanf:"tx-lookup-limit"`
+	EnablePrefetchBlock       bool                `koanf:"enable-prefetch-block"`
+	SyncMonitor               SyncMonitorConfig   `koanf:"sync-monitor"`
+	StylusTarget              StylusTargetConfig  `koanf:"stylus-target"`
 
 	forwardingTarget string
 }
 
 func (c *Config) Validate() error {
+	if err := c.Caching.Validate(); err != nil {
+		return err
+	}
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
@@ -72,6 +120,9 @@ func (c *Config) Validate() error {
 	if c.forwardingTarget != "" && c.Sequencer.Enable {
 		return errors.New("ForwardingTarget set and sequencer enabled")
 	}
+	if err := c.StylusTarget.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -79,7 +130,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
-	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
+	BlockRecorderConfigAddOptions(prefix+".recording-database", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
@@ -87,48 +138,23 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	CachingConfigAddOptions(prefix+".caching", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
-	DangerousConfigAddOptions(prefix+".dangerous", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
+	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 }
 
 var ConfigDefault = Config{
 	RPC:                       arbitrum.DefaultConfig,
 	Sequencer:                 DefaultSequencerConfig,
 	ParentChainReader:         headerreader.DefaultConfig,
-	RecordingDatabase:         arbitrum.DefaultRecordingDatabaseConfig,
+	RecordingDatabase:         DefaultBlockRecorderConfig,
 	ForwardingTarget:          "",
 	SecondaryForwardingTarget: []string{},
 	TxPreChecker:              DefaultTxPreCheckerConfig,
 	TxLookupLimit:             126_230_400, // 1 year at 4 blocks per second
 	Caching:                   DefaultCachingConfig,
-	Dangerous:                 DefaultDangerousConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
 	EnablePrefetchBlock:       true,
-}
-
-func ConfigDefaultNonSequencerTest() *Config {
-	config := ConfigDefault
-	config.Caching = TestCachingConfig
-	config.ParentChainReader = headerreader.TestConfig
-	config.Sequencer.Enable = false
-	config.Forwarder = DefaultTestForwarderConfig
-	config.ForwardingTarget = "null"
-
-	_ = config.Validate()
-
-	return &config
-}
-
-func ConfigDefaultTest() *Config {
-	config := ConfigDefault
-	config.Caching = TestCachingConfig
-	config.Sequencer = TestSequencerConfig
-	config.ParentChainReader = headerreader.TestConfig
-	config.ForwardingTarget = "null"
-
-	_ = config.Validate()
-
-	return &config
+	StylusTarget:              DefaultStylusTargetConfig,
 }
 
 type ConfigFetcher func() *Config
@@ -225,11 +251,16 @@ func CreateExecutionNode(
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true) // TODO can we skip using ExtraOptions here?
-		if err != nil {
+		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
+		if dbutil.IsNotExistError(err) {
 			log.Warn("Classic Msg Database not found", "err", err)
 			classicOutbox = nil
+		} else if err != nil {
+			return nil, fmt.Errorf("Failed to open classic-msg database: %w", err)
 		} else {
+			if err := dbutil.UnfinishedConversionCheck(classicMsgDb); err != nil {
+				return nil, fmt.Errorf("classic-msg unfinished database conversion check error: %w", err)
+			}
 			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 		}
 	}
@@ -313,9 +344,13 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
-	n.ExecEngine.Initialize(n.ConfigFetcher().Caching.StylusLRUCache)
+	config := n.ConfigFetcher()
+	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCache, &config.StylusTarget)
+	if err != nil {
+		return fmt.Errorf("error initializing execution engine: %w", err)
+	}
 	n.ArbInterface.Initialize(n)
-	err := n.Backend.Start()
+	err = n.Backend.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth backend: %w", err)
 	}

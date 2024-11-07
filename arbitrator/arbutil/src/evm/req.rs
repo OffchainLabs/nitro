@@ -7,8 +7,6 @@ use crate::{
         storage::{StorageCache, StorageWord},
         user::UserOutcomeKind,
     },
-    format::Utf8OrHex,
-    pricing::EVM_API_INK,
     Bytes20, Bytes32,
 };
 use eyre::{bail, eyre, Result};
@@ -100,13 +98,13 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
 }
 
 impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
-    fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
+    fn get_bytes32(&mut self, key: Bytes32, evm_api_gas_to_use: u64) -> (Bytes32, u64) {
         let cache = &mut self.storage_cache;
         let mut cost = cache.read_gas();
 
         let value = cache.entry(key).or_insert_with(|| {
             let (res, _, gas) = self.handler.request(EvmApiMethod::GetBytes32, key);
-            cost = cost.saturating_add(gas).saturating_add(EVM_API_INK);
+            cost = cost.saturating_add(gas).saturating_add(evm_api_gas_to_use);
             StorageWord::known(res.try_into().unwrap())
         });
         (value.value, cost)
@@ -140,8 +138,13 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         }
 
         let (res, _, cost) = self.request(EvmApiMethod::SetTrieSlots, data);
-        if res[0] != EvmApiStatus::Success.into() {
-            bail!("{}", String::from_utf8_or_hex(res));
+        let status = res
+            .first()
+            .copied()
+            .map(EvmApiStatus::from)
+            .unwrap_or(EvmApiStatus::Failure);
+        if status != EvmApiStatus::Success {
+            bail!("{:?}", status);
         }
         Ok(cost)
     }
@@ -156,8 +159,13 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         data.extend(key);
         data.extend(value);
         let (res, ..) = self.request(EvmApiMethod::SetTransientBytes32, data);
-        if res[0] != EvmApiStatus::Success.into() {
-            bail!("{}", String::from_utf8_or_hex(res));
+        let status = res
+            .first()
+            .copied()
+            .map(EvmApiStatus::from)
+            .unwrap_or(EvmApiStatus::Failure);
+        if status != EvmApiStatus::Success {
+            bail!("{:?}", status);
         }
         Ok(())
     }

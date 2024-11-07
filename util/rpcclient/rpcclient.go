@@ -44,6 +44,13 @@ func (c *ClientConfig) Validate() error {
 	return err
 }
 
+func (c *ClientConfig) UnmarshalJSON(data []byte) error {
+	// Use DefaultClientConfig for default values when unmarshalling JSON
+	*c = DefaultClientConfig
+	type clientConfigWithoutCustomUnmarshal ClientConfig
+	return json.Unmarshal(data, (*clientConfigWithoutCustomUnmarshal)(c))
+}
+
 type ClientConfigFetcher func() *ClientConfig
 
 var TestClientConfig = ClientConfig{
@@ -77,7 +84,7 @@ type RpcClient struct {
 	config    ClientConfigFetcher
 	client    *rpc.Client
 	autoStack *node.Node
-	logId     uint64
+	logId     atomic.Uint64
 }
 
 func NewRpcClient(config ClientConfigFetcher, stack *node.Node) *RpcClient {
@@ -94,7 +101,7 @@ func (c *RpcClient) Close() {
 }
 
 type limitedMarshal struct {
-	limit int
+	limit uint
 	value any
 }
 
@@ -106,16 +113,18 @@ func (m limitedMarshal) String() string {
 	} else {
 		str = string(marshalled)
 	}
-	if m.limit == 0 || len(str) <= m.limit {
+	// #nosec G115
+	limit := int(m.limit)
+	if m.limit <= 0 || len(str) <= limit {
 		return str
 	}
 	prefix := str[:m.limit/2-1]
-	postfix := str[len(str)-m.limit/2+1:]
+	postfix := str[len(str)-limit/2+1:]
 	return fmt.Sprintf("%v..%v", prefix, postfix)
 }
 
 type limitedArgumentsMarshal struct {
-	limit int
+	limit uint
 	args  []any
 }
 
@@ -154,10 +163,10 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 	if c.client == nil {
 		return errors.New("not connected")
 	}
-	logId := atomic.AddUint64(&c.logId, 1)
-	log.Trace("sending RPC request", "method", method, "logId", logId, "args", limitedArgumentsMarshal{int(c.config().ArgLogLimit), args})
+	logId := c.logId.Add(1)
+	log.Trace("sending RPC request", "method", method, "logId", logId, "args", limitedArgumentsMarshal{c.config().ArgLogLimit, args})
 	var err error
-	for i := 0; i < int(c.config().Retries)+1; i++ {
+	for i := uint(0); i < c.config().Retries+1; i++ {
 		retryDelay := c.config().RetryDelay
 		if i > 0 && retryDelay > 0 {
 			select {
@@ -181,7 +190,7 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 
 		cancelCtx()
 		logger := log.Trace
-		limit := int(c.config().ArgLogLimit)
+		limit := c.config().ArgLogLimit
 		if err != nil && !IsAlreadyKnownError(err) {
 			logger = log.Info
 		}

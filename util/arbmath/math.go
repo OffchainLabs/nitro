@@ -29,6 +29,7 @@ func NextOrCurrentPowerOf2(value uint64) uint64 {
 
 // Log2ceil the log2 of the int, rounded up
 func Log2ceil(value uint64) uint64 {
+	// #nosec G115
 	return uint64(64 - bits.LeadingZeros64(value))
 }
 
@@ -115,6 +116,18 @@ func BigToUintSaturating(value *big.Int) uint64 {
 		return math.MaxUint64
 	}
 	return value.Uint64()
+}
+
+// BigToUintSaturating casts a huge to an int, saturating if out of bounds
+func BigToIntSaturating(value *big.Int) int64 {
+	if !value.IsInt64() {
+		if value.Sign() < 0 {
+			return math.MinInt64
+		} else {
+			return math.MaxInt64
+		}
+	}
+	return value.Int64()
 }
 
 // BigToUintOrPanic casts a huge to a uint, panicking if out of bounds
@@ -216,8 +229,8 @@ func BigMulByFrac(value *big.Int, numerator, denominator int64) *big.Int {
 	return value
 }
 
-// BigMulByUfrac multiply a huge by a rational whose components are non-negative
-func BigMulByUfrac(value *big.Int, numerator, denominator uint64) *big.Int {
+// BigMulByUFrac multiply a huge by a rational whose components are non-negative
+func BigMulByUFrac(value *big.Int, numerator, denominator uint64) *big.Int {
 	value = new(big.Int).Set(value)
 	value.Mul(value, new(big.Int).SetUint64(numerator))
 	value.Div(value, new(big.Int).SetUint64(denominator))
@@ -260,10 +273,12 @@ func BigFloatMulByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
 }
 
 func MaxSignedValue[T Signed]() T {
+	// #nosec G115
 	return T((uint64(1) << (8*unsafe.Sizeof(T(0)) - 1)) - 1)
 }
 
 func MinSignedValue[T Signed]() T {
+	// #nosec G115
 	return T(uint64(1) << ((8 * unsafe.Sizeof(T(0))) - 1))
 }
 
@@ -387,18 +402,20 @@ func DivCeil[T Unsigned](value, divisor T) T {
 
 // ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where x is denominated in basis points.
 // The quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
-func ApproxExpBasisPoints(value Bips, degree uint64) Bips {
+func ApproxExpBasisPoints(value Bips, accuracy uint64) Bips {
 	input := value
 	negative := value < 0
 	if negative {
 		input = -value
 	}
+	// This cast is safe because input is always positive
+	// #nosec G115
 	x := uint64(input)
 	bips := uint64(OneInBips)
 
-	res := bips + x/degree
-	for i := uint64(1); i < degree; i++ {
-		res = bips + SaturatingUMul(res, x)/((degree-i)*bips)
+	res := bips + x/accuracy
+	for i := uint64(1); i < accuracy; i++ {
+		res = bips + SaturatingUMul(res, x)/((accuracy-i)*bips)
 	}
 
 	if negative {

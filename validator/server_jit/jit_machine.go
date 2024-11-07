@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"os"
 	"os/exec"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -124,6 +126,13 @@ func (machine *JitMachine) prove(
 	writeUint32 := func(data uint32) error {
 		return writeExact(arbmath.Uint32ToBytes(data))
 	}
+	writeIntAsUint32 := func(data int) error {
+		if data < 0 || data > math.MaxUint32 {
+			return fmt.Errorf("attempted to write out-of-bounds int %v as uint32", data)
+		}
+		// #nosec G115
+		return writeUint32(uint32(data))
+	}
 	writeUint64 := func(data uint64) error {
 		return writeExact(arbmath.UintToBytes(data))
 	}
@@ -204,14 +213,14 @@ func (machine *JitMachine) prove(
 
 	// send known preimages
 	preimageTypes := entry.Preimages
-	if err := writeUint32(uint32(len(preimageTypes))); err != nil {
+	if err := writeIntAsUint32(len(preimageTypes)); err != nil {
 		return state, err
 	}
 	for ty, preimages := range preimageTypes {
 		if err := writeUint8(uint8(ty)); err != nil {
 			return state, err
 		}
-		if err := writeUint32(uint32(len(preimages))); err != nil {
+		if err := writeIntAsUint32(len(preimages)); err != nil {
 			return state, err
 		}
 		for hash, preimage := range preimages {
@@ -224,16 +233,26 @@ func (machine *JitMachine) prove(
 		}
 	}
 
-	// send user wasms
-	userWasms := entry.UserWasms
-	if err := writeUint32(uint32(len(userWasms))); err != nil {
+	localTarget := rawdb.LocalTarget()
+	userWasms := entry.UserWasms[localTarget]
+
+	// if there are user wasms, but only for wrong architecture - error
+	if len(userWasms) == 0 {
+		for arch, userWasms := range entry.UserWasms {
+			if len(userWasms) != 0 {
+				return state, fmt.Errorf("bad stylus arch for validation input. got: %v, expected: %v", arch, localTarget)
+			}
+		}
+	}
+
+	if err := writeIntAsUint32(len(userWasms)); err != nil {
 		return state, err
 	}
-	for moduleHash, info := range userWasms {
+	for moduleHash, program := range userWasms {
 		if err := writeExact(moduleHash[:]); err != nil {
 			return state, err
 		}
-		if err := writeBytes(info.Asm); err != nil {
+		if err := writeBytes(program); err != nil {
 			return state, err
 		}
 	}
@@ -300,9 +319,11 @@ func (machine *JitMachine) prove(
 			if err != nil {
 				return state, fmt.Errorf("failed to read memory usage from Jit machine: %w", err)
 			}
+			// #nosec G115
 			if memoryUsed > uint64(machine.wasmMemoryUsageLimit) {
 				log.Warn("memory used by jit wasm exceeds the wasm memory usage limit", "limit", machine.wasmMemoryUsageLimit, "memoryUsed", memoryUsed)
 			}
+			// #nosec G115
 			jitWasmMemoryUsage.Update(int64(memoryUsed))
 			return state, nil
 		default:

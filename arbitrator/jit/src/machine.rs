@@ -15,7 +15,7 @@ use std::{
     io::{BufReader, BufWriter, ErrorKind, Read},
     net::TcpStream,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Instant,
 };
 use thiserror::Error;
 use wasmer::{
@@ -135,7 +135,9 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "send_response" => func!(program::send_response),
             "create_stylus_config" => func!(program::create_stylus_config),
             "create_evm_data" => func!(program::create_evm_data),
+            "create_evm_data_v2" => func!(program::create_evm_data_v2),
             "activate" => func!(program::activate),
+            "activate_v2" => func!(program::activate_v2),
         },
     };
 
@@ -334,8 +336,6 @@ pub struct ProcessEnv {
     pub socket: Option<(BufWriter<TcpStream>, BufReader<TcpStream>)>,
     /// A timestamp that helps with printing at various moments
     pub timestamp: Instant,
-    /// How long to wait on any child threads to compute a result
-    pub child_timeout: Duration,
     /// Whether the machine has reached the first wavmio instruction
     pub reached_wavmio: bool,
 }
@@ -347,7 +347,6 @@ impl Default for ProcessEnv {
             debug: false,
             socket: None,
             timestamp: Instant::now(),
-            child_timeout: Duration::from_secs(15),
             reached_wavmio: false,
         }
     }

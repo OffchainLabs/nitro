@@ -191,6 +191,7 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 	rawData, err := beaconRequest[json.RawMessage](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
 	if err != nil || len(rawData) == 0 {
 		// blobs are pruned after 4096 epochs (1 epoch = 32 slots), we determine if the requested slot were to be pruned by a non-archive endpoint
+		// #nosec G115
 		roughAgeOfSlot := uint64(time.Now().Unix()) - (b.genesisTime + slot*b.secondsPerSlot)
 		if roughAgeOfSlot > b.secondsPerSlot*32*4096 {
 			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching older blobs in slot: %d, an archive endpoint is required, please refer to https://docs.arbitrum.io/run-arbitrum-node/l1-ethereum-beacon-chain-rpc-providers, err: %w", slot, err)

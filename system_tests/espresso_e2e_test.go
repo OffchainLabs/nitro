@@ -26,7 +26,7 @@ var workingDir = "./espresso-e2e"
 var lightClientAddress = "0xb075b82c7a23e0994df4793422a1f03dbcf9136f"
 
 var hotShotUrl = "http://127.0.0.1:41000"
-var delayThreshold = 10
+var delayThreshold uint64 = 10
 
 var (
 	jitValidationPort = 54320
@@ -74,6 +74,7 @@ func createValidationNode(ctx context.Context, t *testing.T, jit bool) func() {
 	stackConf.WSModules = []string{server_api.Namespace}
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.ListenAddr = ""
+	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
 
 	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 	config := &valnode.TestValidationConfig
@@ -354,6 +355,9 @@ func checkTransferTxOnL2(
 	return waitForWith(t, ctx, time.Second*300, time.Second*1, func() bool {
 		balance := l2Node.GetBalance(t, addr)
 		log.Info("waiting for balance", "account", account, "addr", addr, "balance", balance)
-		return balance.Cmp(transferAmount) >= 0
+		if balance.Cmp(transferAmount) >= 0 {
+			log.Info("target balance reached", "account", account, "addr", addr, "balance", balance)
+		}
+		return true
 	})
 }

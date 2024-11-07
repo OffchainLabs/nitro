@@ -2,7 +2,7 @@
 
 set -e
 
-mydir=`dirname $0`
+mydir=$(dirname "$0")
 cd "$mydir"
 
 BUILD_WASM=false
@@ -35,7 +35,7 @@ usage(){
     echo "all relative paths are relative to script location"
 }
 
-while getopts "s:t:c:D:wldhf" option; do
+while getopts "n:s:t:c:D:wldhf" option; do
     case $option in
         h)
             usage
@@ -62,6 +62,9 @@ while getopts "s:t:c:D:wldhf" option; do
         s)
             SOURCE_DIR="$OPTARG"
             ;;
+        *)
+            usage
+            ;;
     esac
 done
 
@@ -74,7 +77,7 @@ if [ ! -d "$TARGET_DIR" ]; then
     mkdir -p "${TARGET_DIR}lib"
     ln -s "lib" "${TARGET_DIR}lib64" # Fedora build
 fi
-TARGET_DIR_ABS=`cd -P "$TARGET_DIR"; pwd`
+TARGET_DIR_ABS=$(cd -P "$TARGET_DIR"; pwd)
 
 
 if $USE_DOCKER; then
@@ -94,9 +97,9 @@ cd "$SOURCE_DIR"
 if $BUILD_WASM; then
     mkdir -p buildfiles/build-wasm
     mkdir -p buildfiles/install-wasm
-    TEMP_INSTALL_DIR_ABS=`cd -P buildfiles/install-wasm; pwd`
+    TEMP_INSTALL_DIR_ABS=$(cd -P buildfiles/install-wasm; pwd)
     cd buildfiles/build-wasm
-    cmake ../../ -DCMAKE_C_COMPILER=emcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-fPIC -DCMAKE_INSTALL_PREFIX="$TEMP_INSTALL_DIR_ABS" -DCMAKE_AR=`which emar` -DCMAKE_RANLIB=`which touch`
+    cmake ../../ -DCMAKE_C_COMPILER=emcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-fPIC -DCMAKE_INSTALL_PREFIX="$TEMP_INSTALL_DIR_ABS" -DCMAKE_AR="$(which emar)" -DCMAKE_RANLIB="$(which touch)"
     make -j
     make install
     cp -rv "$TEMP_INSTALL_DIR_ABS/lib" "$TARGET_DIR_ABS/lib-wasm"

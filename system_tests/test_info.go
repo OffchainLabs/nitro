@@ -17,7 +17,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -32,7 +31,7 @@ var simulatedChainID = big.NewInt(1337)
 type AccountInfo struct {
 	Address    common.Address
 	PrivateKey *ecdsa.PrivateKey
-	Nonce      uint64
+	Nonce      atomic.Uint64
 }
 
 type BlockchainTestInfo struct {
@@ -96,7 +95,6 @@ func (b *BlockchainTestInfo) GenerateAccount(name string) {
 	b.Accounts[name] = &AccountInfo{
 		PrivateKey: privateKey,
 		Address:    crypto.PubkeyToAddress(privateKey.PublicKey),
-		Nonce:      0,
 	}
 	log.Info("New Key ", "name", name, "Address", b.Accounts[name].Address)
 }
@@ -134,14 +132,14 @@ func (b *BlockchainTestInfo) GenerateAccountWithMnemonic(name string, mnemonic s
 	b.Accounts[name] = &AccountInfo{
 		Address:    account.Address,
 		PrivateKey: privateKey,
-		Nonce:      0,
+		Nonce:      atomic.Uint64{},
 	}
 	log.Info("New Key ", "name", name, "Address", b.Accounts[name].Address)
 	return nil
 }
 
-func (b *BlockchainTestInfo) GetGenesisAlloc() core.GenesisAlloc {
-	alloc := make(core.GenesisAlloc)
+func (b *BlockchainTestInfo) GetGenesisAlloc() types.GenesisAlloc {
+	alloc := make(types.GenesisAlloc)
 	for _, info := range b.ArbInitData.Accounts {
 		var contractCode []byte
 		contractStorage := make(map[common.Hash]common.Hash)
@@ -151,7 +149,7 @@ func (b *BlockchainTestInfo) GetGenesisAlloc() core.GenesisAlloc {
 				contractStorage[k] = v
 			}
 		}
-		alloc[info.Addr] = core.GenesisAccount{
+		alloc[info.Addr] = types.Account{
 			Balance: new(big.Int).Set(info.EthBalance),
 			Nonce:   info.Nonce,
 			Code:    contractCode,
@@ -169,8 +167,11 @@ func (b *BlockchainTestInfo) SetContract(name string, address common.Address) {
 }
 
 func (b *BlockchainTestInfo) SetFullAccountInfo(name string, info *AccountInfo) {
-	infoCopy := *info
-	b.Accounts[name] = &infoCopy
+	b.Accounts[name] = &AccountInfo{
+		Address:    info.Address,
+		PrivateKey: info.PrivateKey,
+	}
+	b.Accounts[name].Nonce.Store(info.Nonce.Load())
 }
 
 func (b *BlockchainTestInfo) GetAddress(name string) common.Address {
@@ -207,7 +208,7 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string, ctx context.Con
 			if err != nil {
 				return nil, err
 			}
-			atomic.AddUint64(&info.Nonce, 1) // we don't set Nonce, but try to keep track..
+			info.Nonce.Add(1) // we don't set Nonce, but try to keep track..
 			return tx.WithSignature(b.Signer, signature)
 		},
 		GasMargin: 2000, // adjust by 20%
@@ -245,7 +246,7 @@ func (b *BlockchainTestInfo) PrepareTxTo(
 ) *types.Transaction {
 	b.T.Helper()
 	info := b.GetInfoWithPrivKey(from)
-	txNonce := atomic.AddUint64(&info.Nonce, 1) - 1
+	txNonce := info.Nonce.Add(1) - 1
 	if value == nil {
 		value = common.Big0
 	}

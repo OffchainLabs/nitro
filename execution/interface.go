@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/validator"
 )
 
 type MessageResult struct {
@@ -23,7 +22,6 @@ type RecordResult struct {
 	Pos       arbutil.MessageIndex
 	BlockHash common.Hash
 	Preimages map[common.Hash][]byte
-	BatchInfo []validator.BatchInfo
 	UserWasms state.UserWasms
 }
 
@@ -80,7 +78,6 @@ type FullExecutionClient interface {
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FetchBatch(ctx context.Context, batchNum uint64) ([]byte, common.Hash, error)
 	FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error)
 	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
 }
