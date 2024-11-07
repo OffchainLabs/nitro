@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Use the default shell to build the brotli library
+nix develop -c make .make/cbrotli-lib
+
+# Use the special shell to build the wasm libraries
+nix develop .#wasm -c make build-wasm-libs
+
+echo "wasm libs built successfully!"
+echo "Use the default shell e. g. 'nix develop' to run other make recipies."

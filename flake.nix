@@ -78,9 +78,7 @@
             # shell is not able to build one recipe and we haven't managed to
             # come up with a dev shell that works for everything on OSX.
             #
-            #    nix develop .#wasm -c make build-wasm-libs
-            #
-            # After that, the other shell can be used to run `make build`.
+            # See ./scripts/build-wasm-on-macos-with-nix for how to use it.
             #
             # With nix the `clang` command is a wrapper that does not understand
             # some of the arguments that are passed to it during the build. This
@@ -97,6 +95,8 @@
                 llvmPackages_16.bintools # provides wasm-ld
                 cmake
                 wabt  # wasm2wat, wat2wasm, etc
+                cmake
+                wabt # wasm2wat, wat2wasm, etc.
 
                 # Docker
                 docker-compose # provides the `docker-compose` command
