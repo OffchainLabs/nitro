@@ -151,7 +151,7 @@ type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
 	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
 	// Enable failover to AnyTrust (if enabled) or native ETH DA if EigenDA fails.
-	EnableEigenDAFailover              bool `koanf:"enable-eigenda-failover" reload:"hot"`
+	EnableEigenDAFailover bool `koanf:"enable-eigenda-failover" reload:"hot"`
 	// Max batch size.
 	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
