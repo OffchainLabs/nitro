@@ -208,7 +208,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 				signer := types.NewCancunSigner(tx.ChainId())
 				address, err := signer.Sender(tx)
 				Require(t, err)
-				if address == builder.L1Info.GetAddress("Asserter") {
+				if address == builder.L1Info.GetAddress("HonestAsserter") {
 					t.Log("Honest party won OSP, impossible for evil party to win if honest party continues")
 					Require(t, it.Close())
 					return

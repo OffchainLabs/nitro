@@ -338,12 +338,14 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	useFinishedMachine, err := s.useFinishedMachine(messageNum, batchLimit)
+	// Check if we have a virtual global state.
+	vs, err := s.virtualState(messageNum, batchLimit)
 	if err != nil {
 		return nil, err
 	}
-	if useFinishedMachine {
+	if vs.IsSome() {
 		m := server_arb.NewFinishedMachine()
+		m.SetGlobalState(vs.Unwrap())
 		defer m.Destroy()
 		return []common.Hash{m.Hash()}, nil
 	}
@@ -433,23 +435,41 @@ func (s *BOLDStateProvider) messageNum(md *l2stateprovider.AssociatedAssertionMe
 	return prevBatchMsgCount + arbutil.MessageIndex(posInBatch) + arbutil.MessageIndex(chalHeight), nil
 }
 
-// useFinishedMachine returns true if messageNum is a virtual block or the
-// last real block to which this validator's assertion committed.
+// virtualState returns an optional global state.
+//
+// If messageNum is a virtual block or the last real block to which this
+// validator's assertion committed, then this function retuns a global state
+// representing that virtual block's finished machine. Otherwise, it returns
+// an Option.None.
 //
 // This can happen in the BoLD protocol when the rival block-level challenge
 // edge has committed to more blocks that this validator expected for the
 // current batch. In that case, the chalHeight will be a block in the virtual
 // padding of the history commitment of this validator.
 //
-// A return value of true means that callers don't need to actually step through
-// a machine to produce a series of hashes, because all of the hashes can just
-// be "virtual" copies of a single machine in the FINISHED state's hash.
-func (s *BOLDStateProvider) useFinishedMachine(msgNum arbutil.MessageIndex, limit l2stateprovider.Batch) (bool, error) {
+// If there is an Option.Some() retrun value, it means that callers don't need
+// to actually step through a machine to produce a series of hashes, because all
+// of the hashes can just be "virtual" copies of a single machine in the
+// FINISHED state's hash.
+func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit l2stateprovider.Batch) (option.Option[validator.GoGlobalState], error) {
+	gs := option.None[validator.GoGlobalState]()
 	limitMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(limit) - 1)
 	if err != nil {
-		return false, fmt.Errorf("could not get limitMsgCount at %d: %w", limit, err)
+		return gs, fmt.Errorf("could not get limitMsgCount at %d: %w", limit, err)
 	}
-	return msgNum > limitMsgCount, nil
+	if msgNum >= limitMsgCount {
+		result, err := s.statelessValidator.InboxStreamer().ResultAtCount(arbutil.MessageIndex(limitMsgCount))
+		if err != nil {
+			return gs, fmt.Errorf("could not get global state at limitMsgCount %d: %w", limitMsgCount, err)
+		}
+		gs = option.Some(validator.GoGlobalState{
+			BlockHash:  result.BlockHash,
+			SendRoot:   result.SendRoot,
+			Batch:      uint64(limit),
+			PosInBatch: 0,
+		})
+	}
+	return gs, nil
 }
 
 // CtxWithCheckAlive Creates a context with a check alive routine that will
@@ -497,12 +517,14 @@ func (s *BOLDStateProvider) CollectProof(
 	machineIndex l2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
 	messageNum, err := s.messageNum(assertionMetadata, blockChallengeHeight)
-	useFinishedMachine, err := s.useFinishedMachine(messageNum, assertionMetadata.BatchLimit)
+	// Check if we have a virtual global state.
+	vs, err := s.virtualState(messageNum, assertionMetadata.BatchLimit)
 	if err != nil {
 		return nil, err
 	}
-	if useFinishedMachine {
+	if vs.IsSome() {
 		m := server_arb.NewFinishedMachine()
+		m.SetGlobalState(vs.Unwrap())
 		defer m.Destroy()
 		return m.ProveNextStep(), nil
 	}
