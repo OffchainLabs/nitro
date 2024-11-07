@@ -95,6 +95,8 @@
 
                 llvmPackages_16.clang-unwrapped # provides clang without wrapper
                 llvmPackages_16.bintools # provides wasm-ld
+                cmake
+                wabt  # wasm2wat, wat2wasm, etc
 
                 # Docker
                 docker-compose # provides the `docker-compose` command
