@@ -1270,6 +1270,140 @@ func testSdkStorage(t *testing.T, jit bool) {
 	check()
 }
 
+func TestStylusPrecompileMethodsSimple(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	arbDebug, err := pgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	Require(t, err)
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, builder.L2.Client)
+	Require(t, err)
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	ownerAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	ensure(arbDebug.BecomeChainOwner(&ownerAuth))
+
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
+	programAddress := deployContract(t, ctx, ownerAuth, builder.L2.Client, wasm)
+
+	activateAuth := ownerAuth
+	activateAuth.Value = oneEth
+	ensure(arbWasm.ActivateProgram(&activateAuth, programAddress))
+
+	expectedExpiryDays := uint16(1)
+	ensure(arbOwner.SetWasmExpiryDays(&ownerAuth, expectedExpiryDays))
+	ed, err := arbWasm.ExpiryDays(nil)
+	Require(t, err)
+	if ed != expectedExpiryDays {
+		t.Errorf("ExpiryDays from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ed, expectedExpiryDays)
+	}
+	ptl, err := arbWasm.ProgramTimeLeft(nil, programAddress)
+	Require(t, err)
+	expectedExpirySeconds := (uint64(expectedExpiryDays) * 24 * 3600)
+	// ProgramTimeLeft returns time in seconds to expiry and the current ExpiryDays is set to 1 day
+	// We expect the lag of 3600 seconds to exist because program.activatedAt uses hoursSinceArbitrum that
+	// rounds down (the current time since ArbitrumStartTime in hours)/3600
+	if expectedExpirySeconds-ptl > 3600 {
+		t.Errorf("ProgramTimeLeft from arbWasm precompile returned value lesser than expected. %d <= want <= %d, have: %d", expectedExpirySeconds-3600, expectedExpirySeconds, ptl)
+	}
+
+	ensure(arbOwner.SetWasmBlockCacheSize(&ownerAuth, 100))
+	bcs, err := arbWasm.BlockCacheSize(nil)
+	Require(t, err)
+	if bcs != 100 {
+		t.Errorf("BlockCacheSize from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", bcs, 100)
+	}
+
+	ensure(arbOwner.SetWasmFreePages(&ownerAuth, 3))
+	fp, err := arbWasm.FreePages(nil)
+	Require(t, err)
+	if fp != 3 {
+		t.Errorf("FreePages from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", fp, 3)
+	}
+
+	ensure(arbOwner.SetWasmInitCostScalar(&ownerAuth, uint64(4)))
+	ics, err := arbWasm.InitCostScalar(nil)
+	Require(t, err)
+	if ics != uint64(4) {
+		t.Errorf("InitCostScalar from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ics, 4)
+	}
+
+	ensure(arbOwner.SetInkPrice(&ownerAuth, uint32(5)))
+	ip, err := arbWasm.InkPrice(nil)
+	Require(t, err)
+	if ip != uint32(5) {
+		t.Errorf("InkPrice from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ip, 5)
+	}
+
+	ensure(arbOwner.SetWasmKeepaliveDays(&ownerAuth, 0))
+	kad, err := arbWasm.KeepaliveDays(nil)
+	Require(t, err)
+	if kad != 0 {
+		t.Errorf("KeepaliveDays from arbWasm precompile didnt match the value set by arbowner. have: %d, want: 0", kad)
+	}
+
+	ensure(arbOwner.SetWasmMaxStackDepth(&ownerAuth, uint32(6)))
+	msd, err := arbWasm.MaxStackDepth(nil)
+	Require(t, err)
+	if msd != uint32(6) {
+		t.Errorf("MaxStackDepth from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", msd, 6)
+	}
+
+	// Setting low values of gas and cached parameters ensures when MinInitGas is called on ArbWasm precompile,
+	// the returned values would be programs.MinInitGasUnits and programs.MinCachedGasUnits
+	ensure(arbOwner.SetWasmMinInitGas(&ownerAuth, 1, 1))
+	mig, err := arbWasm.MinInitGas(nil)
+	Require(t, err)
+	if mig.Gas != programs.MinInitGasUnits {
+		t.Errorf("MinInitGas from arbWasm precompile didnt match the Gas value set by arbowner. have: %d, want: %d", mig.Gas, programs.MinInitGasUnits)
+	}
+	if mig.Cached != programs.MinCachedGasUnits {
+		t.Errorf("MinInitGas from arbWasm precompile didnt match the Cached value set by arbowner. have: %d, want: %d", mig.Cached, programs.MinCachedGasUnits)
+	}
+
+	ensure(arbOwner.SetWasmPageGas(&ownerAuth, 7))
+	pg, err := arbWasm.PageGas(nil)
+	Require(t, err)
+	if pg != 7 {
+		t.Errorf("PageGas from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", pg, 7)
+	}
+
+	ensure(arbOwner.SetWasmPageLimit(&ownerAuth, 8))
+	pl, err := arbWasm.PageLimit(nil)
+	Require(t, err)
+	if pl != 8 {
+		t.Errorf("PageLimit from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", pl, 8)
+	}
+
+	// pageramp currently is initialPageRamp = 620674314 value in programs package
+	_, err = arbWasm.PageRamp(nil)
+	Require(t, err)
+
+	codehash := crypto.Keccak256Hash(wasm)
+	cas, err := arbWasm.CodehashAsmSize(nil, codehash)
+	Require(t, err)
+	if cas == 0 {
+		t.Error("CodehashAsmSize from arbWasm precompile returned 0 value")
+	}
+	// Since ArbOwner has set wasm KeepaliveDays to 0, it enables us to do this, though this shouldn't have any effect
+	codehashKeepaliveAuth := ownerAuth
+	codehashKeepaliveAuth.Value = oneEth
+	ensure(arbWasm.CodehashKeepalive(&codehashKeepaliveAuth, codehash))
+}
+
 func TestProgramActivationLogs(t *testing.T) {
 	t.Parallel()
 	builder, auth, cleanup := setupProgramTest(t, true)
