@@ -84,8 +84,13 @@ jobs:
 
       - name: Install dependencies
         run: >
-          sudo apt update && sudo apt install -y wabt gotestsum
+          sudo apt update && sudo apt install -y wabt
           cmake build-essential bison golang clang make wabt
+
+      - name: Install latest gotestsum
+        uses: autero1/action-gotestsum@v2.0.0
+        with:
+          gotestsum_version: v1.12.0
 
       - name: Setup nodejs
         if: false # fails to find yarn.lock when running in symlinked directory, doesn't seem to be needed
