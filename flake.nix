@@ -10,17 +10,16 @@
 
   outputs = { flake-utils, nixpkgs, foundry, rust-overlay, ... }:
     let
-      goVersion = 21; # Change this to update the whole stack
+      goVersion = 22; # Change this to update the whole stack
       overlays = [
         (import rust-overlay)
-        (final: prev: {
+        (final: prev: rec {
           go = prev."go_1_${toString goVersion}";
           # Overlaying nodejs here to ensure nodePackages use the desired
-          # version of nodejs. Arbitrum use nodejs v16 but that's EOL and has
-          # been removed from nixpkgs, v18 also works.
-          nodejs = prev.nodejs-18_x;
-          pnpm = prev.nodePackages.pnpm;
-          yarn = prev.nodePackages.yarn;
+          # version of nodejs. Offchainlabs suggests nodejs v18 in the docs.
+          nodejs = prev.nodejs_18;
+          yarn = (prev.yarn.override { inherit nodejs; });
+          pnpm = (prev.pnpm.override { inherit nodejs; });
         })
         foundry.overlay
       ];
@@ -76,9 +75,7 @@
             # shell is not able to build one recipe and we haven't managed to
             # come up with a dev shell that works for everything on OSX.
             #
-            #    nix develop .#wasm -c make build-wasm-libs
-            #
-            # After that, the other shell can be used to run `make build`.
+            # See ./scripts/build-wasm-on-macos-with-nix for how to use it.
             #
             # With nix the `clang` command is a wrapper that does not understand
             # some of the arguments that are passed to it during the build. This
@@ -93,6 +90,8 @@
 
                 llvmPackages_16.clang-unwrapped # provides clang without wrapper
                 llvmPackages_16.bintools # provides wasm-ld
+                cmake
+                wabt # wasm2wat, wat2wasm, etc.
 
                 # Docker
                 docker-compose # provides the `docker-compose` command
