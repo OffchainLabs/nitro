@@ -102,7 +102,6 @@ func TestEigenDAProxyFailOverToETHDA(t *testing.T) {
 		// 1 - Ensure that batches can be submitted and read via EigenDA batch posting
 		checkEigenDABatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
 
-		// time.Sleep(time.Second * 2)
 		// 2 - Cause EigenDA to fail and ensure that the system falls back to anytrust in the presence of 503 eigenda-proxy errors
 		builder.L2.ConsensusNode.BatchPoster.SetEigenDAClientMock()
 		checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(2000000000000), l2B.Client)
