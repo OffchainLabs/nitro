@@ -258,6 +258,13 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		return nil, err
 	}
 
+	if s.reorgEventsReader != nil {
+		select {
+		case s.reorgEventsReader <- struct{}{}:
+		default:
+		}
+	}
+
 	newMessagesResults := make([]*execution.MessageResult, 0, len(oldMessages))
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
@@ -276,12 +283,6 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	if len(oldMessages) > 0 {
 		s.resequenceChan <- oldMessages
 		resequencing = true
-	}
-	if s.reorgEventsReader != nil {
-		select {
-		case s.reorgEventsReader <- struct{}{}:
-		default:
-		}
 	}
 	return newMessagesResults, nil
 }
