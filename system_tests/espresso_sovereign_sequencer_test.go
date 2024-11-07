@@ -66,7 +66,7 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func())
 	return builder, cleanup
 }
 
-func TestSovereignSequencer(t *testing.T) {
+func TestEspressoSovereignSequencer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

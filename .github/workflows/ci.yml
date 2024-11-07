@@ -208,14 +208,7 @@ jobs:
         env:
           TEST_STATE_SCHEME: ${{ matrix.test-state-scheme }}
         run: |
-          skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-          if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 35m -skip "$skip_tests" -tags=cionly > >(stdbuf -oL tee full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          scripts/espresso-run-test-ci
 
       - name: run tests with race detection (path and hash state scheme)
         if: matrix.test-mode == 'race'
@@ -223,57 +216,30 @@ jobs:
         env:
           TEST_STATE_SCHEME: ${{ matrix.test-state-scheme }}
         run: |
-          skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- ./... -race -skip "$skip_tests" -timeout=40m > >(stdbuf -oL tee full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          scripts/espresso-run-test-ci -race
 
       - name: run redis tests
         if: matrix.test-mode == 'redis'
-        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -timeout 20m -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: |
+          TEST_REDIS=redis://localhost:6379/0 scripts/espresso-run-test-ci -p 1 -run TestRedis ./arbnode/... ./system_tests/...
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
         shell: bash
         run: |
-          skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge -skip "$skip_tests" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          scripts/espresso-run-test-ci -run=TestChallenge -tags=challengetest
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
         shell: bash
         run: |
-          skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramArbitrator" -skip "$skip_tests" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          scripts/espresso-run-test-ci -tags=stylustest -run=TestProgramArbitrator
 
       - name: run long stylus tests
         if: matrix.test-mode == 'long'
         shell: bash
         run: |
-          skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramLong" -skip "$skip_tests" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          scripts/espresso-run-test-ci -tags=stylustest -run=TestProgramLong
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v3
