@@ -214,7 +214,7 @@ func (n NodeInterface) EstimateRetryableTicket(
 	}
 
 	// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
-	msg, err := core.TransactionToMessage(types.NewTx(submitTx), types.NewArbitrumSigner(nil), nil, core.NewMessageGasEstimationMode())
+	msg, err := core.TransactionToMessage(types.NewTx(submitTx), types.NewArbitrumSigner(nil), nil, core.NewMessageGasEstimationContext())
 	if err != nil {
 		return err
 	}
@@ -525,7 +525,7 @@ func (n NodeInterface) GasEstimateL1Component(
 	if err := args.CallDefaults(randomGas, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
 		return 0, nil, nil, err
 	}
-	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, evm.StateDB.(*state.StateDB), core.NewMessageEthcallMode())
+	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, evm.StateDB.(*state.StateDB), core.NewMessageEthcallContext())
 
 	pricing := c.State.L1PricingState()
 	l1BaseFeeEstimate, err := pricing.PricePerUnit()
@@ -581,7 +581,7 @@ func (n NodeInterface) GasEstimateComponents(
 	if err := args.CallDefaults(gasCap, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
 		return 0, 0, nil, nil, err
 	}
-	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, evm.StateDB.(*state.StateDB), core.NewMessageGasEstimationMode())
+	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, evm.StateDB.(*state.StateDB), core.NewMessageGasEstimationContext())
 	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
 	if err != nil {
 		return 0, 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
@@ -598,7 +598,7 @@ func (n NodeInterface) GasEstimateComponents(
 	}
 
 	// Compute the fee paid for L1 in L2 terms
-	gasForL1 := arbos.GetPosterGas(c.State, baseFee, core.NewMessageGasEstimationMode(), feeForL1)
+	gasForL1 := arbos.GetPosterGas(c.State, baseFee, core.NewMessageGasEstimationContext(), feeForL1)
 
 	return total, gasForL1, baseFee, l1BaseFeeEstimate, nil
 }

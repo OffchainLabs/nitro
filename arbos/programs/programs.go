@@ -82,7 +82,7 @@ func (p Programs) CacheManagers() *addressSet.AddressSet {
 	return p.cacheManagers
 }
 
-func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVersion uint64, runMode *core.MessageRunMode, debugMode bool) (
+func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVersion uint64, runCtx *core.MessageRunContext, debugMode bool) (
 	uint16, common.Hash, common.Hash, *big.Int, bool, error,
 ) {
 	statedb := evm.StateDB
@@ -116,7 +116,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVers
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit := am.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
 
-	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, arbosVersion, debugMode, burner, runMode)
+	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, arbosVersion, debugMode, burner, runCtx)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -128,7 +128,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVers
 			return 0, codeHash, common.Hash{}, nil, true, err
 		}
 
-		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runMode, expired)
+		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runCtx, expired)
 	}
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
@@ -156,7 +156,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVers
 	// replace the cached asm
 	if cached {
 		code := statedb.GetCode(address)
-		cacheProgram(statedb, info.moduleHash, programData, address, code, codeHash, params, debugMode, time, runMode)
+		cacheProgram(statedb, info.moduleHash, programData, address, code, codeHash, params, debugMode, time, runCtx)
 	}
 
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
@@ -170,7 +170,7 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	reentrant bool,
-	runMode *core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
 	evm := interpreter.Evm()
 	contract := scope.Contract
@@ -216,7 +216,7 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.PageLimit, evm.Context.Time, debugMode, program, runMode)
+	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.PageLimit, evm.Context.Time, debugMode, program, runCtx)
 	if err != nil {
 		log.Crit("failed to get local wasm for activated program", "program", contract.Address())
 		return nil, err
@@ -246,10 +246,10 @@ func (p Programs) CallProgram(
 		address = *contract.CodeAddr
 	}
 	var arbos_tag uint32
-	if runMode.IsChainTip() {
+	if runCtx.IsChainTip() {
 		arbos_tag = statedb.Database().WasmCacheTag()
 	}
-	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag, runMode)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag, runCtx)
 	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
@@ -397,7 +397,7 @@ func (p Programs) SetProgramCached(
 	cache bool,
 	time uint64,
 	params *StylusParams,
-	runMode *core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 	debug bool,
 ) error {
 	program, err := p.getProgram(codeHash, time)
@@ -433,9 +433,9 @@ func (p Programs) SetProgramCached(
 		if err != nil {
 			return err
 		}
-		cacheProgram(db, moduleHash, program, address, code, codeHash, params, debug, time, runMode)
+		cacheProgram(db, moduleHash, program, address, code, codeHash, params, debug, time, runCtx)
 	} else {
-		evictProgram(db, moduleHash, program.version, debug, runMode, expired)
+		evictProgram(db, moduleHash, program.version, debug, runCtx, expired)
 	}
 	program.cached = cache
 	return p.setProgram(codeHash, program)

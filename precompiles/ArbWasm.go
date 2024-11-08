@@ -32,7 +32,7 @@ type ArbWasm struct {
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (uint16, huge, error) {
 	debug := evm.ChainConfig().DebugMode()
-	runMode := c.txProcessor.RunMode()
+	runCtx := c.txProcessor.RunContext()
 	programs := c.State.Programs()
 	arbosVersion := c.State.ArbOSVersion()
 
@@ -40,7 +40,7 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 	if err := c.Burn(1659168); err != nil {
 		return 0, nil, err
 	}
-	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, arbosVersion, runMode, debug)
+	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, arbosVersion, runCtx, debug)
 	if takeAllGas {
 		_ = c.BurnOut()
 	}

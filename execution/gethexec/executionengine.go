@@ -521,7 +521,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc.Config(),
 		hooks,
 		false,
-		core.NewMessageCommitMode(s.wasmTargets),
+		core.NewMessageCommitContext(s.wasmTargets),
 	)
 	if err != nil {
 		return nil, err
@@ -678,11 +678,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
-	var runMode *core.MessageRunMode
+	var runCtx *core.MessageRunContext
 	if isMsgForPrefetch {
-		runMode = core.NewMessagePrefetchMode(s.wasmTargets)
+		runCtx = core.NewMessagePrefetchContext(s.wasmTargets)
 	} else {
-		runMode = core.NewMessageCommitMode(s.wasmTargets)
+		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
@@ -692,7 +692,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		s.bc.Config(),
 		isMsgForPrefetch,
-		runMode,
+		runCtx,
 	)
 
 	return block, statedb, receipts, err

@@ -38,7 +38,7 @@ func BuildBlock(
 	chainConfig *params.ChainConfig,
 	inbox arbstate.InboxBackend,
 	seqBatch []byte,
-	runMode *core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
@@ -66,7 +66,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, runMode,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, runCtx,
 	)
 	return block, err
 }
@@ -130,7 +130,7 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 }
 
 func FuzzStateTransition(f *testing.F) {
-	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, runModeSeed uint8) {
+	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, runCtxSeed uint8) {
 		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
 			return
 		}
@@ -204,21 +204,21 @@ func FuzzStateTransition(f *testing.F) {
 			positionWithinMessage: 0,
 			delayedMessages:       delayedMessages,
 		}
-		runModeNumber := runModeSeed % 5
-		var runMode *core.MessageRunMode
-		switch runModeNumber {
+		runCtxNumber := runCtxSeed % 5
+		var runCtx *core.MessageRunContext
+		switch runCtxNumber {
 		case 0:
-			runMode = core.NewMessageCommitMode(nil)
+			runCtx = core.NewMessageCommitContext(nil)
 		case 1:
-			runMode = core.NewMessageReplayMode(nil)
+			runCtx = core.NewMessageReplayContext(nil)
 		case 2:
-			runMode = core.NewMessagePrefetchMode(nil)
+			runCtx = core.NewMessagePrefetchContext(nil)
 		case 3:
-			runMode = core.NewMessageEthcallMode()
+			runCtx = core.NewMessageEthcallContext()
 		case 4:
-			runMode = core.NewMessageGasEstimationMode()
+			runCtx = core.NewMessageGasEstimationContext()
 		}
-		_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox, seqBatch, runMode)
+		_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox, seqBatch, runCtx)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.

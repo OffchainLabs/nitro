@@ -64,7 +64,7 @@ func activateProgram(
 	arbosVersion uint64,
 	debug bool,
 	burner burn.Burner,
-	runMode *core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 ) (*activationInfo, error) {
 	errBuf := make([]byte, 1024)
 	debugMode := arbmath.BoolToUint32(debug)
@@ -99,9 +99,9 @@ func activateProgram(
 }
 
 // stub any non-consensus, Rust-side caching updates
-func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codeHash common.Hash, params *StylusParams, debug bool, time uint64, runMode *core.MessageRunMode) {
+func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codeHash common.Hash, params *StylusParams, debug bool, time uint64, runCtx *core.MessageRunContext) {
 }
-func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runMode *core.MessageRunMode, forever bool) {
+func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runCtx *core.MessageRunContext, forever bool) {
 }
 
 //go:wasmimport programs new_program
@@ -132,7 +132,7 @@ func startProgram(module uint32) uint32
 //go:wasmimport programs send_response
 func sendResponse(req_id uint32) uint32
 
-func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program, runMode *core.MessageRunMode) ([]byte, error) {
+func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) ([]byte, error) {
 	return nil, nil
 }
 
@@ -148,7 +148,7 @@ func callProgram(
 	params *ProgParams,
 	memoryModel *MemoryModel,
 	_arbos_tag uint32,
-	runMode *core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
 	reqHandler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
 	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, params, reqHandler)
