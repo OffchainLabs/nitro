@@ -57,12 +57,12 @@ func (con ArbWasmCache) setProgramCached(c ctx, evm mech, address addr, codehash
 		return err
 	}
 	debugMode := evm.ChainConfig().DebugMode()
-	txRunMode := c.txProcessor.RunMode()
+	runMode := c.txProcessor.RunMode()
 	emitEvent := func() error {
 		return con.UpdateProgramCache(c, evm, c.caller, codehash, cached)
 	}
 	return programs.SetProgramCached(
-		emitEvent, evm.StateDB, codehash, address, cached, evm.Context.Time, params, txRunMode, debugMode,
+		emitEvent, evm.StateDB, codehash, address, cached, evm.Context.Time, params, runMode, debugMode,
 	)
 }
 

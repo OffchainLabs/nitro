@@ -6,9 +6,10 @@ package precompiles
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/core/tracing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -172,7 +173,7 @@ func TestArbOwner(t *testing.T) {
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
-	evm := newMockEVMForTestingWithVersionAndRunMode(nil, core.MessageGasEstimationMode)
+	evm := newMockEVMForTestingWithVersionAndRunMode(nil, core.NewMessageGasEstimationMode())
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))

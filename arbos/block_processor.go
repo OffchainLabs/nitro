@@ -144,7 +144,7 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	isMsgForPrefetch bool,
-	runMode core.MessageRunMode,
+	runMode *core.MessageRunMode,
 ) (*types.Block, types.Receipts, error) {
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
 	if err != nil {
@@ -169,7 +169,7 @@ func ProduceBlockAdvanced(
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
-	runMode core.MessageRunMode,
+	runMode *core.MessageRunMode,
 ) (*types.Block, types.Receipts, error) {
 
 	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)

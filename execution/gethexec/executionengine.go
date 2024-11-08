@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -92,6 +93,8 @@ type ExecutionEngine struct {
 	prefetchBlock bool
 
 	cachedL1PriceData *L1PriceData
+
+	wasmTargets []ethdb.WasmTarget
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -191,6 +194,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
+	s.wasmTargets = targetConfig.WasmTargets()
 	return nil
 }
 
@@ -517,7 +521,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc.Config(),
 		hooks,
 		false,
-		core.MessageCommitMode,
+		core.NewMessageCommitMode(s.wasmTargets),
 	)
 	if err != nil {
 		return nil, err
@@ -674,9 +678,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
-	runMode := core.MessageCommitMode
+	var runMode *core.MessageRunMode
 	if isMsgForPrefetch {
-		runMode = core.MessageReplayMode
+		runMode = core.NewMessagePrefetchMode(s.wasmTargets)
+	} else {
+		runMode = core.NewMessageCommitMode(s.wasmTargets)
 	}
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,

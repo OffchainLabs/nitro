@@ -405,8 +405,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runMode core.MessageRunMode, posterCost *big.Int) uint64 {
-	if runMode == core.MessageGasEstimationMode {
+func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runMode *core.MessageRunMode, posterCost *big.Int) uint64 {
+	if runMode.IsGasEstimation() {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
@@ -473,7 +473,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
-	if p.msg.TxRunMode != core.MessageEthcallMode {
+	if !p.msg.TxRunMode.IsCall() {
 		// If this is a real tx, limit the amount of computed based on the gas pool.
 		// We do this by charging extra gas, and then refunding it later.
 		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
@@ -485,7 +485,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	return tipReceipient, nil
 }
 
-func (p *TxProcessor) RunMode() core.MessageRunMode {
+func (p *TxProcessor) RunMode() *core.MessageRunMode {
 	return p.msg.TxRunMode
 }
 
@@ -778,6 +778,5 @@ func (p *TxProcessor) MsgIsNonMutating() bool {
 	if p.msg == nil {
 		return false
 	}
-	mode := p.msg.TxRunMode
-	return mode == core.MessageGasEstimationMode || mode == core.MessageEthcallMode
+	return !p.msg.TxRunMode.IsMutating()
 }

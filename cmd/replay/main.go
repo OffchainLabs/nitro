@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -292,7 +293,7 @@ func main() {
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
 		chainContext := WavmChainContext{}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, core.MessageReplayMode)
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, core.NewMessageReplayMode([]ethdb.WasmTarget{rawdb.LocalTarget()}))
 		if err != nil {
 			panic(err)
 		}

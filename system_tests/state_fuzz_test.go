@@ -38,7 +38,7 @@ func BuildBlock(
 	chainConfig *params.ChainConfig,
 	inbox arbstate.InboxBackend,
 	seqBatch []byte,
-	runMode core.MessageRunMode,
+	runMode *core.MessageRunMode,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
@@ -204,8 +204,20 @@ func FuzzStateTransition(f *testing.F) {
 			positionWithinMessage: 0,
 			delayedMessages:       delayedMessages,
 		}
-		numberOfMessageRunModes := uint8(core.MessageReplayMode) + 1 // TODO update number of run modes when new mode is added
-		runMode := core.MessageRunMode(runModeSeed % numberOfMessageRunModes)
+		runModeNumber := runModeSeed % 5
+		var runMode *core.MessageRunMode
+		switch runModeNumber {
+		case 0:
+			runMode = core.NewMessageCommitMode(nil)
+		case 1:
+			runMode = core.NewMessageReplayMode(nil)
+		case 2:
+			runMode = core.NewMessagePrefetchMode(nil)
+		case 3:
+			runMode = core.NewMessageEthcallMode()
+		case 4:
+			runMode = core.NewMessageGasEstimationMode()
+		}
 		_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox, seqBatch, runMode)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,

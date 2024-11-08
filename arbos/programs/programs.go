@@ -82,7 +82,7 @@ func (p Programs) CacheManagers() *addressSet.AddressSet {
 	return p.cacheManagers
 }
 
-func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVersion uint64, runMode core.MessageRunMode, debugMode bool) (
+func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVersion uint64, runMode *core.MessageRunMode, debugMode bool) (
 	uint16, common.Hash, common.Hash, *big.Int, bool, error,
 ) {
 	statedb := evm.StateDB
@@ -116,7 +116,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVers
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit := am.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
 
-	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, arbosVersion, debugMode, burner)
+	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, arbosVersion, debugMode, burner, runMode)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -170,7 +170,7 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	reentrant bool,
-	runmode core.MessageRunMode,
+	runMode *core.MessageRunMode,
 ) ([]byte, error) {
 	evm := interpreter.Evm()
 	contract := scope.Contract
@@ -216,7 +216,7 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.PageLimit, evm.Context.Time, debugMode, program)
+	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.PageLimit, evm.Context.Time, debugMode, program, runMode)
 	if err != nil {
 		log.Crit("failed to get local wasm for activated program", "program", contract.Address())
 		return nil, err
@@ -246,10 +246,10 @@ func (p Programs) CallProgram(
 		address = *contract.CodeAddr
 	}
 	var arbos_tag uint32
-	if runmode == core.MessageCommitMode {
+	if runMode.IsChainTip() {
 		arbos_tag = statedb.Database().WasmCacheTag()
 	}
-	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag, runMode)
 	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
@@ -397,7 +397,7 @@ func (p Programs) SetProgramCached(
 	cache bool,
 	time uint64,
 	params *StylusParams,
-	runMode core.MessageRunMode,
+	runMode *core.MessageRunMode,
 	debug bool,
 ) error {
 	program, err := p.getProgram(codeHash, time)
