@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"time"
 
@@ -27,14 +26,7 @@ type BlockMetadataRebuilderConfig struct {
 	Url             string        `koanf:"url"`
 	JWTSecret       string        `koanf:"jwt-secret"`
 	RebuildInterval time.Duration `koanf:"rebuild-interval"`
-	APIBlocksLimit  int           `koanf:"api-blocks-limit"`
-}
-
-func (c *BlockMetadataRebuilderConfig) Validate() error {
-	if c.APIBlocksLimit < 0 {
-		return errors.New("api-blocks-limit cannot be negative")
-	}
-	return nil
+	APIBlocksLimit  uint64        `koanf:"api-blocks-limit"`
 }
 
 var DefaultBlockMetadataRebuilderConfig = BlockMetadataRebuilderConfig{
@@ -48,7 +40,7 @@ func BlockMetadataRebuilderConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".url", DefaultBlockMetadataRebuilderConfig.Url, "url for bulk blockMetadata api")
 	f.String(prefix+".jwt-secret", DefaultBlockMetadataRebuilderConfig.JWTSecret, "filepath of jwt secret")
 	f.Duration(prefix+".rebuild-interval", DefaultBlockMetadataRebuilderConfig.RebuildInterval, "interval at which blockMetadata is synced regularly")
-	f.Int(prefix+".api-blocks-limit", DefaultBlockMetadataRebuilderConfig.APIBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query.\n"+
+	f.Uint64(prefix+".api-blocks-limit", DefaultBlockMetadataRebuilderConfig.APIBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query.\n"+
 		"This should be set lesser than or equal to the value set on the api provider side")
 }
 
@@ -124,6 +116,22 @@ func (b *BlockMetadataRebuilder) PushBlockMetadataToDB(query []uint64, result []
 }
 
 func (b *BlockMetadataRebuilder) Update(ctx context.Context) time.Duration {
+	handleQuery := func(query []uint64) bool {
+		result, err := b.Fetch(
+			ctx,
+			b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])),
+			b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1])),
+		)
+		if err != nil {
+			log.Error("Error getting result from bulk blockMetadata API", "err", err)
+			return false
+		}
+		if err = b.PushBlockMetadataToDB(query, result); err != nil {
+			log.Error("Error committing result from bulk blockMetadata API to ArbDB", "err", err)
+			return false
+		}
+		return true
+	}
 	iter := b.db.NewIterator(missingBlockMetadataInputFeedPrefix, nil)
 	defer iter.Release()
 	var query []uint64
@@ -131,28 +139,19 @@ func (b *BlockMetadataRebuilder) Update(ctx context.Context) time.Duration {
 		keyBytes := bytes.TrimPrefix(iter.Key(), missingBlockMetadataInputFeedPrefix)
 		query = append(query, binary.BigEndian.Uint64(keyBytes))
 		end := len(query) - 1
-		if query[end]-query[0] >= uint64(b.config.APIBlocksLimit) {
-			if query[end]-query[0] > uint64(b.config.APIBlocksLimit) {
-				if len(query) >= 2 {
-					end -= 1
-				} else {
-					end = 0
-				}
+		if query[end]-query[0]+1 >= uint64(b.config.APIBlocksLimit) {
+			if query[end]-query[0]+1 > uint64(b.config.APIBlocksLimit) && len(query) >= 2 {
+				end -= 1
 			}
-			result, err := b.Fetch(
-				ctx,
-				b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])),
-				b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[end])),
-			)
-			if err != nil {
-				log.Error("Error getting result from bulk blockMetadata API", "err", err)
-				return b.config.RebuildInterval // backoff
-			}
-			if err = b.PushBlockMetadataToDB(query[:end+1], result); err != nil {
-				log.Error("Error committing result from bulk blockMetadata API to ArbDB", "err", err)
-				return b.config.RebuildInterval // backoff
+			if success := handleQuery(query[:end+1]); !success {
+				return b.config.RebuildInterval
 			}
 			query = query[end+1:]
+		}
+	}
+	if len(query) > 0 {
+		if success := handleQuery(query); !success {
+			return b.config.RebuildInterval
 		}
 	}
 	return b.config.RebuildInterval
