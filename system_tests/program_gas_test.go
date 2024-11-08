@@ -25,6 +25,8 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+const HOSTIO_INK = 8400
+
 func checkInkUsage(
 	t *testing.T,
 	builder *NodeBuilder,
@@ -85,19 +87,19 @@ func TestWriteResultGasUsage(t *testing.T) {
 
 	// writeResultEmpty doesn't return any value
 	signature := "writeResultEmpty()"
-	expectedInk := 8400 + 16381*2
+	expectedInk := HOSTIO_INK + 16381*2
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
 
 	// writeResult(uint256) returns an array of uint256
 	signature = "writeResult(uint256)"
 	numberOfElementsInReturnedArray := 10000
 	arrayOverhead := 32 + 32 // 32 bytes for the array length and 32 bytes for the array offset
-	expectedInk = 8400 + (16381+55*(32*numberOfElementsInReturnedArray+arrayOverhead-32))*2
+	expectedInk = HOSTIO_INK + (16381+55*(32*numberOfElementsInReturnedArray+arrayOverhead-32))*2
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{uint32(numberOfElementsInReturnedArray)}, uint64(expectedInk))
 
 	signature = "writeResult(uint256)"
 	numberOfElementsInReturnedArray = 0
-	expectedInk = 8400 + (16381+55*(arrayOverhead-32))*2
+	expectedInk = HOSTIO_INK + (16381+55*(arrayOverhead-32))*2
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{uint32(numberOfElementsInReturnedArray)}, uint64(expectedInk))
 }
 
@@ -111,16 +113,16 @@ func TestReadArgsGasUsage(t *testing.T) {
 	hostio := "read_args"
 
 	signature := "readArgsNoArgs()"
-	expectedInk := 8400 + 5040
+	expectedInk := HOSTIO_INK + 5040
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
 
 	signature = "readArgsOneArg(uint256)"
 	signatureOverhead := 4
-	expectedInk = 8400 + 5040 + 30*(32+signatureOverhead-32)
+	expectedInk = HOSTIO_INK + 5040 + 30*(32+signatureOverhead-32)
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{1}, uint64(expectedInk))
 
 	signature = "readArgsThreeArgs(uint256,uint256,uint256)"
-	expectedInk = 8400 + 5040 + 30*(3*32+signatureOverhead-32)
+	expectedInk = HOSTIO_INK + 5040 + 30*(3*32+signatureOverhead-32)
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{1, 1, 1}, uint64(expectedInk))
 }
 
@@ -134,7 +136,7 @@ func TestMsgReentrantGasUsage(t *testing.T) {
 	hostio := "msg_reentrant"
 
 	signature := "writeResultEmpty()"
-	expectedInk := 8400
+	expectedInk := HOSTIO_INK
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
 }
 
@@ -148,7 +150,7 @@ func TestStorageCacheBytes32GasUsage(t *testing.T) {
 	hostio := "storage_cache_bytes32"
 
 	signature := "storageCacheBytes32()"
-	expectedInk := 8400 + (13440-8400)*2
+	expectedInk := HOSTIO_INK + (13440-HOSTIO_INK)*2
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
 }
 
@@ -165,7 +167,7 @@ func TestPayForMemoryGrowGasUsage(t *testing.T) {
 	expectedInk := 9320660000
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{100}, uint64(expectedInk))
 
-	expectedInk = 8400
+	expectedInk = HOSTIO_INK
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{0}, uint64(expectedInk))
 }
 
