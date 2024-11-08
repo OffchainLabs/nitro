@@ -292,12 +292,12 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 	if msg.AuctionContractAddress != es.auctionContractAddr {
 		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %s does not match sequencer auction contract address %s", msg.AuctionContractAddress, es.auctionContractAddr)
 	}
-	if !es.currentRoundHasController() {
-		return timeboost.ErrNoOnchainController
-	}
 	currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
 	if msg.Round != currentRound {
 		return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
+	}
+	if !es.currentRoundHasController() {
+		return timeboost.ErrNoOnchainController
 	}
 	// Reconstruct the message being signed over and recover the sender address.
 	signingMessage, err := msg.ToMessageBytes()
