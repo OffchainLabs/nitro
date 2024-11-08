@@ -205,12 +205,6 @@ impl HostioTest {
         Ok(tx::origin())
     }
 
-    fn msg_reentrant() {
-        unsafe {
-            hostio::msg_reentrant();
-        }
-    }
-
     fn storage_cache_bytes32() {
         let key = B256::ZERO;
         let val = B256::ZERO;
@@ -219,24 +213,28 @@ impl HostioTest {
         }
     }
 
-    fn pay_for_memory_grow() {
+    fn pay_for_memory_grow(pages: U256) {
+        let pages: u16 = pages.try_into().unwrap();
         unsafe {
-            hostio::pay_for_memory_grow(100);
+            hostio::pay_for_memory_grow(pages);
         }
     }
 
-    fn write_result() {
-        let len = 10000;
-        let data = vec![0; len];
-        unsafe {
-            hostio::write_result(data.as_ptr(), len);
-        }
+    fn write_result_empty() {
     }
 
-    fn read_args() {
-        let mut data = vec![0; 10000];
-        unsafe {
-            hostio::read_args(data.as_mut_ptr());
-        }
+    fn write_result(size: U256) -> Result<Vec<u32>> {
+        let size: usize = size.try_into().unwrap();
+        let data = vec![0; size];
+        Ok(data)
+    }
+
+    fn read_args_no_args() {
+    }
+
+    fn read_args_one_arg(_arg1: U256) {
+    }
+
+    fn read_args_three_args(_arg1: U256, _arg2: U256, _arg3: U256) {
     }
 }

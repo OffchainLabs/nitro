@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"math/big"
@@ -24,52 +25,135 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestGasUsageOfHostiosThatDontHaveGoodEVMEquivalents(t *testing.T) {
+func checkInkUsage(
+	t *testing.T,
+	builder *NodeBuilder,
+	stylusProgram common.Address,
+	hostio string,
+	signature string,
+	params []uint32,
+	expectedInk uint64,
+) {
+	toU256ByteSlice := func(i uint32) []byte {
+		arr := make([]byte, 32)
+		binary.BigEndian.PutUint32(arr[28:32], i)
+		return arr[:]
+	}
+
+	testName := fmt.Sprintf("%v_%v", signature, params)
+
+	data := crypto.Keccak256([]byte(signature))[:4]
+	for _, p := range params {
+		data = append(data, toU256ByteSlice(p)...)
+	}
+
+	const txGas uint64 = 32_000_000
+	tx := builder.L2Info.PrepareTxTo("Owner", &stylusProgram, txGas, nil, data)
+
+	err := builder.L2.Client.SendTransaction(builder.ctx, tx)
+	Require(t, err, "testName", testName)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err, "testName", testName)
+
+	stylusGasUsage, err := stylusHostiosGasUsage(builder.ctx, builder.L2.Client.Client(), tx)
+	Require(t, err, "testName", testName)
+
+	_, ok := stylusGasUsage[hostio]
+	if !ok {
+		Fatal(t, "hostio not found in gas usage", "hostio", hostio, "stylusGasUsage", stylusGasUsage, "testName", testName)
+	}
+
+	if len(stylusGasUsage[hostio]) != 1 {
+		Fatal(t, "unexpected number of gas usage", "hostio", hostio, "stylusGasUsage", stylusGasUsage, "testName", testName)
+	}
+
+	expectedGas := float64(expectedInk) / 10000
+	returnedGas := stylusGasUsage[hostio][0]
+	if math.Abs(expectedGas-returnedGas) > 1e-9 {
+		Fatal(t, "unexpected gas usage", "hostio", hostio, "expected", expectedGas, "returned", returnedGas, "testName", testName)
+	}
+}
+
+func TestWriteResultGasUsage(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	matchSnake := regexp.MustCompile("_[a-z]")
 
-	for _, tc := range []struct {
-		hostio      string
-		expectedInk uint64
-	}{
-		{hostio: "read_args", expectedInk: 8400 + 5040},
-		{hostio: "write_result", expectedInk: 8400 + (16381+55*(10000-32))*2},
-		{hostio: "storage_cache_bytes32", expectedInk: 8400 + (13440-8400)*2},
-		{hostio: "msg_reentrant", expectedInk: 8400},
-		{hostio: "pay_for_memory_grow", expectedInk: 9320660000},
-	} {
-		t.Run(tc.hostio, func(t *testing.T) {
-			funcName := matchSnake.ReplaceAllStringFunc(tc.hostio, func(s string) string {
-				return strings.ToUpper(strings.TrimPrefix(s, "_"))
-			})
-			signature := fmt.Sprintf("%v()", funcName)
-			data := crypto.Keccak256([]byte(signature))[:4]
+	hostio := "write_result"
 
-			const txGas uint64 = 32_000_000
-			tx := builder.L2Info.PrepareTxTo("Owner", &stylusProgram, txGas, nil, data)
+	// writeResultEmpty doesn't return any value
+	signature := "writeResultEmpty()"
+	expectedInk := 8400 + 16381*2
+	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
 
-			err := builder.L2.Client.SendTransaction(builder.ctx, tx)
-			Require(t, err)
-			_, err = builder.L2.EnsureTxSucceeded(tx)
-			Require(t, err)
+	// writeResult(uint256) returns an array of uint256
+	signature = "writeResult(uint256)"
+	numberOfElementsInReturnedArray := 10000
+	arrayOverhead := 32 + 32 // 32 bytes for the array length and 32 bytes for the array offset
+	expectedInk = 8400 + (16381+55*(32*numberOfElementsInReturnedArray+arrayOverhead-32))*2
+	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{uint32(numberOfElementsInReturnedArray)}, uint64(expectedInk))
 
-			stylusGasUsage, err := stylusHostiosGasUsage(builder.ctx, builder.L2.Client.Client(), tx)
-			Require(t, err)
+	signature = "writeResult(uint256)"
+	numberOfElementsInReturnedArray = 0
+	expectedInk = 8400 + (16381+55*(arrayOverhead-32))*2
+	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{uint32(numberOfElementsInReturnedArray)}, uint64(expectedInk))
+}
 
-			_, ok := stylusGasUsage[tc.hostio]
-			if !ok {
-				Fatal(t, "hostio not found in gas usage", "hostio", tc.hostio, "stylusGasUsage", stylusGasUsage)
-			}
+func TestReadArgsGasUsage(t *testing.T) {
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
 
-			expectedGas := float64(tc.expectedInk) / 10000
-			returnedGas := stylusGasUsage[tc.hostio][0]
-			if math.Abs(expectedGas-returnedGas) > 1e-9 {
-				Fatal(t, "unexpected gas usage", "hostio", tc.hostio, "expected", expectedGas, "returned", returnedGas)
-			}
-		})
-	}
+	hostio := "read_args"
+
+	signature := "readArgsNoArgs()"
+	expectedInk := 8400 + 5040
+	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
+
+	signature = "readArgsOneArg(uint256)"
+	signatureOverhead := 4
+	expectedInk = 8400 + 5040 + 30*(32+signatureOverhead-32)
+	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{1}, uint64(expectedInk))
+
+	signature = "readArgsThreeArgs(uint256,uint256,uint256)"
+	expectedInk = 8400 + 5040 + 30*(3*32+signatureOverhead-32)
+	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{1, 1, 1}, uint64(expectedInk))
+}
+
+func TestMsgReentrantGasUsage(t *testing.T) {
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+
+	hostio := "msg_reentrant"
+
+	signature := "writeResultEmpty()"
+	expectedInk := 8400
+	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
+}
+
+func TestStorageCacheBytes32GasUsage(t *testing.T) {
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+
+	hostio := "storage_cache_bytes32"
+
+	signature := "storageCacheBytes32()"
+	expectedInk := 8400 + (13440-8400)*2
+	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
+}
+
+func TestPayForMemoryGrowGasUsage(t *testing.T) {
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+
+	hostio := "pay_for_memory_grow"
+	signature := "payForMemoryGrow(uint256)"
+
+	expectedInk := 9320660000
+	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{100}, uint64(expectedInk))
 }
 
 func TestProgramSimpleCost(t *testing.T) {
