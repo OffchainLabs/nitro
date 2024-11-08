@@ -681,6 +681,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					Nonce:      0,
 				},
 			},
+			ChainOwner: common.HexToAddress(config.Init.DevInitAddress),
 		}
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
@@ -715,6 +716,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.Chain.ID), config.Chain.Name, genesisBlockNr, config.Chain.InfoFiles, config.Chain.InfoJson)
 		if err != nil {
 			return chainDb, nil, err
+		}
+		if config.Init.DevInit && config.Init.DevMaxCodeSize != 0 {
+			chainConfig.ArbitrumChainParams.MaxCodeSize = config.Init.DevMaxCodeSize
 		}
 		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
 		ancients, err := chainDb.Ancients()
