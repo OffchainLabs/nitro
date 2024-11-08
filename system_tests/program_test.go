@@ -1000,11 +1000,6 @@ func testCreate(t *testing.T, jit bool) {
 	validateBlockRange(t, blocks, jit, builder)
 }
 
-func TestProgramMemory(t *testing.T) {
-	t.Parallel()
-	testMemory(t, true)
-}
-
 func TestProgramInfiniteLoopShouldCauseErrOutOfGas(t *testing.T) {
 	t.Parallel()
 	testInfiniteLoopCausesErrOutOfGas(t, true)
@@ -1028,6 +1023,11 @@ func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
 	}
 
 	validateBlocks(t, receipt.BlockNumber.Uint64(), jit, builder)
+}
+
+func TestProgramMemory(t *testing.T) {
+	t.Parallel()
+	testMemory(t, true)
 }
 
 func testMemory(t *testing.T, jit bool) {

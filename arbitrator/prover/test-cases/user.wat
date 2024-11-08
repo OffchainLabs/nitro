@@ -26,7 +26,7 @@
         (loop $loop
             br $loop
         )
-        i32.const 0
+        unreachable
     )
     (func (export "user_entrypoint") (param $args_len i32) (result i32)
         ;; this func uses $args_len to select which func to call
