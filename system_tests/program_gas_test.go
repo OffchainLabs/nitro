@@ -164,6 +164,9 @@ func TestPayForMemoryGrowGasUsage(t *testing.T) {
 
 	expectedInk := 9320660000
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{100}, uint64(expectedInk))
+
+	expectedInk = 8400
+	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{0}, uint64(expectedInk))
 }
 
 func TestProgramSimpleCost(t *testing.T) {
