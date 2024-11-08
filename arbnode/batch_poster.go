@@ -203,6 +203,10 @@ func (c *BatchPosterConfig) Validate() error {
 
 type BatchPosterConfigFetcher func() *BatchPosterConfig
 
+func DangerousBatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".allow-posting-first-batch-when-sequencer-message-count-mismatch", DefaultBatchPosterConfig.Dangerous.AllowPostingFirstBatchWhenSequencerMessageCountMismatch, "allow posting the first batch even if sequence number doesn't match chain (useful after force-inclusion)")
+}
+
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
@@ -229,6 +233,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
+	DangerousBatchPosterConfigAddOptions(prefix+".dangerous", f)
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{

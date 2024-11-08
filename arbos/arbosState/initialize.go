@@ -97,6 +97,16 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
 
+	chainOwner, err := initData.GetChainOwner()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if chainOwner != (common.Address{}) {
+		err = arbosState.ChainOwners().Add(chainOwner)
+		if err != nil {
+			return common.Hash{}, err
+		}
+	}
 	addrTable := arbosState.AddressTable()
 	addrTableSize, err := addrTable.Size()
 	if err != nil {
