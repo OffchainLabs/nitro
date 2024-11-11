@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 arbutil = { path = "../arbutil/" }
-espresso-crypto-helper = { path = "../espresso-crypto-helper/" }
+espresso-crypto-helper = { path = "../espresso-crypto-helper/"}
 brotli = { path = "../brotli/", features = ["wasmer_traits"] }
 caller-env = { path = "../caller-env/", features = ["wasmer_traits"] }
 prover = { path = "../prover/", default-features = false, features = ["native"] }

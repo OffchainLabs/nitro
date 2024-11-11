@@ -33,7 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/espressocrypto"
+	"github.com/offchainlabs/nitro/espressocryptowasm"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -322,14 +322,14 @@ func main() {
 			if err != nil {
 				panic("unable to serialize header")
 			}
-			espressocrypto.VerifyMerkleProof(
+			espressocryptowasm.VerifyMerkleProof(
 				jst.BlockMerkleJustification.BlockMerkleProof.Proof,
 				jsonHeader,
 				*jst.BlockMerkleJustification.BlockMerkleComm,
 				commitment,
 			)
 			if jst.Proof != nil {
-				espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs, *jst.VidCommon)
+				espressocryptowasm.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs, *jst.VidCommon)
 			}
 
 		}

@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package espressocrypto
+package espressocryptowasm
 
 import (
 	"crypto/sha256"
@@ -32,12 +32,12 @@ func VerifyNamespace(
 	ns_table espressoTypes.NsTable,
 	txs []espressoTypes.Bytes,
 	common_data json.RawMessage,
-) bool {
+) {
 	// TODO: this code will likely no longer be used in the STF soon.
 	// G115: integer overflow conversion uint64 -> uint32 (gosec)
 	// #nosec G115
 	var txnComm = hashTxns(uint32(namespace), txs)
-	res := verifyNamespace(
+	verifyNamespace(
 		namespace,
 		proof,
 		[]byte(block_comm.String()),
@@ -45,7 +45,6 @@ func VerifyNamespace(
 		[]byte(txnComm),
 		common_data,
 	)
-	return res
 }
 
 func VerifyMerkleProof(
@@ -53,6 +52,6 @@ func VerifyMerkleProof(
 	header json.RawMessage,
 	blockComm espressoTypes.TaggedBase64,
 	circuit_comm_bytes espressoTypes.Commitment,
-) bool {
-	return verifyMerkleProof(proof, header, []byte(blockComm.String()), circuit_comm_bytes[:])
+) {
+	verifyMerkleProof(proof, header, []byte(blockComm.String()), circuit_comm_bytes[:])
 }
