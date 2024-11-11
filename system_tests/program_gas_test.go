@@ -117,15 +117,18 @@ func TestReadArgsGasUsage(t *testing.T) {
 
 	signature := "readArgsNoArgs()"
 	expectedInk := HOSTIO_INK + 5040
+	// #nosec G115
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
 
 	signature = "readArgsOneArg(uint256)"
 	signatureOverhead := 4
 	expectedInk = HOSTIO_INK + 5040 + 30*(32+signatureOverhead-32)
+	// #nosec G115
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{1}, uint64(expectedInk))
 
 	signature = "readArgsThreeArgs(uint256,uint256,uint256)"
 	expectedInk = HOSTIO_INK + 5040 + 30*(3*32+signatureOverhead-32)
+	// #nosec G115
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{1, 1, 1}, uint64(expectedInk))
 }
 
@@ -140,6 +143,7 @@ func TestMsgReentrantGasUsage(t *testing.T) {
 
 	signature := "writeResultEmpty()"
 	expectedInk := HOSTIO_INK
+	// #nosec G115
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
 }
 
@@ -154,6 +158,7 @@ func TestStorageCacheBytes32GasUsage(t *testing.T) {
 
 	signature := "storageCacheBytes32()"
 	expectedInk := HOSTIO_INK + (13440-HOSTIO_INK)*2
+	// #nosec G115
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
 }
 
@@ -168,9 +173,11 @@ func TestPayForMemoryGrowGasUsage(t *testing.T) {
 	signature := "payForMemoryGrow(uint256)"
 
 	expectedInk := 9320660000
+	// #nosec G115
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{100}, uint64(expectedInk))
 
 	expectedInk = HOSTIO_INK
+	// #nosec G115
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{0}, uint64(expectedInk))
 }
 
