@@ -39,7 +39,7 @@ func checkInkUsage(
 	toU256ByteSlice := func(i uint32) []byte {
 		arr := make([]byte, 32)
 		binary.BigEndian.PutUint32(arr[28:32], i)
-		return arr[:]
+		return arr
 	}
 
 	testName := fmt.Sprintf("%v_%v", signature, params)
@@ -88,6 +88,7 @@ func TestWriteResultGasUsage(t *testing.T) {
 	// writeResultEmpty doesn't return any value
 	signature := "writeResultEmpty()"
 	expectedInk := HOSTIO_INK + 16381*2
+	// #nosec G115
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
 
 	// writeResult(uint256) returns an array of uint256
@@ -95,11 +96,13 @@ func TestWriteResultGasUsage(t *testing.T) {
 	numberOfElementsInReturnedArray := 10000
 	arrayOverhead := 32 + 32 // 32 bytes for the array length and 32 bytes for the array offset
 	expectedInk = HOSTIO_INK + (16381+55*(32*numberOfElementsInReturnedArray+arrayOverhead-32))*2
+	// #nosec G115
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{uint32(numberOfElementsInReturnedArray)}, uint64(expectedInk))
 
 	signature = "writeResult(uint256)"
 	numberOfElementsInReturnedArray = 0
 	expectedInk = HOSTIO_INK + (16381+55*(arrayOverhead-32))*2
+	// #nosec G115
 	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{uint32(numberOfElementsInReturnedArray)}, uint64(expectedInk))
 }
 
