@@ -61,6 +61,7 @@ func TestSequencerFeed(t *testing.T) {
 	defer cleanupSeq()
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
+	// nolint:errcheck
 	port := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
@@ -107,6 +108,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	Require(t, err)
 
 	config := relay.ConfigDefault
+	// nolint:errcheck
 	port := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	config.Node.Feed.Input = *newBroadcastClientConfigTest(port)
 	config.Node.Feed.Output = *newBroadcasterConfigTest()
@@ -119,6 +121,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	Require(t, err)
 	defer currentRelay.StopAndWait()
 
+	// nolint:errcheck
 	port = currentRelay.GetListenerAddr().(*net.TCPAddr).Port
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
@@ -219,6 +222,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer cleanupC()
 	l2clientC, nodeC := testClientC.Client, testClientC.ConsensusNode
 
+	// nolint:errcheck
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
 	// The client node, connects to lying sequencer's feed
@@ -361,6 +365,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	}
 	defer wsBroadcastServer.StopAndWait()
 
+	// nolint:errcheck
 	port := wsBroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
@@ -468,6 +473,7 @@ func TestPopulateFeedBacklog(t *testing.T) {
 
 	// Creates a sink node that will read from the output feed of the previous node.
 	nodeConfigSink := builder.nodeConfig
+	// nolint:errcheck
 	port := builder.L2.ConsensusNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	nodeConfigSink.Feed.Input = *newBroadcastClientConfigTest(port)
 	testClientSink, cleanupSink := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigSink})

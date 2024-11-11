@@ -12,6 +12,7 @@ func (m *SyncMap[K, V]) Load(key K) (V, bool) {
 		var empty V
 		return empty, false
 	}
+	// nolint:errcheck
 	return val.(V), true
 }
 
@@ -27,6 +28,7 @@ func (m *SyncMap[K, V]) Delete(key K) {
 func (m *SyncMap[K, V]) Keys() []K {
 	s := make([]K, 0)
 	m.internal.Range(func(k, v interface{}) bool {
+		// nolint:errcheck
 		s = append(s, k.(K))
 		return true
 	})

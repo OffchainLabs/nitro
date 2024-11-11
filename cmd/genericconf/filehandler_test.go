@@ -55,6 +55,7 @@ func readLogMessagesFromJSONFile(t *testing.T, path string) ([]string, error) {
 		if !ok {
 			testhelpers.FailImpl(t, "Incorrect record, msg key is missing", "record", record)
 		}
+		// nolint:errcheck
 		messages = append(messages, msg.(string))
 	}
 	if errors.Is(err, io.EOF) {

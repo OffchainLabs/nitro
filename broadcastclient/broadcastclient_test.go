@@ -138,6 +138,7 @@ func TestInvalidSignature(t *testing.T) {
 	badPrivateKey, err := crypto.GenerateKey()
 	Require(t, err)
 	badPublicKey := badPrivateKey.Public()
+	// nolint:errcheck
 	badSequencerAddr := crypto.PubkeyToAddress(*badPublicKey.(*ecdsa.PublicKey))
 	config := DefaultTestConfig
 
@@ -202,6 +203,7 @@ func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*m.Broad
 }
 
 func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uint64, currentMessageCount arbutil.MessageIndex, txStreamer TransactionStreamerInterface, confirmedSequenceNumberListener chan arbutil.MessageIndex, feedErrChan chan error, validAddr *common.Address) (*BroadcastClient, error) {
+	// nolint:errcheck
 	port := listenerAddress.(*net.TCPAddr).Port
 	var av contracts.AddressVerifierInterface
 	if validAddr != nil {

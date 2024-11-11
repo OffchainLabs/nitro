@@ -334,6 +334,7 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		if err != nil {
 			return nil, nil, err
 		}
+		// nolint:errcheck
 		return parsedLog.MessageNum, args["messageData"].([]byte), nil
 	default:
 		return nil, nil, errors.New("unexpected log type")

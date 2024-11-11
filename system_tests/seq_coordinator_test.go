@@ -153,6 +153,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	nodeForwardTarget := func(nodeNum int) int {
 		execNode := testNodes[nodeNum].ExecNode
+		// nolint:errcheck
 		fwTarget := execNode.TxPublisher.(*gethexec.TxPreChecker).TransactionPublisher.(*gethexec.Sequencer).ForwardTarget()
 		if fwTarget == "" {
 			return -1
@@ -323,6 +324,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	// nodeB doesn't sequence transactions, but adds messages related to them to its output feed.
 	// nodeBOutputFeedReader reads those messages from this feed and processes them.
 	// nodeBOutputFeedReader doesn't read messages from L1 since none of the nodes posts to L1.
+	// nolint:errcheck
 	nodeBPort := testClientB.ConsensusNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	nodeConfigNodeBOutputFeedReader := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigNodeBOutputFeedReader.Feed.Input = *newBroadcastClientConfigTest(nodeBPort)

@@ -72,7 +72,9 @@ func TestDAS_SimpleExploreExploit(t *testing.T) {
 		}
 
 		for i := 0; i < len(was) && doMatch; i++ {
+			// nolint:errcheck
 			if expected[i].(*dummyReader).int != was[i].(*dummyReader).int {
+				// nolint:errcheck
 				Fail(t, fmt.Sprintf("expected %d, was %d", expected[i].(*dummyReader).int, was[i].(*dummyReader).int))
 			}
 		}

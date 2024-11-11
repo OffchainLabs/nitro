@@ -124,6 +124,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 		if err != nil {
 			return nil, err
 		}
+		// nolint:errcheck
 		return args["data"].([]byte), nil
 	case batchDataSeparateEvent:
 		var numberAsHash common.Hash

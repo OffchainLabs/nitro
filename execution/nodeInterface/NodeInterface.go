@@ -525,6 +525,7 @@ func (n NodeInterface) GasEstimateL1Component(
 	if err := args.CallDefaults(randomGas, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
 		return 0, nil, nil, err
 	}
+	// nolint:errcheck
 	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, evm.StateDB.(*state.StateDB), core.MessageEthcallMode)
 
 	pricing := c.State.L1PricingState()
@@ -581,6 +582,7 @@ func (n NodeInterface) GasEstimateComponents(
 	if err := args.CallDefaults(gasCap, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
 		return 0, 0, nil, nil, err
 	}
+	// nolint:errcheck
 	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, evm.StateDB.(*state.StateDB), core.MessageGasEstimationMode)
 	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
 	if err != nil {
