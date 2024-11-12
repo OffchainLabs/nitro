@@ -1034,3 +1034,7 @@ func (n *Node) ValidatedMessageCount() (arbutil.MessageIndex, error) {
 	}
 	return n.BlockValidator.GetValidated(), nil
 }
+
+func (n *Node) BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error) {
+	return n.TxStreamer.BlockMetadataAtCount(count)
+}

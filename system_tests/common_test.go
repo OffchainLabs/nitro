@@ -480,6 +480,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2.Client = client
 	l2.ExecNode = execNode
 	l2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	l2.Stack = stack
 
 	b.L2 = l2
 	b.L2Info = l2info

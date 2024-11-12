@@ -80,9 +80,10 @@ type ExecutionEngine struct {
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
 
-	newBlockNotifier chan struct{}
-	latestBlockMutex sync.Mutex
-	latestBlock      *types.Block
+	newBlockNotifier    chan struct{}
+	reorgEventsNotifier chan struct{}
+	latestBlockMutex    sync.Mutex
+	latestBlock         *types.Block
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
@@ -182,6 +183,16 @@ func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
 	s.recorder = recorder
 }
 
+func (s *ExecutionEngine) SetReorgEventsNotifier(reorgEventsNotifier chan struct{}) {
+	if s.Started() {
+		panic("trying to set reorg events notifier after start")
+	}
+	if s.reorgEventsNotifier != nil {
+		panic("trying to set reorg events notifier when already set")
+	}
+	s.reorgEventsNotifier = reorgEventsNotifier
+}
+
 func (s *ExecutionEngine) EnableReorgSequencing() {
 	if s.Started() {
 		panic("trying to enable reorg sequencing after start")
@@ -210,6 +221,13 @@ func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) 
 		panic("trying to set transaction consensus when already set")
 	}
 	s.consensus = consensus
+}
+
+func (s *ExecutionEngine) BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error) {
+	if s.consensus != nil {
+		return s.consensus.BlockMetadataAtCount(count)
+	}
+	return nil, errors.New("FullConsensusClient is not accessible to execution")
 }
 
 func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
@@ -244,6 +262,13 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	err := s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.reorgEventsNotifier != nil {
+		select {
+		case s.reorgEventsNotifier <- struct{}{}:
+		default:
+		}
 	}
 
 	newMessagesResults := make([]*execution.MessageResult, 0, len(oldMessages))
