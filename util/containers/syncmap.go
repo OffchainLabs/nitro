@@ -17,8 +17,7 @@ func (m *SyncMap[K, V]) Load(key K) (V, bool) {
 	}
 	vVal, ok := val.(V)
 	if !ok {
-		var empty V
-		return empty, false
+		panic(fmt.Sprintf("type assertion failed on %s", val))
 	}
 	return vVal, true
 }
