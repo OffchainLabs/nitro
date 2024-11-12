@@ -536,6 +536,20 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		refund := func(refundFrom common.Address, amount *big.Int) {
 			const errLog = "fee address doesn't have enough funds to give user refund"
 
+			logMissingRefund := func(err error) {
+				if !errors.Is(err, vm.ErrInsufficientBalance) {
+					log.Error("unexpected error refunding balance", "err", err, "feeAddress", refundFrom)
+					return
+				}
+				logLevel := log.Error
+				isContract := p.evm.StateDB.GetCodeSize(refundFrom) > 0
+				if isContract {
+					// It's expected that the balance might not still be in this address if it's a contract.
+					logLevel = log.Debug
+				}
+				logLevel(errLog, "err", err, "feeAddress", refundFrom)
+			}
+
 			// Refund funds to the fee refund address without overdrafting the L1 deposit.
 			toRefundAddr := takeFunds(maxRefund, amount)
 			err = util.TransferBalance(&refundFrom, &inner.RefundTo, toRefundAddr, p.evm, scenario, "refund")
@@ -543,13 +557,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 				// Normally the network fee address should be holding any collected fees.
 				// However, in theory, they could've been transferred out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
-				log.Error(errLog, "err", err, "feeAddress", refundFrom)
+				logMissingRefund(err)
 			}
 			// Any extra refund can't be given to the fee refund address if it didn't come from the L1 deposit.
 			// Instead, give the refund to the retryable from address.
 			err = util.TransferBalance(&refundFrom, &inner.From, arbmath.BigSub(amount, toRefundAddr), p.evm, scenario, "refund")
 			if err != nil {
-				log.Error(errLog, "err", err, "feeAddress", refundFrom)
+				logMissingRefund(err)
 			}
 		}
 

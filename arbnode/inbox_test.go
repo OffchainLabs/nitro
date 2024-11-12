@@ -72,7 +72,11 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	if err != nil {
 		Fail(t, err)
 	}
-	execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCache)
+	stylusTargetConfig := &gethexec.DefaultStylusTargetConfig
+	Require(t, stylusTargetConfig.Validate()) // pre-processes config (i.a. parses wasmTargets)
+	if err := execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCacheCapacity, &gethexec.DefaultStylusTargetConfig); err != nil {
+		Fail(t, err)
+	}
 	execSeq := &execClientWrapper{execEngine, t}
 	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
 	if err != nil {

@@ -15,11 +15,11 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -114,7 +114,7 @@ func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services 
 func NewAggregatorWithL1Info(
 	config DataAvailabilityConfig,
 	services []ServiceDetails,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	seqInboxAddress common.Address,
 ) (*Aggregator, error) {
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
@@ -130,6 +130,7 @@ func NewAggregatorWithSeqInboxCaller(
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 ) (*Aggregator, error) {
 
+	// #nosec G115
 	keysetHash, keysetBytes, err := KeysetHashFromServices(services, uint64(config.RPCAggregator.AssumedHonest))
 	if err != nil {
 		return nil, err
@@ -166,6 +167,7 @@ type storeResponse struct {
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
+	// #nosec G115
 	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0))
 
 	allBackendsSucceeded := false

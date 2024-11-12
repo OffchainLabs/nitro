@@ -214,7 +214,7 @@ func TestComponentEstimate(t *testing.T) {
 
 	userBalance := big.NewInt(1e16)
 	maxPriorityFeePerGas := big.NewInt(0)
-	maxFeePerGas := arbmath.BigMulByUfrac(l2BaseFee, 3, 2)
+	maxFeePerGas := arbmath.BigMulByUFrac(l2BaseFee, 3, 2)
 
 	builder.L2Info.GenerateAccount("User")
 	builder.L2.TransferBalance(t, "Owner", "User", userBalance, builder.L2Info)

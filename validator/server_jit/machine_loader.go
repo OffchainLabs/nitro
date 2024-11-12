@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -27,16 +28,13 @@ var DefaultJitMachineConfig = JitMachineConfig{
 func getJitPath() (string, error) {
 	var jitBinary string
 	executable, err := os.Executable()
-	println("executable: ", executable)
 	if err == nil {
 		if strings.Contains(filepath.Base(executable), "test") || strings.Contains(filepath.Dir(executable), "system_tests") {
 			_, thisfile, _, _ := runtime.Caller(0)
 			projectDir := filepath.Dir(filepath.Dir(filepath.Dir(thisfile)))
-			println("projectDir: ", projectDir)
 			jitBinary = filepath.Join(projectDir, "target", "bin", "jit")
 		} else {
 			jitBinary = filepath.Join(filepath.Dir(executable), "jit")
-			println("inside else: ", jitBinary)
 		}
 		_, err = os.Stat(jitBinary)
 	}
@@ -55,14 +53,14 @@ type JitMachineLoader struct {
 	stopped bool
 }
 
-func NewJitMachineLoader(config *JitMachineConfig, locator *server_common.MachineLocator, fatalErrChan chan error) (*JitMachineLoader, error) {
+func NewJitMachineLoader(config *JitMachineConfig, locator *server_common.MachineLocator, maxExecutionTime time.Duration, fatalErrChan chan error) (*JitMachineLoader, error) {
 	jitPath, err := getJitPath()
 	if err != nil {
 		return nil, err
 	}
 	createMachineThreadFunc := func(ctx context.Context, moduleRoot common.Hash) (*JitMachine, error) {
 		binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.ProverBinPath)
-		return createJitMachine(jitPath, binPath, config.JitCranelift, config.WasmMemoryUsageLimit, moduleRoot, fatalErrChan)
+		return createJitMachine(jitPath, binPath, config.JitCranelift, config.WasmMemoryUsageLimit, maxExecutionTime, moduleRoot, fatalErrChan)
 	}
 	return &JitMachineLoader{
 		MachineLoader: *server_common.NewMachineLoader[JitMachine](locator, createMachineThreadFunc),

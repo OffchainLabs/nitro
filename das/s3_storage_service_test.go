@@ -64,6 +64,7 @@ func NewTestS3StorageService(ctx context.Context, s3Config genericconf.S3Config)
 
 func TestS3StorageService(t *testing.T) {
 	ctx := context.Background()
+	// #nosec G115
 	timeout := uint64(time.Now().Add(time.Hour).Unix())
 	s3Service, err := NewTestS3StorageService(ctx, genericconf.DefaultS3Config)
 	Require(t, err)
