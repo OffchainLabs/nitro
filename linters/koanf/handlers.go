@@ -126,7 +126,11 @@ func checkFlagDefs(pass *analysis.Pass, f *ast.FuncDecl, cnt map[string]int) Res
 		if !ok {
 			continue
 		}
-		handleSelector(pass, callE.Args[1].(*ast.SelectorExpr), -1, cnt)
+		sel, ok := callE.Args[1].(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+		handleSelector(pass, sel, -1, cnt)
 		if normSL := normalizeTag(sl); !strings.EqualFold(normSL, s) {
 			res.Errors = append(res.Errors, koanfError{
 				Pos:     f.Pos(),
