@@ -80,10 +80,10 @@ type ExecutionEngine struct {
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
 
-	newBlockNotifier  chan struct{}
-	reorgEventsReader chan struct{}
-	latestBlockMutex  sync.Mutex
-	latestBlock       *types.Block
+	newBlockNotifier    chan struct{}
+	reorgEventsNotifier chan struct{}
+	latestBlockMutex    sync.Mutex
+	latestBlock         *types.Block
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
@@ -135,10 +135,6 @@ func (s *ExecutionEngine) backlogL1GasCharged() uint64 {
 		s.cachedL1PriceData.msgToL1PriceData[0].l1GasCharged)
 }
 
-func (s *ExecutionEngine) SetReorgEventsReader(reorgEventsReader chan struct{}) {
-	s.reorgEventsReader = reorgEventsReader
-}
-
 func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	s.cachedL1PriceData.mutex.Lock()
 	defer s.cachedL1PriceData.mutex.Unlock()
@@ -185,6 +181,16 @@ func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
 		panic("trying to set recorder policy when already set")
 	}
 	s.recorder = recorder
+}
+
+func (s *ExecutionEngine) SetReorgEventsNotifier(reorgEventsNotifier chan struct{}) {
+	if s.Started() {
+		panic("trying to set reorg events notifier after start")
+	}
+	if s.reorgEventsNotifier != nil {
+		panic("trying to set reorg events notifier when already set")
+	}
+	s.reorgEventsNotifier = reorgEventsNotifier
 }
 
 func (s *ExecutionEngine) EnableReorgSequencing() {
@@ -258,6 +264,13 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		return nil, err
 	}
 
+	if s.reorgEventsNotifier != nil {
+		select {
+		case s.reorgEventsNotifier <- struct{}{}:
+		default:
+		}
+	}
+
 	newMessagesResults := make([]*execution.MessageResult, 0, len(oldMessages))
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
@@ -276,12 +289,6 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	if len(oldMessages) > 0 {
 		s.resequenceChan <- oldMessages
 		resequencing = true
-	}
-	if s.reorgEventsReader != nil {
-		select {
-		case s.reorgEventsReader <- struct{}{}:
-		default:
-		}
 	}
 	return newMessagesResults, nil
 }

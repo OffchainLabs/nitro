@@ -235,7 +235,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	}
 
 	// Test that LRU caching works
-	builder.execConfig.BlockMetadataApiCacheSize = 10
+	builder.execConfig.BlockMetadataApiCacheSize = 1000
 	builder.execConfig.BlockMetadataApiBlocksLimit = 25
 	builder.RestartL2Node(t)
 	l2rpc = builder.L2.Stack.Attach()

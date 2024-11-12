@@ -60,8 +60,8 @@ type Config struct {
 	EnablePrefetchBlock         bool                             `koanf:"enable-prefetch-block"`
 	SyncMonitor                 SyncMonitorConfig                `koanf:"sync-monitor"`
 	StylusTarget                StylusTargetConfig               `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   int                              `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit int                              `koanf:"block-metadata-api-blocks-limit"`
+	BlockMetadataApiCacheSize   uint64                           `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64                           `koanf:"block-metadata-api-blocks-limit"`
 
 	forwardingTarget string
 }
@@ -84,12 +84,6 @@ func (c *Config) Validate() error {
 	if c.forwardingTarget != "" && c.Sequencer.Enable {
 		return errors.New("ForwardingTarget set and sequencer enabled")
 	}
-	if c.BlockMetadataApiCacheSize < 0 {
-		return errors.New("block-metadata-api-cache-size cannot be negative")
-	}
-	if c.BlockMetadataApiBlocksLimit < 0 {
-		return errors.New("block-metadata-api-blocks-limit cannot be negative")
-	}
 	return nil
 }
 
@@ -107,8 +101,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
-	f.Int(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
-	f.Int(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable")
+	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
+	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 }
 
 var ConfigDefault = Config{
@@ -124,7 +118,7 @@ var ConfigDefault = Config{
 	Forwarder:                   DefaultNodeForwarderConfig,
 	EnablePrefetchBlock:         true,
 	StylusTarget:                DefaultStylusTargetConfig,
-	BlockMetadataApiCacheSize:   10000,
+	BlockMetadataApiCacheSize:   100 * 1024 * 1024,
 	BlockMetadataApiBlocksLimit: 100,
 }
 
