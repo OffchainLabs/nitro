@@ -12,7 +12,12 @@ func (m *SyncMap[K, V]) Load(key K) (V, bool) {
 		var empty V
 		return empty, false
 	}
-	return val.(V), true
+	vVal, ok := val.(V)
+	if !ok {
+		var empty V
+		return empty, false
+	}
+	return vVal, true
 }
 
 func (m *SyncMap[K, V]) Store(key K, val V) {
@@ -27,7 +32,11 @@ func (m *SyncMap[K, V]) Delete(key K) {
 func (m *SyncMap[K, V]) Keys() []K {
 	s := make([]K, 0)
 	m.internal.Range(func(k, v interface{}) bool {
-		s = append(s, k.(K))
+		kKey, ok := k.(K)
+		if !ok {
+			return false
+		}
+		s = append(s, kKey)
 		return true
 	})
 	return s
