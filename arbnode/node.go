@@ -133,6 +133,9 @@ func (c *Config) Validate() error {
 	if c.Sequencer && c.TransactionStreamer.TrackBlockMetadataFrom == 0 {
 		return errors.New("when sequencer is enabled track-missing-block-metadata should be enabled as well")
 	}
+	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataRebuilder.Enable {
+		log.Warn("track-missing-block-metadata is set but blockMetadata rebuilder is not enabled")
+	}
 	return nil
 }
 

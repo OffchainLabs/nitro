@@ -42,12 +42,13 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
-var blockMetadataInputFeedKey = func(pos uint64) []byte {
+func blockMetadataInputFeedKey(pos uint64) []byte {
 	var key []byte
 	prefix := []byte("t")
 	key = append(key, prefix...)
@@ -94,7 +95,8 @@ func TestTimeboostBulkBlockMetadataRebuilder(t *testing.T) {
 	}
 
 	ndcfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	ndcfg.TransactionStreamer.TrackBlockMetadataFrom = 1
+	trackBlockMetadataFrom := uint64(5)
+	ndcfg.TransactionStreamer.TrackBlockMetadataFrom = trackBlockMetadataFrom
 	newNode, cleanupNewNode := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig:  ndcfg,
 		stackConfig: testhelpers.CreateStackConfigForTest(t.TempDir()),
@@ -112,7 +114,7 @@ func TestTimeboostBulkBlockMetadataRebuilder(t *testing.T) {
 	}
 
 	blockMetadataInputFeedPrefix := []byte("t")
-	missingBlockMetadataInputFeedPrefix := []byte("mt")
+	missingBlockMetadataInputFeedPrefix := []byte("xt")
 	arbDb = newNode.ConsensusNode.ArbDB
 
 	// Check if all block numbers with missingBlockMetadataInputFeedPrefix are present as keys in arbDB and that no keys with blockMetadataInputFeedPrefix
@@ -123,7 +125,7 @@ func TestTimeboostBulkBlockMetadataRebuilder(t *testing.T) {
 	}
 	iter.Release()
 	iter = arbDb.NewIterator(missingBlockMetadataInputFeedPrefix, nil)
-	pos := uint64(1)
+	pos := trackBlockMetadataFrom
 	for iter.Next() {
 		keyBytes := bytes.TrimPrefix(iter.Key(), missingBlockMetadataInputFeedPrefix)
 		if pos != binary.BigEndian.Uint64(keyBytes) {
@@ -137,13 +139,13 @@ func TestTimeboostBulkBlockMetadataRebuilder(t *testing.T) {
 	iter.Release()
 
 	// Rebuild blockMetadata and cleanup trackers from ArbDB
-	blockMetadataRebuilder, err := arbnode.NewBlockMetadataRebuilder(ctx, arbnode.BlockMetadataRebuilderConfig{Url: "http://127.0.0.1:8547"}, arbDb, newNode.ExecNode)
+	blockMetadataRebuilder, err := arbnode.NewBlockMetadataRebuilder(ctx, arbnode.BlockMetadataRebuilderConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, newNode.ExecNode)
 	Require(t, err)
 	blockMetadataRebuilder.Update(ctx)
 
 	// Check if all blockMetadata was synced from bulk BlockMetadata API via the blockMetadataRebuilder and that trackers for missing blockMetadata were cleared
 	iter = arbDb.NewIterator(blockMetadataInputFeedPrefix, nil)
-	pos = uint64(1)
+	pos = trackBlockMetadataFrom
 	for iter.Next() {
 		keyBytes := bytes.TrimPrefix(iter.Key(), blockMetadataInputFeedPrefix)
 		if binary.BigEndian.Uint64(keyBytes) != pos {
