@@ -1,6 +1,9 @@
 name: Espresso Docker Image
 
 inputs:
+  context:
+    required: true
+    type: string
   images:
     required: true
     type: string
@@ -36,6 +39,7 @@ runs:
       uses: docker/build-push-action@v5
       id: build
       with:
+        context: ${{ inputs.context }}
         file: ${{ inputs.file }}
         target: ${{ inputs.target }}
         labels: ${{ steps.metadata.outputs.labels  }}

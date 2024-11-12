@@ -102,6 +102,7 @@ jobs:
       - name: Build nitro-node image
         uses: ./.github/actions/docker-image
         with:
+          context: .
           file: Dockerfile
           images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node
           target: nitro-node
@@ -111,6 +112,7 @@ jobs:
         uses: ./.github/actions/docker-image
         id: nitro-node-dev
         with:
+          context: .
           file: Dockerfile
           images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node-dev
           target: nitro-node-dev
