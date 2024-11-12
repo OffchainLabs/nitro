@@ -307,7 +307,7 @@ func main() {
 			}
 
 			hotshotHeader := jst.Header
-			height := hotshotHeader.Height
+			height := hotshotHeader.Header.GetBlockHeight()
 
 			if jst.BlockMerkleJustification == nil {
 				panic("block merkle justification missing")
@@ -329,7 +329,7 @@ func main() {
 				commitment,
 			)
 			if jst.Proof != nil {
-				espressocryptowasm.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs, *jst.VidCommon)
+				espressocryptowasm.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.Header.GetPayloadCommitment(), *jst.Header.Header.GetNsTable(), txs, *jst.VidCommon)
 			}
 
 		}

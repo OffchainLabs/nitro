@@ -48,14 +48,14 @@ func TestEspressoFinalityNode(t *testing.T) {
 	builder, cleanup := createL1AndL2Node(ctx, t)
 	defer cleanup()
 
-	err := waitForL1Node(t, ctx)
+	err := waitForL1Node(ctx)
 	Require(t, err)
 
-	cleanEspresso := runEspresso(t, ctx)
+	cleanEspresso := runEspresso()
 	defer cleanEspresso()
 
 	// wait for the builder
-	err = waitForEspressoNode(t, ctx)
+	err = waitForEspressoNode(ctx)
 	Require(t, err)
 
 	err = checkTransferTxOnL2(t, ctx, builder.L2, "User14", builder.L2Info)
@@ -64,7 +64,7 @@ func TestEspressoFinalityNode(t *testing.T) {
 	msgCnt, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 
-	err = waitForWith(t, ctx, 6*time.Minute, 5*time.Second, func() bool {
+	err = waitForWith(ctx, 6*time.Minute, 5*time.Second, func() bool {
 		validatedCnt := builder.L2.ConsensusNode.BlockValidator.Validated(t)
 		log.Info("L2 validated count", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
 		return validatedCnt == msgCnt
@@ -75,7 +75,7 @@ func TestEspressoFinalityNode(t *testing.T) {
 	builderEspressoFinalityNode, cleanupEspressoFinalityNode := createEspressoFinalityNode(t, builder)
 	defer cleanupEspressoFinalityNode()
 
-	err = waitForWith(t, ctx, 6*time.Minute, 5*time.Second, func() bool {
+	err = waitForWith(ctx, 6*time.Minute, 5*time.Second, func() bool {
 		msgCntFinalityNode, err := builderEspressoFinalityNode.ConsensusNode.TxStreamer.GetMessageCount()
 		log.Info("Finality node validated count", "msgCntFinalityNode", msgCntFinalityNode, "msgCnt", msgCnt)
 		Require(t, err)

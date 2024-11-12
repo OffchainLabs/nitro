@@ -3,12 +3,13 @@ package gethexec
 import (
 	"context"
 	"fmt"
+	"time"
+
 	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos"
-	"time"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -65,16 +66,17 @@ func (n *EspressoFinalityNode) createBlock(ctx context.Context) (returnValue boo
 		return false
 	}
 
-	arbTxns, err := n.espressoClient.FetchTransactionsInBlock(ctx, header.Height, n.namespace)
+	height := header.Header.GetBlockHeight()
+	arbTxns, err := n.espressoClient.FetchTransactionsInBlock(ctx, height, n.namespace)
 	if err != nil {
-		arbos.LogFailedToFetchTransactions(header.Height, err)
+		arbos.LogFailedToFetchTransactions(height, err)
 		return false
 	}
 	arbHeader := &arbostypes.L1IncomingMessageHeader{
 		Kind:        arbostypes.L1MessageType_L2Message,
 		Poster:      l1pricing.BatchPosterAddress,
-		BlockNumber: header.L1Head,
-		Timestamp:   header.Timestamp,
+		BlockNumber: header.Header.GetL1Head(),
+		Timestamp:   header.Header.GetTimestamp(),
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}

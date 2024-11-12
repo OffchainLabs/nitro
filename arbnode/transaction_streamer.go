@@ -1372,6 +1372,7 @@ func (s *TransactionStreamer) PollSubmittedTransactionForFinality(ctx context.Co
 		log.Error("failed to write to db", "err", err)
 		return s.config().EspressoTxnsPollingInterval
 	}
+	log.Info("Finality message", "pos", submittedTxnPos, "tx", submittedTxHash.String())
 	return time.Duration(0)
 }
 

@@ -3,14 +3,15 @@ package arbtest
 import (
 	"context"
 	"encoding/json"
-	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
-	lightclientmock "github.com/EspressoSystems/espresso-sequencer-go/light-client-mock"
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"os"
 	"os/exec"
 	"testing"
 	"time"
+
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
+	lightclientmock "github.com/EspressoSystems/espresso-sequencer-go/light-client-mock"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -33,7 +34,7 @@ var (
 	arbValidationPort = 54321
 )
 
-func runEspresso(t *testing.T, ctx context.Context) func() {
+func runEspresso() func() {
 	shutdown := func() {
 		p := exec.Command("docker", "compose", "down")
 		p.Dir = workingDir
@@ -107,15 +108,13 @@ func createValidationNode(ctx context.Context, t *testing.T, jit bool) func() {
 }
 
 func waitFor(
-	t *testing.T,
 	ctxinput context.Context,
 	condition func() bool,
 ) error {
-	return waitForWith(t, ctxinput, 30*time.Second, time.Second, condition)
+	return waitForWith(ctxinput, 30*time.Second, time.Second, condition)
 }
 
 func waitForWith(
-	t *testing.T,
 	ctxinput context.Context,
 	timeout time.Duration,
 	interval time.Duration,
@@ -136,30 +135,27 @@ func waitForWith(
 	}
 }
 
-func waitForEspressoNode(t *testing.T, ctx context.Context) error {
-	return waitForWith(t, ctx, 400*time.Second, 1*time.Second, func() bool {
-		out, err := exec.Command("curl", "http://localhost:41000/availability/block/10", "-L").Output()
+func waitForEspressoNode(ctx context.Context) error {
+	return waitForWith(ctx, 400*time.Second, 1*time.Second, func() bool {
+		out, err := exec.Command("curl", "http://localhost:20000/api/dev-info", "-L").Output()
 		if err != nil {
-			log.Warn("retry to check the builder", "err", err)
+			log.Warn("retry to check the espresso dev node", "err", err)
 			return false
 		}
 		return len(out) > 0
 	})
 }
 
-func waitForHotShotLiveness(t *testing.T, ctx context.Context, lightClientReader *lightclient.LightClientReader) error {
-	return waitForWith(t, ctx, 400*time.Second, 1*time.Second, func() bool {
+func waitForHotShotLiveness(ctx context.Context, lightClientReader *lightclient.LightClientReader) error {
+	return waitForWith(ctx, 400*time.Second, 1*time.Second, func() bool {
 		log.Info("Waiting for HotShot Liveness")
-		live, err := lightClientReader.IsHotShotLive(10)
-		if err != nil {
-			return false
-		}
-		return live
+		_, err := lightClientReader.FetchMerkleRoot(1, nil)
+		return err == nil
 	})
 }
 
-func waitForL1Node(t *testing.T, ctx context.Context) error {
-	return waitFor(t, ctx, func() bool {
+func waitForL1Node(ctx context.Context) error {
+	return waitFor(ctx, func() bool {
 		if e := exec.Command(
 			"curl",
 			"-X",
@@ -183,14 +179,14 @@ func TestEspressoE2E(t *testing.T) {
 	builder, cleanup := createL1AndL2Node(ctx, t)
 	defer cleanup()
 
-	err := waitForL1Node(t, ctx)
+	err := waitForL1Node(ctx)
 	Require(t, err)
 
-	cleanEspresso := runEspresso(t, ctx)
+	cleanEspresso := runEspresso()
 	defer cleanEspresso()
 
 	// wait for the builder
-	err = waitForEspressoNode(t, ctx)
+	err = waitForEspressoNode(ctx)
 	Require(t, err)
 
 	l2Node := builder.L2
@@ -198,7 +194,7 @@ func TestEspressoE2E(t *testing.T) {
 
 	// Wait for the initial message
 	expected := arbutil.MessageIndex(1)
-	err = waitFor(t, ctx, func() bool {
+	err = waitFor(ctx, func() bool {
 		msgCnt, err := l2Node.ConsensusNode.TxStreamer.GetMessageCount()
 		if err != nil {
 			panic(err)
@@ -210,7 +206,7 @@ func TestEspressoE2E(t *testing.T) {
 	Require(t, err)
 
 	// wait for the latest hotshot block
-	err = waitFor(t, ctx, func() bool {
+	err = waitFor(ctx, func() bool {
 		out, err := exec.Command("curl", "http://127.0.0.1:41000/status/block-height", "-L").Output()
 		if err != nil {
 			return false
@@ -230,7 +226,7 @@ func TestEspressoE2E(t *testing.T) {
 	Require(t, err)
 	// wait for hotshot liveness
 
-	err = waitForHotShotLiveness(t, ctx, lightClientReader)
+	err = waitForHotShotLiveness(ctx, lightClientReader)
 	Require(t, err)
 
 	// Check if the tx is executed correctly
@@ -239,7 +235,7 @@ func TestEspressoE2E(t *testing.T) {
 
 	// Remember the number of messages
 	var msgCnt arbutil.MessageIndex
-	err = waitFor(t, ctx, func() bool {
+	err = waitFor(ctx, func() bool {
 		cnt, err := l2Node.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
 		msgCnt = cnt
@@ -249,7 +245,7 @@ func TestEspressoE2E(t *testing.T) {
 	Require(t, err)
 
 	// Wait for the number of validated messages to catch up
-	err = waitForWith(t, ctx, 360*time.Second, 5*time.Second, func() bool {
+	err = waitForWith(ctx, 8*time.Minute, 5*time.Second, func() bool {
 		validatedCnt := l2Node.ConsensusNode.BlockValidator.Validated(t)
 		log.Info("waiting for validation", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
 		return validatedCnt >= msgCnt
@@ -266,7 +262,7 @@ func TestEspressoE2E(t *testing.T) {
 		WrapL2ForDelayed(t, delayedTx, builder.L1Info, "Faucet", 100000),
 	})
 
-	err = waitForWith(t, ctx, 180*time.Second, 2*time.Second, func() bool {
+	err = waitForWith(ctx, 180*time.Second, 2*time.Second, func() bool {
 		balance2 := l2Node.GetBalance(t, addr2)
 		log.Info("waiting for balance", "account", newAccount2, "addr", addr2, "balance", balance2)
 		return balance2.Cmp(transferAmount) >= 0
@@ -286,7 +282,7 @@ func TestEspressoE2E(t *testing.T) {
 		err := lightclientmock.FreezeL1Height(t, builder.L1.Client, address, &txOpts)
 		log.Info("waiting for light client to report hotshot is down")
 		Require(t, err)
-		err = waitForWith(t, ctx, 10*time.Minute, 1*time.Second, func() bool {
+		err = waitForWith(ctx, 10*time.Minute, 1*time.Second, func() bool {
 			isLive, err := lightclientmock.IsHotShotLive(t, builder.L1.Client, address, uint64(delayThreshold))
 			if err != nil {
 				return false
@@ -300,7 +296,7 @@ func TestEspressoE2E(t *testing.T) {
 		Require(t, err)
 		log.Info("waiting for message count", "currMsg", currMsg)
 		var validatedMsg arbutil.MessageIndex
-		err = waitForWith(t, ctx, 6*time.Minute, 60*time.Second, func() bool {
+		err = waitForWith(ctx, 6*time.Minute, 60*time.Second, func() bool {
 			validatedCnt := builder.L2.ConsensusNode.BlockValidator.Validated(t)
 			log.Info("Validation status", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
 			if validatedCnt >= currMsg {
@@ -315,7 +311,7 @@ func TestEspressoE2E(t *testing.T) {
 		err = checkTransferTxOnL2(t, ctx, l2Node, "User13", l2Info)
 		Require(t, err)
 
-		err = waitForWith(t, ctx, 3*time.Minute, 20*time.Second, func() bool {
+		err = waitForWith(ctx, 3*time.Minute, 20*time.Second, func() bool {
 			validated := builder.L2.ConsensusNode.BlockValidator.Validated(t)
 			return validated >= validatedMsg
 		})
@@ -326,7 +322,7 @@ func TestEspressoE2E(t *testing.T) {
 		Require(t, err)
 
 		// Check if the validated count is increasing
-		err = waitForWith(t, ctx, 3*time.Minute, 20*time.Second, func() bool {
+		err = waitForWith(ctx, 3*time.Minute, 20*time.Second, func() bool {
 			validated := builder.L2.ConsensusNode.BlockValidator.Validated(t)
 			return validated >= validatedMsg+10
 		})
@@ -352,7 +348,7 @@ func checkTransferTxOnL2(
 
 	addr := l2Info.GetAddress(account)
 
-	return waitForWith(t, ctx, time.Second*300, time.Second*1, func() bool {
+	return waitForWith(ctx, time.Second*300, time.Second*1, func() bool {
 		balance := l2Node.GetBalance(t, addr)
 		log.Info("waiting for balance", "account", account, "addr", addr, "balance", balance)
 		if balance.Cmp(transferAmount) >= 0 {

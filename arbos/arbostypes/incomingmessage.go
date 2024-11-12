@@ -43,7 +43,7 @@ type BlockMerkleJustification struct {
 }
 
 type EspressoBlockJustification struct {
-	Header                   *espressoTypes.Header
+	Header                   *espressoTypes.HeaderImpl
 	Proof                    *espressoTypes.NamespaceProof
 	VidCommon                *espressoTypes.VidCommon
 	BlockMerkleJustification *BlockMerkleJustification

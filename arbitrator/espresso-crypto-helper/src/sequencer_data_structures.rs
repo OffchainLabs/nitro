@@ -7,6 +7,7 @@ use ark_serialize::{
 };
 use bytesize::ByteSize;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use derive_more::Deref;
 use derive_more::{Add, Display, From, Into, Sub};
 use digest::OutputSizeUser;
 use either::Either;
@@ -20,12 +21,18 @@ use jf_merkle_tree::{
     MerkleTreeScheme, ToTraversalPath,
 };
 use num_traits::PrimInt;
-use serde::{Deserialize, Serialize};
-use std::{default::Default, str::FromStr};
+use serde::Serializer;
+use serde::{
+    de::{self, MapAccess, SeqAccess, Visitor},
+    Deserialize, Deserializer, Serialize,
+};
+use serde_json::{Map, Value};
+use std::{default::Default, fmt, str::FromStr};
 use tagged_base64::tagged;
 use trait_set::trait_set;
 use typenum::Unsigned;
 
+use crate::v0_3;
 use crate::{full_payload::NsTable, hotshot_types::VidCommitment};
 use crate::{
     utils::{impl_serde_from_string_or_integer, Err, FromStringOrInteger},
@@ -125,7 +132,7 @@ impl From<u16> for ChainId {
     }
 }
 
-#[derive(Hash, Copy, Clone, Debug, Default, Display, PartialEq, Eq, From, Into)]
+#[derive(Hash, Copy, Clone, Debug, Default, Display, PartialEq, Eq, From, Into, Deref)]
 #[display(fmt = "{_0}")]
 pub struct BlockSize(u64);
 
@@ -240,9 +247,206 @@ impl AsRef<Sha256Digest> for BuilderCommitment {
     }
 }
 
+pub enum Header {
+    V1(Header0_1),
+    V2(Header0_1),
+    V3(v0_3::Header),
+}
+
+impl Header {
+    pub fn height(&self) -> u64 {
+        match self {
+            Header::V1(header0_1) => header0_1.height,
+            Header::V2(header0_1) => header0_1.height,
+            Header::V3(header) => header.height,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Header {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct HeaderVisitor;
+
+        impl<'de> Visitor<'de> for HeaderVisitor {
+            type Value = Header;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("Header")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<Self::Value, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let chain_config_or_version: EitherOrVersion = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::missing_field("chain_config"))?;
+
+                match chain_config_or_version {
+                    // For v0.1, the first field in the sequence of fields is the first field of the struct, so we call a function to get the rest of
+                    // the fields from the sequence and pack them into the struct.
+                    EitherOrVersion::Left(cfg) => Ok(Header::V1(
+                        Header0_1::deserialize_with_chain_config(cfg.into(), seq)?,
+                    )),
+                    EitherOrVersion::Right(commit) => Ok(Header::V1(
+                        Header0_1::deserialize_with_chain_config(commit.into(), seq)?,
+                    )),
+                    // For all versions > 0.1, the first "field" is not actually part of the `Header` struct.
+                    // We just delegate directly to the derived deserialization impl for the appropriate version.
+                    EitherOrVersion::Version(Version { major: 0, minor: 2 }) => Ok(Header::V2(
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::missing_field("fields"))?,
+                    )),
+                    EitherOrVersion::Version(Version { major: 0, minor: 3 }) => Ok(Header::V3(
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::missing_field("fields"))?,
+                    )),
+                    EitherOrVersion::Version(v) => {
+                        Err(serde::de::Error::custom(format!("invalid version {v:?}")))
+                    }
+                }
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Header, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                // insert all the fields in the serde_map as the map may have out of order fields.
+                let mut serde_map: Map<String, Value> = Map::new();
+
+                while let Some(key) = map.next_key::<String>()? {
+                    serde_map.insert(key.trim().to_owned(), map.next_value()?);
+                }
+
+                if let Some(v) = serde_map.get("version") {
+                    let fields = serde_map
+                        .get("fields")
+                        .ok_or_else(|| de::Error::missing_field("fields"))?;
+
+                    let version = serde_json::from_value::<EitherOrVersion>(v.clone())
+                        .map_err(de::Error::custom)?;
+                    let result = match version {
+                        EitherOrVersion::Version(Version { major: 0, minor: 2 }) => Ok(Header::V2(
+                            serde_json::from_value(fields.clone()).map_err(de::Error::custom)?,
+                        )),
+                        EitherOrVersion::Version(Version { major: 0, minor: 3 }) => Ok(Header::V3(
+                            serde_json::from_value(fields.clone()).map_err(de::Error::custom)?,
+                        )),
+                        EitherOrVersion::Version(v) => {
+                            Err(de::Error::custom(format!("invalid version {v:?}")))
+                        }
+                        chain_config => Err(de::Error::custom(format!(
+                            "expected version, found chain_config {chain_config:?}"
+                        ))),
+                    };
+                    return result;
+                }
+
+                Ok(Header::V1(
+                    serde_json::from_value(serde_map.into()).map_err(de::Error::custom)?,
+                ))
+            }
+        }
+
+        // List of all possible fields of all versions of the `Header`.
+        // serde's `deserialize_struct` works by deserializing to a struct with a specific list of fields.
+        // The length of the fields list we provide is always going to be greater than the length of the target struct.
+        // In our case, we are deserializing to either a V1 Header or a VersionedHeader for versions > 0.1.
+        // We use serde_json and bincode serialization in the sequencer.
+        // Fortunately, serde_json ignores fields parameter and only cares about our Visitor implementation.
+        // -  https://docs.rs/serde_json/1.0.120/serde_json/struct.Deserializer.html#method.deserialize_struct
+        // Bincode uses the length of the fields list, but the bincode deserialization only cares that the length of the fields
+        // is an upper bound of the target struct's fields length.
+        // -  https://docs.rs/bincode/1.3.3/src/bincode/de/mod.rs.html#313
+        // This works because the bincode deserializer only consumes the next field when `next_element` is called,
+        // and our visitor calls it the correct number of times.
+        // This would, however, break if the bincode deserializer implementation required an exact match of the field's length,
+        // consuming one element for each field.
+        let fields: &[&str] = &[
+            "fields",
+            "chain_config",
+            "version",
+            "height",
+            "timestamp",
+            "l1_head",
+            "l1_finalized",
+            "payload_commitment",
+            "builder_commitment",
+            "ns_table",
+            "block_merkle_tree_root",
+            "fee_merkle_tree_root",
+            "fee_info",
+            "builder_signature",
+        ];
+
+        deserializer.deserialize_struct("Header", fields, HeaderVisitor)
+    }
+}
+
+impl Committable for Header {
+    fn commit(&self) -> Commitment<Self> {
+        match self {
+            Self::V1(header) => header.commit(),
+            Self::V2(fields) => RawCommitmentBuilder::new(&Self::tag())
+                .u64_field("version_major", 0)
+                .u64_field("version_minor", 2)
+                .field("fields", fields.commit())
+                .finalize(),
+            Self::V3(fields) => RawCommitmentBuilder::new(&Self::tag())
+                .u64_field("version_major", 0)
+                .u64_field("version_minor", 3)
+                .field("fields", fields.commit())
+                .finalize(),
+        }
+    }
+
+    fn tag() -> String {
+        // We use the tag "BLOCK" since blocks are identified by the hash of their header. This will
+        // thus be more intuitive to users than "HEADER".
+        "BLOCK".into()
+    }
+}
+
+impl Serialize for Header {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::V1(header) => header.serialize(serializer),
+            Self::V2(fields) => VersionedHeader {
+                version: EitherOrVersion::Version(Version { major: 0, minor: 2 }),
+                fields: fields.clone(),
+            }
+            .serialize(serializer),
+            Self::V3(fields) => VersionedHeader {
+                version: EitherOrVersion::Version(Version { major: 0, minor: 3 }),
+                fields: fields.clone(),
+            }
+            .serialize(serializer),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct VersionedHeader<Fields> {
+    pub(crate) version: EitherOrVersion,
+    pub(crate) fields: Fields,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub enum EitherOrVersion {
+    Left(ChainConfig),
+    Right(Commitment<ChainConfig>),
+    Version(Version),
+}
+
 // Header values
 #[derive(Clone, Debug, Deserialize, Serialize, Hash, PartialEq, Eq)]
-pub struct Header {
+pub struct Header0_1 {
     pub chain_config: ResolvableChainConfig,
     pub height: u64,
     pub timestamp: u64,
@@ -257,8 +461,8 @@ pub struct Header {
     pub fee_info: FeeInfo,
 }
 
-impl Committable for Header {
-    fn commit(&self) -> Commitment<Self> {
+impl Header0_1 {
+    fn commit(&self) -> Commitment<Header> {
         let mut bmt_bytes = vec![];
         self.block_merkle_tree_root
             .serialize_with_mode(&mut bmt_bytes, ark_serialize::Compress::Yes)
@@ -290,6 +494,58 @@ impl Committable for Header {
         // thus be more intuitive to users than "HEADER".
         "BLOCK".into()
     }
+}
+
+impl Header0_1 {
+    pub fn deserialize_with_chain_config<'de, A>(
+        chain_config: ResolvableChainConfig,
+        mut seq: A,
+    ) -> Result<Self, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        macro_rules! element {
+            ($seq:expr, $field:ident) => {
+                $seq.next_element()?
+                    .ok_or_else(|| de::Error::missing_field(stringify!($field)))?
+            };
+        }
+        let height = element!(seq, height);
+        let timestamp = element!(seq, timestamp);
+        let l1_head = element!(seq, l1_head);
+        let l1_finalized = element!(seq, l1_finalized);
+        let payload_commitment = element!(seq, payload_commitment);
+        let builder_commitment = element!(seq, builder_commitment);
+        let ns_table = element!(seq, ns_table);
+        let block_merkle_tree_root = element!(seq, block_merkle_tree_root);
+        let fee_merkle_tree_root = element!(seq, fee_merkle_tree_root);
+        let fee_info = element!(seq, fee_info);
+        let builder_signature = element!(seq, builder_signature);
+
+        Ok(Self {
+            chain_config,
+            height,
+            timestamp,
+            l1_head,
+            l1_finalized,
+            payload_commitment,
+            builder_commitment,
+            ns_table,
+            block_merkle_tree_root,
+            fee_merkle_tree_root,
+            fee_info,
+            builder_signature,
+        })
+    }
+}
+
+/// Type for protocol version number
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Version {
+    /// major version number
+    pub major: u16,
+    /// minor version number
+    pub minor: u16,
 }
 
 pub type FeeMerkleTree = UniversalMerkleTree<FeeAmount, Sha3Digest, FeeAccount, 256, Sha3Node>;
@@ -524,14 +780,13 @@ pub fn field_to_u256<F: PrimeField>(f: F) -> U256 {
 
 #[cfg(test)]
 mod tests {
-    use committable::Committable;
 
-    use super::Header;
+    use super::Header0_1;
 
     #[test]
     fn header_test() {
         let header_str = include_str!("./mock_data/header.json");
-        let header = serde_json::from_str::<Header>(&header_str).unwrap();
+        let header = serde_json::from_str::<Header0_1>(&header_str).unwrap();
         // Copied from espresso sequencer reference test
         let expected = "BLOCK~6Ol30XYkdKaNFXw0QAkcif18Lk8V8qkC4M81qTlwL707";
         assert_eq!(header.commit().to_string(), expected);

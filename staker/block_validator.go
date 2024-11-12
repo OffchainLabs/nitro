@@ -625,7 +625,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		if err != nil {
 			return false, err
 		}
-		blockHeight = jst.Header.Height
+		blockHeight = jst.Header.Header.GetBlockHeight()
 		snapShot, err := v.lightClientReader.FetchMerkleRoot(blockHeight, nil)
 		if err != nil {
 			log.Error("error attempting to fetch block merkle root from the light client contract", "blockHeight", blockHeight)
@@ -1409,4 +1409,12 @@ func (v *BlockValidator) GetValidated() arbutil.MessageIndex {
 	v.reorgMutex.RLock()
 	defer v.reorgMutex.RUnlock()
 	return v.validated()
+}
+
+type TestData struct {
+	Proof             json.RawMessage `json:"proof"`
+	Header            json.RawMessage `json:"header"`
+	BlockMerkleRoot   string          `json:"block_merkle_root"`
+	HotShotCommitment [32]byte        `json:"hotshot_commitment"`
+	HeaderImpl        string          `json:"header_string"`
 }

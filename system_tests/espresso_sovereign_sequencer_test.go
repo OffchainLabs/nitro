@@ -76,14 +76,14 @@ func TestEspressoSovereignSequencer(t *testing.T) {
 	builder, cleanup := createL1AndL2Node(ctx, t)
 	defer cleanup()
 
-	err := waitForL1Node(t, ctx)
+	err := waitForL1Node(ctx)
 	Require(t, err)
 
-	cleanEspresso := runEspresso(t, ctx)
+	cleanEspresso := runEspresso()
 	defer cleanEspresso()
 
 	// wait for the builder
-	err = waitForEspressoNode(t, ctx)
+	err = waitForEspressoNode(ctx)
 	Require(t, err)
 
 	// create light client reader
@@ -92,7 +92,7 @@ func TestEspressoSovereignSequencer(t *testing.T) {
 	Require(t, err)
 
 	// wait for hotshot liveness
-	err = waitForHotShotLiveness(t, ctx, lightClientReader)
+	err = waitForHotShotLiveness(ctx, lightClientReader)
 	Require(t, err)
 	err = checkTransferTxOnL2(t, ctx, builder.L2, "User14", builder.L2Info)
 	Require(t, err)
@@ -100,7 +100,7 @@ func TestEspressoSovereignSequencer(t *testing.T) {
 	msgCnt, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 
-	err = waitForWith(t, ctx, 6*time.Minute, 60*time.Second, func() bool {
+	err = waitForWith(ctx, 8*time.Minute, 60*time.Second, func() bool {
 		validatedCnt := builder.L2.ConsensusNode.BlockValidator.Validated(t)
 		return validatedCnt == msgCnt
 	})

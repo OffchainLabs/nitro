@@ -471,7 +471,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		if err != nil {
 			return nil, err
 		}
-		blockHeight = jst.Header.Height
+		blockHeight = jst.Header.Header.GetBlockHeight()
 		snapShot, err := v.lightClientReader.FetchMerkleRoot(blockHeight, nil)
 		if err != nil {
 			log.Error("error fetching light client commitment", "hotshot block height", blockHeight, "%v", err)

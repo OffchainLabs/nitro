@@ -1,7 +1,10 @@
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use std::ops::Range;
+use tagged_base64::tagged;
 
 use ark_bn254::Bn254;
-use ark_serialize::CanonicalDeserialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use digest::OutputSizeUser;
 use jf_pcs::{
     prelude::UnivariateUniversalParams, univariate_kzg::UnivariateKzgPCS,
     PolynomialCommitmentScheme,
@@ -16,6 +19,7 @@ use jf_vid::{
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use typenum::Unsigned;
 
 /// Private type alias for the EC pairing type parameter for [`Advz`].
 type E = Bn254;
@@ -26,6 +30,43 @@ type Advz = advz::Advz<E, H>;
 
 pub type VidCommitment = <VidSchemeType as VidScheme>::Commit;
 pub type VidCommon = <VidSchemeType as VidScheme>::Common;
+type Sha256Digest = [u8; <sha2::Sha256 as OutputSizeUser>::OutputSize::USIZE];
+
+#[tagged("BUILDER_COMMITMENT")]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, CanonicalDeserialize, CanonicalSerialize)]
+/// Commitment that builders use to sign block options.
+/// A thin wrapper around a Sha256 digest.
+pub struct BuilderCommitment(Sha256Digest);
+
+impl AsRef<Sha256Digest> for BuilderCommitment {
+    fn as_ref(&self) -> &Sha256Digest {
+        &self.0
+    }
+}
+
+/// Type-safe wrapper around `u64` so we know the thing we're talking about is a view number.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    CanonicalSerialize,
+    CanonicalDeserialize,
+)]
+pub struct ViewNumber(pub u64);
+
+impl Committable for ViewNumber {
+    fn commit(&self) -> Commitment<Self> {
+        let builder = RawCommitmentBuilder::new("View Number Commitment");
+        builder.u64(self.0).finalize()
+    }
+}
 
 pub struct VidSchemeType(Advz);
 

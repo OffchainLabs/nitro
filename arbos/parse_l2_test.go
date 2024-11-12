@@ -20,9 +20,9 @@ func TestEspressoParsing(t *testing.T) {
 		BlockNumber: 1,
 	}
 	var mockProof = json.RawMessage(`{"NonExistence":{"ns_id":0}}`)
-	var mockChainConfig = &espressoTypes.ResolvableChainConfig{
-		ChainConfig: espressoTypes.EitherChainConfig{
-			Left: &espressoTypes.ChainConfig{
+	var mockChainConfig = &espressoTypes.ResolvableChainConfig0_1{
+		ChainConfig: espressoTypes.EitherChainConfig0_1{
+			Left: &espressoTypes.ChainConfig0_1{
 				ChainId:      *espressoTypes.NewU256().SetUint64(0x8a19).ToDecimal(),
 				MaxBlockSize: *espressoTypes.NewU256().SetUint64(10240).ToDecimal(),
 				BaseFee:      *espressoTypes.NewU256().SetUint64(0).ToDecimal()},
@@ -32,21 +32,23 @@ func TestEspressoParsing(t *testing.T) {
 	Require(t, err)
 	root, err := tagged_base64.New("root", []byte{4, 5, 6})
 	Require(t, err)
+	header := &espressoTypes.Header0_1{
+		L1Head:              1,
+		ChainConfig:         mockChainConfig,
+		Timestamp:           2,
+		Height:              3,
+		NsTable:             &espressoTypes.NsTable{Bytes: []byte{1}},
+		L1Finalized:         &espressoTypes.L1BlockInfo{},
+		PayloadCommitment:   mockCommitment,
+		BuilderCommitment:   mockCommitment,
+		BlockMerkleTreeRoot: root,
+		FeeMerkleTreeRoot:   root,
+		FeeInfo:             &espressoTypes.FeeInfo{},
+	}
+	headerImpl := espressoTypes.HeaderImpl{Header: header}
 	expectJst := &arbostypes.EspressoBlockJustification{
-		Header: &espressoTypes.Header{
-			L1Head:              1,
-			ChainConfig:         mockChainConfig,
-			Timestamp:           2,
-			Height:              3,
-			NsTable:             &espressoTypes.NsTable{Bytes: []byte{1}},
-			L1Finalized:         &espressoTypes.L1BlockInfo{},
-			PayloadCommitment:   mockCommitment,
-			BuilderCommitment:   mockCommitment,
-			BlockMerkleTreeRoot: root,
-			FeeMerkleTreeRoot:   root,
-			FeeInfo:             &espressoTypes.FeeInfo{},
-		},
-		Proof: &mockProof,
+		Header: &headerImpl,
+		Proof:  &mockProof,
 	}
 	msg, err := MessageFromEspresso(expectHeader, expectTxes, expectJst)
 	Require(t, err)

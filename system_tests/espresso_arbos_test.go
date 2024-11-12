@@ -50,7 +50,7 @@ func EspressoTestChainParams() params.ArbitrumChainParams {
 
 func waitForConfigUpdate(t *testing.T, ctx context.Context, builder *NodeBuilder) error {
 
-	return waitForWith(t, ctx, 120*time.Second, 1*time.Second, func() bool {
+	return waitForWith(ctx, 120*time.Second, 1*time.Second, func() bool {
 		newArbOSConfig, err := builder.L2.ExecNode.GetArbOSConfigAtHeight(0)
 		Require(t, err)
 
@@ -69,21 +69,21 @@ func TestEspressoArbOSConfig(t *testing.T) {
 	builder, cleanup := createL1AndL2Node(ctx, t)
 	defer cleanup()
 
-	err := waitForL1Node(t, ctx)
+	err := waitForL1Node(ctx)
 	Require(t, err)
 
-	cleanEspresso := runEspresso(t, ctx)
+	cleanEspresso := runEspresso()
 	defer cleanEspresso()
 
 	// wait for the builder
-	err = waitForEspressoNode(t, ctx)
+	err = waitForEspressoNode(ctx)
 	Require(t, err)
 
 	l2Node := builder.L2
 
 	// Wait for the initial message
 	expected := arbutil.MessageIndex(1)
-	err = waitFor(t, ctx, func() bool {
+	err = waitFor(ctx, func() bool {
 		msgCnt, err := l2Node.ConsensusNode.TxStreamer.GetMessageCount()
 		if err != nil {
 			panic(err)

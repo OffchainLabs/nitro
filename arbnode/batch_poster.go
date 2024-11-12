@@ -541,73 +541,75 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 	msg *arbostypes.MessageWithMetadata,
 ) error {
 
-	if arbos.IsEspressoMsg(msg.Message) {
-		arbOSConfig, err := b.arbOSVersionGetter.GetArbOSConfigAtHeight(0)
+	if !arbos.IsEspressoMsg(msg.Message) {
+		return nil
+	}
+
+	arbOSConfig, err := b.arbOSVersionGetter.GetArbOSConfigAtHeight(0)
+	if err != nil {
+		return fmt.Errorf("Failed call to GetArbOSConfigAtHeight: %w", err)
+	}
+	if arbOSConfig == nil {
+		return fmt.Errorf("Cannot use a nil ArbOSConfig")
+	}
+	if !arbOSConfig.ArbitrumChainParams.EnableEspresso {
+		// This case should be highly unlikely, as espresso messages are not produced while ArbitrumChainParams.EnableEspresso is false
+		// However, in the event that an espresso message was created, and then Enable Espresso was set to false, we should ensure
+		// the transaction streamer doesn't send any more messages to the espresso network.
+		return fmt.Errorf("Cannot process Espresso messages when Espresso is not enabled in the ArbOS chain config")
+	}
+	txs, jst, err := arbos.ParseEspressoMsg(msg.Message)
+	if err != nil {
+		return err
+	}
+
+	if jst.Header == nil {
+		// If the message is an Espresso message, store the pos in the database to be used later
+		// to submit the message to hotshot for finalization.
+		log.Info("Submitting pos", "pos", b.building.msgCount)
+		err = b.streamer.SubmitEspressoTransactionPos(b.building.msgCount, b.streamer.db.NewBatch())
 		if err != nil {
-			return fmt.Errorf("Failed call to GetArbOSConfigAtHeight: %w", err)
+			log.Error("failed to submit espresso transaction pos", "pos", b.building.msgCount, "err", err)
+			return err
 		}
-		if arbOSConfig == nil {
-			return fmt.Errorf("Cannot use a nil ArbOSConfig")
-		}
-		if !arbOSConfig.ArbitrumChainParams.EnableEspresso {
-			// This case should be highly unlikely, as espresso messages are not produced while ArbitrumChainParams.EnableEspresso is false
-			// However, in the event that an espresso message was created, and then Enable Espresso was set to false, we should ensure
-			// the transaction streamer doesn't send any more messages to the espresso network.
-			return fmt.Errorf("Cannot process Espresso messages when Espresso is not enabled in the ArbOS chain config")
-		}
-		txs, jst, err := arbos.ParseEspressoMsg(msg.Message)
+		return fmt.Errorf("this msg has not been included in hotshot")
+	}
+
+	height := jst.Header.Header.GetBlockHeight()
+	snapshot, err := b.lightClientReader.FetchMerkleRoot(height, nil)
+	if err != nil {
+		return fmt.Errorf("could not get the merkle root at height %v, err %w", height, err)
+	}
+
+	if snapshot.Height <= height {
+		return fmt.Errorf("light client contract does not have a root greater than %v yet, current snapshot height: %v", height, snapshot.Height)
+	}
+	// The next header contains the block commitment merkle tree commitment that validates the header of interest
+	nextHeader, err := b.hotshotClient.FetchHeaderByHeight(ctx, snapshot.Height)
+	if err != nil {
+		return fmt.Errorf("error fetching the next header at height %v, request failed with error %w", snapshot.Height, err)
+	}
+
+	proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, snapshot.Height, height)
+	if err != nil {
+		return fmt.Errorf("error fetching the block merkle proof for validated height %v and leaf height %v. Request failed with error %w", snapshot.Height, height, err)
+	}
+	log.Info("Get the block merkle proof successfully", "height", height, "root", snapshot.Height)
+	var newMsg arbostypes.L1IncomingMessage
+	jst.BlockMerkleJustification = &arbostypes.BlockMerkleJustification{BlockMerkleProof: &proof, BlockMerkleComm: nextHeader.Header.GetBlockMerkleTreeRoot()}
+	if arbos.IsEspressoSovereignMsg(msg.Message) {
+		// Passing an empty byte slice as payloadSignature because txs[0] already contains the payloadSignature here
+		newMsg, err = arbos.MessageFromEspressoSovereignTx(txs[0], jst, []byte{}, msg.Message.Header)
 		if err != nil {
 			return err
 		}
-
-		if jst.Header == nil {
-			// If the message is an Espresso message, store the pos in the database to be used later
-			// to submit the message to hotshot for finalization.
-			if arbos.IsEspressoMsg(msg.Message) {
-				err = b.streamer.SubmitEspressoTransactionPos(b.building.msgCount, b.streamer.db.NewBatch())
-				if err != nil {
-					log.Error("failed to submit espresso transaction pos", "pos", b.building.msgCount, "err", err)
-					return err
-				}
-			}
-			return fmt.Errorf("this msg has not been included in hotshot")
-		}
-
-		snapshot, err := b.lightClientReader.FetchMerkleRoot(jst.Header.Height, nil)
+	} else {
+		newMsg, err = arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
 		if err != nil {
-			return fmt.Errorf("could not get the merkle root at height %v", jst.Header.Height)
+			return err
 		}
-
-		if snapshot.Height <= jst.Header.Height {
-			return fmt.Errorf("light client contract does not have a root greater than %v yet, current snapshot height: %v", jst.Header.Height, snapshot.Height)
-		}
-		// The next header contains the block commitment merkle tree commitment that validates the header of interest
-		nextHeader, err := b.hotshotClient.FetchHeaderByHeight(ctx, snapshot.Height)
-		if err != nil {
-			return fmt.Errorf("error fetching the next header at height %v, request failed with error %w", snapshot.Height, err)
-		}
-
-		proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, snapshot.Height, jst.Header.Height)
-		if err != nil {
-			return fmt.Errorf("error fetching the block merkle proof for validated height %v and leaf height %v. Request failed with error %w", snapshot.Height, jst.Header.Height, err)
-		}
-		var newMsg arbostypes.L1IncomingMessage
-		jst.BlockMerkleJustification = &arbostypes.BlockMerkleJustification{BlockMerkleProof: &proof, BlockMerkleComm: nextHeader.BlockMerkleTreeRoot}
-
-		if arbos.IsEspressoSovereignMsg(msg.Message) {
-			// Passing an empty byte slice as payloadSignature because txs[0] already contains the payloadSignature here
-			newMsg, err = arbos.MessageFromEspressoSovereignTx(txs[0], jst, []byte{}, msg.Message.Header)
-			if err != nil {
-				return err
-			}
-		} else {
-			newMsg, err = arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
-			if err != nil {
-				return err
-			}
-		}
-		msg.Message = &newMsg
 	}
+	msg.Message = &newMsg
 	return nil
 }
 
