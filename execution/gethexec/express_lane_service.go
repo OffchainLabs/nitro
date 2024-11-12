@@ -251,7 +251,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	}
 	// Log an informational warning if the message's sequence number is in the future.
 	if msg.SequenceNumber > control.sequence {
-		log.Warn("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
+		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
 	// Put into the sequence number map.
 	es.messagesBySequenceNumber[msg.SequenceNumber] = msg
