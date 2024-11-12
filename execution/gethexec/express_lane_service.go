@@ -34,6 +34,7 @@ type expressLaneControl struct {
 type expressLaneService struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
+	sequencer                *Sequencer
 	auctionContractAddr      common.Address
 	initialTimestamp         time.Time
 	roundDuration            time.Duration
@@ -47,6 +48,7 @@ type expressLaneService struct {
 }
 
 func newExpressLaneService(
+	sequencer *Sequencer,
 	auctionContractAddr common.Address,
 	sequencerClient *ethclient.Client,
 	bc *core.BlockChain,
@@ -79,6 +81,7 @@ pending:
 	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
 	auctionClosingDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.AuctionClosingSeconds) * time.Second
 	return &expressLaneService{
+		sequencer:                sequencer,
 		auctionContract:          auctionContract,
 		chainConfig:              chainConfig,
 		initialTimestamp:         initialTimestamp,
@@ -231,12 +234,6 @@ func (es *expressLaneService) isWithinAuctionCloseWindow(arrivalTime time.Time) 
 func (es *expressLaneService) sequenceExpressLaneSubmission(
 	ctx context.Context,
 	msg *timeboost.ExpressLaneSubmission,
-	publishTxFn func(
-		parentCtx context.Context,
-		tx *types.Transaction,
-		options *arbitrum_types.ConditionalOptions,
-		isExpressLaneController bool,
-	) error,
 ) error {
 	es.Lock()
 	defer es.Unlock()
@@ -265,7 +262,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		if !exists {
 			break
 		}
-		if err := publishTxFn(
+		if err := es.sequencer.publishTransactionImpl(
 			ctx,
 			nextMsg.Transaction,
 			msg.Options,
