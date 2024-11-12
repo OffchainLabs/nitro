@@ -328,7 +328,7 @@ func newBacklogSegment() *backlogSegment {
 func IsBacklogSegmentNil(segment BacklogSegment) bool {
 	if segment == nil {
 		return true
-	} else if segment.(*backlogSegment) == nil {
+	} else if bs, ok := segment.(*backlogSegment); ok && bs == nil {
 		return true
 	}
 	return false
