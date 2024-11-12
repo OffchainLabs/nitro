@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestSequencerRejection(t *testing.T) {
@@ -36,7 +36,7 @@ func TestSequencerRejection(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.takeOwnership = false
-	port := builderSeq.L2.ConsensusNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testhelpers.AddrTCPPort(builderSeq.L2.ConsensusNode.BroadcastServer.ListenerAddr(), t)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	cleanup := builder.Build(t)
 	defer cleanup()
