@@ -9,9 +9,10 @@ import (
 	"log/slog"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	flag "github.com/spf13/pflag"
 )
 
 type ConfConfig struct {
