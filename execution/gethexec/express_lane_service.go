@@ -235,7 +235,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		parentCtx context.Context,
 		tx *types.Transaction,
 		options *arbitrum_types.ConditionalOptions,
-		delay bool,
+		isExpressLaneController bool,
 	) error,
 ) error {
 	es.Lock()
@@ -269,7 +269,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 			ctx,
 			nextMsg.Transaction,
 			msg.Options,
-			false, /* no delay, as it should go through express lane */
+			true, /* no delay, as it should go through express lane */
 		); err != nil {
 			// If the tx failed, clear it from the sequence map.
 			delete(es.messagesBySequenceNumber, msg.SequenceNumber)
