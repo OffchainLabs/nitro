@@ -1283,7 +1283,7 @@ func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struc
 	return s.config().ExecuteMessageLoopDelay
 }
 
-func (s *TransactionStreamer) PollSubmittedTransactionForFinality(ctx context.Context) time.Duration {
+func (s *TransactionStreamer) pollSubmittedTransactionForFinality(ctx context.Context) time.Duration {
 	submittedTxnPos, err := s.getEspressoSubmittedPos()
 	if err != nil {
 		log.Warn("submitted pos not found", "err", err)
@@ -1481,6 +1481,14 @@ func (s *TransactionStreamer) setEspressoPendingTxnsPos(batch ethdb.KeyValueWrit
 }
 
 func (s *TransactionStreamer) SubmitEspressoTransactionPos(pos arbutil.MessageIndex, batch ethdb.Batch) error {
+	submitted, err := s.getEspressoSubmittedPos()
+	if err != nil && !dbutil.IsErrNotFound(err) {
+		return err
+	}
+
+	if pos == submitted {
+		return fmt.Errorf("Submitting the same position messages %v", pos)
+	}
 	pendingTxnsPos, err := s.getEspressoPendingTxnsPos()
 	if err != nil && !dbutil.IsErrNotFound(err) {
 		log.Error("failed to get the pending txns position", "err", err)
@@ -1490,6 +1498,8 @@ func (s *TransactionStreamer) SubmitEspressoTransactionPos(pos arbutil.MessageIn
 	if err != nil && dbutil.IsErrNotFound(err) {
 		// if the key doesn't exist, create a new array with the pos
 		pendingTxnsPos = []*arbutil.MessageIndex{&pos}
+	} else if pendingTxnsPos[len(pendingTxnsPos)-1] == &pos {
+		return fmt.Errorf("Submitting the same position messages %v", pos)
 	} else {
 		pendingTxnsPos = append(pendingTxnsPos, &pos)
 	}
@@ -1517,7 +1527,7 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context, ig
 	}
 
 	if err == nil {
-		if s.PollSubmittedTransactionForFinality(ctx) != time.Duration(0) {
+		if s.pollSubmittedTransactionForFinality(ctx) != time.Duration(0) {
 			return s.config().EspressoTxnsPollingInterval
 		}
 	}

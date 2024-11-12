@@ -24,7 +24,7 @@ import (
 var workingDir = "./espresso-e2e"
 
 // light client proxy
-var lightClientAddress = "0xb075b82c7a23e0994df4793422a1f03dbcf9136f"
+var lightClientAddress = "0x60571c8f4b52954a24a5e7306d435e951528d963"
 
 var hotShotUrl = "http://127.0.0.1:41000"
 var delayThreshold uint64 = 10
@@ -155,7 +155,7 @@ func waitForHotShotLiveness(ctx context.Context, lightClientReader *lightclient.
 }
 
 func waitForL1Node(ctx context.Context) error {
-	return waitFor(ctx, func() bool {
+	err := waitFor(ctx, func() bool {
 		if e := exec.Command(
 			"curl",
 			"-X",
@@ -170,6 +170,15 @@ func waitForL1Node(ctx context.Context) error {
 		}
 		return true
 	})
+	if err != nil {
+		return err
+	}
+
+	// wait for L1 to be totally ready to better simulate real-world environment
+	// this is necessary right now to avoid some unknown issues in the dev-node
+	// TODO: find a better way
+	time.Sleep(10 * time.Second)
+	return nil
 }
 
 func TestEspressoE2E(t *testing.T) {
@@ -216,7 +225,9 @@ func TestEspressoE2E(t *testing.T) {
 		if err != nil {
 			return false
 		}
-		return h > 0
+		// Wait for the hotshot to generate some blocks to better simulate the real-world environment.
+		// Chosen based on intuition; no empirical data supports this value.
+		return h > 10
 	})
 	Require(t, err)
 

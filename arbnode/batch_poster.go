@@ -567,6 +567,8 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 		// If the message is an Espresso message, store the pos in the database to be used later
 		// to submit the message to hotshot for finalization.
 		log.Info("Submitting pos", "pos", b.building.msgCount)
+		// TODO: Verify if this msgCount is already in the pending queue.
+		// Currently, this check is performed in the function below.
 		err = b.streamer.SubmitEspressoTransactionPos(b.building.msgCount, b.streamer.db.NewBatch())
 		if err != nil {
 			log.Error("failed to submit espresso transaction pos", "pos", b.building.msgCount, "err", err)
