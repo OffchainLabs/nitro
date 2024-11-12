@@ -2,6 +2,8 @@ package timeboost
 
 import (
 	"time"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type auctionCloseTicker struct {
@@ -50,7 +52,7 @@ func CurrentRound(initialRoundTimestamp time.Time, roundDuration time.Duration) 
 	if roundDuration == 0 {
 		return 0
 	}
-	return uint64(time.Since(initialRoundTimestamp) / roundDuration)
+	return arbmath.SaturatingUCast[uint64](time.Since(initialRoundTimestamp) / roundDuration)
 }
 
 func isAuctionRoundClosed(
@@ -63,7 +65,7 @@ func isAuctionRoundClosed(
 		return false
 	}
 	timeInRound := timeIntoRound(timestamp, initialTimestamp, roundDuration)
-	return time.Duration(timeInRound)*time.Second >= roundDuration-auctionClosingDuration
+	return arbmath.SaturatingCast[time.Duration](timeInRound)*time.Second >= roundDuration-auctionClosingDuration
 }
 
 func timeIntoRound(

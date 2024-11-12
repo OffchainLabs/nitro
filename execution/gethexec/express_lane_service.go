@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 )
@@ -41,7 +42,7 @@ type expressLaneService struct {
 	logs                     chan []*types.Log
 	seqClient                *ethclient.Client
 	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
-	roundControl             lru.BasicLRU[uint64, *expressLaneControl]
+	roundControl             *lru.Cache[uint64, *expressLaneControl]
 	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
 }
 
@@ -70,15 +71,15 @@ pending:
 		}
 		return nil, err
 	}
-	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
-	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
-	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
+	initialTimestamp := time.Unix(roundTimingInfo.OffsetTimestamp, 0)
+	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
+	auctionClosingDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.AuctionClosingSeconds) * time.Second
 	return &expressLaneService{
 		auctionContract:          auctionContract,
 		chainConfig:              chainConfig,
 		initialTimestamp:         initialTimestamp,
 		auctionClosing:           auctionClosingDuration,
-		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
+		roundControl:             lru.NewCache[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
 		auctionContractAddr:      auctionContractAddr,
 		roundDuration:            roundDuration,
 		seqClient:                sequencerClient,
@@ -155,12 +156,10 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 						"round", it.Event.Round,
 						"controller", it.Event.FirstPriceExpressLaneController,
 					)
-					es.Lock()
 					es.roundControl.Add(it.Event.Round, &expressLaneControl{
 						controller: it.Event.FirstPriceExpressLaneController,
 						sequence:   0,
 					})
-					es.Unlock()
 				}
 				setExpressLaneIterator, err := es.auctionContract.FilterSetExpressLaneController(filterOpts, nil, nil, nil)
 				if err != nil {
@@ -169,9 +168,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 				}
 				for setExpressLaneIterator.Next() {
 					round := setExpressLaneIterator.Event.Round
-					es.RLock()
 					roundInfo, ok := es.roundControl.Get(round)
-					es.RUnlock()
 					if !ok {
 						log.Warn("Could not find round info for express lane controller transfer event", "round", round)
 						continue
@@ -184,13 +181,11 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 							"new", setExpressLaneIterator.Event.NewExpressLaneController)
 						continue
 					}
-					es.Lock()
 					newController := setExpressLaneIterator.Event.NewExpressLaneController
-					es.roundControl.Add(it.Event.Round, &expressLaneControl{
+					es.roundControl.Add(round, &expressLaneControl{
 						controller: newController,
 						sequence:   0,
 					})
-					es.Unlock()
 				}
 				fromBlock = toBlock
 			}
@@ -239,19 +234,19 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		return timeboost.ErrNoOnchainController
 	}
 	// Check if the submission nonce is too low.
-	if msg.Sequence < control.sequence {
+	if msg.SequenceNumber < control.sequence {
 		return timeboost.ErrSequenceNumberTooLow
 	}
 	// Check if a duplicate submission exists already, and reject if so.
-	if _, exists := es.messagesBySequenceNumber[msg.Sequence]; exists {
+	if _, exists := es.messagesBySequenceNumber[msg.SequenceNumber]; exists {
 		return timeboost.ErrDuplicateSequenceNumber
 	}
 	// Log an informational warning if the message's sequence number is in the future.
-	if msg.Sequence > control.sequence {
-		log.Warn("Received express lane submission with future sequence number", "sequence", msg.Sequence)
+	if msg.SequenceNumber > control.sequence {
+		log.Warn("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
 	// Put into the sequence number map.
-	es.messagesBySequenceNumber[msg.Sequence] = msg
+	es.messagesBySequenceNumber[msg.SequenceNumber] = msg
 
 	for {
 		// Get the next message in the sequence.
@@ -266,7 +261,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 			false, /* no delay, as it should go through express lane */
 		); err != nil {
 			// If the tx failed, clear it from the sequence map.
-			delete(es.messagesBySequenceNumber, msg.Sequence)
+			delete(es.messagesBySequenceNumber, msg.SequenceNumber)
 			return err
 		}
 		// Increase the global round sequence number.
@@ -317,8 +312,6 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 		return timeboost.ErrMalformedData
 	}
 	sender := crypto.PubkeyToAddress(*pubkey)
-	es.RLock()
-	defer es.RUnlock()
 	control, ok := es.roundControl.Get(msg.Round)
 	if !ok {
 		return timeboost.ErrNoOnchainController

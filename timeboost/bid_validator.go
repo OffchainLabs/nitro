@@ -14,12 +14,13 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
 )
 
@@ -113,9 +114,9 @@ func NewBidValidator(
 		return nil, err
 	}
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
-	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
-	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
-	reserveSubmissionDuration := time.Duration(roundTimingInfo.ReserveSubmissionSeconds) * time.Second
+	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
+	auctionClosingDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.AuctionClosingSeconds) * time.Second
+	reserveSubmissionDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.ReserveSubmissionSeconds) * time.Second
 
 	reservePrice, err := auctionContract.ReservePrice(&bind.CallOpts{})
 	if err != nil {

@@ -74,8 +74,8 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage_Timebooste
 	expressLaneClient := newExpressLaneClient(
 		bobPriv,
 		chainId,
-		time.Unix(int64(info.OffsetTimestamp), 0),
-		time.Duration(info.RoundDurationSeconds)*time.Second,
+		time.Unix(info.OffsetTimestamp, 0),
+		arbmath.SaturatingCast[time.Duration](info.RoundDurationSeconds)*time.Second,
 		auctionContractAddr,
 		seqDial,
 	)
@@ -214,7 +214,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 		bobPriv,
 		chainId,
 		time.Unix(int64(info.OffsetTimestamp), 0),
-		time.Duration(info.RoundDurationSeconds)*time.Second,
+		arbmath.SaturatingCast[time.Duration](info.RoundDurationSeconds)*time.Second,
 		auctionContractAddr,
 		seqDial,
 	)
@@ -420,7 +420,7 @@ func setupExpressLaneAuction(
 			BiddingToken: biddingToken,
 			Beneficiary:  beneficiary,
 			RoundTimingInfo: express_lane_auctiongen.RoundTimingInfo{
-				OffsetTimestamp:          initialTimestamp.Uint64(),
+				OffsetTimestamp:          initialTimestamp.Int64(),
 				RoundDurationSeconds:     bidRoundSeconds,
 				AuctionClosingSeconds:    auctionClosingSeconds,
 				ReserveSubmissionSeconds: reserveSubmissionSeconds,
@@ -739,7 +739,7 @@ func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *
 		Round:                  hexutil.Uint64(timeboost.CurrentRound(elc.initialRoundTimestamp, elc.roundDuration)),
 		AuctionContractAddress: elc.auctionContractAddr,
 		Transaction:            encodedTx,
-		Sequence:               hexutil.Uint64(elc.sequence),
+		SequenceNumber:         hexutil.Uint64(elc.sequence),
 		Signature:              hexutil.Bytes{},
 	}
 	msgGo, err := timeboost.JsonSubmissionToGo(msg)

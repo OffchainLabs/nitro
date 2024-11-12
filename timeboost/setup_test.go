@@ -120,7 +120,7 @@ func setupAuctionTest(t testing.TB, ctx context.Context) *auctionSetup {
 			BiddingToken: biddingToken,
 			Beneficiary:  beneficiary,
 			RoundTimingInfo: express_lane_auctiongen.RoundTimingInfo{
-				OffsetTimestamp:          initialTimestamp.Uint64(),
+				OffsetTimestamp:          initialTimestamp.Int64(),
 				RoundDurationSeconds:     bidRoundSeconds,
 				AuctionClosingSeconds:    auctionClosingSeconds,
 				ReserveSubmissionSeconds: reserveSubmissionSeconds,

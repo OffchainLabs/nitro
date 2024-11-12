@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
@@ -185,9 +186,9 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err != nil {
 		return nil, err
 	}
-	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
-	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
-	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
+	auctionClosingDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.AuctionClosingSeconds) * time.Second
+	initialTimestamp := time.Unix(roundTimingInfo.OffsetTimestamp, 0)
+	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
 	return &AuctioneerServer{
 		txOpts:                 txOpts,
 		sequencerRpc:           client,
@@ -364,7 +365,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	}
 
 	currentRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration)
-	roundEndTime := a.initialRoundTimestamp.Add(time.Duration(currentRound) * a.roundDuration)
+	roundEndTime := a.initialRoundTimestamp.Add(arbmath.SaturatingCast[time.Duration](currentRound) * a.roundDuration)
 	retryInterval := 1 * time.Second
 
 	if err := retryUntil(ctx, func() error {

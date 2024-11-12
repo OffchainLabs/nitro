@@ -279,6 +279,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		return err
 	}
 	config := s.config()
+	// #nosec G115
 	maxResequenceMsgCount := count + arbutil.MessageIndex(config.MaxReorgResequenceDepth)
 	if config.MaxReorgResequenceDepth >= 0 && maxResequenceMsgCount < targetMsgCount {
 		log.Error(
@@ -392,6 +393,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	}
 
 	for i := 0; i < len(messagesResults); i++ {
+		// #nosec G115
 		pos := count + arbutil.MessageIndex(i)
 		err = s.storeResult(pos, *messagesResults[i], batch)
 		if err != nil {
@@ -692,7 +694,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, m
 		if err != nil {
 			return err
 		}
-		if dups == len(messages) {
+		if dups == uint64(len(messages)) {
 			return endBatch(batch)
 		}
 		// cant keep reorg lock when catching insertionMutex.
@@ -727,10 +729,10 @@ func (s *TransactionStreamer) countDuplicateMessages(
 	pos arbutil.MessageIndex,
 	messages []arbostypes.MessageWithMetadataAndBlockInfo,
 	batch *ethdb.Batch,
-) (int, bool, *arbostypes.MessageWithMetadata, error) {
-	curMsg := 0
+) (uint64, bool, *arbostypes.MessageWithMetadata, error) {
+	var curMsg uint64
 	for {
-		if len(messages) == curMsg {
+		if uint64(len(messages)) == curMsg {
 			break
 		}
 		key := dbKey(messagePrefix, uint64(pos))
@@ -830,7 +832,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	broadcastStartPos := arbutil.MessageIndex(s.broadcasterQueuedMessagesPos.Load())
 
 	if messagesAreConfirmed {
-		var duplicates int
+		var duplicates uint64
 		var err error
 		duplicates, confirmedReorg, oldMsg, err = s.countDuplicateMessages(messageStartPos, messages, &batch)
 		if err != nil {
@@ -852,6 +854,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		// Active broadcast reorg and L1 messages at or before start of broadcast messages
 		// Or no active broadcast reorg and broadcast messages start before or immediately after last L1 message
 		if messagesAfterPos >= broadcastStartPos {
+			// #nosec G115
 			broadcastSliceIndex := int(messagesAfterPos - broadcastStartPos)
 			messagesOldLen := len(messages)
 			if broadcastSliceIndex < len(s.broadcasterQueuedMessages) {
@@ -868,7 +871,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 
 	var feedReorg bool
 	if !hasNewConfirmedMessages {
-		var duplicates int
+		var duplicates uint64
 		var err error
 		duplicates, feedReorg, oldMsg, err = s.countDuplicateMessages(messageStartPos, messages, nil)
 		if err != nil {
@@ -900,6 +903,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 
 	// Validate delayed message counts of remaining messages
 	for i, msg := range messages {
+		// #nosec G115
 		msgPos := messageStartPos + arbutil.MessageIndex(i)
 		diff := msg.MessageWithMeta.DelayedMessagesRead - lastDelayedRead
 		if diff != 0 && diff != 1 {
@@ -935,6 +939,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		// Check if new messages were added at the end of cache, if they were, then dont remove those particular messages
 		if len(s.broadcasterQueuedMessages) > cacheClearLen {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[cacheClearLen:]
+			// #nosec G115
 			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos) + uint64(cacheClearLen))
 		} else {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
@@ -1068,6 +1073,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 		batch = s.db.NewBatch()
 	}
 	for i, msg := range messages {
+		// #nosec G115
 		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg, batch)
 		if err != nil {
 			return err
@@ -1173,7 +1179,7 @@ func (s *TransactionStreamer) storeResult(
 
 // exposed for testing
 // return value: true if should be called again immediately
-func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution.ExecutionSequencer) bool {
+func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 	if ctx.Err() != nil {
 		return false
 	}
@@ -1248,7 +1254,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 }
 
 func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struct{}) time.Duration {
-	if s.ExecuteNextMsg(ctx, s.exec) {
+	if s.ExecuteNextMsg(ctx) {
 		return 0
 	}
 	return s.config().ExecuteMessageLoopDelay
