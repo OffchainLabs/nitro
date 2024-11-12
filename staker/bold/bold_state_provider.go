@@ -345,7 +345,9 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	}
 	if vs.IsSome() {
 		m := server_arb.NewFinishedMachine()
-		m.SetGlobalState(vs.Unwrap())
+		if err := m.SetGlobalState(vs.Unwrap()); err != nil {
+			return nil, err
+		}
 		defer m.Destroy()
 		return []common.Hash{m.Hash()}, nil
 	}
@@ -517,6 +519,9 @@ func (s *BOLDStateProvider) CollectProof(
 	machineIndex l2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
 	messageNum, err := s.messageNum(assertionMetadata, blockChallengeHeight)
+	if err != nil {
+		return nil, err
+	}
 	// Check if we have a virtual global state.
 	vs, err := s.virtualState(messageNum, assertionMetadata.BatchLimit)
 	if err != nil {
@@ -524,7 +529,9 @@ func (s *BOLDStateProvider) CollectProof(
 	}
 	if vs.IsSome() {
 		m := server_arb.NewFinishedMachine()
-		m.SetGlobalState(vs.Unwrap())
+		if err := m.SetGlobalState(vs.Unwrap()); err != nil {
+			return nil, err
+		}
 		defer m.Destroy()
 		return m.ProveNextStep(), nil
 	}

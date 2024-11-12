@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/offchainlabs/bold/assertions"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
@@ -394,11 +395,29 @@ func newBOLDChallengeManager(
 	scanningInterval := config.AssertionScanningInterval
 	// The interval at which the manager will attempt to confirm assertions.
 	confirmingInterval := config.AssertionConfirmingInterval
-	opts := []challengemanager.Opt{
+
+	amOpts := []assertions.Opt{
+		assertions.WithPostingInterval(postingInterval),
+		assertions.WithPollingInterval(scanningInterval),
+		assertions.WithConfirmationInterval(confirmingInterval),
+	}
+	assertionManager, err := assertions.NewManager(
+		assertionChain,
+		provider,
+		assertionChain.Backend(),
+		assertionChain.RollupAddress(),
+		config.StateProviderConfig.ValidatorName,
+		nil, // TODO: This is not going to cut it.
+		BoldModes[config.Mode],
+		amOpts...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not create assertion manager: %w", err)
+	}
+
+	cmOpts := []challengemanager.Opt{
 		challengemanager.WithName(config.StateProviderConfig.ValidatorName),
 		challengemanager.WithMode(BoldModes[config.Mode]),
-		challengemanager.WithAssertionPostingInterval(postingInterval),
-		challengemanager.WithAssertionScanningInterval(scanningInterval),
 		challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
 		challengemanager.WithAddress(txOpts.From),
 		// Configure the validator to track only certain challenges if configured to do so.
@@ -406,14 +425,15 @@ func newBOLDChallengeManager(
 	}
 	if config.API {
 		// Conditionally enables the BOLD API if configured.
-		opts = append(opts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.APIHost, config.APIPort), config.APIDBPath))
+		cmOpts = append(cmOpts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.APIHost, config.APIPort), config.APIDBPath))
 	}
 	manager, err := challengemanager.New(
 		ctx,
 		assertionChain,
 		provider,
+		assertionManager,
 		assertionChain.RollupAddress(),
-		opts...,
+		cmOpts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create challenge manager: %w", err)

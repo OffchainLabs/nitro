@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/bold/assertions"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
@@ -387,17 +388,44 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil, // Api db
 	)
 
+	assertionManager, err := assertions.NewManager(
+		assertionChain,
+		provider,
+		assertionChain.Backend(),
+		assertionChain.RollupAddress(),
+		"honest",
+		nil,
+		modes.MakeMode,
+		assertions.WithPostingInterval(time.Second*3),
+		assertions.WithPollingInterval(time.Second),
+		assertions.WithAverageBlockCreationTime(time.Second),
+	)
+	Require(t, err)
+
 	manager, err := challengemanager.New(
 		ctx,
 		assertionChain,
 		provider,
+		assertionManager,
 		assertionChain.RollupAddress(),
 		challengemanager.WithName("honest"),
 		challengemanager.WithMode(modes.MakeMode),
 		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("Asserter", ctx).From),
-		challengemanager.WithAssertionPostingInterval(time.Second*3),
-		challengemanager.WithAssertionScanningInterval(time.Second),
 		challengemanager.WithAvgBlockCreationTime(time.Second),
+	)
+	Require(t, err)
+
+	assertionManagerB, err := assertions.NewManager(
+		chainB,
+		evilProvider,
+		chainB.Backend(),
+		chainB.RollupAddress(),
+		"evil",
+		nil,
+		modes.MakeMode,
+		assertions.WithPostingInterval(time.Second*3),
+		assertions.WithPollingInterval(time.Second),
+		assertions.WithAverageBlockCreationTime(time.Second),
 	)
 	Require(t, err)
 
@@ -405,12 +433,11 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		ctx,
 		chainB,
 		evilProvider,
+		assertionManagerB,
 		assertionChain.RollupAddress(),
 		challengemanager.WithName("evil"),
 		challengemanager.WithMode(modes.MakeMode),
 		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("EvilAsserter", ctx).From),
-		challengemanager.WithAssertionPostingInterval(time.Second*3),
-		challengemanager.WithAssertionScanningInterval(time.Second),
 		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
 	Require(t, err)

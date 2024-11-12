@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/bold/assertions"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
@@ -332,18 +333,31 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		builder.L1.Client,
 		solimpl.NewDataPosterTransactor(dp),
 	)
-
 	Require(t, err)
+
+	assertionManager, err := assertions.NewManager(
+		assertionChain,
+		provider,
+		assertionChain.Backend(),
+		assertionChain.RollupAddress(),
+		addressName,
+		nil,
+		modes.MakeMode,
+		assertions.WithPostingInterval(time.Second*3),
+		assertions.WithPollingInterval(time.Second),
+		assertions.WithAverageBlockCreationTime(time.Second),
+	)
+	Require(t, err)
+
 	challengeManager, err := challengemanager.New(
 		ctx,
 		assertionChain,
 		provider,
+		assertionManager,
 		assertionChain.RollupAddress(),
 		challengemanager.WithName(addressName),
 		challengemanager.WithMode(modes.MakeMode),
 		challengemanager.WithAddress(txOpts.From),
-		challengemanager.WithAssertionPostingInterval(time.Second*3),
-		challengemanager.WithAssertionScanningInterval(time.Second),
 		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
 	Require(t, err)
