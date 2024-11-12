@@ -328,7 +328,13 @@ func newBacklogSegment() *backlogSegment {
 func IsBacklogSegmentNil(segment BacklogSegment) bool {
 	if segment == nil {
 		return true
-	} else if bs, ok := segment.(*backlogSegment); ok && bs == nil {
+	}
+	bs, ok := segment.(*backlogSegment)
+	if !ok {
+		log.Error("error in backlogSegment type assertion: clearing backlog")
+		return false
+	}
+	if bs == nil {
 		return true
 	}
 	return false
