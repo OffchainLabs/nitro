@@ -135,10 +135,6 @@ func (s *ExecutionEngine) backlogL1GasCharged() uint64 {
 		s.cachedL1PriceData.msgToL1PriceData[0].l1GasCharged)
 }
 
-func (s *ExecutionEngine) SetReorgEventsNotifier(reorgEventsNotifier chan struct{}) {
-	s.reorgEventsNotifier = reorgEventsNotifier
-}
-
 func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	s.cachedL1PriceData.mutex.Lock()
 	defer s.cachedL1PriceData.mutex.Unlock()
@@ -185,6 +181,16 @@ func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
 		panic("trying to set recorder policy when already set")
 	}
 	s.recorder = recorder
+}
+
+func (s *ExecutionEngine) SetReorgEventsNotifier(reorgEventsNotifier chan struct{}) {
+	if s.Started() {
+		panic("trying to set reorg events notifier after start")
+	}
+	if s.reorgEventsNotifier != nil {
+		panic("trying to set reorg events notifier when already set")
+	}
+	s.reorgEventsNotifier = reorgEventsNotifier
 }
 
 func (s *ExecutionEngine) EnableReorgSequencing() {
