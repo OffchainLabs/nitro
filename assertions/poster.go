@@ -8,14 +8,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/bold/challenge-manager/types"
 	"github.com/offchainlabs/bold/containers"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/offchainlabs/bold/logs/ephemeral"
 	"github.com/pkg/errors"
 )
 
@@ -30,10 +31,16 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 		log.Warn("Staker strategy not configured to stake on latest assertions")
 		return
 	}
+
+	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
+
 	log.Info("Ready to post")
 	if _, err := m.PostAssertion(ctx); err != nil {
 		if !errors.Is(err, solimpl.ErrAlreadyExists) {
-			log.Error("Could not submit latest assertion to L1", "err", err)
+			logLevel := log.Error
+			logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+
+			logLevel("Could not submit latest assertion to L1", "err", err)
 			errorPostingAssertionCounter.Inc(1)
 		}
 	}
@@ -49,9 +56,14 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 				case errors.Is(err, solimpl.ErrBatchNotYetFound):
 					log.Info("Waiting for more batches to post assertions about them onchain")
 				default:
-					log.Error("Could not submit latest assertion", "err", err, "validatorName", m.validatorName)
+					logLevel := log.Error
+					logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+
+					logLevel("Could not submit latest assertion", "err", err, "validatorName", m.validatorName)
 					errorPostingAssertionCounter.Inc(1)
 				}
+			} else {
+				exceedsMaxMempoolSizeEphemeralErrorHandler.Reset()
 			}
 		case <-ctx.Done():
 			return
