@@ -281,8 +281,8 @@ func TestEspressoE2E(t *testing.T) {
 	Require(t, err)
 
 	// Pause l1 height and verify that the escape hatch is working
-	checkStaker := os.Getenv("E2E_SKIP_ESCAPE_HATCH_TEST")
-	if checkStaker == "" {
+	checkEscapeHatch := os.Getenv("E2E_SKIP_ESCAPE_HATCH_TEST")
+	if checkEscapeHatch == "" {
 		log.Info("Checking the escape hatch")
 		// Start to check the escape hatch
 		address := common.HexToAddress(lightClientAddress)

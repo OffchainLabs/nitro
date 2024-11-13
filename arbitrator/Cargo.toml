@@ -8,7 +8,6 @@ members = [
         "prover",
         "stylus",
         "jit",
-        "espresso-crypto-helper"
 ]
 exclude = [
         "stylus/tests/",

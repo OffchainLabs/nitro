@@ -18,8 +18,6 @@ func createEspressoFinalityNode(t *testing.T, builder *NodeBuilder) (*TestClient
 	nodeConfig.BlockValidator.Enable = true
 	nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
 	nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", 54327)
-	nodeConfig.BlockValidator.LightClientAddress = lightClientAddress
-	nodeConfig.BlockValidator.Espresso = true
 	nodeConfig.DelayedSequencer.Enable = true
 	nodeConfig.DelayedSequencer.FinalizeDistance = 1
 	nodeConfig.Sequencer = true

@@ -9,7 +9,6 @@ use structopt::StructOpt;
 
 mod arbcompress;
 mod caller_env;
-mod espressocrypto;
 mod machine;
 mod program;
 mod socket;

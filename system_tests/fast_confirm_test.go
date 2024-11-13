@@ -144,7 +144,6 @@ func TestFastConfirmation(t *testing.T) {
 	stateless, err := staker.NewStatelessBlockValidator(
 		l2node.InboxReader,
 		l2node.InboxTracker,
-		nil,
 		l2node.TxStreamer,
 		execNode,
 		l2node.ArbDB,
@@ -346,7 +345,6 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
-		nil,
 		l2nodeA.TxStreamer,
 		execNodeA,
 		l2nodeA.ArbDB,
@@ -399,7 +397,6 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
-		nil,
 		l2nodeB.TxStreamer,
 		execNodeB,
 		l2nodeB.ArbDB,

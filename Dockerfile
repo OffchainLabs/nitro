@@ -50,7 +50,6 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 COPY ./Makefile ./
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/espresso-crypto-helper arbitrator/espresso-crypto-helper
 COPY arbitrator/brotli arbitrator/brotli
 COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover arbitrator/prover
@@ -72,8 +71,6 @@ COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
 COPY ./arbstate ./arbstate
-COPY ./espressocrypto ./espressocrypto
-COPY ./espressocryptowasm/ ./espressocryptowasm/
 COPY ./arbutil ./arbutil
 COPY ./gethhook ./gethhook
 COPY ./blsSignatures ./blsSignatures
@@ -112,7 +109,6 @@ COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
-COPY arbitrator/espresso-crypto-helper arbitrator/espresso-crypto-helper
 COPY arbitrator/stylus arbitrator/stylus
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY espressocrypto espressocrypto
@@ -145,7 +141,6 @@ COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/prover/benches arbitrator/prover/benches
 COPY arbitrator/bench/Cargo.toml arbitrator/bench/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
-COPY arbitrator/espresso-crypto-helper arbitrator/espresso-crypto-helper
 COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml

@@ -9,9 +9,6 @@ import (
 	"fmt"
 	"testing"
 
-	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
-	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 
@@ -44,8 +41,6 @@ type StatelessBlockValidator struct {
 	streamer     TransactionStreamerInterface
 	db           ethdb.Database
 	dapReaders   []daprovider.Reader
-
-	lightClientReader lightclient.LightClientReaderInterface
 }
 
 type BlockValidatorRegistrer interface {
@@ -144,13 +139,6 @@ type validationEntry struct {
 	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
 	UserWasms  state.UserWasms
 	DelayedMsg []byte
-
-	// If hotshot is down, this is the l1 height associated with the arbitrum original message.
-	// We use this to validate the hotshot liveness
-	// If hotshot is up, this is the hotshot height.
-	BlockHeight       uint64
-	HotShotCommitment espressoTypes.Commitment
-	IsHotShotLive     bool
 }
 
 func (e *validationEntry) ToInput(stylusArchs []ethdb.WasmTarget) (*validator.ValidationInput, error) {
@@ -158,18 +146,15 @@ func (e *validationEntry) ToInput(stylusArchs []ethdb.WasmTarget) (*validator.Va
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
 	res := validator.ValidationInput{
-		Id:                uint64(e.Pos),
-		HasDelayedMsg:     e.HasDelayedMsg,
-		DelayedMsgNr:      e.DelayedMsgNr,
-		Preimages:         e.Preimages,
-		UserWasms:         make(map[ethdb.WasmTarget]map[common.Hash][]byte, len(e.UserWasms)),
-		BatchInfo:         e.BatchInfo,
-		DelayedMsg:        e.DelayedMsg,
-		StartState:        e.Start,
-		DebugChain:        e.ChainConfig.DebugMode(),
-		BlockHeight:       e.BlockHeight,
-		HotShotCommitment: e.HotShotCommitment,
-		HotShotLiveness:   e.IsHotShotLive,
+		Id:            uint64(e.Pos),
+		HasDelayedMsg: e.HasDelayedMsg,
+		DelayedMsgNr:  e.DelayedMsgNr,
+		Preimages:     e.Preimages,
+		UserWasms:     make(map[ethdb.WasmTarget]map[common.Hash][]byte, len(e.UserWasms)),
+		BatchInfo:     e.BatchInfo,
+		DelayedMsg:    e.DelayedMsg,
+		StartState:    e.Start,
+		DebugChain:    e.ChainConfig.DebugMode(),
 	}
 	if len(stylusArchs) == 0 && len(e.UserWasms) > 0 {
 		return nil, fmt.Errorf("stylus support is required")
@@ -198,9 +183,6 @@ func newValidationEntry(
 	prevBatches []validator.BatchInfo,
 	prevDelayed uint64,
 	chainConfig *params.ChainConfig,
-	hotShotCommitment *espressoTypes.Commitment,
-	isHotShotLive bool,
-	l1BlockHeight uint64,
 ) (*validationEntry, error) {
 	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
 	if fullBatchInfo == nil {
@@ -229,26 +211,22 @@ func newValidationEntry(
 	}
 
 	return &validationEntry{
-		Stage:             ReadyForRecord,
-		Pos:               pos,
-		Start:             start,
-		End:               end,
-		HasDelayedMsg:     hasDelayed,
-		DelayedMsgNr:      delayedNum,
-		msg:               msg,
-		BatchInfo:         valBatches,
-		ChainConfig:       chainConfig,
-		Preimages:         preimages,
-		BlockHeight:       l1BlockHeight,
-		HotShotCommitment: *hotShotCommitment,
-		IsHotShotLive:     isHotShotLive,
+		Stage:         ReadyForRecord,
+		Pos:           pos,
+		Start:         start,
+		End:           end,
+		HasDelayedMsg: hasDelayed,
+		DelayedMsgNr:  delayedNum,
+		msg:           msg,
+		BatchInfo:     valBatches,
+		ChainConfig:   chainConfig,
+		Preimages:     preimages,
 	}, nil
 }
 
 func NewStatelessBlockValidator(
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
-	lightClientReader lightclient.LightClientReaderInterface,
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
@@ -256,10 +234,6 @@ func NewStatelessBlockValidator(
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	// Sanity check, also used to surpress the unused koanf field lint error
-	if config().Espresso && config().LightClientAddress == "" {
-		return nil, errors.New("cannot create a new stateless block validator in espresso mode without a hotshot reader")
-	}
 	var executionSpawners []validator.ExecutionSpawner
 	var redisValClient *redis.ValidationClient
 
@@ -282,16 +256,15 @@ func NewStatelessBlockValidator(
 	}
 
 	return &StatelessBlockValidator{
-		config:            config(),
-		recorder:          recorder,
-		redisValidator:    redisValClient,
-		inboxReader:       inboxReader,
-		lightClientReader: lightClientReader,
-		inboxTracker:      inbox,
-		streamer:          streamer,
-		db:                arbdb,
-		dapReaders:        dapReaders,
-		execSpawners:      executionSpawners,
+		config:         config(),
+		recorder:       recorder,
+		redisValidator: redisValClient,
+		inboxReader:    inboxReader,
+		inboxTracker:   inbox,
+		streamer:       streamer,
+		db:             arbdb,
+		dapReaders:     dapReaders,
+		execSpawners:   executionSpawners,
 	}, nil
 }
 
@@ -463,26 +436,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	var comm espressoTypes.Commitment
-	var isHotShotLive bool
-	var blockHeight uint64
-	if arbos.IsEspressoMsg(msg.Message) {
-		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
-		if err != nil {
-			return nil, err
-		}
-		blockHeight = jst.Header.Header.GetBlockHeight()
-		snapShot, err := v.lightClientReader.FetchMerkleRoot(blockHeight, nil)
-		if err != nil {
-			log.Error("error fetching light client commitment", "hotshot block height", blockHeight, "%v", err)
-			return nil, err
-		}
-		comm = snapShot.Root
-		isHotShotLive = true
-	} else if arbos.IsL2NonEspressoMsg(msg.Message) {
-		isHotShotLive = false
-		blockHeight = msg.Message.Header.BlockNumber
-	}
+
 	if !found {
 		return nil, fmt.Errorf("batch %d not found", startPos.BatchNumber)
 	}
@@ -502,7 +456,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 			Data:   data,
 		})
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, fullBatchInfo, prevBatches, prevDelayed, v.streamer.ChainConfig(), &comm, isHotShotLive, blockHeight)
+	entry, err := newValidationEntry(pos, start, end, msg, fullBatchInfo, prevBatches, prevDelayed, v.streamer.ChainConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -596,9 +550,4 @@ func (v *StatelessBlockValidator) Stop() {
 	if v.redisValidator != nil {
 		v.redisValidator.Stop()
 	}
-}
-
-// This method should be only used in tests.
-func (s *StatelessBlockValidator) DebugEspresso_SetLightClientReader(reader lightclient.LightClientReaderInterface, t *testing.T) {
-	s.lightClientReader = reader
 }

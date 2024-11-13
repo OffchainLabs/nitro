@@ -8,6 +8,5 @@ members = [
 	"user-test",
 	"program-exec",
         "forward",
-		"espresso-crypto",
 ]
 resolver = "2"
