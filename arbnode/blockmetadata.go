@@ -14,46 +14,47 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-type BlockMetadataRebuilderConfig struct {
+type BlockMetadataFetcherConfig struct {
 	Enable         bool                   `koanf:"enable"`
 	Source         rpcclient.ClientConfig `koanf:"source"`
 	SyncInterval   time.Duration          `koanf:"sync-interval"`
 	APIBlocksLimit uint64                 `koanf:"api-blocks-limit"`
 }
 
-var DefaultBlockMetadataRebuilderConfig = BlockMetadataRebuilderConfig{
+var DefaultBlockMetadataFetcherConfig = BlockMetadataFetcherConfig{
 	Enable:         false,
 	Source:         rpcclient.DefaultClientConfig,
 	SyncInterval:   time.Minute * 5,
 	APIBlocksLimit: 100,
 }
 
-func BlockMetadataRebuilderConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBlockMetadataRebuilderConfig.Enable, "enable syncing blockMetadata using a bulk blockMetadata api")
-	rpcclient.RPCClientAddOptions(prefix+".source", f, &DefaultBlockMetadataRebuilderConfig.Source)
-	f.Duration(prefix+".rebuild-interval", DefaultBlockMetadataRebuilderConfig.SyncInterval, "interval at which blockMetadata are synced regularly")
-	f.Uint64(prefix+".api-blocks-limit", DefaultBlockMetadataRebuilderConfig.APIBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query.\n"+
+func BlockMetadataFetcherConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultBlockMetadataFetcherConfig.Enable, "enable syncing blockMetadata using a bulk blockMetadata api")
+	rpcclient.RPCClientAddOptions(prefix+".source", f, &DefaultBlockMetadataFetcherConfig.Source)
+	f.Duration(prefix+".sync-interval", DefaultBlockMetadataFetcherConfig.SyncInterval, "interval at which blockMetadata are synced regularly")
+	f.Uint64(prefix+".api-blocks-limit", DefaultBlockMetadataFetcherConfig.APIBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query.\n"+
 		"This should be set lesser than or equal to the limit on the api provider side")
 }
 
-type BlockMetadataRebuilder struct {
+type BlockMetadataFetcher struct {
 	stopwaiter.StopWaiter
-	config BlockMetadataRebuilderConfig
+	config BlockMetadataFetcherConfig
 	db     ethdb.Database
 	client *rpcclient.RpcClient
 	exec   execution.ExecutionClient
 }
 
-func NewBlockMetadataRebuilder(ctx context.Context, c BlockMetadataRebuilderConfig, db ethdb.Database, exec execution.ExecutionClient) (*BlockMetadataRebuilder, error) {
+func NewBlockMetadataFetcher(ctx context.Context, c BlockMetadataFetcherConfig, db ethdb.Database, exec execution.ExecutionClient) (*BlockMetadataFetcher, error) {
 	client := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &c.Source }, nil)
 	if err := client.Start(ctx); err != nil {
 		return nil, err
 	}
-	return &BlockMetadataRebuilder{
+	return &BlockMetadataFetcher{
 		config: c,
 		db:     db,
 		client: client,
@@ -61,7 +62,7 @@ func NewBlockMetadataRebuilder(ctx context.Context, c BlockMetadataRebuilderConf
 	}, nil
 }
 
-func (b *BlockMetadataRebuilder) Fetch(ctx context.Context, fromBlock, toBlock uint64) ([]gethexec.NumberAndBlockMetadata, error) {
+func (b *BlockMetadataFetcher) fetch(ctx context.Context, fromBlock, toBlock uint64) ([]gethexec.NumberAndBlockMetadata, error) {
 	var result []gethexec.NumberAndBlockMetadata
 	err := b.client.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(fromBlock), rpc.BlockNumber(toBlock))
 	if err != nil {
@@ -70,17 +71,9 @@ func (b *BlockMetadataRebuilder) Fetch(ctx context.Context, fromBlock, toBlock u
 	return result, nil
 }
 
-func ArrayToMap[T comparable](arr []T) map[T]struct{} {
-	ret := make(map[T]struct{})
-	for _, elem := range arr {
-		ret[elem] = struct{}{}
-	}
-	return ret
-}
-
-func (b *BlockMetadataRebuilder) PersistBlockMetadata(query []uint64, result []gethexec.NumberAndBlockMetadata) error {
+func (b *BlockMetadataFetcher) persistBlockMetadata(query []uint64, result []gethexec.NumberAndBlockMetadata) error {
 	batch := b.db.NewBatch()
-	queryMap := ArrayToMap(query)
+	queryMap := util.ArrayToMap(query)
 	for _, elem := range result {
 		pos, err := b.exec.BlockNumberToMessageIndex(elem.BlockNumber)
 		if err != nil {
@@ -93,7 +86,7 @@ func (b *BlockMetadataRebuilder) PersistBlockMetadata(query []uint64, result []g
 			if err := batch.Delete(dbKey(missingBlockMetadataInputFeedPrefix, uint64(pos))); err != nil {
 				return err
 			}
-			// If we exceeded the ideal batch size, commit and reset
+			// If we reached the ideal batch size, commit and reset
 			if batch.ValueSize() >= ethdb.IdealBatchSize {
 				if err := batch.Write(); err != nil {
 					return err
@@ -105,9 +98,9 @@ func (b *BlockMetadataRebuilder) PersistBlockMetadata(query []uint64, result []g
 	return batch.Write()
 }
 
-func (b *BlockMetadataRebuilder) Update(ctx context.Context) time.Duration {
+func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	handleQuery := func(query []uint64) bool {
-		result, err := b.Fetch(
+		result, err := b.fetch(
 			ctx,
 			b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])),
 			b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1])),
@@ -116,7 +109,7 @@ func (b *BlockMetadataRebuilder) Update(ctx context.Context) time.Duration {
 			log.Error("Error getting result from bulk blockMetadata API", "err", err)
 			return false
 		}
-		if err = b.PersistBlockMetadata(query, result); err != nil {
+		if err = b.persistBlockMetadata(query, result); err != nil {
 			log.Error("Error committing result from bulk blockMetadata API to ArbDB", "err", err)
 			return false
 		}
@@ -140,19 +133,17 @@ func (b *BlockMetadataRebuilder) Update(ctx context.Context) time.Duration {
 		}
 	}
 	if len(query) > 0 {
-		if success := handleQuery(query); !success {
-			return b.config.SyncInterval
-		}
+		_ = handleQuery(query)
 	}
 	return b.config.SyncInterval
 }
 
-func (b *BlockMetadataRebuilder) Start(ctx context.Context) {
+func (b *BlockMetadataFetcher) Start(ctx context.Context) {
 	b.StopWaiter.Start(ctx, b)
 	b.CallIteratively(b.Update)
 }
 
-func (b *BlockMetadataRebuilder) StopAndWait() {
+func (b *BlockMetadataFetcher) StopAndWait() {
 	b.StopWaiter.StopAndWait()
 	b.client.Close()
 }

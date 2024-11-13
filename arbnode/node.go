@@ -77,23 +77,23 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 }
 
 type Config struct {
-	Sequencer              bool                         `koanf:"sequencer"`
-	ParentChainReader      headerreader.Config          `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader            InboxReaderConfig            `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer       DelayedSequencerConfig       `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster            BatchPosterConfig            `koanf:"batch-poster" reload:"hot"`
-	MessagePruner          MessagePrunerConfig          `koanf:"message-pruner" reload:"hot"`
-	BlockValidator         staker.BlockValidatorConfig  `koanf:"block-validator" reload:"hot"`
-	Feed                   broadcastclient.FeedConfig   `koanf:"feed" reload:"hot"`
-	Staker                 staker.L1ValidatorConfig     `koanf:"staker" reload:"hot"`
-	SeqCoordinator         SeqCoordinatorConfig         `koanf:"seq-coordinator"`
-	DataAvailability       das.DataAvailabilityConfig   `koanf:"data-availability"`
-	SyncMonitor            SyncMonitorConfig            `koanf:"sync-monitor"`
-	Dangerous              DangerousConfig              `koanf:"dangerous"`
-	TransactionStreamer    TransactionStreamerConfig    `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance            MaintenanceConfig            `koanf:"maintenance" reload:"hot"`
-	ResourceMgmt           resourcemanager.Config       `koanf:"resource-mgmt" reload:"hot"`
-	BlockMetadataRebuilder BlockMetadataRebuilderConfig `koanf:"block-metadata-rebuilder" reload:"hot"`
+	Sequencer            bool                        `koanf:"sequencer"`
+	ParentChainReader    headerreader.Config         `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader          InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer     DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster          BatchPosterConfig           `koanf:"batch-poster" reload:"hot"`
+	MessagePruner        MessagePrunerConfig         `koanf:"message-pruner" reload:"hot"`
+	BlockValidator       staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
+	Feed                 broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
+	Staker               staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
+	SeqCoordinator       SeqCoordinatorConfig        `koanf:"seq-coordinator"`
+	DataAvailability     das.DataAvailabilityConfig  `koanf:"data-availability"`
+	SyncMonitor          SyncMonitorConfig           `koanf:"sync-monitor"`
+	Dangerous            DangerousConfig             `koanf:"dangerous"`
+	TransactionStreamer  TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance          MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
+	ResourceMgmt         resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
+	BlockMetadataFetcher BlockMetadataFetcherConfig  `koanf:"block-metadata-fetcher" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -131,10 +131,10 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if c.Sequencer && c.TransactionStreamer.TrackBlockMetadataFrom == 0 {
-		return errors.New("when sequencer is enabled track-missing-block-metadata should be enabled as well")
+		return errors.New("when sequencer is enabled track-missing-block-metadata-from should be set as well")
 	}
-	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataRebuilder.Enable {
-		log.Warn("track-missing-block-metadata is set but blockMetadata rebuilder is not enabled")
+	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
+		log.Warn("track-missing-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
 	return nil
 }
@@ -165,28 +165,28 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
-	BlockMetadataRebuilderConfigAddOptions(prefix+"block-metadata-rebuilder", f)
+	BlockMetadataFetcherConfigAddOptions(prefix+"block-metadata-fetcher", f)
 }
 
 var ConfigDefault = Config{
-	Sequencer:              false,
-	ParentChainReader:      headerreader.DefaultConfig,
-	InboxReader:            DefaultInboxReaderConfig,
-	DelayedSequencer:       DefaultDelayedSequencerConfig,
-	BatchPoster:            DefaultBatchPosterConfig,
-	MessagePruner:          DefaultMessagePrunerConfig,
-	BlockValidator:         staker.DefaultBlockValidatorConfig,
-	Feed:                   broadcastclient.FeedConfigDefault,
-	Staker:                 staker.DefaultL1ValidatorConfig,
-	SeqCoordinator:         DefaultSeqCoordinatorConfig,
-	DataAvailability:       das.DefaultDataAvailabilityConfig,
-	SyncMonitor:            DefaultSyncMonitorConfig,
-	Dangerous:              DefaultDangerousConfig,
-	TransactionStreamer:    DefaultTransactionStreamerConfig,
-	ResourceMgmt:           resourcemanager.DefaultConfig,
-	Maintenance:            DefaultMaintenanceConfig,
-	BlockMetadataRebuilder: DefaultBlockMetadataRebuilderConfig,
-	SnapSyncTest:           DefaultSnapSyncConfig,
+	Sequencer:            false,
+	ParentChainReader:    headerreader.DefaultConfig,
+	InboxReader:          DefaultInboxReaderConfig,
+	DelayedSequencer:     DefaultDelayedSequencerConfig,
+	BatchPoster:          DefaultBatchPosterConfig,
+	MessagePruner:        DefaultMessagePrunerConfig,
+	BlockValidator:       staker.DefaultBlockValidatorConfig,
+	Feed:                 broadcastclient.FeedConfigDefault,
+	Staker:               staker.DefaultL1ValidatorConfig,
+	SeqCoordinator:       DefaultSeqCoordinatorConfig,
+	DataAvailability:     das.DefaultDataAvailabilityConfig,
+	SyncMonitor:          DefaultSyncMonitorConfig,
+	Dangerous:            DefaultDangerousConfig,
+	TransactionStreamer:  DefaultTransactionStreamerConfig,
+	ResourceMgmt:         resourcemanager.DefaultConfig,
+	Maintenance:          DefaultMaintenanceConfig,
+	BlockMetadataFetcher: DefaultBlockMetadataFetcherConfig,
+	SnapSyncTest:         DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -281,7 +281,7 @@ type Node struct {
 	MaintenanceRunner       *MaintenanceRunner
 	DASLifecycleManager     *das.LifecycleManager
 	SyncMonitor             *SyncMonitor
-	blockMetadataRebuilder  *BlockMetadataRebuilder
+	blockMetadataFetcher    *BlockMetadataFetcher
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
 }
@@ -490,9 +490,9 @@ func createNodeImpl(
 		}
 	}
 
-	var blockMetadataRebuilder *BlockMetadataRebuilder
-	if config.BlockMetadataRebuilder.Enable {
-		blockMetadataRebuilder, err = NewBlockMetadataRebuilder(ctx, config.BlockMetadataRebuilder, arbDb, exec)
+	var blockMetadataFetcher *BlockMetadataFetcher
+	if config.BlockMetadataFetcher.Enable {
+		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec)
 		if err != nil {
 			return nil, err
 		}
@@ -521,7 +521,7 @@ func createNodeImpl(
 			MaintenanceRunner:       maintenanceRunner,
 			DASLifecycleManager:     nil,
 			SyncMonitor:             syncMonitor,
-			blockMetadataRebuilder:  blockMetadataRebuilder,
+			blockMetadataFetcher:    blockMetadataFetcher,
 			configFetcher:           configFetcher,
 			ctx:                     ctx,
 		}, nil
@@ -758,7 +758,7 @@ func createNodeImpl(
 		MaintenanceRunner:       maintenanceRunner,
 		DASLifecycleManager:     dasLifecycleManager,
 		SyncMonitor:             syncMonitor,
-		blockMetadataRebuilder:  blockMetadataRebuilder,
+		blockMetadataFetcher:    blockMetadataFetcher,
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
 	}, nil
@@ -942,8 +942,8 @@ func (n *Node) Start(ctx context.Context) error {
 			n.BroadcastClients.Start(ctx)
 		}()
 	}
-	if n.blockMetadataRebuilder != nil {
-		n.blockMetadataRebuilder.Start(ctx)
+	if n.blockMetadataFetcher != nil {
+		n.blockMetadataFetcher.Start(ctx)
 	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
