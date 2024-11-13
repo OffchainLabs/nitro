@@ -270,7 +270,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 
 	targets := statedb.Database().WasmTargets()
 	// we know program is activated, so it must be in correct version and not use too much memory
-	moduleActivationMandatory := false
+	moduleActivationMandatory := true // TODO: refactor the parameter, always set to true
 	info, asmMap, err := activateProgramInternal(addressForLogging, codehash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas, targets, moduleActivationMandatory)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
