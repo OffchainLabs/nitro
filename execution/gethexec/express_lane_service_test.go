@@ -231,10 +231,21 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	}
 }
 
+type stubPublisher struct {
+	publishFn func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error
+}
+
+func (s *stubPublisher) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, isExpressLaneController bool) error {
+	return s.publishFn(parentCtx, tx, options, isExpressLaneController)
+}
+
 func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
+		transactionPublisher: &stubPublisher{func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
+			return nil
+		}},
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
 	}
@@ -244,17 +255,20 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 	msg := &timeboost.ExpressLaneSubmission{
 		SequenceNumber: 0,
 	}
-	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
-		return nil
-	}
-	err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+
+	err := els.sequenceExpressLaneSubmission(ctx, msg)
 	require.ErrorIs(t, err, timeboost.ErrSequenceNumberTooLow)
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	numPublished := 0
 	els := &expressLaneService{
+		transactionPublisher: &stubPublisher{func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
+			numPublished += 1
+			return nil
+		}},
 		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}
@@ -264,39 +278,36 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	msg := &timeboost.ExpressLaneSubmission{
 		SequenceNumber: 2,
 	}
-	numPublished := 0
-	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
-		numPublished += 1
-		return nil
-	}
-	err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+	err := els.sequenceExpressLaneSubmission(ctx, msg)
 	require.NoError(t, err)
 	// Because the message is for a future sequence number, it
 	// should get queued, but not yet published.
 	require.Equal(t, 0, numPublished)
 	// Sending it again should give us an error.
-	err = els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+	err = els.sequenceExpressLaneSubmission(ctx, msg)
 	require.ErrorIs(t, err, timeboost.ErrDuplicateSequenceNumber)
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	numPublished := 0
+	publishedTxOrder := make([]uint64, 0)
 	els := &expressLaneService{
 		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}
-	els.roundControl.Add(0, &expressLaneControl{
-		sequence: 1,
-	})
-	numPublished := 0
-	publishedTxOrder := make([]uint64, 0)
 	control, _ := els.roundControl.Get(0)
-	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
+	els.transactionPublisher = &stubPublisher{func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
 		numPublished += 1
 		publishedTxOrder = append(publishedTxOrder, control.sequence)
 		return nil
-	}
+	}}
+
+	els.roundControl.Add(0, &expressLaneControl{
+		sequence: 1,
+	})
+
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
 			SequenceNumber: 10,
@@ -315,14 +326,14 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 		},
 	}
 	for _, msg := range messages {
-		err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+		err := els.sequenceExpressLaneSubmission(ctx, msg)
 		require.NoError(t, err)
 	}
 	// We should have only published 2, as we are missing sequence number 3.
 	require.Equal(t, 2, numPublished)
 	require.Equal(t, len(messages), len(els.messagesBySequenceNumber))
 
-	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3}, publishFn)
+	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3})
 	require.NoError(t, err)
 	require.Equal(t, 5, numPublished)
 }
@@ -340,14 +351,15 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	numPublished := 0
 	publishedTxOrder := make([]uint64, 0)
 	control, _ := els.roundControl.Get(0)
-	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
+	els.transactionPublisher = &stubPublisher{func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
 		if tx == nil {
 			return errors.New("oops, bad tx")
 		}
 		numPublished += 1
 		publishedTxOrder = append(publishedTxOrder, control.sequence)
 		return nil
-	}
+	}}
+
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
 			SequenceNumber: 1,
@@ -368,10 +380,10 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	}
 	for _, msg := range messages {
 		if msg.Transaction == nil {
-			err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+			err := els.sequenceExpressLaneSubmission(ctx, msg)
 			require.ErrorContains(t, err, "oops, bad tx")
 		} else {
-			err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+			err := els.sequenceExpressLaneSubmission(ctx, msg)
 			require.NoError(t, err)
 		}
 	}

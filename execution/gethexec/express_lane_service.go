@@ -31,10 +31,14 @@ type expressLaneControl struct {
 	controller common.Address
 }
 
+type transactionPublisher interface {
+	publishTransactionImpl(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions, bool) error
+}
+
 type expressLaneService struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
-	sequencer                *Sequencer
+	transactionPublisher     transactionPublisher
 	auctionContractAddr      common.Address
 	initialTimestamp         time.Time
 	roundDuration            time.Duration
@@ -48,7 +52,7 @@ type expressLaneService struct {
 }
 
 func newExpressLaneService(
-	sequencer *Sequencer,
+	transactionPublisher transactionPublisher,
 	auctionContractAddr common.Address,
 	sequencerClient *ethclient.Client,
 	bc *core.BlockChain,
@@ -81,7 +85,7 @@ pending:
 	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
 	auctionClosingDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.AuctionClosingSeconds) * time.Second
 	return &expressLaneService{
-		sequencer:                sequencer,
+		transactionPublisher:     transactionPublisher,
 		auctionContract:          auctionContract,
 		chainConfig:              chainConfig,
 		initialTimestamp:         initialTimestamp,
@@ -262,7 +266,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		if !exists {
 			break
 		}
-		if err := es.sequencer.publishTransactionImpl(
+		if err := es.transactionPublisher.publishTransactionImpl(
 			ctx,
 			nextMsg.Transaction,
 			msg.Options,

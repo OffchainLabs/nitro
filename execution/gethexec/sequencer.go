@@ -536,7 +536,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
 		return err
 	}
-	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg, s.publishTransactionImpl)
+	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg)
 }
 
 func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
@@ -1253,6 +1253,7 @@ func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr co
 	seqClient := ethclient.NewClient(rpcClient)
 
 	els, err := newExpressLaneService(
+		s,
 		auctionContractAddr,
 		seqClient,
 		s.execEngine.bc,
