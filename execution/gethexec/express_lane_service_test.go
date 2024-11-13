@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var testPriv *ecdsa.PrivateKey
+var testPriv, testPriv2 *ecdsa.PrivateKey
 
 func init() {
 	privKey, err := crypto.HexToECDSA("93be75cc4df7acbb636b6abe6de2c0446235ac1dc7da9f290a70d83f088b486d")
@@ -30,6 +30,11 @@ func init() {
 		panic(err)
 	}
 	testPriv = privKey
+	privKey2, err := crypto.HexToECDSA("93be75cc4df7acbb636b6abe6de2c0446235ac1dc7da9f290a70d83f088b486e")
+	if err != nil {
+		panic(err)
+	}
+	testPriv2 = privKey2
 }
 
 func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
@@ -193,7 +198,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			control: expressLaneControl{
 				controller: common.Address{'b'},
 			},
-			sub:         buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv),
+			sub:         buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0),
 			expectedErr: timeboost.ErrNotExpressLaneController,
 		},
 		{
@@ -210,7 +215,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			control: expressLaneControl{
 				controller: crypto.PubkeyToAddress(testPriv.PublicKey),
 			},
-			sub:   buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv),
+			sub:   buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0),
 			valid: true,
 		},
 	}
@@ -229,6 +234,46 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			require.ErrorIs(t, err, tt.expectedErr)
 		})
 	}
+}
+
+func Test_expressLaneService_validateExpressLaneTx_gracePeriod(t *testing.T) {
+	auctionContractAddr := common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6")
+	es := &expressLaneService{
+		auctionContractAddr:  auctionContractAddr,
+		initialTimestamp:     time.Now(),
+		roundDuration:        time.Second * 10,
+		auctionClosing:       time.Second * 5,
+		earlySubmissionGrace: time.Second * 2,
+		chainConfig: &params.ChainConfig{
+			ChainID: big.NewInt(1),
+		},
+		roundControl: lru.NewCache[uint64, *expressLaneControl](8),
+	}
+	es.roundControl.Add(0, &expressLaneControl{
+		controller: crypto.PubkeyToAddress(testPriv.PublicKey),
+	})
+	es.roundControl.Add(1, &expressLaneControl{
+		controller: crypto.PubkeyToAddress(testPriv2.PublicKey),
+	})
+
+	sub1 := buildValidSubmission(t, auctionContractAddr, testPriv, 0)
+	err := es.validateExpressLaneTx(sub1)
+	require.NoError(t, err)
+
+	// Send req for next round
+	sub2 := buildValidSubmission(t, auctionContractAddr, testPriv2, 1)
+	err = es.validateExpressLaneTx(sub2)
+	require.ErrorIs(t, err, timeboost.ErrBadRoundNumber)
+
+	// Sleep til 2 seconds before grace
+	time.Sleep(time.Second * 6)
+	err = es.validateExpressLaneTx(sub2)
+	require.ErrorIs(t, err, timeboost.ErrBadRoundNumber)
+
+	// Send req for next round within grace period
+	time.Sleep(time.Second * 2)
+	err = es.validateExpressLaneTx(sub2)
+	require.NoError(t, err)
 }
 
 type stubPublisher struct {
@@ -461,7 +506,7 @@ func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 		sequence:   1,
 		controller: addr,
 	})
-	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv)
+	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0)
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		err := es.validateExpressLaneTx(sub)
@@ -510,13 +555,14 @@ func buildValidSubmission(
 	t testing.TB,
 	auctionContractAddr common.Address,
 	privKey *ecdsa.PrivateKey,
+	round uint64,
 ) *timeboost.ExpressLaneSubmission {
 	b := &timeboost.ExpressLaneSubmission{
 		ChainId:                big.NewInt(1),
 		AuctionContractAddress: auctionContractAddr,
 		Transaction:            types.NewTransaction(0, common.Address{}, big.NewInt(0), 0, big.NewInt(0), nil),
 		Signature:              make([]byte, 65),
-		Round:                  0,
+		Round:                  round,
 	}
 	data, err := b.ToMessageBytes()
 	require.NoError(t, err)

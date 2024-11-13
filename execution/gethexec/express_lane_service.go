@@ -43,6 +43,7 @@ type expressLaneService struct {
 	initialTimestamp         time.Time
 	roundDuration            time.Duration
 	auctionClosing           time.Duration
+	earlySubmissionGrace     time.Duration
 	chainConfig              *params.ChainConfig
 	logs                     chan []*types.Log
 	seqClient                *ethclient.Client
@@ -56,6 +57,7 @@ func newExpressLaneService(
 	auctionContractAddr common.Address,
 	sequencerClient *ethclient.Client,
 	bc *core.BlockChain,
+	earlySubmissionGrace time.Duration,
 ) (*expressLaneService, error) {
 	chainConfig := bc.Config()
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
@@ -90,6 +92,7 @@ pending:
 		chainConfig:              chainConfig,
 		initialTimestamp:         initialTimestamp,
 		auctionClosing:           auctionClosingDuration,
+		earlySubmissionGrace:     earlySubmissionGrace,
 		roundControl:             lru.NewCache[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
 		auctionContractAddr:      auctionContractAddr,
 		roundDuration:            roundDuration,
@@ -295,7 +298,12 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 	}
 	currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
 	if msg.Round != currentRound {
-		return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
+		if msg.Round == currentRound+1 &&
+			timeboost.TimeTilNextRound(es.initialTimestamp, es.roundDuration) <= es.earlySubmissionGrace {
+			time.Sleep(timeboost.TimeTilNextRound(es.initialTimestamp, es.roundDuration))
+		} else {
+			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
+		}
 	}
 	if !es.currentRoundHasController() {
 		return timeboost.ErrNoOnchainController

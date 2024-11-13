@@ -90,6 +90,7 @@ type TimeboostConfig struct {
 	AuctioneerAddress      string        `koanf:"auctioneer-address"`
 	ExpressLaneAdvantage   time.Duration `koanf:"express-lane-advantage"`
 	SequencerHTTPEndpoint  string        `koanf:"sequencer-http-endpoint"`
+	EarlySubmissionGrace   time.Duration `koanf:"early-submission-grace"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
@@ -98,6 +99,7 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	AuctioneerAddress:      "",
 	ExpressLaneAdvantage:   time.Millisecond * 200,
 	SequencerHTTPEndpoint:  "http://localhost:8547",
+	EarlySubmissionGrace:   time.Second * 2,
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -191,6 +193,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".auctioneer-address", DefaultTimeboostConfig.AuctioneerAddress, "Address of the Timeboost Autonomous Auctioneer")
 	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
 	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
+	f.Duration(prefix+".early-submission-grace", DefaultTimeboostConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
 }
 
 type txQueueItem struct {
@@ -482,7 +485,7 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 	}
 
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
-		if isExpressLaneController && s.expressLaneService.currentRoundHasController() {
+		if !isExpressLaneController && s.expressLaneService.currentRoundHasController() {
 			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
 		}
 	}
@@ -1242,7 +1245,12 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr common.Address, auctioneerAddr common.Address) {
+func (s *Sequencer) StartExpressLane(
+	ctx context.Context,
+	auctionContractAddr common.Address,
+	auctioneerAddr common.Address,
+	earlySubmissionGrace time.Duration,
+) {
 	if !s.config().Timeboost.Enable {
 		log.Crit("Timeboost is not enabled, but StartExpressLane was called")
 	}
@@ -1257,6 +1265,7 @@ func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr co
 		auctionContractAddr,
 		seqClient,
 		s.execEngine.bc,
+		earlySubmissionGrace,
 	)
 	if err != nil {
 		log.Crit("Failed to create express lane service", "err", err, "auctionContractAddr", auctionContractAddr)

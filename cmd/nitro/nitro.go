@@ -661,7 +661,9 @@ func mainImpl() int {
 		execNode.Sequencer.StartExpressLane(
 			ctx,
 			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress),
-			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress))
+			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress),
+			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
+		)
 	}
 
 	err = nil
