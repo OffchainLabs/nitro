@@ -319,7 +319,6 @@ func callProgram(
 	evmData *EvmData,
 	stylusParams *ProgParams,
 	memoryModel *MemoryModel,
-	arbos_tag uint32,
 	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
 	db := interpreter.Evm().StateDB
@@ -347,7 +346,7 @@ func callProgram(
 		cbool(debug),
 		output,
 		(*u64)(&scope.Contract.Gas),
-		u32(arbos_tag),
+		u32(runCtx.WasmCacheTag()),
 	))
 
 	depth := interpreter.Depth()
@@ -381,7 +380,7 @@ func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressFor
 		if err != nil {
 			panic("unable to recreate wasm")
 		}
-		tag := db.Database().WasmCacheTag()
+		tag := runCtx.WasmCacheTag()
 		state.CacheWasmRust(asm, module, program.version, tag, debug)
 		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module, Version: program.version, Tag: tag, Debug: debug})
 	}
@@ -391,7 +390,7 @@ func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressFor
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
 func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runCtx *core.MessageRunContext, forever bool) {
 	if runCtx.IsChainTip() {
-		tag := db.Database().WasmCacheTag()
+		tag := runCtx.WasmCacheTag()
 		state.EvictWasmRust(module, version, tag, debug)
 		if !forever {
 			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Tag: tag, Debug: debug})

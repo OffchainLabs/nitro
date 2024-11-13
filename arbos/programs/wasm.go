@@ -147,7 +147,6 @@ func callProgram(
 	evmData *EvmData,
 	params *ProgParams,
 	memoryModel *MemoryModel,
-	_arbos_tag uint32,
 	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
 	reqHandler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)

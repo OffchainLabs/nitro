@@ -1311,6 +1311,7 @@ func createL2BlockChain(
 func createNonL1BlockChainWithStackConfig(
 	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config, wasmCacheTag uint32,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
+	_ = wasmCacheTag // TODO remove and figure out a way to set the cache tag to 0 for tests that doesn't test long term cache
 	if info == nil {
 		info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
@@ -1329,7 +1330,7 @@ func createNonL1BlockChainWithStackConfig(
 	Require(t, err)
 	wasmData, err := stack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
 	Require(t, err)
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, wasmCacheTag)
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
 
@@ -1424,7 +1425,7 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 	wasmData, err := chainStack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
 	Require(t, err)
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, wasmCacheTag)
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 
 	arbDb, err := chainStack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)

@@ -273,7 +273,7 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		return nil, nil
 	}
 
-	tag := s.bc.StateCache().WasmCacheTag()
+	tag := core.NewMessageCommitContext(nil).WasmCacheTag() // we don't pass any targets, we just want the tag
 	// reorg Rust-side VM state
 	C.stylus_reorg_vm(C.uint64_t(blockNum), C.uint32_t(tag))
 
