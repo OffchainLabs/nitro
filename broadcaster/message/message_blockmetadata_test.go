@@ -3,14 +3,14 @@ package message
 import (
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 func TestTimeboostedInDifferentScenarios(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name          string
-		blockMetadata arbostypes.BlockMetadata
+		blockMetadata common.BlockMetadata
 		txs           []bool // Array representing whether the tx is timeboosted or not. First tx is always false as its an arbitrum internal tx
 	}{
 		{

@@ -18,12 +18,10 @@ type MessageWithMetadata struct {
 	DelayedMessagesRead uint64             `json:"delayedMessagesRead"`
 }
 
-type BlockMetadata []byte
-
 type MessageWithMetadataAndBlockInfo struct {
 	MessageWithMeta MessageWithMetadata
 	BlockHash       *common.Hash
-	BlockMetadata   BlockMetadata
+	BlockMetadata   common.BlockMetadata
 }
 
 var EmptyTestMessageWithMetadata = MessageWithMetadata{
@@ -33,15 +31,6 @@ var EmptyTestMessageWithMetadata = MessageWithMetadata{
 // TestMessageWithMetadataAndRequestId message signature is only verified if requestId defined
 var TestMessageWithMetadataAndRequestId = MessageWithMetadata{
 	Message: &TestIncomingMessageWithRequestId,
-}
-
-// IsTxTimeboosted given a tx's index in the block returns whether the tx was timeboosted or not
-func (b BlockMetadata) IsTxTimeboosted(txIndex int) bool {
-	maxTxCount := (len(b) - 1) * 8
-	if txIndex >= maxTxCount {
-		return false
-	}
-	return b[1+(txIndex/8)]&(1<<(txIndex%8)) != 0
 }
 
 func (m *MessageWithMetadata) Hash(sequenceNumber arbutil.MessageIndex, chainId uint64) (common.Hash, error) {

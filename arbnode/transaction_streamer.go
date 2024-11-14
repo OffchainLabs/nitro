@@ -960,7 +960,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	pos arbutil.MessageIndex,
 	msgWithMeta arbostypes.MessageWithMetadata,
 	msgResult execution.MessageResult,
-	blockMetadata arbostypes.BlockMetadata,
+	blockMetadata common.BlockMetadata,
 ) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
@@ -1091,7 +1091,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	return nil
 }
 
-func (s *TransactionStreamer) BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error) {
+func (s *TransactionStreamer) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
 	if count == 0 {
 		return []byte{}, nil
 	}
