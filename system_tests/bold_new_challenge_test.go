@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/bold/assertions"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
@@ -174,9 +173,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 
 	// Everything's setup, now just wait for the challenge to complete and ensure the honest party won
 
-	chalManager, err := assertionChain.SpecChallengeManager(ctx)
-	Require(t, err)
-
+	chalManager := assertionChain.SpecChallengeManager()
 	filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManager.Address(), builder.L1.Client)
 	Require(t, err)
 
@@ -335,30 +332,18 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 	)
 	Require(t, err)
 
-	assertionManager, err := assertions.NewManager(
-		assertionChain,
-		provider,
-		assertionChain.Backend(),
-		assertionChain.RollupAddress(),
-		addressName,
-		nil,
-		modes.MakeMode,
-		assertions.WithPostingInterval(time.Second*3),
-		assertions.WithPollingInterval(time.Second),
-		assertions.WithAverageBlockCreationTime(time.Second),
-	)
-	Require(t, err)
+	stackOpts := []challengemanager.StackOpt{
+		challengemanager.StackWithName(addressName),
+		challengemanager.StackWithMode(modes.MakeMode),
+		challengemanager.StackWithPostingInterval(time.Second * 3),
+		challengemanager.StackWithPollingInterval(time.Second),
+		challengemanager.StackWithAverageBlockCreationTime(time.Second),
+	}
 
-	challengeManager, err := challengemanager.New(
-		ctx,
+	challengeManager, err := challengemanager.NewChallengeStack(
 		assertionChain,
 		provider,
-		assertionManager,
-		assertionChain.RollupAddress(),
-		challengemanager.WithName(addressName),
-		challengemanager.WithMode(modes.MakeMode),
-		challengemanager.WithAddress(txOpts.From),
-		challengemanager.WithAvgBlockCreationTime(time.Second),
+		stackOpts...,
 	)
 	Require(t, err)
 

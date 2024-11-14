@@ -29,7 +29,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/bold/assertions"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
@@ -212,8 +211,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	Require(t, l2nodeA.Start(ctx))
 	Require(t, l2nodeB.Start(ctx))
 
-	chalManagerAddr, err := assertionChain.SpecChallengeManager(ctx)
-	Require(t, err)
+	chalManagerAddr := assertionChain.SpecChallengeManager()
 	evilOpts := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
@@ -388,66 +386,34 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil, // Api db
 	)
 
-	assertionManager, err := assertions.NewManager(
+	stackOpts := []challengemanager.StackOpt{
+		challengemanager.StackWithName("honest"),
+		challengemanager.StackWithMode(modes.MakeMode),
+		challengemanager.StackWithPostingInterval(time.Second * 3),
+		challengemanager.StackWithPollingInterval(time.Second),
+		challengemanager.StackWithAverageBlockCreationTime(time.Second),
+	}
+
+	manager, err := challengemanager.NewChallengeStack(
 		assertionChain,
 		provider,
-		assertionChain.Backend(),
-		assertionChain.RollupAddress(),
-		"honest",
-		nil,
-		modes.MakeMode,
-		assertions.WithPostingInterval(time.Second*3),
-		assertions.WithPollingInterval(time.Second),
-		assertions.WithAverageBlockCreationTime(time.Second),
+		stackOpts...,
 	)
 	Require(t, err)
 
-	manager, err := challengemanager.New(
-		ctx,
-		assertionChain,
-		provider,
-		assertionManager,
-		assertionChain.RollupAddress(),
-		challengemanager.WithName("honest"),
-		challengemanager.WithMode(modes.MakeMode),
-		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("Asserter", ctx).From),
-		challengemanager.WithAvgBlockCreationTime(time.Second),
-	)
-	Require(t, err)
+	evilStackOpts := append(stackOpts, challengemanager.StackWithName("evil"))
 
-	assertionManagerB, err := assertions.NewManager(
+	managerB, err := challengemanager.NewChallengeStack(
 		chainB,
 		evilProvider,
-		chainB.Backend(),
-		chainB.RollupAddress(),
-		"evil",
-		nil,
-		modes.MakeMode,
-		assertions.WithPostingInterval(time.Second*3),
-		assertions.WithPollingInterval(time.Second),
-		assertions.WithAverageBlockCreationTime(time.Second),
-	)
-	Require(t, err)
-
-	managerB, err := challengemanager.New(
-		ctx,
-		chainB,
-		evilProvider,
-		assertionManagerB,
-		assertionChain.RollupAddress(),
-		challengemanager.WithName("evil"),
-		challengemanager.WithMode(modes.MakeMode),
-		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("EvilAsserter", ctx).From),
-		challengemanager.WithAvgBlockCreationTime(time.Second),
+		evilStackOpts...,
 	)
 	Require(t, err)
 
 	manager.Start(ctx)
 	managerB.Start(ctx)
 
-	chalManager, err := assertionChain.SpecChallengeManager(ctx)
-	Require(t, err)
-
+	chalManager := assertionChain.SpecChallengeManager()
 	filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManager.Address(), l1client)
 	Require(t, err)
 

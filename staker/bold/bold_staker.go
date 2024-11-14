@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/offchainlabs/bold/assertions"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
@@ -396,49 +395,27 @@ func newBOLDChallengeManager(
 	// The interval at which the manager will attempt to confirm assertions.
 	confirmingInterval := config.AssertionConfirmingInterval
 
-	amOpts := []assertions.Opt{
-		assertions.WithPostingInterval(postingInterval),
-		assertions.WithPollingInterval(scanningInterval),
-		assertions.WithConfirmationInterval(confirmingInterval),
-	}
-	assertionManager, err := assertions.NewManager(
-		assertionChain,
-		provider,
-		assertionChain.Backend(),
-		assertionChain.RollupAddress(),
-		config.StateProviderConfig.ValidatorName,
-		nil, // TODO: This is not going to cut it.
-		BoldModes[config.Mode],
-		amOpts...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("could not create assertion manager: %w", err)
-	}
-
-	cmOpts := []challengemanager.Opt{
-		challengemanager.WithName(config.StateProviderConfig.ValidatorName),
-		challengemanager.WithMode(BoldModes[config.Mode]),
-		challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
-		challengemanager.WithAddress(txOpts.From),
-		// Configure the validator to track only certain challenges if configured to do so.
-		challengemanager.WithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
+	stackOpts := []challengemanager.StackOpt{
+		challengemanager.StackWithName(config.StateProviderConfig.ValidatorName),
+		challengemanager.StackWithMode(BoldModes[config.Mode]),
+		challengemanager.StackWithPollingInterval(scanningInterval),
+		challengemanager.StackWithPostingInterval(postingInterval),
+		challengemanager.StackWithConfirmationInterval(confirmingInterval),
+		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 	}
 	if config.API {
-		// Conditionally enables the BOLD API if configured.
-		cmOpts = append(cmOpts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.APIHost, config.APIPort), config.APIDBPath))
+		apiAddr := fmt.Sprintf("%s:%d", config.APIHost, config.APIPort)
+		stackOpts = append(stackOpts, challengemanager.StackWithAPIEnabled(apiAddr, config.APIDBPath))
 	}
-	manager, err := challengemanager.New(
-		ctx,
+
+	manager, err := challengemanager.NewChallengeStack(
 		assertionChain,
 		provider,
-		assertionManager,
-		assertionChain.RollupAddress(),
-		cmOpts...,
+		stackOpts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create challenge manager: %w", err)
 	}
-	provider.UpdateAPIDatabase(manager.Database())
 	return manager, nil
 }
 
