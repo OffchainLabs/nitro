@@ -87,13 +87,12 @@ import (
 type info = *BlockchainTestInfo
 
 type SecondNodeParams struct {
-	nodeConfig   *arbnode.Config
-	execConfig   *gethexec.Config
-	stackConfig  *node.Config
-	dasConfig    *das.DataAvailabilityConfig
-	initData     *statetransfer.ArbosInitializationInfo
-	addresses    *chaininfo.RollupAddresses
-	wasmCacheTag uint32
+	nodeConfig  *arbnode.Config
+	execConfig  *gethexec.Config
+	stackConfig *node.Config
+	dasConfig   *das.DataAvailabilityConfig
+	initData    *statetransfer.ArbosInitializationInfo
+	addresses   *chaininfo.RollupAddresses
 }
 
 type TestClient struct {
@@ -251,7 +250,6 @@ type NodeBuilder struct {
 	initMessage                 *arbostypes.ParsedInitMessage
 	l3InitMessage               *arbostypes.ParsedInitMessage
 	withProdConfirmPeriodBlocks bool
-	wasmCacheTag                uint32
 
 	// Created nodes
 	L1 *TestClient
@@ -355,15 +353,6 @@ func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) WithStylusLongTermCache(enabled bool) *NodeBuilder {
-	if enabled {
-		b.wasmCacheTag = 1
-	} else {
-		b.wasmCacheTag = 0
-	}
-	return b
-}
-
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
@@ -437,8 +426,6 @@ func buildOnParentChain(
 
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
-
-	wasmCacheTag uint32,
 ) *TestClient {
 	if parentChainTestClient == nil {
 		t.Fatal("must build parent chain before building chain")
@@ -450,7 +437,7 @@ func buildOnParentChain(
 	var arbDb ethdb.Database
 	var blockchain *core.BlockChain
 	_, chainTestClient.Stack, chainDb, arbDb, blockchain = createNonL1BlockChainWithStackConfig(
-		t, chainInfo, dataDir, chainConfig, initMessage, stackConfig, execConfig, wasmCacheTag)
+		t, chainInfo, dataDir, chainConfig, initMessage, stackConfig, execConfig)
 
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
@@ -538,8 +525,6 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 		b.l3InitMessage,
 		b.l3Addresses,
-
-		b.wasmCacheTag,
 	)
 
 	return func() {
@@ -568,8 +553,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		b.initMessage,
 		b.addresses,
-
-		b.wasmCacheTag,
 	)
 
 	return func() {
@@ -591,7 +574,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	var arbDb ethdb.Database
 	var blockchain *core.BlockChain
 	b.L2Info, b.L2.Stack, chainDb, arbDb, blockchain = createL2BlockChain(
-		t, b.L2Info, b.dataDir, b.chainConfig, b.execConfig, b.wasmCacheTag)
+		t, b.L2Info, b.dataDir, b.chainConfig, b.execConfig)
 
 	Require(t, b.execConfig.Validate())
 	execConfig := b.execConfig
@@ -642,7 +625,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	}
 	b.L2.cleanup()
 
-	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.execConfig, b.wasmCacheTag)
+	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.execConfig)
 
 	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
@@ -719,7 +702,7 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.wasmCacheTag)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage)
 	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
 	return testClient, func() { testClient.cleanup() }
@@ -1303,15 +1286,14 @@ func deployOnParentChain(
 }
 
 func createL2BlockChain(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, execConfig *gethexec.Config, wasmCacheTag uint32,
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, execConfig *gethexec.Config,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	return createNonL1BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, execConfig, wasmCacheTag)
+	return createNonL1BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, execConfig)
 }
 
 func createNonL1BlockChainWithStackConfig(
-	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config, wasmCacheTag uint32,
+	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	_ = wasmCacheTag // TODO remove and figure out a way to set the cache tag to 0 for tests that doesn't test long term cache
 	if info == nil {
 		info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
@@ -1401,7 +1383,6 @@ func Create2ndNodeWithConfig(
 	valnodeConfig *valnode.Config,
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
-	wasmCacheTag uint32,
 ) (*ethclient.Client, *arbnode.Node) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()

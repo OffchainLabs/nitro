@@ -2329,9 +2329,7 @@ func checkLruCacheMetrics(t *testing.T, expected programs.WasmLruCacheMetrics) {
 }
 
 func TestWasmLongTermCache(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
-		builder.WithStylusLongTermCache(true)
-	})
+	builder, ownerAuth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2467,9 +2465,7 @@ func TestWasmLongTermCache(t *testing.T) {
 }
 
 func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
-		builder.WithStylusLongTermCache(true)
-	})
+	builder, ownerAuth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
