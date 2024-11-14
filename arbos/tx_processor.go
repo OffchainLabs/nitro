@@ -441,13 +441,13 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	}
 
 	var poster common.Address
-	if !p.msg.TxRunContext.ExecutedOnChain() {
+	if !p.msg.TxRunContext.IsExecutedOnChain() {
 		poster = l1pricing.BatchPosterAddress
 	} else {
 		poster = p.evm.Context.Coinbase
 	}
 
-	if p.msg.TxRunContext.ExecutedOnChain() {
+	if p.msg.TxRunContext.IsExecutedOnChain() {
 		p.msg.SkipL1Charging = false
 	}
 	if basefee.Sign() > 0 && !p.msg.SkipL1Charging {
@@ -473,7 +473,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
-	if !p.msg.TxRunContext.IsCall() {
+	if !p.msg.TxRunContext.IsEthcall() {
 		// If this is a real tx, limit the amount of computed based on the gas pool.
 		// We do this by charging extra gas, and then refunding it later.
 		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
@@ -514,7 +514,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		effectiveBaseFee := inner.GasFeeCap
-		if p.msg.TxRunContext.ExecutedOnChain() && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
+		if p.msg.TxRunContext.IsExecutedOnChain() && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
 			log.Error(
 				"ArbitrumRetryTx GasFeeCap doesn't match basefee in commit mode",
 				"txHash", underlyingTx.Hash(),
@@ -778,5 +778,5 @@ func (p *TxProcessor) MsgIsNonMutating() bool {
 	if p.msg == nil {
 		return false
 	}
-	return !p.msg.TxRunContext.IsMutating()
+	return p.msg.TxRunContext.IsNonMutating()
 }
