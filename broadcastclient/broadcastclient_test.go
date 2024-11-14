@@ -138,7 +138,11 @@ func TestInvalidSignature(t *testing.T) {
 	badPrivateKey, err := crypto.GenerateKey()
 	Require(t, err)
 	badPublicKey := badPrivateKey.Public()
-	badSequencerAddr := crypto.PubkeyToAddress(*badPublicKey.(*ecdsa.PublicKey))
+	badECDSA, ok := badPublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		t.Fatal("badPublicKey is not an ecdsa.PublicKey")
+	}
+	badSequencerAddr := crypto.PubkeyToAddress(*badECDSA)
 	config := DefaultTestConfig
 
 	ts := NewDummyTransactionStreamer(chainId, &badSequencerAddr)
@@ -151,6 +155,7 @@ func TestInvalidSignature(t *testing.T) {
 		nil,
 		fatalErrChan,
 		&badSequencerAddr,
+		t,
 	)
 	Require(t, err)
 	broadcastClient.Start(ctx)
@@ -201,8 +206,9 @@ func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*m.Broad
 	return nil
 }
 
-func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uint64, currentMessageCount arbutil.MessageIndex, txStreamer TransactionStreamerInterface, confirmedSequenceNumberListener chan arbutil.MessageIndex, feedErrChan chan error, validAddr *common.Address) (*BroadcastClient, error) {
-	port := listenerAddress.(*net.TCPAddr).Port
+func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uint64, currentMessageCount arbutil.MessageIndex, txStreamer TransactionStreamerInterface, confirmedSequenceNumberListener chan arbutil.MessageIndex, feedErrChan chan error, validAddr *common.Address, t *testing.T) (*BroadcastClient, error) {
+	t.Helper()
+	port := testhelpers.AddrTCPPort(listenerAddress, t)
 	var av contracts.AddressVerifierInterface
 	if validAddr != nil {
 		config.Verify.AcceptSequencer = true
@@ -225,6 +231,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 		nil,
 		feedErrChan,
 		sequencerAddr,
+		t,
 	)
 	Require(t, err)
 	broadcastClient.Start(ctx)
@@ -313,6 +320,7 @@ func TestServerClientDisconnect(t *testing.T) {
 		nil,
 		feedErrChan,
 		&sequencerAddr,
+		t,
 	)
 	Require(t, err)
 	broadcastClient.Start(ctx)
@@ -384,6 +392,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 		confirmedSequenceNumberListener,
 		feedErrChan,
 		&sequencerAddr,
+		t,
 	)
 	Require(t, err)
 	broadcastClient.Start(ctx)
@@ -456,6 +465,7 @@ func TestServerIncorrectChainId(t *testing.T) {
 		nil,
 		badFeedErrChan,
 		&sequencerAddr,
+		t,
 	)
 	Require(t, err)
 	badBroadcastClient.Start(ctx)
@@ -515,6 +525,7 @@ func TestServerMissingChainId(t *testing.T) {
 		nil,
 		badFeedErrChan,
 		&sequencerAddr,
+		t,
 	)
 	Require(t, err)
 	badBroadcastClient.Start(ctx)
@@ -572,6 +583,7 @@ func TestServerIncorrectFeedServerVersion(t *testing.T) {
 		nil,
 		badFeedErrChan,
 		&sequencerAddr,
+		t,
 	)
 	Require(t, err)
 	badBroadcastClient.Start(ctx)
@@ -631,6 +643,7 @@ func TestServerMissingFeedServerVersion(t *testing.T) {
 		nil,
 		badFeedErrChan,
 		&sequencerAddr,
+		t,
 	)
 	Require(t, err)
 	badBroadcastClient.Start(ctx)
@@ -682,6 +695,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 		nil,
 		feedErrChan,
 		&sequencerAddr,
+		t,
 	)
 	Require(t, err)
 	broadcastClient.Start(ctx)
@@ -794,6 +808,7 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uin
 		nil,
 		feedErrChan,
 		sequencerAddr,
+		t,
 	)
 	Require(t, err)
 	broadcastClient.Start(ctx)

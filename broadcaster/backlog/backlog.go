@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -328,7 +329,13 @@ func newBacklogSegment() *backlogSegment {
 func IsBacklogSegmentNil(segment BacklogSegment) bool {
 	if segment == nil {
 		return true
-	} else if segment.(*backlogSegment) == nil {
+	}
+	bs, ok := segment.(*backlogSegment)
+	if !ok {
+		log.Error("error in backlogSegment type assertion: clearing backlog")
+		return false
+	}
+	if bs == nil {
 		return true
 	}
 	return false

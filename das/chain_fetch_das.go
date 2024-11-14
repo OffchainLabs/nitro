@@ -8,14 +8,14 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/offchainlabs/nitro/util/pretty"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type syncedKeysetCache struct {
