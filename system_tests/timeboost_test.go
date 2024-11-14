@@ -47,7 +47,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var blockMetadataInputFeedKey = func(pos uint64) []byte {
+func blockMetadataInputFeedKey(pos uint64) []byte {
 	var key []byte
 	prefix := []byte("t")
 	key = append(key, prefix...)
@@ -71,15 +71,20 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	blockNum := big.NewInt(2)
 	builder.L2Info.GenerateAccount("User")
 	user := builder.L2Info.GetDefaultTransactOpts("User", ctx)
+	var latestL2 uint64
+	var err error
 	for i := 0; ; i++ {
 		builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
-		latestL2, err := builder.L2.Client.BlockNumber(ctx)
+		latestL2, err = builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
-		// Clean BlockMetadata from arbDB so that we can modify it at will
-		Require(t, arbDb.Delete(blockMetadataInputFeedKey(latestL2)))
 		if latestL2 >= blockNum.Uint64() {
 			break
 		}
+	}
+
+	for i := uint64(1); i < latestL2; i++ {
+		// Clean BlockMetadata from arbDB so that we can modify it at will
+		Require(t, arbDb.Delete(blockMetadataInputFeedKey(i)))
 	}
 
 	block, err := builder.L2.Client.BlockByNumber(ctx, blockNum)
@@ -98,11 +103,11 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	var receiptResult []timeboostedFromReceipt
 	err = l2rpc.CallContext(ctx, &receiptResult, "eth_getBlockReceipts", rpc.BlockNumber(blockNum.Int64()))
 	Require(t, err)
-	if receiptResult[0].Timeboosted != nil {
-		t.Fatal("timeboosted field shouldn't exist in the receipt object of first tx")
+	if receiptResult[0].Timeboosted == nil || receiptResult[1].Timeboosted == nil {
+		t.Fatal("timeboosted field should exist in the receipt object of both- first and second txs")
 	}
-	if receiptResult[1].Timeboosted == nil {
-		t.Fatal("timeboosted field should exist in the receipt object of second tx")
+	if *receiptResult[0].Timeboosted != false {
+		t.Fatal("first tx was not timeboosted, but the field indicates otherwise")
 	}
 	if *receiptResult[1].Timeboosted != true {
 		t.Fatal("second tx was timeboosted, but the field indicates otherwise")
@@ -112,8 +117,11 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	var txReceipt timeboostedFromReceipt
 	err = l2rpc.CallContext(ctx, &txReceipt, "eth_getTransactionReceipt", block.Transactions()[0].Hash())
 	Require(t, err)
-	if txReceipt.Timeboosted != nil {
-		t.Fatal("timeboosted field shouldn't exist in the receipt object of first tx")
+	if txReceipt.Timeboosted == nil {
+		t.Fatal("timeboosted field should exist in the receipt object of first tx")
+	}
+	if *txReceipt.Timeboosted != false {
+		t.Fatal("first tx was not timeboosted, but the field indicates otherwise")
 	}
 	err = l2rpc.CallContext(ctx, &txReceipt, "eth_getTransactionReceipt", block.Transactions()[1].Hash())
 	Require(t, err)
@@ -122,6 +130,31 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	}
 	if *txReceipt.Timeboosted != true {
 		t.Fatal("second tx was timeboosted, but the field indicates otherwise")
+	}
+
+	// Check that timeboosted field shouldn't exist for any txs of block=1, as this block doesn't have blockMetadata
+	block, err = builder.L2.Client.BlockByNumber(ctx, common.Big1)
+	Require(t, err)
+	if len(block.Transactions()) != 2 {
+		t.Fatalf("expecting two txs in the first block, but found: %d txs", len(block.Transactions()))
+	}
+	var receiptResult2 []timeboostedFromReceipt
+	err = l2rpc.CallContext(ctx, &receiptResult2, "eth_getBlockReceipts", rpc.BlockNumber(1))
+	Require(t, err)
+	if receiptResult2[0].Timeboosted != nil || receiptResult2[1].Timeboosted != nil {
+		t.Fatal("timeboosted field shouldn't exist in the receipt object of all the txs")
+	}
+	var txReceipt2 timeboostedFromReceipt
+	err = l2rpc.CallContext(ctx, &txReceipt2, "eth_getTransactionReceipt", block.Transactions()[0].Hash())
+	Require(t, err)
+	if txReceipt2.Timeboosted != nil {
+		t.Fatal("timeboosted field shouldn't exist in the receipt object of all the txs")
+	}
+	var txReceipt3 timeboostedFromReceipt
+	err = l2rpc.CallContext(ctx, &txReceipt3, "eth_getTransactionReceipt", block.Transactions()[1].Hash())
+	Require(t, err)
+	if txReceipt3.Timeboosted != nil {
+		t.Fatal("timeboosted field shouldn't exist in the receipt object of all the txs")
 	}
 
 	// Print the receipt object for reference
@@ -199,7 +232,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	}
 
 	// Test that LRU caching works
-	builder.execConfig.BlockMetadataApiCacheSize = 10
+	builder.execConfig.BlockMetadataApiCacheSize = 1000
 	builder.execConfig.BlockMetadataApiBlocksLimit = 25
 	builder.RestartL2Node(t)
 	l2rpc = builder.L2.Stack.Attach()
