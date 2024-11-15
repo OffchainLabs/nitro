@@ -27,6 +27,7 @@ func TransferBalance(
 	evm *vm.EVM,
 	scenario TracingScenario,
 	purpose string,
+	reason tracing.BalanceChangeReason,
 ) error {
 	if amount.Sign() < 0 {
 		panic(fmt.Sprintf("Tried to transfer negative amount %v from %v to %v", amount, from, to))
@@ -66,27 +67,27 @@ func TransferBalance(
 		if arbmath.BigLessThan(balance.ToBig(), amount) {
 			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
 		}
-		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
+		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount), reason)
 		if evm.Context.ArbOSVersion >= 30 {
 			// ensure the from account is "touched" for EIP-161
 			evm.StateDB.AddBalance(*from, &uint256.Int{}, tracing.BalanceChangeTransfer)
 		}
 	}
 	if to != nil {
-		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
+		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount), reason)
 	}
 	return nil
 }
 
 // MintBalance mints funds for the user and adds them to their balance
-func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, purpose string) {
-	err := TransferBalance(nil, to, amount, evm, scenario, purpose)
+func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, purpose string, reason tracing.BalanceChangeReason) {
+	err := TransferBalance(nil, to, amount, evm, scenario, purpose, reason)
 	if err != nil {
 		panic(fmt.Sprintf("impossible error: %v", err))
 	}
 }
 
 // BurnBalance burns funds from a user's account
-func BurnBalance(from *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, purpose string) error {
-	return TransferBalance(from, nil, amount, evm, scenario, purpose)
+func BurnBalance(from *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, purpose string, reason tracing.BalanceChangeReason) error {
+	return TransferBalance(from, nil, amount, evm, scenario, purpose, reason)
 }

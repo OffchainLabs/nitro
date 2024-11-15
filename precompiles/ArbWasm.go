@@ -5,6 +5,7 @@ package precompiles
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	gethparams "github.com/ethereum/go-ethereum/params"
 
@@ -83,11 +84,11 @@ func (con ArbWasm) payActivationDataFee(c ctx, evm mech, value, dataFee huge) er
 	repay := arbmath.BigSub(value, dataFee)
 
 	// transfer the fee to the network account, and the rest back to the user
-	err = util.TransferBalance(&con.Address, &network, dataFee, evm, scenario, "activate")
+	err = util.TransferBalance(&con.Address, &network, dataFee, evm, scenario, "activate", tracing.BalanceChangeTransferActivationFee)
 	if err != nil {
 		return err
 	}
-	return util.TransferBalance(&con.Address, &c.caller, repay, evm, scenario, "reimburse")
+	return util.TransferBalance(&con.Address, &c.caller, repay, evm, scenario, "reimburse", tracing.BalanceChangeTransferActivationReimburse)
 }
 
 // Gets the latest stylus version

@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -119,7 +120,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		return err
 	}
 	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward", tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -141,7 +142,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 			return err
 		}
 		err = util.TransferBalance(
-			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund", tracing.BalanceChangeTransferBatchposterRefund,
 		)
 		if err != nil {
 			return err
@@ -298,7 +299,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 		return err
 	}
 	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward", tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -329,7 +330,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 				return err
 			}
 			err = util.TransferBalance(
-				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund", tracing.BalanceChangeTransferBatchposterRefund,
 			)
 			if err != nil {
 				return err
