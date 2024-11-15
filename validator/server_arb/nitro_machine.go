@@ -9,6 +9,7 @@ package server_arb
 #include <stdlib.h>
 */
 import "C"
+
 import (
 	"context"
 	"errors"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
