@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 func TestSlotAddress(t *testing.T) {

@@ -22,6 +22,7 @@ void handleReqWrap(usize api, u32 req_type, RustSlice *data, u64 *out_cost, GoSl
 }
 */
 import "C"
+
 import (
 	"runtime"
 	"sync"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 )

@@ -12,6 +12,7 @@ package arbcompress
 #include "arbitrator.h"
 */
 import "C"
+
 import (
 	"errors"
 	"fmt"
