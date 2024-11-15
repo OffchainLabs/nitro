@@ -5,6 +5,7 @@ package precompiles
 
 import (
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 

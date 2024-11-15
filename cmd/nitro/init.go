@@ -25,6 +25,7 @@ import (
 
 	"github.com/cavaliergopher/grab/v3"
 	"github.com/codeclysm/extract/v3"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
