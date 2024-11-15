@@ -1710,7 +1710,7 @@ var (
 // recordBlock writes a json file with all of the data needed to validate a block.
 //
 // This can be used as an input to the arbitrator prover to validate a block.
-func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ethdb.WasmTarget) {
+func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...rawdb.WasmTarget) {
 	t.Helper()
 	flag.Parse()
 	if !*recordBlockInputsEnable {

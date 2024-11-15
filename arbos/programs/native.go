@@ -27,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -132,7 +131,7 @@ func compileNative(
 	wasm []byte,
 	stylusVersion uint16,
 	debug bool,
-	target ethdb.WasmTarget,
+	target rawdb.WasmTarget,
 ) ([]byte, error) {
 	output := &rustBytes{}
 	status_asm := C.stylus_compile(
@@ -160,7 +159,7 @@ func activateProgramInternal(
 	gasLeft *uint64,
 	runCtx *core.MessageRunContext,
 	moduleActivationMandatory bool,
-) (*activationInfo, map[ethdb.WasmTarget][]byte, error) {
+) (*activationInfo, map[rawdb.WasmTarget][]byte, error) {
 	targets := runCtx.WasmTargets()
 	var wavmFound bool
 	for _, target := range targets {
@@ -170,11 +169,11 @@ func activateProgramInternal(
 		}
 	}
 	type result struct {
-		target ethdb.WasmTarget
+		target rawdb.WasmTarget
 		asm    []byte
 		err    error
 	}
-	asmMap := make(map[ethdb.WasmTarget][]byte, len(targets))
+	asmMap := make(map[rawdb.WasmTarget][]byte, len(targets))
 
 	// info can be set in separate thread, make sure to wait before reading
 	var info *activationInfo
@@ -298,7 +297,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 	}
 	asm, exists := asmMap[localTarget]
 	if !exists {
-		var availableTargets []ethdb.WasmTarget
+		var availableTargets []rawdb.WasmTarget
 		for target := range asmMap {
 			availableTargets = append(availableTargets, target)
 		}
@@ -480,7 +479,7 @@ func GetEntrySizeEstimateBytes(module []byte, version uint16, debug bool) uint64
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
 const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2+lzcnt+bmi"
 
-func SetTarget(name ethdb.WasmTarget, description string, native bool) error {
+func SetTarget(name rawdb.WasmTarget, description string, native bool) error {
 	output := &rustBytes{}
 	status := userStatus(C.stylus_target_set(
 		goSlice([]byte(name)),
