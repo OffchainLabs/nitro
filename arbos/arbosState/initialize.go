@@ -5,21 +5,23 @@ package arbosState
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
 	"regexp"
 	"sort"
+
+	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -97,6 +99,16 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
 
+	chainOwner, err := initData.GetChainOwner()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if chainOwner != (common.Address{}) {
+		err = arbosState.ChainOwners().Add(chainOwner)
+		if err != nil {
+			return common.Hash{}, err
+		}
+	}
 	addrTable := arbosState.AddressTable()
 	addrTableSize, err := addrTable.Size()
 	if err != nil {

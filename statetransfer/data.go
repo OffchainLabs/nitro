@@ -14,6 +14,7 @@ type ArbosInitializationInfo struct {
 	AddressTableContents []common.Address
 	RetryableData        []InitializationDataForRetryable
 	Accounts             []AccountInitializationInfo
+	ChainOwner           common.Address
 }
 
 type InitializationDataForRetryable struct {

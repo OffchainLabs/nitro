@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
@@ -522,11 +523,14 @@ func (n NodeInterface) GasEstimateL1Component(
 	args.Gas = (*hexutil.Uint64)(&randomGas)
 
 	// We set the run mode to eth_call mode here because we want an exact estimate, not a padded estimate
-	gasLimitNotSetByUser := args.Gas == nil
-	if err := args.CallDefaults(randomGas, evm.Context.BaseFee, evm.ChainConfig().ChainID, gasLimitNotSetByUser); err != nil {
+	if err := args.CallDefaults(randomGas, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
 		return 0, nil, nil, err
 	}
-	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, evm.StateDB.(*state.StateDB), core.MessageEthcallMode, evm.ChainConfig().ChainID, gasLimitNotSetByUser)
+	sdb, ok := evm.StateDB.(*state.StateDB)
+	if !ok {
+		return 0, nil, nil, errors.New("failed to cast to stateDB")
+	}
+	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, sdb, core.MessageEthcallMode)
 
 	pricing := c.State.L1PricingState()
 	l1BaseFeeEstimate, err := pricing.PricePerUnit()
@@ -579,11 +583,14 @@ func (n NodeInterface) GasEstimateComponents(
 	// Setting the gas currently doesn't affect the PosterDataCost,
 	// but we do it anyways for accuracy with potential future changes.
 	args.Gas = &totalRaw
-	gasLimitNotSetByUser := args.Gas == nil
-	if err := args.CallDefaults(gasCap, evm.Context.BaseFee, evm.ChainConfig().ChainID, gasLimitNotSetByUser); err != nil {
+	if err := args.CallDefaults(gasCap, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
 		return 0, 0, nil, nil, err
 	}
-	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, evm.StateDB.(*state.StateDB), core.MessageGasEstimationMode, evm.ChainConfig().ChainID, gasLimitNotSetByUser)
+	sdb, ok := evm.StateDB.(*state.StateDB)
+	if !ok {
+		return 0, 0, nil, nil, errors.New("failed to cast to stateDB")
+	}
+	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, sdb, core.MessageGasEstimationMode)
 	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
 	if err != nil {
 		return 0, 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
