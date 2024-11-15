@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -1009,6 +1010,31 @@ func testCreate(t *testing.T, jit bool) {
 	// validate just the opcodes
 	blocks := []uint64{5, 6}
 	validateBlockRange(t, blocks, jit, builder)
+}
+
+func TestProgramInfiniteLoopShouldCauseErrOutOfGas(t *testing.T) {
+	t.Parallel()
+	testInfiniteLoopCausesErrOutOfGas(t, true)
+	testInfiniteLoopCausesErrOutOfGas(t, false)
+}
+
+func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	userWasm := deployWasm(t, ctx, auth, l2client, "../arbitrator/prover/test-cases/user.wat")
+	// Passing input of size 4 invokes $infinite_loop function that calls the infinite loop
+	tx := l2info.PrepareTxTo("Owner", &userWasm, 1000000, nil, make([]byte, 4))
+	Require(t, l2client.SendTransaction(ctx, tx))
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	if !strings.Contains(err.Error(), vm.ErrOutOfGas.Error()) {
+		t.Fatalf("transaction should have failed with out of gas error but instead failed with: %v", err)
+	}
+
+	validateBlocks(t, receipt.BlockNumber.Uint64(), jit, builder)
 }
 
 func TestProgramMemory(t *testing.T) {
