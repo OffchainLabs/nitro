@@ -340,18 +340,6 @@ func ProduceBlockAdvanced(
 			return receipt, result, nil
 		})()
 
-		if tx.Type() == types.ArbitrumInternalTxType {
-			// ArbOS might have upgraded to a new version, so we need to refresh our state
-			state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
-			if err != nil {
-				return nil, nil, err
-			}
-			// Update the ArbOS version in the header (if it changed)
-			extraInfo := types.DeserializeHeaderExtraInformation(header)
-			extraInfo.ArbOSFormatVersion = state.ArbOSVersion()
-			extraInfo.UpdateHeaderWithInfo(header)
-		}
-
 		// append the err, even if it is nil
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
@@ -371,6 +359,18 @@ func ProduceBlockAdvanced(
 				}
 			}
 			continue
+		}
+
+		if tx.Type() == types.ArbitrumInternalTxType {
+			// ArbOS might have upgraded to a new version, so we need to refresh our state
+			state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Update the ArbOS version in the header (if it changed)
+			extraInfo := types.DeserializeHeaderExtraInformation(header)
+			extraInfo.ArbOSFormatVersion = state.ArbOSVersion()
+			extraInfo.UpdateHeaderWithInfo(header)
 		}
 
 		if tx.Type() == types.ArbitrumInternalTxType && result.Err != nil {
