@@ -67,6 +67,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainD
 	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
+	targets := targetConfig.WasmTargets()
 
 	latestHeader := l2Blockchain.CurrentBlock()
 	// Attempt to get state at the start block when rebuilding commenced, if not available (in case of non-archival nodes) use latest state
@@ -93,7 +94,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainD
 		codeHash := common.BytesToHash(codeHashBytes)
 		code := iter.Value()
 		if state.IsStylusProgram(code) {
-			if err := programs.SaveActiveProgramToWasmStore(stateDb, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time); err != nil {
+			if err := programs.SaveActiveProgramToWasmStore(stateDb, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time, targets); err != nil {
 				return fmt.Errorf("error while rebuilding of wasm store, aborting rebuilding: %w", err)
 			}
 		}
