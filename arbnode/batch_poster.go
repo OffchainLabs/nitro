@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -40,7 +39,6 @@ import (
 
 	hotshotClient "github.com/EspressoSystems/espresso-sequencer-go/client"
 	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
-	"github.com/offchainlabs/nitro/espressocrypto"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -131,10 +129,6 @@ type BatchPoster struct {
 	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
 
 	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
-
-	// Espresso readers
-	lightClientReader lightclient.LightClientReaderInterface
-	hotshotClient     *hotshotClient.Client
 }
 
 type l1BlockBound int
@@ -356,21 +350,21 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	if err != nil {
 		return nil, err
 	}
-	var hotShotClient *hotshotClient.Client
-	var lightClientReader lightclient.LightClientReaderInterface
 
 	hotShotUrl := opts.Config().HotShotUrl
 	lightClientAddr := opts.Config().LightClientAddress
 
 	if hotShotUrl != "" {
-		hotShotClient = hotshotClient.NewClient(hotShotUrl)
+		hotShotClient := hotshotClient.NewClient(hotShotUrl)
+		opts.Streamer.espressoClient = hotShotClient
 	}
 
 	if lightClientAddr != "" {
-		lightClientReader, err = lightclient.NewLightClientReader(common.HexToAddress(lightClientAddr), opts.L1Reader.Client())
+		lightClientReader, err := lightclient.NewLightClientReader(common.HexToAddress(lightClientAddr), opts.L1Reader.Client())
 		if err != nil {
 			return nil, err
 		}
+		opts.Streamer.lightClientReader = lightClientReader
 	}
 
 	b := &BatchPoster{
@@ -389,8 +383,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		dapWriter:          opts.DAPWriter,
 		redisLock:          redisLock,
 		dapReaders:         opts.DAPReaders,
-		hotshotClient:      hotShotClient,
-		lightClientReader:  lightClientReader,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -545,8 +537,7 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 
 // Adds a block merkle proof to an Espresso justification, providing a proof that a set of transactions
 // hashes to some light client state root.
-func (b *BatchPoster) addEspressoBlockMerkleProof(
-	ctx context.Context,
+func (b *BatchPoster) checkEspressoValidation(
 	msg *arbostypes.MessageWithMetadata,
 ) error {
 
@@ -567,17 +558,15 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 		// the transaction streamer doesn't send any more messages to the espresso network.
 		return fmt.Errorf("Cannot process Espresso messages when Espresso is not enabled in the ArbOS chain config")
 	}
-	txs, jst, err := arbos.ParseEspressoMsg(msg.Message)
+
+	hasNotSubmitted, err := b.streamer.HasNotSubmitted(b.building.msgCount)
 	if err != nil {
 		return err
 	}
-
-	if jst.Header == nil {
-		// If the message is an Espresso message, store the pos in the database to be used later
-		// to submit the message to hotshot for finalization.
-		log.Info("Submitting pos", "pos", b.building.msgCount)
-		// TODO: Verify if this msgCount is already in the pending queue.
-		// Currently, this check is performed in the function below.
+	if hasNotSubmitted {
+		// Store the pos in the database to be used later to submit the message
+		// to hotshot for finalization.
+		log.Info("submitting pos", "pos", b.building.msgCount)
 		err = b.streamer.SubmitEspressoTransactionPos(b.building.msgCount, b.streamer.db.NewBatch())
 		if err != nil {
 			log.Error("failed to submit espresso transaction pos", "pos", b.building.msgCount, "err", err)
@@ -586,71 +575,13 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 		return fmt.Errorf("this msg has not been included in hotshot")
 	}
 
-	height := jst.Header.Header.GetBlockHeight()
-	snapshot, err := b.lightClientReader.FetchMerkleRoot(height, nil)
+	lastConfirmed, err := b.streamer.getLastConfirmedPos()
 	if err != nil {
-		return fmt.Errorf("could not get the merkle root at height %v, err %w", height, err)
+		return err
 	}
-
-	if snapshot.Height <= height {
-		return fmt.Errorf("light client contract does not have a root greater than %v yet, current snapshot height: %v", height, snapshot.Height)
+	if lastConfirmed < b.building.msgCount {
+		return fmt.Errorf("this msg has not been finalized on L1 or validated")
 	}
-	// The next header contains the block commitment merkle tree commitment that validates the header of interest
-	nextHeader, err := b.hotshotClient.FetchHeaderByHeight(ctx, snapshot.Height)
-	if err != nil {
-		return fmt.Errorf("error fetching the next header at height %v, request failed with error %w", snapshot.Height, err)
-	}
-
-	proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, snapshot.Height, height)
-	if err != nil {
-		return fmt.Errorf("error fetching the block merkle proof for validated height %v and leaf height %v. Request failed with error %w", snapshot.Height, height, err)
-	}
-	log.Info("Get the block merkle proof successfully", "height", height, "root", snapshot.Height)
-	var newMsg arbostypes.L1IncomingMessage
-	jst.BlockMerkleJustification = &arbostypes.BlockMerkleJustification{BlockMerkleProof: &proof, BlockMerkleComm: nextHeader.Header.GetBlockMerkleTreeRoot()}
-	if arbos.IsEspressoSovereignMsg(msg.Message) {
-		// Passing an empty byte slice as payloadSignature because txs[0] already contains the payloadSignature here
-		newMsg, err = arbos.MessageFromEspressoSovereignTx(txs[0], jst, []byte{}, msg.Message.Header)
-		if err != nil {
-			return err
-		}
-	} else {
-		newMsg, err = arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
-		if err != nil {
-			return fmt.Errorf("error fetching the block merkle proof for validated height %v and leaf height %v. Request failed with error %w", snapshot.Height, jst.Header.Header.GetBlockHeight(), err)
-		}
-		jst.BlockMerkleJustification = &arbostypes.BlockMerkleJustification{BlockMerkleProof: &proof, BlockMerkleComm: nextHeader.Header.GetBlockMerkleTreeRoot()}
-
-		log.Info("About to validate merkle and namespace proofs for msg count with batch relevant to l1 height", "msg count", b.building.msgCount, "l1 height", msg.Message.Header.BlockNumber)
-
-		// Validate espresso proofs.
-		json_header, err := json.Marshal(jst.Header)
-		if err != nil {
-			return fmt.Errorf("Failed to Marshal the jst Header")
-		}
-
-		valid_proof := espressocrypto.VerifyMerkleProof(proof.Proof, json_header, *jst.BlockMerkleJustification.BlockMerkleComm, snapshot.Root)
-		valid_namespace := espressocrypto.VerifyNamespace(arbOSConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.Header.GetPayloadCommitment(), *jst.Header.Header.GetNsTable(), txs, *jst.VidCommon)
-		if !(valid_proof && valid_namespace) {
-			return fmt.Errorf("Cannot add Espresso block merkle proof as it is not valid")
-		}
-
-		log.Info("Espresso proofs have been validated!", "msg count", b.building.msgCount, "l1 height", msg.Message.Header.BlockNumber)
-
-		if arbos.IsEspressoSovereignMsg(msg.Message) {
-			// Passing an empty byte slice as payloadSignature because txs[0] already contains the payloadSignature here
-			newMsg, err = arbos.MessageFromEspressoSovereignTx(txs[0], jst, []byte{}, msg.Message.Header)
-			if err != nil {
-				return err
-			}
-		} else {
-			newMsg, err = arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	msg.Message = &newMsg
 	return nil
 }
 
@@ -1509,9 +1440,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			break
 		}
 
-		err = b.addEspressoBlockMerkleProof(ctx, msg)
+		err = b.checkEspressoValidation(msg)
 		if err != nil {
-			return false, fmt.Errorf("error adding hotshot block merkle proof to justification: %w", err)
+			return false, fmt.Errorf("error checking espresso valdiation: %w", err)
 		}
 		isDelayed := msg.DelayedMessagesRead > b.building.segments.delayedMsg
 		success, err := b.building.segments.AddMessage(msg)

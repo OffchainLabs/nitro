@@ -1381,11 +1381,3 @@ func (v *BlockValidator) GetValidated() arbutil.MessageIndex {
 	defer v.reorgMutex.RUnlock()
 	return v.validated()
 }
-
-type TestData struct {
-	Proof             json.RawMessage `json:"proof"`
-	Header            json.RawMessage `json:"header"`
-	BlockMerkleRoot   string          `json:"block_merkle_root"`
-	HotShotCommitment [32]byte        `json:"hotshot_commitment"`
-	HeaderImpl        string          `json:"header_string"`
-}

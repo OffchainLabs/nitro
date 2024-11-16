@@ -6,8 +6,6 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/util/signature"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -61,9 +59,6 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	chainDb := rawdb.NewMemoryDatabase()
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
-	privateKey, err := crypto.GenerateKey()
-	Require(t, err)
-	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
 	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, gethexec.ConfigDefault.TxLookupLimit, 0)
 
@@ -82,7 +77,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 	execSeq := &execClientWrapper{execEngine, t}
-	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig, dataSigner)
+	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
 	if err != nil {
 		Fail(t, err)
 	}

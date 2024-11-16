@@ -21,6 +21,8 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
+const ESPRESSO_TRANSACTION_SIZE_LIMIT int = 10 * 1024
+
 func ParseEspressoMsg(msg *arbostypes.L1IncomingMessage) ([]espressoTypes.Bytes, *arbostypes.EspressoBlockJustification, error) {
 	if msg.Header.Kind != arbostypes.L1MessageType_L2Message {
 		return nil, nil, errors.New("Parsing espresso transactions failed. Invalid L1Message type")
@@ -210,14 +212,6 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		if err != nil {
 			segments := make(types.Transactions, 0)
 			return segments, err
-		}
-
-		// Here we know for sure there will be 65 bytes of signature at the beginning of the transaction
-		sigBytes := make([]byte, 65)
-		_, err = rd.Read(sigBytes)
-
-		if err != nil {
-			return nil, err
 		}
 
 		result, err := parseL2Message(rd, poster, timestamp, requestId, chainId, depth)
@@ -590,4 +584,22 @@ func IsL2Message(msg *arbostypes.L1IncomingMessage) bool {
 func IsEspressoSovereignMsg(msg *arbostypes.L1IncomingMessage) bool {
 	return msg.Header.Kind == arbostypes.L1MessageType_L2Message &&
 		msg.L2msg[0] == L2MessageKind_EspressoSovereignTx
+}
+
+func BuildHotShotPayload(msgs *[]arbostypes.L1IncomingMessage) (espressoTypes.Bytes, int) {
+	payload := []byte{}
+	msgCnt := 0
+
+	sizeBuf := make([]byte, 8)
+	for _, msg := range *msgs {
+		if len(payload) >= ESPRESSO_TRANSACTION_SIZE_LIMIT {
+			break
+		}
+		msgByte := msg.L2msg
+		binary.BigEndian.PutUint64(sizeBuf, uint64(len(msgByte)))
+		payload = append(payload, sizeBuf...)
+		payload = append(payload, msgByte...)
+		msgCnt += 1
+	}
+	return payload, msgCnt
 }
