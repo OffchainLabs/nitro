@@ -1,0 +1,12 @@
+[package]
+name = "stylus_benchmark"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eyre = "0.6.12"
+wabt = "0.10.0"
+wasmer = { path = "../wasmer/lib/api" }
+
+[workspace]
+members = ["stylus_caller"]
