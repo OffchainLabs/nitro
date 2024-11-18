@@ -1,6 +1,6 @@
 package util
 
-func ArrayToMap[T comparable](arr []T) map[T]struct{} {
+func ArrayToSet[T comparable](arr []T) map[T]struct{} {
 	ret := make(map[T]struct{})
 	for _, elem := range arr {
 		ret[elem] = struct{}{}

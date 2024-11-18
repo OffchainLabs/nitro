@@ -34,7 +34,7 @@ var DefaultBlockMetadataFetcherConfig = BlockMetadataFetcherConfig{
 }
 
 func BlockMetadataFetcherConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBlockMetadataFetcherConfig.Enable, "enable syncing blockMetadata using a bulk blockMetadata api")
+	f.Bool(prefix+".enable", DefaultBlockMetadataFetcherConfig.Enable, "enable syncing blockMetadata using a bulk blockMetadata api. If the source doesn't have the missing blockMetadata, we keep retyring in every sync-interval (default=5mins) duration")
 	rpcclient.RPCClientAddOptions(prefix+".source", f, &DefaultBlockMetadataFetcherConfig.Source)
 	f.Duration(prefix+".sync-interval", DefaultBlockMetadataFetcherConfig.SyncInterval, "interval at which blockMetadata are synced regularly")
 	f.Uint64(prefix+".api-blocks-limit", DefaultBlockMetadataFetcherConfig.APIBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query.\n"+
@@ -73,7 +73,7 @@ func (b *BlockMetadataFetcher) fetch(ctx context.Context, fromBlock, toBlock uin
 
 func (b *BlockMetadataFetcher) persistBlockMetadata(query []uint64, result []gethexec.NumberAndBlockMetadata) error {
 	batch := b.db.NewBatch()
-	queryMap := util.ArrayToMap(query)
+	queryMap := util.ArrayToSet(query)
 	for _, elem := range result {
 		pos, err := b.exec.BlockNumberToMessageIndex(elem.BlockNumber)
 		if err != nil {
