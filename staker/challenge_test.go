@@ -36,7 +36,7 @@ func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
 	Require(t, err)
 
-	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client, common.Address{})
+	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
 	Require(t, err)
 
 	ospEntry, _, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)

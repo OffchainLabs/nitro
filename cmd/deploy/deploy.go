@@ -61,7 +61,6 @@ func main() {
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
-	hotshotAddr := flag.String("hotshot", "", "the address of hotshot contract in L1")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	maxDataSize := new(big.Int).SetUint64(*maxDataSizeUint)
@@ -180,7 +179,6 @@ func main() {
 	defer l1Reader.StopAndWait()
 
 	nativeToken := common.HexToAddress(*nativeTokenAddressString)
-	hotshot := common.HexToAddress(*hotshotAddr)
 	deployedAddresses, err := deploycode.DeployOnParentChain(
 		ctx,
 		l1Reader,
@@ -192,7 +190,6 @@ func main() {
 		nativeToken,
 		maxDataSize,
 		true,
-		hotshot,
 	)
 	if err != nil {
 		flag.Usage()

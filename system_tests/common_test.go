@@ -405,7 +405,6 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		locator.LatestWasmModuleRoot(),
 		b.withProdConfirmPeriodBlocks,
 		true,
-		common.Address{},
 	)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
@@ -507,7 +506,6 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		locator.LatestWasmModuleRoot(),
 		b.l3Config.withProdConfirmPeriodBlocks,
 		false,
-		common.Address{},
 	)
 
 	b.L3 = buildOnParentChain(
@@ -1246,7 +1244,6 @@ func deployOnParentChain(
 	wasmModuleRoot common.Hash,
 	prodConfirmPeriodBlocks bool,
 	chainSupportsBlobs bool,
-	hotshotAddr common.Address,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	parentChainInfo.GenerateAccount("RollupOwner")
 	parentChainInfo.GenerateAccount("Sequencer")
@@ -1282,7 +1279,6 @@ func deployOnParentChain(
 		nativeToken,
 		maxDataSize,
 		chainSupportsBlobs,
-		hotshotAddr,
 	)
 	Require(t, err)
 	parentChainInfo.SetContract("Bridge", addresses.Bridge)
