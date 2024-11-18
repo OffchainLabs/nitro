@@ -25,6 +25,7 @@ nitro-testnode/**/*
 # Arbitrator ignores
 arbitrator/tools/module_roots
 arbitrator/tools/pricer
+arbitrator/tools/stylus_benchmark
 
 # Rust outputs
 arbitrator/target/**/*
