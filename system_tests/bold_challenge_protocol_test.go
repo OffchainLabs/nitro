@@ -16,17 +16,6 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/bold/challenge-manager"
-	modes "github.com/offchainlabs/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
-	challengetesting "github.com/offchainlabs/bold/testing"
-	"github.com/offchainlabs/bold/testing/setup"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -39,6 +28,17 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
+	challengemanager "github.com/offchainlabs/bold/challenge-manager"
+	modes "github.com/offchainlabs/bold/challenge-manager/types"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	"github.com/offchainlabs/bold/solgen/go/bridgegen"
+	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/bold/solgen/go/mocksgen"
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	challengetesting "github.com/offchainlabs/bold/testing"
+	"github.com/offchainlabs/bold/testing/setup"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -48,6 +48,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
+	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -182,11 +183,11 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	Require(t, blockValidatorB.Initialize(ctx))
 	Require(t, blockValidatorB.Start(ctx))
 
-	stateManager, err := staker.NewBOLDStateProvider(
+	stateManager, err := boldstaker.NewBOLDStateProvider(
 		blockValidatorA,
 		statelessA,
 		l2stateprovider.Height(blockChallengeLeafHeight),
-		&staker.StateProviderConfig{
+		&boldstaker.StateProviderConfig{
 			ValidatorName:          "good",
 			MachineLeavesCachePath: "/tmp/good",
 			CheckBatchFinality:     false,
@@ -194,11 +195,11 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	)
 	Require(t, err)
 
-	stateManagerB, err := staker.NewBOLDStateProvider(
+	stateManagerB, err := boldstaker.NewBOLDStateProvider(
 		blockValidatorB,
 		statelessB,
 		l2stateprovider.Height(blockChallengeLeafHeight),
-		&staker.StateProviderConfig{
+		&boldstaker.StateProviderConfig{
 			ValidatorName:          "evil",
 			MachineLeavesCachePath: "/tmp/evil",
 			CheckBatchFinality:     false,
@@ -470,7 +471,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	isSequencer bool,
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
-	stackConfig *node.Config,
+	_ *node.Config,
 	l2infoIn info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
@@ -545,7 +546,8 @@ func createTestNodeOnL1ForBoldProtocol(
 	execConfig := ExecConfigDefaultNonSequencerTest(t)
 	Require(t, execConfig.Validate())
 	execConfig.Caching.StateScheme = rawdb.HashScheme
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, l2info, "", chainConfig, execConfig)
+	useStylusWasmCache := uint32(1)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, l2info, "", chainConfig, execConfig, useStylusWasmCache)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {

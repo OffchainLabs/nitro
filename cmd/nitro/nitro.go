@@ -468,7 +468,11 @@ func mainImpl() int {
 
 	var blocksReExecutor *blocksreexecutor.BlocksReExecutor
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
-		blocksReExecutor = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
+		blocksReExecutor, err = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
+		if err != nil {
+			log.Error("error initializing blocksReExecutor", "err", err)
+			return 1
+		}
 		if nodeConfig.Init.ThenQuit {
 			if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
 				log.Error("error populating stylus target cache", "err", err)

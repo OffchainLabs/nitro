@@ -16,9 +16,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
-
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -124,7 +124,11 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 		if err != nil {
 			return nil, err
 		}
-		return args["data"].([]byte), nil
+		dataBytes, ok := args["data"].([]byte)
+		if !ok {
+			return nil, errors.New("args[\"data\"] not a byte array")
+		}
+		return dataBytes, nil
 	case batchDataSeparateEvent:
 		var numberAsHash common.Hash
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], m.SequenceNumber)
