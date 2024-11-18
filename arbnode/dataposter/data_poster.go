@@ -20,10 +20,15 @@ import (
 	"time"
 
 	"github.com/Knetic/govaluate"
+	"github.com/holiman/uint256"
+	"github.com/redis/go-redis/v9"
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -34,9 +39,10 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -45,10 +51,6 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/redis/go-redis/v9"
-	"github.com/spf13/pflag"
-
-	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 var (
@@ -1101,7 +1103,7 @@ func (p *DataPoster) updateBalance(ctx context.Context) error {
 	return nil
 }
 
-const maxConsecutiveIntermittentErrors = 10
+const maxConsecutiveIntermittentErrors = 20
 
 func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg string) {
 	nonce := tx.FullTx.Nonce()
@@ -1110,10 +1112,17 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 		return
 	}
 	logLevel := log.Error
-	if errors.Is(err, storage.ErrStorageRace) {
+	isStorageRace := errors.Is(err, storage.ErrStorageRace)
+	if isStorageRace || strings.Contains(err.Error(), txpool.ErrFutureReplacePending.Error()) {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
-			logLevel = log.Debug
+			if isStorageRace {
+				logLevel = log.Debug
+			} else {
+				logLevel = log.Info
+			}
+		} else if isStorageRace {
+			logLevel = log.Warn
 		}
 	} else {
 		delete(p.errorCount, nonce)

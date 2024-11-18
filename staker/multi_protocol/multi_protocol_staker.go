@@ -2,16 +2,16 @@ package multiprotocolstaker
 
 import (
 	"context"
-	"github.com/offchainlabs/nitro/staker"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
-
+	"github.com/offchainlabs/nitro/staker"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/txbuilder"

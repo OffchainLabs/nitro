@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common/math"
+
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 

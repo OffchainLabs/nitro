@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/btree"
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -31,9 +34,6 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-
-	"github.com/google/btree"
-	flag "github.com/spf13/pflag"
 )
 
 var (
