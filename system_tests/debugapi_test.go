@@ -59,6 +59,7 @@ func TestDebugAPI(t *testing.T) {
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
 	Require(t, err)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	prev := builder.L2.GetBalance(t, builder.L2Info.GetAddress("Owner"))
 	withdrawalValue := big.NewInt(1000000000)
 	auth.Value = withdrawalValue
 	tx, err := arbSys.SendTxToL1(&auth, common.Address{}, []byte{})
@@ -68,6 +69,7 @@ func TestDebugAPI(t *testing.T) {
 	if len(receipt.Logs) != 1 {
 		Fatal(t, "Unexpected number of logs", len(receipt.Logs))
 	}
+	new := builder.L2.GetBalance(t, builder.L2Info.GetAddress("Owner"))
 
 	var result json.RawMessage
 	flatCallTracer := "flatCallTracer"
@@ -81,7 +83,7 @@ func TestDebugAPI(t *testing.T) {
 
 	found := false
 	for _, balChange := range trace.BalanceChanges {
-		if balChange.Reason == tracing.BalanceDecreaseWithdrawToL1.String(nil, nil) &&
+		if balChange.Reason == tracing.BalanceDecreaseWithdrawToL1.String(prev, new) &&
 			balChange.Addr == types.ArbSysAddress &&
 			balChange.Prev == "0x"+withdrawalValue.Text(16) &&
 			balChange.New == "0x0" {
@@ -120,7 +122,7 @@ func TestDebugAPI(t *testing.T) {
 	Require(t, err)
 	found = false
 	for _, balChange := range jsTrace {
-		if balChange.Reason == tracing.BalanceDecreaseWithdrawToL1.String(nil, nil) &&
+		if balChange.Reason == tracing.BalanceDecreaseWithdrawToL1.String(prev, new) &&
 			balChange.Addr == types.ArbSysAddress &&
 			balChange.Prev.Cmp(withdrawalValue) == 0 &&
 			balChange.New.Cmp(common.Big0) == 0 {
