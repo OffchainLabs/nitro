@@ -1117,6 +1117,10 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	if v.recordSentA.Load() < countUint64 {
 		v.recordSentA.Store(countUint64)
 	}
+
+	if v.lastValidationSentA.Load() < countUint64 {
+		v.lastValidationSentA.Store(countUint64)
+	}
 	// #nosec G115
 	v.validatedA.Store(countUint64)
 	v.valLoopPos = count
@@ -1184,6 +1188,11 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	// under the reorg mutex we don't need atomic access
 	if v.recordSentA.Load() > countUint64 {
 		v.recordSentA.Store(countUint64)
+	}
+	if v.lastValidationSentA.Load() > countUint64 {
+		v.lastValidationSentA.Store(countUint64)
+		// #nosec G115
+		validatorMsgCountLastValidationSentGauge.Update(int64(countUint64))
 	}
 	if v.validatedA.Load() > countUint64 {
 		v.validatedA.Store(countUint64)
@@ -1379,6 +1388,7 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	atomicStorePos(&v.createdA, count, validatorMsgCountCreatedGauge)
 	atomicStorePos(&v.recordSentA, count, validatorMsgCountRecordSentGauge)
 	atomicStorePos(&v.validatedA, count, validatorMsgCountValidatedGauge)
+	atomicStorePos(&v.lastValidationSentA, count, validatorMsgCountLastValidationSentGauge)
 	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(count))
 	v.chainCaughtUp = true
