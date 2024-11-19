@@ -12,7 +12,6 @@ members = [
 exclude = [
         "stylus/tests/",
         "tools/wasmer/",
-        "tools/stylus_benchmark",
 ]
 resolver = "2"
 
