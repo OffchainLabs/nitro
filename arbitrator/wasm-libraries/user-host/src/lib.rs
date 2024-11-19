@@ -3,5 +3,5 @@
 
 mod host;
 mod ink;
-pub mod link;
+mod link;
 mod program;

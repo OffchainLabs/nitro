@@ -1,7 +1,0 @@
-[package]
-name = "stylus_caller"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-user-host = { path = "../../../wasm-libraries/user-host/" }
