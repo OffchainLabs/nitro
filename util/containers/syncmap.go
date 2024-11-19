@@ -1,6 +1,9 @@
 package containers
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 type SyncMap[K any, V any] struct {
 	internal sync.Map
@@ -14,8 +17,7 @@ func (m *SyncMap[K, V]) Load(key K) (V, bool) {
 	}
 	vVal, ok := val.(V)
 	if !ok {
-		var empty V
-		return empty, false
+		panic(fmt.Sprintf("type assertion failed on %s", val))
 	}
 	return vVal, true
 }
@@ -34,7 +36,7 @@ func (m *SyncMap[K, V]) Keys() []K {
 	m.internal.Range(func(k, v interface{}) bool {
 		kKey, ok := k.(K)
 		if !ok {
-			return false
+			panic(fmt.Sprintf("type assertion failed on %s", k))
 		}
 		s = append(s, kKey)
 		return true

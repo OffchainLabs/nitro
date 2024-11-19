@@ -6,10 +6,11 @@ package conf
 import (
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
-	flag "github.com/spf13/pflag"
 )
 
 type ParentChainConfig struct {
