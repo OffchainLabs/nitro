@@ -632,7 +632,8 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		})
 	}
 	entry, err := newValidationEntry(
-		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, prevBatches, v.nextCreatePrevDelayed, chainConfig)
+		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, prevBatches, v.nextCreatePrevDelayed, chainConfig,
+	)
 	if err != nil {
 		return false, err
 	}

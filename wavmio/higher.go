@@ -56,15 +56,6 @@ func ReadInboxMessage(msgNum uint64) []byte {
 	})
 }
 
-func ReadHotShotCommitment(h uint64) (commitment [32]byte) {
-	readHotShotCommitment(h, unsafe.Pointer(&commitment))
-	return commitment
-}
-
-func IsHotShotLive(l1Height uint64) bool {
-	return isHotShotLive(l1Height) > 0
-}
-
 func ReadDelayedInboxMessage(seqNum uint64) []byte {
 	return readBuffer(func(offset uint32, buf unsafe.Pointer) uint32 {
 		return readDelayedInboxMessage(seqNum, offset, buf)

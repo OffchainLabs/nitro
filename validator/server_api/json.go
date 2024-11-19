@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 
-	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -67,10 +66,6 @@ type InputJSON struct {
 	StartState    validator.GoGlobalState
 	UserWasms     map[ethdb.WasmTarget]map[common.Hash]string
 	DebugChain    bool
-
-	BlockHeight       uint64
-	HotShotLiveness   bool
-	HotShotCommitment espressoTypes.Commitment
 }
 
 func (i *InputJSON) WriteToFile() error {
@@ -103,10 +98,6 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		PreimagesB64:  jsonPreimagesMap,
 		UserWasms:     make(map[ethdb.WasmTarget]map[common.Hash]string),
 		DebugChain:    entry.DebugChain,
-
-		HotShotCommitment: entry.HotShotCommitment,
-		HotShotLiveness:   entry.HotShotLiveness,
-		BlockHeight:       entry.BlockHeight,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
@@ -139,10 +130,6 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		Preimages:     preimages,
 		UserWasms:     make(map[ethdb.WasmTarget]map[common.Hash][]byte),
 		DebugChain:    entry.DebugChain,
-
-		HotShotCommitment: entry.HotShotCommitment,
-		HotShotLiveness:   entry.HotShotLiveness,
-		BlockHeight:       entry.BlockHeight,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {

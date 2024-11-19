@@ -171,11 +171,6 @@ pub enum Opcode {
     PopCoThread,
     /// switch between main and a cothread
     SwitchThread,
-
-    /// Reads the HotShot commitment on the stack at an offset
-    ReadHotShotCommitment,
-    /// Gets the HotShot availability at a given L1 height
-    IsHotShotLive,
 }
 
 impl Opcode {
@@ -293,9 +288,6 @@ impl Opcode {
             Opcode::NewCoThread => 0x8030,
             Opcode::PopCoThread => 0x8031,
             Opcode::SwitchThread => 0x8032,
-
-            Opcode::ReadHotShotCommitment => 0x9001,
-            Opcode::IsHotShotLive => 0x9002,
         }
     }
 
@@ -308,8 +300,6 @@ impl Opcode {
                 | Opcode::SetGlobalStateU64
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
-                | Opcode::ReadHotShotCommitment
-                | Opcode::IsHotShotLive
         )
     }
 }

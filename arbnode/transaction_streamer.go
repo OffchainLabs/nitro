@@ -811,36 +811,6 @@ func (s *TransactionStreamer) countDuplicateMessages(
 					}
 					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
 				}
-				msg := nextMessage.MessageWithMeta.Message
-				if arbos.IsEspressoMsg(dbMessageParsed.Message) &&
-					arbos.IsEspressoMsg(msg) &&
-					!bytes.Equal(msg.L2msg, dbMessageParsed.Message.L2msg) {
-					// Check to see if the difference is the existence of block merkle proof in the new message,
-					// The batcher can append this on the fly (see AddEspressoBlockMerkleProof).
-					// If this is the case, update the database with the block merkle justification.
-					_, newJst, err := arbos.ParseEspressoMsg(msg)
-					if err != nil {
-						return 0, false, nil, err
-
-					}
-					_, oldJst, err := arbos.ParseEspressoMsg(dbMessageParsed.Message)
-					if err != nil {
-						return 0, false, nil, err
-					}
-					if oldJst.BlockMerkleJustification == nil && newJst.BlockMerkleJustification != nil {
-						duplicateMessage = true
-						if batch != nil {
-							log.Info("Writing new block justification to DB")
-							if *batch == nil {
-								*batch = s.db.NewBatch()
-							}
-							if err := s.writeMessage(pos, nextMessage, *batch); err != nil {
-								return 0, false, nil, err
-							}
-						}
-					}
-
-				}
 			}
 
 			if !duplicateMessage {
@@ -1289,7 +1259,6 @@ func (s *TransactionStreamer) pollSubmittedTransactionForFinality(ctx context.Co
 		return s.config().EspressoTxnsPollingInterval
 	}
 	if len(submittedTxnPos) == 0 {
-		log.Info("no submitted positions")
 		return s.config().EspressoTxnsPollingInterval
 	}
 	submittedTxHash, err := s.getEspressoSubmittedHash()
@@ -1654,14 +1623,15 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context, ig
 
 		s.espressoTxnsStateInsertionMutex.Lock()
 		defer s.espressoTxnsStateInsertionMutex.Unlock()
-		pendingTxnsPos = pendingTxnsPos[msgCnt-1:]
 
 		batch := s.db.NewBatch()
-		err = s.setEspressoSubmittedPos(batch, pendingTxnsPos)
+		submittedPos := pendingTxnsPos[:msgCnt]
+		err = s.setEspressoSubmittedPos(batch, submittedPos)
 		if err != nil {
 			log.Error("failed to set the submitted txn pos", "err", err)
 			return s.config().EspressoTxnsPollingInterval
 		}
+		pendingTxnsPos = pendingTxnsPos[msgCnt:]
 		err = s.setEspressoPendingTxnsPos(batch, pendingTxnsPos)
 		if err != nil {
 			log.Error("failed to set the pending txns", "err", err)

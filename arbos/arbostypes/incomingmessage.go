@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
-	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -34,20 +33,6 @@ const (
 )
 
 const MaxL2MessageSize = 256 * 1024
-
-type BlockMerkleJustification struct {
-	// Merkle proof validating the justification header.
-	BlockMerkleProof *espressoTypes.HotShotBlockMerkleProof
-	// Block merkle commitment that corresponds to a valid light client snapshot.
-	BlockMerkleComm *espressoTypes.TaggedBase64
-}
-
-type EspressoBlockJustification struct {
-	Header                   *espressoTypes.HeaderImpl
-	Proof                    *espressoTypes.NamespaceProof
-	VidCommon                *espressoTypes.VidCommon
-	BlockMerkleJustification *BlockMerkleJustification
-}
 
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`

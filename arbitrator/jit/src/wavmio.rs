@@ -85,47 +85,6 @@ pub fn read_inbox_message(
     Ok(read.len() as u32)
 }
 
-pub fn is_hotshot_live(mut env: WasmEnvMut, h: u64) -> Result<u32, Escape> {
-    let (_mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
-
-    let liveness = match exec.hotshot_avail_map.get(&h) {
-        Some(liveness) => liveness,
-        None => {
-            return Escape::hostio(format!(
-                "jit machine failed to read the hotshot liveness at {}",
-                h
-            ))
-        }
-    };
-    if *liveness {
-        Ok(1)
-    } else {
-        Ok(0)
-    }
-}
-
-pub fn read_hotshot_commitment(
-    mut env: WasmEnvMut,
-    h: u64,
-    out_ptr: GuestPtr,
-) -> Result<(), Escape> {
-    let (mut mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
-
-    let comm = match exec.hotshot_comm_map.get(&h) {
-        Some(comm) => comm,
-        None => {
-            return Escape::hostio(format!(
-                "jit machine failed to read the hotshot commitment at {}",
-                h
-            ))
-        }
-    };
-    mem.write_slice(out_ptr, comm);
-    Ok(())
-}
-
 /// Reads a delayed inbox message.
 pub fn read_delayed_inbox_message(
     mut env: WasmEnvMut,
@@ -302,19 +261,9 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let position_within_message = socket::read_u64(stream)?;
     let last_block_hash = socket::read_bytes32(stream)?;
     let last_send_root = socket::read_bytes32(stream)?;
-    let hotshot_comm = socket::read_bytes32(stream)?;
-    let block_height = socket::read_u64(stream)?;
-    let hotshot_liveness = socket::read_u8(stream)?;
 
     env.small_globals = [inbox_position, position_within_message];
     env.large_globals = [last_block_hash, last_send_root];
-    if hotshot_liveness > 0 {
-        // HotShot is up
-        env.hotshot_comm_map.insert(block_height, hotshot_comm.0);
-    } else {
-        env.hotshot_avail_map
-            .insert(block_height, hotshot_liveness > 0);
-    }
 
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;

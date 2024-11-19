@@ -76,8 +76,6 @@ pub enum Hostio {
     WavmReadSha256Preimage,
     WavmReadEthVersionedHashPreimage,
     WavmReadInboxMessage,
-    WavmReadHotShotCommitment,
-    WavmIsHotShotLive,
     WavmReadDelayedInboxMessage,
     WavmHaltAndSetFinished,
     WavmLinkModule,
@@ -126,8 +124,6 @@ impl FromStr for Hostio {
             ("env", "wavm_read_eth_versioned_hash_preimage") => WavmReadEthVersionedHashPreimage,
             ("env", "wavm_read_inbox_message") => WavmReadInboxMessage,
             ("env", "wavm_read_delayed_inbox_message") => WavmReadDelayedInboxMessage,
-            ("env", "wavm_read_hotshot_commitment") => WavmReadHotShotCommitment,
-            ("env", "wavm_is_hotshot_live") => WavmIsHotShotLive,
             ("env", "wavm_halt_and_set_finished") => WavmHaltAndSetFinished,
             ("hostio", "wavm_link_module") => WavmLinkModule,
             ("hostio", "wavm_unlink_module") => WavmUnlinkModule,
@@ -190,8 +186,6 @@ impl Hostio {
             WavmReadInboxMessage             => func!([I64, I32, I32], [I32]),
             WavmReadDelayedInboxMessage      => func!([I64, I32, I32], [I32]),
             WavmHaltAndSetFinished           => func!(),
-            WavmReadHotShotCommitment => func!([I32, I64]),
-            WavmIsHotShotLive => func!([I64], [I32]),
             WavmLinkModule              => func!([I32], [I32]),      // λ(module_hash) → module
             WavmUnlinkModule            => func!(),                  // λ()
             ProgramInkLeft              => func!([I32], [I64]),      // λ(module) → ink_left
@@ -291,15 +285,6 @@ impl Hostio {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(ReadPreImage, PreimageType::Sha2_256);
-            }
-            WavmReadHotShotCommitment => {
-                opcode!(LocalGet, 0);
-                opcode!(LocalGet, 1);
-                opcode!(ReadHotShotCommitment);
-            }
-            WavmIsHotShotLive => {
-                opcode!(LocalGet, 0);
-                opcode!(IsHotShotLive);
             }
             WavmReadEthVersionedHashPreimage => {
                 opcode!(LocalGet, 0);

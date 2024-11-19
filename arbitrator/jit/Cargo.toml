@@ -21,8 +21,6 @@ hex = "0.4.3"
 structopt = "0.3.26"
 sha3 = "0.9.1"
 libc = "0.2.132"
-ouroboros = "0.16.0"
-lazy_static = "1.4"
 sha2 = "0.9.9"
 
 [features]

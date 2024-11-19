@@ -188,7 +188,7 @@ test-go-deps: \
 	$(stylus_test_wasms) \
 	$(arbitrator_stylus_lib) \
 	$(arbitrator_generated_header) \
-	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const read-hotshot-10)
+	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
 .PHONY: build-prover-header
 build-prover-header: $(arbitrator_generated_header)

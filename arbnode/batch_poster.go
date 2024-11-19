@@ -55,6 +55,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -540,8 +541,16 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 func (b *BatchPoster) checkEspressoValidation(
 	msg *arbostypes.MessageWithMetadata,
 ) error {
-
-	if !arbos.IsEspressoMsg(msg.Message) {
+	if !b.streamer.chainConfig.ArbitrumChainParams.EnableEspresso {
+		return nil
+	}
+	// We only submit the user transactions to hotshot. Only those messages created by
+	// sequencer should wait for the finality
+	if msg.Message.Header.Kind != arbostypes.L1MessageType_L2Message {
+		return nil
+	}
+	kind := msg.Message.L2msg[0]
+	if kind != arbos.L2MessageKind_Batch && kind != arbos.L2MessageKind_SignedTx {
 		return nil
 	}
 
@@ -553,10 +562,7 @@ func (b *BatchPoster) checkEspressoValidation(
 		return fmt.Errorf("Cannot use a nil ArbOSConfig")
 	}
 	if !arbOSConfig.ArbitrumChainParams.EnableEspresso {
-		// This case should be highly unlikely, as espresso messages are not produced while ArbitrumChainParams.EnableEspresso is false
-		// However, in the event that an espresso message was created, and then Enable Espresso was set to false, we should ensure
-		// the transaction streamer doesn't send any more messages to the espresso network.
-		return fmt.Errorf("Cannot process Espresso messages when Espresso is not enabled in the ArbOS chain config")
+		return nil
 	}
 
 	hasNotSubmitted, err := b.streamer.HasNotSubmitted(b.building.msgCount)
@@ -576,6 +582,9 @@ func (b *BatchPoster) checkEspressoValidation(
 	}
 
 	lastConfirmed, err := b.streamer.getLastConfirmedPos()
+	if dbutil.IsErrNotFound(err) {
+		return fmt.Errorf("no confirmed message has been found")
+	}
 	if err != nil {
 		return err
 	}

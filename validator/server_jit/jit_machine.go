@@ -156,19 +156,6 @@ func (machine *JitMachine) prove(
 	if err := writeExact(entry.StartState.SendRoot[:]); err != nil {
 		return state, err
 	}
-	if err := writeExact(entry.HotShotCommitment[:]); err != nil {
-		return state, err
-	}
-	if err := writeUint64(entry.BlockHeight); err != nil {
-		return state, err
-	}
-	var avail uint8
-	if entry.HotShotLiveness {
-		avail = 1
-	}
-	if err := writeUint8(avail); err != nil {
-		return state, err
-	}
 
 	const successByte = 0x0
 	const failureByte = 0x1

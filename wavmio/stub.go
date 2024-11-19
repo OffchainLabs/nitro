@@ -39,7 +39,6 @@ var (
 	delayedMsgs        [][]byte
 	delayedMsgFirstPos uint64
 	lastBlockHash      common.Hash
-	hotShotCommitment  [32]byte
 	preimages          map[common.Hash][]byte
 	seqAdvanced        uint64
 )
@@ -117,15 +116,6 @@ func StubFinal() {
 
 func GetLastBlockHash() (hash common.Hash) {
 	return lastBlockHash
-}
-
-func ReadHotShotCommitment(h uint64) [32]byte {
-	return hotShotCommitment
-
-}
-
-func IsHotShotLive(l1Height uint64) bool {
-	return true
 }
 
 func ReadInboxMessage(msgNum uint64) []byte {

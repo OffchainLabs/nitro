@@ -384,7 +384,6 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		&l1IncomingMsgHeader,
 		types.Transactions{tx},
 		[]error{nil},
-		false,
 	)
 	Require(t, err)
 

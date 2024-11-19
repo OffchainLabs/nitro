@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/validator"
@@ -115,7 +114,6 @@ func (b *BlockChallengeBackend) FindGlobalStateFromMessageCount(count arbutil.Me
 			return validator.GoGlobalState{}, err
 		}
 		if prevBatchMsgCount > count {
-			log.Info("prevBatchMsgCount should be smaller than count", "prevBatchMsgCount", prevBatchMsgCount, "count", count)
 			return validator.GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
@@ -123,7 +121,6 @@ func (b *BlockChallengeBackend) FindGlobalStateFromMessageCount(count arbutil.Me
 	if err != nil {
 		return validator.GoGlobalState{}, err
 	}
-
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
 		SendRoot:   res.SendRoot,

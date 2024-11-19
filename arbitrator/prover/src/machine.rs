@@ -802,7 +802,6 @@ impl From<Function> for FunctionSerdeAll {
 // bytes32 - send_root
 // uint64 - inbox_position
 // uint64 - position_within_message
-// uint64 - espresso hotshot height
 pub const GLOBAL_STATE_BYTES32_NUM: usize = 2;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
@@ -987,8 +986,6 @@ pub struct Machine {
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-    hotshot_commitments: HashMap<u64, [u8; 32]>,
-    hotshot_liveness: HashMap<u64, bool>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
     /// Linkable Stylus modules in compressed form. Not part of the machine hash.
@@ -1562,9 +1559,7 @@ impl Machine {
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             context: 0,
-            hotshot_commitments: Default::default(),
             debug_info,
-            hotshot_liveness: Default::default(),
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1620,8 +1615,6 @@ impl Machine {
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             context: 0,
-            hotshot_commitments: Default::default(),
-            hotshot_liveness: Default::default(),
             debug_info: false,
         };
         mach.initial_hash = mach.hash();
@@ -1888,18 +1881,6 @@ impl Machine {
     pub fn next_instruction_is_host_io(&self) -> bool {
         self.get_next_instruction()
             .map(|i| i.opcode.is_host_io())
-            .unwrap_or(true)
-    }
-
-    pub fn next_instruction_is_read_hotshot(&self) -> bool {
-        self.get_next_instruction()
-            .map(|i| i.opcode == Opcode::ReadHotShotCommitment)
-            .unwrap_or(true)
-    }
-
-    pub fn next_instruction_is_hotshot_live(&self) -> bool {
-        self.get_next_instruction()
-            .map(|i| i.opcode == Opcode::IsHotShotLive)
             .unwrap_or(true)
     }
 
@@ -2489,29 +2470,6 @@ impl Machine {
                     assert!(success, "Failed to write to previously read memory");
                     value_stack.push(Value::I32(len as u32));
                 }
-                Opcode::ReadHotShotCommitment => {
-                    let height = value_stack.pop().unwrap().assume_u64();
-                    let ptr = value_stack.pop().unwrap().assume_u32();
-                    if let Some(commitment) = self.hotshot_commitments.get(&height) {
-                        if ptr as u64 + 32 > module.memory.size() {
-                            error!();
-                        } else {
-                            let success = module.memory.store_slice_aligned(ptr.into(), commitment);
-                            assert!(success, "Failed to write to previously read memory");
-                        }
-                    } else {
-                        error!()
-                    }
-                }
-                Opcode::IsHotShotLive => {
-                    let height = value_stack.pop().unwrap().assume_u64();
-                    if let Some(is_alive) = self.hotshot_liveness.get(&height) {
-                        let value = if *is_alive { 1 } else { 0 };
-                        value_stack.push(Value::I32(value));
-                    } else {
-                        error!()
-                    }
-                }
                 Opcode::ReadInboxMessage => {
                     let offset = value_stack.pop().unwrap().assume_u32();
                     let ptr = value_stack.pop().unwrap().assume_u32();
@@ -3099,32 +3057,6 @@ impl Machine {
                     }
                 }
             }
-            ReadHotShotCommitment => {
-                let ptr = value_stack.get(0).unwrap().assume_u32();
-                if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
-                    idx /= Memory::LEAF_SIZE;
-                    let prev_data = module.memory.get_leaf_data(idx);
-                    data.extend(prev_data);
-                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
-
-                    let h = value_stack.get(1).unwrap().assume_u64();
-                    if let Some(commitment) = self.hotshot_commitments.get(&h) {
-                        data.extend(commitment);
-                        println!("read hotshot commitment proof generated. height: {:?}, commitment: {:?}", h, commitment);
-                    }
-                } else {
-                    panic!("Should never ever get here")
-                }
-            }
-            IsHotShotLive => {
-                let h = value_stack.get(0).unwrap().assume_u64();
-                if let Some(avail) = self.hotshot_liveness.get(&h) {
-                    let v: u8 = if *avail { 1 } else { 0 };
-                    data.push(v);
-                } else {
-                    panic!("cannot find the hotshot liveness {}", h)
-                }
-            }
             LinkModule | UnlinkModule => {
                 if op == LinkModule {
                     let leaf_index = match value_stack.last() {
@@ -3224,14 +3156,6 @@ impl Machine {
         if index >= self.first_too_far && identifier == InboxIdentifier::Sequencer {
             self.first_too_far = index + 1
         }
-    }
-
-    pub fn add_hotshot_commitment(&mut self, height: u64, commitment: [u8; 32]) {
-        self.hotshot_commitments.insert(height, commitment);
-    }
-
-    pub fn add_hotshot_liveness(&mut self, height: u64, liveness: bool) {
-        self.hotshot_liveness.insert(height, liveness);
     }
 
     pub fn get_module_names(&self, module: usize) -> Option<&NameCustomSection> {
