@@ -256,12 +256,6 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 			posInBatch++
 		}
 	}
-	fmt.Printf("got states from batch %v pos %v up to batch %v height %v\n", fromState.Batch, fromState.PosInBatch, batchLimit, toHeight)
-	println("----- states -----")
-	for i, state := range states {
-		fmt.Printf("batch %v pos %v hash %v\n", state.Batch, state.PosInBatch, machineHashes[i])
-	}
-	println("------------------")
 	return machineHashes, states, nil
 }
 
@@ -402,12 +396,6 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		return nil, err
 	}
 	log.Info(fmt.Sprintf("Finished gathering machine hashes for request %+v", cfg))
-	fmt.Printf("got machine hashes from message num %v start index %v step size %v desired hashes %v\n", messageNum, cfg.MachineStartIndex, cfg.StepSize, cfg.NumDesiredHashes)
-	println("----- hashes -----")
-	for i, h := range result {
-		fmt.Printf("index %v hash %v\n", i, h)
-	}
-	println("------------------")
 	// Do not save a history commitment of length 1 to the cache.
 	if len(result) > 1 && s.historyCache != nil {
 		if err := s.historyCache.Put(cacheKey, result); err != nil {
