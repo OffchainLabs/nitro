@@ -30,43 +30,30 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func TestReceiveMessagesWithoutCompression(t *testing.T) {
+func TestReceiveMessages(t *testing.T) {
 	t.Parallel()
-	testReceiveMessages(t, false, false, false, false)
-}
-
-func TestReceiveMessagesWithCompression(t *testing.T) {
-	t.Parallel()
-	testReceiveMessages(t, true, true, false, false)
-}
-
-func TestReceiveMessagesWithServerOptionalCompression(t *testing.T) {
-	t.Parallel()
-	testReceiveMessages(t, true, true, false, false)
-}
-
-func TestReceiveMessagesWithServerOnlyCompression(t *testing.T) {
-	t.Parallel()
-	testReceiveMessages(t, false, true, false, false)
-}
-
-func TestReceiveMessagesWithClientOnlyCompression(t *testing.T) {
-	t.Parallel()
-	testReceiveMessages(t, true, false, false, false)
-}
-
-func TestReceiveMessagesWithRequiredCompression(t *testing.T) {
-	t.Parallel()
-	testReceiveMessages(t, true, true, true, false)
-}
-
-func TestReceiveMessagesWithRequiredCompressionButClientDisabled(t *testing.T) {
-	t.Parallel()
-	testReceiveMessages(t, false, true, true, true)
+	t.Run("withoutCompression", func(t *testing.T) {
+		testReceiveMessages(t, false, false, false, false)
+	})
+	t.Run("withServerOptionalCompression", func(t *testing.T) {
+		testReceiveMessages(t, true, true, false, false)
+	})
+	t.Run("withServerOnlyCompression", func(t *testing.T) {
+		testReceiveMessages(t, false, true, false, false)
+	})
+	t.Run("withClientOnlyCompression", func(t *testing.T) {
+		testReceiveMessages(t, true, false, false, false)
+	})
+	t.Run("withRequiredCompression", func(t *testing.T) {
+		testReceiveMessages(t, true, true, true, false)
+	})
+	t.Run("withRequiredCompressionButClientDisabled", func(t *testing.T) {
+		testReceiveMessages(t, false, true, true, true)
+	})
 }
 
 func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression bool, serverRequire bool, expectNoMessagesReceived bool) {
-	t.Helper()
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
