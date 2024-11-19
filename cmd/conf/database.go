@@ -124,6 +124,7 @@ var PebbleConfigDefault = PebbleConfig{
 }
 
 func PebbleConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *PebbleConfig) {
+	f.Bool(prefix+".sync-mode", defaultConfig.SyncMode, "if true sync mode is used (data needs to be written to WAL before the write is marked as completed)")
 	f.Int(prefix+".max-concurrent-compactions", defaultConfig.MaxConcurrentCompactions, "maximum number of concurrent compactions")
 	PebbleExperimentalConfigAddOptions(prefix+".experimental", f, &defaultConfig.Experimental)
 }
