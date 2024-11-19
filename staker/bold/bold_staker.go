@@ -1,6 +1,6 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-package boldstaker
+package bold
 
 import (
 	"context"
@@ -393,31 +393,28 @@ func newBOLDChallengeManager(
 	scanningInterval := config.AssertionScanningInterval
 	// The interval at which the manager will attempt to confirm assertions.
 	confirmingInterval := config.AssertionConfirmingInterval
-	opts := []challengemanager.Opt{
-		challengemanager.WithName(config.StateProviderConfig.ValidatorName),
-		challengemanager.WithMode(BoldModes[config.Mode]),
-		challengemanager.WithAssertionPostingInterval(postingInterval),
-		challengemanager.WithAssertionScanningInterval(scanningInterval),
-		challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
-		challengemanager.WithAddress(txOpts.From),
-		// Configure the validator to track only certain challenges if configured to do so.
-		challengemanager.WithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
+
+	stackOpts := []challengemanager.StackOpt{
+		challengemanager.StackWithName(config.StateProviderConfig.ValidatorName),
+		challengemanager.StackWithMode(BoldModes[config.Mode]),
+		challengemanager.StackWithPollingInterval(scanningInterval),
+		challengemanager.StackWithPostingInterval(postingInterval),
+		challengemanager.StackWithConfirmationInterval(confirmingInterval),
+		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 	}
 	if config.API {
-		// Conditionally enables the BOLD API if configured.
-		opts = append(opts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.APIHost, config.APIPort), config.APIDBPath))
+		apiAddr := fmt.Sprintf("%s:%d", config.APIHost, config.APIPort)
+		stackOpts = append(stackOpts, challengemanager.StackWithAPIEnabled(apiAddr, config.APIDBPath))
 	}
-	manager, err := challengemanager.New(
-		ctx,
+
+	manager, err := challengemanager.NewChallengeStack(
 		assertionChain,
 		provider,
-		assertionChain.RollupAddress(),
-		opts...,
+		stackOpts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create challenge manager: %w", err)
 	}
-	provider.UpdateAPIDatabase(manager.Database())
 	return manager, nil
 }
 
