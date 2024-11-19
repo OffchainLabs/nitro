@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 

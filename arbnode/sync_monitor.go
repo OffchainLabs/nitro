@@ -5,10 +5,12 @@ import (
 	"sync"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	flag "github.com/spf13/pflag"
 )
 
 type SyncMonitor struct {
