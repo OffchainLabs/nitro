@@ -92,8 +92,10 @@ func TestSnapSync(t *testing.T) {
 	waitForBlockToCatchupToMessageCount(ctx, t, nodeC.Client, finalMessageCount)
 	// Fetching message count - 1 instead on the latest block number as the latest block number might not be
 	// present in the snap sync node since it does not have the sequencer feed.
+	// #nosec G115
 	header, err := builder.L2.Client.HeaderByNumber(ctx, big.NewInt(int64(finalMessageCount)-1))
 	Require(t, err)
+	// #nosec G115
 	headerNodeC, err := nodeC.Client.HeaderByNumber(ctx, big.NewInt(int64(finalMessageCount)-1))
 	Require(t, err)
 	// Once the node is synced up, check if the block hash is the same for the last block

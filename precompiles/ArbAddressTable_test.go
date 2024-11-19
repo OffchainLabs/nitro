@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -47,6 +48,12 @@ func TestAddressTable1(t *testing.T) {
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
+	exists, err := atab.AddressExists(context, evm, addr)
+	Require(t, err)
+	if exists {
+		t.Fatal("Address shouldn't exist")
+	}
+
 	// register addr
 	slot, err := atab.Register(context, evm, addr)
 	Require(t, err)
@@ -59,6 +66,12 @@ func TestAddressTable1(t *testing.T) {
 	Require(t, err)
 	if (!size.IsInt64()) || (size.Int64() != 1) {
 		t.Fatal()
+	}
+
+	exists, err = atab.AddressExists(context, evm, addr)
+	Require(t, err)
+	if !exists {
+		t.Fatal("Address should exist")
 	}
 
 	// verify Lookup of addr returns 0

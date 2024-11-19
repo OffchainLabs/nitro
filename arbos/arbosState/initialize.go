@@ -5,19 +5,23 @@ package arbosState
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
+	"regexp"
 	"sort"
+
+	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -54,11 +58,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 }
 
 func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
-	number, err := initData.GetNextBlockNumber()
-	if err != nil {
-		return common.Hash{}, err
-	}
-	triedbConfig := cacheConfig.TriedbConfig(chainConfig.IsVerkle(new(big.Int).SetUint64(number), timestamp))
+	triedbConfig := cacheConfig.TriedbConfig()
 	triedbConfig.Preimages = false
 	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
 	defer func() {
@@ -69,6 +69,8 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		log.Crit("failed to init empty statedb", "error", err)
 	}
 
+	noStateTrieChangesToCommitError := regexp.MustCompile("^triedb layer .+ is disk layer$")
+
 	// commit avoids keeping the entire state in memory while importing the state.
 	// At some time it was also used to avoid reprocessing the whole import in case of a crash.
 	commit := func() (common.Hash, error) {
@@ -78,7 +80,11 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		}
 		err = stateDatabase.TrieDB().Commit(root, true)
 		if err != nil {
-			return common.Hash{}, err
+			// pathdb returns an error when there are no state trie changes to commit and we try to commit.
+			// This checks if the error is the expected one and ignores it.
+			if (cacheConfig.StateScheme != rawdb.PathScheme) || !noStateTrieChangesToCommitError.MatchString(err.Error()) {
+				return common.Hash{}, err
+			}
 		}
 		statedb, err = state.New(root, stateDatabase, nil)
 		if err != nil {
@@ -93,6 +99,16 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
 
+	chainOwner, err := initData.GetChainOwner()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if chainOwner != (common.Address{}) {
+		err = arbosState.ChainOwners().Add(chainOwner)
+		if err != nil {
+			return common.Hash{}, err
+		}
+	}
 	addrTable := arbosState.AddressTable()
 	addrTableSize, err := addrTable.Size()
 	if err != nil {
@@ -105,7 +121,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	if err != nil {
 		return common.Hash{}, err
 	}
-	for i := 0; addressReader.More(); i++ {
+	for i := uint64(0); addressReader.More(); i++ {
 		addr, err := addressReader.GetNext()
 		if err != nil {
 			return common.Hash{}, err
@@ -114,7 +130,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		if err != nil {
 			return common.Hash{}, err
 		}
-		if uint64(i) != slot {
+		if i != slot {
 			return common.Hash{}, errors.New("address table slot mismatch")
 		}
 	}

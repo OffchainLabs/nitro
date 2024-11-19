@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -51,6 +52,7 @@ func TestContractTxDeploy(t *testing.T) {
 			0xF3, // RETURN
 		}
 		var requestId common.Hash
+		// #nosec G115
 		requestId[0] = uint8(stateNonce)
 		contractTx := &types.ArbitrumContractTx{
 			ChainId:   params.ArbitrumDevTestChainConfig().ChainID,

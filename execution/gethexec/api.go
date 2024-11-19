@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -78,6 +79,7 @@ func (api *ArbDebugAPI) evenlySpaceBlocks(start, end rpc.BlockNumber) (uint64, u
 	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
 	blocks := end.Int64() - start.Int64() + 1
+	// #nosec G115
 	bound := int64(api.blockRangeBound)
 	step := int64(1)
 	if blocks > bound {
@@ -88,7 +90,9 @@ func (api *ArbDebugAPI) evenlySpaceBlocks(start, end rpc.BlockNumber) (uint64, u
 		return 0, 0, 0, 0, fmt.Errorf("invalid block range: %v to %v", start.Int64(), end.Int64())
 	}
 
+	// #nosec G115
 	first := uint64(end.Int64() - step*(blocks-1)) // minus 1 to include the fact that we start from the last
+	// #nosec G115
 	return first, uint64(step), uint64(end), uint64(blocks), nil
 }
 
@@ -222,11 +226,13 @@ func (api *ArbDebugAPI) TimeoutQueue(ctx context.Context, blockNum rpc.BlockNumb
 	blockNum, _ = api.blockchain.ClipToPostNitroGenesis(blockNum)
 
 	queue := TimeoutQueue{
+		// #nosec G115
 		BlockNumber: uint64(blockNum),
 		Tickets:     []common.Hash{},
 		Timeouts:    []uint64{},
 	}
 
+	// #nosec G115
 	state, _, err := stateAndHeader(api.blockchain, uint64(blockNum))
 	if err != nil {
 		return queue, err

@@ -41,6 +41,7 @@ func fillBlobBits(blob []byte, data []byte) ([]byte, error) {
 			accBits += 8
 			data = data[1:]
 		}
+		// #nosec G115
 		blob[fieldElement*32] = uint8(acc & ((1 << spareBlobBits) - 1))
 		accBits -= spareBlobBits
 		if accBits < 0 {
@@ -88,6 +89,7 @@ func DecodeBlobs(blobs []kzg4844.Blob) ([]byte, error) {
 			acc |= uint16(blob[fieldIndex*32]) << accBits
 			accBits += spareBlobBits
 			if accBits >= 8 {
+				// #nosec G115
 				rlpData = append(rlpData, uint8(acc))
 				acc >>= 8
 				accBits -= 8

@@ -25,6 +25,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -280,6 +281,18 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 			MinVersion: tls.VersionTLS12,
 		},
 		Extensions: extensions,
+		NetDial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			var netDialer net.Dialer
+			// For tcp connections, prefer IPv4 over IPv6 to avoid rate limiting issues
+			if network == "tcp" {
+				conn, err := netDialer.DialContext(ctx, "tcp4", addr)
+				if err == nil {
+					return conn, nil
+				}
+				return netDialer.DialContext(ctx, "tcp6", addr)
+			}
+			return netDialer.DialContext(ctx, network, addr)
+		},
 	}
 
 	if bc.isShuttingDown() {

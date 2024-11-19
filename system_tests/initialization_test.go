@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -21,6 +22,7 @@ func InitOneContract(prand *testhelpers.PseudoRandomDataSource) (*statetransfer.
 	storageMap := make(map[common.Hash]common.Hash)
 	code := []byte{0x60, 0x0} // PUSH1 0
 	sum := big.NewInt(0)
+	// #nosec G115
 	numCells := int(prand.GetUint64() % 1000)
 	for i := 0; i < numCells; i++ {
 		storageAddr := prand.GetHash()

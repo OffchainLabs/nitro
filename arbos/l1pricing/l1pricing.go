@@ -10,20 +10,18 @@ import (
 	"math/big"
 	"sync/atomic"
 
-	"github.com/ethereum/go-ethereum/crypto"
-
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/params"
-
-	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/util/arbmath"
-	am "github.com/offchainlabs/nitro/util/arbmath"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type L1PricingState struct {
@@ -509,7 +507,7 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 		return 0
 	}
 
-	l1Bytes, err := byteCountAfterBrotliLevel(txBytes, int(brotliCompressionLevel))
+	l1Bytes, err := byteCountAfterBrotliLevel(txBytes, brotliCompressionLevel)
 	if err != nil {
 		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
@@ -594,7 +592,7 @@ func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Ad
 	return am.BigMulByUint(pricePerUnit, units), units
 }
 
-func byteCountAfterBrotliLevel(input []byte, level int) (uint64, error) {
+func byteCountAfterBrotliLevel(input []byte, level uint64) (uint64, error) {
 	compressed, err := arbcompress.CompressLevel(input, level)
 	if err != nil {
 		return 0, err

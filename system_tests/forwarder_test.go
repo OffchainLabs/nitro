@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+
 	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
@@ -38,7 +40,7 @@ func TestStaticForwarder(t *testing.T) {
 	clientA := builder.L2.Client
 
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
-	execConfigB := ExecConfigDefaultTest()
+	execConfigB := ExecConfigDefaultTest(t)
 	execConfigB.Sequencer.Enable = false
 	nodeConfigB.Sequencer = false
 	nodeConfigB.DelayedSequencer.Enable = false
@@ -109,7 +111,7 @@ func createForwardingNode(t *testing.T, builder *NodeBuilder, ipcPath string, re
 	nodeConfig.Sequencer = false
 	nodeConfig.DelayedSequencer.Enable = false
 	nodeConfig.BatchPoster.Enable = false
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.Sequencer.Enable = false
 	execConfig.Forwarder.RedisUrl = redisUrl
 	execConfig.ForwardingTarget = fallbackPath
@@ -170,7 +172,7 @@ func waitForSequencerLockout(ctx context.Context, node *arbnode.Node, duration t
 		case <-time.After(duration):
 			return fmt.Errorf("no sequencer was chosen")
 		default:
-			if c, err := node.SeqCoordinator.CurrentChosenSequencer(ctx); err == nil && c != "" {
+			if c, err := node.SeqCoordinator.RedisCoordinator().CurrentChosenSequencer(ctx); err == nil && c != "" {
 				return nil
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -246,6 +248,7 @@ func TestRedisForwarder(t *testing.T) {
 	for i := range seqClients {
 		userA := user("A", i)
 		builder.L2Info.GenerateAccount(userA)
+		// #nosec G115
 		tx := builder.L2Info.PrepareTx("Owner", userA, builder.L2Info.TransferGas, big.NewInt(1e12+int64(builder.L2Info.TransferGas)*builder.L2Info.GasPrice.Int64()), nil)
 		err := fallbackClient.SendTransaction(ctx, tx)
 		Require(t, err)

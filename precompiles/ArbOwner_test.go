@@ -6,16 +6,17 @@ package precompiles
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
 	"testing"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/holiman/uint256"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -151,6 +152,23 @@ func TestArbOwner(t *testing.T) {
 	Require(t, err)
 	if avail.Cmp(deposited) != 0 {
 		Fail(t, avail, deposited)
+	}
+
+	err = prec.SetNetworkFeeAccount(callCtx, evm, addr1)
+	Require(t, err)
+	retrievedNetworkFeeAccount, err := prec.GetNetworkFeeAccount(callCtx, evm)
+	Require(t, err)
+	if retrievedNetworkFeeAccount.Cmp(addr1) != 0 {
+		Fail(t, "Expected", addr1, "got", retrievedNetworkFeeAccount)
+	}
+
+	l2BaseFee := big.NewInt(123)
+	err = prec.SetL2BaseFee(callCtx, evm, l2BaseFee)
+	Require(t, err)
+	retrievedL2BaseFee, err := state.L2PricingState().BaseFeeWei()
+	Require(t, err)
+	if l2BaseFee.Cmp(retrievedL2BaseFee) != 0 {
+		Fail(t, "Expected", l2BaseFee, "got", retrievedL2BaseFee)
 	}
 }
 

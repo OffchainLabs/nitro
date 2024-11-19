@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"net"
 	"reflect"
 	"testing"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -61,7 +61,7 @@ func TestSequencerFeed(t *testing.T) {
 	defer cleanupSeq()
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
-	port := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testhelpers.AddrTCPPort(seqNode.BroadcastServer.ListenerAddr(), t)
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	builder.takeOwnership = false
@@ -107,7 +107,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	Require(t, err)
 
 	config := relay.ConfigDefault
-	port := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testhelpers.AddrTCPPort(seqNode.BroadcastServer.ListenerAddr(), t)
 	config.Node.Feed.Input = *newBroadcastClientConfigTest(port)
 	config.Node.Feed.Output = *newBroadcasterConfigTest()
 	config.Chain.ID = bigChainId.Uint64()
@@ -119,7 +119,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	Require(t, err)
 	defer currentRelay.StopAndWait()
 
-	port = currentRelay.GetListenerAddr().(*net.TCPAddr).Port
+	port = testhelpers.AddrTCPPort(currentRelay.GetListenerAddr(), t)
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	builder.takeOwnership = false
@@ -164,12 +164,12 @@ func compareAllMsgResultsFromConsensusAndExecution(
 	}
 
 	var lastResult *execution.MessageResult
-	for msgCount := 1; arbutil.MessageIndex(msgCount) <= consensusMsgCount; msgCount++ {
+	for msgCount := arbutil.MessageIndex(1); msgCount <= consensusMsgCount; msgCount++ {
 		pos := msgCount - 1
 		resultExec, err := testClient.ExecNode.ResultAtPos(arbutil.MessageIndex(pos))
 		Require(t, err)
 
-		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(msgCount))
+		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(msgCount)
 		Require(t, err)
 
 		if !reflect.DeepEqual(resultExec, resultConsensus) {
@@ -219,7 +219,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer cleanupC()
 	l2clientC, nodeC := testClientC.Client, testClientC.ConsensusNode
 
-	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testhelpers.AddrTCPPort(nodeC.BroadcastServer.ListenerAddr(), t)
 
 	// The client node, connects to lying sequencer's feed
 	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
@@ -361,7 +361,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	}
 	defer wsBroadcastServer.StopAndWait()
 
-	port := wsBroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testhelpers.AddrTCPPort(wsBroadcastServer.ListenerAddr(), t)
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
@@ -430,4 +430,63 @@ func TestBlockHashFeedMismatch(t *testing.T) {
 
 func TestBlockHashFeedNil(t *testing.T) {
 	testBlockHashComparison(t, nil, false)
+}
+
+func TestPopulateFeedBacklog(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.BuildL1(t)
+
+	userAccount := "User2"
+	builder.L2Info.GenerateAccount(userAccount)
+
+	// Guarantees that nodes will rely only on the feed to receive messages
+	builder.nodeConfig.BatchPoster.Enable = false
+	builder.BuildL2OnL1(t)
+
+	dataDir := builder.l2StackConfig.DataDir
+
+	// Sends a transaction
+	tx := builder.L2Info.PrepareTx("Owner", userAccount, builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// Shutdown node and starts a new one with same data dir and output feed enabled.
+	// The new node will populate the feedbacklog since already has a message, related to the
+	// transaction previously sent, stored in disk.
+	builder.L2.cleanup()
+	builder.l2StackConfig.DataDir = dataDir
+	builder.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
+	cleanup := builder.BuildL2OnL1(t)
+	defer cleanup()
+
+	// Creates a sink node that will read from the output feed of the previous node.
+	nodeConfigSink := builder.nodeConfig
+	port := testhelpers.AddrTCPPort(builder.L2.ConsensusNode.BroadcastServer.ListenerAddr(), t)
+	nodeConfigSink.Feed.Input = *newBroadcastClientConfigTest(port)
+	testClientSink, cleanupSink := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigSink})
+	defer cleanupSink()
+
+	// Waits for the transaction to be processed by the sink node.
+	_, err = WaitForTx(ctx, testClientSink.Client, tx.Hash(), time.Second*5)
+	if err != nil {
+		t.Fatal("error waiting for transaction to get to sink:", err)
+	}
+	balance, err := testClientSink.Client.BalanceAt(ctx, builder.L2Info.GetAddress(userAccount), nil)
+	if err != nil {
+		t.Fatal("error getting fraud balance:", err)
+	}
+	if balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatal("Unexpected balance:", balance)
+	}
+
+	if logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg) {
+		t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
+	}
 }

@@ -1,6 +1,5 @@
 use std::{path::PathBuf, time::Duration};
 
-use bench::prepare::*;
 use clap::Parser;
 use eyre::bail;
 
@@ -10,21 +9,22 @@ use gperftools::profiler::PROFILER;
 #[cfg(feature = "heapprof")]
 use gperftools::heap_profiler::HEAP_PROFILER;
 
-use prover::machine::MachineStatus;
-
 #[cfg(feature = "counters")]
 use prover::{machine, memory, merkle};
+
+use prover::machine::MachineStatus;
+use prover::prepare::prepare_machine;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Path to a preimages text file
+    /// Path to a preimages json file
     #[arg(short, long)]
-    preimages_path: PathBuf,
+    json_inputs: PathBuf,
 
     /// Path to a machine.wavm.br
     #[arg(short, long)]
-    machine_path: PathBuf,
+    binary: PathBuf,
 }
 
 fn main() -> eyre::Result<()> {
@@ -33,7 +33,7 @@ fn main() -> eyre::Result<()> {
 
     println!("Running benchmark with always merkleize feature on");
     for step_size in step_sizes {
-        let mut machine = prepare_machine(args.preimages_path.clone(), args.machine_path.clone())?;
+        let mut machine = prepare_machine(args.json_inputs.clone(), args.binary.clone())?;
         let _ = machine.hash();
         let mut hash_times = vec![];
         let mut step_times = vec![];

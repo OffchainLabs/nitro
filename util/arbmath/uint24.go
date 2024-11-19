@@ -9,9 +9,9 @@ import (
 	"math/big"
 )
 
-const MaxUint24 = 1<<24 - 1 // 16777215
-
 type Uint24 uint32
+
+const MaxUint24 = 1<<24 - 1 // 16777215
 
 func (value Uint24) ToBig() *big.Int {
 	return UintToBig(uint64(value))
@@ -26,8 +26,9 @@ func (value Uint24) ToUint64() uint64 {
 }
 
 func IntToUint24[T uint32 | uint64](value T) (Uint24, error) {
+	// #nosec G115
 	if value > T(MaxUint24) {
-		return Uint24(MaxUint24), errors.New("value out of range")
+		return MaxUint24, errors.New("value out of range")
 	}
 	return Uint24(value), nil
 }
@@ -40,6 +41,7 @@ func BigToUint24OrPanic(value *big.Int) Uint24 {
 	if !value.IsUint64() || value.Uint64() > MaxUint24 {
 		panic("big.Int value exceeds the max Uint24")
 	}
+	// #nosec G115
 	return Uint24(value.Uint64())
 }
 

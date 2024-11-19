@@ -104,6 +104,7 @@ func (b *Broadcaster) BroadcastMessages(
 	}()
 	var feedMessages []*m.BroadcastFeedMessage
 	for i, msg := range messagesWithBlockHash {
+		// #nosec G115
 		bfm, err := b.NewBroadcastFeedMessage(msg.MessageWithMeta, seq+arbutil.MessageIndex(i), msg.BlockHash)
 		if err != nil {
 			return err
@@ -145,6 +146,7 @@ func (b *Broadcaster) ListenerAddr() net.Addr {
 }
 
 func (b *Broadcaster) GetCachedMessageCount() int {
+	// #nosec G115
 	return int(b.backlog.Count())
 }
 

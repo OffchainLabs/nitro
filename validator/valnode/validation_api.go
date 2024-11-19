@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -44,7 +45,7 @@ func (a *ValidationServerAPI) WasmModuleRoots() ([]common.Hash, error) {
 	return a.spawner.WasmModuleRoots()
 }
 
-func (a *ValidationServerAPI) StylusArchs() ([]string, error) {
+func (a *ValidationServerAPI) StylusArchs() ([]ethdb.WasmTarget, error) {
 	return a.spawner.StylusArchs(), nil
 }
 
@@ -115,15 +116,6 @@ func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	a.CallIteratively(a.removeOldRuns)
-}
-
-func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *server_api.InputJSON, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
-	input, err := server_api.ValidationInputFromJson(jsonInput)
-	if err != nil {
-		return err
-	}
-	_, err = a.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(ctx)
-	return err
 }
 
 var errRunNotFound error = errors.New("run not found")

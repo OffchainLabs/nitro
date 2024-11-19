@@ -18,6 +18,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
@@ -65,6 +66,7 @@ func RandomCallValue(limit int64) *big.Int {
 
 // Computes a psuedo-random uint64 on the interval [min, max]
 func RandomUint32(min, max uint32) uint32 {
+	//#nosec G115
 	return uint32(RandomUint64(uint64(min), uint64(max)))
 }
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -111,6 +112,7 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 	}
 
 	for wait := 9; wait >= 0; wait-- {
+		// #nosec G115
 		got := int(completed.Load())
 		expected := count - builder.execConfig.Sequencer.NonceFailureCacheSize
 		if got == expected {

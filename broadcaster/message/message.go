@@ -2,6 +2,7 @@ package message
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -41,6 +42,7 @@ type BroadcastFeedMessage struct {
 }
 
 func (m *BroadcastFeedMessage) Size() uint64 {
+	// #nosec G115
 	return uint64(len(m.Signature) + len(m.Message.Message.L2msg) + 160)
 }
 
