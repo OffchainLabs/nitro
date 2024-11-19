@@ -19,16 +19,9 @@ type boldMachine struct {
 // Ensure boldMachine implements server_arb.MachineInterface.
 var _ server_arb.MachineInterface = (*boldMachine)(nil)
 
-// MachineWrapper wraps a server_arb.MachineInterface and adds one step to the
-// front of the machine's execution.
-//
-// This zeroth step should be at the same global state as the inner arbitrator
-// machine has at step 0, but the machine is in the Finished state rather than
-// the Running state.
-func MachineWrapper(inner server_arb.MachineInterface) server_arb.MachineInterface {
+func newBoldMachine(inner server_arb.MachineInterface) *boldMachine {
 	z := server_arb.NewFinishedMachine()
-	err := z.SetGlobalState(inner.GetGlobalState())
-	if err != nil {
+	if err := z.SetGlobalState(inner.GetGlobalState()); err != nil {
 		// This should only occur if the machine is frozen,
 		// which it isn't because we just created it.
 		panic(err)
@@ -40,11 +33,21 @@ func MachineWrapper(inner server_arb.MachineInterface) server_arb.MachineInterfa
 	}
 }
 
+// MachineWrapper wraps a server_arb.MachineInterface and adds one step to the
+// front of the machine's execution.
+//
+// This zeroth step should be at the same global state as the inner arbitrator
+// machine has at step 0, but the machine is in the Finished state rather than
+// the Running state.
+func MachineWrapper(inner server_arb.MachineInterface) server_arb.MachineInterface {
+	return newBoldMachine(inner)
+}
+
 // CloneMachineInterface returns a new boldMachine with the same inner machine.
 func (m *boldMachine) CloneMachineInterface() server_arb.MachineInterface {
-	c := MachineWrapper(m.inner.CloneMachineInterface())
-	c.(*boldMachine).hasStepped = m.hasStepped
-	return c
+	bMach := newBoldMachine(m.inner.CloneMachineInterface())
+	bMach.hasStepped = m.hasStepped
+	return bMach
 }
 
 // GetStepCount returns zero if the machine has not stepped, otherwise it
