@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -107,19 +109,16 @@ func TestPrestateTracerArbitrumStorage(t *testing.T) {
 	Require(t, err)
 
 	// Validate trace result
-	_, ok := result.Pre[manager]
-	assert(ok, nil, "manager address not found in pre section of trace")
-	assert(result.Pre[manager].ArbitrumStorage != nil, nil, "changes to arbitrum storage not picked up by prestate tracer")
-	_, ok = result.Pre[manager].ArbitrumStorage[codehash]
-	assert(ok, nil, "activated program's codehash key not found in the arbitrum storage trace entry for manager address in Pre")
-	preData := result.Pre[manager].ArbitrumStorage[codehash]
-
-	_, ok = result.Post[manager]
-	assert(ok, nil, "manager address not found in post section oftrace")
-	assert(result.Post[manager].ArbitrumStorage != nil, nil, "changes to arbitrum storage not picked up by prestate tracer")
-	_, ok = result.Post[manager].ArbitrumStorage[codehash]
-	assert(ok, nil, "activated program's codehash key not found in the arbitrum storage trace entry for manager address in Post")
-	postData := result.Post[manager].ArbitrumStorage[codehash]
+	validate := func(traceMap map[common.Address]*account, kind string) common.Hash {
+		_, ok := traceMap[manager]
+		assert(ok, nil, fmt.Sprintf("manager address not found in %s section of trace", kind))
+		assert(traceMap[manager].ArbitrumStorage != nil, nil, "changes to arbitrum storage not picked up by prestate tracer")
+		_, ok = traceMap[manager].ArbitrumStorage[codehash]
+		assert(ok, nil, fmt.Sprintf("activated program's codehash key not found in the arbitrum storage trace entry for manager address in %s", kind))
+		return traceMap[manager].ArbitrumStorage[codehash]
+	}
+	preData := validate(result.Pre, "pre")
+	postData := validate(result.Post, "post")
 
 	// since we are just caching the program the only thing that should differ between the pre and post values is the cached byte
 	assert(!(preData == postData), nil, "preData and postData shouldnt be equal")
@@ -141,9 +140,16 @@ func TestPrestateTracerArbitrumStorage(t *testing.T) {
 	hourNow := (time.Now().Unix() - programs.ArbitrumStartTime) / 3600
 	hourActivatedFromTrace := arbmath.BytesToUint24(postData[8:11])
 	// #nosec G115
-	assert(uint64(hourActivatedFromTrace) == uint64(hourNow), nil, "wrong activated time in trace")
+	if !(uint64(hourActivatedFromTrace) == uint64(hourNow)) {
+		// Although very low but there's a chance that this assert might fail with hourNow being off by one
+		// from hourActivatedFromTrace considering the time that passed between the program activation and now.
+		// #nosec G115
+		if !(math.Abs(float64(hourActivatedFromTrace)-float64(hourNow)) != 1) {
+			Fatal(t, "wrong activated time in trace")
+		}
+	}
 
-	// compare gas costs
+	// Compare gas costs
 	keccak := func() uint64 {
 		tx := l2info.PrepareTxTo("Owner", &program, 1e9, nil, []byte{0x00})
 		return ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsedForL2()
@@ -153,11 +159,18 @@ func TestPrestateTracerArbitrumStorage(t *testing.T) {
 	ensure(mock.CacheProgram(&userAuth, program))
 	hits := keccak()
 	cost, err := arbWasm.ProgramInitGas(nil, program)
+	// We check that GasUsedForL2 contains correct portion of gas usage wrt when a program is cached vs when it isn't
 	assert(hits-cost.GasWhenCached == miss-cost.Gas, err)
+
+	// When a program is already cached, no logs are returned upon caching it again
 	empty := len(ensure(mock.CacheProgram(&userAuth, program)).Logs)
+	assert(empty == 0, nil)
+
 	evict := parseLog(ensure(mock.EvictProgram(&userAuth, program)).Logs[0])
+	assert(evict.Manager == manager && !evict.Cached, nil)
+
 	cache := parseLog(ensure(mock.CacheProgram(&userAuth, program)).Logs[0])
-	assert(empty == 0 && evict.Manager == manager && !evict.Cached && cache.Codehash == codehash && cache.Cached, nil)
+	assert(cache.Codehash == codehash && cache.Cached, nil)
 }
 
 func TestDebugAPI(t *testing.T) {
