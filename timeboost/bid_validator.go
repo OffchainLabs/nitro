@@ -109,8 +109,12 @@ func NewBidValidator(
 	if err != nil {
 		return nil, err
 	}
-	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	var roundTimingInfo RoundTimingInfo
+	roundTimingInfo, err = auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
+		return nil, err
+	}
+	if err = roundTimingInfo.Validate(nil); err != nil {
 		return nil, err
 	}
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
@@ -330,7 +334,7 @@ func (bv *BidValidator) validateBid(
 	bv.Lock()
 	numBids, ok := bv.bidsPerSenderInRound[bidder]
 	if !ok {
-		bv.bidsPerSenderInRound[bidder] = 1
+		bv.bidsPerSenderInRound[bidder] = 0
 	}
 	if numBids >= bv.maxBidsPerSenderInRound {
 		bv.Unlock()

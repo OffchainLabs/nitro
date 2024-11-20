@@ -133,7 +133,8 @@ func newExpressLaneService(
 	retries := 0
 
 pending:
-	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	var roundTimingInfo timeboost.RoundTimingInfo
+	roundTimingInfo, err = auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
 		const maxRetries = 5
 		if errors.Is(err, bind.ErrNoCode) && retries < maxRetries {
@@ -143,6 +144,9 @@ pending:
 			time.Sleep(wait)
 			goto pending
 		}
+		return nil, err
+	}
+	if err = roundTimingInfo.Validate(nil); err != nil {
 		return nil, err
 	}
 	initialTimestamp := time.Unix(roundTimingInfo.OffsetTimestamp, 0)
@@ -168,11 +172,18 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 	// Log every new express lane auction round.
 	es.LaunchThread(func(ctx context.Context) {
 		log.Info("Watching for new express lane rounds")
-		now := time.Now()
-		waitTime := es.roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
-		time.Sleep(waitTime)
-		ticker := time.NewTicker(time.Minute)
+		waitTime := timeboost.TimeTilNextRound(es.initialTimestamp, es.roundDuration)
+		// Wait until the next round starts
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(waitTime):
+			// First tick happened, now set up regular ticks
+		}
+
+		ticker := time.NewTicker(es.roundDuration)
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -355,12 +366,12 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 	if msg.AuctionContractAddress != es.auctionContractAddr {
 		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %s does not match sequencer auction contract address %s", msg.AuctionContractAddress, es.auctionContractAddr)
 	}
-	if !es.currentRoundHasController() {
-		return timeboost.ErrNoOnchainController
-	}
 	currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
 	if msg.Round != currentRound {
 		return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
+	}
+	if !es.currentRoundHasController() {
+		return timeboost.ErrNoOnchainController
 	}
 	// Reconstruct the message being signed over and recover the sender address.
 	signingMessage, err := msg.ToMessageBytes()
