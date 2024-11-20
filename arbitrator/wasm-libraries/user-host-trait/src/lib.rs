@@ -5,10 +5,10 @@ use arbutil::{
     crypto,
     evm::{
         self,
-        api::{DataReader, EvmApi},
+        api::{DataReader, EvmApi, Gas, Ink},
         storage::StorageCache,
         user::UserOutcomeKind,
-        EvmData,
+        EvmData, ARBOS_VERSION_STYLUS_CHARGING_FIXES,
     },
     pricing::{self, EVM_API_INK, HOSTIO_INK, PTR_INK},
     Bytes20, Bytes32,
@@ -88,7 +88,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     }
 
     fn say<D: Display>(&self, text: D);
-    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], end_ink: u64);
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], end_ink: Ink);
 
     fn write_bytes20(&self, ptr: GuestPtr, src: Bytes20) -> Result<(), Self::MemoryErr> {
         self.write_slice(ptr, &src.0)
@@ -143,11 +143,20 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// [`SLOAD`]: https://www.evm.codes/#54
     fn storage_load_bytes32(&mut self, key: GuestPtr, dest: GuestPtr) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK)?;
-        self.require_gas(evm::COLD_SLOAD_GAS + EVM_API_INK + StorageCache::REQUIRED_ACCESS_GAS)?; // cache-miss case
+        let arbos_version = self.evm_data().arbos_version;
 
+        // require for cache-miss case, preserve wrong behavior for old arbos
+        let evm_api_gas_to_use = if arbos_version < ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+            Gas(EVM_API_INK.0)
+        } else {
+            self.pricing().ink_to_gas(EVM_API_INK)
+        };
+        self.require_gas(
+            evm::COLD_SLOAD_GAS + StorageCache::REQUIRED_ACCESS_GAS + evm_api_gas_to_use,
+        )?;
         let key = self.read_bytes32(key)?;
 
-        let (value, gas_cost) = self.evm_api().get_bytes32(key);
+        let (value, gas_cost) = self.evm_api().get_bytes32(key, evm_api_gas_to_use);
         self.buy_gas(gas_cost)?;
         self.write_bytes32(dest, value)?;
         trace!("storage_load_bytes32", self, key, value)
@@ -185,7 +194,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
 
         let gas_left = self.gas_left()?;
-        self.evm_api().flush_storage_cache(clear, gas_left)?;
+        let gas_cost = self.evm_api().flush_storage_cache(clear, gas_left)?;
+        if self.evm_data().arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+            self.buy_gas(gas_cost)?;
+        }
         trace!("storage_flush_cache", self, [be!(clear as u8)], &[])
     }
 
@@ -241,7 +253,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         data: GuestPtr,
         data_len: u32,
         value: GuestPtr,
-        gas: u64,
+        gas: Gas,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
         let value = Some(value);
@@ -270,7 +282,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         contract: GuestPtr,
         data: GuestPtr,
         data_len: u32,
-        gas: u64,
+        gas: Gas,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
         let call = |api: &mut Self::A, contract, data: &_, left, req, _| {
@@ -300,7 +312,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         contract: GuestPtr,
         data: GuestPtr,
         data_len: u32,
-        gas: u64,
+        gas: Gas,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
         let call = |api: &mut Self::A, contract, data: &_, left, req, _| {
@@ -317,7 +329,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         calldata: GuestPtr,
         calldata_len: u32,
         value: Option<GuestPtr>,
-        gas: u64,
+        gas: Gas,
         return_data_len: GuestPtr,
         call: F,
         name: &str,
@@ -327,10 +339,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
             &mut Self::A,
             Address,
             &[u8],
-            u64,
-            u64,
+            Gas,
+            Gas,
             Option<Wei>,
-        ) -> (u32, u64, UserOutcomeKind),
+        ) -> (u32, Gas, UserOutcomeKind),
     {
         self.buy_ink(HOSTIO_INK + 3 * PTR_INK + EVM_API_INK)?;
         self.pay_for_read(calldata_len)?;
@@ -453,12 +465,12 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         salt: Option<GuestPtr>,
         contract: GuestPtr,
         revert_data_len: GuestPtr,
-        cost: u64,
+        cost: Ink,
         call: F,
         name: &str,
     ) -> Result<(), Self::Err>
     where
-        F: FnOnce(&mut Self::A, Vec<u8>, Bytes32, Option<Wei>, u64) -> (Result<Address>, u32, u64),
+        F: FnOnce(&mut Self::A, Vec<u8>, Bytes32, Option<Wei>, Gas) -> (Result<Address>, u32, Gas),
     {
         self.buy_ink(HOSTIO_INK + cost)?;
         self.pay_for_read(code_len)?;
@@ -733,7 +745,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// equivalent to that of the EVM's [`GAS`] opcode.
     ///
     /// [`GAS`]: https://www.evm.codes/#5a
-    fn evm_gas_left(&mut self) -> Result<u64, Self::Err> {
+    fn evm_gas_left(&mut self) -> Result<Gas, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let gas = self.gas_left()?;
         trace!("evm_gas_left", self, &[], be!(gas), gas)
@@ -745,7 +757,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`GAS`]: https://www.evm.codes/#5a
     /// [`Ink and Gas`]: https://developer.arbitrum.io/TODO
-    fn evm_ink_left(&mut self) -> Result<u64, Self::Err> {
+    fn evm_ink_left(&mut self) -> Result<Ink, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let ink = self.ink_ready()?;
         trace!("evm_ink_left", self, &[], be!(ink), ink)

@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 )
@@ -144,10 +145,9 @@ pending:
 		}
 		return nil, err
 	}
-
-	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
-	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
-	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
+	initialTimestamp := time.Unix(roundTimingInfo.OffsetTimestamp, 0)
+	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
+	auctionClosingDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.AuctionClosingSeconds) * time.Second
 	return &expressLaneService{
 		auctionContract:          auctionContract,
 		apiBackend:               apiBackend,
@@ -256,7 +256,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 						continue
 					}
 					newController := setExpressLaneIterator.Event.NewExpressLaneController
-					es.roundControl.Add(it.Event.Round, &expressLaneControl{
+					es.roundControl.Add(round, &expressLaneControl{
 						controller: newController,
 						sequence:   0,
 					})

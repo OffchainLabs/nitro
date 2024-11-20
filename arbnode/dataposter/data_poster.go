@@ -24,8 +24,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -33,19 +35,18 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
-	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
 
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
@@ -69,7 +70,7 @@ var (
 type DataPoster struct {
 	stopwaiter.StopWaiter
 	headerReader      *headerreader.HeaderReader
-	client            arbutil.L1Interface
+	client            *ethclient.Client
 	auth              *bind.TransactOpts
 	signer            signerFn
 	config            ConfigFetcher
@@ -359,6 +360,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
+		// #nosec G115
 		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		if nextNonce >= cfg.MaxMempoolTransactions+unconfirmedNonce {
 			return fmt.Errorf("%w: transaction nonce: %d, unconfirmed nonce: %d, max mempool size: %d", ErrExceedsMaxMempoolSize, nextNonce, unconfirmedNonce, cfg.MaxMempoolTransactions)
@@ -371,6 +373,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
+		// #nosec G115
 		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		if unconfirmedNonce > nextNonce {
 			return fmt.Errorf("latest on-chain nonce %v is greater than to next nonce %v", unconfirmedNonce, nextNonce)
@@ -525,6 +528,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get latest nonce %v blocks ago (block %v): %w", config.NonceRbfSoftConfs, softConfBlock, err)
 	}
+	// #nosec G115
 	latestSoftConfirmedNonceGauge.Update(int64(softConfNonce))
 
 	suggestedTip, err := p.client.SuggestGasTipCap(ctx)
@@ -635,11 +639,11 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 
 	if config.MaxFeeBidMultipleBips > 0 {
 		// Limit the fee caps to be no greater than max(MaxFeeBidMultipleBips, minRbf)
-		maxNonBlobFee := arbmath.BigMulByBips(currentNonBlobFee, config.MaxFeeBidMultipleBips)
+		maxNonBlobFee := arbmath.BigMulByUBips(currentNonBlobFee, config.MaxFeeBidMultipleBips)
 		if lastTx != nil {
 			maxNonBlobFee = arbmath.BigMax(maxNonBlobFee, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
 		}
-		maxBlobFee := arbmath.BigMulByBips(currentBlobFee, config.MaxFeeBidMultipleBips)
+		maxBlobFee := arbmath.BigMulByUBips(currentBlobFee, config.MaxFeeBidMultipleBips)
 		if lastTx != nil && lastTx.BlobGasFeeCap() != nil {
 			maxBlobFee = arbmath.BigMax(maxBlobFee, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
 		}
@@ -1052,6 +1056,7 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 		}
 		return nil
 	}
+	// #nosec G115
 	latestFinalizedNonceGauge.Update(int64(nonce))
 	log.Info("Data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
 	if len(p.errorCount) > 0 {
@@ -1083,7 +1088,7 @@ func (p *DataPoster) updateBalance(ctx context.Context) error {
 	return nil
 }
 
-const maxConsecutiveIntermittentErrors = 10
+const maxConsecutiveIntermittentErrors = 20
 
 func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg string) {
 	nonce := tx.FullTx.Nonce()
@@ -1092,10 +1097,17 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 		return
 	}
 	logLevel := log.Error
-	if errors.Is(err, storage.ErrStorageRace) {
+	isStorageRace := errors.Is(err, storage.ErrStorageRace)
+	if isStorageRace || strings.Contains(err.Error(), txpool.ErrFutureReplacePending.Error()) {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
-			logLevel = log.Debug
+			if isStorageRace {
+				logLevel = log.Debug
+			} else {
+				logLevel = log.Info
+			}
+		} else if isStorageRace {
+			logLevel = log.Warn
 		}
 	} else {
 		delete(p.errorCount, nonce)
@@ -1132,6 +1144,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Warn("Failed to get latest nonce", "err", err)
 			return minWait
 		}
+		// #nosec G115
 		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
 		// excluding those that are in an unconfirmed block. If a reorg occurs, we'll continue
@@ -1154,7 +1167,9 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			confirmedNonce := unconfirmedNonce - 1
 			confirmedMeta, err := p.queue.Get(ctx, confirmedNonce)
 			if err == nil && confirmedMeta != nil {
+				// #nosec G115
 				totalQueueWeightGauge.Update(int64(arbmath.SaturatingUSub(latestCumulativeWeight, confirmedMeta.CumulativeWeight())))
+				// #nosec G115
 				totalQueueLengthGauge.Update(int64(arbmath.SaturatingUSub(latestNonce, confirmedNonce)))
 			} else {
 				log.Error("Failed to fetch latest confirmed tx from queue", "confirmedNonce", confirmedNonce, "err", err, "confirmedMeta", confirmedMeta)
@@ -1234,7 +1249,7 @@ type DataPosterConfig struct {
 	MinBlobTxTipCapGwei    float64           `koanf:"min-blob-tx-tip-cap-gwei" reload:"hot"`
 	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
 	MaxBlobTxTipCapGwei    float64           `koanf:"max-blob-tx-tip-cap-gwei" reload:"hot"`
-	MaxFeeBidMultipleBips  arbmath.Bips      `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
+	MaxFeeBidMultipleBips  arbmath.UBips     `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
@@ -1338,7 +1353,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
 	MaxTipCapGwei:          1.2,
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
-	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
@@ -1373,7 +1388,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MinBlobTxTipCapGwei:    1,
 	MaxTipCapGwei:          5,
 	MaxBlobTxTipCapGwei:    1,
-	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,

@@ -20,8 +20,9 @@ func createStylusConfig(version uint32, max_depth uint32, ink_price uint32, debu
 
 type evmDataHandler uint64
 
-//go:wasmimport programs create_evm_data
+//go:wasmimport programs create_evm_data_v2
 func createEvmData(
+	arbosVersion uint64,
 	blockBaseFee unsafe.Pointer,
 	chainid uint64,
 	blockCoinbase unsafe.Pointer,
@@ -45,6 +46,7 @@ func (params *ProgParams) createHandler() stylusConfigHandler {
 
 func (data *EvmData) createHandler() evmDataHandler {
 	return createEvmData(
+		data.arbosVersion,
 		arbutil.SliceToUnsafePointer(data.blockBasefee[:]),
 		data.chainId,
 		arbutil.SliceToUnsafePointer(data.blockCoinbase[:]),
