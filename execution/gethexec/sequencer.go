@@ -503,7 +503,7 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 	}
 
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
-		if isExpressLaneController && s.expressLaneService.currentRoundHasController() {
+		if !isExpressLaneController && s.expressLaneService.currentRoundHasController() {
 			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
 		}
 	}
