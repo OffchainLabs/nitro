@@ -32,11 +32,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -89,7 +88,6 @@ type TimeboostConfig struct {
 	AuctionContractAddress string        `koanf:"auction-contract-address"`
 	AuctioneerAddress      string        `koanf:"auctioneer-address"`
 	ExpressLaneAdvantage   time.Duration `koanf:"express-lane-advantage"`
-	SequencerHTTPEndpoint  string        `koanf:"sequencer-http-endpoint"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
@@ -97,7 +95,6 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	AuctionContractAddress: "",
 	AuctioneerAddress:      "",
 	ExpressLaneAdvantage:   time.Millisecond * 200,
-	SequencerHTTPEndpoint:  "http://localhost:8547",
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -190,7 +187,6 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".auction-contract-address", DefaultTimeboostConfig.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
 	f.String(prefix+".auctioneer-address", DefaultTimeboostConfig.AuctioneerAddress, "Address of the Timeboost Autonomous Auctioneer")
 	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
-	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 }
 
 type txQueueItem struct {
@@ -1242,19 +1238,15 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr common.Address, auctioneerAddr common.Address) {
+func (s *Sequencer) StartExpressLane(ctx context.Context, apiBackend *arbitrum.APIBackend, filterSystem *filters.FilterSystem, auctionContractAddr common.Address, auctioneerAddr common.Address) {
 	if !s.config().Timeboost.Enable {
 		log.Crit("Timeboost is not enabled, but StartExpressLane was called")
 	}
-	rpcClient, err := rpc.DialContext(ctx, s.config().Timeboost.SequencerHTTPEndpoint)
-	if err != nil {
-		log.Crit("Failed to connect to sequencer RPC client", "err", err)
-	}
-	seqClient := ethclient.NewClient(rpcClient)
 
 	els, err := newExpressLaneService(
+		apiBackend,
+		filterSystem,
 		auctionContractAddr,
-		seqClient,
 		s.execEngine.bc,
 	)
 	if err != nil {
