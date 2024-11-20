@@ -92,7 +92,7 @@ type ClientStoreConfig struct {
 	SigningWallet         string        `koanf:"signing-wallet"`
 	SigningWalletPassword string        `koanf:"signing-wallet-password"`
 	MaxStoreChunkBodySize int           `koanf:"max-store-chunk-body-size"`
-	UseLegacyStore        bool          `koanf:"use-legacy-store"`
+	DisableChunkedStore   bool          `koanf:"disable-chunked-store"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -105,7 +105,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	f.Int("max-store-chunk-body-size", 512*1024, "The maximum HTTP POST body size for a chunked store request")
-	f.Bool("use-legacy-store", false, "enabling this forces the das rpc clients to use das_store. Disabled by default")
+	f.Bool("disable-chunked-store", false, "force data to always be sent to DAS all at once instead of splitting into chunks. Disabled by default")
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -154,7 +154,7 @@ func startClientStore(args []string) error {
 		}
 	}
 
-	client, err := das.NewDASRPCClient(config.URL, signer, config.MaxStoreChunkBodySize, config.UseLegacyStore)
+	client, err := das.NewDASRPCClient(config.URL, signer, config.MaxStoreChunkBodySize, config.DisableChunkedStore)
 	if err != nil {
 		return err
 	}
