@@ -6,19 +6,25 @@ package gethexec
 import (
 	"context"
 	"fmt"
+	"math"
+	"math/big"
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -40,30 +46,98 @@ type expressLaneService struct {
 	sync.RWMutex
 	transactionPublisher     transactionPublisher
 	auctionContractAddr      common.Address
+	apiBackend               *arbitrum.APIBackend
 	initialTimestamp         time.Time
 	roundDuration            time.Duration
 	auctionClosing           time.Duration
 	chainConfig              *params.ChainConfig
 	logs                     chan []*types.Log
-	seqClient                *ethclient.Client
 	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
 	roundControl             *lru.Cache[uint64, *expressLaneControl]
 	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
 }
 
+type contractAdapter struct {
+	*filters.FilterAPI
+	bind.ContractTransactor // We leave this member unset as it is not used.
+
+	apiBackend *arbitrum.APIBackend
+}
+
+func (a *contractAdapter) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	logPointers, err := a.GetLogs(ctx, filters.FilterCriteria(q))
+	if err != nil {
+		return nil, err
+	}
+	logs := make([]types.Log, 0, len(logPointers))
+	for _, log := range logPointers {
+		logs = append(logs, *log)
+	}
+	return logs, nil
+}
+
+func (a *contractAdapter) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
+	panic("contractAdapter doesn't implement SubscribeFilterLogs - shouldn't be needed")
+}
+
+func (a *contractAdapter) CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error) {
+	panic("contractAdapter doesn't implement CodeAt - shouldn't be needed")
+}
+
+func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
+	var num rpc.BlockNumber = rpc.LatestBlockNumber
+	if blockNumber != nil {
+		num = rpc.BlockNumber(blockNumber.Int64())
+	}
+
+	state, header, err := a.apiBackend.StateAndHeaderByNumber(ctx, num)
+	if err != nil {
+		return nil, err
+	}
+
+	msg := &core.Message{
+		From:              call.From,
+		To:                call.To,
+		Value:             big.NewInt(0),
+		GasLimit:          math.MaxUint64,
+		GasPrice:          big.NewInt(0),
+		GasFeeCap:         big.NewInt(0),
+		GasTipCap:         big.NewInt(0),
+		Data:              call.Data,
+		AccessList:        call.AccessList,
+		SkipAccountChecks: true,
+		TxRunMode:         core.MessageEthcallMode, // Indicate this is an eth_call
+		SkipL1Charging:    true,                    // Skip L1 data fees
+	}
+
+	evm := a.apiBackend.GetEVM(ctx, msg, state, header, &vm.Config{NoBaseFee: true}, nil)
+	gp := new(core.GasPool).AddGas(math.MaxUint64)
+	result, err := core.ApplyMessage(evm, msg, gp)
+	if err != nil {
+		return nil, err
+	}
+
+	return result.ReturnData, nil
+}
+
 func newExpressLaneService(
 	transactionPublisher transactionPublisher,
+	apiBackend *arbitrum.APIBackend,
+	filterSystem *filters.FilterSystem,
 	auctionContractAddr common.Address,
-	sequencerClient *ethclient.Client,
 	bc *core.BlockChain,
 ) (*expressLaneService, error) {
 	chainConfig := bc.Config()
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
+
+	var contractBackend bind.ContractBackend = &contractAdapter{filters.NewFilterAPI(filterSystem), nil, apiBackend}
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, contractBackend)
 	if err != nil {
 		return nil, err
 	}
 
 	retries := 0
+
 pending:
 	var roundTimingInfo timeboost.RoundTimingInfo
 	roundTimingInfo, err = auctionContract.RoundTimingInfo(&bind.CallOpts{})
@@ -87,13 +161,13 @@ pending:
 	return &expressLaneService{
 		transactionPublisher:     transactionPublisher,
 		auctionContract:          auctionContract,
+		apiBackend:               apiBackend,
 		chainConfig:              chainConfig,
 		initialTimestamp:         initialTimestamp,
 		auctionClosing:           auctionClosingDuration,
 		roundControl:             lru.NewCache[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
 		auctionContractAddr:      auctionContractAddr,
 		roundDuration:            roundDuration,
-		seqClient:                sequencerClient,
 		logs:                     make(chan []*types.Log, 10_000),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}, nil
@@ -139,7 +213,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 		log.Info("Monitoring express lane auction contract")
 		// Monitor for auction resolutions from the auction manager smart contract
 		// and set the express lane controller for the upcoming round accordingly.
-		latestBlock, err := es.seqClient.HeaderByNumber(ctx, nil)
+		latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
 		if err != nil {
 			// TODO: Should not be a crit.
 			log.Crit("Could not get latest header", "err", err)
@@ -150,7 +224,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(time.Millisecond * 250):
-				latestBlock, err := es.seqClient.HeaderByNumber(ctx, nil)
+				latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
 				if err != nil {
 					log.Crit("Could not get latest header", "err", err)
 				}
