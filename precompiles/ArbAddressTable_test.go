@@ -12,10 +12,10 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -174,7 +174,7 @@ func newMockEVMForTestingWithVersionAndRunMode(version *uint64, runMode core.Mes
 }
 
 func newMockEVMForTestingWithVersion(version *uint64) *vm.EVM {
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	if version != nil {
 		chainConfig.ArbitrumChainParams.InitialArbOSVersion = *version
 	}
