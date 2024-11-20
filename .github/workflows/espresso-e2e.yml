@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - integration
+      - celestia-integration
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -46,9 +47,9 @@ jobs:
       - name: Setup nodejs
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
-          cache: 'yarn'
-          cache-dependency-path: '**/yarn.lock'
+          node-version: "18"
+          cache: "yarn"
+          cache-dependency-path: "**/yarn.lock"
 
       - name: Install go
         uses: actions/setup-go@v4
@@ -64,8 +65,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           # TODO: remove pinning: https://github.com/EspressoSystems/nitro-espresso-integration/issues/257
-          toolchain: '1.81.0'
-          targets: 'wasm32-unknown-unknown, wasm32-wasi'
+          toolchain: "1.81.0"
+          targets: "wasm32-unknown-unknown, wasm32-wasi"
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -76,9 +77,9 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-08-06'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
+          toolchain: "nightly-2024-08-06"
+          targets: "wasm32-wasi, wasm32-unknown-unknown"
+          components: "rust-src, rustfmt, clippy"
 
       - name: Cache Build Products
         uses: actions/cache@v3
@@ -123,14 +124,13 @@ jobs:
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
         run: ./scripts/build-brotli.sh -w -d
 
-
       - name: Build
         run: make build build-replay-env -j
 
       - name: Install docker-compose
         uses: KengoTODA/actions-setup-docker-compose@v1.2.1
         with:
-          version: '2.22.0'
+          version: "2.22.0"
 
       - name: Run Espresso tests
         run: |
