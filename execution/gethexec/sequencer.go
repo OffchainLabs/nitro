@@ -457,6 +457,10 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	return s.publishTransactionImpl(parentCtx, tx, options, false /* delay tx if express lane is active */)
 }
 
+func (s *Sequencer) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	return s.publishTransactionImpl(parentCtx, tx, options, true)
+}
+
 func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, isExpressLaneController bool) error {
 	config := s.config()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil

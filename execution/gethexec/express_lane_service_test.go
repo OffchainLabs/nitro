@@ -243,7 +243,7 @@ func makeStubPublisher(els *expressLaneService) *stubPublisher {
 	}
 }
 
-func (s *stubPublisher) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, isExpressLaneController bool) error {
+func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	if tx == nil {
 		return errors.New("oops, bad tx")
 	}

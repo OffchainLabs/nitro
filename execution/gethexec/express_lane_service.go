@@ -38,7 +38,7 @@ type expressLaneControl struct {
 }
 
 type transactionPublisher interface {
-	publishTransactionImpl(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions, bool) error
+	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions) error
 }
 
 type expressLaneService struct {
@@ -340,11 +340,10 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		if !exists {
 			break
 		}
-		if err := es.transactionPublisher.publishTransactionImpl(
+		if err := es.transactionPublisher.PublishTimeboostedTransaction(
 			ctx,
 			nextMsg.Transaction,
 			msg.Options,
-			true, /* no delay, as it should go through express lane */
 		); err != nil {
 			// If the tx failed, clear it from the sequence map.
 			delete(es.messagesBySequenceNumber, msg.SequenceNumber)
