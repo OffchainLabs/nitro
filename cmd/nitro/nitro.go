@@ -660,6 +660,8 @@ func mainImpl() int {
 	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Timeboost.Enable {
 		execNode.Sequencer.StartExpressLane(
 			ctx,
+			execNode.Backend.APIBackend(),
+			execNode.FilterSystem,
 			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress),
 			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress),
 			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
