@@ -71,6 +71,7 @@ var (
 	batchPosterDALastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/batchPoster/action/da_last_success", nil)
 	batchPosterDASuccessCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_success", nil)
 	batchPosterDAFailureCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_failure", nil)
+	batchPosterDAFailoverCount             = metrics.NewRegisteredCounter("arb/batchPoster/action/da_failover", nil)
 
 	batchPosterFailureCounter = metrics.NewRegisteredCounter("arb/batchPoster/action/failure", nil)
 
@@ -109,7 +110,7 @@ type BatchPoster struct {
 	building           *buildingBatch
 	dapWriter          daprovider.Writer
 	// This deviates from the DA spec but is necessary for the batch poster to work efficiently
-	// since we need to an extended method on the SequencerInbox contract
+	// since we need to an extended method on the SequencerInbox contract for posting EigenDA certificates
 	eigenDAWriter     eigenda.EigenDAWriter
 	dapReaders        []daprovider.Reader
 	dataPoster        *dataposter.DataPoster
@@ -122,9 +123,10 @@ type BatchPoster struct {
 	backlog         atomic.Uint64
 	lastHitL1Bounds time.Time // The last time we wanted to post a message but hit the L1 bounds
 
-	batchReverted        atomic.Bool // indicates whether data poster batch was reverted
-	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
-	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
+	batchReverted          atomic.Bool // indicates whether data poster batch was reverted
+	nextRevertCheckBlock   int64       // the last parent block scanned for reverting batches
+	postedFirstBatch       bool        // indicates if batch poster has posted the first batch
+	eigenDAFailoverToETHDA bool        // indicates if batch poster should failover to ETHDA
 
 	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
 }
@@ -148,6 +150,8 @@ type BatchPosterDangerousConfig struct {
 type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
 	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
+	// Enable failover to AnyTrust (if enabled) or native ETH DA if EigenDA fails.
+	EnableEigenDAFailover bool `koanf:"enable-eigenda-failover" reload:"hot"`
 	// Max batch size.
 	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
@@ -214,6 +218,7 @@ type BatchPosterConfigFetcher func() *BatchPosterConfig
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
+	f.Bool(prefix+".enable-eigenda-failover", DefaultBatchPosterConfig.EnableEigenDAFailover, "If EigenDA fails, failover to AnyTrust (if enabled) or native ETH DA")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum 4844 blob enabled batch size")
 	f.Int(prefix+".max-eigenda-batch-size", DefaultBatchPosterConfig.MaxEigenDABatchSize, "maximum EigenDA blob enabled batch size")
@@ -244,8 +249,9 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDapFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
-	MaxSize:             100000,
-	MaxEigenDABatchSize: 16_777_216,
+	EnableEigenDAFailover: false,
+	MaxSize:               100000,
+	MaxEigenDABatchSize:   16_777_216,
 	// Try to fill 3 blobs per batch
 	Max4844BatchSize:               blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)/2 - 2000,
 	PollInterval:                   time.Second * 10,
@@ -325,7 +331,7 @@ var EigenDABatchPosterConfig = BatchPosterConfig{
 	L1BlockBoundBypass:             time.Hour,
 	UseAccessLists:                 true,
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
-	CheckBatchCorrectness:          false,
+	CheckBatchCorrectness:          true,
 }
 
 type BatchPosterOpts struct {
@@ -569,6 +575,14 @@ func (b *BatchPoster) getTxsInfoByBlock(ctx context.Context, number int64) ([]tx
 		return nil, fmt.Errorf("error fetching block %d : %w", number, err)
 	}
 	return blk.Transactions, nil
+}
+
+func (b *BatchPoster) SetEigenDAClientMock() {
+	b.eigenDAWriter = eigenda.NewMockEigenDA(true)
+}
+
+func (b *BatchPoster) SetEigenDAWriter(writer eigenda.EigenDAWriter) {
+	b.eigenDAWriter = writer
 }
 
 // checkRevert checks blocks with number in range [from, to] whether they
@@ -1241,7 +1255,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 
 		var useEigenDA bool
-		if b.eigenDAWriter != nil {
+		if b.eigenDAWriter != nil && !b.eigenDAFailoverToETHDA {
 			useEigenDA = true
 		}
 
@@ -1442,7 +1456,67 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
-	if b.dapWriter != nil {
+	var eigenDaBlobInfo *eigenda.EigenDABlobInfo
+	eigenDADispersed := false
+	failOver := false
+
+	if b.eigenDAWriter != nil && !b.eigenDAFailoverToETHDA {
+		if !b.redisLock.AttemptLock(ctx) {
+			return false, errAttemptLockFailed
+		}
+
+		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+		if err != nil {
+			batchPosterDAFailureCounter.Inc(1)
+			return false, err
+		}
+		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+			batchPosterDAFailureCounter.Inc(1)
+			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
+		}
+		eigenDaBlobInfo, err = b.eigenDAWriter.Store(ctx, sequencerMsg)
+
+		if err != nil && errors.Is(err, eigenda.SvcUnavailableErr) && b.config().EnableEigenDAFailover && b.dapWriter != nil { // Failover to anytrust commitee if enabled
+			log.Error("EigenDA service is unavailable, failing over to any trust mode")
+			b.building.useEigenDA = false
+			failOver = true
+		}
+
+		if err != nil && errors.Is(err, eigenda.SvcUnavailableErr) && b.config().EnableEigenDAFailover && b.dapWriter == nil { // Failover to ETH DA if enabled
+			// when failing over to ETHDA (i.e 4844, calldata), we may need to re-encode the batch. To do this in compliance with the existing code, it's easiest
+			// to update an internal field and retrigger the poster's event loop. Since the batch poster can be distributed across mulitple nodes, there could be
+			// degraded temporary performance as each batch poster will re-encode the batch on another event loop tick using the coordination lock which could worst case
+			// could require every batcher instance to fail dispersal to EigenDA.
+			// However, this is a rare event and the performance impact is minimal.
+
+			log.Error("EigenDA service is unavailable and anytrust is disabled, failing over to ETH DA")
+			b.eigenDAFailoverToETHDA = true
+
+			// // if the batch's size exceeds the native DA max size limit, we must re-encode the batch to accomodate the AnyTrust, calldata, and 4844 size limits
+			if (len(sequencerMsg) > b.config().MaxSize && !b.building.use4844) || (len(sequencerMsg) > b.config().Max4844BatchSize && b.building.use4844) {
+				batchPosterDAFailureCounter.Inc(1)
+				batchPosterDAFailoverCount.Inc(1)
+
+				b.building = nil
+				return false, nil
+			}
+
+		}
+
+		if err != nil && !failOver {
+			batchPosterDAFailureCounter.Inc(1)
+			return false, err
+
+		} else if failOver {
+			batchPosterDAFailoverCount.Inc(1)
+		} else {
+			batchPosterDASuccessCounter.Inc(1)
+			batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
+			eigenDADispersed = true
+		}
+	}
+
+	if b.dapWriter != nil && !eigenDADispersed {
 		if !b.redisLock.AttemptLock(ctx) {
 			return false, errAttemptLockFailed
 		}
@@ -1458,28 +1532,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		// #nosec G115
 		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
-		if err != nil {
-			batchPosterDAFailureCounter.Inc(1)
-			return false, err
-		}
-
-		batchPosterDASuccessCounter.Inc(1)
-		batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
-	}
-
-	var eigenDaBlobInfo *eigenda.EigenDABlobInfo
-	if b.eigenDAWriter != nil {
-
-		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
-		if err != nil {
-			batchPosterDAFailureCounter.Inc(1)
-			return false, err
-		}
-		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
-			batchPosterDAFailureCounter.Inc(1)
-			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
-		}
-		eigenDaBlobInfo, err = b.eigenDAWriter.Store(ctx, sequencerMsg)
 		if err != nil {
 			batchPosterDAFailureCounter.Inc(1)
 			return false, err
@@ -1547,6 +1599,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, err
 	}
 
+	if !b.building.useEigenDA && b.eigenDAFailoverToETHDA {
+		b.eigenDAFailoverToETHDA = false
+	}
+
 	if config.CheckBatchCorrectness {
 		dapReaders := b.dapReaders
 		if b.building.use4844 {
@@ -1598,6 +1654,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	log.Info(
 		"BatchPoster: batch sent",
 		"eigenDA", b.building.useEigenDA,
+		"4844", b.building.use4844,
 		"sequenceNumber", batchPosition.NextSeqNum,
 		"from", batchPosition.MessageCount,
 		"to", b.building.msgCount,

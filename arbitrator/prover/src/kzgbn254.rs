@@ -175,13 +175,12 @@ pub fn prove_kzg_preimage_bn254(
     let mut length_bytes = Vec::with_capacity(32);
     append_left_padded_biguint_be(&mut length_bytes, &BigUint::from(length_usize));
 
-    out.write_all(&commitment_hash.to_vec())?; // hash [:32]
-    out.write_all(&*z)?; // evaluation point [32:64]
-    out.write_all(&*proven_y)?; // expected output [64:96]
-    out.write_all(&xminusz_encoded_bytes)?; // g2TauMinusG2z [96:224]
-    out.write_all(&*commitment_encoded_bytes)?; // kzg commitment [224:288]
-    out.write_all(&proof_encoded_bytes)?; // proof [288:352]
-    out.write_all(&*length_bytes)?; // length of preimage [352:384]
+    out.write_all(&*z)?; // evaluation point [:32]
+    out.write_all(&*proven_y)?; // expected output [32:64]
+    out.write_all(&xminusz_encoded_bytes)?; // g2TauMinusG2z [64:192]
+    out.write_all(&*commitment_encoded_bytes)?; // kzg commitment [192:256]
+    out.write_all(&proof_encoded_bytes)?; // proof [256:320]
+    out.write_all(&*length_bytes)?; // length of preimage [320:352]
 
     Ok(())
 }
