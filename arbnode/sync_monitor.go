@@ -146,11 +146,13 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 		batchProcessed := s.inboxReader.GetLastReadBatchCount()
 		res["batchProcessed"] = batchProcessed
 
-		processedBatchMsgs, err := s.inboxReader.Tracker().GetBatchMessageCount(batchProcessed - 1)
-		if err != nil {
-			res["batchMetadataError"] = err.Error()
-		} else {
-			res["messageOfProcessedBatch"] = processedBatchMsgs
+		if batchProcessed > 0 {
+			processedBatchMsgs, err := s.inboxReader.Tracker().GetBatchMessageCount(batchProcessed - 1)
+			if err != nil {
+				res["batchMetadataError"] = err.Error()
+			} else {
+				res["messageOfProcessedBatch"] = processedBatchMsgs
+			}
 		}
 
 		l1reader := s.inboxReader.l1Reader
