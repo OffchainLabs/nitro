@@ -68,6 +68,7 @@ func (g *GoogleCloudStorageClient) Close(ctx context.Context) error {
 
 type GoogleCloudStorageServiceConfig struct {
 	Enable              bool   `koanf:"enable"`
+	AccessToken         string `koanf:"access-token"`
 	AccessTokenFile     string `koanf:"access-token-file"`
 	Bucket              string `koanf:"bucket"`
 	ObjectPrefix        string `koanf:"object-prefix"`
@@ -78,7 +79,8 @@ var DefaultGoogleCloudStorageServiceConfig = GoogleCloudStorageServiceConfig{}
 
 func GoogleCloudConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultGoogleCloudStorageServiceConfig.Enable, "EXPERIMENTAL/unsupported - enable storage/retrieval of sequencer batch data from an Google Cloud Storage bucket")
-	f.String(prefix+".access-token-file", DefaultGoogleCloudStorageServiceConfig.AccessTokenFile, "Google Cloud Storage access token")
+	f.String(prefix+".access-token", DefaultGoogleCloudStorageServiceConfig.AccessToken, "Google Cloud Storage access token (JSON string)")
+	f.String(prefix+".access-token-file", DefaultGoogleCloudStorageServiceConfig.AccessTokenFile, "Google Cloud Storage access token (JSON file path)")
 	f.String(prefix+".bucket", DefaultGoogleCloudStorageServiceConfig.Bucket, "Google Cloud Storage bucket")
 	f.String(prefix+".object-prefix", DefaultGoogleCloudStorageServiceConfig.ObjectPrefix, "prefix to add to Google Cloud Storage objects")
 	f.Bool(prefix+".discard-after-timeout", DefaultGoogleCloudStorageServiceConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
@@ -96,10 +98,12 @@ func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (Stora
 	var err error
 	// Note that if the credentials are not specified, the client library will find credentials using ADC(Application Default Credentials)
 	// https://cloud.google.com/docs/authentication/provide-credentials-adc.
-	if config.AccessTokenFile == "" {
-		client, err = googlestorage.NewClient(context.Background())
-	} else {
+	if config.AccessToken != "" {
+		client, err = googlestorage.NewClient(context.Background(), option.WithCredentialsJSON([]byte(config.AccessToken)))
+	} else if config.AccessTokenFile != "" {
 		client, err = googlestorage.NewClient(context.Background(), option.WithCredentialsFile(config.AccessTokenFile))
+	} else {
+		client, err = googlestorage.NewClient(context.Background())
 	}
 	if err != nil {
 		return nil, fmt.Errorf("error creating Google Cloud Storage client: %w", err)
