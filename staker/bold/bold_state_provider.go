@@ -72,9 +72,9 @@ func NewBOLDStateProvider(
 }
 
 // ExecutionStateAfterPreviousState Produces the L2 execution state for the next
-// assertion. Returns the state at maxInboxCount or maxNumberOfBlocks after the
-// previous state, whichever is earlier. If previousGlobalState is nil, defaults
-// to returning the state at maxInboxCount.
+// assertion. Returns the state at maxInboxCount or blockChallengeLeafHeight
+// after the previous state, whichever is earlier. If previousGlobalState is
+// nil, defaults to returning the state at maxInboxCount.
 //
 // TODO: Check the block validator has validated the execution state we are
 // proposing.
@@ -82,12 +82,12 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
 	previousGlobalState *protocol.GoGlobalState,
-	maxNumberOfBlocks uint64,
 ) (*protocol.ExecutionState, error) {
 	if maxInboxCount == 0 {
 		return nil, errors.New("max inbox count cannot be zero")
 	}
 	batchIndex := maxInboxCount
+	maxNumberOfBlocks := uint64(s.blockChallengeLeafHeight)
 	messageCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(batchIndex - 1)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
