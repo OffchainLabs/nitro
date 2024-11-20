@@ -26,7 +26,7 @@ jobs:
   analyze:
     name: Analyze
     if: github.repository == 'OffchainLabs/nitro' # don't run in any forks without "Advanced Security" enabled
-    runs-on: ubuntu-8
+    runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
@@ -80,6 +80,8 @@ jobs:
 
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: nightly
 
     - name: Cache Rust Build Products
       uses: actions/cache@v3

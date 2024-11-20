@@ -14,6 +14,11 @@ type mockMachine struct {
 	totalSteps uint64
 }
 
+// GetNextOpcode implements MachineInterface.
+func (m *mockMachine) GetNextOpcode() uint16 {
+	panic("unimplemented")
+}
+
 func (m *mockMachine) Hash() common.Hash {
 	if m.gs.PosInBatch == m.totalSteps-1 {
 		return machineFinishedHash(m.gs)

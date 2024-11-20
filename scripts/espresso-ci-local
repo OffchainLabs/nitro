@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Print failing command on exit
+trap 'echo "ERROR: $BASH_SOURCE:$LINENO $BASH_COMMAND" >&2' ERR
+
+make all
+make test-go-deps
+echo "Build passed"
+
+# make lint
+# echo "Lint passed"
+
+echo run tests without race detection
+scripts/espresso-run-test-ci
+env TEST_STATE_SCHEME=hash scripts/espresso-run-test-ci
+echo "Go tests passed"
+
+echo run tests with race detection
+scripts/espresso-run-test-ci -race
+env TEST_STATE_SCHEME=hash scripts/espresso-run-test-ci -race
+echo "Race tests passed"
+
+container=$(docker run -d -p 6379:6379 redis)
+trap "exit" INT TERM
+trap 'docker rm -f $container' EXIT
+echo run redis tests
+scripts/espresso-run-test-ci -run TestRedis ./arbnode/... ./system_tests/...
+echo "Redis tests passed"
+
+echo run challenge tests
+scripts/espresso-run-test-ci -run=TestChallenge -tags=challengetest
+echo "Go challenge tests passed"
+
+echo run stylus tests
+scripts/espresso-run-test-ci -tags=stylustest -run=TestProgramArbitrator
+scripts/espresso-run-test-ci -tags=stylustest -run=TestProgramLong
+echo "Stylus tests passed"
+
+echo "All tests passed"

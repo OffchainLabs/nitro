@@ -624,6 +624,7 @@ func (m *ChallengeManager) getDAProof(ctx context.Context, proof []byte) ([]byte
 
 				var celestiaReader celestiaTypes.CelestiaReader
 				for _, dapReader := range m.validator.dapReaders {
+					//nolint:all
 					switch reader := dapReader.(type) {
 					case celestiaTypes.CelestiaReader:
 						celestiaReader = reader

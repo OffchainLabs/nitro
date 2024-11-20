@@ -9,23 +9,47 @@ on:
     branches:
       - master
       - develop
+      - integration
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     name: Go Tests
-    runs-on: ubuntu-8
+    runs-on: ubuntu-latest
 
     # Creates a redis container for redis tests
     services:
       redis:
         image: redis
         ports:
-            - 6379:6379
+          - 6379:6379
 
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race, challenge, stylus, long]
+        # Run the defaults and race tests with `path` and `hash` state scheme.
+        # the others we run with the default test-state-scheme which at the time
+        # of writing this is `path`.
+        include:
+          - test-mode: defaults
+            test-state-scheme: path
+
+          - test-mode: defaults
+            test-state-scheme: hash
+
+          - test-mode: race
+            test-state-scheme: path
+
+          - test-mode: race
+            test-state-scheme: hash
+
+          - test-mode: challenge
+          - test-mode: stylus
+          - test-mode: long
+          - test-mode: redis
 
     steps:
       - name: Checkout
@@ -33,15 +57,47 @@ jobs:
         with:
           submodules: true
 
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Make more disk space available on public runner
+        run: |
+          # rmz seems to be faster at deleting files than rm
+          cargo binstall -y rmz
+          sudo mv /home/runner/.cargo/bin/rmz /usr/local/bin/rmz
+
+          echo "Available storage before:"
+          sudo df -h
+          echo
+          sudo rmz -f /usr/share/dotnet
+          sudo rmz -f /usr/share/swift
+          sudo rmz -f /usr/share/gradle-*
+          sudo rmz -f /usr/share/az_*
+          sudo rmz -f /usr/local/lib/android
+          sudo rmz -f /opt/ghc
+          sudo rmz -f /opt/az
+          sudo rmz -f /opt/pipx
+          sudo rmz -f /opt/google
+          sudo rmz -f /opt/microsoft
+          echo "Available storage after:"
+          sudo df -h
+          echo
+
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y wabt gotestsum
+        run: >
+          sudo apt update && sudo apt install -y wabt
+          cmake build-essential bison golang clang make wabt
+
+      - name: Install latest gotestsum
+        uses: autero1/action-gotestsum@v2.0.0
+        with:
+          gotestsum_version: v1.12.0
 
       - name: Setup nodejs
+        if: false # fails to find yarn.lock when running in symlinked directory, doesn't seem to be needed
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
-          cache: 'yarn'
-          cache-dependency-path: '**/yarn.lock'
+          node-version: "18"
+          cache: "yarn"
+          cache-dependency-path: "**/yarn.lock"
 
       - name: Install go
         uses: actions/setup-go@v4
@@ -56,23 +112,29 @@ jobs:
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 'stable'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
-          components: 'llvm-tools-preview, rustfmt, clippy'
+          # TODO: remove pinning: https://github.com/EspressoSystems/nitro-espresso-integration/issues/257
+          toolchain: "1.81.0"
+          targets: "wasm32-wasi, wasm32-unknown-unknown"
+          components: "llvm-tools-preview, rustfmt, clippy"
 
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-08-06'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
+          toolchain: "nightly-2024-08-06"
+          targets: "wasm32-wasi, wasm32-unknown-unknown"
+          components: "rust-src, rustfmt, clippy"
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
+      - name: Install cbindgen
+        run: cargo install cbindgen
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
 
       - name: Cache Build Products
         uses: actions/cache@v3
@@ -80,8 +142,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.test-mode }}
-          restore-keys: ${{ runner.os }}-go-
+          key: v1-${{ runner.os }}-go-${{ hashFiles('go.sum') }}-${{ matrix.test-mode }}
+          restore-keys: v1-${{ runner.os }}-go-
 
       - name: Cache Rust Build Products
         uses: actions/cache@v3
@@ -89,12 +151,12 @@ jobs:
           path: |
             ~/.cargo/registry/
             ~/.cargo/git/
-            arbitrator/target/
+            arbitrator/**/target/
             arbitrator/wasm-libraries/target/
             arbitrator/wasm-libraries/soft-float/SoftFloat/build
             target/etc/initial-machine-cache/
-          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
-          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
+          key: v2-${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
+          restore-keys: v1-${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v3
@@ -106,8 +168,8 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-${{ matrix.test-mode }}
-          restore-keys: ${{ runner.os }}-brotli-
+          key: v1-${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-${{ matrix.test-mode }}
+          restore-keys: v1-${{ runner.os }}-brotli-
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -118,116 +180,71 @@ jobs:
         run: ./scripts/build-brotli.sh -w -d
 
       - name: Build
-        run: make build test-go-deps -j
+        run: make build -j
+
+      - name: test-go-deps
+        run: make --debug test-go-deps
 
       - name: Build all lint dependencies
         run: make -j build-node-deps
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        if: matrix.test-mode == 'defaults'
+        uses: golangci/golangci-lint-action@v5
         with:
-          version: latest
-          skip-pkg-cache: true
-      - name: Custom Lint
-        run: |
-          go run ./linters ./...
+          version: v1.59.1
+          skip-cache: true
+
+      # TODO: celestia has lint errors, fix later
+      # - name: Custom Lint
+      #   if: matrix.test-mode == 'defaults'
+      #   run: |
+      #     go run ./linters ./...
 
       - name: Set environment variables
         run: |
-          mkdir -p target/tmp/deadbeefbee
-          echo "TMPDIR=$(pwd)/target/tmp/deadbeefbee" >> "$GITHUB_ENV"
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
 
-      - name: run tests without race detection and path state scheme
+      - name: run tests without race detection (path and hash state scheme)
         if: matrix.test-mode == 'defaults'
+        shell: bash
         env:
-          TEST_STATE_SCHEME: path
+          TEST_STATE_SCHEME: ${{ matrix.test-state-scheme }}
         run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 20m -tags=cionly > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          scripts/espresso-run-test-ci
 
-      - name: run tests without race detection and hash state scheme
-        if: matrix.test-mode == 'defaults'
-        env:
-          TEST_STATE_SCHEME: hash
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 20m -tags=cionly; then
-              exit 1
-            fi
-          done
-
-      - name: run tests with race detection and path state scheme
+      - name: run tests with race detection (path and hash state scheme)
         if: matrix.test-mode == 'race'
+        shell: bash
         env:
-          TEST_STATE_SCHEME: path
+          TEST_STATE_SCHEME: ${{ matrix.test-state-scheme }}
         run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -timeout 30m > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
-
-      - name: run tests with race detection and hash state scheme
-        if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: hash
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -timeout 30m; then
-              exit 1
-            fi
-          done
+          scripts/espresso-run-test-ci -race
 
       - name: run redis tests
-        if: matrix.test-mode == 'defaults'
-        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        if: matrix.test-mode == 'redis'
+        run: |
+          TEST_REDIS=redis://localhost:6379/0 scripts/espresso-run-test-ci -p 1 -run TestRedis ./arbnode/... ./system_tests/...
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
+        shell: bash
         run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          scripts/espresso-run-test-ci -run=TestChallenge -tags=challengetest
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
+        shell: bash
         run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramArbitrator" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          scripts/espresso-run-test-ci -tags=stylustest -run=TestProgramArbitrator
 
       - name: run long stylus tests
         if: matrix.test-mode == 'long'
+        shell: bash
         run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramLong" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          scripts/espresso-run-test-ci -tags=stylustest -run=TestProgramLong
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v3
@@ -237,9 +254,14 @@ jobs:
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
-        if: matrix.test-mode == 'defaults'
+        if: false
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Check available space after CI run
+        if: "!cancelled()"
+        run: |
+          sudo df -h

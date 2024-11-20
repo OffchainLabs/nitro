@@ -409,6 +409,7 @@ func main() {
 		message := readMessage()
 
 		chainContext := WavmChainContext{}
+
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false)
 		if err != nil {
 			panic(err)

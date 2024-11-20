@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -131,6 +132,67 @@ func (s *ExecutionEngine) backlogL1GasCharged() uint64 {
 	return (s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeL1GasCharged -
 		s.cachedL1PriceData.msgToL1PriceData[0].cummulativeL1GasCharged +
 		s.cachedL1PriceData.msgToL1PriceData[0].l1GasCharged)
+}
+
+// GetArbOSConfigAtHeight is a data retrieval function on the execution engine.
+// Params:
+//
+//	height: An optional unsinged 64 bit integer that represents the block height at which we wish to view the
+//	ArbOS config. This must be less than or equal to the current block height.
+//
+// Returns:
+//
+//	A reference to a params.ChainConfig struct that contains the cannonical ArbOS chain config at the given block
+//	height,	the current block height if height was 0, or an error if the execution engine was unable to obtain the
+//	chain config.
+//
+// Safety:
+//
+//	This function should be thread safe as the functions it calls in the execution engine are thread safe.
+func (s *ExecutionEngine) GetArbOSConfigAtHeight(height uint64) (*params.ChainConfig, error) {
+	var (
+		chainConfig *params.ChainConfig
+		state       *state.StateDB
+		err         error
+	)
+	// if height was provided, get the ArbOS chainConfig at that height, otherwise get the config at current tip height.
+	if height != 0 {
+		state, err = s.bc.StateAt(s.bc.GetBlockByNumber(height).Root())
+		if err != nil {
+			log.Error("Error fetching stateDb at height to obtain ArbOS config", "height", height, "err", err)
+			return nil, err
+		}
+	} else {
+		state, err = s.bc.State()
+		if err != nil {
+			log.Error("Error fetching stateDb at current height to obtain ArbOS config", "err", err)
+			return nil, err
+		}
+	}
+	// Open ArbOS state from the requested statedb
+	arbOSState, err := arbosState.OpenSystemArbosState(state, nil, true)
+	if err != nil {
+		log.Error("Error fetching ArbOS state", "err", err)
+		return nil, err
+	}
+	// Get the chain config bytes from ArbOS state
+	chainConfigBytes, err := arbOSState.ChainConfig()
+	if err != nil {
+		log.Error("Error fetching ArbOS chainConfig from ArbOS state", "err", err)
+		return nil, err
+	}
+	// Deserialize the chainConfig from bytes
+	if chainConfigBytes != nil {
+		err = json.Unmarshal(chainConfigBytes, &chainConfig)
+		if err != nil {
+			log.Error("Error deserializing ArbOS chainConfig from bytes", "err", err)
+			return nil, err
+		}
+		return chainConfig, nil
+	} else {
+		return nil, fmt.Errorf("chain config bytes is nil")
+	}
+	// If we made it here everything has gone well; we can return the chain config struct.
 }
 
 func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
@@ -320,6 +382,7 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 
 func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
 	var l2Message []byte
+
 	if len(txes) == 1 && txErrors[0] == nil {
 		txBytes, err := txes[0].MarshalBinary()
 		if err != nil {
@@ -411,6 +474,7 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 	attempts := 0
 	for {
 		s.createBlocksMutex.Lock()
+		log.Info("locking block mutex, attempting to sequence transactions")
 		block, err := sequencerFunc()
 		s.createBlocksMutex.Unlock()
 		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
@@ -436,7 +500,7 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 	}
 }
 
-func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, espressoSovereign bool) (*types.Block, error) {
 	return s.sequencerWrapper(func() (*types.Block, error) {
 		hooks.TxErrors = nil
 		return s.sequenceTransactionsWithBlockMutex(header, txes, hooks)
@@ -446,7 +510,7 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 // SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
 // CPU profiling enabled. If the block creation takes longer than 2 seconds, it
 // keeps both and prints out filenames in an error log line.
-func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, espressoSovereign bool) (*types.Block, error) {
 	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
 	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
 		log.Error("Starting CPU profiling", "error", err)
@@ -455,7 +519,7 @@ func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L
 		log.Error("Starting tracing", "error", err)
 	}
 	start := time.Now()
-	res, err := s.SequenceTransactions(header, txes, hooks)
+	res, err := s.SequenceTransactions(header, txes, hooks, espressoSovereign)
 	elapsed := time.Since(start)
 	pprof.StopCPUProfile()
 	trace.Stop()

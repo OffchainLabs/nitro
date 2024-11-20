@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 )
 
-
 // BlobPointer contains the reference to the data blob on Celestia
 type BlobPointer struct {
 	BlockHeight  uint64   `json:"block_height"`

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# This script is a wrapper around gotestsum, our main use-case is to skip the files
+# that are listed in the ci_skip_tests file.
+#
+# Arguments passed to this script are passed to go test.
+set -euo pipefail
+
+skip_tests=$(grep -vE '^\s*#|^\s*$' ci_skip_tests | tr '\n' '|' | sed 's/|$//')
+packages=`go list ./...`
+echo running tests for $packages
+
+# The --hide-summary output argument is a workaround for false positive test runs:
+#   https://github.com/gotestyourself/gotestsum/issues/423
+gotestsum --format short-verbose --packages="$packages" \
+  --rerun-fails=2 \
+  --no-color=false \
+  --hide-summary output \
+  -- \
+  -timeout 35m \
+  -skip "$skip_tests" \
+  "$@"

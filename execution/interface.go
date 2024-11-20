@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"errors"
+	"github.com/ethereum/go-ethereum/params"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -12,8 +13,9 @@ import (
 )
 
 type MessageResult struct {
-	BlockHash common.Hash
-	SendRoot  common.Hash
+	BlockHash     common.Hash
+	SendRoot      common.Hash
+	HotShotHeight uint64
 }
 
 type RecordResult struct {
@@ -57,6 +59,7 @@ type ExecutionSequencer interface {
 	MarkFeedStart(to arbutil.MessageIndex)
 	Synced() bool
 	FullSyncProgressMap() map[string]interface{}
+	GetArbOSConfigAtHeight(height uint64) (*params.ChainConfig, error)
 }
 
 type FullExecutionClient interface {

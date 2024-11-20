@@ -12,9 +12,12 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/andybalholm/brotli"
 	"github.com/spf13/pflag"
@@ -34,9 +37,13 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	hotshotClient "github.com/EspressoSystems/espresso-sequencer-go/client"
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
@@ -48,6 +55,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -67,9 +75,7 @@ var (
 
 	batchPosterEstimatedBatchBacklogGauge = metrics.NewRegisteredGauge("arb/batchposter/estimated_batch_backlog", nil)
 
-	batchPosterDALastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/batchPoster/action/da_last_success", nil)
-	batchPosterDASuccessCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_success", nil)
-	batchPosterDAFailureCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_failure", nil)
+	batchPosterDAFailureCounter = metrics.NewRegisteredCounter("arb/batchPoster/action/da_failure", nil)
 
 	batchPosterFailureCounter = metrics.NewRegisteredCounter("arb/batchPoster/action/failure", nil)
 
@@ -172,9 +178,13 @@ type BatchPosterConfig struct {
 	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
 	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
 	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
-
-	gasRefunder  common.Address
-	l1BlockBound l1BlockBound
+	gasRefunder                    common.Address
+	l1BlockBound                   l1BlockBound
+	// Espresso specific flags
+	LightClientAddress      string `koanf:"light-client-address"`
+	HotShotUrl              string `koanf:"hotshot-url"`
+	UserDataAttestationFile string `koanf:"user-data-attestation-file"`
+	QuoteFile               string `koanf:"quote-file"`
 }
 
 func (c *BatchPosterConfig) Validate() error {
@@ -222,9 +232,13 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	f.Bool(prefix+".use-access-lists", DefaultBatchPosterConfig.UseAccessLists, "post batches with access lists to reduce gas usage (disabled for L3s)")
+	f.String(prefix+".hotshot-url", DefaultBatchPosterConfig.HotShotUrl, "specifies the hotshot url if we are batching in espresso mode")
+	f.String(prefix+".light-client-address", DefaultBatchPosterConfig.LightClientAddress, "specifies the hotshot light client address if we are batching in espresso mode")
 	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
 	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from layer 1 minimum bounds. Requires l1-block-bound option not be set to \"ignore\"")
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
+	f.String(prefix+".user-data-attestation-file", DefaultBatchPosterConfig.UserDataAttestationFile, "specifies the file containing the user data attestation")
+	f.String(prefix+".quote-file", DefaultBatchPosterConfig.QuoteFile, "specifies the file containing the quote")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -256,6 +270,8 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	ReorgResistanceMargin:          10 * time.Minute,
 	CheckBatchCorrectness:          true,
+	UserDataAttestationFile:        "",
+	QuoteFile:                      "",
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -333,6 +349,23 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	if err != nil {
 		return nil, err
 	}
+
+	hotShotUrl := opts.Config().HotShotUrl
+	lightClientAddr := opts.Config().LightClientAddress
+
+	if hotShotUrl != "" {
+		hotShotClient := hotshotClient.NewClient(hotShotUrl)
+		opts.Streamer.espressoClient = hotShotClient
+	}
+
+	if lightClientAddr != "" {
+		lightClientReader, err := lightclient.NewLightClientReader(common.HexToAddress(lightClientAddr), opts.L1Reader.Client())
+		if err != nil {
+			return nil, err
+		}
+		opts.Streamer.lightClientReader = lightClientReader
+	}
+
 	b := &BatchPoster{
 		l1Reader:           opts.L1Reader,
 		inbox:              opts.Inbox,
@@ -499,6 +532,64 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 		})
 	}
 	return l
+}
+
+// Adds a block merkle proof to an Espresso justification, providing a proof that a set of transactions
+// hashes to some light client state root.
+func (b *BatchPoster) checkEspressoValidation(
+	msg *arbostypes.MessageWithMetadata,
+) error {
+	if !b.streamer.chainConfig.ArbitrumChainParams.EnableEspresso {
+		return nil
+	}
+	// We only submit the user transactions to hotshot. Only those messages created by
+	// sequencer should wait for the finality
+	if msg.Message.Header.Kind != arbostypes.L1MessageType_L2Message {
+		return nil
+	}
+	kind := msg.Message.L2msg[0]
+	if kind != arbos.L2MessageKind_Batch && kind != arbos.L2MessageKind_SignedTx {
+		return nil
+	}
+
+	arbOSConfig, err := b.arbOSVersionGetter.GetArbOSConfigAtHeight(0)
+	if err != nil {
+		return fmt.Errorf("Failed call to GetArbOSConfigAtHeight: %w", err)
+	}
+	if arbOSConfig == nil {
+		return fmt.Errorf("Cannot use a nil ArbOSConfig")
+	}
+	if !arbOSConfig.ArbitrumChainParams.EnableEspresso {
+		return nil
+	}
+
+	hasNotSubmitted, err := b.streamer.HasNotSubmitted(b.building.msgCount)
+	if err != nil {
+		return err
+	}
+	if hasNotSubmitted {
+		// Store the pos in the database to be used later to submit the message
+		// to hotshot for finalization.
+		log.Info("submitting pos", "pos", b.building.msgCount)
+		err = b.streamer.SubmitEspressoTransactionPos(b.building.msgCount, b.streamer.db.NewBatch())
+		if err != nil {
+			log.Error("failed to submit espresso transaction pos", "pos", b.building.msgCount, "err", err)
+			return err
+		}
+		return fmt.Errorf("this msg has not been included in hotshot")
+	}
+
+	lastConfirmed, err := b.streamer.getLastConfirmedPos()
+	if dbutil.IsErrNotFound(err) {
+		return fmt.Errorf("no confirmed message has been found")
+	}
+	if err != nil {
+		return err
+	}
+	if lastConfirmed < b.building.msgCount {
+		return fmt.Errorf("this msg has not been finalized on L1 or validated")
+	}
+	return nil
 }
 
 type txInfo struct {
@@ -970,10 +1061,15 @@ func (b *BatchPoster) encodeAddBatch(
 	var calldata []byte
 	var kzgBlobs []kzg4844.Blob
 	var err error
+	var userData []byte
 	if use4844 {
 		kzgBlobs, err = blobs.EncodeBlobs(l2MessageData)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to encode blobs: %w", err)
+		}
+		_, blobHashes, err := blobs.ComputeCommitmentsAndHashes(kzgBlobs)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to compute blob hashes: %w", err)
 		}
 		// EIP4844 transactions to the sequencer inbox will not use transaction calldata for L2 info.
 		calldata, err = method.Inputs.Pack(
@@ -983,6 +1079,25 @@ func (b *BatchPoster) encodeAddBatch(
 			new(big.Int).SetUint64(uint64(prevMsgNum)),
 			new(big.Int).SetUint64(uint64(newMsgNum)),
 		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to pack calldata: %w", err)
+		}
+		// userData has blobHashes along with other calldata for EIP-4844 transactions
+		userData, err = method.Inputs.Pack(
+			seqNum,
+			new(big.Int).SetUint64(delayedMsg),
+			b.config().gasRefunder,
+			new(big.Int).SetUint64(uint64(prevMsgNum)),
+			new(big.Int).SetUint64(uint64(newMsgNum)),
+			blobHashes,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to pack user data: %w", err)
+		}
+		_, err = b.getAttestationQuote(userData)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get attestation quote: %w", err)
+		}
 	} else {
 		calldata, err = method.Inputs.Pack(
 			seqNum,
@@ -992,13 +1107,56 @@ func (b *BatchPoster) encodeAddBatch(
 			new(big.Int).SetUint64(uint64(prevMsgNum)),
 			new(big.Int).SetUint64(uint64(newMsgNum)),
 		)
+
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to pack calldata: %w", err)
+		}
+
+		_, err = b.getAttestationQuote(calldata)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get attestation quote: %w", err)
+		}
 	}
-	if err != nil {
-		return nil, nil, err
-	}
+	// TODO: when contract is updated add attestationQuote to the calldata
 	fullCalldata := append([]byte{}, method.ID...)
 	fullCalldata = append(fullCalldata, calldata...)
 	return fullCalldata, kzgBlobs, nil
+}
+
+/**
+ * This function generates the attestation quote for the user data.
+ * The user data is hashed using keccak256 and then 32 bytes of padding is added to the hash.
+ * The hash is then written to a file specified in the config. (For SGX: /dev/attestation/user_report_data)
+ * The quote is then read from the file specified in the config. (For SGX: /dev/attestation/quote)
+ */
+func (b *BatchPoster) getAttestationQuote(userData []byte) ([]byte, error) {
+	if (b.config().UserDataAttestationFile == "") || (b.config().QuoteFile == "") {
+		return []byte{}, nil
+	}
+
+	// keccak256 hash of userData
+	userDataHash := crypto.Keccak256(userData)
+
+	// Add 32 bytes of padding to the user data hash
+	// because keccak256 hash is 32 bytes and sgx requires 64 bytes of user data
+	for i := 0; i < 32; i += 1 {
+		userDataHash = append(userDataHash, 0)
+	}
+
+	// Write the message to "/dev/attestation/user_report_data" in SGX
+	err := os.WriteFile(b.config().UserDataAttestationFile, userDataHash, 0600)
+	if err != nil {
+		return []byte{}, fmt.Errorf("failed to create user report data file: %w", err)
+	}
+
+	// Read the quote from "/dev/attestation/quote" in SGX
+	attestationQuote, err := os.ReadFile(b.config().QuoteFile)
+	if err != nil {
+		return []byte{}, fmt.Errorf("failed to read quote file: %w", err)
+	}
+
+	log.Info("Attestation quote generated", "quote", hex.EncodeToString(attestationQuote))
+	return attestationQuote, nil
 }
 
 var ErrNormalGasEstimationFailed = errors.New("normal gas estimation failed")
@@ -1287,6 +1445,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				"l1BoundMaxTimestamp", l1BoundMaxTimestamp,
 			)
 			break
+		}
+
+		err = b.checkEspressoValidation(msg)
+		if err != nil {
+			return false, fmt.Errorf("error checking espresso valdiation: %w", err)
 		}
 		isDelayed := msg.DelayedMessagesRead > b.building.segments.delayedMsg
 		success, err := b.building.segments.AddMessage(msg)

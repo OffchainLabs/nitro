@@ -19,7 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-
 	"github.com/r3labs/diff/v3"
 	flag "github.com/spf13/pflag"
 )

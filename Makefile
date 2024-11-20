@@ -45,7 +45,7 @@ precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 output_root=target
 output_latest=$(output_root)/machines/latest
 
-repo_dirs = arbos arbcompress arbnode arbutil arbstate cmd das precompiles solgen system_tests util validator wavmio
+repo_dirs = arbos arbcompress arbnode arbutil arbstate cmd das espressocrypto precompiles solgen system_tests util validator wavmio
 go_source.go = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 go_source.s  = $(wildcard $(patsubst %,%/*.s, $(repo_dirs)) $(patsubst %,%/*/*.s, $(repo_dirs)))
 go_source = $(go_source.go) $(go_source.s)
@@ -153,7 +153,18 @@ stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data
 stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_math_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_erc20_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_bfs:.b=.wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 
+espresso_crypto_dir = ./espressocrypto/lib/espresso-crypto-helper
+espresso_crypto_files = $(wildcard $(espresso_crypto_dir)/*.toml $(espresso_crypto_dir)/src/*.rs)
+espresso_crypto_lib = $(output_root)/lib/libespresso_crypto_helper.a
+
 # user targets
+.PHONY: build-espresso-crypto-lib
+build-espresso-crypto-lib: $(espresso_crypto_lib)
+
+$(espresso_crypto_lib): $(DEP_PREDICATE) $(espresso_crypto_files)
+	mkdir -p `dirname $(espresso_crypto_lib)`
+	cargo build --release --manifest-path $(espresso_crypto_dir)/Cargo.toml
+	install $(espresso_crypto_dir)/target/release/libespresso_crypto_helper.a $@
 
 .PHONY: push
 push: lint test-go .make/fmt
@@ -169,7 +180,7 @@ build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq
 	@printf $(done)
 
 .PHONY: build-node-deps
-build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
+build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib build-espresso-crypto-lib
 
 .PHONY: test-go-deps
 test-go-deps: \
@@ -285,6 +296,12 @@ clean:
 	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*
+	rm -rf brotli/buildfiles
+	cargo clean --manifest-path $(espresso_crypto_dir)/Cargo.toml
+
+# Ensure lib64 is a symlink to lib
+	mkdir -p $(output_root)/lib
+	ln -s lib $(output_root)/lib64
 
 .PHONY: docker
 docker:
@@ -589,6 +606,11 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 .make:
 	mkdir .make
 
+local-sequencer:
+	./target/bin/nitro --conf.file ./config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642  --http.api net,web3,eth,txpool,debug --node.seq-coordinator.my-url  ws://localhost:8548 --graphql.enable --execution.sequencer.espresso --execution.sequencer.hotshot-url "http://localhost:50000" --execution.rpc.espresso --execution.rpc.hotshot-url "http://localhost:50000" --execution.rpc.espresso-namespace 1 --execution.sequencer.espresso-namespace 1
+
+local-validator:
+	./target/bin/nitro --conf.file ./config/validator_config.json --http.port 8247 --http.api net,web3,arb,debug --ws.port 8548
 
 # Makefile settings
 

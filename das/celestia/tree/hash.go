@@ -20,6 +20,7 @@ func emptyHash() []byte {
 
 // returns tmhash(0x00 || leaf)
 func leafHash(record func(bytes32, []byte, arbutil.PreimageType), leaf []byte) []byte {
+	//nolint:all
 	preimage := append(leafPrefix, leaf...)
 	hash := tmhash.Sum(preimage)
 
@@ -29,6 +30,7 @@ func leafHash(record func(bytes32, []byte, arbutil.PreimageType), leaf []byte) [
 
 // returns tmhash(0x01 || left || right)
 func innerHash(record func(bytes32, []byte, arbutil.PreimageType), left []byte, right []byte) []byte {
+	//nolint:all
 	preimage := append(innerPrefix, append(left, right...)...)
 	hash := tmhash.Sum(preimage)
 

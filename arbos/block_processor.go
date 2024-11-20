@@ -38,6 +38,8 @@ var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
+const NOT_EXPECTED_BUILDER_ERROR string = "This transaction is part of a block not built by the desired builder"
+
 // A helper struct that implements String() by marshalling to JSON.
 // This is useful for logging because it's lazy, so if the log level is too high to print the transaction,
 // it doesn't waste compute marshalling the transaction when the result wouldn't be used.
@@ -152,6 +154,7 @@ func ProduceBlock(
 	}
 
 	hooks := NoopSequencingHooks()
+
 	return ProduceBlockAdvanced(
 		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch,
 	)
