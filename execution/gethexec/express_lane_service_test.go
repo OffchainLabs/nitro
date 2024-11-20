@@ -350,20 +350,20 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	}
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
-			SequenceNumber:    1,
-			Transaction: &types.Transaction{},
+			SequenceNumber: 1,
+			Transaction:    &types.Transaction{},
 		},
 		{
-			SequenceNumber:    3,
-			Transaction: &types.Transaction{},
+			SequenceNumber: 3,
+			Transaction:    &types.Transaction{},
 		},
 		{
-			SequenceNumber:    2,
-			Transaction: nil,
+			SequenceNumber: 2,
+			Transaction:    nil,
 		},
 		{
-			SequenceNumber:    2,
-			Transaction: &types.Transaction{},
+			SequenceNumber: 2,
+			Transaction:    &types.Transaction{},
 		},
 	}
 	for _, msg := range messages {

@@ -48,16 +48,15 @@ func (e Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 	return nil
 }
 
-func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
-	FinalizeBlock(header, txs, state, chain.Config())
+func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body) {
+	FinalizeBlock(header, body.Transactions, state, chain.Config())
 }
 
-func (e Engine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction,
-	uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
+func (e Engine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
 
-	e.Finalize(chain, header, state, txs, uncles, withdrawals)
+	e.Finalize(chain, header, state, body)
 
-	block := types.NewBlock(header, txs, nil, receipts, trie.NewStackTrie(nil))
+	block := types.NewBlock(header, body.Transactions, nil, receipts, trie.NewStackTrie(nil))
 	return block, nil
 }
 

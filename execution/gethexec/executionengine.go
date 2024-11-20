@@ -7,7 +7,7 @@
 package gethexec
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 */
@@ -87,6 +87,8 @@ type ExecutionEngine struct {
 
 	reorgSequencing bool
 
+	disableStylusCacheMetricsCollection bool
+
 	prefetchBlock bool
 
 	cachedL1PriceData *L1PriceData
@@ -138,7 +140,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	defer s.cachedL1PriceData.mutex.Unlock()
 
 	if to < s.cachedL1PriceData.startOfL1PriceDataCache {
-		log.Info("trying to trim older cache which doesnt exist anymore")
+		log.Debug("trying to trim older L1 price data cache which doesnt exist anymore")
 	} else if to >= s.cachedL1PriceData.endOfL1PriceDataCache {
 		s.cachedL1PriceData.startOfL1PriceDataCache = 0
 		s.cachedL1PriceData.endOfL1PriceDataCache = 0
@@ -150,23 +152,44 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
-	if rustCacheSize != 0 {
-		programs.ResizeWasmLruCache(rustCacheSize)
+func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
+	localTarget := rawdb.LocalTarget()
+	targets := targetConfig.WasmTargets()
+	var nativeSet bool
+	for _, target := range targets {
+		var effectiveStylusTarget string
+		switch target {
+		case rawdb.TargetWavm:
+			// skip wavm target
+			continue
+		case rawdb.TargetArm64:
+			effectiveStylusTarget = targetConfig.Arm64
+		case rawdb.TargetAmd64:
+			effectiveStylusTarget = targetConfig.Amd64
+		case rawdb.TargetHost:
+			effectiveStylusTarget = targetConfig.Host
+		default:
+			return fmt.Errorf("unsupported stylus target: %v", target)
+		}
+		isNative := target == localTarget
+		err := programs.SetTarget(target, effectiveStylusTarget, isNative)
+		if err != nil {
+			return fmt.Errorf("failed to set stylus target: %w", err)
+		}
+		nativeSet = nativeSet || isNative
 	}
-	var effectiveStylusTarget string
-	target := rawdb.LocalTarget()
-	switch target {
-	case rawdb.TargetArm64:
-		effectiveStylusTarget = targetConfig.Arm64
-	case rawdb.TargetAmd64:
-		effectiveStylusTarget = targetConfig.Amd64
-	case rawdb.TargetHost:
-		effectiveStylusTarget = targetConfig.Host
+	if !nativeSet {
+		return fmt.Errorf("local target %v missing in list of archs %v", localTarget, targets)
 	}
-	err := programs.SetTarget(target, effectiveStylusTarget, true)
-	if err != nil {
-		return fmt.Errorf("Failed to set stylus target: %w", err)
+	return nil
+}
+
+func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *StylusTargetConfig) error {
+	if rustCacheCapacityMB != 0 {
+		programs.SetWasmLruCacheCapacity(arbmath.SaturatingUMul(uint64(rustCacheCapacityMB), 1024*1024))
+	}
+	if err := PopulateStylusTargetCache(targetConfig); err != nil {
+		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 	return nil
 }
@@ -189,6 +212,16 @@ func (s *ExecutionEngine) EnableReorgSequencing() {
 		panic("trying to enable reorg sequencing when already set")
 	}
 	s.reorgSequencing = true
+}
+
+func (s *ExecutionEngine) DisableStylusCacheMetricsCollection() {
+	if s.Started() {
+		panic("trying to disable stylus cache metrics collection after start")
+	}
+	if s.disableStylusCacheMetricsCollection {
+		panic("trying to disable stylus cache metrics collection when already set")
+	}
+	s.disableStylusCacheMetricsCollection = true
 }
 
 func (s *ExecutionEngine) EnablePrefetchBlock() {
@@ -484,6 +517,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc.Config(),
 		hooks,
 		false,
+		core.MessageCommitMode,
 	)
 	if err != nil {
 		return nil, err
@@ -640,6 +674,10 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
+	runMode := core.MessageCommitMode
+	if isMsgForPrefetch {
+		runMode = core.MessageReplayMode
+	}
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -648,6 +686,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		s.bc.Config(),
 		isMsgForPrefetch,
+		runMode,
 	)
 
 	return block, statedb, receipts, err
@@ -942,4 +981,17 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			}
 		}
 	})
+	if !s.disableStylusCacheMetricsCollection {
+		// periodically update stylus cache metrics
+		s.LaunchThread(func(ctx context.Context) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Minute):
+					programs.UpdateWasmCacheMetrics()
+				}
+			}
+		})
+	}
 }

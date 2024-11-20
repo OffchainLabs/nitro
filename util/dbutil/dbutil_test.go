@@ -28,6 +28,9 @@ func testIsNotExistError(t *testing.T, dbEngine string, isNotExist func(error) b
 	if isNotExist(err) {
 		t.Fatalf("Classified other error as not exist, err: %v", err)
 	}
+	if isNotExist(nil) {
+		t.Fatal("Classified nil as not exist")
+	}
 }
 
 func TestIsNotExistError(t *testing.T) {

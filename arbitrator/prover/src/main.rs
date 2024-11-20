@@ -8,6 +8,7 @@ use eyre::{eyre, Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
+    prepare::prepare_machine,
     utils::{file_bytes, hash_preimage, CBytes},
     wavm::Opcode,
 };
@@ -86,6 +87,10 @@ struct Opts {
     skip_until_host_io: bool,
     #[structopt(long)]
     max_steps: Option<u64>,
+    // JSON inputs supercede any of the command-line inputs which could
+    // be specified in the JSON file.
+    #[structopt(long)]
+    json_inputs: Option<PathBuf>,
 }
 
 fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
@@ -135,83 +140,8 @@ fn main() -> Result<()> {
             }
         }
     }
-    let mut inbox_contents = HashMap::default();
-    let mut inbox_position = opts.inbox_position;
-    let mut delayed_position = opts.delayed_inbox_position;
-    let inbox_header_len;
-    let delayed_header_len;
-    if opts.inbox_add_stub_headers {
-        inbox_header_len = INBOX_HEADER_LEN;
-        delayed_header_len = DELAYED_HEADER_LEN + 1;
-    } else {
-        inbox_header_len = 0;
-        delayed_header_len = 0;
-    }
 
-    for path in opts.inbox {
-        inbox_contents.insert(
-            (InboxIdentifier::Sequencer, inbox_position),
-            file_with_stub_header(&path, inbox_header_len)?,
-        );
-        println!("read file {:?} to seq. inbox {}", &path, inbox_position);
-        inbox_position += 1;
-    }
-    for path in opts.delayed_inbox {
-        inbox_contents.insert(
-            (InboxIdentifier::Delayed, delayed_position),
-            file_with_stub_header(&path, delayed_header_len)?,
-        );
-        delayed_position += 1;
-    }
-
-    let mut preimages: HashMap<PreimageType, HashMap<Bytes32, CBytes>> = HashMap::default();
-    if let Some(path) = opts.preimages {
-        let mut file = BufReader::new(File::open(path)?);
-        loop {
-            let mut ty_buf = [0u8; 1];
-            match file.read_exact(&mut ty_buf) {
-                Ok(()) => {}
-                Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(e.into()),
-            }
-            let preimage_ty: PreimageType = ty_buf[0].try_into()?;
-
-            let mut size_buf = [0u8; 8];
-            file.read_exact(&mut size_buf)?;
-            let size = u64::from_le_bytes(size_buf) as usize;
-            let mut buf = vec![0u8; size];
-            file.read_exact(&mut buf)?;
-
-            let hash = hash_preimage(&buf, preimage_ty)?;
-            preimages
-                .entry(preimage_ty)
-                .or_default()
-                .insert(hash.into(), buf.as_slice().into());
-        }
-    }
-    let preimage_resolver =
-        Arc::new(move |_, ty, hash| preimages.get(&ty).and_then(|m| m.get(&hash)).cloned())
-            as PreimageResolver;
-
-    let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
-    let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
-
-    let global_state = GlobalState {
-        u64_vals: [opts.inbox_position, opts.position_within_message],
-        bytes32_vals: [last_block_hash, last_send_root],
-    };
-
-    let mut mach = Machine::from_paths(
-        &opts.libraries,
-        &opts.binary,
-        true,
-        opts.allow_hostapi,
-        opts.debug_funcs,
-        true,
-        global_state,
-        inbox_contents,
-        preimage_resolver,
-    )?;
+    let mut mach = initialize_machine(&opts)?;
 
     for path in &opts.stylus_modules {
         let err = || eyre!("failed to read module at {}", path.to_string_lossy().red());
@@ -414,6 +344,13 @@ fn main() -> Result<()> {
         });
     }
 
+    println!(
+        "End GlobalState:\n  BlockHash: {:?}\n  SendRoot: {:?}\n  Batch: {}\n  PosInBatch: {}",
+        mach.get_global_state().bytes32_vals[0],
+        mach.get_global_state().bytes32_vals[1],
+        mach.get_global_state().u64_vals[0],
+        mach.get_global_state().u64_vals[1]
+    );
     println!("End machine status: {:?}", mach.get_status());
     println!("End machine hash: {}", mach.hash());
     println!("End machine stack: {:?}", mach.get_data_stack());
@@ -462,7 +399,6 @@ fn main() -> Result<()> {
                 }
             }
         }
-
         let opts_binary = opts.binary;
         let opts_libraries = opts.libraries;
         let format_pc = |module_num: usize, func_num: usize| -> (String, String) {
@@ -542,4 +478,88 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
     Ok(())
+}
+
+fn initialize_machine(opts: &Opts) -> eyre::Result<Machine> {
+    if let Some(json_inputs) = opts.json_inputs.clone() {
+        prepare_machine(json_inputs, opts.binary.clone())
+    } else {
+        let mut inbox_contents = HashMap::default();
+        let mut inbox_position = opts.inbox_position;
+        let mut delayed_position = opts.delayed_inbox_position;
+        let inbox_header_len;
+        let delayed_header_len;
+        if opts.inbox_add_stub_headers {
+            inbox_header_len = INBOX_HEADER_LEN;
+            delayed_header_len = DELAYED_HEADER_LEN + 1;
+        } else {
+            inbox_header_len = 0;
+            delayed_header_len = 0;
+        }
+
+        for path in opts.inbox.clone() {
+            inbox_contents.insert(
+                (InboxIdentifier::Sequencer, inbox_position),
+                file_with_stub_header(&path, inbox_header_len)?,
+            );
+            println!("read file {:?} to seq. inbox {}", &path, inbox_position);
+            inbox_position += 1;
+        }
+        for path in opts.delayed_inbox.clone() {
+            inbox_contents.insert(
+                (InboxIdentifier::Delayed, delayed_position),
+                file_with_stub_header(&path, delayed_header_len)?,
+            );
+            delayed_position += 1;
+        }
+
+        let mut preimages: HashMap<PreimageType, HashMap<Bytes32, CBytes>> = HashMap::default();
+        if let Some(path) = opts.preimages.clone() {
+            let mut file = BufReader::new(File::open(path)?);
+            loop {
+                let mut ty_buf = [0u8; 1];
+                match file.read_exact(&mut ty_buf) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
+                    Err(e) => return Err(e.into()),
+                }
+                let preimage_ty: PreimageType = ty_buf[0].try_into()?;
+
+                let mut size_buf = [0u8; 8];
+                file.read_exact(&mut size_buf)?;
+                let size = u64::from_le_bytes(size_buf) as usize;
+                let mut buf = vec![0u8; size];
+                file.read_exact(&mut buf)?;
+
+                let hash = hash_preimage(&buf, preimage_ty)?;
+                preimages
+                    .entry(preimage_ty)
+                    .or_default()
+                    .insert(hash.into(), buf.as_slice().into());
+            }
+        }
+        let preimage_resolver =
+            Arc::new(move |_, ty, hash| preimages.get(&ty).and_then(|m| m.get(&hash)).cloned())
+                as PreimageResolver;
+
+        let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
+        let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
+
+        let global_state = GlobalState {
+            u64_vals: [opts.inbox_position, opts.position_within_message],
+            bytes32_vals: [last_block_hash, last_send_root],
+        };
+
+        Machine::from_paths(
+            &opts.libraries,
+            &opts.binary,
+            true,
+            opts.allow_hostapi,
+            opts.debug_funcs,
+            true,
+            global_state,
+            inbox_contents,
+            preimage_resolver,
+        )
+    }
 }
