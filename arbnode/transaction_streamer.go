@@ -478,8 +478,11 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(seqNum arbutil.
 
 	key = dbKey(blockMetadataInputFeedPrefix, uint64(seqNum))
 	blockMetadata, err := s.db.Get(key)
-	if err != nil && !dbutil.IsErrNotFound(err) {
-		return nil, err
+	if err != nil {
+		if !dbutil.IsErrNotFound(err) {
+			return nil, err
+		}
+		blockMetadata = nil
 	}
 
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
@@ -1099,13 +1102,16 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 
 func (s *TransactionStreamer) BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error) {
 	if count == 0 {
-		return []byte{}, nil
+		return nil, nil
 	}
 	pos := count - 1
 
 	key := dbKey(blockMetadataInputFeedPrefix, uint64(pos))
 	blockMetadata, err := s.db.Get(key)
-	if err != nil && !dbutil.IsErrNotFound(err) {
+	if err != nil {
+		if dbutil.IsErrNotFound(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return blockMetadata, nil

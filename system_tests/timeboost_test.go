@@ -150,14 +150,16 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage_Timebooste
 		Require(t, err)
 		var foundUserTx bool
 		for txIndex, tx := range userTxBlock.Transactions() {
+			got, err := blockMetadataOfBlock.IsTxTimeboosted(txIndex)
+			Require(t, err)
 			if tx.Hash() == userTx.Hash() {
 				foundUserTx = true
-				if !isTimeboosted && blockMetadataOfBlock.IsTxTimeboosted(txIndex) {
+				if !isTimeboosted && got {
 					t.Fatalf("incorrect timeboosted bit for %s's tx, it shouldn't be timeboosted", user)
-				} else if isTimeboosted && !blockMetadataOfBlock.IsTxTimeboosted(txIndex) {
+				} else if isTimeboosted && !got {
 					t.Fatalf("incorrect timeboosted bit for %s's tx, it should be timeboosted", user)
 				}
-			} else if blockMetadataOfBlock.IsTxTimeboosted(txIndex) {
+			} else if got {
 				// Other tx's right now shouln't be timeboosted
 				t.Fatalf("incorrect timeboosted bit for nonspecified tx with index: %d, it shouldn't be timeboosted", txIndex)
 			}
