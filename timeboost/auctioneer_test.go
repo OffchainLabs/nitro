@@ -10,16 +10,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
@@ -134,7 +136,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 		require.NoError(t, err)
 		_, err = bob.Bid(ctx, big.NewInt(int64(i)+1), bobAddr) // Bob bids 1 wei higher than Alice.
 		require.NoError(t, err)
-		_, err = charlie.Bid(ctx, big.NewInt(int64(i)+2), charlieAddr) // Charlie bids 2 wei higher than the Bob.
+		_, err = charlie.Bid(ctx, big.NewInt(int64(i)+2), charlieAddr) // Charlie bids 2 wei higher than the Alice.
 		require.NoError(t, err)
 	}
 
@@ -153,10 +155,10 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	// We also verify the top two bids are those we expect.
 	require.Equal(t, 3, len(am.bidCache.bidsByExpressLaneControllerAddr))
 	result := am.bidCache.topTwoBids()
-	require.Equal(t, result.firstPlace.Amount, big.NewInt(6))
-	require.Equal(t, result.firstPlace.Bidder, charlieAddr)
-	require.Equal(t, result.secondPlace.Amount, big.NewInt(5))
-	require.Equal(t, result.secondPlace.Bidder, bobAddr)
+	require.Equal(t, big.NewInt(7), result.firstPlace.Amount) // Best bid should be Charlie's last bid 7
+	require.Equal(t, charlieAddr, result.firstPlace.Bidder)
+	require.Equal(t, big.NewInt(6), result.secondPlace.Amount) // Second best bid should be Bob's last bid of 6
+	require.Equal(t, bobAddr, result.secondPlace.Bidder)
 }
 
 func TestRetryUntil(t *testing.T) {

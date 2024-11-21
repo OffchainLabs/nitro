@@ -26,9 +26,9 @@ func (t *auctionCloseTicker) start() {
 	for {
 		now := time.Now()
 		// Calculate the start of the next round
-		startOfNextMinute := now.Truncate(t.roundDuration).Add(t.roundDuration)
+		startOfNextRound := now.Truncate(t.roundDuration).Add(t.roundDuration)
 		// Subtract AUCTION_CLOSING_SECONDS seconds to get the tick time
-		nextTickTime := startOfNextMinute.Add(-t.auctionClosingDuration)
+		nextTickTime := startOfNextRound.Add(-t.auctionClosingDuration)
 		// Ensure we are not setting a past tick time
 		if nextTickTime.Before(now) {
 			// If the calculated tick time is in the past, move to the next interval
@@ -76,4 +76,12 @@ func timeIntoRound(
 	secondsSinceOffset := uint64(timestamp.Sub(initialTimestamp).Seconds())
 	roundDurationSeconds := uint64(roundDuration.Seconds())
 	return secondsSinceOffset % roundDurationSeconds
+}
+
+func TimeTilNextRound(
+	initialTimestamp time.Time,
+	roundDuration time.Duration) time.Duration {
+	currentRoundNum := CurrentRound(initialTimestamp, roundDuration)
+	nextRoundStart := initialTimestamp.Add(roundDuration * arbmath.SaturatingCast[time.Duration](currentRoundNum+1))
+	return time.Until(nextRoundStart)
 }

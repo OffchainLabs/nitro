@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBidValidator_validateBid(t *testing.T) {
@@ -103,19 +104,19 @@ func TestBidValidator_validateBid(t *testing.T) {
 	for _, tt := range tests {
 		bv := BidValidator{
 			chainId:                 big.NewInt(1),
-			initialRoundTimestamp:   time.Now().Add(-time.Second),
+			initialRoundTimestamp:   time.Now().Add(-time.Second * 3),
 			reservePrice:            big.NewInt(2),
-			roundDuration:           time.Minute,
-			auctionClosingDuration:  45 * time.Second,
+			roundDuration:           10 * time.Second,
+			auctionClosingDuration:  5 * time.Second,
 			auctionContract:         setup.expressLaneAuction,
 			auctionContractAddr:     setup.expressLaneAuctionAddr,
 			bidsPerSenderInRound:    make(map[common.Address]uint8),
 			maxBidsPerSenderInRound: 5,
 		}
-		if tt.auctionClosed {
-			bv.roundDuration = 0
-		}
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.auctionClosed {
+				time.Sleep(time.Second * 3)
+			}
 			_, err := bv.validateBid(tt.bid, setup.expressLaneAuction.BalanceOf)
 			require.ErrorIs(t, err, tt.expectedErr)
 			require.Contains(t, err.Error(), tt.errMsg)

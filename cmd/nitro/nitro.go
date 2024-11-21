@@ -466,28 +466,29 @@ func mainImpl() int {
 
 	fatalErrChan := make(chan error, 10)
 
-	var blocksReExecutor *blocksreexecutor.BlocksReExecutor
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
-		blocksReExecutor, err = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
+		if !nodeConfig.Init.ThenQuit {
+			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
+			return 1
+		}
+		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
 		if err != nil {
 			log.Error("error initializing blocksReExecutor", "err", err)
 			return 1
 		}
-		if nodeConfig.Init.ThenQuit {
-			if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
-				log.Error("error populating stylus target cache", "err", err)
-				return 1
-			}
-			success := make(chan struct{})
-			blocksReExecutor.Start(ctx, success)
-			deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
-			select {
-			case err := <-fatalErrChan:
-				log.Error("shutting down due to fatal error", "err", err)
-				defer log.Error("shut down due to fatal error", "err", err)
-				return 1
-			case <-success:
-			}
+		if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+			log.Error("error populating stylus target cache", "err", err)
+			return 1
+		}
+		success := make(chan struct{})
+		blocksReExecutor.Start(ctx, success)
+		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
+		select {
+		case err := <-fatalErrChan:
+			log.Error("shutting down due to fatal error", "err", err)
+			defer log.Error("shut down due to fatal error", "err", err)
+			return 1
+		case <-success:
 		}
 	}
 
@@ -639,10 +640,6 @@ func mainImpl() int {
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
-	if blocksReExecutor != nil && !nodeConfig.Init.ThenQuit {
-		blocksReExecutor.Start(ctx, nil)
-		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
-	}
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
@@ -660,6 +657,8 @@ func mainImpl() int {
 	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Timeboost.Enable {
 		execNode.Sequencer.StartExpressLane(
 			ctx,
+			execNode.Backend.APIBackend(),
+			execNode.FilterSystem,
 			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress),
 			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress))
 	}

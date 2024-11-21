@@ -6,6 +6,9 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -13,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
@@ -21,8 +25,6 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
-	"github.com/spf13/pflag"
 )
 
 type BidderClientConfigFetcher func() *BidderClientConfig
@@ -76,7 +78,8 @@ func NewBidderClient(
 	configFetcher BidderClientConfigFetcher,
 ) (*BidderClient, error) {
 	cfg := configFetcher()
-	_, _ = cfg.BidGwei, cfg.DepositGwei
+	_ = cfg.BidGwei     // These fields are used from cmd/bidder-client
+	_ = cfg.DepositGwei // this marks them as used for the linter.
 	if cfg.AuctionContractAddress == "" {
 		return nil, fmt.Errorf("auction contract address cannot be empty")
 	}
@@ -94,10 +97,14 @@ func NewBidderClient(
 	if err != nil {
 		return nil, err
 	}
-	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{
+	var roundTimingInfo RoundTimingInfo
+	roundTimingInfo, err = auctionContract.RoundTimingInfo(&bind.CallOpts{
 		Context: ctx,
 	})
 	if err != nil {
+		return nil, err
+	}
+	if err = roundTimingInfo.Validate(nil); err != nil {
 		return nil, err
 	}
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
