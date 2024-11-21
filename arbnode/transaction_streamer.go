@@ -1164,17 +1164,33 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	return msgResult, nil
 }
 
-func (s *TransactionStreamer) checkResult(msgResult *execution.MessageResult, expectedBlockHash *common.Hash) {
-	if expectedBlockHash == nil {
+func (s *TransactionStreamer) checkResult(pos arbutil.MessageIndex, msgResult *execution.MessageResult, msgAndBlockInfo *arbostypes.MessageWithMetadataAndBlockInfo) {
+	if msgAndBlockInfo.BlockHash == nil {
 		return
 	}
-	if msgResult.BlockHash != *expectedBlockHash {
+	if msgResult.BlockHash != *msgAndBlockInfo.BlockHash {
 		log.Error(
 			BlockHashMismatchLogMsg,
-			"expected", expectedBlockHash,
+			"expected", msgAndBlockInfo.BlockHash,
 			"actual", msgResult.BlockHash,
 		)
-		return
+		// Try deleting the existing blockMetadata for this block in arbDB and set it as missing
+		if msgAndBlockInfo.BlockMetadata != nil {
+			batch := s.db.NewBatch()
+			if err := batch.Delete(dbKey(blockMetadataInputFeedPrefix, uint64(pos))); err != nil {
+				log.Error("error deleting blockMetadata of block whose BlockHash from feed doesn't match locally computed hash", "msgSeqNum", pos, "err", err)
+				return
+			}
+			if s.trackBlockMetadataFrom != 0 && pos >= s.trackBlockMetadataFrom {
+				if err := batch.Put(dbKey(missingBlockMetadataInputFeedPrefix, uint64(pos)), nil); err != nil {
+					log.Error("error marking deleted blockMetadata as missing in arbDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgSeqNum", pos, "err", err)
+					return
+				}
+			}
+			if err := batch.Write(); err != nil {
+				log.Error("error writing batch that deletes blockMetadata of the block whose BlockHash from feed doesn't match locally computed hash", "msgSeqNum", pos, "err", err)
+			}
+		}
 	}
 }
 
@@ -1242,7 +1258,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 	}
 
 	// we just log the error but not update the value in db itself with msgResult.BlockHash? and instead forward the new block hash
-	s.checkResult(msgResult, msgAndBlockInfo.BlockHash)
+	s.checkResult(pos, msgResult, msgAndBlockInfo)
 
 	batch := s.db.NewBatch()
 	err = s.storeResult(pos, *msgResult, batch)

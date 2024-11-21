@@ -563,6 +563,7 @@ func setupExpressLaneAuction(
 		ExpressLaneAdvantage:  time.Second * 5,
 		SequencerHTTPEndpoint: fmt.Sprintf("http://localhost:%d", seqPort),
 	}
+	builderSeq.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	cleanupSeq := builderSeq.Build(t)
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
