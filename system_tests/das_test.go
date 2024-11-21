@@ -7,20 +7,15 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"io"
-	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
-	"os"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -195,7 +190,7 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *e
 }
 
 func TestDASComplexConfigAndRestMirror(t *testing.T) {
-	initTest(t)
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -303,24 +298,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	err = restServer.Shutdown()
 	Require(t, err)
-}
-
-func enableLogging(logLvl int) {
-	glogger := log.NewGlogHandler(
-		log.NewTerminalHandler(io.Writer(os.Stderr), false))
-	glogger.Verbosity(slog.Level(logLvl))
-	log.SetDefault(log.NewLogger(glogger))
-}
-
-func initTest(t *testing.T) {
-	t.Parallel()
-	loggingStr := os.Getenv("LOGGING")
-	if len(loggingStr) > 0 {
-		var err error
-		logLvl, err := strconv.Atoi(loggingStr)
-		Require(t, err, "Failed to parse string")
-		enableLogging(logLvl)
-	}
 }
 
 func TestDASBatchPosterFallback(t *testing.T) {
