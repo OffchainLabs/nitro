@@ -34,6 +34,7 @@ import (
 
 type incorrectBlockStateProvider struct {
 	honest              *bold.BOLDStateProvider
+	chain               protocol.AssertionChain
 	wrongAtFirstVirtual bool
 	wrongAtBlockHeight  uint64
 	honestMachineHash   common.Hash
@@ -44,9 +45,9 @@ func (s *incorrectBlockStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
 	previousGlobalState *protocol.GoGlobalState,
-	maxNumberOfBlocks uint64,
 ) (*protocol.ExecutionState, error) {
-	executionState, err := s.honest.ExecutionStateAfterPreviousState(ctx, maxInboxCount, previousGlobalState, maxNumberOfBlocks)
+	maxNumberOfBlocks := s.chain.SpecChallengeManager().LayerZeroHeights().BlockChallengeHeight.Uint64()
+	executionState, err := s.honest.ExecutionStateAfterPreviousState(ctx, maxInboxCount, previousGlobalState)
 	if err != nil {
 		return nil, err
 	}
@@ -160,6 +161,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	_, cleanupEvilChallengeManager := startBoldChallengeManager(t, ctx, builder, evilNode, "EvilAsserter", func(stateManager BoldStateProviderInterface) BoldStateProviderInterface {
 		p := &incorrectBlockStateProvider{
 			honest:              stateManager.(*bold.BOLDStateProvider),
+			chain:               assertionChain,
 			wrongAtFirstVirtual: wrongAtFirstVirtual,
 		}
 		if !wrongAtFirstVirtual {

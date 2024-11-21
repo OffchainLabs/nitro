@@ -86,7 +86,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
-	l2chainConfig := params.ArbitrumDevTestChainConfig()
+	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -502,7 +502,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	}
 	nodeConfig.ParentChainReader.OldHeaderTimeout = time.Minute * 10
 	if chainConfig == nil {
-		chainConfig = params.ArbitrumDevTestChainConfig()
+		chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	fatalErrChan := make(chan error, 10)
@@ -659,14 +659,14 @@ func deployContractsOnly(
 		genesisInboxCount,
 		anyTrustFastConfirmer,
 		challengetesting.WithLayerZeroHeights(&protocol.LayerZeroHeights{
-			BlockChallengeHeight:     blockChallengeLeafHeight,
-			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
-			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
+			BlockChallengeHeight:     protocol.Height(blockChallengeLeafHeight),
+			BigStepChallengeHeight:   protocol.Height(bigStepChallengeLeafHeight),
+			SmallStepChallengeHeight: protocol.Height(smallStepChallengeLeafHeight),
 		}),
 		challengetesting.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
 		challengetesting.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
 	)
-	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
+	config, err := json.Marshal(chaininfo.ArbitrumDevTestChainConfig())
 	Require(t, err)
 	cfg.ChainConfig = string(config)
 	addresses, err := setup.DeployFullRollupStack(

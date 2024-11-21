@@ -24,6 +24,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util"
@@ -42,7 +43,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx)
+	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, 1<<5)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
@@ -157,7 +158,8 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	// t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx)
+	maxNumBlocks := uint64(1 << 14)
+	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, maxNumBlocks)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
@@ -215,8 +217,6 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 	}
 
-	maxBlocks := uint64(1 << 14)
-
 	t.Run("StatesInBatchRange", func(t *testing.T) {
 		toBatch := uint64(3)
 		toHeight := l2stateprovider.Height(10)
@@ -249,7 +249,6 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 				Batch:      0,
 				PosInBatch: 1,
 			},
-			maxBlocks,
 		)
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
@@ -266,7 +265,6 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 				Batch:      0,
 				PosInBatch: 0,
 			},
-			maxBlocks,
 		)
 		Require(t, err)
 		if genesis == nil {
@@ -278,7 +276,6 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 			ctx,
 			2,
 			&genesis.GlobalState,
-			maxBlocks,
 		)
 		Require(t, err)
 		if first == nil {
@@ -290,7 +287,6 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 			ctx,
 			10,
 			&first.GlobalState,
-			maxBlocks,
 		)
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
@@ -309,7 +305,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 			SendRoot:  result.SendRoot,
 			Batch:     3,
 		}
-		got, err := stateManager.ExecutionStateAfterPreviousState(ctx, 3, &first.GlobalState, maxBlocks)
+		got, err := stateManager.ExecutionStateAfterPreviousState(ctx, 3, &first.GlobalState)
 		Require(t, err)
 		if state.Batch != got.GlobalState.Batch {
 			Fatal(t, "wrong batch")
@@ -327,7 +323,6 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 			ctx,
 			state.Batch+1,
 			&got.GlobalState,
-			maxBlocks,
 		)
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
@@ -337,7 +332,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 	})
 	t.Run("ExecutionStateAfterBatchCount", func(t *testing.T) {
-		_, err = stateManager.ExecutionStateAfterPreviousState(ctx, 0, &protocol.GoGlobalState{}, maxBlocks)
+		_, err = stateManager.ExecutionStateAfterPreviousState(ctx, 0, &protocol.GoGlobalState{})
 		if err == nil {
 			Fatal(t, "should have failed")
 		}
@@ -345,9 +340,9 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 			Fatal(t, "wrong error message", err)
 		}
 
-		genesis, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &protocol.GoGlobalState{}, maxBlocks)
+		genesis, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &protocol.GoGlobalState{})
 		Require(t, err)
-		execState, err := stateManager.ExecutionStateAfterPreviousState(ctx, totalBatches, &genesis.GlobalState, maxBlocks)
+		execState, err := stateManager.ExecutionStateAfterPreviousState(ctx, totalBatches, &genesis.GlobalState)
 		Require(t, err)
 		if execState == nil {
 			Fatal(t, "should not be nil")
@@ -355,9 +350,9 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	})
 }
 
-func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *bold.BOLDStateProvider, *staker.BlockValidator) {
+func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHeight uint64) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *bold.BOLDStateProvider, *staker.BlockValidator) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
-	l2chainConfig := params.ArbitrumDevTestChainConfig()
+	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -400,7 +395,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
-		l2stateprovider.Height(blockChallengeLeafHeight),
+		l2stateprovider.Height(blockChallengeHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "",
 			MachineLeavesCachePath: t.TempDir(),
