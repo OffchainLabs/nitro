@@ -21,6 +21,7 @@ go_library(
         "//runtime",
         "//state-commitments/history",
         "//time",
+        "@com_github_ccoveille_go_safecast//:go-safecast",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//core/types",

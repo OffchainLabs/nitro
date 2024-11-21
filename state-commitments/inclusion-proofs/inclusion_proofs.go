@@ -1,17 +1,21 @@
-// Package inclusionproofs defines a series of utilities for generating and verifying
-// traditional Merkle proofs of data.
-//
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
+// Package inclusionproofs defines a series of utilities for generating and
+// verifying traditional Merkle proofs of data.
 package inclusionproofs
 
 import (
-	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/pkg/errors"
 	"runtime"
 	"sync"
+
+	"github.com/pkg/errors"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 )
 
 var (

@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package prefixproofs_test
 
@@ -10,18 +11,22 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/offchainlabs/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
-	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
-	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
-	"github.com/stretchr/testify/require"
+
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	"github.com/offchainlabs/bold/containers/option"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	"github.com/offchainlabs/bold/solgen/go/mocksgen"
+	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/bold/testing/casttest"
+	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 )
 
 func TestAppendCompleteSubTree(t *testing.T) {
@@ -97,11 +102,15 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	fromMessageNumber := l2stateprovider.Height(3)
 	toMessageNumber := l2stateprovider.Height(7)
 	req := &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              wasmModuleRoot,
-		FromBatch:                   0,
-		ToBatch:                     10,
+		AssertionMetadata: &l2stateprovider.AssociatedAssertionMetadata{
+			WasmModuleRoot: wasmModuleRoot,
+			FromState: protocol.GoGlobalState{
+				Batch:      0,
+				PosInBatch: uint64(startMessageNumber),
+			},
+			BatchLimit: 10,
+		},
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		FromHeight:                  startMessageNumber,
 		UpToHeight:                  option.Some(l2stateprovider.Height(fromMessageNumber)),
 	}
 	loCommit, err := manager.HistoryCommitment(ctx, req)
@@ -167,11 +176,15 @@ func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
 	fromMessageNumber := l2stateprovider.Height(3)
 	toMessageNumber := l2stateprovider.Height(6)
 	req := &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              wasmModuleRoot,
-		FromBatch:                   0,
-		ToBatch:                     10,
+		AssertionMetadata: &l2stateprovider.AssociatedAssertionMetadata{
+			WasmModuleRoot: wasmModuleRoot,
+			FromState: protocol.GoGlobalState{
+				Batch:      0,
+				PosInBatch: uint64(startMessageNumber),
+			},
+			BatchLimit: 10,
+		},
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		FromHeight:                  startMessageNumber,
 		UpToHeight:                  option.Some(l2stateprovider.Height(fromMessageNumber)),
 	}
 	loCommit, err := manager.HistoryCommitment(ctx, req)
@@ -245,23 +258,27 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 	wasmModuleRoot := common.Hash{}
 	batch := l2stateprovider.Batch(1)
 	req := &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              wasmModuleRoot,
-		FromBatch:                   0,
-		ToBatch:                     batch,
+		AssertionMetadata: &l2stateprovider.AssociatedAssertionMetadata{
+			WasmModuleRoot: wasmModuleRoot,
+			FromState: protocol.GoGlobalState{
+				Batch:      0,
+				PosInBatch: 3,
+			},
+			BatchLimit: batch,
+		},
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		FromHeight:                  3,
 		UpToHeight:                  option.None[l2stateprovider.Height](),
 	}
 	loCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(f, err)
-	req.FromHeight = 7
+	req.AssertionMetadata.FromState.PosInBatch = 7
 	hiCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(f, err)
 
 	fromMessageNumber := l2stateprovider.Height(3)
 	toMessageNumber := l2stateprovider.Height(7)
 
-	req.FromHeight = 0
+	req.AssertionMetadata.FromState.PosInBatch = 0
 	req.UpToHeight = option.Some(toMessageNumber)
 	packedProof, err := manager.PrefixProof(ctx, req, fromMessageNumber)
 	require.NoError(f, err)
@@ -376,9 +393,9 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 		solErr := merkleTreeContract.VerifyPrefixProof(
 			opts,
 			cfg.PreRoot,
-			big.NewInt(int64(cfg.PreSize)),
+			big.NewInt(casttest.ToInt64(t, cfg.PreSize)),
 			cfg.PostRoot,
-			big.NewInt(int64(cfg.PostSize)),
+			big.NewInt(casttest.ToInt64(t, cfg.PostSize)),
 			preArray,
 			proofArray,
 		)
@@ -417,7 +434,9 @@ func FuzzPrefixProof_MaximumAppendBetween_GoSolidityEquivalence(f *testing.F) {
 	opts := &bind.CallOpts{}
 	f.Fuzz(func(t *testing.T, pre, post uint64) {
 		gotGo, err1 := prefixproofs.MaximumAppendBetween(pre, post)
-		gotSol, err2 := merkleTreeContract.MaximumAppendBetween(opts, big.NewInt(int64(pre)), big.NewInt(int64(post)))
+		preBig := big.NewInt(casttest.ToInt64(t, pre))
+		postBig := big.NewInt(casttest.ToInt64(t, post))
+		gotSol, err2 := merkleTreeContract.MaximumAppendBetween(opts, preBig, postBig)
 		if err1 == nil && err2 == nil {
 			if !gotSol.IsUint64() {
 				t.Fatal("sol result was not a uint64")
@@ -449,7 +468,7 @@ func FuzzPrefixProof_BitUtils_GoSolidityEquivalence(f *testing.F) {
 	merkleTreeContract, _ := setupMerkleTreeContract(f)
 	opts := &bind.CallOpts{}
 	f.Fuzz(func(t *testing.T, x uint64) {
-		lsbSol, _ := merkleTreeContract.LeastSignificantBit(opts, big.NewInt(int64(x)))
+		lsbSol, _ := merkleTreeContract.LeastSignificantBit(opts, big.NewInt(casttest.ToInt64(t, x)))
 		lsbGo, _ := prefixproofs.LeastSignificantBit(x)
 		if lsbSol != nil {
 			if !lsbSol.IsUint64() {
@@ -459,7 +478,7 @@ func FuzzPrefixProof_BitUtils_GoSolidityEquivalence(f *testing.F) {
 				t.Errorf("Mismatch lsb sol=%d, go=%d", lsbSol, lsbGo)
 			}
 		}
-		msbSol, _ := merkleTreeContract.MostSignificantBit(opts, big.NewInt(int64(x)))
+		msbSol, _ := merkleTreeContract.MostSignificantBit(opts, big.NewInt(casttest.ToInt64(t, x)))
 		msbGo, _ := prefixproofs.MostSignificantBit(x)
 		if msbSol != nil {
 			if !msbSol.IsUint64() {
@@ -505,7 +524,7 @@ func runBitEquivalenceTest(
 		{num: 1<<32 - 1},
 		{num: 10231920391293},
 	} {
-		lsbSol, err := solFunc(opts, big.NewInt(int64(tt.num)))
+		lsbSol, err := solFunc(opts, big.NewInt(casttest.ToInt64(t, tt.num)))
 		if tt.wantSolErr {
 			require.NotNil(t, err)
 			require.ErrorContains(t, err, tt.solErr)

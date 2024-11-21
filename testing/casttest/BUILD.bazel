@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "casttest",
+    srcs = ["safe.go"],
+    importpath = "github.com/offchainlabs/bold/testing/casttest",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_ccoveille_go_safecast//:go-safecast",
+        "@com_github_stretchr_testify//require",
+    ],
+)

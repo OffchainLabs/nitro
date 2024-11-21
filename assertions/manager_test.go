@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package assertions_test
 
@@ -10,25 +11,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/bold/assertions"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	challengemanager "github.com/offchainlabs/bold/challenge-manager"
+	cm "github.com/offchainlabs/bold/challenge-manager"
 	"github.com/offchainlabs/bold/challenge-manager/types"
 	retry "github.com/offchainlabs/bold/runtime"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
+	"github.com/offchainlabs/bold/testing/casttest"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
-	setup, err := setup.ChainsWithEdgeChallengeManager(
+	testData, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockOneStepProver(),
 		setup.WithMockBridge(),
 		setup.WithChallengeTestingOpts(
@@ -41,44 +45,64 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	bridgeBindings, err := mocksgen.NewBridgeStub(setup.Addrs.Bridge, setup.Backend)
+	bridgeBindings, err := mocksgen.NewBridgeStub(testData.Addrs.Bridge, testData.Backend)
 	require.NoError(t, err)
 
-	msgCount, err := bridgeBindings.SequencerMessageCount(setup.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
+	msgCount, err := bridgeBindings.SequencerMessageCount(testData.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), msgCount.Uint64())
 
-	aliceChain := setup.Chains[0]
-	bobChain := setup.Chains[1]
+	aliceChain := testData.Chains[0]
+	bobChain := testData.Chains[1]
+	charlieChain := testData.Chains[2]
 
 	ctx := context.Background()
-	genesisHash, err := setup.Chains[1].GenesisAssertionHash(ctx)
+	genesisHash, err := testData.Chains[1].GenesisAssertionHash(ctx)
 	require.NoError(t, err)
-	genesisCreationInfo, err := setup.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
+	genesisCreationInfo, err := testData.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
 	require.NoError(t, err)
 
-	stateManagerOpts := setup.StateManagerOpts
+	stateManagerOpts := testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
 		statemanager.WithNumBatchesRead(5),
 	)
-	aliceStateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
+	aliceStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	// Bob diverges from Alice at batch 1.
-	stateManagerOpts = setup.StateManagerOpts
+	stateManagerOpts = testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
 		statemanager.WithNumBatchesRead(5),
 		statemanager.WithBlockDivergenceHeight(1),
 		statemanager.WithMachineDivergenceStep(1),
 	)
-	bobStateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
+	bobStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
+	aliceChalManager, err := cm.NewChallengeStack(
+		aliceChain,
+		aliceStateManager,
+		cm.StackWithMode(types.DefensiveMode),
+		cm.StackWithName("alice"),
+	)
+	require.NoError(t, err)
+	aliceChalManager.Start(ctx)
+
 	// We have bob post an assertion at batch 1.
+	//
+	// It is important that this assertion is posted after alice's challenge
+	// manager is started, and before Charlie's assertion manager is started. If
+	// this happens before alice's challenge manager then, alice and charlie will
+	// race to post the rival assertion to the one from bob. Even though, alice's
+	// polling interval is a minute, the very first time she poll's, she'll
+	// already see bob's rival assertion and attempt to post the rival. Only one
+	// rival assertion can be posted with identical content, so, if alice wins,
+	// charlie's attempt below will fail because the rival assertion he is trying
+	// to post already exists.
 	genesisGlobalState := protocol.GoGlobalStateFromSolidity(genesisCreationInfo.AfterState.GlobalState)
-	bobPostState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisGlobalState, 1<<26)
+	bobPostState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisGlobalState)
 	require.NoError(t, err)
 	t.Logf("%+v", bobPostState)
 	bobAssertion, err := bobChain.NewStakeOnNewAssertion(
@@ -90,52 +114,35 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	bobAssertionInfo, err := bobChain.ReadAssertionCreationInfo(ctx, bobAssertion.Id())
 	require.NoError(t, err)
 
-	// We have Alice process the assertion and post a rival, honest assertion to the one
-	// at batch 1.
-	aliceChalManager, err := challengemanager.New(
-		ctx,
-		aliceChain,
-		aliceStateManager,
-		setup.Addrs.Rollup,
-		challengemanager.WithMode(types.DefensiveMode),
-	)
-	require.NoError(t, err)
-	aliceChalManager.Start(ctx)
-
 	// Setup an assertion manager for Charlie, and have it process Alice's
-	// assertion creation event at batch 4.
-	aliceAssertionManager, err := assertions.NewManager(
-		aliceChain,
+	// assertion creation event at batch 1.
+	charlieAssertionManager, err := assertions.NewManager(
+		charlieChain,
 		aliceStateManager,
-		setup.Backend,
-		aliceChalManager,
-		aliceChain.RollupAddress(),
-		aliceChalManager.ChallengeManagerAddress(),
-		"alice",
-		time.Millisecond*200, // poll interval for assertions
-		time.Hour,            // confirmation attempt interval
-		aliceStateManager,
-		time.Hour, // poll interval
-		time.Second*1,
-		nil,
+		"charlie",
+		types.DefensiveMode,
+		assertions.WithPollingInterval(time.Millisecond*200),
+		assertions.WithAverageBlockCreationTime(time.Second),
 		assertions.WithPostingDisabled(),
 	)
 	require.NoError(t, err)
+	charlieAssertionManager.SetRivalHandler(aliceChalManager)
 
-	aliceAssertionManager.Start(ctx)
+	charlieAssertionManager.Start(ctx)
 
-	// Check that Alice submitted a rival to Bob's assertion after some time.
+	// Check that charlie submitted a rival to Bob's assertion after some time.
+	// Charlie does this because he agrees with Alice's assertion at batch 1.
 	time.Sleep(time.Second)
-	require.Equal(t, uint64(1), aliceAssertionManager.SubmittedRivals())
+	require.Equal(t, uint64(1), charlieAssertionManager.SubmittedRivals())
 
 	// We have bob post an assertion at batch 2.
 	dataHash := [32]byte{1}
 	enqueueSequencerMessageAsExecutor(
 		t,
-		setup.Accounts[0].TxOpts,
-		setup.Addrs.UpgradeExecutor,
-		setup.Backend,
-		setup.Addrs.Bridge,
+		testData.Accounts[0].TxOpts,
+		testData.Addrs.UpgradeExecutor,
+		testData.Backend,
+		testData.Addrs.Bridge,
 		seqMessage{
 			dataHash:                 dataHash,
 			afterDelayedMessagesRead: big.NewInt(1),
@@ -144,11 +151,11 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 		},
 	)
 
-	genesisState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 0, nil, 1<<26)
+	genesisState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 0, nil)
 	require.NoError(t, err)
-	preState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisState.GlobalState, 1<<26)
+	preState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisState.GlobalState)
 	require.NoError(t, err)
-	bobPostState, err = bobStateManager.ExecutionStateAfterPreviousState(ctx, 2, &preState.GlobalState, 1<<26)
+	bobPostState, err = bobStateManager.ExecutionStateAfterPreviousState(ctx, 2, &preState.GlobalState)
 	require.NoError(t, err)
 	_, err = bobChain.StakeOnNewAssertion(
 		ctx,
@@ -157,11 +164,11 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Once Alice sees this, she should do nothing as it is from a bad fork and
-	// she already posted the correct child to their earliest valid ancestor here.
-	// We should only have attempted to submit 1 honest rival.
+	// Once Charlie sees this, he should do nothing as it is from a bad fork and
+	// he already posted the correct child to their earliest valid ancestor here.
+	// Charlie should only have attempted to submit 1 honest rival.
 	time.Sleep(time.Second)
-	require.Equal(t, uint64(1), aliceAssertionManager.SubmittedRivals())
+	require.Equal(t, uint64(1), charlieAssertionManager.SubmittedRivals())
 }
 
 func TestComplexAssertionForkScenario(t *testing.T) {
@@ -171,7 +178,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	//
 	// and then we have another validator that disagrees with 4, so Charlie
 	// should open a 4' that branches off 3.
-	setup, err := setup.ChainsWithEdgeChallengeManager(
+	testData, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockOneStepProver(),
 		setup.WithChallengeTestingOpts(
 			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
@@ -183,44 +190,44 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	bridgeBindings, err := mocksgen.NewBridgeStub(setup.Addrs.Bridge, setup.Backend)
+	bridgeBindings, err := mocksgen.NewBridgeStub(testData.Addrs.Bridge, testData.Backend)
 	require.NoError(t, err)
 
-	msgCount, err := bridgeBindings.SequencerMessageCount(setup.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
+	msgCount, err := bridgeBindings.SequencerMessageCount(testData.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), msgCount.Uint64())
 
-	aliceChain := setup.Chains[0]
-	bobChain := setup.Chains[1]
+	aliceChain := testData.Chains[0]
+	bobChain := testData.Chains[1]
 
 	ctx := context.Background()
-	genesisHash, err := setup.Chains[1].GenesisAssertionHash(ctx)
+	genesisHash, err := testData.Chains[1].GenesisAssertionHash(ctx)
 	require.NoError(t, err)
-	genesisCreationInfo, err := setup.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
+	genesisCreationInfo, err := testData.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
 	require.NoError(t, err)
 
-	stateManagerOpts := setup.StateManagerOpts
+	stateManagerOpts := testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
 		statemanager.WithNumBatchesRead(5),
 	)
-	aliceStateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
+	aliceStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	// Bob diverges from Alice at batch 1.
-	stateManagerOpts = setup.StateManagerOpts
+	stateManagerOpts = testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
 		statemanager.WithNumBatchesRead(5),
 		statemanager.WithBlockDivergenceHeight(1),
 		statemanager.WithMachineDivergenceStep(1),
 	)
-	bobStateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
+	bobStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
-	genesisState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, nil, 1<<26)
+	genesisState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, nil)
 	require.NoError(t, err)
-	alicePostState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisState.GlobalState, 1<<26)
+	alicePostState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisState.GlobalState)
 	require.NoError(t, err)
 
 	t.Logf("New stake from alice at post state %+v\n", alicePostState)
@@ -231,7 +238,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	bobPostState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisState.GlobalState, 1<<26)
+	bobPostState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisState.GlobalState)
 	require.NoError(t, err)
 	_, err = bobChain.NewStakeOnNewAssertion(
 		ctx,
@@ -248,10 +255,10 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 		dataHash := [32]byte{1}
 		enqueueSequencerMessageAsExecutor(
 			t,
-			setup.Accounts[0].TxOpts,
-			setup.Addrs.UpgradeExecutor,
-			setup.Backend,
-			setup.Addrs.Bridge,
+			testData.Accounts[0].TxOpts,
+			testData.Addrs.UpgradeExecutor,
+			testData.Backend,
+			testData.Addrs.Bridge,
 			seqMessage{
 				dataHash:                 dataHash,
 				afterDelayedMessagesRead: big.NewInt(1),
@@ -264,10 +271,9 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 		prevInfo, err2 := aliceChain.ReadAssertionCreationInfo(ctx, aliceAssertion.Id())
 		require.NoError(t, err2)
 		prevGlobalState := protocol.GoGlobalStateFromSolidity(prevInfo.AfterState.GlobalState)
-		preState, err2 := aliceStateManager.ExecutionStateAfterPreviousState(ctx, uint64(batch-1), &prevGlobalState, 1<<26)
+		preState, err2 := aliceStateManager.ExecutionStateAfterPreviousState(ctx, casttest.ToUint64(t, batch-1), &prevGlobalState)
 		require.NoError(t, err2)
-		require.NoError(t, err2)
-		alicePostState, err2 = aliceStateManager.ExecutionStateAfterPreviousState(ctx, uint64(batch), &preState.GlobalState, 1<<26)
+		alicePostState, err2 = aliceStateManager.ExecutionStateAfterPreviousState(ctx, casttest.ToUint64(t, batch), &preState.GlobalState)
 		require.NoError(t, err2)
 		t.Logf("Moving stake from alice at post state %+v\n", alicePostState)
 		aliceAssertion, err = aliceChain.StakeOnNewAssertion(
@@ -280,54 +286,45 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 
 	// Charlie should process Alice's creation event and determine it disagrees with batch 4
 	// and then post the competing assertion.
-	charlieChain := setup.Chains[2]
+	charlieChain := testData.Chains[2]
 
 	stateManagerOpts = []statemanager.Opt{
 		statemanager.WithNumBatchesRead(5),
 		statemanager.WithBlockDivergenceHeight(36), // TODO: Make this more intuitive. This translates to batch 4 due to how our mock works.
 		statemanager.WithMachineDivergenceStep(1),
 	}
-	charlieStateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
+	charlieStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
-
-	chalManager, err := challengemanager.New(
-		ctx,
-		charlieChain,
-		charlieStateManager,
-		setup.Addrs.Rollup,
-		challengemanager.WithMode(types.DefensiveMode),
-	)
-	require.NoError(t, err)
-	chalManager.Start(ctx)
 
 	// Setup an assertion manager for Charlie, and have it process Alice's
 	// assertion creation event at batch 4.
 	charlieAssertionManager, err := assertions.NewManager(
 		charlieChain,
 		charlieStateManager,
-		setup.Backend,
-		chalManager,
-		charlieChain.RollupAddress(),
-		chalManager.ChallengeManagerAddress(),
 		"charlie",
-		time.Millisecond*100, // poll interval
-		time.Hour,            // confirmation attempt interval
-		charlieStateManager,
-		time.Hour, // poll interval
-		time.Second*1,
-		nil,
+		types.DefensiveMode,
+		assertions.WithPollingInterval(time.Millisecond*200),
+		assertions.WithAverageBlockCreationTime(time.Second),
 		assertions.WithPostingDisabled(),
 	)
 	require.NoError(t, err)
 
-	go charlieAssertionManager.Start(ctx)
+	chalManager, err := cm.NewChallengeStack(
+		charlieChain,
+		charlieStateManager,
+		cm.OverrideAssertionManager(charlieAssertionManager),
+		cm.StackWithMode(types.DefensiveMode),
+		cm.StackWithName("charlie"),
+	)
+	require.NoError(t, err)
+	chalManager.Start(ctx)
 
 	time.Sleep(time.Second)
 
 	// Assert that Charlie posted the rival assertion at batch 4.
 	charlieSubmitted := charlieAssertionManager.AssertionsSubmittedInProcess()
 	charlieAssertion := charlieSubmitted[0]
-	charlieAssertionInfo, err := charlieChain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: charlieAssertion})
+	charlieAssertionInfo, err := charlieChain.ReadAssertionCreationInfo(ctx, charlieAssertion)
 	require.NoError(t, err)
 	charliePostState := protocol.GoExecutionStateFromSolidity(charlieAssertionInfo.AfterState)
 
@@ -341,7 +338,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 
 func TestFastConfirmation(t *testing.T) {
 	ctx := context.Background()
-	setup, err := setup.ChainsWithEdgeChallengeManager(
+	testData, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockOneStepProver(),
 		setup.WithChallengeTestingOpts(
 			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
@@ -354,60 +351,48 @@ func TestFastConfirmation(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	bridgeBindings, err := mocksgen.NewBridgeStub(setup.Addrs.Bridge, setup.Backend)
+	bridgeBindings, err := mocksgen.NewBridgeStub(testData.Addrs.Bridge, testData.Backend)
 	require.NoError(t, err)
 
-	msgCount, err := bridgeBindings.SequencerMessageCount(setup.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
+	msgCount, err := bridgeBindings.SequencerMessageCount(testData.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), msgCount.Uint64())
 
-	aliceChain := setup.Chains[0]
+	aliceChain := testData.Chains[0]
 
-	stateManagerOpts := setup.StateManagerOpts
+	stateManagerOpts := testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
 		statemanager.WithNumBatchesRead(5),
 	)
-	stateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
-	require.NoError(t, err)
-
-	chalManager, err := challengemanager.New(
-		ctx,
-		aliceChain,
-		stateManager,
-		setup.Addrs.Rollup,
-		challengemanager.WithMode(types.ResolveMode),
-		challengemanager.WithFastConfirmation(),
-	)
-	require.NoError(t, err)
-	chalManager.Start(ctx)
-
-	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, nil, 1<<26)
-	require.NoError(t, err)
-	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &preState.GlobalState, 1<<26)
+	stateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	assertionManager, err := assertions.NewManager(
 		aliceChain,
 		stateManager,
-		setup.Backend,
-		chalManager,
-		aliceChain.RollupAddress(),
-		chalManager.ChallengeManagerAddress(),
 		"alice",
-		time.Millisecond*200, // poll interval for assertions
-		time.Hour,            // confirmation attempt interval
-		stateManager,
-		time.Millisecond*100, // poll interval
-		time.Second*1,
-		nil,
-		assertions.WithDangerousReadyToPost(),
-		assertions.WithPostingDisabled(),
+		types.ResolveMode,
+		assertions.WithPollingInterval(time.Millisecond*200),
+		assertions.WithAverageBlockCreationTime(time.Second),
 		assertions.WithFastConfirmation(),
 	)
 	require.NoError(t, err)
 
-	go assertionManager.Start(ctx)
+	chalManager, err := cm.NewChallengeStack(
+		aliceChain,
+		stateManager,
+		cm.OverrideAssertionManager(assertionManager),
+		cm.StackWithMode(types.ResolveMode),
+		cm.StackWithName("alice"),
+	)
+	require.NoError(t, err)
+	chalManager.Start(ctx)
+
+	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, nil)
+	require.NoError(t, err)
+	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &preState.GlobalState)
+	require.NoError(t, err)
 
 	time.Sleep(time.Second)
 
@@ -418,12 +403,12 @@ func TestFastConfirmation(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	expectAssertionConfirmed(t, ctx, setup.Backend, aliceChain.RollupAddress())
+	expectAssertionConfirmed(t, ctx, aliceChain.Backend(), aliceChain.RollupAddress())
 }
 
 func TestFastConfirmationWithSafe(t *testing.T) {
 	ctx := context.Background()
-	setup, err := setup.ChainsWithEdgeChallengeManager(
+	testData, err := setup.ChainsWithEdgeChallengeManager(
 		// setup.WithMockBridge(),
 		setup.WithMockOneStepProver(),
 		setup.WithChallengeTestingOpts(
@@ -437,61 +422,51 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	bridgeBindings, err := mocksgen.NewBridgeStub(setup.Addrs.Bridge, setup.Backend)
+	bridgeBindings, err := mocksgen.NewBridgeStub(testData.Addrs.Bridge, testData.Backend)
 	require.NoError(t, err)
 
-	msgCount, err := bridgeBindings.SequencerMessageCount(setup.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
+	msgCount, err := bridgeBindings.SequencerMessageCount(testData.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), msgCount.Uint64())
 
-	aliceChain := setup.Chains[0]
-	bobChain := setup.Chains[1]
+	aliceChain := testData.Chains[0]
+	bobChain := testData.Chains[1]
 
-	stateManagerOpts := setup.StateManagerOpts
+	stateManagerOpts := testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
 		statemanager.WithNumBatchesRead(5),
 	)
-	stateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
-	require.NoError(t, err)
-
-	chalManagerAlice, err := challengemanager.New(
-		ctx,
-		aliceChain,
-		stateManager,
-		setup.Addrs.Rollup,
-		challengemanager.WithMode(types.ResolveMode),
-		challengemanager.WithFastConfirmation(),
-	)
-	require.NoError(t, err)
-	chalManagerAlice.Start(ctx)
-
-	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, nil, 1<<26)
-	require.NoError(t, err)
-	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &preState.GlobalState, 1<<26)
+	stateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	assertionManagerAlice, err := assertions.NewManager(
 		aliceChain,
 		stateManager,
-		setup.Backend,
-		chalManagerAlice,
-		aliceChain.RollupAddress(),
-		chalManagerAlice.ChallengeManagerAddress(),
 		"alice",
-		time.Millisecond*200, // poll interval for assertions
-		time.Hour,            // confirmation attempt interval
-		stateManager,
-		time.Millisecond*100, // poll interval
-		time.Second*1,
-		nil,
+		types.ResolveMode,
+		assertions.WithPollingInterval(time.Millisecond*200),
+		assertions.WithAverageBlockCreationTime(time.Second),
 		assertions.WithDangerousReadyToPost(),
 		assertions.WithPostingDisabled(),
 		assertions.WithFastConfirmation(),
 	)
 	require.NoError(t, err)
 
-	go assertionManagerAlice.Start(ctx)
+	chalManagerAlice, err := cm.NewChallengeStack(
+		aliceChain,
+		stateManager,
+		cm.OverrideAssertionManager(assertionManagerAlice),
+		cm.StackWithMode(types.ResolveMode),
+		cm.StackWithName("alice"),
+	)
+	require.NoError(t, err)
+	chalManagerAlice.Start(ctx)
+
+	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, nil)
+	require.NoError(t, err)
+	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &preState.GlobalState)
+	require.NoError(t, err)
 
 	time.Sleep(time.Second)
 
@@ -501,48 +476,38 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(posted.Unwrap().AfterState))
 
 	<-time.After(time.Second)
-	status, err := aliceChain.AssertionStatus(ctx, protocol.AssertionHash{Hash: posted.Unwrap().AssertionHash})
+	status, err := aliceChain.AssertionStatus(ctx, posted.Unwrap().AssertionHash)
 	require.NoError(t, err)
 	// Just one fast confirmation is not enough to confirm the assertion.
 	require.Equal(t, protocol.AssertionPending, status)
 
-	chalManagerBob, err := challengemanager.New(
-		ctx,
-		bobChain,
-		stateManager,
-		setup.Addrs.Rollup,
-		challengemanager.WithMode(types.ResolveMode),
-		challengemanager.WithFastConfirmation(),
-	)
-	require.NoError(t, err)
-	chalManagerBob.Start(ctx)
-
 	assertionManagerBob, err := assertions.NewManager(
 		bobChain,
 		stateManager,
-		setup.Backend,
-		chalManagerBob,
-		bobChain.RollupAddress(),
-		chalManagerBob.ChallengeManagerAddress(),
 		"bob",
-		time.Millisecond*200, // poll interval for assertions
-		time.Hour,            // confirmation attempt interval
-		stateManager,
-		time.Millisecond*100, // poll interval
-		time.Second*1,
-		nil,
+		types.ResolveMode,
+		assertions.WithPollingInterval(time.Millisecond*200),
+		assertions.WithAverageBlockCreationTime(time.Second),
 		assertions.WithDangerousReadyToPost(),
 		assertions.WithPostingDisabled(),
 		assertions.WithFastConfirmation(),
 	)
 	require.NoError(t, err)
 
-	assertionManagerBob.Start(ctx)
+	chalManagerBob, err := cm.NewChallengeStack(
+		bobChain,
+		stateManager,
+		cm.OverrideAssertionManager(assertionManagerBob),
+		cm.StackWithMode(types.ResolveMode),
+		cm.StackWithName("bob"),
+	)
+	require.NoError(t, err)
+	chalManagerBob.Start(ctx)
 
 	// Only after both Alice and Bob confirm the assertion, it should be confirmed.
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	expectAssertionConfirmed(t, ctx, setup.Backend, aliceChain.RollupAddress())
+	expectAssertionConfirmed(t, ctx, aliceChain.Backend(), aliceChain.RollupAddress())
 }
 
 type seqMessage struct {

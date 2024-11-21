@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//math",
+        "@com_github_ccoveille_go_safecast//:go-safecast",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//crypto",
     ],
@@ -20,6 +21,7 @@ go_test(
     deps = [
         "//state-commitments/legacy",
         "//state-commitments/prefix-proofs",
+        "//testing/casttest",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_stretchr_testify//require",

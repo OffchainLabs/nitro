@@ -1,9 +1,10 @@
-// Package l2stateprovider defines a dependency which provides L2 states and proofs
-// needed for the challenge manager to interact with Arbitrum chains' rollup and challenge
-// contracts.
-//
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
+// Package l2stateprovider defines a dependency which provides L2 states and
+// proofs needed for the challenge manager to interact with an Arbitrum chain's
+// rollup and challenge contracts.
 package l2stateprovider
 
 import (
@@ -11,10 +12,12 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/offchainlabs/bold/api/db"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	"github.com/offchainlabs/bold/state-commitments/history"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 var ErrChainCatchingUp = errors.New("chain is catching up to the execution state")
@@ -46,8 +49,8 @@ type History struct {
 	MerkleRoot common.Hash
 }
 
-// Provider defines an L2 state backend that can provide history commitments, execution
-// states, prefix proofs, and more for the BOLD protocol.
+// Provider defines an L2 state backend that can provide history commitments,
+// execution states, prefix proofs, and more for the BoLD protocol.
 type Provider interface {
 	ExecutionProvider
 	GeneralHistoryCommitter
@@ -57,41 +60,67 @@ type Provider interface {
 }
 
 type ExecutionProvider interface {
-	// Produces the L2 execution state to assert to after the previous assertion state.
-	// Returns either the state at the batch count maxInboxCount or the state maxNumberOfBlocks after previousGlobalState,
-	// whichever is an earlier state. If previousGlobalState is nil, this function simply returns the state at maxInboxCount batches.
-	ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState *protocol.GoGlobalState, maxNumberOfBlocks uint64) (*protocol.ExecutionState, error)
+	// Produces the L2 execution state to assert to after the previous assertion
+	// state.
+	// Returns either the state at the batch count maxInboxCount (PosInBatch=0) or
+	// the state LayerZeroHeights.BlockChallengeHeight blokcs after
+	// previousGlobalState, whichever is an earlier state. If previousGlobalState
+	// is nil, this function simply returns the state at maxInboxCount batches
+	// (PosInBatch=0).
+	ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState *protocol.GoGlobalState) (*protocol.ExecutionState, error)
 }
 
+// AssociatedAssertionMetadata for the tracked edge.
+type AssociatedAssertionMetadata struct {
+	FromState protocol.GoGlobalState
+	// This assertion may not read this batch.
+	// Unless it hits the block limit, its last state in position 0 of this batch.
+	BatchLimit           Batch
+	WasmModuleRoot       common.Hash
+	ClaimedAssertionHash protocol.AssertionHash
+}
+
+// HistoryCommitmentRequest for a BoLD history commitment.
+//
+// The request specifies the metadata for the assertion which is being
+// challenged in the block level challenge, and the heights at which the
+// challenges at higher challenge levels originated.
+//
+// HistoryCommitment requestors can also specify an optional height at which to
+// end the history commitment. If none, the request will commit to all the
+// leaves at the current challenge level.
+//
+// NOTE: It is NOT possible to request a history commitment which starts at
+// some height other than 0 for the current challenge level. This is because
+// the edge tracker only needs to be able to provide history committments for
+// all machine state hases at the current challenge level, or sets of leaves
+// which are prefixes to that full set of leaves. In all cases, the first leaf
+// is the one in relative position 0 for the challenge level.
 type HistoryCommitmentRequest struct {
-	// The WasmModuleRoot for the execution of machines. This is a global parameter
-	// that is specified in the Rollup contracts.
-	WasmModuleRoot common.Hash
-	// The batch sequence number at which we want to start computing this history commitment.
-	FromBatch Batch
-	// The batch sequence number at which we want to end computing this history commitment.
-	ToBatch Batch
-	// A slice of heights that tells the backend where the subchallenges for the requested
-	// history commitment originated from.
+	// Miscellaneous metadata for assertion the commitment is being made for.
+	// Includes the WasmModuleRoot and the start and end states.
+	AssertionMetadata *AssociatedAssertionMetadata
+	// A slice of heights that tells the backend where the subchallenges for the
+	// requested history commitment originated from.
 	// Each index corresponds to a challenge level. For example,
-	// if we have three levels, where lvl 0 is the block challenge level, an input of
-	// []Height{12, 3} tells us that that the top-level subchallenge originated at height 12
-	// then the next subchallenge originated at height 3 below that.
+	// if we have three levels, where lvl 0 is the block challenge level, an
+	// input of []Height{12, 3} tells us that that the top-level subchallenge
+	// originated at height 12 then the next subchallenge originated at height
+	// 3 below that.
 	UpperChallengeOriginHeights []Height
-	// The height at which to start the history commitment.
-	FromHeight Height
-	// An optional height at which to end the history commitment. If none, the request
-	// will commit to all the leaves at the specified challenge level.
+	// An optional height at which to end the history commitment. If none, the
+	// request will commit to all the leaves at the specified challenge level.
 	UpToHeight option.Option[Height]
-	// ClaimId for the request.
-	ClaimId common.Hash
 }
 
 type GeneralHistoryCommitter interface {
+	// Request a history commitment for the machine state hashes at the current
+	// challenge level. See the HistoryCommitmentRequest struct for details.
 	HistoryCommitment(
 		ctx context.Context,
 		req *HistoryCommitmentRequest,
 	) (history.History, error)
+	UpdateAPIDatabase(db.Database)
 }
 
 type GeneralPrefixProver interface {
@@ -105,11 +134,8 @@ type GeneralPrefixProver interface {
 type OneStepProofProvider interface {
 	OneStepProofData(
 		ctx context.Context,
-		wasmModuleRoot common.Hash,
-		fromBatch,
-		toBatch Batch,
+		assertionMetadata *AssociatedAssertionMetadata,
 		upperChallengeOriginHeights []Height,
-		fromHeight,
 		upToHeight Height,
 	) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error)
 }

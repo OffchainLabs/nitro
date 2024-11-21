@@ -5,6 +5,7 @@ go_test(
     size = "small",
     srcs = ["prefixproofs_test.go"],
     deps = [
+        "//chain-abstraction:protocol",
         "//containers/option",
         "//layer2-state-provider",
         "//solgen/go/mocksgen",

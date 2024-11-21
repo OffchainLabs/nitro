@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 // Package db handles the interface to an underlying database of BOLD data
 // for easy querying of information used by the BOLD API.
 package db
@@ -8,13 +12,15 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/bold/api"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	"github.com/offchainlabs/bold/state-commitments/history"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type Database interface {
@@ -866,9 +872,27 @@ func (d *SqliteDatabase) InsertCollectMachineHash(h *api.JsonCollectMachineHashe
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	query := `INSERT INTO CollectMachineHashes (
-        WasmModuleRoot, FromBatch, BlockChallengeHeight, RawStepHeights, NumDesiredHashes, MachineStartIndex, StepSize, StartTime
+        WasmModuleRoot,
+        FromBatch,
+        PositionInBatch,
+        BatchLimit,
+        BlockChallengeHeight,
+        RawStepHeights,
+        NumDesiredHashes,
+        MachineStartIndex,
+        StepSize,
+        StartTime
     ) VALUES (
-        :WasmModuleRoot, :FromBatch, :BlockChallengeHeight, :RawStepHeights, :NumDesiredHashes, :MachineStartIndex, :StepSize, :StartTime
+        :WasmModuleRoot,
+        :FromBatch,
+        :PositionInBatch,
+        :BatchLimit,
+        :BlockChallengeHeight,
+        :RawStepHeights,
+        :NumDesiredHashes,
+        :MachineStartIndex,
+        :StepSize,
+        :StartTime
     )`
 	_, err := d.sqlDB.NamedExec(query, h)
 	if err != nil {
@@ -884,6 +908,8 @@ func (d *SqliteDatabase) UpdateCollectMachineHash(h *api.JsonCollectMachineHashe
 				FinishTime = :FinishTime
 				 WHERE WasmModuleRoot = :WasmModuleRoot
 				   AND FromBatch = :FromBatch
+				   AND PositionInBatch = :PositionInBatch
+           AND BatchLimit = :BatchLimit
 				   AND BlockChallengeHeight = :BlockChallengeHeight
 				   AND RawStepHeights = :RawStepHeights
 				   AND NumDesiredHashes = :NumDesiredHashes

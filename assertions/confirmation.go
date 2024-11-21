@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package assertions
 
 import (
@@ -6,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ccoveille/go-safecast"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/log"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/bold/challenge-manager/types"
@@ -29,7 +36,7 @@ func (m *Manager) queueCanonicalAssertionsForConfirmation(ctx context.Context) {
 
 func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertionHash protocol.AssertionHash) {
 	// Only resolve mode strategies or higher should be confirming assertions.
-	if m.challengeReader.Mode() < types.ResolveMode {
+	if m.mode < types.ResolveMode {
 		return
 	}
 	creationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
@@ -50,16 +57,14 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		return
 	}
 	prevCreationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
-		return m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+		return m.chain.ReadAssertionCreationInfo(ctx, creationInfo.ParentAssertionHash)
 	})
 	if err != nil {
 		log.Error("Could not get prev assertion creation info", "err", err)
 		return
 	}
-
 	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
-
-	ticker := time.NewTicker(m.confirmationAttemptInterval)
+	ticker := time.NewTicker(m.times.confInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -69,7 +74,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			parentAssertion, err := m.chain.GetAssertion(
 				ctx,
 				m.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}),
-				protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash},
+				creationInfo.ParentAssertionHash,
 			)
 			if err != nil {
 				log.Error("Could not get parent assertion", "err", err)
@@ -84,7 +89,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			if parentAssertionHasSecondChild {
 				return
 			}
-			confirmed, err := solimpl.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationBlock, m.chain, m.averageTimeForBlockCreation, option.None[protocol.EdgeId]())
+			confirmed, err := solimpl.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationBlock, m.chain, m.times.avgBlockTime, option.None[protocol.EdgeId]())
 			if err != nil {
 				if !strings.Contains(err.Error(), "PREV_NOT_LATEST_CONFIRMED") {
 					logLevel := log.Error
@@ -108,7 +113,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 }
 
 func (m *Manager) updateLatestConfirmedMetrics(ctx context.Context) {
-	ticker := time.NewTicker(m.confirmationAttemptInterval)
+	ticker := time.NewTicker(m.times.confInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -127,7 +132,12 @@ func (m *Manager) updateLatestConfirmedMetrics(ctx context.Context) {
 			log.Info("Latest confirmed assertion", "assertionAfterState", fmt.Sprintf("%+v", afterState))
 
 			// TODO: Check if the latest assertion that was confirmed is one we agree with.
-			latestConfirmedAssertionGauge.Update(int64(latestConfirmed.CreatedAtBlock()))
+			latestConfirmedBlockNum, err := safecast.ToInt64(latestConfirmed.CreatedAtBlock())
+			if err != nil {
+				log.Error("Could not convert latest confirmed block number to int64", "err", err)
+				continue
+			}
+			latestConfirmedAssertionGauge.Update(latestConfirmedBlockNum)
 		case <-ctx.Done():
 			return
 		}

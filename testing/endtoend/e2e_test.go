@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package endtoend
 
 import (
@@ -8,9 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/bold/api"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	challengemanager "github.com/offchainlabs/bold/challenge-manager"
+	cm "github.com/offchainlabs/bold/challenge-manager"
 	"github.com/offchainlabs/bold/challenge-manager/types"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/bold/solgen/go/mocksgen"
@@ -19,11 +29,6 @@ import (
 	"github.com/offchainlabs/bold/testing/endtoend/backend"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 )
 
 type backendKind uint8
@@ -82,8 +87,8 @@ func defaultTimeParams() timeParams {
 	}
 }
 
-// Configures info about the state of the Arbitrum Inbox
-// when a test runs, useful to set up things such as the number of batches posted.
+// Configures info about the state of the Arbitrum Inbox when a test runs,
+// useful to set up things such as the number of batches posted.
 type inboxParams struct {
 	numBatchesPosted uint64
 }
@@ -207,7 +212,8 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Validators include a chain admin, a single honest validators, and any number of evil entities.
+	// Validators include a chain admin, a single honest validator, and any
+	// number of evil entities.
 	totalValidators := cfg.actors.numEvilValidators + 2
 
 	challengeTestingOpts := []challenge_testing.Opt{
@@ -262,31 +268,28 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 		statemanager.WithNumBatchesRead(cfg.inbox.numBatchesPosted),
 		statemanager.WithLayerZeroHeights(&cfg.protocol.layerZeroHeights, cfg.protocol.numBigStepLevels),
 	}
-	honestStateManager, err := statemanager.NewForSimpleMachine(baseStateManagerOpts...)
+	honestStateManager, err := statemanager.NewForSimpleMachine(t, baseStateManagerOpts...)
 	require.NoError(t, err)
 
-	baseChallengeManagerOpts := []challengemanager.Opt{
-		challengemanager.WithMode(types.MakeMode),
-		challengemanager.WithAssertionPostingInterval(cfg.timings.assertionPostingInterval),
-		challengemanager.WithAssertionScanningInterval(cfg.timings.assertionScanningInterval),
-		challengemanager.WithAssertionConfirmingInterval(cfg.timings.assertionConfirmationAttemptInterval),
-		challengemanager.WithHeadBlockSubscriptions(),
+	baseStackOpts := []cm.StackOpt{
+		cm.StackWithMode(types.MakeMode),
+		cm.StackWithPollingInterval(cfg.timings.assertionScanningInterval),
+		cm.StackWithPostingInterval(cfg.timings.assertionPostingInterval),
+		cm.StackWithAverageBlockCreationTime(cfg.timings.blockTime),
+		cm.StackWithConfirmationInterval(cfg.timings.assertionConfirmationAttemptInterval),
+		cm.StackWithHeadBlockSubscriptionsEnabled(),
 	}
 
 	name := "honest"
 	txOpts := accounts[1]
 	//nolint:gocritic
 	honestOpts := append(
-		baseChallengeManagerOpts,
-		challengemanager.WithAddress(txOpts.From),
-		challengemanager.WithName(name),
+		baseStackOpts,
+		cm.StackWithName(name),
 	)
-	honestManager := setupChallengeManager(
-		t, ctx, bk.Client(), rollupAddr.Rollup, honestStateManager, txOpts, honestOpts...,
-	)
-	if !api.IsNil(honestManager.Database()) {
-		honestStateManager.UpdateAPIDatabase(honestManager.Database())
-	}
+	honestChain := setupAssertionChain(t, ctx, bk.Client(), rollupAddr.Rollup, txOpts)
+	honestManager, err := cm.NewChallengeStack(honestChain, honestStateManager, honestOpts...)
+	require.NoError(t, err)
 
 	// Diverge exactly at the last opcode within the block.
 	totalOpcodes := totalWasmOpcodes(&cfg.protocol.layerZeroHeights, cfg.protocol.numBigStepLevels)
@@ -295,7 +298,7 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 	assertionDivergenceHeight := uint64(1)
 	assertionBlockHeightDifference := int64(1)
 
-	evilChallengeManagers := make([]*challengemanager.Manager, cfg.actors.numEvilValidators)
+	evilChallengeManagers := make([]*cm.Manager, cfg.actors.numEvilValidators)
 	for i := uint64(0); i < cfg.actors.numEvilValidators; i++ {
 		machineDivergenceStep := randUint64(totalOpcodes)
 		//nolint:gocritic
@@ -305,21 +308,21 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 			statemanager.WithBlockDivergenceHeight(assertionDivergenceHeight),
 			statemanager.WithDivergentBlockHeightOffset(assertionBlockHeightDifference),
 		)
-		evilStateManager, err := statemanager.NewForSimpleMachine(evilStateManagerOpts...)
+		evilStateManager, err := statemanager.NewForSimpleMachine(t, evilStateManagerOpts...)
 		require.NoError(t, err)
 
-		// Honest validator has index 1 in the accounts slice, as 0 is admin, so evil ones should start at 2.
+		// Honest validator has index 1 in the accounts slice, as 0 is admin, so
+		// evil ones should start at 2.
 		txOpts = accounts[2+i]
 		name = fmt.Sprintf("evil-%d", i)
 		//nolint:gocritic
 		evilOpts := append(
-			baseChallengeManagerOpts,
-			challengemanager.WithAddress(txOpts.From),
-			challengemanager.WithName(name),
+			baseStackOpts,
+			cm.StackWithName(name),
 		)
-		evilManager := setupChallengeManager(
-			t, ctx, bk.Client(), rollupAddr.Rollup, evilStateManager, txOpts, evilOpts...,
-		)
+		evilChain := setupAssertionChain(t, ctx, bk.Client(), rollupAddr.Rollup, txOpts)
+		evilManager, err := cm.NewChallengeStack(evilChain, evilStateManager, evilOpts...)
+		require.NoError(t, err)
 		evilChallengeManagers[i] = evilManager
 	}
 

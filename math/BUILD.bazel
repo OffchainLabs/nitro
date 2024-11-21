@@ -18,13 +18,8 @@ go_test(
         "math_test.go",
     ],
     embed = [":math"],
-    deps = ["@com_github_stretchr_testify//require"],
-)
-
-go_test(
-    name = "intlog2_test",
-    size = "small",
-    srcs = ["intlog2_test.go"],
-    embed = [":math"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        "//testing/casttest",
+        "@com_github_stretchr_testify//require",
+    ],
 )

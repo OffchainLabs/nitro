@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package edgetracker
 
 import (
@@ -6,13 +10,16 @@ import (
 	"strings"
 	"time"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	retry "github.com/offchainlabs/bold/runtime"
+	"github.com/ccoveille/go-safecast"
+	"github.com/pkg/errors"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/pkg/errors"
+
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	retry "github.com/offchainlabs/bold/runtime"
 )
 
 var onchainTimerDifferAfterConfirmationJobCounter = metrics.NewRegisteredCounter("arb/validator/tracker/onchain_timer_differed_after_confirmation_job", nil)
@@ -56,23 +63,22 @@ type RoyalChallengeReader interface {
 		challengedAssertionHash protocol.AssertionHash,
 		edgeId protocol.EdgeId,
 	) ([]protocol.ReadOnlyEdge, error)
+	AvgBlockTime() time.Duration
 }
 
 func newChallengeConfirmer(
 	challengeReader RoyalChallengeReader,
 	chainWriter ChainWriter,
 	backend protocol.ChainBackend,
-	averageTimeForBlockCreation time.Duration,
 	validatorName string,
 	chain protocol.Protocol,
 ) *challengeConfirmer {
 	return &challengeConfirmer{
-		reader:                      challengeReader,
-		writer:                      chainWriter,
-		validatorName:               validatorName,
-		averageTimeForBlockCreation: averageTimeForBlockCreation,
-		backend:                     backend,
-		chain:                       chain,
+		reader:        challengeReader,
+		writer:        chainWriter,
+		validatorName: validatorName,
+		backend:       backend,
+		chain:         chain,
 	}
 }
 
@@ -312,7 +318,15 @@ func (cc *challengeConfirmer) waitForTxToBeSafe(
 
 		// If the tx is not yet safe, we can simply wait.
 		if !txSafe {
-			blocksLeftForTxToBeSafe := receipt.BlockNumber.Uint64() - latestSafeHeader.Number.Uint64()
+			var blocksLeftForTxToBeSafe int64
+			if receipt.BlockNumber.Uint64() > latestSafeHeader.Number.Uint64() {
+				blocksLeftForTxToBeSafe = 0
+			} else {
+				blocksLeftForTxToBeSafe, err = safecast.ToInt64(latestSafeHeader.Number.Uint64() - receipt.BlockNumber.Uint64())
+				if err != nil {
+					return errors.Wrap(err, "could not convert blocks left for tx to be safe to int64")
+				}
+			}
 			timeToWait := cc.averageTimeForBlockCreation * time.Duration(blocksLeftForTxToBeSafe)
 			<-time.After(timeToWait)
 		} else {

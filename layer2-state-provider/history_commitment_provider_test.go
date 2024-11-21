@@ -1,11 +1,16 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package l2stateprovider
 
 import (
 	"fmt"
 	"testing"
 
-	"github.com/offchainlabs/bold/containers/option"
 	"github.com/stretchr/testify/require"
+
+	"github.com/offchainlabs/bold/containers/option"
 )
 
 func Test_computeRequiredNumberOfHashes(t *testing.T) {
@@ -18,25 +23,14 @@ func Test_computeRequiredNumberOfHashes(t *testing.T) {
 	}
 
 	challengeLevel := uint64(0)
-	startHeight := Height(5)
 	_, err := provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		startHeight,
-		option.None[Height](),
-	)
-	require.ErrorContains(t, err, "invalid range: end 4 was < start 5")
-
-	startHeight = Height(0)
-	_, err = provider.computeRequiredNumberOfHashes(
-		challengeLevel,
-		startHeight,
 		option.Some(Height(5)),
 	)
 	require.ErrorContains(t, err, "end 5 was greater than max height for level 4")
 
 	got, err := provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		startHeight,
 		option.Some(Height(4)),
 	)
 	require.NoError(t, err)
@@ -45,7 +39,6 @@ func Test_computeRequiredNumberOfHashes(t *testing.T) {
 	challengeLevel = uint64(1)
 	got, err = provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		startHeight,
 		option.Some(Height(4)),
 	)
 	require.NoError(t, err)
@@ -53,7 +46,6 @@ func Test_computeRequiredNumberOfHashes(t *testing.T) {
 
 	got, err = provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		startHeight,
 		option.None[Height](),
 	)
 	require.NoError(t, err)
@@ -62,21 +54,18 @@ func Test_computeRequiredNumberOfHashes(t *testing.T) {
 	challengeLevel = uint64(2)
 	got, err = provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		startHeight,
 		option.None[Height](),
 	)
 	require.NoError(t, err)
 	require.Equal(t, uint64(17), got)
 
 	challengeLevel = uint64(1)
-	startHeight = Height(4)
 	got, err = provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		startHeight,
 		option.Some(Height(8)),
 	)
 	require.NoError(t, err)
-	require.Equal(t, uint64(5), got)
+	require.Equal(t, uint64(9), got)
 }
 
 func Test_computeMachineStartIndex(t *testing.T) {

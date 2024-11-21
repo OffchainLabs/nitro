@@ -1,14 +1,21 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package history
 
 import (
 	"fmt"
 	"testing"
 
-	"github.com/offchainlabs/bold/state-commitments/legacy"
-	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/stretchr/testify/require"
+
+	"github.com/offchainlabs/bold/state-commitments/legacy"
+	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/bold/testing/casttest"
 )
 
 func FuzzHistoryCommitter(f *testing.F) {
@@ -46,7 +53,7 @@ func BenchmarkPrefixProofGeneration_Legacy(b *testing.B) {
 		prefixExpansion, err := prefixproofs.ExpansionFromLeaves(hashes[:lowCommitmentNumLeaves])
 		require.NoError(b, err)
 		_, err = prefixproofs.GeneratePrefixProof(
-			uint64(lowCommitmentNumLeaves),
+			casttest.ToUint64(b, lowCommitmentNumLeaves),
 			prefixExpansion,
 			hashes[lowCommitmentNumLeaves:hiCommitmentNumLeaves],
 			prefixproofs.RootFetcherFromExpansion,
@@ -210,7 +217,7 @@ func TestLegacyVsOptimizedEdgeCases(t *testing.T) {
 				inputLeaves[i] = simpleHash
 			}
 			committer := newCommitter()
-			computedRoot, err := committer.computeRoot(inputLeaves, uint64(tt.virtualLength))
+			computedRoot, err := committer.computeRoot(inputLeaves, casttest.ToUint64(t, tt.virtualLength))
 			require.NoError(t, err)
 
 			leaves := make([]common.Hash, tt.virtualLength)

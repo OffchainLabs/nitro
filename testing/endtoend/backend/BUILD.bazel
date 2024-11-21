@@ -30,6 +30,7 @@ go_library(
 
 go_test(
     name = "backend_test",
+    size = "small",
     srcs = ["anvil_local_test.go"],
     embed = [":backend"],
     tags = [

@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package challengetree
 
@@ -11,15 +12,28 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/common"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/challenge-manager/challenge-tree/mock"
 	"github.com/offchainlabs/bold/containers/option"
 	"github.com/offchainlabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/testing/mocks"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
 )
+
+func simpleAssertionMetadata() *l2stateprovider.AssociatedAssertionMetadata {
+	return &l2stateprovider.AssociatedAssertionMetadata{
+		WasmModuleRoot: common.Hash{},
+		FromState: protocol.GoGlobalState{
+			Batch:      0,
+			PosInBatch: 0,
+		},
+		BatchLimit: 1,
+	}
+}
 
 func TestAddEdge(t *testing.T) {
 	ht := &RoyalChallengeTree{
@@ -72,12 +86,9 @@ func TestAddEdge(t *testing.T) {
 			ctx,
 			protocol.NewBlockChallengeLevel(),
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              common.Hash{},
-				FromBatch:                   0,
-				ToBatch:                     0,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
-				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(end)),
+				UpToHeight:                  option.Some(l2stateprovider.Height(end)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(start),
@@ -89,12 +100,9 @@ func TestAddEdge(t *testing.T) {
 			ctx,
 			protocol.NewBlockChallengeLevel(),
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              common.Hash{},
-				FromBatch:                   0,
-				ToBatch:                     0,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
-				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(end)),
+				UpToHeight:                  option.Some(l2stateprovider.Height(end)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(end),
@@ -118,12 +126,9 @@ func TestAddEdge(t *testing.T) {
 			ctx,
 			protocol.NewBlockChallengeLevel(),
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              common.Hash{},
-				FromBatch:                   0,
-				ToBatch:                     0,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
-				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
+				UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),
@@ -161,12 +166,9 @@ func TestAddEdge(t *testing.T) {
 			ctx,
 			protocol.NewBlockChallengeLevel(),
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              common.Hash{},
-				FromBatch:                   0,
-				ToBatch:                     0,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
-				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
+				UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(startHeight),
@@ -178,12 +180,9 @@ func TestAddEdge(t *testing.T) {
 			ctx,
 			protocol.NewBlockChallengeLevel(),
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              common.Hash{},
-				FromBatch:                   0,
-				ToBatch:                     0,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
-				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
+				UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),
@@ -223,12 +222,9 @@ func TestAddEdge(t *testing.T) {
 			ctx,
 			protocol.NewBlockChallengeLevel(),
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              common.Hash{},
-				FromBatch:                   0,
-				ToBatch:                     0,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
-				UpToHeight:                  option.Some[l2stateprovider.Height](l2stateprovider.Height(endHeight)),
+				UpToHeight:                  option.Some(l2stateprovider.Height(endHeight)),
 			},
 			l2stateprovider.History{
 				Height:     uint64(endHeight),
@@ -321,8 +317,8 @@ func (m *mockMetadataReader) TopLevelClaimHeights(
 	return m.claimHeights, m.claimHeightsErr
 }
 
-func (m *mockMetadataReader) SpecChallengeManager(_ context.Context) (protocol.SpecChallengeManager, error) {
-	return m.mockManager, nil
+func (m *mockMetadataReader) SpecChallengeManager() protocol.SpecChallengeManager {
+	return m.mockManager
 }
 func (m *mockMetadataReader) ReadAssertionCreationInfo(
 	_ context.Context, _ protocol.AssertionHash,

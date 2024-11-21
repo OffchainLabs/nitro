@@ -1,19 +1,21 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 // Package challengetree includes logic for keeping track of royal edges within a challenge
 // with utilities for computing cumulative path timers for said edges. This is helpful during
 // the confirmation process needed by edge trackers.
-//
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 package challengetree
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/pkg/errors"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/pkg/errors"
 )
 
 // MetadataReader can read certain information about edges from the backend.
@@ -21,7 +23,7 @@ type MetadataReader interface {
 	AssertionUnrivaledBlocks(ctx context.Context, assertionHash protocol.AssertionHash) (uint64, error)
 	TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionHash, error)
 	TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (protocol.OriginHeights, error)
-	SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error)
+	SpecChallengeManager() protocol.SpecChallengeManager
 	ReadAssertionCreationInfo(
 		ctx context.Context, id protocol.AssertionHash,
 	) (*protocol.AssertionCreatedInfo, error)

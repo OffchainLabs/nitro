@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package inclusionproofs
 
@@ -7,9 +8,12 @@ import (
 	"fmt"
 	"testing"
 
-	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/common"
+
+	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/bold/testing/casttest"
 )
 
 func TestInclusionProof(t *testing.T) {
@@ -47,7 +51,7 @@ func TestInclusionProof(t *testing.T) {
 		require.Equal(t, root, computedRoot)
 	})
 	t.Run("last leaf proof", func(t *testing.T) {
-		index = uint64(len(leaves) - 1)
+		index = casttest.ToUint64(t, len(leaves)-1)
 		proof, err = GenerateInclusionProof(leaves, index)
 		require.NoError(t, err)
 		require.Equal(t, true, len(proof) > 0)

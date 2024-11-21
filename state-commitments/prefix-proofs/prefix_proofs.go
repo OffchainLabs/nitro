@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 // Package prefixproofs defines utilities for creating Merkle prefix proofs for binary
 // trees. It is used extensively in the challenge protocol for making challenge moves on-chain.
@@ -106,9 +107,11 @@ import (
 	"math"
 	"math/bits"
 
+	"github.com/ccoveille/go-safecast"
+	"github.com/pkg/errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -136,7 +139,11 @@ func LeastSignificantBit(x uint64) (uint64, error) {
 	if x == 0 {
 		return 0, ErrCannotBeZero
 	}
-	return uint64(bits.TrailingZeros64(x)), nil
+	lsbU64, err := safecast.ToUint64(bits.TrailingZeros64(x))
+	if err != nil {
+		return 0, err
+	}
+	return lsbU64, nil
 }
 
 // MostSignificantBit of a 64bit unsigned integer.
@@ -144,7 +151,11 @@ func MostSignificantBit(x uint64) (uint64, error) {
 	if x == 0 {
 		return 0, ErrCannotBeZero
 	}
-	return uint64(63 - bits.LeadingZeros64(x)), nil
+	msb64, err := safecast.ToUint64(63 - bits.LeadingZeros64(x))
+	if err != nil {
+		return 0, err
+	}
+	return msb64, nil
 }
 
 // Root of the subtree. A collision free commitment to the contents of the tree.
@@ -460,8 +471,11 @@ func VerifyPrefixProof(cfg *VerifyPrefixProofConfig) error {
 		if err != nil {
 			return err
 		}
-		numLeaves := 1 << level
-		size += uint64(numLeaves)
+		numLeaves, err := safecast.ToUint64(1 << level)
+		if err != nil {
+			return err
+		}
+		size += numLeaves
 		if size > cfg.PostSize {
 			return errors.Wrapf(
 				ErrSizeNotLeqPostSize,

@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package assertions
 
 import (
@@ -5,17 +9,19 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pkg/errors"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/bold/api"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	retry "github.com/offchainlabs/bold/runtime"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	gethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/pkg/errors"
 )
 
 func (m *Manager) syncAssertions(ctx context.Context) {
@@ -38,7 +44,6 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 	m.assertionChainData.latestAgreedAssertion = latestConfirmed.Id()
 	m.assertionChainData.canonicalAssertions[latestConfirmed.Id()] = latestConfirmedInfo
 	if !m.disablePosting {
-		m.startPostingSignal <- struct{}{}
 		close(m.startPostingSignal)
 	}
 	m.assertionChainData.Unlock()
@@ -85,7 +90,7 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 		fromBlock = toBlock
 	}
 
-	ticker := time.NewTicker(m.pollInterval)
+	ticker := time.NewTicker(m.times.pollInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -151,7 +156,7 @@ func (m *Manager) processAllAssertionsInRange(
 
 	// Extract all assertion creation events from the log filter iterator.
 	assertions := make([]assertionAndParentCreationInfo, 0)
-	assertionsByHash := make(map[common.Hash]*protocol.AssertionCreatedInfo)
+	assertionsByHash := make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo)
 	for it.Next() {
 		if it.Error() != nil {
 			return errors.Wrapf(
@@ -181,7 +186,7 @@ func (m *Manager) processAllAssertionsInRange(
 			}
 			if fullInfo.parent == nil {
 				parentInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
-					return m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+					return m.chain.ReadAssertionCreationInfo(ctx, creationInfo.ParentAssertionHash)
 				})
 				if err != nil {
 					return errors.Wrapf(err, "could not read assertion creation info for %#x (parent of %#x)", creationInfo.ParentAssertionHash, creationInfo.AssertionHash)
@@ -254,7 +259,7 @@ func (m *Manager) extractAssertionFromEvent(
 	if err != nil {
 		return none, errors.Wrapf(err, "could not read assertion creation info for %#x", assertionHash.Hash)
 	}
-	if creationInfo.ParentAssertionHash == (common.Hash{}) {
+	if creationInfo.ParentAssertionHash.Hash == (common.Hash{}) {
 		return none, nil
 	}
 	return option.Some(creationInfo), nil
@@ -274,7 +279,7 @@ func (m *Manager) findCanonicalAssertionBranch(
 
 	for _, fullInfo := range assertions {
 		assertion := fullInfo.assertion
-		if assertion.ParentAssertionHash == cursor.Hash {
+		if assertion.ParentAssertionHash == cursor {
 			agreedWithAssertion, err := retry.UntilSucceeds(ctx, func() (bool, error) {
 				expectedState, err := m.ExecutionStateAfterParent(ctx, fullInfo.parent)
 				switch {
@@ -295,7 +300,7 @@ func (m *Manager) findCanonicalAssertionBranch(
 				return errors.New("could not check for assertion agreements")
 			}
 			if agreedWithAssertion {
-				cursor = protocol.AssertionHash{Hash: assertion.AssertionHash}
+				cursor = assertion.AssertionHash
 				m.assertionChainData.latestAgreedAssertion = cursor
 				m.assertionChainData.canonicalAssertions[cursor] = assertion
 				m.observedCanonicalAssertions <- cursor
@@ -329,12 +334,8 @@ func (m *Manager) respondToAnyInvalidAssertions(
 ) error {
 	for _, fullInfo := range assertions {
 		assertion := fullInfo.assertion
-		canonicalParent, hasCanonicalParent := m.assertionChainData.canonicalAssertions[protocol.AssertionHash{
-			Hash: assertion.ParentAssertionHash,
-		}]
-		_, isCanonical := m.assertionChainData.canonicalAssertions[protocol.AssertionHash{
-			Hash: assertion.AssertionHash,
-		}]
+		canonicalParent, hasCanonicalParent := m.assertionChainData.canonicalAssertions[assertion.ParentAssertionHash]
+		_, isCanonical := m.assertionChainData.canonicalAssertions[assertion.AssertionHash]
 		// If an assertion has a canonical parent but is not canonical itself,
 		// then we should challenge the assertion if we are configured to do so,
 		// or raise an alarm if we are only a watchtower validator.
@@ -345,7 +346,7 @@ func (m *Manager) respondToAnyInvalidAssertions(
 					invalidAssertion: assertion,
 				})
 				if innerErr != nil {
-					log.Error("Could not post rival assertion and/or challenge", "err", innerErr)
+					innerErr = errors.Wrapf(innerErr, "validator=%s could not post rival assertion and/or challenge", m.validatorName)
 					return nil, innerErr
 				}
 				return posted, nil
@@ -354,10 +355,10 @@ func (m *Manager) respondToAnyInvalidAssertions(
 				return err
 			}
 			if postedRival != nil {
-				postedAssertionHash := protocol.AssertionHash{Hash: postedRival.AssertionHash}
+				postedAssertionHash := postedRival.AssertionHash
 				if _, ok := m.assertionChainData.canonicalAssertions[postedAssertionHash]; !ok {
 					m.assertionChainData.canonicalAssertions[postedAssertionHash] = postedRival
-					m.submittedAssertions.Insert(postedAssertionHash.Hash)
+					m.submittedAssertions.Insert(postedAssertionHash)
 					m.submittedRivalsCount++
 					m.observedCanonicalAssertions <- postedAssertionHash
 				}
@@ -386,7 +387,7 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 		"detectedAssertionHash", args.invalidAssertion.AssertionHash,
 		"batchCount", batchCount,
 	}
-	if !m.canPostRivalAssertion() {
+	if !m.mode.SupportsPostingRivals() {
 		log.Warn("Detected invalid assertion, but not configured to post a rival stake", logFields...)
 		evilAssertionCounter.Inc(1)
 		return nil, nil
@@ -404,52 +405,33 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 		log.Warn(fmt.Sprintf("Expected to post a rival assertion to %#x, but did not post anything", args.invalidAssertion.AssertionHash))
 		return nil, nil
 	}
-	assertionHash := protocol.AssertionHash{Hash: correctRivalAssertion.Unwrap().AssertionHash}
+	assertionHash := correctRivalAssertion.Unwrap().AssertionHash
 	postedRival, err := m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not read assertion creation info for %#x", assertionHash.Hash)
 	}
-	if !m.canPostChallenge() {
+	if !m.mode.SupportsPostingChallenges() {
 		log.Warn("Posted rival assertion and stake, but not configured to initiate a challenge", logFields...)
 		return postedRival, nil
 	}
 
-	if args.canonicalParent.ChallengeManager != m.challengeManagerAddr {
+	if args.canonicalParent.ChallengeManager != m.chain.SpecChallengeManager().Address() {
 		log.Warn("Posted rival assertion, but could not challenge as challenge manager address did not match, "+
 			"start a new server with the right challenge manager address",
 			"correctAssertion", postedRival.AssertionHash,
 			"evilAssertion", args.invalidAssertion.AssertionHash,
 			"expectedChallengeManagerAddress", args.canonicalParent.ChallengeManager,
-			"configuredChallengeManagerAddress", m.challengeManagerAddr,
+			"configuredChallengeManagerAddress", m.chain.SpecChallengeManager().Address(),
 		)
 		return nil, nil
 	}
 
-	// Generating a random integer between 0 and max delay second to wait before challenging.
-	// This is to avoid all validators challenging at the same time.
-	mds := 1 // default max delay seconds to 1 to avoid panic
-	if m.challengeReader.MaxDelaySeconds() > 1 {
-		mds = m.challengeReader.MaxDelaySeconds()
+	if m.rivalHandler == nil {
+		return nil, errors.New("rival handler not set")
 	}
-	randSecs, err := randUint64(uint64(mds))
+	err = m.rivalHandler.HandleCorrectRival(ctx, postedRival.AssertionHash)
 	if err != nil {
 		return nil, err
-	}
-	time.Sleep(time.Duration(randSecs) * time.Second)
-	correctClaimedAssertionHash := protocol.AssertionHash{
-		Hash: correctRivalAssertion.Unwrap().AssertionHash,
-	}
-	challengeSubmitted, err := m.challengeCreator.ChallengeAssertion(ctx, correctClaimedAssertionHash)
-	if err != nil {
-		return nil, err
-	}
-	if challengeSubmitted {
-		challengeSubmittedCounter.Inc(1)
-		m.challengesSubmittedCount++
-	}
-
-	if err := m.logChallengeConfigs(ctx); err != nil {
-		log.Error("Could not log challenge configs", "err", err)
 	}
 	return postedRival, nil
 }
@@ -491,6 +473,7 @@ func (m *Manager) maybePostRivalAssertion(
 			"parentAssertionHash", canonicalParent.AssertionHash,
 			"correctRivalAssertionHash", creationInfo.AssertionHash,
 			"transactionHash", creationInfo.TransactionHash,
+			"name", m.validatorName,
 			"postedAssertionState", fmt.Sprintf("%+v", creationInfo.AfterState),
 		)
 		go func() {
@@ -515,7 +498,7 @@ func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.
 	}
 	beforeState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
 	afterState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
-	assertionHash := protocol.AssertionHash{Hash: creationInfo.AssertionHash}
+	assertionHash := creationInfo.AssertionHash
 	status, err := m.chain.AssertionStatus(ctx, assertionHash)
 	if err != nil {
 		return err
@@ -540,7 +523,7 @@ func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.
 		Hash:                     assertionHash.Hash,
 		ConfirmPeriodBlocks:      creationInfo.ConfirmPeriodBlocks,
 		RequiredStake:            creationInfo.RequiredStake.String(),
-		ParentAssertionHash:      creationInfo.ParentAssertionHash,
+		ParentAssertionHash:      creationInfo.ParentAssertionHash.Hash,
 		InboxMaxCount:            creationInfo.InboxMaxCount.String(),
 		AfterInboxBatchAcc:       creationInfo.AfterInboxBatchAcc,
 		WasmModuleRoot:           creationInfo.WasmModuleRoot,

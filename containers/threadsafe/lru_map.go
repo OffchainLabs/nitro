@@ -1,12 +1,13 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package threadsafe
 
 import (
-	"github.com/ethereum/go-ethereum/common/lru"
 	"sync"
 
+	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
@@ -54,10 +55,10 @@ func (s *LruMap[K, V]) Has(k K) bool {
 	return s.items.Contains(k)
 }
 
-func (s *LruMap[K, V]) NumItems() uint64 {
+func (s *LruMap[K, V]) NumItems() int {
 	s.RLock()
 	defer s.RUnlock()
-	return uint64(s.items.Len())
+	return s.items.Len()
 }
 
 func (s *LruMap[K, V]) TryGet(k K) (V, bool) {

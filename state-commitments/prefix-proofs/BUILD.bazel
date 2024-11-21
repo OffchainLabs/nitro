@@ -20,6 +20,7 @@ go_library(
     importpath = "github.com/offchainlabs/bold/state-commitments/prefix-proofs",
     visibility = [":friends"],
     deps = [
+        "@com_github_ccoveille_go_safecast//:go-safecast",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_pkg_errors//:errors",
@@ -36,9 +37,11 @@ go_test(
     data = glob(["testdata/**"]),
     embed = [":prefix-proofs"],
     deps = [
+        "//chain-abstraction:protocol",
         "//containers/option",
         "//layer2-state-provider",
         "//solgen/go/mocksgen",
+        "//testing/casttest",
         "//testing/mocks/state-provider",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",

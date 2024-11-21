@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package endtoend
 
 import (
@@ -7,28 +11,27 @@ import (
 	"math/rand"
 	"testing"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/bold/challenge-manager"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/stretchr/testify/require"
+
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 )
 
-func setupChallengeManager(
+func setupAssertionChain(
 	t *testing.T,
 	ctx context.Context,
 	backend protocol.ChainBackend,
 	rollup common.Address,
-	sm l2stateprovider.Provider,
 	txOpts *bind.TransactOpts,
-	opts ...challengemanager.Opt,
-) *challengemanager.Manager {
+) *solimpl.AssertionChain {
+	t.Helper()
 	assertionChainBinding, err := rollupgen.NewRollupUserLogic(
 		rollup, backend,
 	)
@@ -46,24 +49,15 @@ func setupChallengeManager(
 		solimpl.NewChainBackendTransactor(backend),
 	)
 	require.NoError(t, err)
-
-	manager, err := challengemanager.New(
-		ctx,
-		chain,
-		sm,
-		rollup,
-		opts...,
-	)
-	require.NoError(t, err)
-	return manager
+	return chain
 }
 
 func totalWasmOpcodes(heights *protocol.LayerZeroHeights, numBigSteps uint8) uint64 {
 	totalWasmOpcodes := uint64(1)
 	for i := uint8(0); i < numBigSteps; i++ {
-		totalWasmOpcodes *= heights.BigStepChallengeHeight
+		totalWasmOpcodes *= heights.BigStepChallengeHeight.Uint64()
 	}
-	totalWasmOpcodes *= heights.SmallStepChallengeHeight
+	totalWasmOpcodes *= heights.SmallStepChallengeHeight.Uint64()
 	return totalWasmOpcodes
 }
 

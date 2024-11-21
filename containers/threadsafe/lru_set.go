@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package threadsafe
 
@@ -44,10 +45,10 @@ func (s *LruSet[T]) Insert(t T) {
 	}
 }
 
-func (s *LruSet[T]) NumItems() uint64 {
+func (s *LruSet[T]) NumItems() int {
 	s.RLock()
 	defer s.RUnlock()
-	return uint64(s.items.Len())
+	return s.items.Len()
 }
 
 func (s *LruSet[T]) Has(t T) bool {

@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package watcher
 
@@ -8,15 +9,28 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/common"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	"github.com/offchainlabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/bold/testing/mocks"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
 )
+
+func simpleAssertionMetadata() *l2stateprovider.AssociatedAssertionMetadata {
+	return &l2stateprovider.AssociatedAssertionMetadata{
+		WasmModuleRoot: common.Hash{},
+		FromState: protocol.GoGlobalState{
+			Batch:      0,
+			PosInBatch: 0,
+		},
+		BatchLimit: 1,
+	}
+}
 
 func Test_challengedAssertionConfirmableBlock(t *testing.T) {
 	t.Run("assertion confirm period has not yet passed", func(t *testing.T) {
@@ -53,7 +67,6 @@ func TestWatcher_processEdgeConfirmation(t *testing.T) {
 	mockChallengeManager := &mocks.MockSpecChallengeManager{}
 	mockChain.On(
 		"SpecChallengeManager",
-		ctx,
 	).Return(mockChallengeManager, nil)
 
 	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))}
@@ -100,7 +113,6 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	mockChallengeManager := &mocks.MockSpecChallengeManager{}
 	mockChain.On(
 		"SpecChallengeManager",
-		ctx,
 	).Return(mockChallengeManager, nil)
 
 	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))}
@@ -125,7 +137,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 
 	info := &protocol.AssertionCreatedInfo{
 		InboxMaxCount:       big.NewInt(1),
-		ParentAssertionHash: parentAssertionHash.Hash,
+		ParentAssertionHash: parentAssertionHash,
 	}
 	mockChain.On(
 		"ReadAssertionCreationInfo",
@@ -180,11 +192,8 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		ctx,
 		protocol.NewBlockChallengeLevel(),
 		&l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     0,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some[l2stateprovider.Height](4),
 		},
 		l2stateprovider.History{
@@ -197,11 +206,8 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		ctx,
 		protocol.NewBlockChallengeLevel(),
 		&l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     0,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some[l2stateprovider.Height](4),
 		},
 		l2stateprovider.History{

@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 // Package server defines the client-facing API methods for fetching data
 // related to BOLD challenges. It handles HTTP methods with their requests and responses.
 package server
@@ -8,9 +12,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gorilla/mux"
+
 	"github.com/offchainlabs/bold/api/backend"
 	"github.com/offchainlabs/bold/util/stopwaiter"
-	"github.com/gorilla/mux"
 )
 
 var apiVersion = "/api/v1"
@@ -53,6 +58,10 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) Stop(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
+}
+
+func (s *Server) Addr() string {
+	return s.srv.Addr
 }
 
 func (s *Server) registerMethods() error {

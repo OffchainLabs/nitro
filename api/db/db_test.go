@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package db
 
 import (
@@ -5,13 +9,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/bold/api"
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/state-commitments/history"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/offchainlabs/bold/api"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	"github.com/offchainlabs/bold/state-commitments/history"
+	"github.com/offchainlabs/bold/testing/casttest"
 )
 
 func TestSqliteDatabase_CollectMachineHashes(t *testing.T) {
@@ -26,6 +33,8 @@ func TestSqliteDatabase_CollectMachineHashes(t *testing.T) {
 	machineHashes := &api.JsonCollectMachineHashes{
 		WasmModuleRoot:       common.BytesToHash([]byte("foo")),
 		FromBatch:            1,
+		PositionInBatch:      0,
+		BatchLimit:           7,
 		BlockChallengeHeight: 2,
 		RawStepHeights:       "3, 4, 5, 6",
 		NumDesiredHashes:     4,
@@ -106,7 +115,7 @@ func TestSqliteDatabase_Updates(t *testing.T) {
 	for i := 0; i < numAssertions; i++ {
 		base := baseAssertion()
 		base.Hash = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
-		base.CreationBlock = uint64(i)
+		base.CreationBlock = casttest.ToUint64(t, i)
 		assertionsToCreate[i] = base
 	}
 	require.NoError(t, db.InsertAssertions(assertionsToCreate))
@@ -169,7 +178,7 @@ func TestSqliteDatabase_Assertions(t *testing.T) {
 	for i := 0; i < numAssertions; i++ {
 		base := baseAssertion()
 		base.Hash = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
-		base.CreationBlock = uint64(i)
+		base.CreationBlock = casttest.ToUint64(t, i)
 		if i == 1 {
 			base.ConfirmPeriodBlocks = 20
 			base.BeforeStateBlockHash = common.BytesToHash([]byte("block"))
@@ -198,7 +207,7 @@ func TestSqliteDatabase_Assertions(t *testing.T) {
 			base.AfterStatePosInBatch = 2
 			base.IsFirstChild = true
 		}
-		base.CreationBlock = uint64(i)
+		base.CreationBlock = casttest.ToUint64(t, i)
 		assertionsToCreate[i] = base
 	}
 	require.NoError(t, db.InsertAssertions(assertionsToCreate))
@@ -335,7 +344,7 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 	for i := 0; i < numAssertions; i++ {
 		base := baseAssertion()
 		base.Hash = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
-		base.CreationBlock = uint64(i)
+		base.CreationBlock = casttest.ToUint64(t, i)
 		assertionsToCreate[i] = base
 	}
 	require.NoError(t, db.InsertAssertions(assertionsToCreate))
@@ -347,7 +356,7 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		base := baseEdge()
 		base.Id = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
 		base.AssertionHash = common.BytesToHash([]byte("1"))
-		base.CreatedAtBlock = uint64(i)
+		base.CreatedAtBlock = casttest.ToUint64(t, i)
 		base.EndHeight = endHeight
 		if i == 0 {
 			base.OriginId = common.BytesToHash([]byte("foo"))

@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 // Package history provides functions for computing merkle tree roots
 // and proofs needed for the BoLD protocol's history commitments.
 //
@@ -39,9 +43,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/offchainlabs/bold/math"
+	"github.com/ccoveille/go-safecast"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/bold/math"
 )
 
 var (
@@ -230,8 +237,15 @@ func (h *historyCommitter) computeRoot(leaves []common.Hash, virtual uint64) (co
 	}
 	hashed := h.hashLeaves(leaves)
 	limit := nextPowerOf2(virtual)
-	depth := uint(math.Log2Floor(limit))
-	n := max(uint(math.Log2Ceil(virtual)), 1)
+	depth, err := safecast.ToUint(math.Log2Floor(limit))
+	if err != nil {
+		return emptyHash, err
+	}
+	n, err := safecast.ToUint(math.Log2Ceil(virtual))
+	if err != nil {
+		return emptyHash, err
+	}
+	n = max(n, 1)
 	if err := h.populateFillers(&hashed[lvLen-1], n); err != nil {
 		return emptyHash, err
 	}
@@ -510,7 +524,10 @@ func (h *historyCommitter) prefixAndProof(index uint64, leaves []common.Hash, vi
 	if index+1 > virtual {
 		return nil, nil, fmt.Errorf("index %d + 1 should be <= virtual %d", index, virtual)
 	}
-	logVirtual := uint(math.Log2Floor(virtual) + 1)
+	logVirtual, err := safecast.ToUint(math.Log2Floor(virtual) + 1)
+	if err != nil {
+		return nil, nil, err
+	}
 	if err = h.populateFillers(&leaves[lvLen-1], logVirtual); err != nil {
 		return nil, nil, err
 	}
@@ -561,7 +578,11 @@ func lastLeafProofPositions(virtual uint64) ([]treePosition, error) {
 	positions := make([]treePosition, depth)
 	idx := uint64(virtual) - 1
 	for l := range positions {
-		positions[l] = sibling(idx, uint64(l))
+		lU64, err := safecast.ToUint64(l)
+		if err != nil {
+			return nil, err
+		}
+		positions[l] = sibling(idx, lU64)
 		idx = parent(idx)
 	}
 	return positions, nil

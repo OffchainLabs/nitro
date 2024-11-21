@@ -1,11 +1,16 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package api
 
 import (
 	"reflect"
 	"time"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/ethereum/go-ethereum/common"
+
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 )
 
 type JsonAssertion struct {
@@ -105,6 +110,8 @@ type JsonMiniStakeInfo struct {
 type JsonCollectMachineHashes struct {
 	WasmModuleRoot       common.Hash `json:"wasmModuleRoot" db:"WasmModuleRoot"`
 	FromBatch            uint64      `json:"fromBatch" db:"FromBatch"`
+	PositionInBatch      uint64      `json:"positionInBatch" db:"PositionInBatch"`
+	BatchLimit           uint64      `json:"batchLimit" db:"BatchLimit"`
 	BlockChallengeHeight uint64      `json:"blockChallengeHeight" db:"BlockChallengeHeight"`
 	StepHeights          []uint64    `json:"stepHeights"`
 	RawStepHeights       string      `json:"-" db:"RawStepHeights"`

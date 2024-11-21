@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package assertions_test
 
@@ -8,16 +9,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+
 	"github.com/offchainlabs/bold/assertions"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	challengemanager "github.com/offchainlabs/bold/challenge-manager"
+	cm "github.com/offchainlabs/bold/challenge-manager"
 	"github.com/offchainlabs/bold/challenge-manager/types"
 	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPostAssertion(t *testing.T) {
@@ -49,44 +52,33 @@ func TestPostAssertion(t *testing.T) {
 		stateManagerOpts,
 		statemanager.WithNumBatchesRead(5),
 	)
-	stateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
-	require.NoError(t, err)
-
-	chalManager, err := challengemanager.New(
-		ctx,
-		aliceChain,
-		stateManager,
-		setup.Addrs.Rollup,
-		challengemanager.WithMode(types.DefensiveMode),
-	)
-	require.NoError(t, err)
-	chalManager.Start(ctx)
-
-	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, nil, 1<<26)
-	require.NoError(t, err)
-	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &preState.GlobalState, 1<<26)
+	stateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	assertionManager, err := assertions.NewManager(
 		aliceChain,
 		stateManager,
-		setup.Backend,
-		chalManager,
-		aliceChain.RollupAddress(),
-		chalManager.ChallengeManagerAddress(),
 		"alice",
-		time.Millisecond*200, // poll interval for assertions
-		time.Hour,            // confirmation attempt interval
-		stateManager,
-		time.Millisecond*100, // poll interval
-		time.Second*1,
-		nil,
-		assertions.WithDangerousReadyToPost(),
-		assertions.WithPostingDisabled(),
+		types.DefensiveMode,
+		assertions.WithPollingInterval(time.Millisecond*200),
+		assertions.WithAverageBlockCreationTime(time.Second),
 	)
 	require.NoError(t, err)
 
-	go assertionManager.Start(ctx)
+	chalManager, err := cm.NewChallengeStack(
+		aliceChain,
+		stateManager,
+		cm.StackWithMode(types.DefensiveMode),
+		cm.StackWithName("alice"),
+		cm.OverrideAssertionManager(assertionManager),
+	)
+	require.NoError(t, err)
+	chalManager.Start(ctx)
+
+	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, nil)
+	require.NoError(t, err)
+	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &preState.GlobalState)
+	require.NoError(t, err)
 
 	time.Sleep(time.Second)
 

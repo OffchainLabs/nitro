@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package solimpl_test
 
@@ -7,6 +8,12 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
@@ -17,29 +24,32 @@ import (
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	stateprovider "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
 )
+
+func simpleAssertionMetadata() *l2stateprovider.AssociatedAssertionMetadata {
+	return &l2stateprovider.AssociatedAssertionMetadata{
+		WasmModuleRoot: common.Hash{},
+		FromState: protocol.GoGlobalState{
+			Batch:      0,
+			PosInBatch: 0,
+		},
+		BatchLimit: 1,
+	}
+}
 
 func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 	ctx := context.Background()
 
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
+	createdData, err := setup.CreateTwoValidatorFork(ctx, t, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
-	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
-	require.NoError(t, err)
+	challengeManager := createdData.Chains[0].SpecChallengeManager()
 
 	// Honest assertion being added.
 	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 		}
 		startCommit, startErr := stateManager.HistoryCommitment(ctx, req)
@@ -91,21 +101,15 @@ func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 	t.Run("bisected children are presumptive", func(t *testing.T) {
 		var bisectHeight uint64 = challenge_testing.LevelZeroBlockEdgeHeight / 2
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(bisectHeight)),
 		}
 		honestBisectCommit, err := createdData.HonestStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, err)
 		req = &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  l2stateprovider.Height(0),
 			UpToHeight:                  option.Some(l2stateprovider.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
 		}
 		honestProof, err := createdData.HonestStateManager.PrefixProof(ctx, req, l2stateprovider.Height(bisectHeight))
@@ -151,21 +155,15 @@ func TestEdgeChallengeManager_HasLengthOneRival(t *testing.T) {
 		var height uint64 = challenge_testing.LevelZeroBlockEdgeHeight
 		for height > 1 {
 			req := &l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              common.Hash{},
-				FromBatch:                   0,
-				ToBatch:                     1,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(height / 2)),
 			}
 			honestBisectCommit, err := honestStateManager.HistoryCommitment(ctx, req)
 			require.NoError(t, err)
 			prefixCommitReq := &l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              common.Hash{},
-				FromBatch:                   0,
-				ToBatch:                     1,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(height)),
 			}
 			honestProof, err := honestStateManager.PrefixProof(
@@ -198,19 +196,15 @@ func TestEdgeChallengeManager_HasLengthOneRival(t *testing.T) {
 
 func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 	ctx := context.Background()
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
+	createdData, err := setup.CreateTwoValidatorFork(ctx, t, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
 	chain1 := createdData.Chains[0]
-	challengeManager, err := chain1.SpecChallengeManager(ctx)
-	require.NoError(t, err)
+	challengeManager := chain1.SpecChallengeManager()
 
 	req := &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              common.Hash{},
-		FromBatch:                   0,
-		ToBatch:                     1,
+		AssertionMetadata:           simpleAssertionMetadata(),
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		FromHeight:                  0,
 		UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 	}
 	start, err := createdData.HonestStateManager.HistoryCommitment(ctx, req)
@@ -238,11 +232,8 @@ func TestEdgeChallengeManager_Bisect(t *testing.T) {
 
 	t.Run("OK", func(t *testing.T) {
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(challenge_testing.LevelZeroBlockEdgeHeight / 2)),
 		}
 		honestBisectCommit, err := honestStateManager.HistoryCommitment(ctx, req)
@@ -285,21 +276,18 @@ func TestEdgeChallengeManager_AddSubchallengeLeaf(t *testing.T) {
 	honestEdge := bisectionScenario.honestLevelZeroEdge
 	evilEdge := bisectionScenario.evilLevelZeroEdge
 
-	challengeManager, err := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
-	require.NoError(t, err)
+	challengeManager := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager()
 
 	// Perform bisections all the way down to a one step fork.
 	var blockHeight uint64 = challenge_testing.LevelZeroBlockEdgeHeight
 	for blockHeight > 1 {
 		bisectTo := l2stateprovider.Height(blockHeight / 2)
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(bisectTo),
 		}
+		var err error
 		honestBisectCommit, honestErr := honestStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, honestErr)
 		req.UpToHeight = option.Some(l2stateprovider.Height(blockHeight))
@@ -328,11 +316,8 @@ func TestEdgeChallengeManager_AddSubchallengeLeaf(t *testing.T) {
 	}
 
 	req := &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              common.Hash{},
-		FromBatch:                   0,
-		ToBatch:                     1,
+		AssertionMetadata:           simpleAssertionMetadata(),
 		UpperChallengeOriginHeights: []l2stateprovider.Height{0},
-		FromHeight:                  0,
 		UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 	}
 	startCommit, startErr := honestStateManager.HistoryCommitment(ctx, req)
@@ -343,11 +328,8 @@ func TestEdgeChallengeManager_AddSubchallengeLeaf(t *testing.T) {
 	require.Equal(t, startCommit.LastLeaf, endCommit.FirstLeaf)
 
 	req = &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              common.Hash{},
-		FromBatch:                   0,
-		ToBatch:                     1,
+		AssertionMetadata:           simpleAssertionMetadata(),
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		FromHeight:                  0,
 		UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 	}
 	startParentCommitment, parentErr := honestStateManager.HistoryCommitment(ctx, req)
@@ -357,11 +339,8 @@ func TestEdgeChallengeManager_AddSubchallengeLeaf(t *testing.T) {
 	require.NoError(t, endParentErr)
 
 	req = &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              common.Hash{},
-		FromBatch:                   0,
-		ToBatch:                     1,
+		AssertionMetadata:           simpleAssertionMetadata(),
 		UpperChallengeOriginHeights: []l2stateprovider.Height{0},
-		FromHeight:                  0,
 		UpToHeight:                  option.Some(l2stateprovider.Height(endCommit.Height)),
 	}
 	startEndPrefixProof, proofErr := honestStateManager.PrefixProof(ctx, req, 0)
@@ -386,9 +365,8 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 	ctx := context.Background()
 	t.Run("edge does not exist", func(t *testing.T) {
 		bisectionScenario := setupBisectionScenario(t)
-		challengeManager, err := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
-		require.NoError(t, err)
-		err = challengeManager.ConfirmEdgeByOneStepProof(
+		challengeManager := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager()
+		err := challengeManager.ConfirmEdgeByOneStepProof(
 			ctx,
 			protocol.EdgeId{Hash: common.BytesToHash([]byte("foo"))},
 			&protocol.OneStepData{
@@ -405,8 +383,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 		honestEdge := scenario.smallStepHonestEdge
 
 		chain := scenario.topLevelFork.Chains[0]
-		challengeManager, err := scenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
-		require.NoError(t, err)
+		challengeManager := scenario.topLevelFork.Chains[1].SpecChallengeManager()
 
 		honestStateManager := scenario.honestStateManager
 		fromBlockChallengeHeight := uint64(0)
@@ -417,17 +394,16 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 		require.NoError(t, err)
 		parentAssertionCreationInfo, err := chain.ReadAssertionCreationInfo(ctx, id)
 		require.NoError(t, err)
+		assertionMetadata := simpleAssertionMetadata()
+		assertionMetadata.WasmModuleRoot = parentAssertionCreationInfo.WasmModuleRoot
 
 		data, startInclusionProof, endInclusionProof, err := honestStateManager.OneStepProofData(
 			ctx,
-			parentAssertionCreationInfo.WasmModuleRoot,
-			0,
-			1,
+			assertionMetadata,
 			[]l2stateprovider.Height{
 				l2stateprovider.Height(fromBlockChallengeHeight),
 				l2stateprovider.Height(fromBigStep),
 			},
-			0,
 			l2stateprovider.Height(smallStep),
 		)
 		require.NoError(t, err)
@@ -462,11 +438,8 @@ func TestEdgeChallengeManager_ConfirmByTime(t *testing.T) {
 
 	bisectTo := l2stateprovider.Height(challenge_testing.LevelZeroBlockEdgeHeight / 2)
 	req := &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              common.Hash{},
-		FromBatch:                   0,
-		ToBatch:                     1,
+		AssertionMetadata:           simpleAssertionMetadata(),
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		FromHeight:                  0,
 		UpToHeight:                  option.Some(bisectTo),
 	}
 	honestBisectCommit, err := honestStateManager.HistoryCommitment(ctx, req)
@@ -490,8 +463,7 @@ func TestEdgeChallengeManager_ConfirmByTime(t *testing.T) {
 	}
 
 	expectedNewTimer := uint64(200)
-	chalManager, err := bisectionScenario.topLevelFork.Chains[0].SpecChallengeManager(ctx)
-	require.NoError(t, err)
+	chalManager := bisectionScenario.topLevelFork.Chains[0].SpecChallengeManager()
 	_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren1, honestChildren2, honestEdge}, expectedNewTimer)
 	require.NoError(t, err)
 	_, err = honestEdge.ConfirmByTimer(ctx)
@@ -506,20 +478,16 @@ func TestEdgeChallengeManager_ConfirmByTime(t *testing.T) {
 func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 	ctx := context.Background()
 
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
+	createdData, err := setup.CreateTwoValidatorFork(ctx, t, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
-	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
-	require.NoError(t, err)
+	challengeManager := createdData.Chains[0].SpecChallengeManager()
 
 	// Honest assertion being added.
 	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 		}
 		startCommit, startErr := stateManager.HistoryCommitment(ctx, req)
@@ -555,8 +523,7 @@ func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 	}
 
 	t.Run("confirmed by timer", func(t *testing.T) {
-		chalManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
-		require.NoError(t, err)
+		chalManager := createdData.Chains[0].SpecChallengeManager()
 		expectedNewTimer := uint64(200)
 		_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge}, expectedNewTimer)
 		require.NoError(t, err)
@@ -623,8 +590,7 @@ func TestUpgradingConfigMidChallenge(t *testing.T) {
 	// We confirm the edge by one-step-proof.
 	honestEdge := scenario.smallStepHonestEdge
 	chain := scenario.topLevelFork.Chains[0]
-	challengeManager, err := scenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
-	require.NoError(t, err)
+	challengeManager := scenario.topLevelFork.Chains[1].SpecChallengeManager()
 
 	honestStateManager := scenario.honestStateManager
 	fromBlockChallengeHeight := uint64(0)
@@ -645,14 +611,11 @@ func TestUpgradingConfigMidChallenge(t *testing.T) {
 
 	data, startInclusionProof, endInclusionProof, err := honestStateManager.OneStepProofData(
 		ctx,
-		parentAssertionCreationInfo.WasmModuleRoot,
-		0,
-		1,
+		simpleAssertionMetadata(),
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(fromBlockChallengeHeight),
 			l2stateprovider.Height(fromBigStep),
 		},
-		0,
 		l2stateprovider.Height(smallStep),
 	)
 	require.NoError(t, err)
@@ -689,23 +652,20 @@ func setupBisectionScenario(
 	t *testing.T,
 	opts ...setup.Opt,
 ) *bisectionScenario {
+	t.Helper()
 	ctx := context.Background()
 
 	opts = append(opts, setup.WithMockOneStepProver())
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, opts...)
+	createdData, err := setup.CreateTwoValidatorFork(ctx, t, &setup.CreateForkConfig{}, opts...)
 	require.NoError(t, err)
 
-	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
-	require.NoError(t, err)
+	challengeManager := createdData.Chains[0].SpecChallengeManager()
 
 	// Honest assertion being added.
 	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) (history.History, protocol.SpecEdge) {
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 		}
 		startCommit, startErr := stateManager.HistoryCommitment(ctx, req)
@@ -786,18 +746,14 @@ func setupOneStepProofScenario(
 	honestEdge := bisectionScenario.honestLevelZeroEdge
 	evilEdge := bisectionScenario.evilLevelZeroEdge
 
-	challengeManager, err := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
-	require.NoError(t, err)
+	challengeManager := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager()
 
 	var blockHeight uint64 = challenge_testing.LevelZeroBlockEdgeHeight
 	for blockHeight > 1 {
 		bisectTo := l2stateprovider.Height(blockHeight / 2)
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(bisectTo),
 		}
 		honestBisectCommit, honestErr := honestStateManager.HistoryCommitment(ctx, req)
@@ -805,6 +761,7 @@ func setupOneStepProofScenario(
 		req.UpToHeight = option.Some(l2stateprovider.Height(blockHeight))
 		honestProof, honestProofErr := honestStateManager.PrefixProof(ctx, req, bisectTo)
 		require.NoError(t, honestProofErr)
+		var err error
 		honestEdge, _, err = honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 		require.NoError(t, err)
 
@@ -830,11 +787,8 @@ func setupOneStepProofScenario(
 	// Now opening big step level zero leaves at index 0
 	bigStepAdder := func(stateManager l2stateprovider.Provider, sourceEdge protocol.SpecEdge) protocol.SpecEdge {
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{0},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 		}
 		startCommit, startErr := stateManager.HistoryCommitment(ctx, req)
@@ -845,11 +799,8 @@ func setupOneStepProofScenario(
 		require.Equal(t, startCommit.LastLeaf, endCommit.FirstLeaf)
 
 		req = &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 		}
 		startParentCommitment, parentErr := stateManager.HistoryCommitment(ctx, req)
@@ -859,11 +810,8 @@ func setupOneStepProofScenario(
 		require.NoError(t, endParentErr)
 
 		req = &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{0},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(endCommit.Height)),
 		}
 		startEndPrefixProof, proofErr := stateManager.PrefixProof(ctx, req, 0)
@@ -901,11 +849,8 @@ func setupOneStepProofScenario(
 		bisectTo := l2stateprovider.Height(bigStepHeight / 2)
 
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{0},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(bisectTo),
 		}
 		honestBisectCommit, bisectErr := honestStateManager.HistoryCommitment(ctx, req)
@@ -951,11 +896,8 @@ func setupOneStepProofScenario(
 	// Now opening small step level zero leaves at index 0
 	smallStepAdder := func(stateManager l2stateprovider.Provider, edge protocol.SpecEdge) protocol.SpecEdge {
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{0, 0},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 		}
 		startCommit, startErr := stateManager.HistoryCommitment(ctx, req)
@@ -966,11 +908,8 @@ func setupOneStepProofScenario(
 		require.NoError(t, endErr)
 
 		req = &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{0},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 		}
 		startParentCommitment, parentErr := stateManager.HistoryCommitment(ctx, req)
@@ -981,11 +920,8 @@ func setupOneStepProofScenario(
 		require.NoError(t, endParentErr)
 
 		req = &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{0, 0},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(endCommit.Height)),
 		}
 		startEndPrefixProof, prefixErr := stateManager.PrefixProof(ctx, req, 0)
@@ -1045,11 +981,8 @@ func setupOneStepProofScenario(
 	for smallStepHeight > 1 {
 		bisectTo := l2stateprovider.Height(smallStepHeight / 2)
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{0, 0},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(bisectTo),
 		}
 

@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package solimpl
 
@@ -8,11 +9,12 @@ import (
 	"fmt"
 	"math/big"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/metrics"
+
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 )
 
 type MetricsContractBackend struct {

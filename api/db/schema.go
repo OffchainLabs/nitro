@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package db
 
 var (
@@ -110,6 +114,8 @@ ALTER TABLE Edges ADD COLUMN InheritedTimer INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS CollectMachineHashes (
     WasmModuleRoot TEXT NOT NULL,
     FromBatch INTEGER NOT NULL,
+    PositionInBatch INTEGER NOT NULL,
+    BatchLimit INTEGER NOT NULL,
     BlockChallengeHeight INTEGER NOT NULL,
     RawStepHeights TEXT NOT NULL,
     NumDesiredHashes INTEGER NOT NULL,

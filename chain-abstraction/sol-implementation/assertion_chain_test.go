@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package solimpl_test
 
@@ -9,6 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/bold/containers/option"
@@ -17,10 +24,6 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/setup"
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNewStakeOnNewAssertion(t *testing.T) {
@@ -285,32 +288,33 @@ func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 	_, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
+	createdData, err := setup.CreateTwoValidatorFork(ctx, t, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
-	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
-	require.NoError(t, err)
+	challengeManager := createdData.Chains[0].SpecChallengeManager()
 
 	// Honest assertion being added.
 	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
+		assertionMetadata := &l2stateprovider.AssociatedAssertionMetadata{
+			WasmModuleRoot: common.Hash{},
+			FromState: protocol.GoGlobalState{
+				Batch:      0,
+				PosInBatch: 0,
+			},
+			BatchLimit: 1,
+		}
 		startCommit, startErr := stateManager.HistoryCommitment(
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              common.Hash{},
-				FromBatch:                   0,
-				ToBatch:                     1,
+				AssertionMetadata:           assertionMetadata,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 			},
 		)
 		require.NoError(t, startErr)
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           assertionMetadata,
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
 		}
 		endCommit, endErr := stateManager.HistoryCommitment(
@@ -404,16 +408,12 @@ func TestAssertionBySequenceNum(t *testing.T) {
 }
 
 func TestChallengePeriodBlocks(t *testing.T) {
-	ctx := context.Background()
 	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
 	chain := cfg.Chains[0]
 
-	manager, err := chain.SpecChallengeManager(ctx)
-	require.NoError(t, err)
-
-	chalPeriod, err := manager.ChallengePeriodBlocks(ctx)
-	require.NoError(t, err)
+	manager := chain.SpecChallengeManager()
+	chalPeriod := manager.ChallengePeriodBlocks()
 	require.Equal(t, cfg.RollupConfig.ConfirmPeriodBlocks, chalPeriod)
 }
 
@@ -422,32 +422,33 @@ func TestIsChallengeComplete(t *testing.T) {
 	_, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
+	createdData, err := setup.CreateTwoValidatorFork(ctx, t, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
-	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
-	require.NoError(t, err)
+	challengeManager := createdData.Chains[0].SpecChallengeManager()
 
 	// Honest assertion being added.
 	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
+		assertionMetadata := &l2stateprovider.AssociatedAssertionMetadata{
+			WasmModuleRoot: common.Hash{},
+			FromState: protocol.GoGlobalState{
+				Batch:      0,
+				PosInBatch: 0,
+			},
+			BatchLimit: 1,
+		}
 		startCommit, startErr := stateManager.HistoryCommitment(
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              common.Hash{},
-				FromBatch:                   0,
-				ToBatch:                     1,
+				AssertionMetadata:           assertionMetadata,
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(0)),
 			},
 		)
 		require.NoError(t, startErr)
 		req := &l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              common.Hash{},
-			FromBatch:                   0,
-			ToBatch:                     1,
+			AssertionMetadata:           assertionMetadata,
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
 		}
 		endCommit, endErr := stateManager.HistoryCommitment(

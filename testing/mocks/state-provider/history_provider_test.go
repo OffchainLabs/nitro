@@ -1,13 +1,20 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package stateprovider
 
 import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/common"
+
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -15,13 +22,23 @@ var (
 	_ l2stateprovider.MachineHashCollector    = (*L2StateBackend)(nil)
 )
 
+func simpleAssertionMetadata() *l2stateprovider.AssociatedAssertionMetadata {
+	return &l2stateprovider.AssociatedAssertionMetadata{
+		WasmModuleRoot: common.Hash{},
+		FromState: protocol.GoGlobalState{
+			Batch:      0,
+			PosInBatch: 0,
+		},
+		BatchLimit: 1,
+	}
+}
+
 func TestHistoryCommitment(t *testing.T) {
 	ctx := context.Background()
-	wasmModuleRoot := common.Hash{}
 	challengeLeafHeights := []l2stateprovider.Height{
-		4,
-		8,
-		16,
+		1 << 2,
+		1 << 3,
+		1 << 4,
 	}
 	numStates := uint64(10)
 	states, _ := setupStates(t, numStates, 0 /* honest */)
@@ -46,11 +63,8 @@ func TestHistoryCommitment(t *testing.T) {
 		got, err := provider.HistoryCommitment(
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              wasmModuleRoot,
-				FromBatch:                   0,
-				ToBatch:                     1,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
 				UpToHeight:                  option.None[l2stateprovider.Height](),
 			},
 		)
@@ -61,11 +75,8 @@ func TestHistoryCommitment(t *testing.T) {
 		got, err := provider.HistoryCommitment(
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              wasmModuleRoot,
-				FromBatch:                   0,
-				ToBatch:                     1,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(2)),
 			},
 		)
@@ -76,11 +87,8 @@ func TestHistoryCommitment(t *testing.T) {
 		blockChallengeCommit, err := provider.HistoryCommitment(
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              wasmModuleRoot,
-				FromBatch:                   0,
-				ToBatch:                     1,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(1)),
 			},
 		)
@@ -89,11 +97,8 @@ func TestHistoryCommitment(t *testing.T) {
 		subChallengeCommit, err := provider.HistoryCommitment(
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              wasmModuleRoot,
-				FromBatch:                   0,
-				ToBatch:                     1,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{0},
-				FromHeight:                  0,
 				UpToHeight:                  option.None[l2stateprovider.Height](),
 			},
 		)
@@ -107,11 +112,8 @@ func TestHistoryCommitment(t *testing.T) {
 		blockChallengeCommit, err := provider.HistoryCommitment(
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              wasmModuleRoot,
-				FromBatch:                   0,
-				ToBatch:                     1,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				FromHeight:                  0,
 				UpToHeight:                  option.Some(l2stateprovider.Height(1)),
 			},
 		)
@@ -120,11 +122,8 @@ func TestHistoryCommitment(t *testing.T) {
 		smallStepSubchallengeCommit, err := provider.HistoryCommitment(
 			ctx,
 			&l2stateprovider.HistoryCommitmentRequest{
-				WasmModuleRoot:              wasmModuleRoot,
-				FromBatch:                   0,
-				ToBatch:                     1,
+				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []l2stateprovider.Height{0, 0},
-				FromHeight:                  0,
 				UpToHeight:                  option.None[l2stateprovider.Height](),
 			},
 		)

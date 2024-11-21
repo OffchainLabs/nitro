@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package prefixproofs
 
 import (
@@ -7,18 +11,21 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient/simulated"
+
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/state-commitments/history"
 	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient/simulated"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPrefixProofGeneration(t *testing.T) {
@@ -150,11 +157,15 @@ func computeLegacyPrefixProof(t *testing.T, ctx context.Context, numHashes uint6
 	startMessageNumber := l2stateprovider.Height(0)
 	fromMessageNumber := l2stateprovider.Height(prefixIndex)
 	req := &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              wasmModuleRoot,
-		FromBatch:                   0,
-		ToBatch:                     10,
+		AssertionMetadata: &l2stateprovider.AssociatedAssertionMetadata{
+			WasmModuleRoot: wasmModuleRoot,
+			FromState: protocol.GoGlobalState{
+				Batch:      0,
+				PosInBatch: uint64(startMessageNumber),
+			},
+			BatchLimit: 10,
+		},
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		FromHeight:                  startMessageNumber,
 		UpToHeight:                  option.Some(l2stateprovider.Height(fromMessageNumber)),
 	}
 	loCommit, err := manager.HistoryCommitment(ctx, req)

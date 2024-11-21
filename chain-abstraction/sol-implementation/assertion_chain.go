@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 // Package solimpl includes an easy-to-use abstraction
 // around the challenge protocol contracts using their Go
@@ -15,6 +16,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ccoveille/go-safecast"
+	"github.com/pkg/errors"
+
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers"
 	"github.com/offchainlabs/bold/containers/option"
@@ -23,14 +35,6 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/bold/solgen/go/contractsgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -209,7 +213,7 @@ func NewAssertionChain(
 		txOpts:                                   copiedOpts,
 		rollupAddr:                               rollupAddr,
 		chalManagerAddr:                          chalManagerAddr,
-		confirmedChallengesByParentAssertionHash: threadsafe.NewLruSet[protocol.AssertionHash](1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("confirmedChallengesByParentAssertionHash")),
+		confirmedChallengesByParentAssertionHash: threadsafe.NewLruSet(1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("confirmedChallengesByParentAssertionHash")),
 		averageTimeForBlockCreation:              time.Second * 12,
 		transactor:                               transactor,
 		rpcHeadBlockNumber:                       rpc.FinalizedBlockNumber,
@@ -323,12 +327,17 @@ func (a *AssertionChain) LatestConfirmed(ctx context.Context, opts *bind.CallOpt
 
 // Returns true if the staker's address is currently staked in the assertion chain.
 func (a *AssertionChain) IsStaked(ctx context.Context) (bool, error) {
-	return a.rollup.IsStaked(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), a.txOpts.From)
+	return a.rollup.IsStaked(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), a.StakerAddress())
 }
 
 // RollupAddress for the assertion chain.
 func (a *AssertionChain) RollupAddress() common.Address {
 	return a.rollupAddr
+}
+
+// StakerAddress for the staker which initialized this chain interface.
+func (a *AssertionChain) StakerAddress() common.Address {
+	return a.txOpts.From
 }
 
 // IsChallengeComplete checks if a challenge is complete by using the challenge's parent assertion hash.
@@ -430,7 +439,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	}
 	computedHash, err := a.userLogic.RollupUserLogicCaller.ComputeAssertionHash(
 		a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}),
-		parentAssertionCreationInfo.AssertionHash,
+		parentAssertionCreationInfo.AssertionHash.Hash,
 		postState.AsSolidityStruct(),
 		inboxBatchAcc,
 	)
@@ -452,7 +461,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 			parentAssertionCreationInfo.RequiredStake,
 			rollupgen.AssertionInputs{
 				BeforeStateData: rollupgen.BeforeStateData{
-					PrevPrevAssertionHash: parentAssertionCreationInfo.ParentAssertionHash,
+					PrevPrevAssertionHash: parentAssertionCreationInfo.ParentAssertionHash.Hash,
 					SequencerBatchAcc:     parentAssertionCreationInfo.AfterInboxBatchAcc,
 					ConfigData: rollupgen.ConfigData{
 						RequiredStake:       parentAssertionCreationInfo.RequiredStake,
@@ -515,13 +524,13 @@ func (a *AssertionChain) MinAssertionPeriodBlocks(ctx context.Context) (uint64, 
 
 func TryConfirmingAssertion(
 	ctx context.Context,
-	assertionHash common.Hash,
+	assertionHash protocol.AssertionHash,
 	confirmableAfterBlock uint64,
 	chain protocol.AssertionChain,
 	averageTimeForBlockCreation time.Duration,
 	winningEdgeId option.Option[protocol.EdgeId],
 ) (bool, error) {
-	status, err := chain.AssertionStatus(ctx, protocol.AssertionHash{Hash: assertionHash})
+	status, err := chain.AssertionStatus(ctx, assertionHash)
 	if err != nil {
 		return false, fmt.Errorf("could not get assertion by hash: %#x: %w", assertionHash, err)
 	}
@@ -544,7 +553,15 @@ func TryConfirmingAssertion(
 
 		// If the assertion is not yet confirmable, we can simply wait.
 		if !confirmable {
-			blocksLeftForConfirmation := confirmableAfterBlock - latestHeader.Number.Uint64()
+			var blocksLeftForConfirmation int64
+			if confirmableAfterBlock > latestHeader.Number.Uint64() {
+				blocksLeftForConfirmation = 0
+			} else {
+				blocksLeftForConfirmation, err = safecast.ToInt64(confirmableAfterBlock - latestHeader.Number.Uint64())
+				if err != nil {
+					return false, errors.Wrap(err, "could not convert blocks left for confirmation to int64")
+				}
+			}
 			timeToWait := averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
 			log.Info(
 				fmt.Sprintf(
@@ -561,7 +578,7 @@ func TryConfirmingAssertion(
 	}
 
 	if winningEdgeId.IsSome() {
-		err = chain.ConfirmAssertionByChallengeWinner(ctx, protocol.AssertionHash{Hash: assertionHash}, winningEdgeId.Unwrap())
+		err = chain.ConfirmAssertionByChallengeWinner(ctx, assertionHash, winningEdgeId.Unwrap())
 		if err != nil {
 			if strings.Contains(err.Error(), protocol.ChallengeGracePeriodNotPassedAssertionConfirmationError) {
 				return false, nil
@@ -573,7 +590,7 @@ func TryConfirmingAssertion(
 
 		}
 	} else {
-		err = chain.ConfirmAssertionByTime(ctx, protocol.AssertionHash{Hash: assertionHash})
+		err = chain.ConfirmAssertionByTime(ctx, assertionHash)
 		if err != nil {
 			if strings.Contains(err.Error(), protocol.BeforeDeadlineAssertionConfirmationError) {
 				return false, nil
@@ -612,10 +629,10 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 		return err
 	}
 	// If the assertion is genesis, return nil.
-	if creationInfo.ParentAssertionHash == [32]byte{} {
+	if creationInfo.ParentAssertionHash.Hash == [32]byte{} {
 		return nil
 	}
-	prevCreationInfo, err := a.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+	prevCreationInfo, err := a.ReadAssertionCreationInfo(ctx, creationInfo.ParentAssertionHash)
 	if err != nil {
 		return err
 	}
@@ -623,7 +640,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	if err != nil {
 		return err
 	}
-	if creationInfo.ParentAssertionHash != latestConfirmed.Id().Hash {
+	if creationInfo.ParentAssertionHash != latestConfirmed.Id() {
 		return fmt.Errorf(
 			"parent id %#x is not the latest confirmed assertion %#x",
 			creationInfo.ParentAssertionHash,
@@ -637,7 +654,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 		return a.userLogic.RollupUserLogicTransactor.ConfirmAssertion(
 			opts,
 			b,
-			creationInfo.ParentAssertionHash,
+			creationInfo.ParentAssertionHash.Hash,
 			creationInfo.AfterState,
 			winningEdgeId.Hash,
 			rollupgen.ConfigData{
@@ -670,8 +687,8 @@ func (a *AssertionChain) FastConfirmAssertion(
 	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		return a.userLogic.RollupUserLogicTransactor.FastConfirmAssertion(
 			opts,
-			assertionCreationInfo.AssertionHash,
-			assertionCreationInfo.ParentAssertionHash,
+			assertionCreationInfo.AssertionHash.Hash,
+			assertionCreationInfo.ParentAssertionHash.Hash,
 			assertionCreationInfo.AfterState,
 			assertionCreationInfo.AfterInboxBatchAcc,
 		)
@@ -730,7 +747,7 @@ func (a *AssertionChain) fastConfirmSafeAssertion(
 	if _, ok := a.fastConfirmSafeApprovedHashesOwners[safeTxHash]; !ok {
 		a.fastConfirmSafeApprovedHashesOwners[safeTxHash] = make(map[common.Address]bool)
 	}
-	a.fastConfirmSafeApprovedHashesOwners[safeTxHash][a.txOpts.From] = true
+	a.fastConfirmSafeApprovedHashesOwners[safeTxHash][a.StakerAddress()] = true
 	return a.checkApprovedHashAndExecTransaction(ctx, fastConfirmCallData, safeTxHash)
 }
 
@@ -738,8 +755,8 @@ func (a *AssertionChain) createFastConfirmCalldata(
 	assertionCreationInfo *protocol.AssertionCreatedInfo,
 ) ([]byte, error) {
 	calldata, err := fastConfirmAssertionMethod.Inputs.Pack(
-		assertionCreationInfo.AssertionHash,
-		assertionCreationInfo.ParentAssertionHash,
+		assertionCreationInfo.AssertionHash.Hash,
+		assertionCreationInfo.ParentAssertionHash.Hash,
 		assertionCreationInfo.AfterState,
 		assertionCreationInfo.AfterInboxBatchAcc,
 	)
@@ -804,9 +821,9 @@ func (a *AssertionChain) checkApprovedHashAndExecTransaction(ctx context.Context
 	return nil
 }
 
-// SpecChallengeManager creates a new spec challenge manager
-func (a *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
-	return a.specChallengeManager, nil
+// SpecChallengeManager returns the assertions chain's spec challenge manager.
+func (a *AssertionChain) SpecChallengeManager() protocol.SpecChallengeManager {
+	return a.specChallengeManager
 }
 
 // AssertionUnrivaledBlocks gets the number of blocks an assertion was unrivaled. That is, it looks up the
@@ -887,10 +904,7 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 }
 
 func (a *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionHash, error) {
-	cm, err := a.SpecChallengeManager(ctx)
-	if err != nil {
-		return protocol.AssertionHash{}, err
-	}
+	cm := a.SpecChallengeManager()
 	edgeOpt, err := cm.GetEdge(ctx, edgeId)
 	if err != nil {
 		return protocol.AssertionHash{}, err
@@ -902,10 +916,7 @@ func (a *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol.
 }
 
 func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protocol.EdgeId) (protocol.OriginHeights, error) {
-	cm, err := a.SpecChallengeManager(ctx)
-	if err != nil {
-		return protocol.OriginHeights{}, err
-	}
+	cm := a.SpecChallengeManager()
 	edgeOpt, err := cm.GetEdge(ctx, edgeId)
 	if err != nil {
 		return protocol.OriginHeights{}, err
@@ -969,12 +980,12 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 	return &protocol.AssertionCreatedInfo{
 		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
 		RequiredStake:       parsedLog.RequiredStake,
-		ParentAssertionHash: parsedLog.ParentAssertionHash,
+		ParentAssertionHash: protocol.AssertionHash{Hash: parsedLog.ParentAssertionHash},
 		BeforeState:         parsedLog.Assertion.BeforeState,
 		AfterState:          afterState,
 		InboxMaxCount:       parsedLog.InboxMaxCount,
 		AfterInboxBatchAcc:  parsedLog.AfterInboxBatchAcc,
-		AssertionHash:       parsedLog.AssertionHash,
+		AssertionHash:       protocol.AssertionHash{Hash: parsedLog.AssertionHash},
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
 		TransactionHash:     ethLog.TxHash,

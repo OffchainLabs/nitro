@@ -28,6 +28,7 @@ go_test(
         "//api",
         "//chain-abstraction:protocol",
         "//state-commitments/history",
+        "//testing/casttest",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_jmoiron_sqlx//:sqlx",
         "@com_github_mattn_go_sqlite3//:go-sqlite3",

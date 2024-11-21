@@ -11,7 +11,7 @@ test_suite(
 
 go_test(
     name = "endtoend_test",
-    timeout = "long",
+    size = "medium",
     srcs = [
         "e2e_test.go",
         "helpers_test.go",
@@ -22,12 +22,10 @@ go_test(
         "manual",
     ],
     deps = [
-        "//api",
         "//chain-abstraction:protocol",
         "//chain-abstraction/sol-implementation",
         "//challenge-manager",
         "//challenge-manager/types",
-        "//layer2-state-provider",
         "//solgen/go/bridgegen",
         "//solgen/go/mocksgen",
         "//solgen/go/rollupgen",

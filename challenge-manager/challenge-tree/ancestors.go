@@ -1,14 +1,19 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package challengetree
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/pkg/errors"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers"
 	"github.com/offchainlabs/bold/containers/threadsafe"
 	bisection "github.com/offchainlabs/bold/math"
-	"github.com/pkg/errors"
 )
 
 var (

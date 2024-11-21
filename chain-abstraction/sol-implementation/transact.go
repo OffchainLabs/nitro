@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package solimpl
 
@@ -8,12 +9,15 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/offchainlabs/bold/containers"
+	"github.com/ccoveille/go-safecast"
+	"github.com/pkg/errors"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/pkg/errors"
+
+	"github.com/offchainlabs/bold/containers"
 )
 
 // ChainCommitter defines a type of chain backend that supports
@@ -81,7 +85,11 @@ func (a *AssertionChain) transact(
 	}
 
 	// Now, we send the tx with the estimated gas.
-	opts.GasLimit = gas + uint64(defaultBaseGas)
+	defaultGasUint64, err := safecast.ToUint64(defaultBaseGas)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not convert default base gas to uint64")
+	}
+	opts.GasLimit = gas + defaultGasUint64
 	tx, err = a.transactor.SendTransaction(ctx, fn, opts, gas)
 	if err != nil {
 		return nil, err
@@ -145,7 +153,15 @@ func (a *AssertionChain) waitForTxToBeSafe(
 
 		// If the tx is not yet safe, we can simply wait.
 		if !txSafe {
-			blocksLeftForTxToBeSafe := receipt.BlockNumber.Uint64() - latestSafeHeader.Number.Uint64()
+			var blocksLeftForTxToBeSafe int64
+			if receipt.BlockNumber.Uint64() > latestSafeHeader.Number.Uint64() {
+				blocksLeftForTxToBeSafe = 0
+			} else {
+				blocksLeftForTxToBeSafe, err = safecast.ToInt64(latestSafeHeader.Number.Uint64() - receipt.BlockNumber.Uint64())
+				if err != nil {
+					return nil, errors.Wrap(err, "could not convert blocks left for tx to be safe to int64")
+				}
+			}
 			timeToWait := a.averageTimeForBlockCreation * time.Duration(blocksLeftForTxToBeSafe)
 			<-time.After(timeToWait)
 		} else {

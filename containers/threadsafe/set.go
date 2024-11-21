@@ -1,9 +1,7 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
-// Package threadsafe includes generic utilities for maps and sets that can
-// be safely used concurrently for type-safety at compile time with the
-// bare minimum methods needed in this repository.
 package threadsafe
 
 import (

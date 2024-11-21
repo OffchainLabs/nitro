@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 // Package backend handles the business logic for API data fetching
 // for BOLD challenge information. It is meant to be fairly abstract and
 // well-tested.
@@ -10,14 +14,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ccoveille/go-safecast"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/bold/api"
 	"github.com/offchainlabs/bold/api/db"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	watcher "github.com/offchainlabs/bold/challenge-manager/chain-watcher"
 	edgetracker "github.com/offchainlabs/bold/challenge-manager/edge-tracker"
 	"github.com/offchainlabs/bold/containers/option"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 type BusinessLogicProvider interface {
@@ -44,14 +51,21 @@ func NewBackend(
 	db db.ReadUpdateDatabase,
 	chainDataFetcher protocol.AssertionChain,
 	chainWatcher *watcher.Watcher,
-	trackerFetcher EdgeTrackerFetcher,
 ) *Backend {
 	return &Backend{
 		db:               db,
 		chainDataFetcher: chainDataFetcher,
 		chainWatcher:     chainWatcher,
-		trackerFetcher:   trackerFetcher,
+		trackerFetcher:   nil, // Must be set after construction.
 	}
+}
+
+// SetEdgeTrackerFetcher sets the edge tracker fetcher for the backend.
+//
+// This method must be called to inject this dependency before starting the
+// backend.
+func (b *Backend) SetEdgeTrackerFetcher(fetcher EdgeTrackerFetcher) {
+	b.trackerFetcher = fetcher
 }
 
 func (b *Backend) GetAssertions(ctx context.Context, opts ...db.AssertionOption) ([]*api.JsonAssertion, error) {
@@ -116,7 +130,10 @@ func (b *Backend) GetCollectMachineHashes(ctx context.Context, opts ...db.Collec
 				if err != nil {
 					return nil, fmt.Errorf("could not parse step height %s: %w", stepHeightStr, err)
 				}
-				stepHeights[i] = uint64(stepHeight)
+				stepHeights[i], err = safecast.ToUint64(stepHeight)
+				if err != nil {
+					return nil, fmt.Errorf("could not cast step height %d to uint64: %w", stepHeight, err)
+				}
 			}
 			cmh.StepHeights = stepHeights
 		}
@@ -137,10 +154,7 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 		return nil, err
 	}
 	if query.ShouldForceUpdate() {
-		chalManager, err := b.chainDataFetcher.SpecChallengeManager(ctx)
-		if err != nil {
-			return nil, err
-		}
+		chalManager := b.chainDataFetcher.SpecChallengeManager()
 		for _, e := range edges {
 			edgeOpt, err := chalManager.GetEdge(ctx, protocol.EdgeId{Hash: e.Id})
 			if err != nil {
@@ -310,7 +324,7 @@ func (b *Backend) LatestConfirmedAssertion(ctx context.Context) (*api.JsonAssert
 		Hash:                     hash.Hash,
 		ConfirmPeriodBlocks:      creationInfo.ConfirmPeriodBlocks,
 		RequiredStake:            creationInfo.RequiredStake.String(),
-		ParentAssertionHash:      creationInfo.ParentAssertionHash,
+		ParentAssertionHash:      creationInfo.ParentAssertionHash.Hash,
 		InboxMaxCount:            creationInfo.InboxMaxCount.String(),
 		AfterInboxBatchAcc:       creationInfo.AfterInboxBatchAcc,
 		WasmModuleRoot:           creationInfo.WasmModuleRoot,

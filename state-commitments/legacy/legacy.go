@@ -1,18 +1,21 @@
-// Package history defines the primitive HistoryCommitment type in the BOLD
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
+// Package history defines the primitive HistoryCommitment type in the BoLD
 // protocol.
-//
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 package legacy
 
 import (
 	"errors"
 	"sync"
 
-	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
+	"github.com/ccoveille/go-safecast"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	inclusionproofs "github.com/offchainlabs/bold/state-commitments/inclusion-proofs"
-	"github.com/ethereum/go-ethereum/common"
+	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 )
 
 var (
@@ -80,10 +83,14 @@ func NewLegacy(leaves []common.Hash) (LegacyHistory, error) {
 	if err3 != nil {
 		return emptyCommit, err3
 	}
+	hU64, err := safecast.ToUint64(len(leaves) - 1)
+	if err != nil {
+		return emptyCommit, err
+	}
 
 	return LegacyHistory{
 		Merkle:         root,
-		Height:         uint64(len(leaves) - 1),
+		Height:         hU64,
 		FirstLeaf:      leaves[0],
 		LastLeaf:       leaves[len(leaves)-1],
 		FirstLeafProof: firstLeafProof,

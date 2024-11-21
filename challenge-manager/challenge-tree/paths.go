@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package challengetree
 
 import (
@@ -6,10 +10,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/pkg/errors"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers"
 	"github.com/offchainlabs/bold/containers/option"
-	"github.com/pkg/errors"
 )
 
 type ComputePathWeightArgs struct {
@@ -197,10 +202,14 @@ func (ht *RoyalChallengeTree) findEssentialPaths(
 			if err != nil {
 				return nil, nil, err
 			}
-			lowerPath := append(path, lowerChildId)
-			upperPath := append(path, upperChildId)
-			lowerTimers := append(currentTimers, lowerTimer)
-			upperTimers := append(currentTimers, upperTimer)
+			lowerPath := path
+			upperPath := path
+			lowerPath = append(lowerPath, lowerChildId)
+			upperPath = append(upperPath, upperChildId)
+			lowerTimers := currentTimers
+			upperTimers := currentTimers
+			lowerTimers = append(lowerTimers, lowerTimer)
+			upperTimers = append(upperTimers, upperTimer)
 			stack.push(&visited{
 				essentialNode: lowerChild,
 				path:          lowerPath,
@@ -219,8 +228,10 @@ func (ht *RoyalChallengeTree) findEssentialPaths(
 			if err != nil {
 				return nil, nil, err
 			}
-			claimingPath := append(path, claimingEdge.Id())
-			claimingTimers := append(currentTimers, claimingEdgeTimer)
+			claimingPath := path
+			claimingPath = append(claimingPath, claimingEdge.Id())
+			claimingTimers := currentTimers
+			claimingTimers = append(claimingTimers, claimingEdgeTimer)
 			stack.push(&visited{
 				essentialNode: claimingEdge,
 				path:          claimingPath,
@@ -274,6 +285,7 @@ func (h uint64Heap) Peek() uint64 {
 }
 
 func (h *uint64Heap) Push(x any) {
+	// nolint:errcheck
 	*h = append(*h, x.(uint64))
 }
 
@@ -304,6 +316,7 @@ func (h *pathWeightMinHeap) Push(item uint64) {
 }
 
 func (h *pathWeightMinHeap) Pop() uint64 {
+	// nolint:errcheck
 	return heap.Pop(h.items).(uint64)
 }
 
@@ -337,5 +350,6 @@ func (s *stack[T]) pop() option.Option[T] {
 	tail := s.dll.Back()
 	val := tail.Value
 	s.dll.Remove(tail)
+	// nolint:errcheck
 	return option.Some(val.(T))
 }

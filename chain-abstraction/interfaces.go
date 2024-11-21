@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package protocol
 
@@ -10,14 +11,17 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/offchainlabs/bold/containers/option"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
-	"github.com/offchainlabs/bold/state-commitments/history"
+	"github.com/ccoveille/go-safecast"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/bold/containers/option"
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/bold/state-commitments/history"
 )
 
 // ErrCachedTimeSufficient is an error received from the challenge manager smart contract
@@ -49,9 +53,9 @@ type HeadSubscriber interface {
 
 // LayerZeroHeights for edges configured as parameters in the challenge manager contract.
 type LayerZeroHeights struct {
-	BlockChallengeHeight     uint64
-	BigStepChallengeHeight   uint64
-	SmallStepChallengeHeight uint64
+	BlockChallengeHeight     Height
+	BigStepChallengeHeight   Height
+	SmallStepChallengeHeight Height
 }
 
 // AssertionHash represents a unique identifier for an assertion
@@ -107,12 +111,12 @@ type Assertion interface {
 type AssertionCreatedInfo struct {
 	ConfirmPeriodBlocks uint64
 	RequiredStake       *big.Int
-	ParentAssertionHash common.Hash
+	ParentAssertionHash AssertionHash
 	BeforeState         rollupgen.AssertionState
 	AfterState          rollupgen.AssertionState
 	InboxMaxCount       *big.Int
 	AfterInboxBatchAcc  common.Hash
-	AssertionHash       common.Hash
+	AssertionHash       AssertionHash
 	WasmModuleRoot      common.Hash
 	ChallengeManager    common.Address
 	TransactionHash     common.Hash
@@ -134,6 +138,8 @@ type AssertionChain interface {
 	GetAssertion(ctx context.Context, opts *bind.CallOpts, id AssertionHash) (Assertion, error)
 	IsChallengeComplete(ctx context.Context, challengeParentAssertionHash AssertionHash) (bool, error)
 	Backend() ChainBackend
+	RollupAddress() common.Address
+	StakerAddress() common.Address
 	AssertionStatus(
 		ctx context.Context,
 		assertionHash AssertionHash,
@@ -176,7 +182,7 @@ type AssertionChain interface {
 	) error
 
 	// Spec-based implementation methods.
-	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)
+	SpecChallengeManager() SpecChallengeManager
 }
 
 // InheritedTimer for an edge from its children or claiming edges.
@@ -219,7 +225,11 @@ func ChallengeLevelFromString(s string) (ChallengeLevel, error) {
 		if err != nil {
 			return 0, err
 		}
-		return ChallengeLevel(challengeLevel), nil
+		clu8, err := safecast.ToUint8(challengeLevel)
+		if err != nil {
+			return 0, err
+		}
+		return ChallengeLevel(clu8), nil
 	}
 }
 
@@ -262,11 +272,11 @@ type SpecChallengeManager interface {
 	// Address of the challenge manager contract.
 	Address() common.Address
 	// Layer zero edge heights defined the challenge manager contract.
-	LayerZeroHeights(ctx context.Context) (*LayerZeroHeights, error)
+	LayerZeroHeights() LayerZeroHeights
 	// Number of big step challenge levels defined in the challenge manager contract.
-	NumBigSteps(ctx context.Context) (uint8, error)
+	NumBigSteps() uint8
 	// Duration of the challenge period in blocks.
-	ChallengePeriodBlocks(ctx context.Context) (uint64, error)
+	ChallengePeriodBlocks() uint64
 	// Gets an edge by its id.
 	GetEdge(ctx context.Context, edgeId EdgeId) (option.Option[SpecEdge], error)
 	MultiUpdateInheritedTimers(
@@ -314,6 +324,10 @@ type SpecChallengeManager interface {
 // Height if defined as the height of a history commitment in the specification.
 // Heights are 0-indexed.
 type Height uint64
+
+func (h Height) Uint64() uint64 {
+	return uint64(h)
+}
 
 // EdgeStatus of an edge in the protocol.
 type EdgeStatus uint8

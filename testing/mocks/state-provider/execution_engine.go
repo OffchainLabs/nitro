@@ -1,13 +1,15 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 package stateprovider
 
 import (
 	"encoding/binary"
 	"math/big"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/ethereum/go-ethereum/common"
+
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 )
 
 type Machine interface {

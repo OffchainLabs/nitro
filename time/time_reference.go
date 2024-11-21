@@ -1,7 +1,8 @@
-// Package time defines abstractions for time-related operations in BOLD.
-//
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
+// Package time defines abstractions for time-related operations in BoLD.
 package time
 
 import (

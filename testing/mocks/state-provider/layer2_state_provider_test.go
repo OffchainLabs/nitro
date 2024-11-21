@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 package stateprovider
 
 import (
@@ -11,12 +12,14 @@ import (
 	"math"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	challenge_testing "github.com/offchainlabs/bold/testing"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/stretchr/testify/require"
 )
 
 func mockMachineAtBlock(_ context.Context, block uint64) (Machine, error) {

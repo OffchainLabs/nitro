@@ -1,3 +1,7 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package events
 
 import (
@@ -104,7 +108,7 @@ func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
 	}
 }
 
-type subId uint64
+type subId int
 
 // Subscription defines a generic handle to a subscription of
 // events from a producer.

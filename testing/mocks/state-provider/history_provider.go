@@ -1,11 +1,17 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+
 package stateprovider
 
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/common"
+
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 // Collects a list of machine hashes at a message number based on some configuration parameters.
@@ -36,8 +42,7 @@ func (s *L2StateBackend) CollectMachineHashes(
 // CollectProof Collects osp of at a message number and OpcodeIndex .
 func (s *L2StateBackend) CollectProof(
 	ctx context.Context,
-	wasmModuleRoot common.Hash,
-	fromBatch l2stateprovider.Batch,
+	assertionMetadata *l2stateprovider.AssociatedAssertionMetadata,
 	blockChallengeHeight l2stateprovider.Height,
 	machineIndex l2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
@@ -57,17 +62,16 @@ func (s *L2StateBackend) CollectProof(
 // at each message number.
 func (s *L2StateBackend) L2MessageStatesUpTo(
 	ctx context.Context,
-	from l2stateprovider.Height,
-	upTo option.Option[l2stateprovider.Height],
-	fromBatch,
-	toBatch l2stateprovider.Batch,
+	fromState protocol.GoGlobalState,
+	batchLimit l2stateprovider.Batch,
+	toHeight option.Option[l2stateprovider.Height],
 ) ([]common.Hash, error) {
 	var to l2stateprovider.Height
-	if !upTo.IsNone() {
-		to = upTo.Unwrap()
+	if !toHeight.IsNone() {
+		to = toHeight.Unwrap()
 	} else {
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
 		to = l2stateprovider.Height(blockChallengeLeafHeight)
 	}
-	return s.statesUpTo(uint64(from), uint64(to), uint64(fromBatch), uint64(toBatch))
+	return s.statesUpTo(uint64(fromState.PosInBatch), uint64(to), uint64(fromState.Batch), uint64(batchLimit))
 }

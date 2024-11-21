@@ -1,19 +1,23 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 // Package assertions contains testing utilities for posting and scanning for
-// assertions on chain, which are useful for simulating the responsibilities
-// of Arbitrum Nitro and initiating challenges as needed using our challenge manager.
+// assertions on chain, which are useful for simulating the responsibilities of
+// Arbitrum Nitro and initiating challenges as needed using our challenge
+// manager.
 package assertions
 
 import (
 	"context"
-	"crypto/rand"
-	"math/big"
 	"sync"
 	"time"
 
-	"github.com/offchainlabs/bold/util/stopwaiter"
+	"github.com/pkg/errors"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/bold/api/db"
@@ -21,55 +25,65 @@ import (
 	"github.com/offchainlabs/bold/challenge-manager/types"
 	"github.com/offchainlabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/pkg/errors"
+	"github.com/offchainlabs/bold/util/stopwaiter"
 )
 
 var (
 	evilAssertionCounter                  = metrics.NewRegisteredCounter("arb/validator/scanner/evil_assertion", nil)
-	challengeSubmittedCounter             = metrics.NewRegisteredCounter("arb/validator/scanner/challenge_submitted", nil)
 	assertionConfirmedCounter             = metrics.GetOrRegisterCounter("arb/validator/scanner/assertion_confirmed", nil)
 	errorConfirmingAssertionByTimeCounter = metrics.NewRegisteredCounter("arb/validator/scanner/error_confirming_assertion_by_time", nil)
 	latestConfirmedAssertionGauge         = metrics.NewRegisteredGauge("arb/validator/scanner/latest_confirmed_assertion_block_number", nil)
 	safeBlockDelayCounter                 = metrics.GetOrRegisterCounter("arb/validator/scanner/safe_block_delay", nil)
 )
 
-// The Manager struct is responsible for several tasks related to the assertion chain:
-// 1. It continuously polls the assertion chain to check for posted, on-chain assertions starting from the latest confirmed assertion up to the newest one.
-// 2. As the assertion chain advances, the Manager keeps polling to stay updated.
-// 3. Upon observing each new assertion, the Manager evaluates whether it should challenge the assertion or not.
-// 4. The Manager frequently posts new assertions to the assertion chain at specific intervals.
-// 5. When posting assertions, it relies on the most recent execution state available in its local state manager.
+type timings struct {
+	pollInterval time.Duration
+	confInterval time.Duration
+	postInterval time.Duration
+	avgBlockTime time.Duration
+}
+
+var defaultTimings = timings{
+	pollInterval: time.Minute,
+	confInterval: time.Second * 10,
+	postInterval: time.Hour,
+	avgBlockTime: time.Second * 12,
+}
+
+// The Manager struct is responsible for several tasks related to the assertion
+// chain:
+//
+// 1. It continuously polls the assertion chain to check for posted, on-chain
+// assertions starting from the latest confirmed assertion up to the newest one.
+// 2. As the assertion chain advances, the Manager keeps polling to stay
+// updated.
+// 3. Upon observing each new assertion, the Manager evaluates whether it should
+// challenge the assertion or not.
+// 4. The Manager frequently posts new assertions to the assertion chain at
+// specific intervals.
+// 5. When posting assertions, it relies on the most recent execution state
+// available in its local execution provider.
 type Manager struct {
 	stopwaiter.StopWaiter
 	chain                       protocol.AssertionChain
 	backend                     bind.ContractBackend
-	challengeCreator            types.ChallengeCreator
-	challengeReader             types.ChallengeReader
-	stateProvider               l2stateprovider.ExecutionProvider
-	pollInterval                time.Duration
-	confirmationAttemptInterval time.Duration
-	averageTimeForBlockCreation time.Duration
+	execProvider                l2stateprovider.ExecutionProvider
+	times                       timings
 	rollupAddr                  common.Address
-	challengeManagerAddr        common.Address
 	validatorName               string
 	forksDetectedCount          uint64
-	challengesSubmittedCount    uint64
 	assertionsProcessedCount    uint64
 	submittedRivalsCount        uint64
-	postInterval                time.Duration
-	submittedAssertions         *threadsafe.LruSet[common.Hash]
+	submittedAssertions         *threadsafe.LruSet[protocol.AssertionHash]
 	apiDB                       db.Database
 	assertionChainData          *assertionChainData
 	observedCanonicalAssertions chan protocol.AssertionHash
 	isReadyToPost               bool
 	disablePosting              bool
 	startPostingSignal          chan struct{}
-	layerZeroHeightsCache       *protocol.LayerZeroHeights
-	layerZeroHeightsCacheLock   sync.RWMutex
 	enableFastConfirmation      bool
+	mode                        types.Mode
+	rivalHandler                types.RivalHandler
 }
 
 type assertionChainData struct {
@@ -98,47 +112,78 @@ func WithDangerousReadyToPost() Opt {
 	}
 }
 
+// WithAPIDB sets the database to use for the assertion manager.
+func WithAPIDB(db db.Database) Opt {
+	return func(m *Manager) {
+		m.apiDB = db
+	}
+}
+
+// WithPostingInterval overrides the default posting interval.
+//
+// This interval is the amount of time the assertsion manager will wait between
+// attempts to post assertions, unless the previous assertion was an overflow
+// asseartion. If the previous assertion was an overflow assertion, and the
+// assertion manager has the data it needs to post an additional assertion,
+// it will disregard the posting interval and post right away.
+func WithPostingInterval(t time.Duration) Opt {
+	return func(m *Manager) {
+		m.times.postInterval = t
+	}
+}
+
+// WithPollingInterval overrides the default polling interval.
+//
+// This interval is the amount of time the assertion manager will wait between
+// atteampts to read new asseartions from the parent chain.
+func WithPollingInterval(t time.Duration) Opt {
+	return func(m *Manager) {
+		m.times.pollInterval = t
+	}
+}
+
+// WithConfirmationInterval overrides the default a confiramtion interval.
+//
+// This is the interval the assertion manager will wait between attempts to
+// persist information about which assertions can be confirmed to the parent
+// chain.
+func WithConfirmationInterval(t time.Duration) Opt {
+	return func(m *Manager) {
+		m.times.confInterval = t
+	}
+}
+
+// WithAverageBlockCreationTime overrides the default average block creation
+// time.
+//
+// The average block cretion time is used by the assertion manager to emit
+// warnings if the parent chain hasn't had any new blocks for considerably
+// longer than this expected delay.
+func WithAverageBlockCreationTime(t time.Duration) Opt {
+	return func(m *Manager) {
+		m.times.avgBlockTime = t
+	}
+}
+
 // NewManager creates a manager from the required dependencies.
 func NewManager(
 	chain protocol.AssertionChain,
-	stateProvider l2stateprovider.Provider,
-	backend bind.ContractBackend,
-	challengeManager types.ChallengeManager,
-	rollupAddr common.Address,
-	challengeManagerAddr common.Address,
+	execProvider l2stateprovider.ExecutionProvider,
 	validatorName string,
-	pollInterval,
-	assertionConfirmationAttemptInterval time.Duration,
-	stateManager l2stateprovider.ExecutionProvider,
-	postInterval time.Duration,
-	averageTimeForBlockCreation time.Duration,
-	apiDB db.Database,
+	mode types.Mode,
 	opts ...Opt,
 ) (*Manager, error) {
-	if pollInterval == 0 {
-		return nil, errors.New("assertion scanning interval must be greater than 0")
-	}
-	if assertionConfirmationAttemptInterval == 0 {
-		return nil, errors.New("assertion confirmation attempt interval must be greater than 0")
-	}
 	m := &Manager{
-		chain:                       chain,
-		apiDB:                       apiDB,
-		backend:                     backend,
-		stateProvider:               stateProvider,
-		challengeCreator:            challengeManager,
-		challengeReader:             challengeManager,
-		rollupAddr:                  rollupAddr,
-		challengeManagerAddr:        challengeManagerAddr,
-		validatorName:               validatorName,
-		pollInterval:                pollInterval,
-		confirmationAttemptInterval: assertionConfirmationAttemptInterval,
-		forksDetectedCount:          0,
-		challengesSubmittedCount:    0,
-		assertionsProcessedCount:    0,
-		postInterval:                postInterval,
-		submittedAssertions:         threadsafe.NewLruSet[common.Hash](1000, threadsafe.LruSetWithMetric[common.Hash]("submittedAssertions")),
-		averageTimeForBlockCreation: averageTimeForBlockCreation,
+		chain:                    chain,
+		apiDB:                    nil,
+		backend:                  chain.Backend(),
+		execProvider:             execProvider,
+		rollupAddr:               chain.RollupAddress(),
+		validatorName:            validatorName,
+		times:                    defaultTimings,
+		forksDetectedCount:       0,
+		assertionsProcessedCount: 0,
+		submittedAssertions:      threadsafe.NewLruSet(1500, threadsafe.LruSetWithMetric[protocol.AssertionHash]("submittedAssertions")),
 		assertionChainData: &assertionChainData{
 			latestAgreedAssertion: protocol.AssertionHash{},
 			canonicalAssertions:   make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo),
@@ -146,11 +191,24 @@ func NewManager(
 		observedCanonicalAssertions: make(chan protocol.AssertionHash, 1000),
 		isReadyToPost:               false,
 		startPostingSignal:          make(chan struct{}),
+		mode:                        mode,
+		rivalHandler:                nil, // Must be set after construction if mode > DefensiveMode
 	}
 	for _, o := range opts {
 		o(m)
 	}
+	if m.times.pollInterval == 0 {
+		return nil, errors.New("assertion polling interval must be greater than 0")
+	}
+	if m.times.confInterval == 0 {
+		return nil, errors.New("assertion confirmation attempt interval must be greater than 0")
+	}
 	return m, nil
+}
+
+// SetRivalHandler sets the rival handler for the assertion manager.
+func (m *Manager) SetRivalHandler(handler types.RivalHandler) {
+	m.rivalHandler = handler
 }
 
 func (m *Manager) Start(ctx context.Context) {
@@ -189,7 +247,7 @@ func (m *Manager) checkLatestDesiredBlock(ctx context.Context) {
 				log.Error("Latest block number not a uint64")
 				continue
 			}
-			safeBlockDelayInSeconds := (latestBlock.Number.Uint64() - latestSafeBlock.Number.Uint64()) * uint64(m.averageTimeForBlockCreation.Seconds())
+			safeBlockDelayInSeconds := (latestBlock.Number.Uint64() - latestSafeBlock.Number.Uint64()) * uint64(m.times.avgBlockTime.Seconds())
 			if safeBlockDelayInSeconds > 1200 {
 				log.Warn("Latest safe block is delayed by more that 20 minutes", "latestSafeBlock", latestSafeBlock.Number.Uint64(), "latestBlock", latestBlock.Number.Uint64())
 				safeBlockDelayCounter.Inc(1)
@@ -198,46 +256,13 @@ func (m *Manager) checkLatestDesiredBlock(ctx context.Context) {
 	}
 }
 
-func (m *Manager) LayerZeroHeights(ctx context.Context) (*protocol.LayerZeroHeights, error) {
-	m.layerZeroHeightsCacheLock.RLock()
-	cachedValue := m.layerZeroHeightsCache
-	m.layerZeroHeightsCacheLock.RUnlock()
-	if cachedValue != nil {
-		return cachedValue, nil
-	}
-
-	m.layerZeroHeightsCacheLock.Lock()
-	defer m.layerZeroHeightsCacheLock.Unlock()
-	cm, err := m.chain.SpecChallengeManager(ctx)
-	if err != nil {
-		return nil, err
-	}
-	layerZeroHeights, err := cm.LayerZeroHeights(ctx)
-	if err != nil {
-		return nil, err
-	}
-	m.layerZeroHeightsCache = layerZeroHeights
-	return layerZeroHeights, nil
-}
-
 func (m *Manager) ExecutionStateAfterParent(ctx context.Context, parentInfo *protocol.AssertionCreatedInfo) (*protocol.ExecutionState, error) {
-	layerZeroHeights, err := m.LayerZeroHeights(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if layerZeroHeights.BlockChallengeHeight == 0 {
-		return nil, errors.New("block challenge height is zero")
-	}
 	goGlobalState := protocol.GoGlobalStateFromSolidity(parentInfo.AfterState.GlobalState)
-	return m.stateProvider.ExecutionStateAfterPreviousState(ctx, parentInfo.InboxMaxCount.Uint64(), &goGlobalState, layerZeroHeights.BlockChallengeHeight-1)
+	return m.execProvider.ExecutionStateAfterPreviousState(ctx, parentInfo.InboxMaxCount.Uint64(), &goGlobalState)
 }
 
 func (m *Manager) ForksDetected() uint64 {
 	return m.forksDetectedCount
-}
-
-func (m *Manager) ChallengesSubmitted() uint64 {
-	return m.challengesSubmittedCount
 }
 
 func (m *Manager) AssertionsProcessed() uint64 {
@@ -248,57 +273,12 @@ func (m *Manager) SubmittedRivals() uint64 {
 	return m.submittedRivalsCount
 }
 
-func (m *Manager) AssertionsSubmittedInProcess() []common.Hash {
-	hashes := make([]common.Hash, 0)
-	m.submittedAssertions.ForEach(func(elem common.Hash) {
+func (m *Manager) AssertionsSubmittedInProcess() []protocol.AssertionHash {
+	hashes := make([]protocol.AssertionHash, 0)
+	m.submittedAssertions.ForEach(func(elem protocol.AssertionHash) {
 		hashes = append(hashes, elem)
 	})
 	return hashes
-}
-
-func (m *Manager) logChallengeConfigs(ctx context.Context) error {
-	cm, err := m.chain.SpecChallengeManager(ctx)
-	if err != nil {
-		return err
-	}
-	bigStepNum, err := cm.NumBigSteps(ctx)
-	if err != nil {
-		return err
-	}
-	challengePeriodBlocks, err := cm.ChallengePeriodBlocks(ctx)
-	if err != nil {
-		return err
-	}
-	layerZeroHeights, err := m.LayerZeroHeights(ctx)
-	if err != nil {
-		return err
-	}
-	log.Info("Opening challenge with the following configuration",
-		"address", cm.Address(),
-		"bigStepNumber", bigStepNum,
-		"challengePeriodBlocks", challengePeriodBlocks,
-		"layerZeroHeights", layerZeroHeights,
-	)
-	return nil
-}
-
-// Returns true if the manager can respond to an assertion with a challenge.
-func (m *Manager) canPostRivalAssertion() bool {
-	return m.challengeReader.Mode() >= types.DefensiveMode
-}
-
-func (m *Manager) canPostChallenge() bool {
-	return m.challengeReader.Mode() > types.DefensiveMode
-}
-func randUint64(max uint64) (uint64, error) {
-	n, err := rand.Int(rand.Reader, new(big.Int).SetUint64(max))
-	if err != nil {
-		return 0, err
-	}
-	if !n.IsUint64() {
-		return 0, errors.New("not a uint64")
-	}
-	return n.Uint64(), nil
 }
 
 func (m *Manager) LatestAgreedAssertion() protocol.AssertionHash {

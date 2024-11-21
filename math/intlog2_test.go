@@ -1,5 +1,6 @@
 // Copyright 2024, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package math
 
@@ -9,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/offchainlabs/bold/testing/casttest"
 )
 
 var benchResult int
@@ -62,7 +65,7 @@ func FuzzUnsingedIntegerLog2Floor(f *testing.F) {
 func BenchmarkUnsingedIntegerLog2Floor(b *testing.B) {
 	var r int
 	for i := 1; i < b.N; i++ {
-		r = Log2Floor(uint64(i))
+		r = Log2Floor(casttest.ToUint64(b, i))
 	}
 	benchResult = r
 }
@@ -124,7 +127,7 @@ func FuzzUnsingedIntegerLog2Ceil(f *testing.F) {
 func BenchmarkUnsingedIntegerLog2Ceil(b *testing.B) {
 	var r int
 	for i := 1; i < b.N; i++ {
-		r = Log2Ceil(uint64(i))
+		r = Log2Ceil(casttest.ToUint64(b, i))
 	}
 	benchResult = r
 }

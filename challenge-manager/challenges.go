@@ -1,5 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see:
+// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 package challengemanager
 
@@ -7,20 +8,41 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/offchainlabs/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	"github.com/pkg/errors"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/log"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	edgetracker "github.com/offchainlabs/bold/challenge-manager/edge-tracker"
 	"github.com/offchainlabs/bold/containers"
-	"github.com/pkg/errors"
+	"github.com/offchainlabs/bold/containers/option"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 )
 
-// ChallengeAssertion initiates a challenge on an assertion added to the protocol by finding its parent assertion
-// and starting a challenge transaction. If the challenge creation is successful, we add a leaf
-// with an associated history commitment to it and spawn a challenge tracker in the background.
+// HandleCorrectRival is called when the assertion manager has posted a correct
+// rival assertion on the chain and the chllenge manager needs to create a
+// challenge committing to the correct assertion to rival one or more incorrect
+// assertions.
+func (m *Manager) HandleCorrectRival(ctx context.Context, riv protocol.AssertionHash) error {
+	challengeSubmitted, err := m.ChallengeAssertion(ctx, riv)
+	if err != nil {
+		return err
+	}
+	if challengeSubmitted {
+		challengeSubmittedCounter.Inc(1)
+	}
+	m.logChallengeConfigs()
+	return nil
+}
+
+// ChallengeAssertion initiates a challenge committing to an assertion added to
+// the protocol by finding its parent assertion and starting a challenge
+// transaction. If the challenge creation is successful, the challenge manager
+// adds a leaf with an associated history commitment to it and spawns a
+// challenge tracker in the background.
+//
+// id is the id of the assertion that this validator agrees with.
 func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) (bool, error) {
 	assertion, err := m.chain.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, id)
 	if err != nil {
@@ -83,8 +105,9 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 	log.Info("Successfully opened a challenge on an invalid assertion",
 		"name", m.name,
 		"assertionHash", containers.Trunc(id.Bytes()),
-		"fromBatch", edgeTrackerAssertionInfo.FromBatch,
-		"toBatch", edgeTrackerAssertionInfo.ToBatch,
+		"fromBatch", edgeTrackerAssertionInfo.FromState.Batch,
+		"fromPosInBatch", edgeTrackerAssertionInfo.FromState.PosInBatch,
+		"batchLimit", edgeTrackerAssertionInfo.BatchLimit,
 	)
 	return true, nil
 }
@@ -92,52 +115,49 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 func (m *Manager) addBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
-) (protocol.VerifiedRoyalEdge, bool, *edgetracker.AssociatedAssertionMetadata, bool, error) {
+) (protocol.VerifiedRoyalEdge, bool, *l2stateprovider.AssociatedAssertionMetadata, bool, error) {
 	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertion.Id())
 	if err != nil {
 		return nil, false, nil, false, errors.Wrap(err, "could not get assertion creation info")
 	}
-	if !m.allowTrackingEdgeWithChallengeParentAssertionHash(protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash}) {
+	if !m.watcher.AllowTrackingEdgeWithParentHash(creationInfo.ParentAssertionHash) {
 		return nil, false, nil, false, nil
 	}
-	prevCreationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+	prevCreationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, creationInfo.ParentAssertionHash)
 	if err != nil {
 		return nil, false, nil, false, errors.Wrap(err, "could not get assertion creation info")
 	}
-	fromBatch := l2stateprovider.Batch(protocol.GoGlobalStateFromSolidity(creationInfo.BeforeState.GlobalState).Batch)
-	toBatch := l2stateprovider.Batch(protocol.GoGlobalStateFromSolidity(creationInfo.AfterState.GlobalState).Batch)
+	if prevCreationInfo.InboxMaxCount == nil {
+		return nil, false, nil, false, errors.New("prevCreationInfo.InboxMaxCount is nil")
+	}
+	if !prevCreationInfo.InboxMaxCount.IsUint64() {
+		return nil, false, nil, false, fmt.Errorf("inbox max count is not a uint64: %v", prevCreationInfo.InboxMaxCount)
+	}
+	fromState := protocol.GoGlobalStateFromSolidity(creationInfo.BeforeState.GlobalState)
+	assertionMetadata := &l2stateprovider.AssociatedAssertionMetadata{
+		FromState:            fromState,
+		BatchLimit:           l2stateprovider.Batch(prevCreationInfo.InboxMaxCount.Uint64()),
+		WasmModuleRoot:       prevCreationInfo.WasmModuleRoot,
+		ClaimedAssertionHash: creationInfo.AssertionHash,
+	}
 
 	startCommit, err := m.stateManager.HistoryCommitment(
 		ctx,
 		&l2stateprovider.HistoryCommitmentRequest{
-			WasmModuleRoot:              prevCreationInfo.WasmModuleRoot,
-			FromBatch:                   fromBatch,
-			ToBatch:                     toBatch,
+			AssertionMetadata:           assertionMetadata,
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
-			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
-			ClaimId:                     creationInfo.AssertionHash,
 		},
 	)
 	if err != nil {
 		return nil, false, nil, false, err
 	}
-	manager, err := m.chain.SpecChallengeManager(ctx)
-	if err != nil {
-		return nil, false, nil, false, err
-	}
-	layerZeroHeights, err := manager.LayerZeroHeights(ctx)
-	if err != nil {
-		return nil, false, nil, false, err
-	}
+	manager := m.chain.SpecChallengeManager()
+	layerZeroHeights := manager.LayerZeroHeights()
 	req := &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              prevCreationInfo.WasmModuleRoot,
-		FromBatch:                   fromBatch,
-		ToBatch:                     toBatch,
+		AssertionMetadata:           assertionMetadata,
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		FromHeight:                  0,
 		UpToHeight:                  option.Some(l2stateprovider.Height(layerZeroHeights.BlockChallengeHeight)),
-		ClaimId:                     creationInfo.AssertionHash,
 	}
 	endCommit, err := m.stateManager.HistoryCommitment(
 		ctx,
@@ -149,7 +169,7 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 	precomputedEdgeId, err := manager.CalculateEdgeId(
 		ctx,
 		protocol.NewBlockChallengeLevel(),
-		protocol.OriginId(creationInfo.ParentAssertionHash),
+		protocol.OriginId(creationInfo.ParentAssertionHash.Hash),
 		protocol.Height(startCommit.Height),
 		startCommit.Merkle,
 		protocol.Height(endCommit.Height),
@@ -176,22 +196,5 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, false, nil, false, errors.Wrap(err, "could not post block challenge root edge")
 	}
-	return edge, true, &edgetracker.AssociatedAssertionMetadata{
-		FromBatch:            fromBatch,
-		ToBatch:              toBatch,
-		WasmModuleRoot:       prevCreationInfo.WasmModuleRoot,
-		ClaimedAssertionHash: creationInfo.AssertionHash,
-	}, false, nil
-}
-
-func (m *Manager) allowTrackingEdgeWithChallengeParentAssertionHash(challengeParentAssertionHash protocol.AssertionHash) bool {
-	if len(m.trackChallengeParentAssertionHashes) == 0 {
-		return true
-	}
-	for _, hash := range m.trackChallengeParentAssertionHashes {
-		if hash == challengeParentAssertionHash {
-			return true
-		}
-	}
-	return false
+	return edge, true, assertionMetadata, false, nil
 }
