@@ -49,10 +49,15 @@ func (t *auctionCloseTicker) start() {
 
 // CurrentRound returns the current round number.
 func CurrentRound(initialRoundTimestamp time.Time, roundDuration time.Duration) uint64 {
+	return RoundAtTimestamp(initialRoundTimestamp, time.Now(), roundDuration)
+}
+
+// CurrentRound returns the round number as of some timestamp.
+func RoundAtTimestamp(initialRoundTimestamp time.Time, currentTime time.Time, roundDuration time.Duration) uint64 {
 	if roundDuration == 0 {
 		return 0
 	}
-	return arbmath.SaturatingUCast[uint64](time.Since(initialRoundTimestamp) / roundDuration)
+	return arbmath.SaturatingUCast[uint64](currentTime.Sub(initialRoundTimestamp) / roundDuration)
 }
 
 func isAuctionRoundClosed(
@@ -81,7 +86,14 @@ func timeIntoRound(
 func TimeTilNextRound(
 	initialTimestamp time.Time,
 	roundDuration time.Duration) time.Duration {
-	currentRoundNum := CurrentRound(initialTimestamp, roundDuration)
+	return TimeTilNextRoundAfterTimestamp(initialTimestamp, time.Now(), roundDuration)
+}
+
+func TimeTilNextRoundAfterTimestamp(
+	initialTimestamp time.Time,
+	currentTime time.Time,
+	roundDuration time.Duration) time.Duration {
+	currentRoundNum := RoundAtTimestamp(initialTimestamp, currentTime, roundDuration)
 	nextRoundStart := initialTimestamp.Add(roundDuration * arbmath.SaturatingCast[time.Duration](currentRoundNum+1))
 	return time.Until(nextRoundStart)
 }
