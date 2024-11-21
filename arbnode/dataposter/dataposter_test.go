@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/Knetic/govaluate"
+	"github.com/google/go-cmp/cmp"
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -17,8 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/google/go-cmp/cmp"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
