@@ -27,6 +27,9 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/pubsub"
@@ -40,8 +43,10 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
+func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage_TimeboostedFieldIsCorrect(t *testing.T) {
 	t.Parallel()
+
+	// logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -52,8 +57,10 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	seq, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
+	seq, seqClient, seqInfo, auctionContractAddr, cleanupSeq, feedListener, cleanupFeedListener := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
 	defer cleanupSeq()
+	defer cleanupFeedListener()
+
 	chainId, err := seqClient.ChainID(ctx)
 	Require(t, err)
 
@@ -129,6 +136,57 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 			t.Fatal("Bob should have been sequenced before Alice with express lane")
 		}
 	}
+
+	// verifyTimeboostedCorrectness is used to check if the timeboosted byte array in both the sequencer's tx streamer and the client node's tx streamer (which is connected
+	// to the sequencer feed) is accurate, i.e it represents correctly whether a tx is timeboosted or not
+	verifyTimeboostedCorrectness := func(user string, tNode *arbnode.Node, tClient *ethclient.Client, isTimeboosted bool, userTx *types.Transaction, userTxBlockNum uint64) {
+		blockMetadataOfBlock, err := tNode.TxStreamer.BlockMetadataAtCount(arbutil.MessageIndex(userTxBlockNum) + 1)
+		Require(t, err)
+		if len(blockMetadataOfBlock) == 0 {
+			t.Fatal("got empty blockMetadata byte array")
+		}
+		if blockMetadataOfBlock[0] != message.TimeboostedVersion {
+			t.Fatalf("blockMetadata byte array has invalid version. Want: %d, Got: %d", message.TimeboostedVersion, blockMetadataOfBlock[0])
+		}
+		userTxBlock, err := tClient.BlockByNumber(ctx, new(big.Int).SetUint64(userTxBlockNum))
+		Require(t, err)
+		var foundUserTx bool
+		for txIndex, tx := range userTxBlock.Transactions() {
+			got, err := blockMetadataOfBlock.IsTxTimeboosted(txIndex)
+			Require(t, err)
+			if tx.Hash() == userTx.Hash() {
+				foundUserTx = true
+				if !isTimeboosted && got {
+					t.Fatalf("incorrect timeboosted bit for %s's tx, it shouldn't be timeboosted", user)
+				} else if isTimeboosted && !got {
+					t.Fatalf("incorrect timeboosted bit for %s's tx, it should be timeboosted", user)
+				}
+			} else if got {
+				// Other tx's right now shouln't be timeboosted
+				t.Fatalf("incorrect timeboosted bit for nonspecified tx with index: %d, it shouldn't be timeboosted", txIndex)
+			}
+		}
+		if !foundUserTx {
+			t.Fatalf("%s's tx wasn't found in the block with blockNum retrieved from its receipt", user)
+		}
+	}
+
+	// First test that timeboosted byte array is correct on sequencer side
+	verifyTimeboostedCorrectness("alice", seq, seqClient, false, aliceTx, aliceBlock)
+	verifyTimeboostedCorrectness("bob", seq, seqClient, true, bobBoostableTx, bobBlock)
+
+	// Verify that timeboosted byte array receieved via sequencer feed is correct
+	_, err = WaitForTx(ctx, feedListener.Client, bobBoostableTx.Hash(), time.Second*5)
+	Require(t, err)
+	_, err = WaitForTx(ctx, feedListener.Client, aliceTx.Hash(), time.Second*5)
+	Require(t, err)
+	verifyTimeboostedCorrectness("alice", feedListener.ConsensusNode, feedListener.Client, false, aliceTx, aliceBlock)
+	verifyTimeboostedCorrectness("bob", feedListener.ConsensusNode, feedListener.Client, true, bobBoostableTx, bobBlock)
+
+	// arbnode.BlockHashMismatchLogMsg has been randomly appearing and disappearing when running this test, not sure why that might be happening
+	// if logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg) {
+	// 	t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
+	// }
 }
 
 func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *testing.T) {
@@ -142,7 +200,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
-	seq, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
+	seq, seqClient, seqInfo, auctionContractAddr, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
 	defer cleanupSeq()
 	chainId, err := seqClient.ChainID(ctx)
 	Require(t, err)
@@ -245,7 +303,7 @@ func setupExpressLaneAuction(
 	dbDirPath string,
 	ctx context.Context,
 	jwtSecretPath string,
-) (*arbnode.Node, *ethclient.Client, *BlockchainTestInfo, common.Address, func()) {
+) (*arbnode.Node, *ethclient.Client, *BlockchainTestInfo, common.Address, func(), *TestClient, func()) {
 
 	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
@@ -265,6 +323,13 @@ func setupExpressLaneAuction(
 	}
 	cleanupSeq := builderSeq.Build(t)
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
+
+	port := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	builderFeedListener := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builderFeedListener.isSequencer = false
+	builderFeedListener.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+	builderFeedListener.nodeConfig.Feed.Input.Timeout = broadcastclient.DefaultConfig.Timeout
+	cleanupFeedListener := builderFeedListener.Build(t)
 
 	// Send an L2 tx in the background every two seconds to keep the chain moving.
 	go func() {
@@ -585,7 +650,7 @@ func setupExpressLaneAuction(
 	if !bobWon {
 		t.Fatal("Bob should have won the auction")
 	}
-	return seqNode, seqClient, seqInfo, proxyAddr, cleanupSeq
+	return seqNode, seqClient, seqInfo, proxyAddr, cleanupSeq, builderFeedListener.L2, cleanupFeedListener
 }
 
 func awaitAuctionResolved(
