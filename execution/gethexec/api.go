@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -34,6 +35,34 @@ func NewArbAPI(publisher TransactionPublisher) *ArbAPI {
 
 func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
 	return a.txPublisher.CheckHealth(ctx)
+}
+
+type ArbTimeboostAuctioneerAPI struct {
+	txPublisher TransactionPublisher
+}
+
+func NewArbTimeboostAuctioneerAPI(publisher TransactionPublisher) *ArbTimeboostAuctioneerAPI {
+	return &ArbTimeboostAuctioneerAPI{publisher}
+}
+
+func (a *ArbTimeboostAuctioneerAPI) SubmitAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	return a.txPublisher.PublishAuctionResolutionTransaction(ctx, tx)
+}
+
+type ArbTimeboostAPI struct {
+	txPublisher TransactionPublisher
+}
+
+func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
+	return &ArbTimeboostAPI{publisher}
+}
+
+func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
+	goMsg, err := timeboost.JsonSubmissionToGo(msg)
+	if err != nil {
+		return err
+	}
+	return a.txPublisher.PublishExpressLaneTransaction(ctx, goMsg)
 }
 
 type ArbDebugAPI struct {
