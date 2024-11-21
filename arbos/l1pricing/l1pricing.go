@@ -280,7 +280,6 @@ func (ps *L1PricingState) TransferFromL1FeesAvailable(
 	amount *big.Int,
 	evm *vm.EVM,
 	scenario util.TracingScenario,
-	purpose string,
 	reason tracing.BalanceChangeReason,
 ) (*big.Int, error) {
 	if err := util.TransferBalance(&L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, reason); err != nil {
@@ -410,7 +409,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		return err
 	}
 	l1FeesAvailable, err = ps.TransferFromL1FeesAvailable(
-		payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward", tracing.BalanceChangeTransferBatchposterReward,
+		payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -431,7 +430,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 			return err
 		}
 		l1FeesAvailable, err = ps.TransferFromL1FeesAvailable(
-			addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund", tracing.BalanceChangeTransferBatchposterRefund,
+			addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 		)
 		if err != nil {
 			return err
