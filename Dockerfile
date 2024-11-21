@@ -205,8 +205,7 @@ RUN apt-get update && apt-get install -y unzip wget curl
 WORKDIR /workspace/machines
 
 # Download WAVM machines
-# Since these replay artifacts are only used for core arbitrum functionality
-# we don't need to fetch legacy artifacts
+# no fetch since these replay artifacts are only used for backwards compatibility for Arbitrum One and Nova
 COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v1-rc1 0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41
 #RUN ./download-machine.sh consensus-v2.1 0x9d68e40c47e3b87a8a7e6368cc52915720a6484bb2f47ceabad7e573e3a11232
@@ -303,7 +302,8 @@ USER user
 WORKDIR /home/user/
 ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
-FROM offchainlabs/nitro-node:v2.3.4-rc.5-b4cc111 AS nitro-legacy
+## Fetch the old nitro-node release
+FROM offchainlabs/nitro-node:v3.2.1-d81324d AS nitro-legacy
 
 FROM nitro-node-slim AS nitro-node
 USER root
