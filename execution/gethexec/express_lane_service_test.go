@@ -233,6 +233,28 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	}
 }
 
+type stubPublisher struct {
+	els              *expressLaneService
+	publishedTxOrder []uint64
+}
+
+func makeStubPublisher(els *expressLaneService) *stubPublisher {
+	return &stubPublisher{
+		els:              els,
+		publishedTxOrder: make([]uint64, 0),
+	}
+}
+
+func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	if tx == nil {
+		return errors.New("oops, bad tx")
+	}
+	control, _ := s.els.roundControl.Get(0)
+	s.publishedTxOrder = append(s.publishedTxOrder, control.sequence)
+	return nil
+
+}
+
 func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -240,16 +262,16 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
 	}
+	stubPublisher := makeStubPublisher(els)
+	els.transactionPublisher = stubPublisher
 	els.roundControl.Add(0, &expressLaneControl{
 		sequence: 1,
 	})
 	msg := &timeboost.ExpressLaneSubmission{
 		SequenceNumber: 0,
 	}
-	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
-		return nil
-	}
-	err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+
+	err := els.sequenceExpressLaneSubmission(ctx, msg)
 	require.ErrorIs(t, err, timeboost.ErrSequenceNumberTooLow)
 }
 
@@ -260,24 +282,21 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}
+	stubPublisher := makeStubPublisher(els)
+	els.transactionPublisher = stubPublisher
 	els.roundControl.Add(0, &expressLaneControl{
 		sequence: 1,
 	})
 	msg := &timeboost.ExpressLaneSubmission{
 		SequenceNumber: 2,
 	}
-	numPublished := 0
-	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
-		numPublished += 1
-		return nil
-	}
-	err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+	err := els.sequenceExpressLaneSubmission(ctx, msg)
 	require.NoError(t, err)
 	// Because the message is for a future sequence number, it
 	// should get queued, but not yet published.
-	require.Equal(t, 0, numPublished)
+	require.Equal(t, 0, len(stubPublisher.publishedTxOrder))
 	// Sending it again should give us an error.
-	err = els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+	err = els.sequenceExpressLaneSubmission(ctx, msg)
 	require.ErrorIs(t, err, timeboost.ErrDuplicateSequenceNumber)
 }
 
@@ -288,45 +307,46 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}
+	stubPublisher := makeStubPublisher(els)
+	els.transactionPublisher = stubPublisher
+
 	els.roundControl.Add(0, &expressLaneControl{
 		sequence: 1,
 	})
-	numPublished := 0
-	publishedTxOrder := make([]uint64, 0)
-	control, _ := els.roundControl.Get(0)
-	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
-		numPublished += 1
-		publishedTxOrder = append(publishedTxOrder, control.sequence)
-		return nil
-	}
+
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
 			SequenceNumber: 10,
+			Transaction:    &types.Transaction{},
 		},
 		{
 			SequenceNumber: 5,
+			Transaction:    &types.Transaction{},
 		},
 		{
 			SequenceNumber: 1,
+			Transaction:    &types.Transaction{},
 		},
 		{
 			SequenceNumber: 4,
+			Transaction:    &types.Transaction{},
 		},
 		{
 			SequenceNumber: 2,
+			Transaction:    &types.Transaction{},
 		},
 	}
 	for _, msg := range messages {
-		err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+		err := els.sequenceExpressLaneSubmission(ctx, msg)
 		require.NoError(t, err)
 	}
 	// We should have only published 2, as we are missing sequence number 3.
-	require.Equal(t, 2, numPublished)
+	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
 	require.Equal(t, len(messages), len(els.messagesBySequenceNumber))
 
-	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3}, publishFn)
+	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3, Transaction: &types.Transaction{}})
 	require.NoError(t, err)
-	require.Equal(t, 5, numPublished)
+	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.T) {
@@ -339,17 +359,9 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	els.roundControl.Add(0, &expressLaneControl{
 		sequence: 1,
 	})
-	numPublished := 0
-	publishedTxOrder := make([]uint64, 0)
-	control, _ := els.roundControl.Get(0)
-	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
-		if tx == nil {
-			return errors.New("oops, bad tx")
-		}
-		numPublished += 1
-		publishedTxOrder = append(publishedTxOrder, control.sequence)
-		return nil
-	}
+	stubPublisher := makeStubPublisher(els)
+	els.transactionPublisher = stubPublisher
+
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
 			SequenceNumber: 1,
@@ -370,16 +382,16 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	}
 	for _, msg := range messages {
 		if msg.Transaction == nil {
-			err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+			err := els.sequenceExpressLaneSubmission(ctx, msg)
 			require.ErrorContains(t, err, "oops, bad tx")
 		} else {
-			err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+			err := els.sequenceExpressLaneSubmission(ctx, msg)
 			require.NoError(t, err)
 		}
 	}
 	// One tx out of the four should have failed, so we should have only published 3.
-	require.Equal(t, 3, numPublished)
-	require.Equal(t, []uint64{1, 2, 3}, publishedTxOrder)
+	require.Equal(t, 3, len(stubPublisher.publishedTxOrder))
+	require.Equal(t, []uint64{1, 2, 3}, stubPublisher.publishedTxOrder)
 }
 
 func TestIsWithinAuctionCloseWindow(t *testing.T) {

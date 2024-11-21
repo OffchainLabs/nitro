@@ -455,10 +455,14 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	return s.publishTransactionImpl(parentCtx, tx, options, true /* delay tx if express lane is active */)
+	return s.publishTransactionImpl(parentCtx, tx, options, false /* delay tx if express lane is active */)
 }
 
-func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
+func (s *Sequencer) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	return s.publishTransactionImpl(parentCtx, tx, options, true)
+}
+
+func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, isExpressLaneController bool) error {
 	config := s.config()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
 	// And hard threshold was enabled, this prevents spamming of read locks when not needed
@@ -504,7 +508,7 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 	}
 
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
-		if delay && s.expressLaneService.currentRoundHasController() {
+		if !isExpressLaneController && s.expressLaneService.currentRoundHasController() {
 			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
 		}
 	}
@@ -558,7 +562,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
 		return err
 	}
-	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg, s.publishTransactionImpl)
+	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg)
 }
 
 func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
@@ -1276,6 +1280,7 @@ func (s *Sequencer) StartExpressLane(ctx context.Context, apiBackend *arbitrum.A
 	}
 
 	els, err := newExpressLaneService(
+		s,
 		apiBackend,
 		filterSystem,
 		auctionContractAddr,

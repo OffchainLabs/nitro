@@ -39,9 +39,14 @@ type expressLaneControl struct {
 	controller common.Address
 }
 
+type transactionPublisher interface {
+	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions) error
+}
+
 type expressLaneService struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
+	transactionPublisher     transactionPublisher
 	auctionContractAddr      common.Address
 	apiBackend               *arbitrum.APIBackend
 	initialTimestamp         time.Time
@@ -50,7 +55,7 @@ type expressLaneService struct {
 	chainConfig              *params.ChainConfig
 	logs                     chan []*types.Log
 	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
-	roundControl             *lru.Cache[uint64, *expressLaneControl]
+	roundControl             *lru.Cache[uint64, *expressLaneControl] // thread safe
 	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
 }
 
@@ -118,6 +123,7 @@ func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMs
 }
 
 func newExpressLaneService(
+	transactionPublisher transactionPublisher,
 	apiBackend *arbitrum.APIBackend,
 	filterSystem *filters.FilterSystem,
 	auctionContractAddr common.Address,
@@ -155,6 +161,7 @@ pending:
 	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
 	auctionClosingDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.AuctionClosingSeconds) * time.Second
 	return &expressLaneService{
+		transactionPublisher:     transactionPublisher,
 		auctionContract:          auctionContract,
 		apiBackend:               apiBackend,
 		chainConfig:              chainConfig,
@@ -281,8 +288,6 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 }
 
 func (es *expressLaneService) currentRoundHasController() bool {
-	es.Lock()
-	defer es.Unlock()
 	currRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
 	control, ok := es.roundControl.Get(currRound)
 	if !ok {
@@ -307,19 +312,15 @@ func (es *expressLaneService) isWithinAuctionCloseWindow(arrivalTime time.Time) 
 func (es *expressLaneService) sequenceExpressLaneSubmission(
 	ctx context.Context,
 	msg *timeboost.ExpressLaneSubmission,
-	publishTxFn func(
-		parentCtx context.Context,
-		tx *types.Transaction,
-		options *arbitrum_types.ConditionalOptions,
-		delay bool,
-	) error,
 ) error {
-	es.Lock()
-	defer es.Unlock()
+	// no service lock needed since roundControl is thread-safe
 	control, ok := es.roundControl.Get(msg.Round)
 	if !ok {
 		return timeboost.ErrNoOnchainController
 	}
+
+	es.Lock()
+	defer es.Unlock()
 	// Check if the submission nonce is too low.
 	if msg.SequenceNumber < control.sequence {
 		return timeboost.ErrSequenceNumberTooLow
@@ -330,7 +331,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	}
 	// Log an informational warning if the message's sequence number is in the future.
 	if msg.SequenceNumber > control.sequence {
-		log.Warn("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
+		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
 	// Put into the sequence number map.
 	es.messagesBySequenceNumber[msg.SequenceNumber] = msg
@@ -341,11 +342,10 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		if !exists {
 			break
 		}
-		if err := publishTxFn(
+		if err := es.transactionPublisher.PublishTimeboostedTransaction(
 			ctx,
 			nextMsg.Transaction,
 			msg.Options,
-			false, /* no delay, as it should go through express lane */
 		); err != nil {
 			// If the tx failed, clear it from the sequence map.
 			delete(es.messagesBySequenceNumber, msg.SequenceNumber)
