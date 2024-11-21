@@ -232,7 +232,6 @@ COPY ./scripts/download-machine-espresso.sh .
 #    https://github.com/EspressoSystems/nitro-espresso-integration/releases
 #    and add the corresponding download step below.
 # 3. Create a new release on github with the change: for example YYYYMMDD
-RUN ./download-machine-espresso.sh 20240723-consensus 0x2422802a7cda99737209430b103689205bc8e56eab8b08c6ad409e65e45c3145
 
 FROM golang:1.21.10-bookworm AS node-builder
 WORKDIR /workspace
