@@ -11,6 +11,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
+	"golang.org/x/crypto/sha3"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -19,7 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/golang-jwt/jwt/v4"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/pubsub"
@@ -27,9 +32,6 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
-	"github.com/spf13/pflag"
-	"golang.org/x/crypto/sha3"
 )
 
 // domainValue holds the Keccak256 hash of the string "TIMEBOOST_BID".
