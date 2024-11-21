@@ -372,6 +372,7 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %s does not match sequencer auction contract address %s", msg.AuctionContractAddress, es.auctionContractAddr)
 	}
 
+	currentTime := time.Now()
 	for {
 		currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
 		if msg.Round == currentRound {
@@ -379,8 +380,11 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 		}
 
 		if msg.Round == currentRound+1 &&
-			timeboost.TimeTilNextRound(es.initialTimestamp, es.roundDuration) <= es.earlySubmissionGrace {
-			time.Sleep(timeboost.TimeTilNextRound(es.initialTimestamp, es.roundDuration))
+			timeboost.TimeTilNextRoundAfterTimestamp(es.initialTimestamp, currentTime, es.roundDuration) <= es.earlySubmissionGrace {
+			// If it becomes the next round in between checking the currentRound
+			// above, and here, then this will be a negative duration which is
+			// treated as time.Sleep(0), which is fine.
+			time.Sleep(timeboost.TimeTilNextRoundAfterTimestamp(es.initialTimestamp, currentTime, es.roundDuration))
 		} else {
 			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
 		}
