@@ -53,7 +53,7 @@ type expressLaneService struct {
 	chainConfig              *params.ChainConfig
 	logs                     chan []*types.Log
 	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
-	roundControl             *lru.Cache[uint64, *expressLaneControl]
+	roundControl             *lru.Cache[uint64, *expressLaneControl] // thread safe
 	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
 }
 
@@ -286,8 +286,6 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 }
 
 func (es *expressLaneService) currentRoundHasController() bool {
-	es.Lock()
-	defer es.Unlock()
 	currRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
 	control, ok := es.roundControl.Get(currRound)
 	if !ok {
@@ -313,12 +311,14 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	ctx context.Context,
 	msg *timeboost.ExpressLaneSubmission,
 ) error {
-	es.Lock()
-	defer es.Unlock()
+	// no service lock needed since roundControl is thread-safe
 	control, ok := es.roundControl.Get(msg.Round)
 	if !ok {
 		return timeboost.ErrNoOnchainController
 	}
+
+	es.Lock()
+	defer es.Unlock()
 	// Check if the submission nonce is too low.
 	if msg.SequenceNumber < control.sequence {
 		return timeboost.ErrSequenceNumberTooLow
