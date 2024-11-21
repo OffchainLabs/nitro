@@ -21,10 +21,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -201,7 +201,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	// Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = params.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	builder.BuildL1(t)
 
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
@@ -329,7 +329,7 @@ func TestDASBatchPosterFallback(t *testing.T) {
 
 	// Setup L1
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = params.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	builder.BuildL1(t)
 	l1client := builder.L1.Client
 	l1info := builder.L1Info

@@ -10,6 +10,7 @@ package server_arb
 ResolvedPreimage preimageResolverC(size_t context, uint8_t preimageType, const uint8_t* hash);
 */
 import "C"
+
 import (
 	"context"
 	"errors"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
