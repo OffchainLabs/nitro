@@ -55,7 +55,6 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
-	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -185,6 +184,7 @@ type BatchPosterConfig struct {
 	HotShotUrl              string `koanf:"hotshot-url"`
 	UserDataAttestationFile string `koanf:"user-data-attestation-file"`
 	QuoteFile               string `koanf:"quote-file"`
+	UseEscapeHatch          bool   `koanf:"use-escape-hatch"`
 }
 
 func (c *BatchPosterConfig) Validate() error {
@@ -239,6 +239,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
 	f.String(prefix+".user-data-attestation-file", DefaultBatchPosterConfig.UserDataAttestationFile, "specifies the file containing the user data attestation")
 	f.String(prefix+".quote-file", DefaultBatchPosterConfig.QuoteFile, "specifies the file containing the quote")
+	f.Bool(prefix+".use-escape-hatch", DefaultBatchPosterConfig.UseEscapeHatch, "if true, batches will be posted without doing the espresso verification when hotshot is down. If false, wait for hotshot being up")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -272,6 +273,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	CheckBatchCorrectness:          true,
 	UserDataAttestationFile:        "",
 	QuoteFile:                      "",
+	UseEscapeHatch:                 false,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -303,6 +305,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	UseAccessLists:                 true,
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	CheckBatchCorrectness:          true,
+	UseEscapeHatch:                 false,
 }
 
 type BatchPosterOpts struct {
@@ -365,6 +368,8 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		}
 		opts.Streamer.lightClientReader = lightClientReader
 	}
+
+	opts.Streamer.UseEscapeHatch = opts.Config().UseEscapeHatch
 
 	b := &BatchPoster{
 		l1Reader:           opts.L1Reader,
@@ -552,43 +557,63 @@ func (b *BatchPoster) checkEspressoValidation(
 		return nil
 	}
 
-	arbOSConfig, err := b.arbOSVersionGetter.GetArbOSConfigAtHeight(0)
+	lastConfirmed, err := b.streamer.getLastConfirmedPos()
 	if err != nil {
-		return fmt.Errorf("Failed call to GetArbOSConfigAtHeight: %w", err)
+		log.Error("failed call to get last confirmed pos", "err", err)
+		return err
 	}
-	if arbOSConfig == nil {
-		return fmt.Errorf("Cannot use a nil ArbOSConfig")
-	}
-	if !arbOSConfig.ArbitrumChainParams.EnableEspresso {
+
+	// This message has passed the espresso verification
+	if lastConfirmed != nil && b.building.msgCount <= *lastConfirmed {
 		return nil
 	}
 
-	hasNotSubmitted, err := b.streamer.HasNotSubmitted(b.building.msgCount)
-	if err != nil {
-		return err
-	}
-	if hasNotSubmitted {
-		// Store the pos in the database to be used later to submit the message
-		// to hotshot for finalization.
-		log.Info("submitting pos", "pos", b.building.msgCount)
-		err = b.streamer.SubmitEspressoTransactionPos(b.building.msgCount, b.streamer.db.NewBatch())
+	log.Warn("this message has not been finalized on L1 or validated")
+
+	if b.streamer.UseEscapeHatch {
+		skip, err := b.streamer.getSkipVerificationPos()
 		if err != nil {
-			log.Error("failed to submit espresso transaction pos", "pos", b.building.msgCount, "err", err)
+			log.Error("failed call to get skip verification pos", "err", err)
 			return err
 		}
-		return fmt.Errorf("this msg has not been included in hotshot")
+
+		// Skip checking espresso validation due to hotshot failure
+		if skip != nil {
+			if b.building.msgCount <= *skip {
+				log.Warn("skipped espresso verification due to hotshot failure", "pos", b.building.msgCount)
+				return nil
+			}
+			// TODO: if current position is greater than the `skip`, should set the
+			// the skip value to nil. This should contribute to better efficiency.
+		}
 	}
 
-	lastConfirmed, err := b.streamer.getLastConfirmedPos()
-	if dbutil.IsErrNotFound(err) {
-		return fmt.Errorf("no confirmed message has been found")
+	if b.streamer.HotshotDown && b.streamer.UseEscapeHatch {
+		log.Warn("skipped espresso verification due to hotshot failure", "pos", b.building.msgCount)
+		return nil
 	}
+
+	return fmt.Errorf("waiting for espresso finalization, pos: %d", b.building.msgCount)
+}
+
+func (b *BatchPoster) submitEspressoTransactionPos(pos arbutil.MessageIndex) error {
+	hasNotSubmitted, err := b.streamer.HasNotSubmitted(pos)
 	if err != nil {
 		return err
 	}
-	if lastConfirmed < b.building.msgCount {
-		return fmt.Errorf("this msg has not been finalized on L1 or validated")
+	if !hasNotSubmitted {
+		return nil
 	}
+
+	// Store the pos in the database to be used later to submit the message
+	// to hotshot for finalization.
+	log.Info("submitting pos", "pos", pos)
+	err = b.streamer.SubmitEspressoTransactionPos(pos, b.streamer.db.NewBatch())
+	if err != nil {
+		log.Error("failed to submit espresso transaction pos", "pos", pos, "err", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -1414,6 +1439,30 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			timestampWithPadding := arbmath.SaturatingUAdd(latestHeader.Time, uint64(config.L1BlockBoundBypass/time.Second))
 			l1BoundMinBlockNumberWithBypass = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
 			l1BoundMinTimestampWithBypass = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
+		}
+	}
+
+	// Submit message positions to pending queue
+	if !b.streamer.UseEscapeHatch || b.streamer.shouldSubmitEspressoTransaction() {
+		for p := b.building.msgCount; p < msgCount; p += 1 {
+			msg, err := b.streamer.GetMessage(p)
+			if err != nil {
+				log.Error("error getting message from streamer", "error", err)
+				break
+			}
+			// We only submit the user transactions to hotshot.
+			if msg.Message.Header.Kind != arbostypes.L1MessageType_L2Message {
+				continue
+			}
+			kind := msg.Message.L2msg[0]
+			if kind != arbos.L2MessageKind_Batch && kind != arbos.L2MessageKind_SignedTx {
+				continue
+			}
+			err = b.submitEspressoTransactionPos(p)
+			if err != nil {
+				log.Error("error submitting position", "error", err, "pos", p)
+				break
+			}
 		}
 	}
 
