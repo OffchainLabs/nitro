@@ -18,6 +18,7 @@ typedef uint64_t u64;
 typedef size_t usize;
 */
 import "C"
+
 import (
 	"errors"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"

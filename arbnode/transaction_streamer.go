@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"reflect"
@@ -16,8 +17,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"errors"
 
 	flag "github.com/spf13/pflag"
 
