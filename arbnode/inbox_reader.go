@@ -124,12 +124,14 @@ func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *h
 func (r *InboxReader) Start(ctxIn context.Context) error {
 	r.StopWaiter.Start(ctxIn, r)
 	hadError := false
-	r.LaunchThread(func(ctx context.Context) {
-		for {
+	runChan := make(chan struct{}, 1)
+	err := stopwaiter.CallIterativelyWith[struct{}](
+		&r.StopWaiterSafe,
+		func(ctx context.Context, ignored struct{}) time.Duration {
 			err := r.run(ctx, hadError)
 			if errors.Is(err, broadcastclient.TransactionStreamerBlockCreationStopped) {
 				log.Info("stopping block creation in inbox reader because transaction streamer has stopped")
-				return
+				close(runChan)
 			}
 			if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
 				log.Warn("error reading inbox", "err", err)
@@ -137,17 +139,13 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			} else {
 				hadError = false
 			}
-			interval := time.Second
-			timer := time.NewTimer(interval)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
-			}
-		}
-	})
-
+			return time.Second
+		},
+		runChan,
+	)
+	if err != nil {
+		return err
+	}
 	// Ensure we read the init message before other things start up
 	for i := 0; ; i++ {
 		batchCount, err := r.tracker.GetBatchCount()

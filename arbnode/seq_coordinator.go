@@ -870,29 +870,22 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 				err, "newRedisUrl", c.config.NewRedisUrl)
 		}
 	}
-
-	c.LaunchThread(func(ctx context.Context) {
-		for {
+	chooseRedisAndUpdateChan := make(chan struct{}, 1)
+	err := stopwaiter.CallIterativelyWith[struct{}](
+		&c.StopWaiterSafe,
+		func(ctx context.Context, ignored struct{}) time.Duration {
 			interval, err := c.chooseRedisAndUpdate(ctx, newRedisCoordinator)
 			if errors.Is(err, broadcastclient.TransactionStreamerBlockCreationStopped) {
 				log.Info("stopping block creation in sequencer because transaction streamer has stopped")
-				return
+				close(chooseRedisAndUpdateChan)
 			}
-			if ctx.Err() != nil {
-				return
-			}
-			if interval == time.Duration(0) {
-				continue
-			}
-			timer := time.NewTimer(interval)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
-			}
-		}
-	})
+			return interval
+		},
+		chooseRedisAndUpdateChan,
+	)
+	if err != nil {
+		log.Warn("error in starting iterative call to chooseRedisAndUpdate", "err", err)
+	}
 	if c.config.ChosenHealthcheckAddr != "" {
 		c.StopWaiter.LaunchThread(c.launchHealthcheckServer)
 	}
