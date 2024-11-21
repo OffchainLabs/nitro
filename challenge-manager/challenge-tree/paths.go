@@ -9,6 +9,7 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/pkg/errors"
 
@@ -202,12 +203,12 @@ func (ht *RoyalChallengeTree) findEssentialPaths(
 			if err != nil {
 				return nil, nil, err
 			}
-			lowerPath := path
-			upperPath := path
+			lowerPath := slices.Clone(path)
+			upperPath := slices.Clone(path)
 			lowerPath = append(lowerPath, lowerChildId)
 			upperPath = append(upperPath, upperChildId)
-			lowerTimers := currentTimers
-			upperTimers := currentTimers
+			lowerTimers := slices.Clone(currentTimers)
+			upperTimers := slices.Clone(currentTimers)
 			lowerTimers = append(lowerTimers, lowerTimer)
 			upperTimers = append(upperTimers, upperTimer)
 			stack.push(&visited{
@@ -228,9 +229,9 @@ func (ht *RoyalChallengeTree) findEssentialPaths(
 			if err != nil {
 				return nil, nil, err
 			}
-			claimingPath := path
+			claimingPath := slices.Clone(path)
 			claimingPath = append(claimingPath, claimingEdge.Id())
-			claimingTimers := currentTimers
+			claimingTimers := slices.Clone(currentTimers)
 			claimingTimers = append(claimingTimers, claimingEdgeTimer)
 			stack.push(&visited{
 				essentialNode: claimingEdge,
