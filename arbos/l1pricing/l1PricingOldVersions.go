@@ -120,7 +120,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		return err
 	}
 	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward", tracing.BalanceChangeTransferBatchposterReward,
+		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -142,7 +142,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 			return err
 		}
 		err = util.TransferBalance(
-			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund", tracing.BalanceChangeTransferBatchposterRefund,
+			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 		)
 		if err != nil {
 			return err
@@ -299,7 +299,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 		return err
 	}
 	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward", tracing.BalanceChangeTransferBatchposterReward,
+		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -330,7 +330,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 				return err
 			}
 			err = util.TransferBalance(
-				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund", tracing.BalanceChangeTransferBatchposterRefund,
+				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 			)
 			if err != nil {
 				return err

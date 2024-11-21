@@ -5,7 +5,6 @@ package arbtest
 
 import (
 	"context"
-	"encoding/json"
 	"math/big"
 	"strings"
 	"testing"
@@ -16,9 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -241,41 +238,6 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	if !arbmath.BigEquals(l2balance, callValue) {
 		Fatal(t, "Unexpected balance:", l2balance)
 	}
-
-	// Call tracing to display balance changes when a ArbitrumSubmitRetryableTx and ArbitrumRetryTx are processed
-	// Currently we check the accuracy by there should be only one balanceChangeReason for user2's address and that is to set its balance to callValue
-	var blockTrace []blockTraceWithBalanceChangesOnly
-	l2rpc := builder.L2.Stack.Attach()
-	CallTracer := "callTracer"
-	err = l2rpc.CallContext(ctx, &blockTrace, "debug_traceBlockByNumber", rpc.BlockNumber(receipt.BlockNumber.Int64()), &tracers.TraceConfig{Tracer: &CallTracer})
-	Require(t, err)
-
-	var allBalanceChanges []balanceChange
-	for _, txTrace := range blockTrace {
-		allBalanceChanges = append(allBalanceChanges, txTrace.Result.BalanceChanges...)
-	}
-	found := false
-	for _, bc := range allBalanceChanges {
-		if bc.Addr == user2Address {
-			if bc.Prev != "0x"+common.Big0.Text(16) {
-				t.Fatalf("expected 0 initial balance for user2. Got: %s", bc.Prev)
-			}
-			if bc.New != "0x"+callValue.Text(16) {
-				t.Fatalf("unexpected final balance for user2. Want: %s Got: %s", "0x"+callValue.Text(16), bc.New)
-			}
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("couldn't find user2 address in the balance changes of traces")
-	}
-
-	// Print traces for reference
-	var result json.RawMessage
-	err = l2rpc.CallContext(ctx, &result, "debug_traceBlockByNumber", rpc.BlockNumber(receipt.BlockNumber.Int64()), &tracers.TraceConfig{Tracer: &CallTracer})
-	Require(t, err)
-	colors.PrintGrey("traces: ", string(result))
-
 }
 
 func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {

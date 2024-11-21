@@ -16,20 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/colors"
 )
-
-type balanceChange struct {
-	Addr   common.Address `json:"addr"`
-	Prev   string         `json:"prev"`
-	New    string         `json:"new"`
-	Reason string         `json:"reason"`
-}
-type balanceChanges struct {
-	BalanceChanges []balanceChange `json:"balanceChanges"`
-}
-type blockTraceWithBalanceChangesOnly struct {
-	Result balanceChanges `json:"result"`
-}
 
 func TestDebugAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -59,7 +47,6 @@ func TestDebugAPI(t *testing.T) {
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
 	Require(t, err)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	prev := builder.L2.GetBalance(t, builder.L2Info.GetAddress("Owner"))
 	withdrawalValue := big.NewInt(1000000000)
 	auth.Value = withdrawalValue
 	tx, err := arbSys.SendTxToL1(&auth, common.Address{}, []byte{})
@@ -68,30 +55,6 @@ func TestDebugAPI(t *testing.T) {
 	Require(t, err)
 	if len(receipt.Logs) != 1 {
 		Fatal(t, "Unexpected number of logs", len(receipt.Logs))
-	}
-	new := builder.L2.GetBalance(t, builder.L2Info.GetAddress("Owner"))
-
-	var result json.RawMessage
-	flatCallTracer := "flatCallTracer"
-	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), &tracers.TraceConfig{Tracer: &flatCallTracer})
-	Require(t, err)
-
-	var trace balanceChanges
-	callTracer := "callTracer"
-	err = l2rpc.CallContext(ctx, &trace, "debug_traceTransaction", tx.Hash(), &tracers.TraceConfig{Tracer: &callTracer})
-	Require(t, err)
-
-	found := false
-	for _, balChange := range trace.BalanceChanges {
-		if balChange.Reason == tracing.BalanceDecreaseWithdrawToL1.String(prev, new) &&
-			balChange.Addr == types.ArbSysAddress &&
-			balChange.Prev == "0x"+withdrawalValue.Text(16) &&
-			balChange.New == "0x0" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("balanceChanges didn't register withdrawal of funds to L1")
 	}
 
 	// Use JS tracer
@@ -120,9 +83,9 @@ func TestDebugAPI(t *testing.T) {
 	var jsTrace []balanceChangeJS
 	err = l2rpc.CallContext(ctx, &jsTrace, "debug_traceTransaction", tx.Hash(), &tracers.TraceConfig{Tracer: &js})
 	Require(t, err)
-	found = false
+	found := false
 	for _, balChange := range jsTrace {
-		if balChange.Reason == tracing.BalanceDecreaseWithdrawToL1.String(prev, new) &&
+		if balChange.Reason == tracing.BalanceDecreaseWithdrawToL1.String() &&
 			balChange.Addr == types.ArbSysAddress &&
 			balChange.Prev.Cmp(withdrawalValue) == 0 &&
 			balChange.New.Cmp(common.Big0) == 0 {
@@ -132,4 +95,9 @@ func TestDebugAPI(t *testing.T) {
 	if !found {
 		t.Fatal("balanceChanges in tracing via js tracer didn't register withdrawal of funds to L1")
 	}
+
+	var result json.RawMessage
+	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), &tracers.TraceConfig{Tracer: &js})
+	Require(t, err)
+	colors.PrintGrey("balance changes: ", string(result))
 }

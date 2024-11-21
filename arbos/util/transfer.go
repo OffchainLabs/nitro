@@ -26,7 +26,6 @@ func TransferBalance(
 	amount *big.Int,
 	evm *vm.EVM,
 	scenario TracingScenario,
-	purpose string,
 	reason tracing.BalanceChangeReason,
 ) error {
 	if amount.Sign() < 0 {
@@ -80,14 +79,14 @@ func TransferBalance(
 }
 
 // MintBalance mints funds for the user and adds them to their balance
-func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, purpose string, reason tracing.BalanceChangeReason) {
-	err := TransferBalance(nil, to, amount, evm, scenario, purpose, reason)
+func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, reason tracing.BalanceChangeReason) {
+	err := TransferBalance(nil, to, amount, evm, scenario, reason)
 	if err != nil {
 		panic(fmt.Sprintf("impossible error: %v", err))
 	}
 }
 
 // BurnBalance burns funds from a user's account
-func BurnBalance(from *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, purpose string, reason tracing.BalanceChangeReason) error {
-	return TransferBalance(from, nil, amount, evm, scenario, purpose, reason)
+func BurnBalance(from *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, reason tracing.BalanceChangeReason) error {
+	return TransferBalance(from, nil, amount, evm, scenario, reason)
 }

@@ -84,11 +84,11 @@ func (con ArbWasm) payActivationDataFee(c ctx, evm mech, value, dataFee huge) er
 	repay := arbmath.BigSub(value, dataFee)
 
 	// transfer the fee to the network account, and the rest back to the user
-	err = util.TransferBalance(&con.Address, &network, dataFee, evm, scenario, "activate", tracing.BalanceChangeTransferActivationFee)
+	err = util.TransferBalance(&con.Address, &network, dataFee, evm, scenario, tracing.BalanceChangeTransferActivationFee)
 	if err != nil {
 		return err
 	}
-	return util.TransferBalance(&con.Address, &c.caller, repay, evm, scenario, "reimburse", tracing.BalanceChangeTransferActivationReimburse)
+	return util.TransferBalance(&con.Address, &c.caller, repay, evm, scenario, tracing.BalanceChangeTransferActivationReimburse)
 }
 
 // Gets the latest stylus version

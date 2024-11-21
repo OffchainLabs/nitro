@@ -283,7 +283,7 @@ func (ps *L1PricingState) TransferFromL1FeesAvailable(
 	purpose string,
 	reason tracing.BalanceChangeReason,
 ) (*big.Int, error) {
-	if err := util.TransferBalance(&L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, purpose, reason); err != nil {
+	if err := util.TransferBalance(&L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, reason); err != nil {
 		return nil, err
 	}
 	old, err := ps.L1FeesAvailable()
