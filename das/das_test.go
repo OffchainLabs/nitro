@@ -55,6 +55,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	Require(t, err, "no das")
 	var daReader DataAvailabilityServiceReader = storageService
 
+	// #nosec G115
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
 	messageSaved := []byte("hello world")
 	cert, err := daWriter.Store(firstCtx, messageSaved, timeout)
@@ -146,6 +147,7 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	var daReader DataAvailabilityServiceReader = storageService
 
 	messageSaved := []byte("hello world")
+	// #nosec G115
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
 	cert, err := daWriter.Store(ctx, messageSaved, timeout)
 	Require(t, err, "Error storing message")

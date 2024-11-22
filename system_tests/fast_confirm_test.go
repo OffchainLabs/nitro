@@ -10,6 +10,7 @@ package arbtest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -32,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -79,15 +81,6 @@ func TestFastConfirmation(t *testing.T) {
 	builder.L1.TransferBalance(t, "Faucet", "Validator", balance, builder.L1Info)
 	l1auth := builder.L1Info.GetDefaultTransactOpts("Validator", ctx)
 
-	valWalletAddrPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2node.DeployInfo.ValidatorWalletCreator, 0, &l1auth, l2node.L1Reader, true)
-	Require(t, err)
-	valWalletAddr := *valWalletAddrPtr
-	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2node.DeployInfo.ValidatorWalletCreator, 0, &l1auth, l2node.L1Reader, true)
-	Require(t, err)
-	if valWalletAddr == *valWalletAddrCheck {
-		Require(t, err, "didn't cache validator wallet address", valWalletAddr.String(), "vs", valWalletAddrCheck.String())
-	}
-
 	rollup, err := rollupgen.NewRollupAdminLogic(l2node.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 
@@ -96,28 +89,14 @@ func TestFastConfirmation(t *testing.T) {
 	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
-	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddr, srv.Address}, []bool{true, true})
-	Require(t, err, "unable to generate setValidator calldata")
-	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2node.DeployInfo.Rollup, setValidatorCalldata)
-	Require(t, err, "unable to set validators")
-	_, err = builder.L1.EnsureTxSucceeded(tx)
-	Require(t, err)
-
 	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
 	Require(t, err, "unable to generate setMinimumAssertionPeriod calldata")
-	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2node.DeployInfo.Rollup, setMinAssertPeriodCalldata)
+	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2node.DeployInfo.Rollup, setMinAssertPeriodCalldata)
 	Require(t, err, "unable to set minimum assertion period")
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	setAnyTrustFastConfirmerCalldata, err := rollupABI.Pack("setAnyTrustFastConfirmer", valWalletAddr)
-	Require(t, err, "unable to generate setAnyTrustFastConfirmer calldata")
-	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2node.DeployInfo.Rollup, setAnyTrustFastConfirmerCalldata)
-	Require(t, err, "unable to set anytrust fast confirmer")
-	_, err = builder.L1.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	valConfig := staker.TestL1ValidatorConfig
+	valConfig := legacystaker.TestL1ValidatorConfig
 	valConfig.EnableFastConfirmation = true
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
@@ -138,6 +117,29 @@ func TestFastConfirmation(t *testing.T) {
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 
+	valWalletAddrPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2node.DeployInfo.ValidatorWalletCreator, 0, l2node.L1Reader, true, valWallet.DataPoster(), valWallet.GetExtraGas())
+	Require(t, err)
+	valWalletAddr := *valWalletAddrPtr
+	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2node.DeployInfo.ValidatorWalletCreator, 0, l2node.L1Reader, true, valWallet.DataPoster(), valWallet.GetExtraGas())
+	Require(t, err)
+	if valWalletAddr == *valWalletAddrCheck {
+		Require(t, err, "didn't cache validator wallet address", valWalletAddr.String(), "vs", valWalletAddrCheck.String())
+	}
+
+	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddr, srv.Address}, []bool{true, true})
+	Require(t, err, "unable to generate setValidator calldata")
+	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2node.DeployInfo.Rollup, setValidatorCalldata)
+	Require(t, err, "unable to set validators")
+	_, err = builder.L1.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	setAnyTrustFastConfirmerCalldata, err := rollupABI.Pack("setAnyTrustFastConfirmer", valWalletAddr)
+	Require(t, err, "unable to generate setAnyTrustFastConfirmer calldata")
+	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2node.DeployInfo.Rollup, setAnyTrustFastConfirmerCalldata)
+	Require(t, err, "unable to set anytrust fast confirmer")
+	_, err = builder.L1.EnsureTxSucceeded(tx)
+	Require(t, err)
+
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
@@ -156,11 +158,11 @@ func TestFastConfirmation(t *testing.T) {
 	Require(t, err)
 	err = valWallet.Initialize(ctx)
 	Require(t, err)
-	stakerA, err := staker.NewStaker(
+	stakerA, err := legacystaker.NewStaker(
 		l2node.L1Reader,
 		valWallet,
 		bind.CallOpts{},
-		func() *staker.L1ValidatorConfig { return &valConfig },
+		func() *legacystaker.L1ValidatorConfig { return &valConfig },
 		nil,
 		stateless,
 		nil,
@@ -211,7 +213,7 @@ func TestFastConfirmation(t *testing.T) {
 	latestConfirmAfterAct, err := rollup.LatestConfirmed(&bind.CallOpts{})
 	Require(t, err)
 	if latestConfirmAfterAct <= latestConfirmBeforeAct {
-		Fatal(t, "staker A didn't advance the latest confirmed node")
+		Fatal(t, fmt.Sprintf("staker A didn't advance the latest confirmed node: want > %d, got: %d", latestConfirmBeforeAct, latestConfirmAfterAct))
 	}
 }
 
@@ -278,15 +280,6 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	builder.L1.TransferBalance(t, "Faucet", "ValidatorB", balance, builder.L1Info)
 	l1authB := builder.L1Info.GetDefaultTransactOpts("ValidatorB", ctx)
 
-	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
-	Require(t, err)
-	valWalletAddrA := *valWalletAddrAPtr
-	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
-	Require(t, err)
-	if valWalletAddrA == *valWalletAddrCheck {
-		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
-	}
-
 	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 
@@ -295,29 +288,14 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
-	safeAddress := deploySafe(t, builder.L1, builder.L1.Client, deployAuth, []common.Address{valWalletAddrA, srv.Address})
-	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From, srv.Address, safeAddress}, []bool{true, true, true, true})
-	Require(t, err, "unable to generate setValidator calldata")
-	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setValidatorCalldata)
-	Require(t, err, "unable to set validators")
-	_, err = builder.L1.EnsureTxSucceeded(tx)
-	Require(t, err)
-
 	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
 	Require(t, err, "unable to generate setMinimumAssertionPeriod calldata")
-	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setMinAssertPeriodCalldata)
+	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setMinAssertPeriodCalldata)
 	Require(t, err, "unable to set minimum assertion period")
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	setAnyTrustFastConfirmerCalldata, err := rollupABI.Pack("setAnyTrustFastConfirmer", safeAddress)
-	Require(t, err, "unable to generate setAnyTrustFastConfirmer calldata")
-	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setAnyTrustFastConfirmerCalldata)
-	Require(t, err, "unable to set anytrust fast confirmer")
-	_, err = builder.L1.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	valConfigA := staker.TestL1ValidatorConfig
+	valConfigA := legacystaker.TestL1ValidatorConfig
 	valConfigA.EnableFastConfirmation = true
 
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
@@ -339,6 +317,30 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	valConfigA.Strategy = "MakeNodes"
 
+	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
+	Require(t, err)
+	valWalletAddrA := *valWalletAddrAPtr
+	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
+	Require(t, err)
+	if valWalletAddrA == *valWalletAddrCheck {
+		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
+	}
+
+	safeAddress := deploySafe(t, builder.L1, builder.L1.Client, deployAuth, []common.Address{valWalletAddrA, srv.Address})
+	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From, srv.Address, safeAddress}, []bool{true, true, true, true})
+	Require(t, err, "unable to generate setValidator calldata")
+	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setValidatorCalldata)
+	Require(t, err, "unable to set validators")
+	_, err = builder.L1.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	setAnyTrustFastConfirmerCalldata, err := rollupABI.Pack("setAnyTrustFastConfirmer", safeAddress)
+	Require(t, err, "unable to generate setAnyTrustFastConfirmer calldata")
+	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setAnyTrustFastConfirmerCalldata)
+	Require(t, err, "unable to set anytrust fast confirmer")
+	_, err = builder.L1.EnsureTxSucceeded(tx)
+	Require(t, err)
+
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
@@ -357,11 +359,11 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = valWalletA.Initialize(ctx)
 	Require(t, err)
-	stakerA, err := staker.NewStaker(
+	stakerA, err := legacystaker.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletA,
 		bind.CallOpts{},
-		func() *staker.L1ValidatorConfig { return &valConfigA },
+		func() *legacystaker.L1ValidatorConfig { return &valConfigA },
 		nil,
 		statelessA,
 		nil,
@@ -391,7 +393,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	}
 	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
-	valConfigB := staker.TestL1ValidatorConfig
+	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.EnableFastConfirmation = true
 	valConfigB.Strategy = "watchtower"
 	statelessB, err := staker.NewStatelessBlockValidator(
@@ -409,11 +411,11 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = valWalletB.Initialize(ctx)
 	Require(t, err)
-	stakerB, err := staker.NewStaker(
+	stakerB, err := legacystaker.NewStaker(
 		l2nodeB.L1Reader,
 		valWalletB,
 		bind.CallOpts{},
-		func() *staker.L1ValidatorConfig { return &valConfigB },
+		func() *legacystaker.L1ValidatorConfig { return &valConfigB },
 		nil,
 		statelessB,
 		nil,

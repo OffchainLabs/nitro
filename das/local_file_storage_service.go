@@ -20,14 +20,16 @@ import (
 	"syscall"
 	"time"
 
+	flag "github.com/spf13/pflag"
+	"golang.org/x/sys/unix"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	flag "github.com/spf13/pflag"
-	"golang.org/x/sys/unix"
 )
 
 type LocalFileStorageConfig struct {
@@ -377,6 +379,7 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 				return err
 			}
 
+			// #nosec G115
 			expiryPath := tl.expiryPath(batch.key, uint64(batch.expiry.Unix()))
 			if err = createHardLink(newPath, expiryPath); err != nil {
 				return err

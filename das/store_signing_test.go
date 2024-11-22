@@ -19,6 +19,7 @@ func TestStoreSigning(t *testing.T) {
 	addr := crypto.PubkeyToAddress(privateKey.PublicKey)
 
 	weirdMessage := []byte("The quick brown fox jumped over the lazy dog.")
+	// #nosec G115
 	timeout := uint64(time.Now().Unix())
 
 	signer := signature.DataSignerFromPrivateKey(privateKey)

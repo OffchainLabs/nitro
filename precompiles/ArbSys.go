@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
@@ -92,7 +93,6 @@ func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
 
 // MyCallersAddressWithoutAliasing gets the caller's caller without any potential aliasing
 func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
-
 	address := addr{}
 
 	if evm.Depth() > 1 {

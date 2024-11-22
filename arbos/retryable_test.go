@@ -9,17 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 func TestOpenNonexistentRetryable(t *testing.T) {
@@ -38,6 +38,7 @@ func TestRetryableLifecycle(t *testing.T) {
 	retryableState := state.RetryableState()
 
 	lifetime := uint64(retryables.RetryableLifetimeSeconds)
+	// #nosec G115
 	timestampAtCreation := uint64(rand.Int63n(1 << 16))
 	timeoutAtCreation := timestampAtCreation + lifetime
 	currentTime := timeoutAtCreation
@@ -57,6 +58,7 @@ func TestRetryableLifecycle(t *testing.T) {
 	checkQueueSize := func(expected int, message string) {
 		timeoutQueueSize, err := retryableState.TimeoutQueue.Size()
 		Require(t, err)
+		// #nosec G115
 		if timeoutQueueSize != uint64(expected) {
 			Fail(t, currentTime, message, timeoutQueueSize)
 		}
@@ -167,6 +169,7 @@ func TestRetryableCleanup(t *testing.T) {
 	callvalue := big.NewInt(0)
 	calldata := testhelpers.RandomizeSlice(make([]byte, rand.Intn(1<<12)))
 
+	// #nosec G115
 	timeout := uint64(rand.Int63n(1 << 16))
 	timestamp := 2 * timeout
 

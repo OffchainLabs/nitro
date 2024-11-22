@@ -16,17 +16,6 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
-	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
-	modes "github.com/OffchainLabs/bold/challenge-manager/types"
-	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
-	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
-	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
-	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	challengetesting "github.com/OffchainLabs/bold/testing"
-	"github.com/OffchainLabs/bold/testing/setup"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -36,9 +25,23 @@ import (
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
+	challengemanager "github.com/offchainlabs/bold/challenge-manager"
+	modes "github.com/offchainlabs/bold/challenge-manager/types"
+	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	"github.com/offchainlabs/bold/solgen/go/bridgegen"
+	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/bold/solgen/go/mocksgen"
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	challengetesting "github.com/offchainlabs/bold/testing"
+	"github.com/offchainlabs/bold/testing/setup"
+	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -48,21 +51,34 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/server_arb/boldmach"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-var (
-	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 10)
-	smallStepChallengeLeafHeight = uint64(1 << 10)
-)
+func TestChallengeProtocolBOLDReadInboxChallenge(t *testing.T) {
+	testChallengeProtocolBOLD(t)
+}
 
-func TestChallengeProtocolBOLD(t *testing.T) {
+func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
+	opts := []server_arb.SpawnerOption{
+		server_arb.WithWrapper(func(inner server_arb.MachineInterface) server_arb.MachineInterface {
+			// This wrapper is applied after the BOLD wrapper, so step 0 is the finished machine.
+			// Modifying its hash results in invalid inclusion proofs for the evil validator,
+			// so we start modifying hashes at step 1 (the first machine step in the running state).
+			return NewIncorrectIntermediateMachine(inner, 1)
+		}),
+	}
+	testChallengeProtocolBOLD(t, opts...)
+}
+
+func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
 	Require(t, os.RemoveAll("/tmp/good"))
 	Require(t, os.RemoveAll("/tmp/evil"))
 	t.Cleanup(func() {
@@ -72,7 +88,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
-	l2chainConfig := params.ArbitrumDevTestChainConfig()
+	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -90,35 +106,19 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	// Every 3 seconds, send an L1 transaction to keep the chain moving.
-	go func() {
-		delay := time.Second * 3
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				time.Sleep(delay)
-				balance := big.NewInt(params.GWei)
-				if ctx.Err() != nil {
-					break
-				}
-				TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
-				latestBlock, err := l1client.BlockNumber(ctx)
-				if ctx.Err() != nil {
-					break
-				}
-				Require(t, err)
-				if latestBlock > 150 {
-					delay = time.Second
-				}
-			}
-		}
-	}()
+	go keepChainMoving(t, ctx, l1info, l1client)
 
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
 	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, l2nodeConfig, nil, stakeTokenAddr)
 	defer l2nodeB.StopAndWait()
+
+	genesisA, err := l2nodeA.Execution.ResultAtPos(0)
+	Require(t, err)
+	genesisB, err := l2nodeB.Execution.ResultAtPos(0)
+	Require(t, err)
+	if genesisA.BlockHash != genesisB.BlockHash {
+		Fatal(t, "genesis blocks mismatch between nodes")
+	}
 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
@@ -127,7 +127,11 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 
 	valCfg := valnode.TestValidationConfig
 	valCfg.UseJit = false
-	_, valStack := createTestValidationNode(t, ctx, &valCfg)
+	boldWrapperOpt := server_arb.WithWrapper(
+		func(inner server_arb.MachineInterface) server_arb.MachineInterface {
+			return boldmach.MachineWrapper(inner)
+		})
+	_, valStack := createTestValidationNode(t, ctx, &valCfg, boldWrapperOpt)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	statelessA, err := staker.NewStatelessBlockValidator(
@@ -143,8 +147,8 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
-
-	_, valStackB := createTestValidationNode(t, ctx, &valCfg)
+	spawnerOpts = append([]server_arb.SpawnerOption{boldWrapperOpt}, spawnerOpts...)
+	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
@@ -182,11 +186,11 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	Require(t, blockValidatorB.Initialize(ctx))
 	Require(t, blockValidatorB.Start(ctx))
 
-	stateManager, err := staker.NewBOLDStateProvider(
+	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidatorA,
 		statelessA,
 		l2stateprovider.Height(blockChallengeLeafHeight),
-		&staker.StateProviderConfig{
+		&bold.StateProviderConfig{
 			ValidatorName:          "good",
 			MachineLeavesCachePath: "/tmp/good",
 			CheckBatchFinality:     false,
@@ -194,11 +198,11 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	)
 	Require(t, err)
 
-	stateManagerB, err := staker.NewBOLDStateProvider(
+	stateManagerB, err := bold.NewBOLDStateProvider(
 		blockValidatorB,
 		statelessB,
 		l2stateprovider.Height(blockChallengeLeafHeight),
-		&staker.StateProviderConfig{
+		&bold.StateProviderConfig{
 			ValidatorName:          "evil",
 			MachineLeavesCachePath: "/tmp/evil",
 			CheckBatchFinality:     false,
@@ -209,8 +213,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	Require(t, l2nodeA.Start(ctx))
 	Require(t, l2nodeB.Start(ctx))
 
-	chalManagerAddr, err := assertionChain.SpecChallengeManager(ctx)
-	Require(t, err)
+	chalManagerAddr := assertionChain.SpecChallengeManager()
 	evilOpts := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
@@ -229,7 +232,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		assertionChain.RollupAddress(),
 		chalManagerAddr.Address(),
 		&evilOpts,
-		l1client,
+		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		solimpl.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
@@ -385,40 +388,34 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		nil, // Api db
 	)
 
-	manager, err := challengemanager.New(
-		ctx,
+	stackOpts := []challengemanager.StackOpt{
+		challengemanager.StackWithName("honest"),
+		challengemanager.StackWithMode(modes.MakeMode),
+		challengemanager.StackWithPostingInterval(time.Second * 3),
+		challengemanager.StackWithPollingInterval(time.Second),
+		challengemanager.StackWithAverageBlockCreationTime(time.Second),
+	}
+
+	manager, err := challengemanager.NewChallengeStack(
 		assertionChain,
 		provider,
-		assertionChain.RollupAddress(),
-		challengemanager.WithName("honest"),
-		challengemanager.WithMode(modes.MakeMode),
-		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("Asserter", ctx).From),
-		challengemanager.WithAssertionPostingInterval(time.Second*3),
-		challengemanager.WithAssertionScanningInterval(time.Second),
-		challengemanager.WithAvgBlockCreationTime(time.Second),
+		stackOpts...,
 	)
 	Require(t, err)
 
-	managerB, err := challengemanager.New(
-		ctx,
+	evilStackOpts := append(stackOpts, challengemanager.StackWithName("evil"))
+
+	managerB, err := challengemanager.NewChallengeStack(
 		chainB,
 		evilProvider,
-		assertionChain.RollupAddress(),
-		challengemanager.WithName("evil"),
-		challengemanager.WithMode(modes.MakeMode),
-		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("EvilAsserter", ctx).From),
-		challengemanager.WithAssertionPostingInterval(time.Second*3),
-		challengemanager.WithAssertionScanningInterval(time.Second),
-		challengemanager.WithAvgBlockCreationTime(time.Second),
+		evilStackOpts...,
 	)
 	Require(t, err)
 
 	manager.Start(ctx)
 	managerB.Start(ctx)
 
-	chalManager, err := assertionChain.SpecChallengeManager(ctx)
-	Require(t, err)
-
+	chalManager := assertionChain.SpecChallengeManager()
 	filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManager.Address(), l1client)
 	Require(t, err)
 
@@ -464,13 +461,38 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	}
 }
 
+// Every 3 seconds, send an L1 transaction to keep the chain moving.
+func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestInfo, l1Client *ethclient.Client) {
+	delay := time.Second * 3
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			time.Sleep(delay)
+			if ctx.Err() != nil {
+				break
+			}
+			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1Info, l1Client, ctx)
+			latestBlock, err := l1Client.BlockNumber(ctx)
+			if ctx.Err() != nil {
+				break
+			}
+			Require(t, err)
+			if latestBlock > 150 {
+				delay = time.Second
+			}
+		}
+	}
+}
+
 func createTestNodeOnL1ForBoldProtocol(
 	t *testing.T,
 	ctx context.Context,
 	isSequencer bool,
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
-	stackConfig *node.Config,
+	_ *node.Config,
 	l2infoIn info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
@@ -482,7 +504,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	}
 	nodeConfig.ParentChainReader.OldHeaderTimeout = time.Minute * 10
 	if chainConfig == nil {
-		chainConfig = params.ArbitrumDevTestChainConfig()
+		chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	fatalErrChan := make(chan error, 10)
@@ -542,9 +564,12 @@ func createTestNodeOnL1ForBoldProtocol(
 	l1info.SetContract("Rollup", addresses.Rollup)
 	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
-	cacheConfig := TestCachingConfig
-	cacheConfig.StateScheme = rawdb.HashScheme
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, &cacheConfig)
+	execConfig := ExecConfigDefaultNonSequencerTest(t)
+	Require(t, execConfig.Validate())
+	execConfig.Caching.StateScheme = rawdb.HashScheme
+	useWasmCache := uint32(1)
+	initMessage := getInitMessage(ctx, t, l1client, addresses)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, nil, execConfig, useWasmCache)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -560,9 +585,6 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
-	execConfig := ExecConfigDefaultNonSequencerTest()
-	Require(t, execConfig.Validate())
-	execConfig.Caching.StateScheme = rawdb.HashScheme
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
@@ -596,7 +618,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		addresses.Rollup,
 		chalManagerAddr,
 		&opts,
-		l1client,
+		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		solimpl.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
@@ -639,19 +661,19 @@ func deployContractsOnly(
 		genesisInboxCount,
 		anyTrustFastConfirmer,
 		challengetesting.WithLayerZeroHeights(&protocol.LayerZeroHeights{
-			BlockChallengeHeight:     blockChallengeLeafHeight,
-			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
-			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
+			BlockChallengeHeight:     protocol.Height(blockChallengeLeafHeight),
+			BigStepChallengeHeight:   protocol.Height(bigStepChallengeLeafHeight),
+			SmallStepChallengeHeight: protocol.Height(smallStepChallengeLeafHeight),
 		}),
 		challengetesting.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
 		challengetesting.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
 	)
-	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
+	config, err := json.Marshal(chaininfo.ArbitrumDevTestChainConfig())
 	Require(t, err)
 	cfg.ChainConfig = string(config)
 	addresses, err := setup.DeployFullRollupStack(
 		ctx,
-		backend,
+		butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
 		cfg,
@@ -765,7 +787,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
 
-	execConfig := ExecConfigDefaultNonSequencerTest()
+	execConfig := ExecConfigDefaultNonSequencerTest(t)
 	Require(t, execConfig.Validate())
 	execConfig.Caching.StateScheme = rawdb.HashScheme
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
@@ -804,7 +826,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		addresses.Rollup,
 		chalManagerAddr,
 		&evilOpts,
-		l1client,
+		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		solimpl.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
@@ -820,13 +842,13 @@ func makeBoldBatch(
 	sequencer *bind.TransactOpts,
 	seqInbox *bridgegen.SequencerInbox,
 	seqInboxAddr common.Address,
-	messagesPerBatch,
+	numMessages,
 	divergeAtIndex int64,
 ) {
 	ctx := context.Background()
 
 	batchBuffer := bytes.NewBuffer([]byte{})
-	for i := int64(0); i < messagesPerBatch; i++ {
+	for i := int64(0); i < numMessages; i++ {
 		value := i
 		if i == divergeAtIndex {
 			value++
@@ -854,7 +876,8 @@ func makeBoldBatch(
 	}
 	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
 	Require(t, err)
-	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
+	batchMetaData, err := l2Node.InboxTracker.GetBatchMetadata(batches[0].SequenceNumber)
+	log.Info("Batch metadata", "md", batchMetaData)
 	Require(t, err, "failed to get batch metadata after adding batch:")
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -53,7 +54,6 @@ func TestP256VerifyEnabled(t *testing.T) {
 func TestOutboxProofs(t *testing.T) {
 	t.Parallel()
 	gethhook.RequireHookedGeth()
-	rand.Seed(time.Now().UTC().UnixNano())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -175,6 +175,7 @@ func TestOutboxProofs(t *testing.T) {
 				sibling := place ^ which
 
 				position := merkletree.LevelAndLeaf{
+					// #nosec G115
 					Level: uint64(level),
 					Leaf:  sibling,
 				}
@@ -201,6 +202,7 @@ func TestOutboxProofs(t *testing.T) {
 						leaf := total - 1 // preceding it. We subtract 1 since we count from 0
 
 						partial := merkletree.LevelAndLeaf{
+							// #nosec G115
 							Level: uint64(level),
 							Leaf:  leaf,
 						}
@@ -289,6 +291,7 @@ func TestOutboxProofs(t *testing.T) {
 				step.Leaf += 1 << step.Level // we start on the min partial's zero-hash sibling
 				known[step] = zero
 
+				// #nosec G115
 				for step.Level < uint64(treeLevels) {
 
 					curr, ok := known[step]

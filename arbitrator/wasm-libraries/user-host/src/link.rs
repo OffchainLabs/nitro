@@ -3,7 +3,11 @@
 
 use crate::program::Program;
 use arbutil::{
-    evm::{user::UserOutcomeKind, EvmData},
+    evm::{
+        api::{Gas, Ink},
+        user::UserOutcomeKind,
+        EvmData,
+    },
     format::DebugBytes,
     heapify, Bytes20, Bytes32,
 };
@@ -37,14 +41,15 @@ struct MemoryLeaf([u8; 32]);
 ///
 /// pages_ptr: starts pointing to max allowed pages, returns number of pages used
 #[no_mangle]
-pub unsafe extern "C" fn programs__activate(
+pub unsafe extern "C" fn programs__activate_v2(
     wasm_ptr: GuestPtr,
     wasm_size: usize,
     pages_ptr: GuestPtr,
     asm_estimate_ptr: GuestPtr,
     init_cost_ptr: GuestPtr,
     cached_init_cost_ptr: GuestPtr,
-    version: u16,
+    stylus_version: u16,
+    arbos_version_for_gas: u64,
     debug: u32,
     codehash: GuestPtr,
     module_hash_ptr: GuestPtr,
@@ -58,7 +63,15 @@ pub unsafe extern "C" fn programs__activate(
 
     let page_limit = STATIC_MEM.read_u16(pages_ptr);
     let gas_left = &mut STATIC_MEM.read_u64(gas_ptr);
-    match Module::activate(&wasm, codehash, version, page_limit, debug, gas_left) {
+    match Module::activate(
+        &wasm,
+        codehash,
+        stylus_version,
+        arbos_version_for_gas,
+        page_limit,
+        debug,
+        gas_left,
+    ) {
         Ok((module, data)) => {
             STATIC_MEM.write_u64(gas_ptr, *gas_left);
             STATIC_MEM.write_u16(pages_ptr, data.footprint);
@@ -111,11 +124,11 @@ pub unsafe extern "C" fn programs__new_program(
 
     // buy ink
     let pricing = config.pricing;
-    let ink = pricing.gas_to_ink(gas);
+    let ink = pricing.gas_to_ink(Gas(gas));
 
     // link the program and ready its instrumentation
     let module = wavm_link_module(&MemoryLeaf(*module_hash));
-    program_set_ink(module, ink);
+    program_set_ink(module, ink.0);
     program_set_stack(module, config.max_depth);
 
     // provide arguments
@@ -166,7 +179,7 @@ pub unsafe extern "C" fn programs__set_response(
         id,
         STATIC_MEM.read_slice(result_ptr, result_len),
         STATIC_MEM.read_slice(raw_data_ptr, raw_data_len),
-        gas,
+        Gas(gas),
     );
 }
 
@@ -198,7 +211,7 @@ pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind)
     let program = Program::current();
     let module = program.module;
     let mut outs = program.outs.as_slice();
-    let mut ink_left = program_ink_left(module);
+    let mut ink_left = Ink(program_ink_left(module));
 
     // apply any early exit codes
     if let Some(early) = program.early_exit {
@@ -209,12 +222,12 @@ pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind)
     if program_ink_status(module) != 0 {
         status = OutOfInk;
         outs = &[];
-        ink_left = 0;
+        ink_left = Ink(0);
     }
     if program_stack_left(module) == 0 {
         status = OutOfStack;
         outs = &[];
-        ink_left = 0;
+        ink_left = Ink(0);
     }
 
     let gas_left = program.config.pricing.ink_to_gas(ink_left);
@@ -242,7 +255,8 @@ pub unsafe extern "C" fn programs__create_stylus_config(
 /// Creates an `EvmData` handler from its component parts.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn programs__create_evm_data(
+pub unsafe extern "C" fn programs__create_evm_data_v2(
+    arbos_version: u64,
     block_basefee_ptr: GuestPtr,
     chainid: u64,
     block_coinbase_ptr: GuestPtr,
@@ -259,6 +273,7 @@ pub unsafe extern "C" fn programs__create_evm_data(
     reentrant: u32,
 ) -> u64 {
     let evm_data = EvmData {
+        arbos_version,
         block_basefee: read_bytes32(block_basefee_ptr),
         cached: cached != 0,
         chainid,
