@@ -32,6 +32,7 @@ go_test(
         "compute_ancestors_test.go",
         "inherited_timer_test.go",
         "local_timer_test.go",
+        "paths_edge_cases_test.go",
         "paths_test.go",
         "tree_test.go",
     ],

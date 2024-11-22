@@ -13,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/bold/api"
@@ -57,18 +56,13 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 		log.Error("Could not get rollup user logic filterer", "err", err)
 		return
 	}
-	latestBlock, err := retry.UntilSucceeds(ctx, func() (*gethtypes.Header, error) {
-		return m.backend.HeaderByNumber(ctx, m.chain.GetDesiredRpcHeadBlockNumber())
+	toBlock, err := retry.UntilSucceeds(ctx, func() (uint64, error) {
+		return m.backend.HeaderU64(ctx)
 	})
 	if err != nil {
 		log.Error("Could not get header by number", "err", err)
 		return
 	}
-	if !latestBlock.Number.IsUint64() {
-		log.Error("Latest block number was not a uint64")
-		return
-	}
-	toBlock := latestBlock.Number.Uint64()
 	if fromBlock != toBlock {
 		filterOpts := &bind.FilterOpts{
 			Start:   fromBlock,
@@ -95,16 +89,11 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			latestBlock, err := m.backend.HeaderByNumber(ctx, m.chain.GetDesiredRpcHeadBlockNumber())
+			toBlock, err := m.backend.HeaderU64(ctx)
 			if err != nil {
 				log.Error("Could not get header by number", "err", err)
 				continue
 			}
-			if !latestBlock.Number.IsUint64() {
-				log.Error("Latest block number was not a uint64")
-				continue
-			}
-			toBlock := latestBlock.Number.Uint64()
 			if fromBlock == toBlock {
 				continue
 			}

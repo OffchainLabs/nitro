@@ -30,7 +30,7 @@ var onchainTimerDifferAfterConfirmationJobCounter = metrics.NewRegisteredCounter
 // it ensures to confirm that edge. If this is not the case, it will return an error
 // and write data to disk to help with debugging the issue.
 type challengeConfirmer struct {
-	reader                      RoyalChallengeReader
+	reader                      HonestChallengeTreeReader
 	writer                      ChainWriter
 	backend                     protocol.ChainBackend
 	validatorName               string
@@ -49,25 +49,8 @@ type ChainWriter interface {
 	) (*types.Transaction, error)
 }
 
-type RoyalChallengeReader interface {
-	BlockChallengeRootEdge(
-		ctx context.Context,
-		challengedAssertionHash protocol.AssertionHash,
-	) (protocol.SpecEdge, error)
-	LowerMostRoyalEdges(
-		ctx context.Context,
-		challengedAssertionHash protocol.AssertionHash,
-	) ([]protocol.SpecEdge, error)
-	ComputeAncestors(
-		ctx context.Context,
-		challengedAssertionHash protocol.AssertionHash,
-		edgeId protocol.EdgeId,
-	) ([]protocol.ReadOnlyEdge, error)
-	AvgBlockTime() time.Duration
-}
-
 func newChallengeConfirmer(
-	challengeReader RoyalChallengeReader,
+	challengeReader HonestChallengeTreeReader,
 	chainWriter ChainWriter,
 	backend protocol.ChainBackend,
 	validatorName string,
@@ -98,13 +81,15 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 	ctx context.Context,
 	challengedAssertionHash protocol.AssertionHash,
 	computedTimer uint64,
-	royalRootEdge protocol.SpecEdge,
+	royalRootEdge protocol.VerifiedRoyalEdge,
+	claimedAssertionHash protocol.AssertionHash,
 	challengePeriodBlocks uint64,
 ) error {
 	fields := []any{
 		"validatorName", cc.validatorName,
 		"challengedAssertion", fmt.Sprintf("%#x", challengedAssertionHash.Hash[:4]),
-		"royalRootBlockChallengeEdge", fmt.Sprintf("%#x", royalRootEdge.Id().Hash.Bytes()[:4]),
+		"essentialEdgeId", fmt.Sprintf("%#x", royalRootEdge.Id().Bytes()[:4]),
+		"challengeLevel", royalRootEdge.GetChallengeLevel(),
 	}
 	log.Info("Starting challenge confirmation job", fields...)
 	// Find the bottom-most royal edges that exist in our local challenge tree, each one
@@ -112,7 +97,8 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 	royalTreeLeaves, err := retry.UntilSucceeds(ctx, func() ([]protocol.SpecEdge, error) {
 		edges, innerErr := cc.reader.LowerMostRoyalEdges(ctx, challengedAssertionHash)
 		if innerErr != nil {
-			log.Error("Could not fetch lower-most royal edges", fields, "err", innerErr)
+			fields = append(fields, "err", innerErr)
+			log.Error("Could not fetch lower-most royal edges", fields)
 			return nil, innerErr
 		}
 		return edges, nil
@@ -133,7 +119,8 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 				ctx, challengedAssertionHash, edge.Id(),
 			)
 			if innerErr != nil {
-				log.Error("Could not compute ancestors for edge", fields, "err", innerErr)
+				fields = append(fields, "err", innerErr)
+				log.Error("Could not compute ancestors for edge", fields)
 				return nil, innerErr
 			}
 			return resp, nil
@@ -159,6 +146,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 			len(royalBranches),
 			branch,
 			challengePeriodBlocks,
+			claimedAssertionHash,
 		)
 		if innerErr != nil {
 			return innerErr
@@ -181,7 +169,8 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 	onchainInheritedTimer, err := retry.UntilSucceeds(ctx, func() (protocol.InheritedTimer, error) {
 		timer, innerErr := royalRootEdge.SafeHeadInheritedTimer(ctx)
 		if innerErr != nil {
-			log.Error("Could not get inherited timer for edge", fields, "err", innerErr)
+			fields = append(fields, "err", innerErr)
+			log.Error("Could not get inherited timer for edge", fields)
 			return 0, innerErr
 		}
 		return timer, nil
@@ -198,7 +187,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 		onchainTimerDifferAfterConfirmationJobCounter.Inc(1)
 		log.Error(
 			fmt.Sprintf("Onchain timer %d was not >= %d after confirmation job", onchainInheritedTimer, challengePeriodBlocks),
-			fields,
+			fields...,
 		)
 		return fmt.Errorf(
 			"onchain timer %d after confirmation job was executed < challenge period %d",
@@ -206,38 +195,42 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 			challengePeriodBlocks,
 		)
 	}
-	log.Info("Confirming edge by time", fields...)
+	log.Info("Confirming essential root edge by timer", fields...)
 	if _, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-		if _, innerErr := royalRootEdge.ConfirmByTimer(ctx); innerErr != nil {
-			log.Error("Could not confirm edge by timer", fields, "err", innerErr)
+		if _, innerErr := royalRootEdge.ConfirmByTimer(ctx, claimedAssertionHash); innerErr != nil {
+			fields = append(fields, "err", innerErr)
+			log.Error("Could not confirm edge by timer", fields)
 			return false, innerErr
 		}
 		return false, nil
 	}); err != nil {
 		return err
 	}
-	log.Info("Challenge root edge confirmed, assertion can now be confirmed to finish challenge", fields...)
+	log.Info("Essential root edge confirmed by timer", fields...)
 	return nil
 }
 
 func (cc *challengeConfirmer) propageTimerUpdateToBranch(
 	ctx context.Context,
-	royalRootEdge protocol.SpecEdge,
+	royalRootEdge protocol.VerifiedRoyalEdge,
 	computedLocalTimer uint64,
-	claimedAssertionHash protocol.AssertionHash,
+	challengedAssertionHash protocol.AssertionHash,
 	branchIdx,
 	totalBranches int,
 	branch []protocol.ReadOnlyEdge,
 	challengePeriodBlocks uint64,
+	claimedAssertionHash protocol.AssertionHash,
 ) (*types.Transaction, error) {
 	if len(branch) == 0 {
 		return nil, nil
 	}
 	fields := []any{
 		"validatorName", cc.validatorName,
+		"challengedAssertionHash", fmt.Sprintf("%#x", challengedAssertionHash.Hash[:4]),
 		"claimedAssertionHash", fmt.Sprintf("%#x", claimedAssertionHash.Hash[:4]),
-		"royalRootBlockChallengeEdge", fmt.Sprintf("%#x", royalRootEdge.Id().Hash.Bytes()[:4]),
+		"royalRootBlockChallengeEdge", fmt.Sprintf("%#x", royalRootEdge.Id().Bytes()[:4]),
 		"branch", fmt.Sprintf("%d/%d", branchIdx, totalBranches-1),
+		"challengeLevel", fmt.Sprintf("%d", royalRootEdge.GetChallengeLevel()),
 	}
 	tx, err := retry.UntilSucceeds(ctx, func() (*types.Transaction, error) {
 		tx, innerErr := cc.writer.MultiUpdateInheritedTimers(ctx, branch, computedLocalTimer)
@@ -247,10 +240,11 @@ func (cc *challengeConfirmer) propageTimerUpdateToBranch(
 			// This means we can finish early as the onchain timer is already sufficient,
 			// and our transaction reverted. We can gracefully continue if so.
 			if strings.Contains(innerErr.Error(), protocol.ErrCachedTimeSufficient) {
-				log.Info("Onchain, cached timer for branch is already sufficient, so no need to transact", fields)
+				log.Info("Onchain, cached timer for branch is already sufficient, so no need to transact", fields...)
 				return nil, nil
 			}
-			log.Error("Could not transact multi-update inherited timers", fields, "err", innerErr)
+			fields = append(fields, "err", innerErr)
+			log.Error("Could not transact multi-update inherited timers", fields...)
 			return nil, innerErr
 		}
 		return tx, nil
@@ -263,7 +257,8 @@ func (cc *challengeConfirmer) propageTimerUpdateToBranch(
 	rootTimer, err := retry.UntilSucceeds(ctx, func() (protocol.InheritedTimer, error) {
 		timer, innerErr := royalRootEdge.LatestInheritedTimer(ctx)
 		if innerErr != nil {
-			log.Error("Could not get inherited timer for edge", fields, "err", innerErr)
+			fields = append(fields, "err", innerErr)
+			log.Error("Could not get inherited timer for edge", fields...)
 			return 0, innerErr
 		}
 		return timer, nil
@@ -280,11 +275,12 @@ func (cc *challengeConfirmer) propageTimerUpdateToBranch(
 	}
 
 	// If yes, we confirm the root edge and finish early, we do so.
-	log.Info("Branch was confirmable by time", fields...)
+	log.Info("Branch was confirmable by timer", fields...)
 	tx, err = retry.UntilSucceeds(ctx, func() (*types.Transaction, error) {
-		innerTx, innerErr := royalRootEdge.ConfirmByTimer(ctx)
+		innerTx, innerErr := royalRootEdge.ConfirmByTimer(ctx, claimedAssertionHash)
 		if innerErr != nil {
-			log.Error("Could not confirm edge by timer", fields, "err", innerErr)
+			fields = append(fields, "err", innerErr)
+			log.Error("Could not confirm edge by timer early with confirmable branch", fields...)
 			return nil, innerErr
 		}
 		return innerTx, nil
@@ -292,7 +288,7 @@ func (cc *challengeConfirmer) propageTimerUpdateToBranch(
 	if err != nil {
 		return nil, err
 	}
-	log.Info("Challenge root edge confirmed, assertion can now be confirmed to finish challenge", fields...)
+	log.Info("Essential root edge confirmed by timer", fields...)
 	return tx, nil
 }
 
@@ -307,22 +303,19 @@ func (cc *challengeConfirmer) waitForTxToBeSafe(
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		latestSafeHeader, err := backend.HeaderByNumber(ctx, cc.chain.GetDesiredRpcHeadBlockNumber())
+		latestSafeHeaderNumber, err := backend.HeaderU64(ctx)
 		if err != nil {
 			return err
 		}
-		if !latestSafeHeader.Number.IsUint64() {
-			return errors.New("latest block number is not a uint64")
-		}
-		txSafe := latestSafeHeader.Number.Uint64() >= receipt.BlockNumber.Uint64()
+		txSafe := latestSafeHeaderNumber >= receipt.BlockNumber.Uint64()
 
 		// If the tx is not yet safe, we can simply wait.
 		if !txSafe {
 			var blocksLeftForTxToBeSafe int64
-			if receipt.BlockNumber.Uint64() > latestSafeHeader.Number.Uint64() {
+			if receipt.BlockNumber.Uint64() > latestSafeHeaderNumber {
 				blocksLeftForTxToBeSafe = 0
 			} else {
-				blocksLeftForTxToBeSafe, err = safecast.ToInt64(latestSafeHeader.Number.Uint64() - receipt.BlockNumber.Uint64())
+				blocksLeftForTxToBeSafe, err = safecast.ToInt64(latestSafeHeaderNumber - receipt.BlockNumber.Uint64())
 				if err != nil {
 					return errors.Wrap(err, "could not convert blocks left for tx to be safe to int64")
 				}

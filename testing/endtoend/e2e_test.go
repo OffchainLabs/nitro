@@ -51,9 +51,6 @@ func (b backendKind) String() string {
 
 // Defines the configuration for an end-to-end test, with different
 // parameters for the various parts of the system.
-// TODO: Support concurrent challenges at the assertion chain level.
-// TODO: Many evil parties, each with their own claim.
-// TODO: Many evil parties, all supporting the same claim.
 type e2eConfig struct {
 	backend      backendKind
 	protocol     protocolParams
@@ -110,7 +107,7 @@ type protocolParams struct {
 func defaultProtocolParams() protocolParams {
 	return protocolParams{
 		numBigStepLevels:      1,
-		challengePeriodBlocks: 60,
+		challengePeriodBlocks: 40,
 		layerZeroHeights: protocol.LayerZeroHeights{
 			BlockChallengeHeight:     1 << 5,
 			BigStepChallengeHeight:   1 << 5,
@@ -120,6 +117,8 @@ func defaultProtocolParams() protocolParams {
 }
 
 func TestEndToEnd_SmokeTest(t *testing.T) {
+	timeCfg := defaultTimeParams()
+	timeCfg.blockTime = time.Second
 	runEndToEndTest(t, &e2eConfig{
 		backend:  simulated,
 		protocol: defaultProtocolParams(),
@@ -127,22 +126,16 @@ func TestEndToEnd_SmokeTest(t *testing.T) {
 		actors: actorParams{
 			numEvilValidators: 1,
 		},
-		timings: defaultTimeParams(),
+		timings: timeCfg,
 		expectations: []expect{
-			// Expect one assertion is confirmed by challenge win.
-			expectAssertionConfirmedByChallengeWin,
-			// Other ideas:
-			// All validators are staked at top-level
-			// All subchallenges have mini-stakes
+			expectChallengeWinWithAllHonestEssentialEdgesConfirmed,
 		},
 	})
 }
 
 func TestEndToEnd_MaxWavmOpcodes(t *testing.T) {
-	t.Skip("Flakey simulated backend")
 	protocolCfg := defaultProtocolParams()
 	protocolCfg.numBigStepLevels = 2
-	protocolCfg.challengePeriodBlocks = 50
 	// A block can take a max of 2^42 wavm opcodes to validate.
 	protocolCfg.layerZeroHeights = protocol.LayerZeroHeights{
 		BlockChallengeHeight:     1 << 6,
@@ -158,18 +151,14 @@ func TestEndToEnd_MaxWavmOpcodes(t *testing.T) {
 		},
 		timings: defaultTimeParams(),
 		expectations: []expect{
-			// Expect one assertion is confirmed by challenge win.
-			expectAssertionConfirmedByChallengeWin,
+			expectChallengeWinWithAllHonestEssentialEdgesConfirmed,
 		},
 	})
 }
 
 func TestEndToEnd_TwoEvilValidators(t *testing.T) {
-	t.Skip("Flakey simulated backend")
 	protocolCfg := defaultProtocolParams()
-	protocolCfg.challengePeriodBlocks = 50
 	timeCfg := defaultTimeParams()
-	timeCfg.blockTime = time.Millisecond * 500
 	timeCfg.assertionPostingInterval = time.Hour
 	runEndToEndTest(t, &e2eConfig{
 		backend:  simulated,
@@ -180,30 +169,26 @@ func TestEndToEnd_TwoEvilValidators(t *testing.T) {
 		},
 		timings: timeCfg,
 		expectations: []expect{
-			// Expect one assertion is confirmed by challenge win.
-			expectAssertionConfirmedByChallengeWin,
+			expectChallengeWinWithAllHonestEssentialEdgesConfirmed,
 		},
 	})
 }
 
 func TestEndToEnd_ManyEvilValidators(t *testing.T) {
-	t.Skip("Flakey simulated backend")
+	t.Skip("This test is too slow to run in CI")
 	protocolCfg := defaultProtocolParams()
-	protocolCfg.challengePeriodBlocks = 100
 	timeCfg := defaultTimeParams()
-	timeCfg.blockTime = time.Millisecond * 500
 	timeCfg.assertionPostingInterval = time.Hour
 	runEndToEndTest(t, &e2eConfig{
 		backend:  simulated,
 		protocol: protocolCfg,
 		inbox:    defaultInboxParams(),
 		actors: actorParams{
-			numEvilValidators: 3,
+			numEvilValidators: 5,
 		},
 		timings: timeCfg,
 		expectations: []expect{
-			// Expect one assertion is confirmed by challenge win.
-			expectAssertionConfirmedByChallengeWin,
+			expectChallengeWinWithAllHonestEssentialEdgesConfirmed,
 		},
 	})
 }
@@ -300,7 +285,10 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 
 	evilChallengeManagers := make([]*cm.Manager, cfg.actors.numEvilValidators)
 	for i := uint64(0); i < cfg.actors.numEvilValidators; i++ {
-		machineDivergenceStep := randUint64(totalOpcodes)
+		machineDivergenceStep := randUint64(i)
+		if machineDivergenceStep == 0 {
+			machineDivergenceStep = 1
+		}
 		//nolint:gocritic
 		evilStateManagerOpts := append(
 			baseStateManagerOpts,
@@ -313,14 +301,14 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 
 		// Honest validator has index 1 in the accounts slice, as 0 is admin, so
 		// evil ones should start at 2.
-		txOpts = accounts[2+i]
+		evilTxOpts := accounts[2+i]
 		name = fmt.Sprintf("evil-%d", i)
 		//nolint:gocritic
 		evilOpts := append(
 			baseStackOpts,
 			cm.StackWithName(name),
 		)
-		evilChain := setupAssertionChain(t, ctx, bk.Client(), rollupAddr.Rollup, txOpts)
+		evilChain := setupAssertionChain(t, ctx, bk.Client(), rollupAddr.Rollup, evilTxOpts)
 		evilManager, err := cm.NewChallengeStack(evilChain, evilStateManager, evilOpts...)
 		require.NoError(t, err)
 		evilChallengeManagers[i] = evilManager
@@ -336,7 +324,7 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 	for _, e := range cfg.expectations {
 		fn := e // loop closure
 		g.Go(func() error {
-			return fn(t, ctx, bk.ContractAddresses(), bk.Client())
+			return fn(t, ctx, bk.ContractAddresses(), bk.Client(), txOpts.From)
 		})
 	}
 	require.NoError(t, g.Wait())
@@ -357,7 +345,7 @@ func enqueueSequencerMessageAsExecutor(
 	t *testing.T,
 	opts *bind.TransactOpts,
 	executor common.Address,
-	backend setup.Backend,
+	backend protocol.ChainBackend,
 	bridge common.Address,
 	msg seqMessage,
 ) {

@@ -7,11 +7,6 @@ package backend
 import (
 	"context"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/require"
-
-	retry "github.com/offchainlabs/bold/runtime"
 )
 
 func TestLocalAnvilLoadAccounts(t *testing.T) {
@@ -24,34 +19,5 @@ func TestLocalAnvilLoadAccounts(t *testing.T) {
 	}
 	if len(a.accounts) == 0 {
 		t.Error("No accounts generated")
-	}
-}
-
-func TestLocalAnvilStarts(t *testing.T) {
-	t.Skip("Flakey in CI")
-	ctx, cancel := context.WithTimeout(context.TODO(), 30*time.Second)
-	defer cancel()
-	a, err := NewAnvilLocal(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err2 := a.Start(ctx); err2 != nil {
-		t.Fatal(err2)
-	}
-	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-		if _, err2 := a.DeployRollup(ctx); err2 != nil {
-			return false, err2
-		}
-		return true, nil
-	})
-	require.NoError(t, err)
-
-	// There should be at least 100 blocks
-	bn, err2 := a.Client().HeaderByNumber(ctx, nil)
-	if err2 != nil {
-		t.Fatal(err2)
-	}
-	if bn.Number.Uint64() < 100 {
-		t.Errorf("Expected at least 100 blocks at start, but got only %d", bn)
 	}
 }

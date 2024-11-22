@@ -11,7 +11,7 @@ test_suite(
 
 go_test(
     name = "endtoend_test",
-    size = "medium",
+    size = "large",
     srcs = [
         "e2e_test.go",
         "helpers_test.go",
@@ -38,7 +38,6 @@ go_test(
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//core/types",
-        "@com_github_ethereum_go_ethereum//ethclient",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
     ],
@@ -53,9 +52,12 @@ go_library(
     deps = [
         "//chain-abstraction:protocol",
         "//runtime",
+        "//solgen/go/challengeV2gen",
         "//solgen/go/rollupgen",
         "//testing/setup:setup_lib",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_stretchr_testify//require",
     ],
 )

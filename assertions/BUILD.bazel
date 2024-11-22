@@ -27,9 +27,9 @@ go_library(
         "@com_github_ccoveille_go_safecast//:go-safecast",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_ethereum_go_ethereum//log",
         "@com_github_ethereum_go_ethereum//metrics",
+        "@com_github_ethereum_go_ethereum//rpc",
         "@com_github_pkg_errors//:errors",
     ],
 )

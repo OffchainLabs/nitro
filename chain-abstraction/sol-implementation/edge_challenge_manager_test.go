@@ -46,7 +46,7 @@ func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 	challengeManager := createdData.Chains[0].SpecChallengeManager()
 
 	// Honest assertion being added.
-	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
+	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.VerifiedRoyalEdge {
 		req := &l2stateprovider.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
@@ -466,12 +466,12 @@ func TestEdgeChallengeManager_ConfirmByTime(t *testing.T) {
 	chalManager := bisectionScenario.topLevelFork.Chains[0].SpecChallengeManager()
 	_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren1, honestChildren2, honestEdge}, expectedNewTimer)
 	require.NoError(t, err)
-	_, err = honestEdge.ConfirmByTimer(ctx)
+	_, err = honestEdge.ConfirmByTimer(ctx, bisectionScenario.topLevelFork.Leaf1.Id())
 	require.NoError(t, err)
 	s0, err := honestEdge.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, protocol.EdgeConfirmed, s0)
-	_, err = honestEdge.ConfirmByTimer(ctx)
+	_, err = honestEdge.ConfirmByTimer(ctx, bisectionScenario.topLevelFork.Leaf1.Id())
 	require.NoError(t, err)
 }
 
@@ -484,7 +484,7 @@ func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 	challengeManager := createdData.Chains[0].SpecChallengeManager()
 
 	// Honest assertion being added.
-	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
+	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.VerifiedRoyalEdge {
 		req := &l2stateprovider.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
@@ -528,7 +528,7 @@ func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 		_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge}, expectedNewTimer)
 		require.NoError(t, err)
 
-		_, err = honestEdge.ConfirmByTimer(ctx)
+		_, err = honestEdge.ConfirmByTimer(ctx, createdData.Leaf1.Id())
 		require.NoError(t, err)
 		status, err := honestEdge.Status(ctx)
 		require.NoError(t, err)
@@ -538,7 +538,7 @@ func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 		status, err := honestEdge.Status(ctx)
 		require.NoError(t, err)
 		require.Equal(t, protocol.EdgeConfirmed, status)
-		_, err = honestEdge.ConfirmByTimer(ctx)
+		_, err = honestEdge.ConfirmByTimer(ctx, createdData.Leaf1.Id())
 		require.NoError(t, err)
 	})
 }
@@ -642,8 +642,8 @@ type bisectionScenario struct {
 	topLevelFork        *setup.CreatedValidatorFork
 	honestStateManager  l2stateprovider.Provider
 	evilStateManager    l2stateprovider.Provider
-	honestLevelZeroEdge protocol.SpecEdge
-	evilLevelZeroEdge   protocol.SpecEdge
+	honestLevelZeroEdge protocol.VerifiedRoyalEdge
+	evilLevelZeroEdge   protocol.VerifiedRoyalEdge
 	honestStartCommit   history.History
 	evilStartCommit     history.History
 }
@@ -662,7 +662,7 @@ func setupBisectionScenario(
 	challengeManager := createdData.Chains[0].SpecChallengeManager()
 
 	// Honest assertion being added.
-	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) (history.History, protocol.SpecEdge) {
+	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) (history.History, protocol.VerifiedRoyalEdge) {
 		req := &l2stateprovider.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
@@ -785,7 +785,7 @@ func setupOneStepProofScenario(
 	}
 
 	// Now opening big step level zero leaves at index 0
-	bigStepAdder := func(stateManager l2stateprovider.Provider, sourceEdge protocol.SpecEdge) protocol.SpecEdge {
+	bigStepAdder := func(stateManager l2stateprovider.Provider, sourceEdge protocol.SpecEdge) protocol.VerifiedRoyalEdge {
 		req := &l2stateprovider.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{0},
@@ -894,7 +894,7 @@ func setupOneStepProofScenario(
 	require.Equal(t, true, isAtOneStepFork)
 
 	// Now opening small step level zero leaves at index 0
-	smallStepAdder := func(stateManager l2stateprovider.Provider, edge protocol.SpecEdge) protocol.SpecEdge {
+	smallStepAdder := func(stateManager l2stateprovider.Provider, edge protocol.SpecEdge) protocol.VerifiedRoyalEdge {
 		req := &l2stateprovider.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []l2stateprovider.Height{0, 0},

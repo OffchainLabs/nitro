@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/bold/containers/option"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
@@ -34,6 +35,13 @@ type ChainBackend interface {
 	ReceiptFetcher
 	TxFetcher
 	HeadSubscriber
+	ChainID(ctx context.Context) (*big.Int, error)
+	Close()
+	Client() rpc.ClientInterface
+	// HeaderU64 returns either latest, safe, or finalized block number from
+	// the current canonical chain, depending on how the underlying implementation
+	// of ChainBackend is configured.
+	HeaderU64(ctx context.Context) (uint64, error)
 }
 
 // ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
@@ -149,7 +157,6 @@ type AssertionChain interface {
 		ctx context.Context, id AssertionHash,
 	) (*AssertionCreatedInfo, error)
 	GetCallOptsWithDesiredRpcHeadBlockNumber(opts *bind.CallOpts) *bind.CallOpts
-	GetDesiredRpcHeadBlockNumber() *big.Int
 
 	MinAssertionPeriodBlocks(ctx context.Context) (uint64, error)
 	AssertionUnrivaledBlocks(ctx context.Context, assertionHash AssertionHash) (uint64, error)
@@ -409,25 +416,31 @@ type ReadOnlyEdge interface {
 	TopLevelClaimHeight(ctx context.Context) (OriginHeights, error)
 }
 
+// SpecEdge according to the protocol specification.
+type SpecEdge interface {
+	ReadOnlyEdge
+	MarkAsHonest()
+	AsVerifiedHonest() (VerifiedRoyalEdge, bool)
+}
+
 // VerifiedRoyalEdge marks edges that are known to be royal. For example,
 // when a local validator creates an edge, it is known to be royal and several types
 // expensive or duplicate computation can be avoided in methods that take in this type.
 // A sentinel method `Honest()` is used to mark an edge as satisfying this interface.
 type VerifiedRoyalEdge interface {
 	SpecEdge
-	Honest()
-}
-
-// SpecEdge according to the protocol specification.
-type SpecEdge interface {
-	ReadOnlyEdge
-	// Bisection capabilities for an edge. Returns the two child
-	// edges that are created as a result.
+	// Bisect defines a method to bisect an edge into two children.
+	// Returns the two child edges that are created as a result.
+	// Only honest edges should be bisected.
 	Bisect(
 		ctx context.Context,
 		prefixHistoryRoot common.Hash,
 		prefixProof []byte,
 	) (VerifiedRoyalEdge, VerifiedRoyalEdge, error)
-	// Confirms an edge for having a total timer >= one challenge period.
-	ConfirmByTimer(ctx context.Context) (*types.Transaction, error)
+	// ConfirmByTimer confirms an edge for having a total timer >= one challenge period.
+	// The claimed assertion hash the edge corresponds to is required as part of the onchain
+	// transaction to confirm the edge.
+	// Only honest edges should be confirmed by timer.
+	ConfirmByTimer(ctx context.Context, claimedAssertion AssertionHash) (*types.Transaction, error)
+	Honest()
 }

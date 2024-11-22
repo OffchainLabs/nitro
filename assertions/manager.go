@@ -10,15 +10,16 @@ package assertions
 
 import (
 	"context"
+	"math/big"
 	"sync"
 	"time"
 
 	"github.com/pkg/errors"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/bold/api/db"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
@@ -66,7 +67,7 @@ var defaultTimings = timings{
 type Manager struct {
 	stopwaiter.StopWaiter
 	chain                       protocol.AssertionChain
-	backend                     bind.ContractBackend
+	backend                     protocol.ChainBackend
 	execProvider                l2stateprovider.ExecutionProvider
 	times                       timings
 	rollupAddr                  common.Address
@@ -228,7 +229,7 @@ func (m *Manager) checkLatestDesiredBlock(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(time.Minute):
-			latestSafeBlock, err := m.backend.HeaderByNumber(ctx, m.chain.GetDesiredRpcHeadBlockNumber())
+			latestSafeBlock, err := m.backend.HeaderByNumber(ctx, big.NewInt(int64(rpc.SafeBlockNumber)))
 			if err != nil {
 				log.Error("Error getting latest safe block", "err", err)
 				continue

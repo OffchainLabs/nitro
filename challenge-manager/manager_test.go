@@ -85,6 +85,7 @@ func Test_getEdgeTrackers(t *testing.T) {
 
 	v, m, s := setupValidator(ctx, t)
 	edge := &mocks.MockSpecEdge{}
+	honest := &mocks.MockHonestEdge{MockSpecEdge: edge}
 	edge.On("Id").Return(protocol.EdgeId{Hash: common.BytesToHash([]byte("foo"))})
 	edge.On("GetReversedChallengeLevel").Return(protocol.ChallengeLevel(2))
 	edge.On("MutualId").Return(protocol.MutualId{})
@@ -97,6 +98,8 @@ func Test_getEdgeTrackers(t *testing.T) {
 	edge.On("StartCommitment").Return(protocol.Height(0), common.Hash{})
 	edge.On("EndCommitment").Return(protocol.Height(0), common.Hash{})
 	edge.On("GetChallengeLevel").Return(protocol.ChallengeLevel(0))
+	edge.On("MarkAsHonest").Return()
+	edge.On("AsVerifiedHonest").Return(honest, true)
 	m.On("ReadAssertionCreationInfo", ctx, assertionHash).Return(&protocol.AssertionCreatedInfo{
 		BeforeState: rollupgen.AssertionState{
 			GlobalState: rollupgen.GlobalState{
@@ -116,8 +119,9 @@ func Test_getEdgeTrackers(t *testing.T) {
 	s.On("ExecutionStateMsgCount", ctx, &protocol.ExecutionState{}).Return(uint64(1), nil)
 
 	require.NoError(t, v.watcher.AddVerifiedHonestEdge(ctx, verifiedHonestMock{edge}))
-
-	trk, err := v.getTrackerForEdge(ctx, protocol.SpecEdge(edge))
+	edge.MarkAsHonest()
+	verifiedRoyal, _ := edge.AsVerifiedHonest()
+	trk, err := v.getTrackerForEdge(ctx, verifiedRoyal)
 	require.NoError(t, err)
 
 	require.Equal(t, l2stateprovider.Batch(1), l2stateprovider.Batch(trk.AssertionInfo().FromState.Batch))
@@ -188,9 +192,10 @@ func setupEdgeTrackersForBisection(
 	honestWatcher.SetEdgeManager(honestValidator)
 	honestValidator.watcher = honestWatcher
 	assertionInfo := &l2stateprovider.AssociatedAssertionMetadata{
-		FromState:      protocol.GoGlobalState{Batch: 0, PosInBatch: 0},
-		BatchLimit:     1,
-		WasmModuleRoot: common.Hash{},
+		FromState:            protocol.GoGlobalState{Batch: 0, PosInBatch: 0},
+		BatchLimit:           1,
+		WasmModuleRoot:       common.Hash{},
+		ClaimedAssertionHash: createdData.Leaf1.Id(),
 	}
 	tracker1, err := edgetracker.New(
 		ctx,
@@ -217,6 +222,12 @@ func setupEdgeTrackersForBisection(
 	require.NoError(t, err)
 	evilWatcher.SetEdgeManager(evilValidator)
 	evilValidator.watcher = evilWatcher
+	assertionInfo = &l2stateprovider.AssociatedAssertionMetadata{
+		FromState:            protocol.GoGlobalState{Batch: 0, PosInBatch: 0},
+		BatchLimit:           1,
+		WasmModuleRoot:       common.Hash{},
+		ClaimedAssertionHash: createdData.Leaf2.Id(),
+	}
 	tracker2, err := edgetracker.New(
 		ctx,
 		evilEdge,

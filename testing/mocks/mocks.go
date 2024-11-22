@@ -375,9 +375,8 @@ func (m *MockSpecEdge) Bisect(
 	args := m.Called(ctx, prefixHistoryRoot, prefixProof)
 	return args.Get(0).(protocol.VerifiedRoyalEdge), args.Get(1).(protocol.VerifiedRoyalEdge), args.Error(2)
 }
-
-func (m *MockSpecEdge) ConfirmByTimer(ctx context.Context) (*types.Transaction, error) {
-	args := m.Called(ctx)
+func (m *MockSpecEdge) ConfirmByTimer(ctx context.Context, assertionHash protocol.AssertionHash) (*types.Transaction, error) {
+	args := m.Called(ctx, assertionHash)
 	return args.Get(0).(*types.Transaction), args.Error(1)
 }
 
@@ -400,12 +399,25 @@ func (m *MockSpecEdge) HasLengthOneRival(ctx context.Context) (bool, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(bool), args.Error(1)
 }
+func (m *MockSpecEdge) MarkAsHonest() {
+	m.Called()
+}
+func (m *MockSpecEdge) AsVerifiedHonest() (protocol.VerifiedRoyalEdge, bool) {
+	args := m.Called()
+	return args.Get(0).(protocol.VerifiedRoyalEdge), args.Get(1).(bool)
+}
+
+type MockHonestEdge struct {
+	*MockSpecEdge
+}
+
+func (m *MockHonestEdge) Honest() {}
 
 type MockEdgeTracker struct {
 	mock.Mock
 }
 
-func (m *MockEdgeTracker) TrackEdge(ctx context.Context, edge protocol.SpecEdge) error {
+func (m *MockEdgeTracker) TrackEdge(ctx context.Context, edge protocol.VerifiedRoyalEdge) error {
 	args := m.Called(ctx, edge)
 	return args.Error(0)
 }

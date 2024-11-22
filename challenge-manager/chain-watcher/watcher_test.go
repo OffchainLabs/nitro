@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
@@ -123,6 +124,9 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	edge.On("Status", ctx).Return(protocol.EdgePending, nil)
 	edge.On("GetTotalChallengeLevels", ctx).Return(uint8(3), nil)
 	edge.On("HasChildren", ctx).Return(false, nil)
+	edge.On("MarkAsHonest").Return()
+	mockHonest := &mocks.MockHonestEdge{MockSpecEdge: edge}
+	edge.On("AsVerifiedHonest").Return(mockHonest, true)
 
 	mockChain.On(
 		"IsChallengeComplete",
@@ -217,7 +221,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 	).Return(true, nil)
 
 	mockManager := &mocks.MockEdgeTracker{}
-	mockManager.On("TrackEdge", ctx, edge).Return(nil)
+	mockManager.On("TrackEdge", ctx, mockHonest).Return(nil)
 
 	watcher := &Watcher{
 		challenges:       threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](),
@@ -244,10 +248,22 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 }
 
 type mockHonestEdge struct {
-	protocol.SpecEdge
+	*mocks.MockSpecEdge
 }
 
 func (m *mockHonestEdge) Honest() {}
+
+func (m *mockHonestEdge) Bisect(
+	ctx context.Context,
+	prefixHistoryRoot common.Hash,
+	prefixProof []byte,
+) (protocol.VerifiedRoyalEdge, protocol.VerifiedRoyalEdge, error) {
+	return m.MockSpecEdge.Bisect(ctx, prefixHistoryRoot, prefixProof)
+}
+
+func (m *mockHonestEdge) ConfirmByTimer(ctx context.Context, claimedAssertion protocol.AssertionHash) (*types.Transaction, error) {
+	return m.MockSpecEdge.ConfirmByTimer(ctx, claimedAssertion)
+}
 
 func TestWatcher_AddVerifiedHonestEdge(t *testing.T) {
 	ctx := context.Background()

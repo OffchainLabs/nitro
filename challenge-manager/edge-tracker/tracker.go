@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	challengetree "github.com/offchainlabs/bold/challenge-manager/challenge-tree"
 	"github.com/offchainlabs/bold/containers"
 	"github.com/offchainlabs/bold/containers/events"
 	"github.com/offchainlabs/bold/containers/fsm"
@@ -33,26 +34,54 @@ var (
 	errBadOneStepProof   = errors.New("bad one step proof data")
 	spawnedCounter       = metrics.NewRegisteredCounter("arb/validator/tracker/spawned", nil)
 	bisectedCounter      = metrics.NewRegisteredCounter("arb/validator/tracker/bisected", nil)
-	confirmedCounter     = metrics.NewRegisteredCounter("arb/validator/tracker/confirmed", nil)
 	layerZeroLeafCounter = metrics.NewRegisteredCounter("arb/validator/tracker/layer_zero_leaves", nil)
 )
 
-// RoyalChallengeWriter can retrieve information about an edge to determine if
-// it can be confirmed via different means. For example, checking if a confirmed
-// edge exists that claims a specified edge id as its claim id, or retrieving
-// the cumulative, honest path timer for an edge and its honest ancestors. This
-// information is used in order to confirm edges onchain.
-type RoyalChallengeWriter interface {
-	RoyalChallengeReader
+// HonestChallengeTreeReader defines a type which can retrieve information about
+// an edge to determine if it can be confirmed via different means. For example,
+// checking if a confirmed edge exists that claims a specified edge id as its claim id,
+// or retrieving the cumulative, honest path timer for an edge and its honest ancestors.
+// This information is used in order to confirm edges onchain.
+type HonestChallengeTreeReader interface {
+	LowerMostRoyalEdges(
+		ctx context.Context,
+		challengedAssertionHash protocol.AssertionHash,
+	) ([]protocol.SpecEdge, error)
+	ComputeAncestors(
+		ctx context.Context,
+		challengedAssertionHash protocol.AssertionHash,
+		edgeId protocol.EdgeId,
+	) ([]protocol.ReadOnlyEdge, error)
+	ClosestEssentialAncestor(
+		ctx context.Context,
+		challengedAssertionHash protocol.AssertionHash,
+		edge protocol.VerifiedRoyalEdge,
+	) (protocol.ReadOnlyEdge, error)
+	IsEssentialAncestorConfirmable(
+		ctx context.Context,
+		edge protocol.SpecEdge,
+		challengedAssertionHash protocol.AssertionHash,
+		confirmationThreshold uint64,
+	) (bool, error)
+	IsConfirmableEssentialEdge(
+		ctx context.Context,
+		challengedAssertionHash protocol.AssertionHash,
+		essentialEdgeId protocol.EdgeId,
+		confirmationThreshold uint64,
+	) (confirmable bool, essentialPaths []challengetree.EssentialPath, timer uint64, err error)
+}
+
+// HonestChallengeTreeWriter defines a type which can not only read information
+// about the honest challenge tree, but also add a verified honest edge to the tree.
+type HonestChallengeTreeWriter interface {
+	HonestChallengeTreeReader
 	AddVerifiedHonestEdge(
 		ctx context.Context, verifiedHonest protocol.VerifiedRoyalEdge,
 	) error
-	ComputeRootInheritedTimer(
-		ctx context.Context,
-		challengedAssertionHash protocol.AssertionHash,
-	) (protocol.InheritedTimer, error)
 }
 
+// ChallengeTracker defines a type which can keep track of edge spawner goroutines
+// and remove them as needed upon confirmation.
 type ChallengeTracker interface {
 	IsTrackingEdge(protocol.EdgeId) bool
 	MarkTrackedEdge(protocol.EdgeId, *Tracker)
@@ -88,14 +117,14 @@ func WithFSMOpts(opts ...fsm.Opt[edgeTrackerAction, State]) Opt {
 }
 
 type Tracker struct {
-	edge                        protocol.SpecEdge
+	edge                        protocol.VerifiedRoyalEdge
 	fsm                         *fsm.Fsm[edgeTrackerAction, State]
 	fsmOpts                     []fsm.Opt[edgeTrackerAction, State]
 	timeRef                     utilTime.Reference
 	validatorName               string
 	chain                       protocol.Protocol
 	stateProvider               l2stateprovider.Provider
-	chainWatcher                RoyalChallengeWriter
+	chainWatcher                HonestChallengeTreeWriter
 	challengeManager            ChallengeTracker
 	associatedAssertionMetadata *l2stateprovider.AssociatedAssertionMetadata
 	challengeConfirmer          *challengeConfirmer
@@ -103,10 +132,10 @@ type Tracker struct {
 
 func New(
 	ctx context.Context,
-	edge protocol.SpecEdge,
+	edge protocol.VerifiedRoyalEdge,
 	chain protocol.Protocol,
 	stateProvider l2stateprovider.Provider,
-	chainWatcher RoyalChallengeWriter,
+	chainWatcher HonestChallengeTreeWriter,
 	challengeManager ChallengeTracker,
 	assertionCreationInfo *l2stateprovider.AssociatedAssertionMetadata,
 	opts ...Opt,
@@ -142,10 +171,6 @@ func (et *Tracker) AssertionInfo() *l2stateprovider.AssociatedAssertionMetadata 
 
 func (et *Tracker) EdgeId() protocol.EdgeId {
 	return et.edge.Id()
-}
-
-func (et *Tracker) Watcher() RoyalChallengeWriter {
-	return et.chainWatcher
 }
 
 func (et *Tracker) ChallengeManager() ChallengeTracker {
@@ -184,7 +209,7 @@ func (et *Tracker) Spawn(ctx context.Context) {
 			return
 		}
 		if et.ShouldDespawn(ctx) {
-			log.Debug("Tracked edge received notice it should exit - now despawning", fields...)
+			log.Info("Tracked edge received notice it should exit - now despawning", fields...)
 			spawnedCounter.Dec(1)
 			et.challengeManager.RemovedTrackedEdge(et.edge.Id())
 			return
@@ -213,7 +238,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 		}
 		wasConfirmed, err := et.tryToConfirmEdge(ctx)
 		if err != nil {
-			log.Error("Could not check if edge can be confirmed", fields, "err", err)
+			log.Error("Could not check if edge can be confirmed from start state", fields, "err", err)
 			et.fsm.MarkError(err)
 		}
 		if wasConfirmed {
@@ -243,23 +268,50 @@ func (et *Tracker) Act(ctx context.Context) error {
 		return et.fsm.Do(edgeBisect{})
 	// Edge is at a one-step-proof in a small-step challenge.
 	case EdgeAtOneStepProof:
+		ok, err := et.isEssentialAncestorConfirmable(ctx)
+		if err != nil {
+			log.Error("Could not check if closest essential ancestor is confirmable", fields, "err", err)
+			et.fsm.MarkError(err)
+			return et.fsm.Do(edgeBackToStart{})
+		}
+		if ok {
+			return et.fsm.Do(edgeAwaitChallengeCompletion{})
+		}
 		if err := et.submitOneStepProof(ctx); err != nil {
-			log.Error("Could not submit one step proof", append(fields, "err", err)...)
+			log.Trace("Could not submit one step proof", append(fields, "err", err)...)
 			et.fsm.MarkError(err)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		return et.fsm.Do(edgeAwaitChallengeCompletion{})
-	// Edge tracker should add a subchallenge level zero leaf.
+	// Edge tracker should add a subchallenge.
 	case EdgeAddingSubchallengeLeaf:
-		if err := et.openSubchallengeLeaf(ctx); err != nil {
+		ok, err := et.isEssentialAncestorConfirmable(ctx)
+		if err != nil {
+			log.Error("Could not check if closest essential ancestor is confirmable", fields, "err", err)
+			et.fsm.MarkError(err)
+			return et.fsm.Do(edgeBackToStart{})
+		}
+		if ok {
+			return et.fsm.Do(edgeAwaitChallengeCompletion{})
+		}
+		if err := et.openSubchallenge(ctx); err != nil {
 			log.Error("Could not open subchallenge leaf", append(fields, "err", err)...)
 			et.fsm.MarkError(err)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		layerZeroLeafCounter.Inc(1)
 		return et.fsm.Do(edgeAwaitChallengeCompletion{})
-	// Edge should bisect.
+		// Edge should bisect.
 	case EdgeBisecting:
+		ok, err := et.isEssentialAncestorConfirmable(ctx)
+		if err != nil {
+			log.Error("Could not check if closest essential ancestor is confirmable", fields, "err", err)
+			et.fsm.MarkError(err)
+			return et.fsm.Do(edgeBackToStart{})
+		}
+		if ok {
+			return et.fsm.Do(edgeAwaitChallengeCompletion{})
+		}
 		lowerChild, upperChild, err := et.bisect(ctx)
 		if err != nil {
 			log.Error("Could not bisect", append(fields, "err", err)...)
@@ -318,30 +370,50 @@ func (et *Tracker) Act(ctx context.Context) error {
 }
 
 // ShouldDespawn checks if an edge tracker should despawn and no longer act.
-// This is true an edge's claimed assertion is confirmed.
+// Every edge tracker needs to have a despawn condition
+// to ensure goroutines are cleaned up.
 func (et *Tracker) ShouldDespawn(ctx context.Context) bool {
+	// If the edge is an essential root, it should despawn once it is confirmed.
 	fields := et.uniqueTrackerLogFields()
-	status, err := et.edge.Status(ctx)
+	if et.edge.ClaimId().IsSome() {
+		status, err := et.edge.Status(ctx)
+		if err != nil {
+			log.Error("Could not get edge status", append(fields, "err", err)...)
+			return false
+		}
+		return status == protocol.EdgeConfirmed
+	}
+	// Else if the edge is a NON-essential root:
+	canOsp, err := canOneStepProve(ctx, et.edge)
 	if err != nil {
-		log.Error("Could not get edge status", append(fields, "err", err)...)
+		log.Error("Could not check if edge can be one step proven", append(fields, "err", err)...)
 		return false
 	}
-	if status == protocol.EdgeConfirmed {
-		return true
+	// If the edge is a small step edge of length one, exit once it is confirmed by OSP.
+	if canOsp {
+		status, err2 := et.edge.Status(ctx)
+		if err2 != nil {
+			log.Error("Could not get edge status", append(fields, "err", err2)...)
+			return false
+		}
+		return status == protocol.EdgeConfirmed
 	}
-	claimedAssertion, err := et.chain.AssertionStatus(
-		ctx,
-		et.associatedAssertionMetadata.ClaimedAssertionHash,
-	)
+	assertionHash, err := et.edge.AssertionHash(ctx)
 	if err != nil {
-		log.Error("Could not get claimed assertion status", append(fields, "err", err)...)
+		log.Error("Could not get edge assertion hash", append(fields, "err", err)...)
 		return false
 	}
-	if claimedAssertion == protocol.AssertionConfirmed {
-		log.Info("Claimed assertion by edge confirmed, can now despawn edge", fields...)
-		return true
+	closestEssential, err := et.chainWatcher.ClosestEssentialAncestor(ctx, assertionHash, et.edge)
+	if err != nil {
+		log.Error("Could not get edge closest essential ancestor", append(fields, "err", err)...)
+		return false
 	}
-	return false
+	status, err := closestEssential.Status(ctx)
+	if err != nil {
+		log.Error("Could not get closest essential ancestor status", append(fields, "err", err)...)
+		return false
+	}
+	return status == protocol.EdgeConfirmed
 }
 
 func (et *Tracker) uniqueTrackerLogFields() []any {
@@ -366,8 +438,9 @@ func (et *Tracker) uniqueTrackerLogFields() []any {
 }
 
 func (et *Tracker) tryToConfirmEdge(ctx context.Context) (bool, error) {
-	// If the edge is not a root, block challenge edge, we have nothing to do here.
-	if !IsRootBlockChallengeEdge(et.edge) {
+	fields := et.uniqueTrackerLogFields()
+	// If the edge is not a root of a challenge or subchallenge, we have nothing to do here.
+	if et.edge.ClaimId().IsNone() {
 		return false, nil
 	}
 	status, err := et.edge.Status(ctx)
@@ -377,76 +450,71 @@ func (et *Tracker) tryToConfirmEdge(ctx context.Context) (bool, error) {
 	if status == protocol.EdgeConfirmed {
 		return true, nil
 	}
-	assertionHash, err := et.edge.AssertionHash(ctx)
+	challengedAssertionHash, err := et.edge.AssertionHash(ctx)
 	if err != nil {
 		return false, err
 	}
-	fields := et.uniqueTrackerLogFields()
-	start := time.Now()
-	computedTimer, err := et.chainWatcher.ComputeRootInheritedTimer(ctx, assertionHash)
-	if err != nil {
-		log.Error("Could not update time cache", "err", err)
-		return false, errors.Wrap(err, "could not update edge inherited timer")
-	}
-	end := time.Since(start)
-	onchainTimer, err := et.edge.SafeHeadInheritedTimer(ctx)
-	if err != nil {
-		return false, errors.Wrap(err, "could not get edge onchain inherited timer")
-	}
 	manager := et.chain.SpecChallengeManager()
 	chalPeriod := manager.ChallengePeriodBlocks()
+	start := time.Now()
+	isConfirmable, _, computedTimer, err := et.chainWatcher.IsConfirmableEssentialEdge(
+		ctx,
+		challengedAssertionHash,
+		et.edge.Id(),
+		chalPeriod,
+	)
+	if err != nil {
+		return false, errors.Wrap(err, "not check if essential edge is confirmable")
+	}
+	end := time.Since(start)
 	localFields := []any{
 		"localTimer", computedTimer,
-		"onchainTimer", onchainTimer,
 		"confirmableAfter", chalPeriod,
 		"edgeId", fmt.Sprintf("%#x", et.edge.Id().Bytes()[:4]),
 		"took", end,
-		"fromBatch", et.associatedAssertionMetadata.FromState.Batch,
-		"fromPosInBatch", et.associatedAssertionMetadata.FromState.PosInBatch,
 		"batchLimit", et.associatedAssertionMetadata.BatchLimit,
 		"claimedAssertion", fmt.Sprintf("%#x", et.associatedAssertionMetadata.ClaimedAssertionHash.Hash[:4]),
 	}
-	log.Info("Updated edge timer", localFields...)
-	// Short circuit early if the edge is confirmable.
-	// We have a few things to check here:
-	// First, if the edge's onchain timer is greater than a challenge period, then we can
-	// immediately confirm by time by sending a transaction.
-	if onchainTimer >= protocol.InheritedTimer(chalPeriod) {
-		log.Info("Onchain timer is greater than challenge period, now confirming edge by time", localFields...)
-		if _, err := et.edge.ConfirmByTimer(ctx); err != nil {
-			return false, errors.Wrapf(
-				err,
-				"could not confirm by timer: got timer %d, chal period %d",
-				onchainTimer,
-				chalPeriod,
-			)
-		}
-		log.Info("Confirmed edge by time", fields...)
-		confirmedCounter.Inc(1)
-		return true, nil
-	}
-	// Otherwise, if the locally cached timer is greater than a challenge period, it means
-	// we need to trigger a confirmation job that will propagate updates to the whole royal
-	// challenge tree onchain until the edge has an onchain timer >= a challenge period.
-	// We let our confirmer dependency take care of this confirmatin job.
-	if uint64(computedTimer) >= chalPeriod {
-		log.Info("Local computed timer big enough to confirm edge", localFields...)
+	if isConfirmable {
+		log.Info("Local computed timer big enough to confirm edge", append(fields, localFields...)...)
 		if err := et.challengeConfirmer.beginConfirmationJob(
 			ctx,
-			assertionHash,
-			uint64(computedTimer),
+			challengedAssertionHash,
+			computedTimer,
 			et.edge,
+			et.associatedAssertionMetadata.ClaimedAssertionHash,
 			chalPeriod,
 		); err != nil {
-			return false, errors.Wrap(
+			log.Error("Could not begin confirmation job", fields...)
+			return false, errors.Wrapf(
 				err,
-				"could not complete confirmation job for royal, block challenge edge",
+				"could not complete confirmation job for essential root edge at level %d",
+				et.edge.GetChallengeLevel(),
 			)
 		}
 		// The edge is now confirmed.
 		return true, nil
 	}
+	log.Info("Local computed timer not big enough to confirm edge", append(fields, localFields...)...)
 	return false, nil
+}
+
+// Checks if the closest essential ancestor of an edge is confirmable. This method is used by the edge
+// tracker to determine if it needs to open a subchallenge or bisect. The honest strategy
+// aims to avoid unnecessary moves if it can determine they are unnecessary.
+func (et *Tracker) isEssentialAncestorConfirmable(ctx context.Context) (bool, error) {
+	assertionHash, err := et.edge.AssertionHash(ctx)
+	if err != nil {
+		return false, err
+	}
+	manager := et.chain.SpecChallengeManager()
+	chalPeriod := manager.ChallengePeriodBlocks()
+	return et.chainWatcher.IsEssentialAncestorConfirmable(
+		ctx,
+		et.edge,
+		assertionHash,
+		chalPeriod,
+	)
 }
 
 // Determines the bisection point from parentHeight to toHeight and returns a history
@@ -527,7 +595,7 @@ func (et *Tracker) DetermineBisectionHistoryWithProof(
 	return historyCommit, proof, nil
 }
 
-func (et *Tracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.SpecEdge, error) {
+func (et *Tracker) bisect(ctx context.Context) (protocol.VerifiedRoyalEdge, protocol.VerifiedRoyalEdge, error) {
 	historyCommit, proof, err := et.DetermineBisectionHistoryWithProof(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -558,7 +626,7 @@ func (et *Tracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.Spec
 	return firstChild, secondChild, nil
 }
 
-func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
+func (et *Tracker) openSubchallenge(ctx context.Context) error {
 	originHeights, err := et.edge.TopLevelClaimHeight(ctx)
 	if err != nil {
 		return errors.Wrap(err, "could not get top level claim height")

@@ -16,7 +16,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers"
 )
 
@@ -47,7 +49,7 @@ func withoutSafeWait() transactOpt {
 // errored directly.
 func (a *AssertionChain) transact(
 	ctx context.Context,
-	backend ChainBackend,
+	backend protocol.ChainBackend,
 	fn func(opts *bind.TransactOpts) (*types.Transaction, error),
 	configOpts ...transactOpt,
 ) (*types.Receipt, error) {
@@ -105,7 +107,7 @@ func (a *AssertionChain) transact(
 		return nil, err
 	}
 
-	if config.waitForDesiredBlockNum {
+	if config.waitForDesiredBlockNum && a.rpcHeadBlockNumber != rpc.LatestBlockNumber {
 		ctxWaitSafe, cancelWaitSafe := context.WithTimeout(ctx, time.Minute*20)
 		defer cancelWaitSafe()
 		receipt, err = a.waitForTxToBeSafe(ctxWaitSafe, backend, tx, receipt)
@@ -134,7 +136,7 @@ func (a *AssertionChain) transact(
 // waitForTxToBeSafe waits for the transaction to be mined in a block that is safe.
 func (a *AssertionChain) waitForTxToBeSafe(
 	ctx context.Context,
-	backend ChainBackend,
+	backend protocol.ChainBackend,
 	tx *types.Transaction,
 	receipt *types.Receipt,
 ) (*types.Receipt, error) {
@@ -142,22 +144,19 @@ func (a *AssertionChain) waitForTxToBeSafe(
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		latestSafeHeader, err := backend.HeaderByNumber(ctx, a.GetDesiredRpcHeadBlockNumber())
+		latestSafeHeaderNumber, err := backend.HeaderU64(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if !latestSafeHeader.Number.IsUint64() {
-			return nil, errors.New("latest block number is not a uint64")
-		}
-		txSafe := latestSafeHeader.Number.Uint64() >= receipt.BlockNumber.Uint64()
+		txSafe := latestSafeHeaderNumber >= receipt.BlockNumber.Uint64()
 
 		// If the tx is not yet safe, we can simply wait.
 		if !txSafe {
 			var blocksLeftForTxToBeSafe int64
-			if receipt.BlockNumber.Uint64() > latestSafeHeader.Number.Uint64() {
+			if receipt.BlockNumber.Uint64() > latestSafeHeaderNumber {
 				blocksLeftForTxToBeSafe = 0
 			} else {
-				blocksLeftForTxToBeSafe, err = safecast.ToInt64(latestSafeHeader.Number.Uint64() - receipt.BlockNumber.Uint64())
+				blocksLeftForTxToBeSafe, err = safecast.ToInt64(latestSafeHeaderNumber - receipt.BlockNumber.Uint64())
 				if err != nil {
 					return nil, errors.Wrap(err, "could not convert blocks left for tx to be safe to int64")
 				}

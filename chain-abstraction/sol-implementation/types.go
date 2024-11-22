@@ -139,7 +139,7 @@ func (a *Assertion) Status(ctx context.Context) (protocol.AssertionStatus, error
 }
 
 type honestEdge struct {
-	protocol.SpecEdge
+	*specEdge
 }
 
 func (h *honestEdge) Honest() {}
@@ -165,4 +165,5 @@ type specEdge struct {
 	lowerChild        option.Option[protocol.EdgeId] // Once the edge has a lower child, this is set
 	upperChild        option.Option[protocol.EdgeId] // Once the edge has an upper child, this is set
 	hasLengthOneRival bool                           // Once the edge has a rival of length 1, this is set
+	verifiedHonest    bool                           // Whether or not the edge has been verified as honest.
 }

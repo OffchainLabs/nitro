@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
@@ -38,12 +39,6 @@ import (
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 )
-
-type Backend interface {
-	bind.DeployBackend
-	bind.ContractBackend
-	TransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error)
-}
 
 type Committer interface {
 	Commit() common.Hash
@@ -413,6 +408,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 			backend,
 			solimpl.NewChainBackendTransactor(backend),
 			solimpl.WithFastConfirmSafeAddress(safeProxyAddress),
+			solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 		)
 		if chainErr != nil {
 			return nil, chainErr
@@ -492,7 +488,7 @@ type RollupAddresses struct {
 
 func DeployFullRollupStack(
 	ctx context.Context,
-	backend Backend,
+	backend protocol.ChainBackend,
 	deployAuth *bind.TransactOpts,
 	sequencer common.Address,
 	config rollupgen.Config,
@@ -621,7 +617,7 @@ func DeployFullRollupStack(
 func deployBridgeCreator(
 	ctx context.Context,
 	auth *bind.TransactOpts,
-	backend Backend,
+	backend protocol.ChainBackend,
 	useMockBridge bool,
 ) (common.Address, error) {
 	var bridgeTemplate common.Address
@@ -855,7 +851,7 @@ func deployBridgeCreator(
 func deployChallengeFactory(
 	ctx context.Context,
 	auth *bind.TransactOpts,
-	backend Backend,
+	backend protocol.ChainBackend,
 	useMockOneStepProver bool,
 ) (common.Address, common.Address, error) {
 	var ospEntryAddr common.Address
@@ -942,7 +938,7 @@ func deployChallengeFactory(
 
 func deployRollupCreator(
 	ctx context.Context,
-	backend Backend,
+	backend protocol.ChainBackend,
 	auth *bind.TransactOpts,
 	useMockBridge bool,
 	useMockOneStepProver bool,

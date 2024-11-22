@@ -71,12 +71,6 @@ func init() {
 	}
 }
 
-// ChainBackend to interact with the underlying blockchain.
-type ChainBackend interface {
-	bind.ContractBackend
-	ReceiptFetcher
-}
-
 // ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
 type ReceiptFetcher interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
@@ -88,7 +82,7 @@ type Transactor interface {
 }
 
 type ChainBackendTransactor struct {
-	ChainBackend
+	protocol.ChainBackend
 	fifo *FIFO
 }
 
@@ -541,25 +535,22 @@ func TryConfirmingAssertion(
 		return true, nil
 	}
 	for {
-		var latestHeader *types.Header
-		latestHeader, err = chain.Backend().HeaderByNumber(ctx, chain.GetDesiredRpcHeadBlockNumber())
+		var latestHeaderNumber uint64
+		latestHeaderNumber, err = chain.Backend().HeaderU64(ctx)
 		if err != nil {
 			return false, err
 		}
-		if !latestHeader.Number.IsUint64() {
-			return false, errors.New("latest block number is not a uint64")
-		}
-		confirmable := latestHeader.Number.Uint64() >= confirmableAfterBlock
+		confirmable := latestHeaderNumber >= confirmableAfterBlock
 
 		// If the assertion is not yet confirmable, we can simply wait.
 		if !confirmable {
 			var blocksLeftForConfirmation int64
-			if confirmableAfterBlock > latestHeader.Number.Uint64() {
+			if latestHeaderNumber > confirmableAfterBlock {
 				blocksLeftForConfirmation = 0
 			} else {
-				blocksLeftForConfirmation, err = safecast.ToInt64(confirmableAfterBlock - latestHeader.Number.Uint64())
+				blocksLeftForConfirmation, err = safecast.ToInt64(confirmableAfterBlock - latestHeaderNumber)
 				if err != nil {
-					return false, errors.Wrap(err, "could not convert blocks left for confirmation to int64")
+					return false, err
 				}
 			}
 			timeToWait := averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
@@ -871,14 +862,10 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 	// If there is no second child, we simply return the number of blocks
 	// since the assertion was created and its parent.
 	if prevNode.SecondChildBlock == 0 {
-		latestHeader, err := a.backend.HeaderByNumber(ctx, a.GetDesiredRpcHeadBlockNumber())
+		num, err := a.backend.HeaderU64(ctx)
 		if err != nil {
 			return 0, err
 		}
-		if !latestHeader.Number.IsUint64() {
-			return 0, errors.New("latest header number is not a uint64")
-		}
-		num := latestHeader.Number.Uint64()
 
 		// Should never happen.
 		if wantNode.CreatedAtBlock > num {
@@ -1039,11 +1026,15 @@ func (a *AssertionChain) GetCallOptsWithDesiredRpcHeadBlockNumber(opts *bind.Cal
 	return opts
 }
 
-func (a *AssertionChain) GetDesiredRpcHeadBlockNumber() *big.Int {
+func (a *AssertionChain) GetCallOptsWithSafeBlockNumber(opts *bind.CallOpts) *bind.CallOpts {
+	if opts == nil {
+		opts = &bind.CallOpts{}
+	}
 	// If we are running tests, we want to use the latest block number since
 	// simulated backends only support the latest block number.
 	if flag.Lookup("test.v") != nil {
 		return nil
 	}
-	return big.NewInt(int64(a.rpcHeadBlockNumber))
+	opts.BlockNumber = big.NewInt(int64(rpc.SafeBlockNumber))
+	return opts
 }

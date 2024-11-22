@@ -28,13 +28,13 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/setup"
+	"github.com/offchainlabs/bold/util"
 )
 
 var _ Backend = &AnvilLocal{}
 
 type AnvilLocal struct {
-	client    *ethclient.Client
-	rpc       *rpc.Client
+	client    protocol.ChainBackend
 	cmd       *exec.Cmd
 	addresses *setup.RollupAddresses
 	accounts  []*bind.TransactOpts
@@ -56,8 +56,7 @@ func NewAnvilLocal(ctx context.Context) (*AnvilLocal, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.rpc = c
-	a.client = ethclient.NewClient(c)
+	a.client = util.NewBackendWrapper(ethclient.NewClient(c), rpc.LatestBlockNumber)
 	return a, nil
 }
 
@@ -145,7 +144,7 @@ func (a *AnvilLocal) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		a.rpc.Close()
+		a.client.Close()
 		if err := a.cmd.Process.Kill(); err != nil {
 			fmt.Printf("Could not kill anvil process: %v\n", err)
 		}
@@ -313,7 +312,7 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 
 // MineBlocks will call anvil to instantly mine n blocks.
 func (a *AnvilLocal) MineBlocks(ctx context.Context, n uint64) error {
-	return a.rpc.CallContext(ctx, nil, "anvil_mine", hexutil.EncodeUint64(n))
+	return a.client.Client().CallContext(ctx, nil, "anvil_mine", hexutil.EncodeUint64(n))
 }
 
 func (a *AnvilLocal) ContractAddresses() *setup.RollupAddresses {

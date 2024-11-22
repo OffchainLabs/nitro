@@ -17,6 +17,8 @@ import (
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 )
 
+var _ protocol.ChainBackend = &MetricsContractBackend{}
+
 type MetricsContractBackend struct {
 	protocol.ChainBackend
 }
@@ -44,6 +46,11 @@ func (t *MetricsContractBackend) CodeAt(ctx context.Context, contract common.Add
 func (t *MetricsContractBackend) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
 	metrics.GetOrRegisterCounter("arb/backend/header_by_number/count", nil).Inc(1)
 	return t.ChainBackend.HeaderByNumber(ctx, number)
+}
+
+func (t *MetricsContractBackend) HeaderU64(ctx context.Context) (uint64, error) {
+	metrics.GetOrRegisterCounter("arb/backend/header_by_number/count", nil).Inc(1)
+	return t.ChainBackend.HeaderU64(ctx)
 }
 
 func (t *MetricsContractBackend) PendingCodeAt(ctx context.Context, account common.Address) ([]byte, error) {

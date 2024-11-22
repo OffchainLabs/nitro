@@ -204,16 +204,13 @@ func (m *Manager) waitToPostIfNeeded(
 	ctx context.Context,
 	parentCreationInfo *protocol.AssertionCreatedInfo,
 ) error {
-	latestBlock, err := m.backend.HeaderByNumber(ctx, m.chain.GetDesiredRpcHeadBlockNumber())
+	latestBlockNumber, err := m.backend.HeaderU64(ctx)
 	if err != nil {
 		return err
 	}
-	if !latestBlock.Number.IsUint64() {
-		return errors.New("latest block number not a uint64")
-	}
 	blocksSinceLast := uint64(0)
-	if parentCreationInfo.CreationBlock < latestBlock.Number.Uint64() {
-		blocksSinceLast = latestBlock.Number.Uint64() - parentCreationInfo.CreationBlock
+	if parentCreationInfo.CreationBlock < latestBlockNumber {
+		blocksSinceLast = latestBlockNumber - parentCreationInfo.CreationBlock
 	}
 	minPeriodBlocks, err := m.chain.MinAssertionPeriodBlocks(ctx)
 	if err != nil {

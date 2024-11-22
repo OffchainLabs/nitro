@@ -48,7 +48,7 @@ var (
 
 // EdgeManager provides a method to track edges, via edge tracker goroutines.
 type EdgeManager interface {
-	TrackEdge(ctx context.Context, edge protocol.SpecEdge) error
+	TrackEdge(ctx context.Context, edge protocol.VerifiedRoyalEdge) error
 }
 
 // Represents a set of honest edges being tracked in a top-level challenge and
@@ -76,7 +76,7 @@ type Watcher struct {
 	edgeManager                 EdgeManager
 	pollEventsInterval          time.Duration
 	challenges                  *threadsafe.Map[protocol.AssertionHash, *trackedChallenge]
-	backend                     bind.ContractBackend
+	backend                     protocol.ChainBackend
 	validatorName               string
 	numBigStepLevels            uint8
 	initialSyncCompleted        atomic.Bool
@@ -242,16 +242,11 @@ func (w *Watcher) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			latestBlock, err := w.backend.HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
+			toBlock, err := w.backend.HeaderU64(ctx)
 			if err != nil {
 				log.Error("Could not get latest header", "err", err)
 				continue
 			}
-			if !latestBlock.Number.IsUint64() {
-				log.Error("latest block header number is not a uint64")
-				continue
-			}
-			toBlock := latestBlock.Number.Uint64()
 			if fromBlock == toBlock {
 				w.initialSyncCompleted.Store(true)
 				continue
@@ -292,14 +287,10 @@ func (w *Watcher) Start(ctx context.Context) {
 // GetRoyalEdges returns all royal, tracked edges in the watcher by assertion
 // hash.
 func (w *Watcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash][]*api.JsonTrackedRoyalEdge, error) {
-	header, err := w.chain.Backend().HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
+	blockNum, err := w.chain.Backend().HeaderU64(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !header.Number.IsUint64() {
-		return nil, errors.New("block header is not a uint64")
-	}
-	blockNum := header.Number.Uint64()
 	response := make(map[protocol.AssertionHash][]*api.JsonTrackedRoyalEdge)
 	if err = w.challenges.ForEach(func(assertionHash protocol.AssertionHash, t *trackedChallenge) error {
 		return t.honestEdgeTree.GetEdges().ForEach(func(edgeId protocol.EdgeId, edge protocol.SpecEdge) error {
@@ -314,7 +305,7 @@ func (w *Watcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash
 				return err2
 			}
 			hasRival := !unrivaled
-			timeUnrivaled, err2 := t.honestEdgeTree.TimeUnrivaled(edge, blockNum)
+			timeUnrivaled, err2 := t.honestEdgeTree.TimeUnrivaled(ctx, edge, blockNum)
 			if err2 != nil {
 				return err2
 			}
@@ -392,47 +383,86 @@ func (w *Watcher) ComputeAncestors(
 			challengedAssertionHash,
 		)
 	}
-	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
+	blockHeaderNumber, err := w.chain.Backend().HeaderU64(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !blockHeader.Number.IsUint64() {
-		return nil, errors.New("block number is not uint64")
-	}
-	return chal.honestEdgeTree.ComputeAncestors(ctx, edgeId, blockHeader.Number.Uint64())
+	return chal.honestEdgeTree.ComputeAncestors(ctx, edgeId, blockHeaderNumber)
 }
 
-func (w *Watcher) PathWeightToClosestEssentialAncestor(
+func (w *Watcher) ClosestEssentialAncestor(
 	ctx context.Context,
 	challengedAssertionHash protocol.AssertionHash,
-	edge protocol.ReadOnlyEdge,
-) (uint64, error) {
+	edge protocol.VerifiedRoyalEdge,
+) (protocol.ReadOnlyEdge, error) {
 	chal, ok := w.challenges.TryGet(challengedAssertionHash)
 	if !ok {
-		return 0, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"could not get challenge for top level assertion %#x",
 			challengedAssertionHash,
 		)
 	}
-	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
-	if err != nil {
-		return 0, err
+	return chal.honestEdgeTree.ClosestEssentialAncestor(ctx, edge)
+}
+
+func (w *Watcher) IsEssentialAncestorConfirmable(
+	ctx context.Context,
+	edge protocol.SpecEdge,
+	challengedAssertionHash protocol.AssertionHash,
+	confirmationThreshold uint64,
+) (bool, error) {
+	chal, ok := w.challenges.TryGet(challengedAssertionHash)
+	if !ok {
+		return false, fmt.Errorf(
+			"could not get challenge for top level assertion %#x",
+			challengedAssertionHash,
+		)
 	}
-	if !blockHeader.Number.IsUint64() {
-		return 0, errors.New("block number is not uint64")
+	blockHeaderNumber, err := w.chain.Backend().HeaderU64(ctx)
+	if err != nil {
+		return false, err
 	}
 	if !chal.honestEdgeTree.HasRoyalEdge(edge.Id()) {
-		return 0, fmt.Errorf("edge with id %#x is not yet tracked locally", edge.Id().Hash)
+		return false, fmt.Errorf("edge with id %#x is not yet tracked locally", edge.Id().Hash)
 	}
 	essentialAncestor, err := chal.honestEdgeTree.ClosestEssentialAncestor(ctx, edge)
 	if err != nil {
-		return 0, err
+		return false, err
 	}
-	return chal.honestEdgeTree.ComputePathWeight(ctx, challengetree.ComputePathWeightArgs{
+	pathWeight, err := chal.honestEdgeTree.ComputePathWeight(ctx, challengetree.ComputePathWeightArgs{
 		Child:    edge.Id(),
 		Ancestor: essentialAncestor.Id(),
-		BlockNum: blockHeader.Number.Uint64(),
+		BlockNum: blockHeaderNumber,
 	})
+	if err != nil {
+		return false, err
+	}
+	return pathWeight >= confirmationThreshold, nil
+}
+
+func (w *Watcher) IsConfirmableEssentialEdge(
+	ctx context.Context,
+	challengedAssertionHash protocol.AssertionHash,
+	essentialEdgeId protocol.EdgeId,
+	confirmationThreshold uint64,
+) (bool, []challengetree.EssentialPath, uint64, error) {
+	chal, ok := w.challenges.TryGet(challengedAssertionHash)
+	if !ok {
+		return false, nil, 0, fmt.Errorf("could not get challenge for top level assertion %#x", challengedAssertionHash)
+	}
+	blockHeaderNumber, err := w.chain.Backend().HeaderU64(ctx)
+	if err != nil {
+		return false, nil, 0, err
+	}
+	confirmable, essentialPaths, timer, err := chal.honestEdgeTree.IsConfirmableEssentialEdge(
+		ctx,
+		challengetree.IsConfirmableArgs{
+			EssentialEdge:         essentialEdgeId,
+			BlockNum:              blockHeaderNumber,
+			ConfirmationThreshold: confirmationThreshold,
+		},
+	)
+	return confirmable, essentialPaths, timer, err
 }
 
 func (w *Watcher) ComputeRootInheritedTimer(
@@ -446,14 +476,11 @@ func (w *Watcher) ComputeRootInheritedTimer(
 			challengedAssertionHash,
 		)
 	}
-	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
+	blockHeaderNumber, err := w.chain.Backend().HeaderU64(ctx)
 	if err != nil {
 		return 0, err
 	}
-	if !blockHeader.Number.IsUint64() {
-		return 0, errors.New("block number is not uint64")
-	}
-	return chal.honestEdgeTree.ComputeRootInheritedTimer(ctx, challengedAssertionHash, blockHeader.Number.Uint64())
+	return chal.honestEdgeTree.ComputeRootInheritedTimer(ctx, challengedAssertionHash, blockHeaderNumber)
 }
 
 func (w *Watcher) AllowTrackingEdgeWithParentHash(parentHash protocol.AssertionHash) bool {
@@ -601,16 +628,16 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) (bool, er
 	}
 	// Add the edge to a local challenge tree of tracked edges. If it is honest,
 	// we also spawn a tracker for the edge.
-	isRoyalEdge, err := chal.honestEdgeTree.AddEdge(ctx, edge)
-	if err != nil {
+	if err = chal.honestEdgeTree.AddEdge(ctx, edge); err != nil {
 		if !errors.Is(err, challengetree.ErrAlreadyBeingTracked) {
 			return false, errors.Wrap(err, "could not add edge to challenge tree")
 		}
 		// If the error is that we are already tracking the edge, we exit early.
 		return false, nil
 	}
-	if isRoyalEdge {
-		err = w.edgeManager.TrackEdge(ctx, edge)
+	royalEdge, isRoyal := edge.AsVerifiedHonest()
+	if isRoyal {
+		err = w.edgeManager.TrackEdge(ctx, royalEdge)
 		if err != nil {
 			return false, err
 		}
@@ -623,10 +650,10 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) (bool, er
 		"endHeight", end,
 		"startCommit", fmt.Sprintf("%#x", startRoot[:4]),
 		"endCommit", fmt.Sprintf("%#x", endRoot[:4]),
+		"isHonestEdge", isRoyal,
 		"validatorName", w.validatorName,
-		"isHonestEdge", isRoyalEdge,
 	}
-	if isRoyalEdge {
+	if isRoyal {
 		log.Info("Observed honest edge", fields...)
 	} else {
 		if edge.ClaimId().IsSome() {
@@ -647,7 +674,7 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) (bool, er
 	}
 	go func() {
 		if _, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-			if innerErr := w.saveEdgeToDB(ctx, edge, isRoyalEdge); innerErr != nil {
+			if innerErr := w.saveEdgeToDB(ctx, edge, isRoyal); innerErr != nil {
 				log.Error("Could not save edge to db", "err", innerErr)
 				return false, innerErr
 			}
@@ -906,7 +933,6 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 
 			if confirmed {
 				assertionConfirmedCounter.Inc(1)
-				w.challenges.Delete(challengeParentAssertionHash)
 				log.Info("Confirmed assertion by challenge win", "assertionHash", claimedAssertion)
 				return
 			}
@@ -941,16 +967,13 @@ func (w *Watcher) getStartEndBlockNum(ctx context.Context) (filterRange, error) 
 	}
 	firstBlock := latestConfirmed.CreatedAtBlock()
 	startBlock := firstBlock
-	header, err := w.backend.HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
+	headerNumber, err := w.backend.HeaderU64(ctx)
 	if err != nil {
 		return filterRange{}, err
 	}
-	if !header.Number.IsUint64() {
-		return filterRange{}, errors.New("header number is not a uint64")
-	}
 	return filterRange{
 		startBlockNum: startBlock,
-		endBlockNum:   header.Number.Uint64(),
+		endBlockNum:   headerNumber,
 	}, nil
 }
 

@@ -12,6 +12,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//chain-abstraction:protocol",
+        "//challenge-manager/challenge-tree",
         "//containers",
         "//containers/events",
         "//containers/fsm",

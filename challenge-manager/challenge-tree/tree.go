@@ -44,18 +44,17 @@ func buildEdgeCreationTimeKey(originId protocol.OriginId, mutualId protocol.Mutu
 	return key
 }
 
-// RoyalChallengeTree keeps track of royal edges the honest node agrees with in a particular challenge.
+// RoyalChallengeTree keeps track of royal edges the honest validator agrees with in a particular challenge.
 // All edges tracked in this data structure are part of the same, top-level assertion challenge.
 type RoyalChallengeTree struct {
-	edges                    *threadsafe.Map[protocol.EdgeId, protocol.SpecEdge]
-	edgeCreationTimes        *threadsafe.Map[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]]
-	topLevelAssertionHash    protocol.AssertionHash
-	metadataReader           MetadataReader
-	histChecker              l2stateprovider.HistoryChecker
-	validatorName            string
-	totalChallengeLevels     uint8
-	royalRootEdgesByLevel    *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]]
-	essentialNodePathWeights map[protocol.EdgeId]*pathWeightMinHeap
+	edges                 *threadsafe.Map[protocol.EdgeId, protocol.SpecEdge]
+	edgeCreationTimes     *threadsafe.Map[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]]
+	topLevelAssertionHash protocol.AssertionHash
+	metadataReader        MetadataReader
+	histChecker           l2stateprovider.HistoryChecker
+	validatorName         string
+	totalChallengeLevels  uint8
+	royalRootEdgesByLevel *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]]
 }
 
 func New(
@@ -73,9 +72,8 @@ func New(
 		histChecker:           histChecker,
 		validatorName:         validatorName,
 		// The total number of challenge levels include block challenges, small step challenges, and N big step challenges.
-		totalChallengeLevels:     numBigStepLevels + 2,
-		royalRootEdgesByLevel:    threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]](threadsafe.MapWithMetric[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]]("royalRootEdgesByLevel")),
-		essentialNodePathWeights: make(map[protocol.EdgeId]*pathWeightMinHeap),
+		totalChallengeLevels:  numBigStepLevels + 2,
+		royalRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]](threadsafe.MapWithMetric[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]]("royalRootEdgesByLevel")),
 	}
 }
 
@@ -106,6 +104,10 @@ func (ht *RoyalChallengeTree) GetEdges() *threadsafe.Map[protocol.EdgeId, protoc
 	return ht.edges
 }
 
+func (ht *RoyalChallengeTree) GetEdge(edgeId protocol.EdgeId) (protocol.SpecEdge, bool) {
+	return ht.edges.TryGet(edgeId)
+}
+
 func (ht *RoyalChallengeTree) HasRoyalEdge(edgeId protocol.EdgeId) bool {
 	return ht.edges.Has(edgeId)
 }
@@ -114,8 +116,8 @@ func (ht *RoyalChallengeTree) IsUnrivaledAtBlockNum(edge protocol.ReadOnlyEdge, 
 	return ht.UnrivaledAtBlockNum(edge, blockNum)
 }
 
-func (ht *RoyalChallengeTree) TimeUnrivaled(edge protocol.ReadOnlyEdge, blockNum uint64) (uint64, error) {
-	return ht.LocalTimer(edge, blockNum)
+func (ht *RoyalChallengeTree) TimeUnrivaled(ctx context.Context, edge protocol.ReadOnlyEdge, blockNum uint64) (uint64, error) {
+	return ht.LocalTimer(ctx, edge, blockNum)
 }
 
 // Obtains the lowermost edges across all subchallenges that are royal.

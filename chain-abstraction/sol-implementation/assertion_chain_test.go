@@ -294,7 +294,7 @@ func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 	challengeManager := createdData.Chains[0].SpecChallengeManager()
 
 	// Honest assertion being added.
-	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
+	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.VerifiedRoyalEdge {
 		assertionMetadata := &l2stateprovider.AssociatedAssertionMetadata{
 			WasmModuleRoot: common.Hash{},
 			FromState: protocol.GoGlobalState{
@@ -367,7 +367,7 @@ func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 		require.ErrorContains(t, err, "EDGE_NOT_CONFIRMED")
 	})
 	t.Run("level zero block edge confirmed allows assertion confirmation", func(t *testing.T) {
-		_, err = honestEdge.ConfirmByTimer(ctx)
+		_, err = honestEdge.ConfirmByTimer(ctx, createdData.Leaf1.Id())
 		require.NoError(t, err)
 
 		// Adjust beyond the grace period.
@@ -428,7 +428,7 @@ func TestIsChallengeComplete(t *testing.T) {
 	challengeManager := createdData.Chains[0].SpecChallengeManager()
 
 	// Honest assertion being added.
-	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.SpecEdge {
+	leafAdder := func(stateManager l2stateprovider.Provider, leaf protocol.Assertion) protocol.VerifiedRoyalEdge {
 		assertionMetadata := &l2stateprovider.AssociatedAssertionMetadata{
 			WasmModuleRoot: common.Hash{},
 			FromState: protocol.GoGlobalState{
@@ -487,7 +487,7 @@ func TestIsChallengeComplete(t *testing.T) {
 		createdData.Backend.Commit()
 	}
 
-	_, err = honestEdge.ConfirmByTimer(ctx)
+	_, err = honestEdge.ConfirmByTimer(ctx, createdData.Leaf1.Id())
 	require.NoError(t, err)
 
 	// Adjust beyond the grace period.
