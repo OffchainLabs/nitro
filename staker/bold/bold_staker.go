@@ -139,16 +139,17 @@ func StateProviderConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type BOLDStaker struct {
 	stopwaiter.StopWaiter
-	config             *BoldConfig
-	chalManager        *challengemanager.Manager
-	blockValidator     *staker.BlockValidator
-	rollupAddress      common.Address
-	client             bind.ContractBackend
-	lastWasmModuleRoot common.Hash
-	callOpts           bind.CallOpts
-	wallet             legacystaker.ValidatorWalletInterface
-	stakedNotifiers    []legacystaker.LatestStakedNotifier
-	confirmedNotifiers []legacystaker.LatestConfirmedNotifier
+	config                  *BoldConfig
+	chalManager             *challengemanager.Manager
+	blockValidator          *staker.BlockValidator
+	statelessBlockValidator *staker.StatelessBlockValidator
+	rollupAddress           common.Address
+	client                  bind.ContractBackend
+	lastWasmModuleRoot      common.Hash
+	callOpts                bind.CallOpts
+	wallet                  legacystaker.ValidatorWalletInterface
+	stakedNotifiers         []legacystaker.LatestStakedNotifier
+	confirmedNotifiers      []legacystaker.LatestConfirmedNotifier
 }
 
 func NewBOLDStaker(
@@ -170,15 +171,16 @@ func NewBOLDStaker(
 		return nil, err
 	}
 	return &BOLDStaker{
-		config:             config,
-		chalManager:        manager,
-		blockValidator:     blockValidator,
-		rollupAddress:      rollupAddress,
-		client:             client,
-		callOpts:           callOpts,
-		wallet:             wallet,
-		stakedNotifiers:    stakedNotifiers,
-		confirmedNotifiers: confirmedNotifiers,
+		config:                  config,
+		chalManager:             manager,
+		blockValidator:          blockValidator,
+		statelessBlockValidator: statelessBlockValidator,
+		rollupAddress:           rollupAddress,
+		client:                  client,
+		callOpts:                callOpts,
+		wallet:                  wallet,
+		stakedNotifiers:         stakedNotifiers,
+		confirmedNotifiers:      confirmedNotifiers,
 	}, nil
 }
 
@@ -270,7 +272,7 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 	if err != nil {
 		return 0, nil, fmt.Errorf("error getting latest %s: %w", assertionType, err)
 	}
-	caughtUp, count, err := staker.GlobalStateToMsgCount(b.blockValidator.InboxTracker(), b.blockValidator.InboxStreamer(), validator.GoGlobalState(globalState))
+	caughtUp, count, err := staker.GlobalStateToMsgCount(b.statelessBlockValidator.InboxTracker(), b.statelessBlockValidator.InboxStreamer(), validator.GoGlobalState(globalState))
 	if err != nil {
 		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
 			return 0, nil, fmt.Errorf("latest %s assertion of %v not yet in our node: %w", assertionType, globalState, err)
@@ -283,7 +285,7 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 		return 0, nil, nil
 	}
 
-	processedCount, err := b.blockValidator.InboxStreamer().GetProcessedMessageCount()
+	processedCount, err := b.statelessBlockValidator.InboxStreamer().GetProcessedMessageCount()
 	if err != nil {
 		return 0, nil, err
 	}
