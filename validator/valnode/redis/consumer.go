@@ -6,14 +6,16 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/spf13/pflag"
 )
 
 // ValidationServer implements consumer for the requests originated from

@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
-
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 func testTwoNodesLong(t *testing.T, dasModeStr string) {

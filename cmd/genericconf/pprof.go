@@ -3,7 +3,6 @@ package genericconf
 import (
 	"fmt"
 	"net/http"
-
 	// Blank import pprof registers its HTTP handlers.
 	_ "net/http/pprof" // #nosec G108
 

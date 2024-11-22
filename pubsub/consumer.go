@@ -10,11 +10,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/google/uuid"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type ConsumerConfig struct {
