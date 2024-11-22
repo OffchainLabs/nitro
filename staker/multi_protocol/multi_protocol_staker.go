@@ -199,11 +199,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 	ctx context.Context,
 	rollupAddress common.Address,
 ) (*boldstaker.BOLDStaker, error) {
-	txBuilder, err := txbuilder.NewBuilder(m.wallet)
-	if err != nil {
-		return nil, err
-	}
-	auth, err := txBuilder.Auth(ctx)
+	txBuilder, err := txbuilder.NewBuilder(m.wallet, m.legacyConfig().GasRefunder())
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +207,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		ctx,
 		rollupAddress,
 		*m.getCallOpts(ctx),
-		auth,
+		txBuilder.SingleTxAuth(),
 		m.l1Reader,
 		m.blockValidator,
 		m.statelessBlockValidator,

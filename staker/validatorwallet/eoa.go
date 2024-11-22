@@ -15,7 +15,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/txbuilder"
 )
 
 type EOA struct {
@@ -81,21 +80,17 @@ func (w *EOA) TestTransactions(context.Context, []*types.Transaction) error {
 	return nil
 }
 
-func (w *EOA) ExecuteTransactions(ctx context.Context, builder *txbuilder.Builder, _ common.Address) (*types.Transaction, error) {
-	if len(builder.Transactions()) == 0 {
+func (w *EOA) ExecuteTransactions(ctx context.Context, txes []*types.Transaction, _ common.Address) (*types.Transaction, error) {
+	if len(txes) == 0 {
 		return nil, nil
 	}
-	tx := builder.Transactions()[0] // we ignore future txs and only execute the first
+	tx := txes[0] // we ignore future txs and only execute the first
 	return w.postTransaction(ctx, tx)
 }
 
 func (w *EOA) postTransaction(ctx context.Context, baseTx *types.Transaction) (*types.Transaction, error) {
-	nonce, err := w.L1Client().NonceAt(ctx, w.auth.From, nil)
-	if err != nil {
-		return nil, err
-	}
 	gas := baseTx.Gas() + w.getExtraGas()
-	newTx, err := w.dataPoster.PostSimpleTransaction(ctx, nonce, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
+	newTx, err := w.dataPoster.PostSimpleTransaction(ctx, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
 	if err != nil {
 		return nil, fmt.Errorf("post transaction: %w", err)
 	}

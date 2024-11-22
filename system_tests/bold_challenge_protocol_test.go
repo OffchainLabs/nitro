@@ -233,7 +233,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		chalManagerAddr.Address(),
 		&evilOpts,
 		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
-		solimpl.NewDataPosterTransactor(dp),
+		bold.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
 
@@ -619,7 +619,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		chalManagerAddr,
 		&opts,
 		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
-		solimpl.NewDataPosterTransactor(dp),
+		bold.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
 	assertionChain = assertionChainBindings
@@ -827,7 +827,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		chalManagerAddr,
 		&evilOpts,
 		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
-		solimpl.NewDataPosterTransactor(dp),
+		bold.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
 
