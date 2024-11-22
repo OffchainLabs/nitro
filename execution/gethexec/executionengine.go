@@ -96,6 +96,8 @@ type ExecutionEngine struct {
 	disableStylusCacheMetricsCollection bool
 
 	prefetchBlock bool
+
+	cachedL1PriceData *L1PriceData
 }
 
 type Opt func(*ExecutionEngine)
