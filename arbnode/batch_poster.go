@@ -180,14 +180,20 @@ type BatchPosterConfig struct {
 	gasRefunder                    common.Address
 	l1BlockBound                   l1BlockBound
 	// Espresso specific flags
-	LightClientAddress      string `koanf:"light-client-address"`
-	HotShotUrl              string `koanf:"hotshot-url"`
-	UserDataAttestationFile string `koanf:"user-data-attestation-file"`
-	QuoteFile               string `koanf:"quote-file"`
-	UseEscapeHatch          bool   `koanf:"use-escape-hatch"`
+	LightClientAddress           string        `koanf:"light-client-address"`
+	HotShotUrl                   string        `koanf:"hotshot-url"`
+	UserDataAttestationFile      string        `koanf:"user-data-attestation-file"`
+	QuoteFile                    string        `koanf:"quote-file"`
+	UseEscapeHatch               bool          `koanf:"use-escape-hatch"`
+	EspressoTxnsPollingInterval  time.Duration `koanf:"espresso-txns-polling-interval"`
+	EspressoSwitchDelayThreshold uint64        `koanf:"espresso-switch-delay-threshold"`
 }
 
 func (c *BatchPosterConfig) Validate() error {
+	if (c.LightClientAddress == "") != (c.HotShotUrl == "") {
+		return errors.New("light client address and hotshot URL must both be set together, or both left unset")
+
+	}
 	if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
 		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
 	}
@@ -240,6 +246,8 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".user-data-attestation-file", DefaultBatchPosterConfig.UserDataAttestationFile, "specifies the file containing the user data attestation")
 	f.String(prefix+".quote-file", DefaultBatchPosterConfig.QuoteFile, "specifies the file containing the quote")
 	f.Bool(prefix+".use-escape-hatch", DefaultBatchPosterConfig.UseEscapeHatch, "if true, batches will be posted without doing the espresso verification when hotshot is down. If false, wait for hotshot being up")
+	f.Duration(prefix+".espresso-txns-polling-interval", DefaultBatchPosterConfig.EspressoTxnsPollingInterval, "interval between polling for transactions to be included in the block")
+	f.Uint64(prefix+".espresso-switch-delay-threshold", DefaultBatchPosterConfig.EspressoSwitchDelayThreshold, "specifies the switch delay threshold used to determine hotshot liveness")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -274,6 +282,8 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	UserDataAttestationFile:        "",
 	QuoteFile:                      "",
 	UseEscapeHatch:                 false,
+	EspressoTxnsPollingInterval:    time.Millisecond * 100,
+	EspressoSwitchDelayThreshold:   20,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -306,6 +316,8 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	CheckBatchCorrectness:          true,
 	UseEscapeHatch:                 false,
+	EspressoTxnsPollingInterval:    time.Millisecond * 100,
+	EspressoSwitchDelayThreshold:   10,
 }
 
 type BatchPosterOpts struct {
@@ -367,9 +379,10 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 			return nil, err
 		}
 		opts.Streamer.lightClientReader = lightClientReader
+		opts.Streamer.UseEscapeHatch = opts.Config().UseEscapeHatch
+		opts.Streamer.espressoTxnsPollingInterval = opts.Config().EspressoTxnsPollingInterval
+		opts.Streamer.espressoSwitchDelayThreshold = opts.Config().EspressoSwitchDelayThreshold
 	}
-
-	opts.Streamer.UseEscapeHatch = opts.Config().UseEscapeHatch
 
 	b := &BatchPoster{
 		l1Reader:           opts.L1Reader,

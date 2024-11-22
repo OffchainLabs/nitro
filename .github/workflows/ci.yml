@@ -56,7 +56,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive
 
       - uses: cargo-bins/cargo-binstall@main
       - name: Make more disk space available on public runner
