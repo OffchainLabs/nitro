@@ -29,7 +29,7 @@ type stackParams struct {
 	trackChallengeParentAssertionHashes []protocol.AssertionHash
 	apiAddr                             string
 	apiDBPath                           string
-	enableHeadBlockSubscriptions        bool
+	headerProvider                      HeaderProvider
 	enableFastConfirmation              bool
 	assertionManagerOverride            *assertions.Manager
 }
@@ -44,7 +44,7 @@ var defaultStackParams = stackParams{
 	trackChallengeParentAssertionHashes: nil,
 	apiAddr:                             "",
 	apiDBPath:                           "",
-	enableHeadBlockSubscriptions:        false,
+	headerProvider:                      nil,
 	enableFastConfirmation:              false,
 	assertionManagerOverride:            nil,
 }
@@ -52,38 +52,36 @@ var defaultStackParams = stackParams{
 // StackOpt is a functional option to configure the stack.
 type StackOpt func(*stackParams)
 
-// WithMode sets the mode of the default challenge manager.
+// WithMode sets the mode of the challenge manager.
 func StackWithMode(mode types.Mode) StackOpt {
 	return func(p *stackParams) {
 		p.mode = mode
 	}
 }
 
-// WithName sets the name of the default challenge manager.
+// WithName sets the name of the challenge manager.
 func StackWithName(name string) StackOpt {
 	return func(p *stackParams) {
 		p.name = name
 	}
 }
 
-// WithPollingInterval sets the polling interval of the default challenge
-// manager.
+// WithPollingInterval sets the polling interval of the challenge manager.
 func StackWithPollingInterval(interval time.Duration) StackOpt {
 	return func(p *stackParams) {
 		p.pollInterval = interval
 	}
 }
 
-// WithPostingInterval sets the posting interval of the default challenge
-// manager.
+// WithPostingInterval sets the posting interval of the challenge manager.
 func StackWithPostingInterval(interval time.Duration) StackOpt {
 	return func(p *stackParams) {
 		p.postInterval = interval
 	}
 }
 
-// WithConfirmationInterval sets the confirmation interval of the default
-// challenge manager.
+// WithConfirmationInterval sets the confirmation interval of the challenge
+// manager.
 func StackWithConfirmationInterval(interval time.Duration) StackOpt {
 	return func(p *stackParams) {
 		p.confInterval = interval
@@ -91,7 +89,7 @@ func StackWithConfirmationInterval(interval time.Duration) StackOpt {
 }
 
 // WithAverageBlockCreationTime sets the average block creation time of the
-// default challenge manager.
+// challenge manager.
 func StackWithAverageBlockCreationTime(interval time.Duration) StackOpt {
 	return func(p *stackParams) {
 		p.avgBlockTime = interval
@@ -99,7 +97,7 @@ func StackWithAverageBlockCreationTime(interval time.Duration) StackOpt {
 }
 
 // WithTrackChallengeParentAssertionHashes sets the track challenge parent
-// assertion hashes of the default challenge manager.
+// assertion hashes of the challenge manager.
 func StackWithTrackChallengeParentAssertionHashes(hashes []string) StackOpt {
 	return func(p *stackParams) {
 		p.trackChallengeParentAssertionHashes = make([]protocol.AssertionHash, len(hashes))
@@ -109,8 +107,8 @@ func StackWithTrackChallengeParentAssertionHashes(hashes []string) StackOpt {
 	}
 }
 
-// WithAPIEnabled sets the API address and database path of the default
-// challenge manager.
+// WithAPIEnabled sets the API address and database path of the challenge
+// manager.
 func StackWithAPIEnabled(apiAddr, apiDBPath string) StackOpt {
 	return func(p *stackParams) {
 		p.apiAddr = apiAddr
@@ -118,11 +116,10 @@ func StackWithAPIEnabled(apiAddr, apiDBPath string) StackOpt {
 	}
 }
 
-// WithHeadBlockSubscriptionsEnabled sets the enable head block subscriptions of
-// the default challenge manager.
-func StackWithHeadBlockSubscriptionsEnabled() StackOpt {
+// StackWithHeaderProvider sets the header provider of the challenge manager.
+func StackWithHeaderProvider(hp HeaderProvider) StackOpt {
 	return func(p *stackParams) {
-		p.enableHeadBlockSubscriptions = true
+		p.headerProvider = hp
 	}
 }
 
@@ -133,8 +130,8 @@ func StackWithFastConfirmationEnabled() StackOpt {
 	}
 }
 
-// OverrideAssertionManger can be used in tests to override the default
-// assertion manager.
+// OverrideAssertionManger can be used in tests to override the assertion
+// manager.
 func OverrideAssertionManager(asm *assertions.Manager) StackOpt {
 	return func(p *stackParams) {
 		p.assertionManagerOverride = asm
@@ -223,8 +220,8 @@ func NewChallengeStack(
 		WithMode(params.mode),
 		WithName(params.name),
 	}
-	if params.enableHeadBlockSubscriptions {
-		cmOpts = append(cmOpts, WithHeadBlockSubscriptions())
+	if params.headerProvider != nil {
+		cmOpts = append(cmOpts, WithHeaderProvider(params.headerProvider))
 	}
 	if params.apiAddr != "" {
 		cmOpts = append(cmOpts, WithAPIServer(api))

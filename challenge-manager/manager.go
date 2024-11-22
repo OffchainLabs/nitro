@@ -48,6 +48,11 @@ type AssertionManager interface {
 	SetRivalHandler(types.RivalHandler)
 }
 
+// HeaderProvider is a producer of new block headers.
+type HeaderProvider interface {
+	Subscribe(requireBlockNrUpdates bool) (<-chan *gethtypes.Header, func())
+}
+
 // Manager defines an offchain, challenge manager, which will be
 // an active participant in interacting with the on-chain contracts.
 type Manager struct {
@@ -57,6 +62,7 @@ type Manager struct {
 	watcher                      *watcher.Watcher
 	stateManager                 l2stateprovider.Provider
 	name                         string
+	headerProvider               HeaderProvider
 	timeRef                      utilTime.Reference
 	trackedEdgeIds               *threadsafe.Map[protocol.EdgeId, *edgetracker.Tracker]
 	assertionMetadataCache       *threadsafe.LruMap[protocol.AssertionHash, l2stateprovider.AssociatedAssertionMetadata]
@@ -64,7 +70,6 @@ type Manager struct {
 	notifyOnNumberOfBlocks       uint64
 	mode                         types.Mode
 	claimedAssertionsInChallenge *threadsafe.LruSet[protocol.AssertionHash]
-	headBlockSubscriptions       bool
 	// API
 	api *server.Server
 }
@@ -92,16 +97,17 @@ func WithMode(m types.Mode) Opt {
 	}
 }
 
-// WithAPIServer(*server.Server) sets the API server for the challenge manager.
+// WithAPIServer sets the API server for the challenge manager.
 func WithAPIServer(api *server.Server) Opt {
 	return func(val *Manager) {
 		val.api = api
 	}
 }
 
-func WithHeadBlockSubscriptions() Opt {
+// WithHeaderProvider sets the header provider for the challenge manager.
+func WithHeaderProvider(provider HeaderProvider) Opt {
 	return func(val *Manager) {
-		val.headBlockSubscriptions = true
+		val.headerProvider = provider
 	}
 }
 
@@ -124,7 +130,6 @@ func New(
 		assertionMetadataCache:       threadsafe.NewLruMap(1500, threadsafe.LruMapWithMetric[protocol.AssertionHash, l2stateprovider.AssociatedAssertionMetadata]("batchIndexForAssertionCache")),
 		notifyOnNumberOfBlocks:       1,
 		newBlockNotifier:             events.NewProducer[*gethtypes.Header](),
-		headBlockSubscriptions:       false,
 		claimedAssertionsInChallenge: threadsafe.NewLruSet(1500, threadsafe.LruSetWithMetric[protocol.AssertionHash]("claimedAssertionsInChallenge")),
 		api:                          nil,
 	}
@@ -315,7 +320,7 @@ func (m *Manager) listenForBlockEvents(ctx context.Context) {
 
 	// Then, once the watcher has reached the latest head, we
 	// fire off a block notifications events normally.
-	if m.headBlockSubscriptions {
+	if m.headerProvider != nil {
 		m.tickOnHeadBlockSubscriptions(ctx)
 	} else {
 		m.tickAtInterval(ctx)
@@ -323,12 +328,9 @@ func (m *Manager) listenForBlockEvents(ctx context.Context) {
 }
 
 func (m *Manager) tickOnHeadBlockSubscriptions(ctx context.Context) {
-	ch := make(chan *gethtypes.Header, 100)
-	sub, err := m.chain.Backend().SubscribeNewHead(ctx, ch)
-	if err != nil {
-		panic(err)
-	}
-	defer sub.Unsubscribe()
+	doesNotNeedEveryBlockNumberUpdate := false
+	ch, unsub := m.headerProvider.Subscribe(doesNotNeedEveryBlockNumberUpdate)
+	defer unsub()
 	numBlocksReceived := uint64(0)
 	for {
 		select {
@@ -341,7 +343,6 @@ func (m *Manager) tickOnHeadBlockSubscriptions(ctx context.Context) {
 			if numBlocksReceived%m.notifyOnNumberOfBlocks == 0 {
 				m.newBlockNotifier.Broadcast(ctx, header)
 			}
-		case <-sub.Err():
 		case <-ctx.Done():
 			return
 		}

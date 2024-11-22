@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	cm "github.com/offchainlabs/bold/challenge-manager"
@@ -256,13 +257,16 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 	honestStateManager, err := statemanager.NewForSimpleMachine(t, baseStateManagerOpts...)
 	require.NoError(t, err)
 
+	shp := &simpleHeaderProvider{b: bk, chs: make([]chan<- *gethtypes.Header, 0)}
+	shp.Start(ctx)
+
 	baseStackOpts := []cm.StackOpt{
 		cm.StackWithMode(types.MakeMode),
 		cm.StackWithPollingInterval(cfg.timings.assertionScanningInterval),
 		cm.StackWithPostingInterval(cfg.timings.assertionPostingInterval),
 		cm.StackWithAverageBlockCreationTime(cfg.timings.blockTime),
 		cm.StackWithConfirmationInterval(cfg.timings.assertionConfirmationAttemptInterval),
-		cm.StackWithHeadBlockSubscriptionsEnabled(),
+		cm.StackWithHeaderProvider(shp),
 	}
 
 	name := "honest"
