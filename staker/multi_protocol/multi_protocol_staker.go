@@ -111,9 +111,7 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 
 func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 	m.StopWaiter.Start(ctxIn, m)
-	if m.legacyConfig().StrategyType() != legacystaker.WatchtowerStrategy {
-		m.wallet.Start(ctxIn)
-	}
+	m.wallet.Start(ctxIn)
 	if m.boldStaker != nil {
 		log.Info("Starting BOLD staker")
 		m.boldStaker.Start(ctxIn)
@@ -125,7 +123,7 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 		m.CallIteratively(func(ctx context.Context) time.Duration {
 			switchedToBoldProtocol, err := m.checkAndSwitchToBoldStaker(ctxIn)
 			if err != nil {
-				log.Error("staker: error in checking switch to bold staker", "err", err)
+				log.Warn("staker: error in checking switch to bold staker", "err", err)
 				return stakerSwitchInterval
 			}
 			if switchedToBoldProtocol {
@@ -164,6 +162,10 @@ func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Ad
 		return false, addr, err
 	}
 	_, err = userLogic.ChallengeGracePeriodBlocks(callOpts)
+	if err != nil && !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		// Unexpected error, perhaps an L1 issue?
+		return false, addr, err
+	}
 	// ChallengeGracePeriodBlocks only exists in the BOLD rollup contracts.
 	return err == nil, rollupAddress, nil
 }

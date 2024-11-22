@@ -515,9 +515,6 @@ func (s *Staker) StopAndWait() {
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
-	if s.Strategy() != WatchtowerStrategy {
-		s.wallet.Start(ctxIn)
-	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	isAheadOfOnChainNonceEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
