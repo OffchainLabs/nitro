@@ -106,38 +106,6 @@ func (d *ChainBackendTransactor) SendTransaction(ctx context.Context, fn func(op
 	return tx, d.ChainBackend.SendTransaction(ctx, tx)
 }
 
-// DataPoster is an interface that allows posting simple transactions without providing a nonce.
-// This is implemented in nitro repository.
-type DataPoster interface {
-	PostSimpleTransactionAutoNonce(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error)
-}
-
-// DataPosterTransactor is a wrapper around a DataPoster that implements the Transactor interface.
-type DataPosterTransactor struct {
-	fifo *FIFO
-	DataPoster
-}
-
-func NewDataPosterTransactor(dataPoster DataPoster) *DataPosterTransactor {
-	return &DataPosterTransactor{
-		fifo:       NewFIFO(1000),
-		DataPoster: dataPoster,
-	}
-}
-
-func (d *DataPosterTransactor) SendTransaction(ctx context.Context, fn func(opts *bind.TransactOpts) (*types.Transaction, error), opts *bind.TransactOpts, gas uint64) (*types.Transaction, error) {
-	// Try to acquire lock and if it fails, wait for a bit and try again.
-	for !d.fifo.Lock() {
-		<-time.After(100 * time.Millisecond)
-	}
-	defer d.fifo.Unlock()
-	tx, err := fn(opts)
-	if err != nil {
-		return nil, err
-	}
-	return d.PostSimpleTransactionAutoNonce(ctx, *tx.To(), tx.Data(), gas, tx.Value())
-}
-
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
