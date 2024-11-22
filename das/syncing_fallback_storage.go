@@ -51,7 +51,7 @@ func init() {
 	}
 	BatchDeliveredID = sequencerInboxABI.Events[sequencerBatchDeliveredEvent].ID
 	sequencerBatchDataABI = sequencerInboxABI.Events[sequencerBatchDataEvent]
-	addSequencerL2BatchFromOriginCallABI = sequencerInboxABI.Methods["addSequencerL2BatchFromOrigin0"]
+	addSequencerL2BatchFromOriginCallABI = sequencerInboxABI.Methods["addSequencerL2BatchFromOrigin"]
 }
 
 type SyncToStorageConfig struct {

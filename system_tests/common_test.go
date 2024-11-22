@@ -387,6 +387,7 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
+	log.Info("Building L1")
 	b.L1 = NewTestClient(b.ctx)
 	var l1StackConfig *node.Config
 	if b.useL1StackConfig {
@@ -570,7 +571,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 // Requires precompiles.AllowDebugPrecompiles = true
 func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	b.L2 = NewTestClient(b.ctx)
-
 	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
 
 	var chainDb ethdb.Database
@@ -1268,6 +1268,13 @@ func deployOnParentChain(
 
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
+
+	//  Deploy a espressoTEEVerifierMock contract
+	espressoTEEVerifierAddress, tx, _, err := mocksgen.DeployEspressoTEEVerifierMock(&parentChainTransactionOpts, parentChainClient)
+	Require(t, err)
+
+	_, err = parentChainReader.WaitForTxApproval(ctx, tx)
+	Require(t, err)
 	addresses, err := deploy.DeployOnParentChain(
 		ctx,
 		parentChainReader,
@@ -1275,7 +1282,7 @@ func deployOnParentChain(
 		[]common.Address{parentChainInfo.GetAddress("Sequencer")},
 		parentChainInfo.GetAddress("RollupOwner"),
 		0,
-		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}, espressoTEEVerifierAddress),
 		nativeToken,
 		maxDataSize,
 		chainSupportsBlobs,

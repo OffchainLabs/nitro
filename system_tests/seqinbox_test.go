@@ -43,9 +43,9 @@ type blockTestState struct {
 const seqInboxTestIters = 40
 
 func encodeAddBatch(seqABI *abi.ABI, seqNum *big.Int, message []byte, afterDelayedMsgRead *big.Int, gasRefunder common.Address) ([]byte, error) {
-	method, ok := seqABI.Methods["addSequencerL2BatchFromOrigin0"]
+	method, ok := seqABI.Methods["addSequencerL2BatchFromOrigin"]
 	if !ok {
-		return nil, errors.New("failed to find add addSequencerL2BatchFromOrigin0 method")
+		return nil, errors.New("failed to find add addSequencerL2BatchFromOrigin method")
 	}
 	inputData, err := method.Inputs.Pack(
 		seqNum,
@@ -356,9 +356,9 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				t.Errorf("Access list mistmatch:\n%s\n", diff)
 			}
 			if i%5 == 0 {
-				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, big.NewInt(0), big.NewInt(0))
+				tx, err = seqInbox.AddSequencerL2Batch99020501(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, big.NewInt(0), big.NewInt(0), []byte{})
 			} else {
-				tx, err = seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, common.Big0, common.Big0)
+				tx, err = seqInbox.AddSequencerL2BatchFromOrigin37501551(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, common.Big0, common.Big0, []byte{})
 			}
 			Require(t, err)
 			txRes, err := builder.L1.EnsureTxSucceeded(tx)

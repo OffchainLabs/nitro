@@ -85,7 +85,8 @@ var (
 const (
 	batchPosterSimpleRedisLockKey = "node.batch-poster.redis-lock.simple-lock-key"
 
-	sequencerBatchPostMethodName          = "addSequencerL2BatchFromOrigin0"
+	oldSequencerBatchPostMethodName       = "addSequencerL2BatchFromOrigin1"
+	newSequencerBatchPostMethodName       = "addSequencerL2BatchFromOrigin"
 	sequencerBatchPostWithBlobsMethodName = "addSequencerL2BatchFromBlobs"
 )
 
@@ -620,7 +621,6 @@ func (b *BatchPoster) submitEspressoTransactionPos(pos arbutil.MessageIndex) err
 
 	// Store the pos in the database to be used later to submit the message
 	// to hotshot for finalization.
-	log.Info("submitting pos", "pos", pos)
 	err = b.streamer.SubmitEspressoTransactionPos(pos, b.streamer.db.NewBatch())
 	if err != nil {
 		log.Error("failed to submit espresso transaction pos", "pos", pos, "err", err)
@@ -1088,26 +1088,19 @@ func (b *BatchPoster) encodeAddBatch(
 	delayedMsg uint64,
 	use4844 bool,
 ) ([]byte, []kzg4844.Blob, error) {
-	methodName := sequencerBatchPostMethodName
-	if use4844 {
-		methodName = sequencerBatchPostWithBlobsMethodName
-	}
-	method, ok := b.seqInboxABI.Methods[methodName]
-	if !ok {
-		return nil, nil, errors.New("failed to find add batch method")
-	}
+
 	var calldata []byte
 	var kzgBlobs []kzg4844.Blob
+	fullCalldata := make([]byte, 0)
 	var err error
-	var userData []byte
 	if use4844 {
+		method, ok := b.seqInboxABI.Methods[sequencerBatchPostWithBlobsMethodName]
+		if !ok {
+			return nil, nil, errors.New("failed to find add batch method")
+		}
 		kzgBlobs, err = blobs.EncodeBlobs(l2MessageData)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to encode blobs: %w", err)
-		}
-		_, blobHashes, err := blobs.ComputeCommitmentsAndHashes(kzgBlobs)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to compute blob hashes: %w", err)
 		}
 		// EIP4844 transactions to the sequencer inbox will not use transaction calldata for L2 info.
 		calldata, err = method.Inputs.Pack(
@@ -1118,25 +1111,17 @@ func (b *BatchPoster) encodeAddBatch(
 			new(big.Int).SetUint64(uint64(newMsgNum)),
 		)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to pack calldata: %w", err)
+			return nil, nil, fmt.Errorf("failed to pack calldata for eip-4844: %w", err)
 		}
-		// userData has blobHashes along with other calldata for EIP-4844 transactions
-		userData, err = method.Inputs.Pack(
-			seqNum,
-			new(big.Int).SetUint64(delayedMsg),
-			b.config().gasRefunder,
-			new(big.Int).SetUint64(uint64(prevMsgNum)),
-			new(big.Int).SetUint64(uint64(newMsgNum)),
-			blobHashes,
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to pack user data: %w", err)
-		}
-		_, err = b.getAttestationQuote(userData)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get attestation quote: %w", err)
-		}
+		fullCalldata = append(fullCalldata, method.ID...)
+		fullCalldata = append(fullCalldata, calldata...)
 	} else {
+		// initially constructing the calldata using the old oldSequencerBatchPostMethodName method
+		// This will allow us to get the attestation quote on the hash of the data
+		method, ok := b.seqInboxABI.Methods[oldSequencerBatchPostMethodName]
+		if !ok {
+			return nil, nil, errors.New("failed to find add batch method")
+		}
 		calldata, err = method.Inputs.Pack(
 			seqNum,
 			l2MessageData,
@@ -1147,17 +1132,37 @@ func (b *BatchPoster) encodeAddBatch(
 		)
 
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to pack calldata: %w", err)
+			return nil, nil, fmt.Errorf("failed to pack calldata without attestation quote: %w", err)
 		}
 
-		_, err = b.getAttestationQuote(calldata)
+		attestationQuote, err := b.getAttestationQuote(calldata)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get attestation quote: %w", err)
 		}
+
+		//  construct the calldata with attestation quote
+		method, ok = b.seqInboxABI.Methods[newSequencerBatchPostMethodName]
+		if !ok {
+			return nil, nil, errors.New("failed to find add batch method")
+		}
+
+		calldata, err = method.Inputs.Pack(
+			seqNum,
+			l2MessageData,
+			new(big.Int).SetUint64(delayedMsg),
+			b.config().gasRefunder,
+			new(big.Int).SetUint64(uint64(prevMsgNum)),
+			new(big.Int).SetUint64(uint64(newMsgNum)),
+			attestationQuote,
+		)
+
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to pack calldata with attestation quote: %w", err)
+		}
+		fullCalldata = append([]byte{}, method.ID...)
+		fullCalldata = append(fullCalldata, calldata...)
 	}
-	// TODO: when contract is updated add attestationQuote to the calldata
-	fullCalldata := append([]byte{}, method.ID...)
-	fullCalldata = append(fullCalldata, calldata...)
+
 	return fullCalldata, kzgBlobs, nil
 }
 
@@ -1647,6 +1652,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
 	}
 	accessList := b.accessList(batchPosition.NextSeqNum, b.building.segments.delayedMsg)
+
 	// On restart, we may be trying to estimate gas for a batch whose successor has
 	// already made it into pending state, if not latest state.
 	// In that case, we might get a revert with `DelayedBackwards()`.

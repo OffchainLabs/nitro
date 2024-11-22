@@ -44,6 +44,7 @@ func main() {
 	deployAccount := flag.String("l1DeployAccount", "", "l1 seq account to use (default is first account in keystore)")
 	ownerAddressString := flag.String("ownerAddress", "", "the rollup owner's address")
 	sequencerAddressString := flag.String("sequencerAddress", "", "the sequencer's address")
+	espressoTEEVerifierAddressString := flag.String("espressoTEEVerifierAddress", "", "the address of the espressoTEEVerifier contract")
 	batchPostersString := flag.String("batchPosters", "", "the comma separated array of addresses of batch posters. Defaults to sequencer address")
 	batchPosterManagerAddressString := flag.String("batchPosterManger", "", "the batch poster manger's address. Defaults to owner address")
 	nativeTokenAddressString := flag.String("nativeTokenAddress", "0x0000000000000000000000000000000000000000", "address of the ERC20 token which is used as native L2 currency")
@@ -96,6 +97,11 @@ func main() {
 
 	if !common.IsHexAddress(*sequencerAddressString) && len(*sequencerAddressString) > 0 {
 		panic("specified sequencer address is invalid")
+	}
+
+	esperssoTEEVerifierAddress := common.HexToAddress(*espressoTEEVerifierAddressString)
+	if !common.IsHexAddress(esperssoTEEVerifierAddress.String()) {
+		panic("specified espressoTEEVerifier address is invalid")
 	}
 	sequencerAddress := common.HexToAddress(*sequencerAddressString)
 
@@ -187,7 +193,7 @@ func main() {
 		batchPosters,
 		batchPosterManagerAddress,
 		*authorizevalidators,
-		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
+		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress, esperssoTEEVerifierAddress),
 		nativeToken,
 		maxDataSize,
 		true,

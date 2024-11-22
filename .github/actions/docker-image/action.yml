@@ -16,6 +16,9 @@ inputs:
   file:
     required: true
     type: string
+  push:
+    required: true
+    type: boolean
 
 outputs:
   digest:
@@ -46,7 +49,7 @@ runs:
         platforms: ${{ inputs.platforms }}
         cache-from: type=registry,ref=${{ steps.metadata.outputs.tags }}
         cache-to: type=inline
-        outputs: type=image,name=${{ inputs.images }},push-by-digest=true,name-canonical=true,push=true
+        outputs: type=image,name=${{ inputs.images }},push-by-digest=true,name-canonical=true,push=${{ inputs.push }}
 
     # This will upload the digest for each architecture to the same artifact,
     # Note: upload-artifact@v4 will no longer support this.

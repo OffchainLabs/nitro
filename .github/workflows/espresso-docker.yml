@@ -6,16 +6,13 @@
 # so it's possible this was always the culprit.
 #
 # After building, the images are merged together to make a multiplatform image.
-#
-# The latest wavm machine is also copied and exported as an artifact. In nitro
-# this seems to be later used as machine for the non-dev nitro-node build.
-# For more details on that see the Dockerfile and ./scripts/download.sh
 name: Espresso Docker build CI
 run-name: Docker build CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
   workflow_dispatch:
   merge_group:
+  pull_request:
   push:
     branches:
       - master
@@ -35,20 +32,19 @@ jobs:
     strategy:
       matrix:
         platform: [linux/amd64, linux/arm64]
-        include:
-          - platform: linux/amd64
-            runs-on: ubuntu-latest
-          - platform: linux/arm64
-            runs-on: buildjet-4vcpu-ubuntu-2204-arm
+        # Don't run arm build on PRs, "exclude:" is processed before "include:",
+        # so we avoid using `include:`.
+        exclude:
+          - platform: ${{ github.event_name == 'pull_request' && 'linux/arm64' }}
 
-    runs-on: ${{ matrix.runs-on }}
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'buildjet-4vcpu-ubuntu-2204-arm' }}
 
     steps:
       - uses: cargo-bins/cargo-binstall@main
-        if: matrix.runs-on == 'ubuntu-latest'
+        if: ${{ runner.arch != 'ARM64' }}
 
       - name: Make more disk space available on public runner
-        if: matrix.runs-on == 'ubuntu-latest'
+        if: ${{ runner.arch != 'ARM64' }}
         run: |
           # rmz seems to be faster at deleting files than rm
           cargo binstall -y rmz
@@ -94,6 +90,7 @@ jobs:
 
       - name: Login to Github Container Repo
         uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner  }}
@@ -107,6 +104,7 @@ jobs:
           images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node
           target: nitro-node
           platforms: ${{ matrix.platform }}
+          push: ${{ github.event_name != 'pull_request' }}
 
       - name: Build nitro-node-dev image
         uses: ./.github/actions/docker-image
@@ -117,37 +115,7 @@ jobs:
           images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node-dev
           target: nitro-node-dev
           platforms: ${{ matrix.platform }}
-
-      # The module root is not identical for the ARM build so we upload
-      # the binary only for AMD64.
-
-      - name: Extract WAVM machine from container and print its root
-        if: matrix.platform == 'linux/amd64'
-        id: module-root
-        run: |
-          # Unfortunately, `docker cp` seems to always result in a "permission denied"
-          # We work around this by piping a tarball through stdout
-          digest="${{ steps.nitro-node-dev.outputs.digest }}"
-          image=ghcr.io/espressosystems/nitro-espresso-integration/nitro-node-dev@$digest
-          docker run --rm --entrypoint tar $image -cf - target/machines/latest | tar xf -
-          ls -lah target/machines/latest
-          module_root="$(cat "target/machines/latest/module-root.txt")"
-          echo "module-root=$module_root" >> $GITHUB_OUTPUT
-          echo -e "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
-
-      - name: Upload WAVM machine as artifact
-        uses: actions/upload-artifact@v3
-        if: matrix.platform == 'linux/amd64'
-        with:
-          name: wavm-machine-${{ steps.module-root.outputs.module-root }}
-          path: target/machines/latest/*
-          if-no-files-found: error
-
-      - name: Release wasm binary
-        uses: softprops/action-gh-release@v1
-        if: matrix.platform == 'linux/amd64' && startsWith(github.ref, 'refs/tags/')
-        with:
-          files: target/machines/latest/*
+          push: ${{ github.event_name != 'pull_request' }}
 
       - name: Check available space after CI run
         if: "!cancelled()"
@@ -158,7 +126,10 @@ jobs:
   #
   # For documentation refer to
   # https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
+  # Only building for AMD64
   merge_into_multiplatform_images:
+  # We only build the ARM images for non-PR builds, so skip this job if we're on PRs.
+    if: github.event_name != 'pull_request'
     needs:
       - docker_build
     strategy:

@@ -119,6 +119,8 @@ COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
 RUN apt-get update && apt-get install -y cmake
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
+
+RUN apt-get install -y libssl-dev pkg-config
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-espresso-crypto-lib
 
 FROM scratch AS prover-header-export
