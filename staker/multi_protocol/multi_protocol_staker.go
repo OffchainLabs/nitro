@@ -6,7 +6,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
@@ -29,7 +28,7 @@ type MultiProtocolStaker struct {
 	confirmedNotifiers      []legacystaker.LatestConfirmedNotifier
 	statelessBlockValidator *staker.StatelessBlockValidator
 	wallet                  legacystaker.ValidatorWalletInterface
-	client                  *ethclient.Client
+	l1Reader                *headerreader.HeaderReader
 	blockValidator          *staker.BlockValidator
 	callOpts                bind.CallOpts
 	boldConfig              *boldstaker.BoldConfig
@@ -83,7 +82,7 @@ func NewMultiProtocolStaker(
 		confirmedNotifiers:      confirmedNotifiers,
 		statelessBlockValidator: statelessBlockValidator,
 		wallet:                  wallet,
-		client:                  l1Reader.Client(),
+		l1Reader:                l1Reader,
 		blockValidator:          blockValidator,
 		callOpts:                callOpts,
 		boldConfig:              boldConfig,
@@ -157,7 +156,7 @@ func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Ad
 	if err != nil {
 		return false, addr, err
 	}
-	userLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, m.client)
+	userLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, m.l1Reader.Client())
 	if err != nil {
 		return false, addr, err
 	}
@@ -213,7 +212,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		rollupAddress,
 		*m.getCallOpts(ctx),
 		auth,
-		m.client,
+		m.l1Reader,
 		m.blockValidator,
 		m.statelessBlockValidator,
 		m.boldConfig,

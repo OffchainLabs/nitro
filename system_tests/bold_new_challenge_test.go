@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
@@ -27,6 +28,7 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/state-commitments/history"
+	"github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -329,7 +331,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		builder.addresses.Rollup,
 		chalManagerAddr,
 		&txOpts,
-		builder.L1.Client,
+		util.NewBackendWrapper(builder.L1.Client, rpc.LatestBlockNumber),
 		solimpl.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)

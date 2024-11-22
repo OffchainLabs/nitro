@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
@@ -40,6 +41,7 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challengetesting "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/setup"
+	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -230,7 +232,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		assertionChain.RollupAddress(),
 		chalManagerAddr.Address(),
 		&evilOpts,
-		l1client,
+		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		solimpl.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
@@ -616,7 +618,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		addresses.Rollup,
 		chalManagerAddr,
 		&opts,
-		l1client,
+		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		solimpl.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
@@ -671,7 +673,7 @@ func deployContractsOnly(
 	cfg.ChainConfig = string(config)
 	addresses, err := setup.DeployFullRollupStack(
 		ctx,
-		backend,
+		butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
 		cfg,
@@ -824,7 +826,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		addresses.Rollup,
 		chalManagerAddr,
 		&evilOpts,
-		l1client,
+		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		solimpl.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)

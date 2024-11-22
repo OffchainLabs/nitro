@@ -14,8 +14,8 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
@@ -23,10 +23,12 @@ import (
 	boldtypes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -144,8 +146,9 @@ type BOLDStaker struct {
 	blockValidator          *staker.BlockValidator
 	statelessBlockValidator *staker.StatelessBlockValidator
 	rollupAddress           common.Address
-	client                  bind.ContractBackend
+	l1Reader                *headerreader.HeaderReader
 	lastWasmModuleRoot      common.Hash
+	client                  protocol.ChainBackend
 	callOpts                bind.CallOpts
 	wallet                  legacystaker.ValidatorWalletInterface
 	stakedNotifiers         []legacystaker.LatestStakedNotifier
@@ -157,7 +160,7 @@ func NewBOLDStaker(
 	rollupAddress common.Address,
 	callOpts bind.CallOpts,
 	txOpts *bind.TransactOpts,
-	client *ethclient.Client,
+	l1Reader *headerreader.HeaderReader,
 	blockValidator *staker.BlockValidator,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	config *BoldConfig,
@@ -166,7 +169,8 @@ func NewBOLDStaker(
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
 ) (*BOLDStaker, error) {
-	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, client, blockValidator, statelessBlockValidator, config, dataPoster)
+	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
+	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +180,8 @@ func NewBOLDStaker(
 		blockValidator:          blockValidator,
 		statelessBlockValidator: statelessBlockValidator,
 		rollupAddress:           rollupAddress,
-		client:                  client,
+		l1Reader:                l1Reader,
+		client:                  wrappedClient,
 		callOpts:                callOpts,
 		wallet:                  wallet,
 		stakedNotifiers:         stakedNotifiers,
@@ -340,7 +345,8 @@ func newBOLDChallengeManager(
 	ctx context.Context,
 	rollupAddress common.Address,
 	txOpts *bind.TransactOpts,
-	client *ethclient.Client,
+	l1Reader *headerreader.HeaderReader,
+	client protocol.ChainBackend,
 	blockValidator *staker.BlockValidator,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	config *BoldConfig,
@@ -403,6 +409,7 @@ func newBOLDChallengeManager(
 		challengemanager.StackWithPostingInterval(postingInterval),
 		challengemanager.StackWithConfirmationInterval(confirmingInterval),
 		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
+		challengemanager.StackWithHeaderProvider(l1Reader),
 	}
 	if config.API {
 		apiAddr := fmt.Sprintf("%s:%d", config.APIHost, config.APIPort)
