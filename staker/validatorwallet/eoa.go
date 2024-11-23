@@ -17,6 +17,9 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
+// EOA is a ValidatorWallet that uses an Externally Owned Account to sign transactions.
+// An Ethereum Externally Owned Account is directly represented by a private key,
+// as opposed to a smart contract wallet where the smart contract authorizes transactions.
 type EOA struct {
 	auth                    *bind.TransactOpts
 	client                  *ethclient.Client
