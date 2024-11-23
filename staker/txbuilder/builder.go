@@ -22,11 +22,9 @@ type ValidatorWalletInterface interface {
 	AuthIfEoa() *bind.TransactOpts
 }
 
-// Builder combines any transactions sent to it via SendTransaction into one batch,
+// Builder combines any transactions signed via it into one batch,
 // which is then sent to the validator wallet.
 // This lets the validator make multiple atomic transactions.
-// This inherits from an ethclient.Client so it can be used to transparently
-// intercept calls to SendTransaction and queue them for the next batch.
 type Builder struct {
 	transactions []*types.Transaction
 	singleTxAuth bind.TransactOpts

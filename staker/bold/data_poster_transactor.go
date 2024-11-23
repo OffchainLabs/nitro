@@ -29,7 +29,11 @@ func NewDataPosterTransactor(dataPoster *dataposter.DataPoster) *DataPosterTrans
 func (d *DataPosterTransactor) SendTransaction(ctx context.Context, fn func(opts *bind.TransactOpts) (*types.Transaction, error), opts *bind.TransactOpts, gas uint64) (*types.Transaction, error) {
 	// Try to acquire lock and if it fails, wait for a bit and try again.
 	for !d.fifo.Lock() {
-		<-time.After(100 * time.Millisecond)
+		select {
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	defer d.fifo.Unlock()
 	tx, err := fn(opts)
