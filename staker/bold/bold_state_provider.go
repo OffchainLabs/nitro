@@ -162,6 +162,15 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
 	ctx context.Context, gs validator.GoGlobalState, messageCount arbutil.MessageIndex,
 ) (bool, error) {
+	if s.stateProviderConfig.CheckBatchFinality {
+		finalizedMessageCount, err := s.statelessValidator.InboxReader().GetFinalizedMsgCount(ctx)
+		if err != nil {
+			return false, err
+		}
+		if messageCount > finalizedMessageCount {
+			return false, nil
+		}
+	}
 	if s.validator == nil {
 		// If we do not have a validator, we cannot check if the state is validated.
 		// So we assume it is validated and return true.
@@ -174,16 +183,8 @@ func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
 	if lastValidatedGs == nil {
 		return false, ErrChainCatchingUp
 	}
-	stateValidated := gs.Batch <= lastValidatedGs.GlobalState.Batch
-	if !s.stateProviderConfig.CheckBatchFinality {
-		return stateValidated, nil
-	}
-	finalizedMessageCount, err := s.statelessValidator.InboxReader().GetFinalizedMsgCount(ctx)
-	if err != nil {
-		return false, err
-	}
-	messageCountFinalized := messageCount <= finalizedMessageCount
-	return messageCountFinalized && stateValidated, nil
+	stateValidated := gs.Batch < lastValidatedGs.GlobalState.Batch || (gs.Batch == lastValidatedGs.GlobalState.Batch && gs.PosInBatch <= lastValidatedGs.GlobalState.PosInBatch)
+	return stateValidated, nil
 }
 
 func (s *BOLDStateProvider) StatesInBatchRange(
