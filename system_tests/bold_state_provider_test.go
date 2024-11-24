@@ -208,13 +208,6 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		if lastInfo.GlobalState.Batch >= totalBatches {
 			break
 		}
-		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
-		if err != nil {
-			continue
-		}
-		if batchMsgCount >= totalMessageCount {
-			break
-		}
 	}
 
 	t.Run("StatesInBatchRange", func(t *testing.T) {
