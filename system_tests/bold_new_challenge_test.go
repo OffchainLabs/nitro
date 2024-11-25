@@ -28,7 +28,7 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/state-commitments/history"
-	"github.com/offchainlabs/bold/util"
+	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -331,8 +331,8 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		builder.addresses.Rollup,
 		chalManagerAddr,
 		&txOpts,
-		util.NewBackendWrapper(builder.L1.Client, rpc.LatestBlockNumber),
-		solimpl.NewDataPosterTransactor(dp),
+		butil.NewBackendWrapper(builder.L1.Client, rpc.LatestBlockNumber),
+		bold.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
 

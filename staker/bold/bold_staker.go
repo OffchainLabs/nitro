@@ -1,5 +1,5 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/offchainlabs/nitro/blob/main/LICENSE
 package bold
 
 import (
@@ -361,7 +361,7 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not get challenge manager: %w", err)
 	}
-	assertionChain, err := solimpl.NewAssertionChain(ctx, rollupAddress, chalManager, txOpts, client, solimpl.NewDataPosterTransactor(dataPoster))
+	assertionChain, err := solimpl.NewAssertionChain(ctx, rollupAddress, chalManager, txOpts, client, NewDataPosterTransactor(dataPoster))
 	if err != nil {
 		return nil, fmt.Errorf("could not create assertion chain: %w", err)
 	}
