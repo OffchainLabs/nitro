@@ -1827,8 +1827,11 @@ dependencies = [
 name = "stylus_benchmark"
 version = "0.1.0"
 dependencies = [
+ "arbutil",
  "eyre",
  "jit",
+ "prover",
+ "stylus",
  "wasmer",
  "wasmer-compiler-cranelift",
 ]
