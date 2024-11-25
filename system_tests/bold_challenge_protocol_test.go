@@ -234,6 +234,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		&evilOpts,
 		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
+		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 
@@ -620,6 +621,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		&opts,
 		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
+		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 	assertionChain = assertionChainBindings
