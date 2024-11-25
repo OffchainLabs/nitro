@@ -1,75 +1,102 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+use arbutil::evm::EvmData;
 use jit::machine::WasmEnv;
-use jit::program::{create_evm_data_v2, create_stylus_config};
-use wasmer::{CompilerConfig, Function, FunctionEnv, Store, Value, Memory, MemoryType };
-use wasmer_compiler_cranelift::Cranelift;
+use jit::program::{
+    exec_program, get_last_msg, pop_with_wasm_env, send_response_with_wasm_env,
+    set_response_with_wasm_env, start_program_with_wasm_env, JitConfig,
+};
+use prover::programs::{
+    config::CompileConfig, config::CompileDebugParams, config::CompileMemoryParams,
+    config::CompilePricingParams, config::PricingParams, prelude::StylusConfig,
+};
+use stylus::native::compile;
+use wasmer::Target;
+use std::str;
+
+const EVM_API_METHOD_REQ_OFFSET: u32 = 0x10000000;
+
+fn to_result(req_type: u32, req_data: &Vec<u8>) -> (&str, &str) {
+    let msg = match str::from_utf8(req_data) {
+        Ok(v) => v,
+        Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+    };
+
+    match req_type {
+        0 => return ("", ""), // userSuccess
+        1 => return (msg, "ErrExecutionReverted"), // userRevert
+        2 => return (msg, "ErrExecutionReverted"), // userFailure
+        3 => return ("", "ErrOutOfGas"), // userOutOfInk
+        4 => return ("", "ErrDepth"), // userOutOfStack
+        _ => return ("", "ErrExecutionReverted") // userUnknown
+    }
+}
 
 fn main() -> eyre::Result<()> {
-    let mut compiler = Cranelift::new();
-    compiler.canonicalize_nans(true);
-    compiler.enable_verifier();
-    let mut store = Store::new(compiler);
+    let wasm = match std::fs::read("./programs_to_benchmark/user.wasm") {
+        Ok(wasm) => wasm,
+        Err(err) => panic!("failed to read: {err}"),
+    };
 
-    let mut env = WasmEnv::default();
-    let mem = Memory::new(&mut store, MemoryType::new(10000, Some(60000), false)).unwrap();
-    env.memory = Some(mem);
+    let compiled_module = compile(&wasm, 0, false, Target::default())?;
 
-    let func_env = FunctionEnv::new(&mut store, env);
+    let exec = &mut WasmEnv::default();
 
-    macro_rules! func {
-        ($func:expr) => {
-            Function::new_typed_with_env(&mut store, &func_env, $func)
-        };
+    let calldata = Vec::from([0u8; 32]);
+    let evm_data = EvmData::default();
+    let config = JitConfig {
+        stylus: StylusConfig {
+            version: 0,
+            max_depth: 10000,
+            pricing: PricingParams { ink_price: 1 },
+        },
+        compile: CompileConfig {
+            version: 0,
+            pricing: CompilePricingParams::default(),
+            bounds: CompileMemoryParams::default(),
+            debug: CompileDebugParams::default(),
+        },
+    };
+
+    let module = exec_program(
+        exec,
+        compiled_module.into(),
+        calldata,
+        config,
+        evm_data,
+        160000000,
+    )
+    .unwrap();
+    println!("module: {:?}", module);
+
+    let mut req_id = start_program_with_wasm_env(exec, module).unwrap();
+    println!("req_id: {:?}", req_id);
+
+    loop {
+        let msg = get_last_msg(exec, req_id).unwrap();
+        println!(
+            "msg.req_type: {:?}, msg.req_data: {:?}",
+            msg.req_type, msg.req_data
+        );
+
+        if msg.req_type < EVM_API_METHOD_REQ_OFFSET {
+            let _ = pop_with_wasm_env(exec);
+
+            let gas_left = u64::from_be_bytes(msg.req_data[..8].try_into().unwrap());
+            let req_data = msg.req_data[8..].to_vec();
+            let (msg, err) = to_result(msg.req_type, &req_data);
+            println!("gas_left: {:?}, msg: {:?}, err: {:?}", gas_left, msg, err);
+
+            break;
+        }
+
+        if msg.req_type != EVM_API_METHOD_REQ_OFFSET {
+            panic!("unsupported call");
+        }
+        set_response_with_wasm_env(exec, req_id, 1, vec![0u8; 32], msg.req_data)?;
+        req_id = send_response_with_wasm_env(exec, req_id).unwrap();
     }
-    let f_create_stylus_config = func!(create_stylus_config);
-    let f_create_evm_data = func!(create_evm_data_v2);
-
-    let config_handler = f_create_stylus_config
-        .call(
-            &mut store,
-            &[
-                Value::I32(0),
-                Value::I32(10000),
-                Value::I32(1),
-                Value::I32(0),
-            ],
-        )
-        .unwrap();
-    println!("config_handler={:?}", config_handler);
-
-    let block_base_fee = Vec::from([0u8; 32]);
-    let block_coinbase = Vec::from([0u8; 32]);
-    let contract_address = Vec::from([0u8; 32]);
-    let module_hash = Vec::from([0u8; 32]);
-    let msg_sender = Vec::from([0u8; 32]);
-    let msg_value = Vec::from([0u8; 32]);
-    let tx_gas_price = Vec::from([0u8; 32]);
-    let tx_origin = Vec::from([0u8; 32]);
-    let data_handler = f_create_evm_data
-        .call(
-            &mut store,
-            &[
-                Value::I64(0),
-                Value::I32(&block_base_fee as *const _ as i32),
-                Value::I64(0),
-                Value::I32(&block_coinbase as *const _ as i32),
-                Value::I64(0),
-                Value::I64(0),
-                Value::I64(0),
-                Value::I32(&contract_address as *const _ as i32),
-                Value::I32(&module_hash as *const _ as i32),
-                Value::I32(&msg_sender as *const _ as i32),
-                Value::I32(&msg_value as *const _ as i32),
-                Value::I32(&tx_gas_price as *const _ as i32),
-                Value::I32(&tx_origin as *const _ as i32),
-                Value::I32(0),
-                Value::I32(0),
-            ],
-        )
-        .unwrap();
-    println!("data_handler={:?}", data_handler);
 
     Ok(())
 }
