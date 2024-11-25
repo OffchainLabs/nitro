@@ -58,7 +58,7 @@ func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.Var(&parsedBackendsConf, prefix+".backends", "JSON RPC backend configuration. This can be specified on the command line as a JSON array, eg: [{\"url\": \"...\", \"pubkey\": \"...\"},...], or as a JSON array in the config file.")
 	f.Int(prefix+".max-store-chunk-body-size", DefaultAggregatorConfig.MaxStoreChunkBodySize, "maximum HTTP POST body size to use for individual batch chunks, including JSON RPC overhead and an estimated overhead of 512B of headers")
-	f.Bool(prefix+".disable-chunked-store", DefaultAggregatorConfig.DisableChunkedStore, "force data to always be sent to DAS all at once instead of splitting into chunks. Disabled by default")
+	f.Bool(prefix+".disable-chunked-store", DefaultAggregatorConfig.DisableChunkedStore, "force data to always be sent to DAS all at once instead of splitting into chunks")
 }
 
 type Aggregator struct {
