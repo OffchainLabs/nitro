@@ -278,7 +278,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 			return et.fsm.Do(edgeAwaitChallengeCompletion{})
 		}
 		if err := et.submitOneStepProof(ctx); err != nil {
-			log.Trace("Could not submit one step proof", append(fields, "err", err)...)
+			log.Error("Could not submit one step proof", append(fields, "err", err)...)
 			et.fsm.MarkError(err)
 			return et.fsm.Do(edgeBackToStart{})
 		}

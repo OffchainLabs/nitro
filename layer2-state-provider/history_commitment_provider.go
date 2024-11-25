@@ -508,7 +508,6 @@ func (p *HistoryCommitmentProvider) OneStepProofData(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	machineIndex += OpcodeIndex(upToHeight)
 
 	osp, err := p.proofCollector.CollectProof(ctx, assertionMetadata, startHeights[0], machineIndex)
 	if err != nil {

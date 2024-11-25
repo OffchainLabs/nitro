@@ -643,7 +643,6 @@ func deployBridgeCreator(
 		if err != nil {
 			return common.Address{}, err
 		}
-		fmt.Println("Got template")
 	}
 
 	datahashesReader, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
