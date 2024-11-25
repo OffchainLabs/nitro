@@ -465,24 +465,6 @@ func (w *Watcher) IsConfirmableEssentialEdge(
 	return confirmable, essentialPaths, timer, err
 }
 
-func (w *Watcher) ComputeRootInheritedTimer(
-	ctx context.Context,
-	challengedAssertionHash protocol.AssertionHash,
-) (protocol.InheritedTimer, error) {
-	chal, ok := w.challenges.TryGet(challengedAssertionHash)
-	if !ok {
-		return 0, fmt.Errorf(
-			"could not get challenge for top level assertion %#x",
-			challengedAssertionHash,
-		)
-	}
-	blockHeaderNumber, err := w.chain.Backend().HeaderU64(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return chal.honestEdgeTree.ComputeRootInheritedTimer(ctx, challengedAssertionHash, blockHeaderNumber)
-}
-
 func (w *Watcher) AllowTrackingEdgeWithParentHash(parentHash protocol.AssertionHash) bool {
 	if len(w.trackChallengeParentAssertionHashes) == 0 {
 		return true

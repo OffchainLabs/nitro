@@ -5,7 +5,6 @@ go_library(
     srcs = [
         "add_edge.go",
         "ancestors.go",
-        "inherited_timer.go",
         "local_timer.go",
         "paths.go",
         "tree.go",
@@ -30,7 +29,6 @@ go_test(
     srcs = [
         "ancestors_test.go",
         "compute_ancestors_test.go",
-        "inherited_timer_test.go",
         "local_timer_test.go",
         "paths_edge_cases_test.go",
         "paths_test.go",

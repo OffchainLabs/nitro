@@ -262,6 +262,16 @@ func (ht *RoyalChallengeTree) isClaimedEdge(ctx context.Context, edge protocol.R
 	return true, claimingEdge
 }
 
+func IsClaimingAnEdge(edge protocol.ReadOnlyEdge) bool {
+	return edge.ClaimId().IsSome() && edge.GetChallengeLevel() != protocol.NewBlockChallengeLevel()
+}
+
+func hasLengthOne(edge protocol.ReadOnlyEdge) bool {
+	startHeight, _ := edge.StartCommitment()
+	endHeight, _ := edge.EndCommitment()
+	return endHeight-startHeight == 1
+}
+
 // Proof edges are edges that have length one at the lowest challenge level.
 func isProofEdge(ctx context.Context, edge protocol.ReadOnlyEdge) bool {
 	isSmallStep := edge.GetChallengeLevel() == protocol.ChallengeLevel(edge.GetTotalChallengeLevels(ctx)-1)
