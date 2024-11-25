@@ -10,7 +10,7 @@ pub mod machine;
 mod prepare;
 pub mod program;
 mod socket;
-mod stylus_backend;
+pub mod stylus_backend;
 mod test;
 mod wasip1_stub;
 mod wavmio;
