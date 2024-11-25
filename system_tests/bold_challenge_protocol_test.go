@@ -1,8 +1,6 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest && !race
-
 package arbtest
 
 import (
@@ -234,6 +232,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		&evilOpts,
 		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		solimpl.NewDataPosterTransactor(dp),
+		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 
@@ -620,6 +619,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		&opts,
 		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		solimpl.NewDataPosterTransactor(dp),
+		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 	assertionChain = assertionChainBindings
