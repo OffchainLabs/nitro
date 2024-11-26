@@ -212,10 +212,7 @@ func (m *Manager) waitToPostIfNeeded(
 	if parentCreationInfo.CreationBlock < latestBlockNumber {
 		blocksSinceLast = latestBlockNumber - parentCreationInfo.CreationBlock
 	}
-	minPeriodBlocks, err := m.chain.MinAssertionPeriodBlocks(ctx)
-	if err != nil {
-		return err
-	}
+	minPeriodBlocks := m.chain.MinAssertionPeriodBlocks()
 	canPostNow := blocksSinceLast >= minPeriodBlocks
 
 	// If we cannot post just yet, we can wait.

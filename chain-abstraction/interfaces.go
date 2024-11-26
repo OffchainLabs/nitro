@@ -158,7 +158,7 @@ type AssertionChain interface {
 	) (*AssertionCreatedInfo, error)
 	GetCallOptsWithDesiredRpcHeadBlockNumber(opts *bind.CallOpts) *bind.CallOpts
 
-	MinAssertionPeriodBlocks(ctx context.Context) (uint64, error)
+	MinAssertionPeriodBlocks() uint64
 	AssertionUnrivaledBlocks(ctx context.Context, assertionHash AssertionHash) (uint64, error)
 	TopLevelAssertion(ctx context.Context, edgeId EdgeId) (AssertionHash, error)
 	TopLevelClaimHeights(ctx context.Context, edgeId EdgeId) (OriginHeights, error)
@@ -190,6 +190,10 @@ type AssertionChain interface {
 
 	// Spec-based implementation methods.
 	SpecChallengeManager() SpecChallengeManager
+
+	// MaxAssertionsPerChallenge period returns maximum number of assertions that
+	// may need to be processed during a challenge period of blocks.
+	MaxAssertionsPerChallengePeriod() uint64
 }
 
 // InheritedTimer for an edge from its children or claiming edges.

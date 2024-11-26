@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ccoveille/go-safecast"
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -174,6 +175,10 @@ func NewManager(
 	mode types.Mode,
 	opts ...Opt,
 ) (*Manager, error) {
+	maxAssertions, err := safecast.ToInt(chain.MaxAssertionsPerChallengePeriod())
+	if err != nil {
+		return nil, errors.Wrap(err, "could not convert max assertions to int")
+	}
 	m := &Manager{
 		chain:                    chain,
 		apiDB:                    nil,
@@ -184,12 +189,12 @@ func NewManager(
 		times:                    defaultTimings,
 		forksDetectedCount:       0,
 		assertionsProcessedCount: 0,
-		submittedAssertions:      threadsafe.NewLruSet(1500, threadsafe.LruSetWithMetric[protocol.AssertionHash]("submittedAssertions")),
+		submittedAssertions:      threadsafe.NewLruSet(maxAssertions, threadsafe.LruSetWithMetric[protocol.AssertionHash]("submittedAssertions")),
 		assertionChainData: &assertionChainData{
 			latestAgreedAssertion: protocol.AssertionHash{},
 			canonicalAssertions:   make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo),
 		},
-		observedCanonicalAssertions: make(chan protocol.AssertionHash, 1000),
+		observedCanonicalAssertions: make(chan protocol.AssertionHash, maxAssertions),
 		isReadyToPost:               false,
 		startPostingSignal:          make(chan struct{}),
 		mode:                        mode,

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ccoveille/go-safecast"
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -120,6 +121,10 @@ func New(
 	assertionManager AssertionManager,
 	opts ...Opt,
 ) (*Manager, error) {
+	maxAssertions, err := safecast.ToInt(chain.MaxAssertionsPerChallengePeriod())
+	if err != nil {
+		return nil, errors.Wrap(err, "could not convert max assertions to int")
+	}
 	m := &Manager{
 		chain:                        chain,
 		stateManager:                 stateManager,
@@ -127,10 +132,10 @@ func New(
 		watcher:                      watcher,
 		timeRef:                      utilTime.NewRealTimeReference(),
 		trackedEdgeIds:               threadsafe.NewMap(threadsafe.MapWithMetric[protocol.EdgeId, *edgetracker.Tracker]("trackedEdgeIds")),
-		assertionMetadataCache:       threadsafe.NewLruMap(1500, threadsafe.LruMapWithMetric[protocol.AssertionHash, l2stateprovider.AssociatedAssertionMetadata]("batchIndexForAssertionCache")),
+		assertionMetadataCache:       threadsafe.NewLruMap(maxAssertions, threadsafe.LruMapWithMetric[protocol.AssertionHash, l2stateprovider.AssociatedAssertionMetadata]("batchIndexForAssertionCache")),
 		notifyOnNumberOfBlocks:       1,
 		newBlockNotifier:             events.NewProducer[*gethtypes.Header](),
-		claimedAssertionsInChallenge: threadsafe.NewLruSet(1500, threadsafe.LruSetWithMetric[protocol.AssertionHash]("claimedAssertionsInChallenge")),
+		claimedAssertionsInChallenge: threadsafe.NewLruSet(maxAssertions, threadsafe.LruSetWithMetric[protocol.AssertionHash]("claimedAssertionsInChallenge")),
 		api:                          nil,
 	}
 	for _, o := range opts {

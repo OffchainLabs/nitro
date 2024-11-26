@@ -257,6 +257,7 @@ func setupValidator(ctx context.Context, t *testing.T) (*Manager, *mocks.MockPro
 	cm := &mocks.MockSpecChallengeManager{}
 	p.On("CurrentChallengeManager", ctx).Return(cm, nil)
 	p.On("SpecChallengeManager").Return(cm)
+	p.On("MaxAssertionsPerChallengePeriod").Return(uint64(100))
 	cm.On("NumBigSteps").Return(uint8(1))
 	s := &mocks.MockStateManager{}
 	cfg, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())

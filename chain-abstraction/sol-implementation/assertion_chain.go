@@ -118,6 +118,7 @@ type AssertionChain struct {
 	confirmedChallengesByParentAssertionHash *threadsafe.LruSet[protocol.AssertionHash]
 	specChallengeManager                     protocol.SpecChallengeManager
 	averageTimeForBlockCreation              time.Duration
+	minAssertionPeriodBlocks                 uint64
 	transactor                               Transactor
 	fastConfirmSafeAddress                   common.Address
 	fastConfirmSafe                          *contractsgen.Safe
@@ -196,6 +197,18 @@ func NewAssertionChain(
 		return nil, err
 	}
 	chain.rollup = coreBinding
+	minPeriod, err := chain.rollup.MinimumAssertionPeriod(chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+	if err != nil {
+		return nil, err
+	}
+	if !minPeriod.IsUint64() {
+		return nil, errors.New("minimum assertion period was not a uint64")
+	}
+	if minPeriod.Uint64() == 0 {
+		minPeriod = big.NewInt(1)
+	}
+	log.Info("Minimum assertion period", "blocks", minPeriod.Uint64())
+	chain.minAssertionPeriodBlocks = minPeriod.Uint64()
 	chain.userLogic = assertionChainBinding
 	specChallengeManager, err := NewSpecChallengeManager(
 		ctx,
@@ -473,15 +486,15 @@ func (a *AssertionChain) GenesisAssertionHash(ctx context.Context) (common.Hash,
 	return a.userLogic.GenesisAssertionHash(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 }
 
-func (a *AssertionChain) MinAssertionPeriodBlocks(ctx context.Context) (uint64, error) {
-	minPeriod, err := a.rollup.MinimumAssertionPeriod(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
-	if err != nil {
-		return 0, err
-	}
-	if !minPeriod.IsUint64() {
-		return 0, errors.New("minimum assertion period was not a uint64")
-	}
-	return minPeriod.Uint64(), nil
+func (a *AssertionChain) MinAssertionPeriodBlocks() uint64 {
+	return a.minAssertionPeriodBlocks
+}
+
+// MaxAssertionsPerChallenge period returns maximum number of assertions that
+// may need to be processed during a challenge period of blocks.
+func (a *AssertionChain) MaxAssertionsPerChallengePeriod() uint64 {
+	cb := a.SpecChallengeManager().ChallengePeriodBlocks()
+	return cb / a.minAssertionPeriodBlocks
 }
 
 func TryConfirmingAssertion(
