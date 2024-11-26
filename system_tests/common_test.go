@@ -1331,8 +1331,8 @@ func deployOnParentChain(
 			EndHistoryRoot: [32]byte{},
 		}
 		bufferConfig := rollupgen.BufferConfig{
-			Threshold:            delayBufferThreshold, // in seconds
-			Max:                  14400,                // in secods; 2 days of blocks
+			Threshold:            delayBufferThreshold, // number of blocks
+			Max:                  14400,                // 2 days of blocks
 			ReplenishRateInBasis: 500,                  // 5%
 		}
 		cfg := rollupgen.Config{
