@@ -67,9 +67,9 @@ func Test_extractAssertionFromEvent(t *testing.T) {
 	aliceStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
-	preState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, nil)
+	preState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
 	require.NoError(t, err)
-	postState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 1, &preState.GlobalState)
+	postState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 1, preState.GlobalState)
 	require.NoError(t, err)
 	assertion, err := aliceChain.NewStakeOnNewAssertion(
 		ctx,
@@ -248,7 +248,7 @@ type mockStateProvider struct {
 func (m *mockStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
-	previousGlobalState *protocol.GoGlobalState,
+	previousGlobalState protocol.GoGlobalState,
 ) (*protocol.ExecutionState, error) {
 	agreement, ok := m.agreesWith[maxInboxCount]
 	if !ok {

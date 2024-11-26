@@ -264,7 +264,7 @@ func (m *Manager) checkLatestDesiredBlock(ctx context.Context) {
 
 func (m *Manager) ExecutionStateAfterParent(ctx context.Context, parentInfo *protocol.AssertionCreatedInfo) (*protocol.ExecutionState, error) {
 	goGlobalState := protocol.GoGlobalStateFromSolidity(parentInfo.AfterState.GlobalState)
-	return m.execProvider.ExecutionStateAfterPreviousState(ctx, parentInfo.InboxMaxCount.Uint64(), &goGlobalState)
+	return m.execProvider.ExecutionStateAfterPreviousState(ctx, parentInfo.InboxMaxCount.Uint64(), goGlobalState)
 }
 
 func (m *Manager) ForksDetected() uint64 {

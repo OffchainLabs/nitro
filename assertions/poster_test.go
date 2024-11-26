@@ -75,9 +75,9 @@ func TestPostAssertion(t *testing.T) {
 	require.NoError(t, err)
 	chalManager.Start(ctx)
 
-	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, nil)
+	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
 	require.NoError(t, err)
-	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &preState.GlobalState)
+	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, preState.GlobalState)
 	require.NoError(t, err)
 
 	time.Sleep(time.Second)

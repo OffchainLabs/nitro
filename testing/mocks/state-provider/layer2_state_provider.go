@@ -220,7 +220,7 @@ func (s *L2StateBackend) UpdateAPIDatabase(database db.Database) {
 }
 
 // ExecutionStateAfterPreviousState produces the l2 state to assert at the message number specified.
-func (s *L2StateBackend) ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState *protocol.GoGlobalState) (*protocol.ExecutionState, error) {
+func (s *L2StateBackend) ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState protocol.GoGlobalState) (*protocol.ExecutionState, error) {
 	if len(s.executionStates) == 0 {
 		return nil, errors.New("no execution states")
 	}
@@ -229,7 +229,7 @@ func (s *L2StateBackend) ExecutionStateAfterPreviousState(ctx context.Context, m
 	}
 	blocksSincePrevious := -1
 	for _, st := range s.executionStates {
-		if previousGlobalState != nil && st.GlobalState.Equals(*previousGlobalState) {
+		if st.GlobalState.Equals(previousGlobalState) {
 			blocksSincePrevious = 0
 		}
 		bsp64, err := safecast.ToUint64(blocksSincePrevious + 1)
@@ -237,14 +237,11 @@ func (s *L2StateBackend) ExecutionStateAfterPreviousState(ctx context.Context, m
 			return nil, fmt.Errorf("could not convert blocksSincePrevious to uint64: %w", err)
 		}
 		if st.GlobalState.Batch == maxInboxCount || (blocksSincePrevious >= 0 && bsp64 >= uint64(s.challengeLeafHeights[0])) {
-			if blocksSincePrevious < 0 && previousGlobalState != nil {
+			if blocksSincePrevious < 0 {
 				return nil, fmt.Errorf("missing previous global state %+v", previousGlobalState)
 			}
 			// Compute the history commitment for the assertion state.
-			fromBatch := uint64(0)
-			if previousGlobalState != nil {
-				fromBatch = previousGlobalState.Batch
-			}
+			fromBatch := previousGlobalState.Batch
 			historyCommit, err := s.statesUpTo(0, uint64(s.challengeLeafHeights[0]), fromBatch, st.GlobalState.Batch)
 			if err != nil {
 				return nil, err

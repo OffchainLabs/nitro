@@ -64,10 +64,8 @@ type ExecutionProvider interface {
 	// state.
 	// Returns either the state at the batch count maxInboxCount (PosInBatch=0) or
 	// the state LayerZeroHeights.BlockChallengeHeight blokcs after
-	// previousGlobalState, whichever is an earlier state. If previousGlobalState
-	// is nil, this function simply returns the state at maxInboxCount batches
-	// (PosInBatch=0).
-	ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState *protocol.GoGlobalState) (*protocol.ExecutionState, error)
+	// previousGlobalState, whichever is an earlier state.
+	ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState protocol.GoGlobalState) (*protocol.ExecutionState, error)
 }
 
 // AssociatedAssertionMetadata for the tracked edge.

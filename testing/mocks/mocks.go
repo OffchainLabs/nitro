@@ -120,7 +120,7 @@ func (m *MockStateManager) AgreesWithHistoryCommitment(
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockStateManager) ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState *protocol.GoGlobalState) (*protocol.ExecutionState, error) {
+func (m *MockStateManager) ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState protocol.GoGlobalState) (*protocol.ExecutionState, error) {
 	args := m.Called(ctx, maxInboxCount, previousGlobalState)
 	return args.Get(0).(*protocol.ExecutionState), args.Error(1)
 }
