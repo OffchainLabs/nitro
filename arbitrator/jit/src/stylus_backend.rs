@@ -147,6 +147,9 @@ pub fn exec_wasm(
         unsafe { NativeInstance::deserialize(&module, compile.clone(), evm_api, evm_data) }?;
 
     let thread = thread::spawn(move || {
+        let timer_before = instance.env().timer;
+        println!("timer_before: {:?}", timer_before);
+
         let outcome = instance.run_main(&calldata, config, ink);
 
         let ink_left = match outcome.as_ref() {
@@ -165,6 +168,9 @@ pub fn exec_wasm(
         let mut output = Vec::with_capacity(8 + data.len());
         output.extend(gas_left.to_be_bytes());
         output.extend(data);
+
+        let timer_after = instance.env().timer;
+        println!("timer_after: {:?}", timer_after);
 
         let msg = MessageFromCothread {
             req_data: output,

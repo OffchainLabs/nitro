@@ -144,6 +144,7 @@ checksum = "7d5a26814d8dcb93b0e5a0ff3c6d80a8843bafb21b39e8e18a6f05471870e110"
 name = "arbutil"
 version = "0.1.0"
 dependencies = [
+ "derivative",
  "digest 0.10.7",
  "eyre",
  "fnv",
