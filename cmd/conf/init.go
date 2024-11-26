@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type InitConfig struct {
@@ -20,6 +21,7 @@ type InitConfig struct {
 	DownloadPoll             time.Duration `koanf:"download-poll"`
 	DevInit                  bool          `koanf:"dev-init"`
 	DevInitAddress           string        `koanf:"dev-init-address"`
+	DevMaxCodeSize           uint64        `koanf:"dev-max-code-size"`
 	DevInitBlockNum          uint64        `koanf:"dev-init-blocknum"`
 	Empty                    bool          `koanf:"empty"`
 	ImportWasm               bool          `koanf:"import-wasm"`
@@ -47,6 +49,7 @@ var InitConfigDefault = InitConfig{
 	DownloadPoll:             time.Minute,
 	DevInit:                  false,
 	DevInitAddress:           "",
+	DevMaxCodeSize:           0,
 	DevInitBlockNum:          0,
 	Empty:                    false,
 	ImportWasm:               false,
@@ -75,6 +78,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddress, "Address of dev-account. Leave empty to use the dev-wallet.")
 	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in ancient database.")
+	f.Uint64(prefix+".dev-max-code-size", InitConfigDefault.DevMaxCodeSize, "Max code size for dev accounts")
 	f.Bool(prefix+".empty", InitConfigDefault.Empty, "init with empty state")
 	f.Bool(prefix+".import-wasm", InitConfigDefault.ImportWasm, "if set, import the wasm directory when downloading a database (contains executable code - only use with highly trusted source)")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")

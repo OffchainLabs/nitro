@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
@@ -53,15 +54,7 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func DefaultBufferConfig() rollupgen.BufferConfig {
-	return rollupgen.BufferConfig{
-		Threshold:            600,   // 1 hour of blocks
-		Max:                  14400, // 2 days of blocks
-		ReplenishRateInBasis: 500,   // 5%
-	}
-}
-
-func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, serializedChainConfig []byte, loserStakeEscrow common.Address, bufferConfig rollupgen.BufferConfig) rollupgen.Config {
+func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, serializedChainConfig []byte, loserStakeEscrow common.Address) rollupgen.Config {
 	var confirmPeriod uint64
 	if prod {
 		confirmPeriod = 45818
@@ -85,7 +78,6 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 			DelaySeconds:  big.NewInt(60 * 60 * 24),
 			FutureSeconds: big.NewInt(60 * 60),
 		},
-		BufferConfig: bufferConfig,
 	}
 }
 

@@ -1,6 +1,6 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-package boldstaker
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/offchainlabs/nitro/blob/main/LICENSE
+package bold
 
 import (
 	"context"
@@ -9,27 +9,28 @@ import (
 	"math/big"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
 	boldtypes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
-
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
-
+	"github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-
-	flag "github.com/spf13/pflag"
 )
 
 var assertionCreatedId common.Hash
@@ -140,16 +141,18 @@ func StateProviderConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type BOLDStaker struct {
 	stopwaiter.StopWaiter
-	config             *BoldConfig
-	chalManager        *challengemanager.Manager
-	blockValidator     *staker.BlockValidator
-	rollupAddress      common.Address
-	client             bind.ContractBackend
-	lastWasmModuleRoot common.Hash
-	callOpts           bind.CallOpts
-	wallet             legacystaker.ValidatorWalletInterface
-	stakedNotifiers    []legacystaker.LatestStakedNotifier
-	confirmedNotifiers []legacystaker.LatestConfirmedNotifier
+	config                  *BoldConfig
+	chalManager             *challengemanager.Manager
+	blockValidator          *staker.BlockValidator
+	statelessBlockValidator *staker.StatelessBlockValidator
+	rollupAddress           common.Address
+	l1Reader                *headerreader.HeaderReader
+	lastWasmModuleRoot      common.Hash
+	client                  protocol.ChainBackend
+	callOpts                bind.CallOpts
+	wallet                  legacystaker.ValidatorWalletInterface
+	stakedNotifiers         []legacystaker.LatestStakedNotifier
+	confirmedNotifiers      []legacystaker.LatestConfirmedNotifier
 }
 
 func NewBOLDStaker(
@@ -157,7 +160,7 @@ func NewBOLDStaker(
 	rollupAddress common.Address,
 	callOpts bind.CallOpts,
 	txOpts *bind.TransactOpts,
-	client *ethclient.Client,
+	l1Reader *headerreader.HeaderReader,
 	blockValidator *staker.BlockValidator,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	config *BoldConfig,
@@ -166,20 +169,23 @@ func NewBOLDStaker(
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
 ) (*BOLDStaker, error) {
-	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, client, blockValidator, statelessBlockValidator, config, dataPoster)
+	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
+	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster)
 	if err != nil {
 		return nil, err
 	}
 	return &BOLDStaker{
-		config:             config,
-		chalManager:        manager,
-		blockValidator:     blockValidator,
-		rollupAddress:      rollupAddress,
-		client:             client,
-		callOpts:           callOpts,
-		wallet:             wallet,
-		stakedNotifiers:    stakedNotifiers,
-		confirmedNotifiers: confirmedNotifiers,
+		config:                  config,
+		chalManager:             manager,
+		blockValidator:          blockValidator,
+		statelessBlockValidator: statelessBlockValidator,
+		rollupAddress:           rollupAddress,
+		l1Reader:                l1Reader,
+		client:                  wrappedClient,
+		callOpts:                callOpts,
+		wallet:                  wallet,
+		stakedNotifiers:         stakedNotifiers,
+		confirmedNotifiers:      confirmedNotifiers,
 	}, nil
 }
 
@@ -271,7 +277,7 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 	if err != nil {
 		return 0, nil, fmt.Errorf("error getting latest %s: %w", assertionType, err)
 	}
-	caughtUp, count, err := staker.GlobalStateToMsgCount(b.blockValidator.InboxTracker(), b.blockValidator.InboxStreamer(), validator.GoGlobalState(globalState))
+	caughtUp, count, err := staker.GlobalStateToMsgCount(b.statelessBlockValidator.InboxTracker(), b.statelessBlockValidator.InboxStreamer(), validator.GoGlobalState(globalState))
 	if err != nil {
 		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
 			return 0, nil, fmt.Errorf("latest %s assertion of %v not yet in our node: %w", assertionType, globalState, err)
@@ -284,7 +290,7 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 		return 0, nil, nil
 	}
 
-	processedCount, err := b.blockValidator.InboxStreamer().GetProcessedMessageCount()
+	processedCount, err := b.statelessBlockValidator.InboxStreamer().GetProcessedMessageCount()
 	if err != nil {
 		return 0, nil, err
 	}
@@ -339,7 +345,8 @@ func newBOLDChallengeManager(
 	ctx context.Context,
 	rollupAddress common.Address,
 	txOpts *bind.TransactOpts,
-	client *ethclient.Client,
+	l1Reader *headerreader.HeaderReader,
+	client protocol.ChainBackend,
 	blockValidator *staker.BlockValidator,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	config *BoldConfig,
@@ -354,7 +361,7 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not get challenge manager: %w", err)
 	}
-	assertionChain, err := solimpl.NewAssertionChain(ctx, rollupAddress, chalManager, txOpts, client, solimpl.NewDataPosterTransactor(dataPoster))
+	assertionChain, err := solimpl.NewAssertionChain(ctx, rollupAddress, chalManager, txOpts, client, NewDataPosterTransactor(dataPoster))
 	if err != nil {
 		return nil, fmt.Errorf("could not create assertion chain: %w", err)
 	}
@@ -394,31 +401,29 @@ func newBOLDChallengeManager(
 	scanningInterval := config.AssertionScanningInterval
 	// The interval at which the manager will attempt to confirm assertions.
 	confirmingInterval := config.AssertionConfirmingInterval
-	opts := []challengemanager.Opt{
-		challengemanager.WithName(config.StateProviderConfig.ValidatorName),
-		challengemanager.WithMode(BoldModes[config.Mode]),
-		challengemanager.WithAssertionPostingInterval(postingInterval),
-		challengemanager.WithAssertionScanningInterval(scanningInterval),
-		challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
-		challengemanager.WithAddress(txOpts.From),
-		// Configure the validator to track only certain challenges if configured to do so.
-		challengemanager.WithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
+
+	stackOpts := []challengemanager.StackOpt{
+		challengemanager.StackWithName(config.StateProviderConfig.ValidatorName),
+		challengemanager.StackWithMode(BoldModes[config.Mode]),
+		challengemanager.StackWithPollingInterval(scanningInterval),
+		challengemanager.StackWithPostingInterval(postingInterval),
+		challengemanager.StackWithConfirmationInterval(confirmingInterval),
+		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
+		challengemanager.StackWithHeaderProvider(l1Reader),
 	}
 	if config.API {
-		// Conditionally enables the BOLD API if configured.
-		opts = append(opts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.APIHost, config.APIPort), config.APIDBPath))
+		apiAddr := fmt.Sprintf("%s:%d", config.APIHost, config.APIPort)
+		stackOpts = append(stackOpts, challengemanager.StackWithAPIEnabled(apiAddr, config.APIDBPath))
 	}
-	manager, err := challengemanager.New(
-		ctx,
+
+	manager, err := challengemanager.NewChallengeStack(
 		assertionChain,
 		provider,
-		assertionChain.RollupAddress(),
-		opts...,
+		stackOpts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create challenge manager: %w", err)
 	}
-	provider.UpdateAPIDatabase(manager.Database())
 	return manager, nil
 }
 
@@ -478,12 +483,12 @@ func readBoldAssertionCreationInfo(
 	return &protocol.AssertionCreatedInfo{
 		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
 		RequiredStake:       parsedLog.RequiredStake,
-		ParentAssertionHash: parsedLog.ParentAssertionHash,
+		ParentAssertionHash: protocol.AssertionHash{Hash: parsedLog.ParentAssertionHash},
 		BeforeState:         parsedLog.Assertion.BeforeState,
 		AfterState:          afterState,
 		InboxMaxCount:       parsedLog.InboxMaxCount,
 		AfterInboxBatchAcc:  parsedLog.AfterInboxBatchAcc,
-		AssertionHash:       parsedLog.AssertionHash,
+		AssertionHash:       protocol.AssertionHash{Hash: parsedLog.AssertionHash},
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
 		TransactionHash:     ethLog.TxHash,

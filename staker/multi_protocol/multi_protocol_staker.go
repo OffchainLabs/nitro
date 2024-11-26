@@ -6,11 +6,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
-
 	"github.com/offchainlabs/nitro/staker"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
@@ -29,7 +28,7 @@ type MultiProtocolStaker struct {
 	confirmedNotifiers      []legacystaker.LatestConfirmedNotifier
 	statelessBlockValidator *staker.StatelessBlockValidator
 	wallet                  legacystaker.ValidatorWalletInterface
-	client                  *ethclient.Client
+	l1Reader                *headerreader.HeaderReader
 	blockValidator          *staker.BlockValidator
 	callOpts                bind.CallOpts
 	boldConfig              *boldstaker.BoldConfig
@@ -83,7 +82,7 @@ func NewMultiProtocolStaker(
 		confirmedNotifiers:      confirmedNotifiers,
 		statelessBlockValidator: statelessBlockValidator,
 		wallet:                  wallet,
-		client:                  l1Reader.Client(),
+		l1Reader:                l1Reader,
 		blockValidator:          blockValidator,
 		callOpts:                callOpts,
 		boldConfig:              boldConfig,
@@ -111,9 +110,7 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 
 func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 	m.StopWaiter.Start(ctxIn, m)
-	if m.legacyConfig().StrategyType() != legacystaker.WatchtowerStrategy {
-		m.wallet.Start(ctxIn)
-	}
+	m.wallet.Start(ctxIn)
 	if m.boldStaker != nil {
 		log.Info("Starting BOLD staker")
 		m.boldStaker.Start(ctxIn)
@@ -125,7 +122,7 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 		m.CallIteratively(func(ctx context.Context) time.Duration {
 			switchedToBoldProtocol, err := m.checkAndSwitchToBoldStaker(ctxIn)
 			if err != nil {
-				log.Error("staker: error in checking switch to bold staker", "err", err)
+				log.Warn("staker: error in checking switch to bold staker", "err", err)
 				return stakerSwitchInterval
 			}
 			if switchedToBoldProtocol {
@@ -159,11 +156,15 @@ func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Ad
 	if err != nil {
 		return false, addr, err
 	}
-	userLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, m.client)
+	userLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, m.l1Reader.Client())
 	if err != nil {
 		return false, addr, err
 	}
 	_, err = userLogic.ChallengeGracePeriodBlocks(callOpts)
+	if err != nil && !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		// Unexpected error, perhaps an L1 issue?
+		return false, addr, err
+	}
 	// ChallengeGracePeriodBlocks only exists in the BOLD rollup contracts.
 	return err == nil, rollupAddress, nil
 }
@@ -198,11 +199,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 	ctx context.Context,
 	rollupAddress common.Address,
 ) (*boldstaker.BOLDStaker, error) {
-	txBuilder, err := txbuilder.NewBuilder(m.wallet)
-	if err != nil {
-		return nil, err
-	}
-	auth, err := txBuilder.Auth(ctx)
+	txBuilder, err := txbuilder.NewBuilder(m.wallet, m.legacyConfig().GasRefunder())
 	if err != nil {
 		return nil, err
 	}
@@ -210,8 +207,8 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		ctx,
 		rollupAddress,
 		*m.getCallOpts(ctx),
-		auth,
-		m.client,
+		txBuilder.SingleTxAuth(),
+		m.l1Reader,
 		m.blockValidator,
 		m.statelessBlockValidator,
 		m.boldConfig,

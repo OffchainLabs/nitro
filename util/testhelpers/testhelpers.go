@@ -7,6 +7,7 @@ import (
 	"context"
 	crypto "crypto/rand"
 	"io"
+	"log/slog"
 	"math/big"
 	"math/rand"
 	"os"
@@ -17,8 +18,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/util/colors"
-	"golang.org/x/exp/slog"
 )
 
 // Fail a test should an error occur

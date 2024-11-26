@@ -17,6 +17,7 @@ type InitDataReader interface {
 	GetNextBlockNumber() (uint64, error)
 	GetRetryableDataReader() (RetryableDataReader, error)
 	GetAccountDataReader() (AccountDataReader, error)
+	GetChainOwner() (common.Address, error)
 }
 
 type ListReader interface {

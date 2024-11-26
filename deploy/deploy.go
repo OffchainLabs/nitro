@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
@@ -49,26 +50,15 @@ func deployBridgeCreator(ctx context.Context, parentChainReader *headerreader.He
 			return common.Address{}, fmt.Errorf("blob basefee reader deploy error: %w", err)
 		}
 	}
-	seqInboxTemplateEthBased, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844, false, false)
+	seqInboxTemplateEthBased, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844, false)
 	err = andTxSucceeded(ctx, parentChainReader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("sequencer inbox eth based deploy error: %w", err)
 	}
-	delayBufferableSeqInboxTemplateEthBased, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844, false, true)
-	err = andTxSucceeded(ctx, parentChainReader, tx, err)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("delay bufferable sequencer inbox eth based deploy error: %w", err)
-	}
-
-	seqInboxTemplateERC20Based, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844, true, false)
+	seqInboxTemplateERC20Based, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844, true)
 	err = andTxSucceeded(ctx, parentChainReader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("sequencer inbox erc20 based deploy error: %w", err)
-	}
-	delayBufferableSeqInboxTemplateERC20Based, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844, true, true)
-	err = andTxSucceeded(ctx, parentChainReader, tx, err)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("delay bufferable sequencer inbox erc20 based deploy error: %w", err)
 	}
 
 	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, client, maxDataSize)
@@ -89,13 +79,12 @@ func deployBridgeCreator(ctx context.Context, parentChainReader *headerreader.He
 		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
 	}
 
-	ethBasedTemplates := rollupgen.BridgeCreatorBridgeTemplates{
-		Bridge:                        bridgeTemplate,
-		SequencerInbox:                seqInboxTemplateEthBased,
-		DelayBufferableSequencerInbox: delayBufferableSeqInboxTemplateEthBased,
-		Inbox:                         inboxTemplate,
-		RollupEventInbox:              rollupEventBridgeTemplate,
-		Outbox:                        outboxTemplate,
+	ethBasedTemplates := rollupgen.BridgeCreatorBridgeContracts{
+		Bridge:           bridgeTemplate,
+		SequencerInbox:   seqInboxTemplateEthBased,
+		Inbox:            inboxTemplate,
+		RollupEventInbox: rollupEventBridgeTemplate,
+		Outbox:           outboxTemplate,
 	}
 
 	/// deploy ERC20 based templates
@@ -123,13 +112,12 @@ func deployBridgeCreator(ctx context.Context, parentChainReader *headerreader.He
 		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
 	}
 
-	erc20BasedTemplates := rollupgen.BridgeCreatorBridgeTemplates{
-		Bridge:                        erc20BridgeTemplate,
-		SequencerInbox:                seqInboxTemplateERC20Based,
-		DelayBufferableSequencerInbox: delayBufferableSeqInboxTemplateERC20Based,
-		Inbox:                         erc20InboxTemplate,
-		RollupEventInbox:              erc20RollupEventBridgeTemplate,
-		Outbox:                        erc20OutboxTemplate,
+	erc20BasedTemplates := rollupgen.BridgeCreatorBridgeContracts{
+		Bridge:           erc20BridgeTemplate,
+		SequencerInbox:   seqInboxTemplateERC20Based,
+		Inbox:            erc20InboxTemplate,
+		RollupEventInbox: erc20RollupEventBridgeTemplate,
+		Outbox:           erc20OutboxTemplate,
 	}
 
 	bridgeCreatorAddr, tx, _, err := rollupgen.DeployBridgeCreator(auth, client, ethBasedTemplates, erc20BasedTemplates)
@@ -269,6 +257,7 @@ func DeployOnParentChain(ctx context.Context, parentChainReader *headerreader.He
 	for i := uint64(1); i <= authorizeValidators; i++ {
 		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
 	}
+
 	deployParams := rollupgen.RollupCreatorRollupDeploymentParams{
 		Config:                    config,
 		Validators:                validatorAddrs,
@@ -284,7 +273,6 @@ func DeployOnParentChain(ctx context.Context, parentChainReader *headerreader.He
 		deployAuth,
 		deployParams,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
 	}

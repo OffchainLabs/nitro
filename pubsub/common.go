@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 func ResultKeyFor(streamName, id string) string { return fmt.Sprintf("%s.%s", streamName, id) }

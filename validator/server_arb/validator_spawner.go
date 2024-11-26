@@ -10,18 +10,18 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 )
 
 var arbitratorValidationSteps = metrics.NewRegisteredHistogram("arbitrator/validation/steps", nil, metrics.NewBoundedHistogramSample())
@@ -56,20 +56,42 @@ func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
 	return &DefaultArbitratorSpawnerConfig
 }
 
+// MachineWrapper is a function that wraps a MachineInterface
+//
+// This is a mechanism to allow clients of the AribtratorSpawner to inject
+// functionality around the arbitrator machine. Possible use cases include
+// mocking out the machine for testing purposes, or having the machine behave
+// differently when certain features (like BoLD) are enabled.
+type MachineWrapper func(MachineInterface) MachineInterface
+
+type SpawnerOption func(*ArbitratorSpawner)
+
 type ArbitratorSpawner struct {
 	stopwaiter.StopWaiter
 	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
-	config        ArbitratorSpawnerConfigFecher
+	// Oreder of wrappers is important. The first wrapper is the innermost.
+	machineWrappers []MachineWrapper
+	config          ArbitratorSpawnerConfigFecher
 }
 
-func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {
+func WithWrapper(wrapper MachineWrapper) SpawnerOption {
+	return func(s *ArbitratorSpawner) {
+		s.machineWrappers = append(s.machineWrappers, wrapper)
+	}
+}
+
+func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
 	spawner := &ArbitratorSpawner{
-		locator:       locator,
-		machineLoader: NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
-		config:        config,
+		locator:         locator,
+		machineLoader:   NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
+		machineWrappers: make([]MachineWrapper, 0),
+		config:          config,
+	}
+	for _, opt := range opts {
+		opt(spawner)
 	}
 	return spawner, nil
 }
@@ -159,11 +181,15 @@ func (v *ArbitratorSpawner) execute(
 		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
-	mach := basemachine.Clone()
-	defer mach.Destroy()
-	err = v.loadEntryToMachine(ctx, entry, mach)
+	arbMach := basemachine.Clone()
+	defer arbMach.Destroy()
+	err = v.loadEntryToMachine(ctx, entry, arbMach)
 	if err != nil {
 		return validator.GoGlobalState{}, err
+	}
+	var mach MachineInterface = arbMach
+	for _, wrapper := range v.machineWrappers {
+		mach = wrapper(mach)
 	}
 	var steps uint64
 	for mach.IsRunning() {
@@ -218,7 +244,11 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 			machine.Destroy()
 			return nil, err
 		}
-		return machine, nil
+		wrapped := MachineInterface(machine)
+		for _, wrapper := range v.machineWrappers {
+			wrapped = wrapper(wrapped)
+		}
+		return wrapped, nil
 	}
 	currentExecConfig := v.config().Execution
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](v, func(ctx context.Context) (validator.ExecutionRun, error) {

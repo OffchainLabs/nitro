@@ -18,12 +18,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
@@ -40,7 +43,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx)
+	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, 1<<5)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
@@ -65,7 +68,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	_, err = honestUpgradeExec.ExecuteCall(&honestRollupOwnerOpts, seqInbox, data)
 	Require(t, err)
 
-	// We will make two batches, with 5 messages in each batch.
+	// Make two batchs. One with 5 messages, and one with 10 messages.
 	numMessagesPerBatch := int64(5)
 	divergeAt := int64(-1) // No divergence.
 	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, seqInboxBinding, seqInbox, numMessagesPerBatch, divergeAt)
@@ -79,23 +82,26 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	totalBatches := totalBatchesBig.Uint64()
 	totalMessageCount, err := l2node.InboxTracker.GetBatchMessageCount(totalBatches - 1)
 	Require(t, err)
+	log.Info("Status", "totalBatches", totalBatches, "totalMessageCount", totalMessageCount)
+	t.Logf("totalBatches: %v, totalMessageCount: %v\n", totalBatches, totalMessageCount)
 
 	// Wait until the validator has validated the batches.
 	for {
+		time.Sleep(time.Millisecond * 100)
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
 		if lastInfo == nil || err != nil {
 			continue
+		}
+		if lastInfo.GlobalState.Batch >= totalBatches {
+			break
 		}
 		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
 		if err != nil {
 			continue
 		}
-		Require(t, err)
-		t.Log("lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
 		if batchMsgCount >= totalMessageCount {
 			break
 		}
-		time.Sleep(time.Millisecond * 100)
 	}
 
 	historyCommitter := l2stateprovider.NewHistoryCommitmentProvider(
@@ -111,11 +117,14 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	)
 	bisectionHeight := l2stateprovider.Height(16)
 	request := &l2stateprovider.HistoryCommitmentRequest{
-		WasmModuleRoot:              common.Hash{},
-		FromBatch:                   1,
-		ToBatch:                     3,
+		AssertionMetadata: &l2stateprovider.AssociatedAssertionMetadata{
+			FromState: protocol.GoGlobalState{
+				Batch: 1,
+			},
+			BatchLimit:     3,
+			WasmModuleRoot: common.Hash{},
+		},
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		FromHeight:                  0,
 		UpToHeight:                  option.Some(bisectionHeight),
 	}
 	bisectionCommitment, err := historyCommitter.HistoryCommitment(ctx, request)
@@ -146,10 +155,11 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 }
 
 func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx)
+	maxNumBlocks := uint64(1 << 14)
+	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, maxNumBlocks)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
@@ -190,40 +200,36 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 
 	// Wait until the validator has validated the batches.
 	for {
+		time.Sleep(time.Millisecond * 100)
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
 		if lastInfo == nil || err != nil {
 			continue
 		}
-		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
-		if err != nil {
-			continue
-		}
-		t.Log("lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
-		if batchMsgCount >= totalMessageCount {
+		if lastInfo.GlobalState.Batch >= totalBatches {
 			break
 		}
-		time.Sleep(time.Millisecond * 100)
 	}
 
-	maxBlocks := uint64(1 << 14)
-
 	t.Run("StatesInBatchRange", func(t *testing.T) {
-		fromBatch := l2stateprovider.Batch(1)
-		toBatch := l2stateprovider.Batch(3)
-		fromHeight := l2stateprovider.Height(0)
-		toHeight := l2stateprovider.Height(14)
-		stateRoots, states, err := stateManager.StatesInBatchRange(ctx, fromHeight, toHeight, fromBatch, toBatch)
+		toBatch := uint64(3)
+		toHeight := l2stateprovider.Height(10)
+		fromState := protocol.GoGlobalState{
+			Batch: 1,
+		}
+		stateRoots, states, err := stateManager.StatesInBatchRange(ctx, fromState, toBatch, toHeight)
 		Require(t, err)
+		want := 11
+		got := len(stateRoots)
 
-		if len(stateRoots) != 15 {
-			Fatal(t, "wrong number of state roots")
+		if got != want {
+			t.Errorf("len(stateRoots): got %v, want %v", got, want)
 		}
 		firstState := states[0]
 		if firstState.Batch != 1 && firstState.PosInBatch != 0 {
 			Fatal(t, "wrong first state")
 		}
 		lastState := states[len(states)-1]
-		if lastState.Batch != 1 && lastState.PosInBatch != 0 {
+		if lastState.Batch != 3 && lastState.PosInBatch != 0 {
 			Fatal(t, "wrong last state")
 		}
 	})
@@ -232,11 +238,10 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		_, err = stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			0,
-			&protocol.GoGlobalState{
+			protocol.GoGlobalState{
 				Batch:      0,
 				PosInBatch: 1,
 			},
-			maxBlocks,
 		)
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
@@ -249,11 +254,10 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		genesis, err := stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			1,
-			&protocol.GoGlobalState{
+			protocol.GoGlobalState{
 				Batch:      0,
 				PosInBatch: 0,
 			},
-			maxBlocks,
 		)
 		Require(t, err)
 		if genesis == nil {
@@ -264,8 +268,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		first, err := stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			2,
-			&genesis.GlobalState,
-			maxBlocks,
+			genesis.GlobalState,
 		)
 		Require(t, err)
 		if first == nil {
@@ -276,8 +279,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		_, err = stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			10,
-			&first.GlobalState,
-			maxBlocks,
+			first.GlobalState,
 		)
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
@@ -296,7 +298,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 			SendRoot:  result.SendRoot,
 			Batch:     3,
 		}
-		got, err := stateManager.ExecutionStateAfterPreviousState(ctx, 3, &first.GlobalState, maxBlocks)
+		got, err := stateManager.ExecutionStateAfterPreviousState(ctx, 3, first.GlobalState)
 		Require(t, err)
 		if state.Batch != got.GlobalState.Batch {
 			Fatal(t, "wrong batch")
@@ -313,8 +315,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		_, err = stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			state.Batch+1,
-			&got.GlobalState,
-			maxBlocks,
+			got.GlobalState,
 		)
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
@@ -324,7 +325,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 	})
 	t.Run("ExecutionStateAfterBatchCount", func(t *testing.T) {
-		_, err = stateManager.ExecutionStateAfterPreviousState(ctx, 0, &protocol.GoGlobalState{}, maxBlocks)
+		_, err = stateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
 		if err == nil {
 			Fatal(t, "should have failed")
 		}
@@ -332,9 +333,9 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 			Fatal(t, "wrong error message", err)
 		}
 
-		genesis, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &protocol.GoGlobalState{}, maxBlocks)
+		genesis, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, protocol.GoGlobalState{})
 		Require(t, err)
-		execState, err := stateManager.ExecutionStateAfterPreviousState(ctx, totalBatches, &genesis.GlobalState, maxBlocks)
+		execState, err := stateManager.ExecutionStateAfterPreviousState(ctx, totalBatches, genesis.GlobalState)
 		Require(t, err)
 		if execState == nil {
 			Fatal(t, "should not be nil")
@@ -342,9 +343,9 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	})
 }
 
-func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *staker.BOLDStateProvider, *staker.BlockValidator) {
+func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHeight uint64) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *bold.BOLDStateProvider, *staker.BlockValidator) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
-	l2chainConfig := params.ArbitrumDevTestChainConfig()
+	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -384,13 +385,13 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 	Require(t, blockValidator.Initialize(ctx))
 	Require(t, blockValidator.Start(ctx))
 
-	stateManager, err := staker.NewBOLDStateProvider(
+	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
-		l2stateprovider.Height(blockChallengeLeafHeight),
-		&staker.StateProviderConfig{
+		l2stateprovider.Height(blockChallengeHeight),
+		&bold.StateProviderConfig{
 			ValidatorName:          "",
-			MachineLeavesCachePath: "",
+			MachineLeavesCachePath: t.TempDir(),
 			CheckBatchFinality:     false,
 		},
 	)
