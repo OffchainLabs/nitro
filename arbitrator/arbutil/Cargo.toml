@@ -17,3 +17,4 @@ serde = { version = "1.0.130", features = ["derive", "rc"] }
 num_enum = "0.7.1"
 sha2 = "0.10.7"
 sha3 = "0.10.8"
+derivative = "2.2.0"

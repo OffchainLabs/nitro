@@ -34,12 +34,14 @@ fn to_result(req_type: u32, req_data: &Vec<u8>) -> (&str, &str) {
 }
 
 fn main() -> eyre::Result<()> {
-    let wasm = match std::fs::read("./programs_to_benchmark/user.wasm") {
+    let wat = match std::fs::read("./programs_to_benchmark/add_one.wat") {
         Ok(wasm) => wasm,
         Err(err) => panic!("failed to read: {err}"),
     };
+    let wasm = wasmer::wat2wasm(&wat).unwrap();
 
-    let compiled_module = compile(&wasm, 0, false, Target::default())?;
+    // enables debug in order to use log
+    let compiled_module = compile(&wasm, 0, true, Target::default())?;
 
     let exec = &mut WasmEnv::default();
 
@@ -55,7 +57,12 @@ fn main() -> eyre::Result<()> {
             version: 0,
             pricing: CompilePricingParams::default(),
             bounds: CompileMemoryParams::default(),
-            debug: CompileDebugParams::default(),
+            debug: CompileDebugParams {
+                debug_funcs: true,
+                debug_info: true,
+                count_ops: true,
+                cranelift: true,
+            },
         },
     };
 
@@ -71,13 +78,11 @@ fn main() -> eyre::Result<()> {
     println!("module: {:?}", module);
 
     let mut req_id = start_program_with_wasm_env(exec, module).unwrap();
-    println!("req_id: {:?}", req_id);
-
     loop {
         let msg = get_last_msg(exec, req_id).unwrap();
         println!(
-            "msg.req_type: {:?}, msg.req_data: {:?}",
-            msg.req_type, msg.req_data
+            "req_id: {:?}, msg.req_type: {:?}, msg.req_data: {:?}",
+            req_id, msg.req_type, msg.req_data
         );
 
         if msg.req_type < EVM_API_METHOD_REQ_OFFSET {
@@ -86,7 +91,7 @@ fn main() -> eyre::Result<()> {
             let gas_left = u64::from_be_bytes(msg.req_data[..8].try_into().unwrap());
             let req_data = msg.req_data[8..].to_vec();
             let (msg, err) = to_result(msg.req_type, &req_data);
-            println!("gas_left: {:?}, msg: {:?}, err: {:?}", gas_left, msg, err);
+            println!("gas_left: {:?}, msg: {:?}, err: {:?}, req_data: {:?}", gas_left, msg, err, req_data);
 
             break;
         }

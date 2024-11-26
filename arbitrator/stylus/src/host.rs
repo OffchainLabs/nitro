@@ -9,6 +9,7 @@ use arbutil::{
         api::{DataReader, EvmApi, Gas, Ink},
         EvmData,
     },
+    timer::Timer,
     Color,
 };
 use caller_env::GuestPtr;
@@ -44,6 +45,10 @@ where
 
     fn evm_data(&self) -> &EvmData {
         &self.evm_data
+    }
+
+    fn timer(&mut self) -> &mut Timer {
+        &mut self.env.timer
     }
 
     fn evm_return_data_len(&mut self) -> &mut u32 {
@@ -464,3 +469,9 @@ pub(crate) fn console_tee<D: DataReader, E: EvmApi<D>, T: Into<Value> + Copy>(
 }
 
 pub(crate) fn null_host<D: DataReader, E: EvmApi<D>>(_: WasmEnvMut<D, E>) {}
+
+pub(crate) fn toggle_measurement<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>
+) -> MaybeEscape {
+    hostio!(env, toggle_measurement())
+}
