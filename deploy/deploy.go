@@ -10,88 +10,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	"github.com/offchainlabs/bold/solgen/go/ospgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
-	"github.com/offchainlabs/bold/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
+	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
-
-// lint:require-exhaustive-initialization
-type RollupConfigOpts struct {
-	Prod                         bool
-	WasmModuleRoot               common.Hash
-	RollupOwner                  common.Address
-	ChainConfig                  *params.ChainConfig
-	SerializedChainConfig        []byte
-	LoserStakeEscrow             common.Address
-	MiniStakeValues              []*big.Int
-	StakeToken                   common.Address
-	GenesisExecutionState        rollupgen.AssertionState
-	GenesisInboxCount            *big.Int
-	AnyTrustFastConfirmer        common.Address
-	LayerZeroBlockEdgeHeight     uint64
-	LayerZeroBigStepEdgeHeight   uint64
-	LayerZeroSmallStepEdgeHeight uint64
-	NumBigStepLevel              uint8
-	BufferConfig                 rollupgen.BufferConfig
-}
-
-func DefaultBufferConfig() rollupgen.BufferConfig {
-	return rollupgen.BufferConfig{
-		Threshold:            600,   // 1 hour of blocks
-		Max:                  14400, // 2 days of blocks
-		ReplenishRateInBasis: 500,   // 5%
-	}
-}
-
-func GenerateRollupConfig(opts *RollupConfigOpts) rollupgen.Config {
-	var confirmPeriod uint64
-	if opts.Prod {
-		confirmPeriod = 45818
-	} else {
-		confirmPeriod = 25
-	}
-
-	var gracePeriod uint64
-	if opts.Prod {
-		gracePeriod = 14400
-	} else {
-		gracePeriod = 3
-	}
-
-	cfg := rollupgen.Config{
-		ConfirmPeriodBlocks: confirmPeriod,
-		StakeToken:          opts.StakeToken,
-		BaseStake:           big.NewInt(1),
-		WasmModuleRoot:      opts.WasmModuleRoot,
-		Owner:               opts.RollupOwner,
-		LoserStakeEscrow:    opts.LoserStakeEscrow,
-		ChainId:             opts.ChainConfig.ChainID,
-		ChainConfig:         string(opts.SerializedChainConfig),
-		MiniStakeValues:     opts.MiniStakeValues,
-		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
-			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
-			FutureBlocks:  big.NewInt(12),
-			DelaySeconds:  big.NewInt(60 * 60 * 24),
-			FutureSeconds: big.NewInt(60 * 60),
-		},
-		LayerZeroBlockEdgeHeight:     new(big.Int).SetUint64(opts.LayerZeroBlockEdgeHeight),
-		LayerZeroBigStepEdgeHeight:   new(big.Int).SetUint64(opts.LayerZeroBigStepEdgeHeight),
-		LayerZeroSmallStepEdgeHeight: new(big.Int).SetUint64(opts.LayerZeroSmallStepEdgeHeight),
-		GenesisAssertionState:        opts.GenesisExecutionState,
-		GenesisInboxCount:            opts.GenesisInboxCount,
-		AnyTrustFastConfirmer:        opts.AnyTrustFastConfirmer,
-		NumBigStepLevel:              opts.NumBigStepLevel,
-		ChallengeGracePeriodBlocks:   gracePeriod,
-		BufferConfig:                 opts.BufferConfig,
-	}
-	return cfg
-}
 
 func andTxSucceeded(ctx context.Context, parentChainReader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
 	if err != nil {
@@ -240,7 +167,7 @@ func deployChallengeFactory(ctx context.Context, parentChainReader *headerreader
 		return common.Address{}, common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
 	}
 
-	challengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(auth, client)
+	challengeManagerAddr, tx, _, err := challengegen.DeployChallengeManager(auth, client)
 	err = andTxSucceeded(ctx, parentChainReader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("challenge manager deploy error: %w", err)
@@ -255,51 +182,57 @@ func deployChallengeFactory(ctx context.Context, parentChainReader *headerreader
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, parentChainReader *headerreader.HeaderReader, auth *bind.TransactOpts, maxDataSize *big.Int, chainSupportsBlobs bool) (*rollupgen.RollupCreator, common.Address, common.Address, error) {
+func deployRollupCreator(ctx context.Context, parentChainReader *headerreader.HeaderReader, auth *bind.TransactOpts, maxDataSize *big.Int, chainSupportsBlobs bool) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, parentChainReader, auth, maxDataSize, chainSupportsBlobs)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, fmt.Errorf("bridge creator deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("bridge creator deploy error: %w", err)
 	}
 
 	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, parentChainReader, auth)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, parentChainReader.Client())
 	err = andTxSucceeded(ctx, parentChainReader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, fmt.Errorf("rollup admin logic deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup admin logic deploy error: %w", err)
 	}
 
 	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, parentChainReader.Client())
 	err = andTxSucceeded(ctx, parentChainReader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
 	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, parentChainReader.Client())
 	err = andTxSucceeded(ctx, parentChainReader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
 	}
 
 	upgradeExecutor, tx, _, err := upgrade_executorgen.DeployUpgradeExecutor(auth, parentChainReader.Client())
 	err = andTxSucceeded(ctx, parentChainReader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, fmt.Errorf("upgrade executor deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("upgrade executor deploy error: %w", err)
+	}
+
+	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(auth, parentChainReader.Client())
+	err = andTxSucceeded(ctx, parentChainReader, tx, err)
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator utils deploy error: %w", err)
 	}
 
 	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(auth, parentChainReader.Client())
 	err = andTxSucceeded(ctx, parentChainReader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, fmt.Errorf("validator wallet creator deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator wallet creator deploy error: %w", err)
 	}
 
 	l2FactoriesDeployHelper, tx, _, err := rollupgen.DeployDeployHelper(auth, parentChainReader.Client())
 	err = andTxSucceeded(ctx, parentChainReader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, fmt.Errorf("deploy helper creator deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("deploy helper creator deploy error: %w", err)
 	}
 
 	tx, err = rollupCreator.SetTemplates(
@@ -310,15 +243,16 @@ func deployRollupCreator(ctx context.Context, parentChainReader *headerreader.He
 		rollupAdminLogic,
 		rollupUserLogic,
 		upgradeExecutor,
+		validatorUtils,
 		validatorWalletCreator,
 		l2FactoriesDeployHelper,
 	)
 	err = andTxSucceeded(ctx, parentChainReader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, fmt.Errorf("rollup set template error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup set template error: %w", err)
 	}
 
-	return rollupCreator, rollupCreatorAddress, validatorWalletCreator, nil
+	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
 func DeployOnParentChain(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPosters []common.Address, batchPosterManager common.Address, authorizeValidators uint64, config rollupgen.Config, nativeToken common.Address, maxDataSize *big.Int, chainSupportsBlobs bool) (*chaininfo.RollupAddresses, error) {
@@ -326,7 +260,7 @@ func DeployOnParentChain(ctx context.Context, parentChainReader *headerreader.He
 		return nil, errors.New("no machine specified")
 	}
 
-	rollupCreator, _, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth, maxDataSize, chainSupportsBlobs)
+	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth, maxDataSize, chainSupportsBlobs)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
@@ -371,6 +305,7 @@ func DeployOnParentChain(ctx context.Context, parentChainReader *headerreader.He
 		Rollup:                 info.RollupAddress,
 		NativeToken:            nativeToken,
 		UpgradeExecutor:        info.UpgradeExecutor,
+		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
 	}, nil
 }
