@@ -322,7 +322,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	if err = opts.Config().Validate(); err != nil {
 		return nil, err
 	}
-	// TODO(delaybuffer) use new bridgegen
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
 		return nil, err
