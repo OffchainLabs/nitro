@@ -46,14 +46,14 @@ type incorrectBlockStateProvider struct {
 func (s *incorrectBlockStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
-	previousGlobalState *protocol.GoGlobalState,
+	previousGlobalState protocol.GoGlobalState,
 ) (*protocol.ExecutionState, error) {
 	maxNumberOfBlocks := s.chain.SpecChallengeManager().LayerZeroHeights().BlockChallengeHeight.Uint64()
 	executionState, err := s.honest.ExecutionStateAfterPreviousState(ctx, maxInboxCount, previousGlobalState)
 	if err != nil {
 		return nil, err
 	}
-	evilStates, err := s.L2MessageStatesUpTo(ctx, *previousGlobalState, l2stateprovider.Batch(maxInboxCount), option.Some(l2stateprovider.Height(maxNumberOfBlocks)))
+	evilStates, err := s.L2MessageStatesUpTo(ctx, previousGlobalState, l2stateprovider.Batch(maxInboxCount), option.Some(l2stateprovider.Height(maxNumberOfBlocks)))
 	if err != nil {
 		return nil, err
 	}

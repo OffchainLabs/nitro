@@ -81,7 +81,7 @@ func NewBOLDStateProvider(
 func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
-	previousGlobalState *protocol.GoGlobalState,
+	previousGlobalState protocol.GoGlobalState,
 ) (*protocol.ExecutionState, error) {
 	if maxInboxCount == 0 {
 		return nil, errors.New("max inbox count cannot be zero")
@@ -95,26 +95,24 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		}
 		return nil, err
 	}
-	if previousGlobalState != nil {
-		var previousMessageCount arbutil.MessageIndex
-		if previousGlobalState.Batch > 0 {
-			previousMessageCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(previousGlobalState.Batch - 1)
-			if err != nil {
-				if strings.Contains(err.Error(), "not found") {
-					return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
-				}
-				return nil, err
+	var previousMessageCount arbutil.MessageIndex
+	if previousGlobalState.Batch > 0 {
+		previousMessageCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(previousGlobalState.Batch - 1)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
 			}
+			return nil, err
 		}
-		previousMessageCount += arbutil.MessageIndex(previousGlobalState.PosInBatch)
-		messageDiffBetweenBatches := messageCount - previousMessageCount
-		maxMessageCount := previousMessageCount + arbutil.MessageIndex(maxNumberOfBlocks)
-		if messageDiffBetweenBatches > maxMessageCount {
-			messageCount = maxMessageCount
-			batchIndex, _, err = s.statelessValidator.InboxTracker().FindInboxBatchContainingMessage(messageCount)
-			if err != nil {
-				return nil, err
-			}
+	}
+	previousMessageCount += arbutil.MessageIndex(previousGlobalState.PosInBatch)
+	messageDiffBetweenBatches := messageCount - previousMessageCount
+	maxMessageCount := previousMessageCount + arbutil.MessageIndex(maxNumberOfBlocks)
+	if messageDiffBetweenBatches > maxMessageCount {
+		messageCount = maxMessageCount
+		batchIndex, _, err = s.statelessValidator.InboxTracker().FindInboxBatchContainingMessage(messageCount)
+		if err != nil {
+			return nil, err
 		}
 	}
 	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, l2stateprovider.Batch(batchIndex))
@@ -135,15 +133,10 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		GlobalState:   protocol.GoGlobalState(globalState),
 		MachineStatus: protocol.MachineStatusFinished,
 	}
-
-	var previousGlobalStateOrDefault protocol.GoGlobalState
-	if previousGlobalState != nil {
-		previousGlobalStateOrDefault = *previousGlobalState
-	}
 	toBatch := executionState.GlobalState.Batch
 	historyCommitStates, _, err := s.StatesInBatchRange(
 		ctx,
-		previousGlobalStateOrDefault,
+		previousGlobalState,
 		toBatch,
 		l2stateprovider.Height(maxNumberOfBlocks),
 	)
@@ -155,7 +148,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		return nil, err
 	}
 	executionState.EndHistoryRoot = historyCommit.Merkle
-	fmt.Printf("ExecutionStateAfterPreviousState for previous state batch %v pos %v got end batch %v pos %v last leaf %v hash %v\n", previousGlobalStateOrDefault.Batch, previousGlobalStateOrDefault.PosInBatch, executionState.GlobalState.Batch, executionState.GlobalState.PosInBatch, historyCommitStates[len(historyCommitStates)-1], executionState.EndHistoryRoot)
+	fmt.Printf("ExecutionStateAfterPreviousState for previous state batch %v pos %v got end batch %v pos %v last leaf %v hash %v\n", previousGlobalState.Batch, previousGlobalState.PosInBatch, executionState.GlobalState.Batch, executionState.GlobalState.PosInBatch, historyCommitStates[len(historyCommitStates)-1], executionState.EndHistoryRoot)
 	return executionState, nil
 }
 
