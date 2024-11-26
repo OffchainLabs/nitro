@@ -13,6 +13,7 @@ go_test(
     name = "endtoend_test",
     size = "large",
     srcs = [
+        "e2e_crash_test.go",
         "e2e_test.go",
         "helpers_test.go",
     ],
@@ -26,7 +27,9 @@ go_test(
         "//chain-abstraction/sol-implementation",
         "//challenge-manager",
         "//challenge-manager/types",
+        "//runtime",
         "//solgen/go/bridgegen",
+        "//solgen/go/challengeV2gen",
         "//solgen/go/mocksgen",
         "//solgen/go/rollupgen",
         "//testing",

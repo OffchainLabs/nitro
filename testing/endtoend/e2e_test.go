@@ -280,7 +280,6 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 	honestManager, err := cm.NewChallengeStack(honestChain, honestStateManager, honestOpts...)
 	require.NoError(t, err)
 
-	// Diverge exactly at the last opcode within the block.
 	totalOpcodes := totalWasmOpcodes(&cfg.protocol.layerZeroHeights, cfg.protocol.numBigStepLevels)
 	t.Logf("Total wasm opcodes in test: %d", totalOpcodes)
 
@@ -289,6 +288,7 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 
 	evilChallengeManagers := make([]*cm.Manager, cfg.actors.numEvilValidators)
 	for i := uint64(0); i < cfg.actors.numEvilValidators; i++ {
+		// Diverge at a random opcode within the block.
 		machineDivergenceStep := randUint64(i)
 		if machineDivergenceStep == 0 {
 			machineDivergenceStep = 1

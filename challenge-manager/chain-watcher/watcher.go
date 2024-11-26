@@ -87,6 +87,7 @@ type Watcher struct {
 	// Only track challenges for these parent assertion hashes.
 	// Track all if empty / nil.
 	trackChallengeParentAssertionHashes []protocol.AssertionHash
+	maxLookbackBlocks                   uint64
 }
 
 // New initializes a watcher service for frequently scanning the chain
@@ -99,6 +100,7 @@ func New(
 	assertionConfirmingInterval time.Duration,
 	averageTimeForBlockCreation time.Duration,
 	trackChallengeParentAssertionHashes []protocol.AssertionHash,
+	maxLookbackBlocks uint64,
 ) (*Watcher, error) {
 	return &Watcher{
 		chain:                               chain,
@@ -114,6 +116,7 @@ func New(
 		averageTimeForBlockCreation:         averageTimeForBlockCreation,
 		evilEdgesByLevel:                    threadsafe.NewMap(threadsafe.MapWithMetric[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]("evilEdgesByLevel")),
 		trackChallengeParentAssertionHashes: trackChallengeParentAssertionHashes,
+		maxLookbackBlocks:                   maxLookbackBlocks,
 	}, nil
 }
 
@@ -580,19 +583,8 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) (bool, er
 	if err != nil {
 		return false, err
 	}
-	challengeComplete, err := w.chain.IsChallengeComplete(ctx, challengeParentAssertionHash)
-	if err != nil {
-		return false, errors.Wrapf(
-			err,
-			"could not check if edge with parent assertion hash %#x is part of a completed challenge",
-			challengeParentAssertionHash.Hash,
-		)
-	}
 	start, startRoot := edge.StartCommitment()
 	end, endRoot := edge.EndCommitment()
-	if challengeComplete {
-		return false, nil
-	}
 	chal, ok := w.challenges.TryGet(challengeParentAssertionHash)
 	if !ok {
 		tree := challengetree.New(
@@ -943,12 +935,16 @@ type filterRange struct {
 // Gets the start and end block numbers for our filter queries, starting from
 // the latest confirmed assertion's block number up to the latest block number.
 func (w *Watcher) getStartEndBlockNum(ctx context.Context) (filterRange, error) {
-	latestConfirmed, err := w.chain.LatestConfirmed(ctx, w.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+	latestBlock, err := w.chain.Backend().HeaderU64(ctx)
 	if err != nil {
 		return filterRange{}, err
 	}
-	firstBlock := latestConfirmed.CreatedAtBlock()
-	startBlock := firstBlock
+	startBlock := latestBlock
+	if w.maxLookbackBlocks < startBlock {
+		startBlock = startBlock - w.maxLookbackBlocks
+	} else {
+		startBlock = 0
+	}
 	headerNumber, err := w.backend.HeaderU64(ctx)
 	if err != nil {
 		return filterRange{}, err

@@ -48,6 +48,16 @@ func (s *simpleHeaderProvider) Subscribe(requireBlockNrUpdates bool) (<-chan *ty
 	ch := make(chan *types.Header, 100)
 	s.chs = append(s.chs, ch)
 	return ch, func() {
+		s.removeChannel(ch)
 		close(ch)
+	}
+}
+
+func (s *simpleHeaderProvider) removeChannel(ch chan<- *types.Header) {
+	for i, sch := range s.chs {
+		if sch == ch {
+			s.chs = append(s.chs[:i], s.chs[i+1:]...)
+			return
+		}
 	}
 }
