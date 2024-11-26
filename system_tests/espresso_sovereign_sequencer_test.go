@@ -25,7 +25,7 @@ func createL1AndL2Node(
 	builder.l1StackConfig.WSHost = "0.0.0.0"
 	builder.l1StackConfig.DataDir = t.TempDir()
 	builder.l1StackConfig.WSModules = append(builder.l1StackConfig.WSModules, "eth")
-	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
+	builder.chainConfig.ArbitrumChainParams.EspressoTEEVerifierAddress = common.HexToAddress(verifierAddress)
 
 	// poster config
 	builder.nodeConfig.BatchPoster.Enable = true

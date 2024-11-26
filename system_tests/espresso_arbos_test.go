@@ -39,12 +39,12 @@ func EspressoArbOSTestChainConfig() *params.ChainConfig {
 }
 func EspressoTestChainParams() params.ArbitrumChainParams {
 	return params.ArbitrumChainParams{
-		EnableArbOS:               true,
-		AllowDebugPrecompiles:     true,
-		DataAvailabilityCommittee: false,
-		InitialArbOSVersion:       31,
-		InitialChainOwner:         common.Address{},
-		EnableEspresso:            false,
+		EnableArbOS:                true,
+		AllowDebugPrecompiles:      true,
+		DataAvailabilityCommittee:  false,
+		InitialArbOSVersion:        31,
+		InitialChainOwner:          common.Address{},
+		EspressoTEEVerifierAddress: common.Address{},
 	}
 }
 
@@ -54,7 +54,8 @@ func waitForConfigUpdate(t *testing.T, ctx context.Context, builder *NodeBuilder
 		newArbOSConfig, err := builder.L2.ExecNode.GetArbOSConfigAtHeight(0)
 		Require(t, err)
 
-		if newArbOSConfig.ArbitrumChainParams.EnableEspresso != false {
+		emptyAddress := common.Address{}
+		if newArbOSConfig.ArbitrumChainParams.EspressoTEEVerifierAddress != emptyAddress {
 			return false
 		}
 		Require(t, err)
@@ -98,8 +99,8 @@ func TestEspressoArbOSConfig(t *testing.T) {
 	Require(t, err)
 
 	// assert that espresso is initially enabled
-	if initialArbOSConfig.ArbitrumChainParams.EnableEspresso != true {
-		err = fmt.Errorf("Initial config should have EnableEspresso == true!")
+	if initialArbOSConfig.ArbitrumChainParams.EspressoTEEVerifierAddress != common.HexToAddress(verifierAddress) {
+		err = fmt.Errorf("Initial config should have EspressoTEEVerifierAddress == common.HexToAddress(verifierAddress)!")
 
 	}
 	Require(t, err)

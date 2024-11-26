@@ -24,6 +24,9 @@ var workingDir = "./espresso-e2e"
 // light client proxy
 var lightClientAddress = "0x60571c8f4b52954a24a5e7306d435e951528d963"
 
+// TODO: espresso TEE verifier address
+var verifierAddress = "0x60571c8f4b52954a24a5e7306d435e951528d963"
+
 var hotShotUrl = "http://127.0.0.1:41000"
 
 var (

@@ -283,8 +283,10 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	UserDataAttestationFile:        "",
 	QuoteFile:                      "",
 	UseEscapeHatch:                 false,
-	EspressoTxnsPollingInterval:    time.Millisecond * 100,
-	EspressoSwitchDelayThreshold:   20,
+	EspressoTxnsPollingInterval:    time.Millisecond * 500,
+	EspressoSwitchDelayThreshold:   350,
+	LightClientAddress:             "",
+	HotShotUrl:                     "",
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -317,8 +319,10 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	CheckBatchCorrectness:          true,
 	UseEscapeHatch:                 false,
-	EspressoTxnsPollingInterval:    time.Millisecond * 100,
+	EspressoTxnsPollingInterval:    time.Millisecond * 500,
 	EspressoSwitchDelayThreshold:   10,
+	LightClientAddress:             "",
+	HotShotUrl:                     "",
 }
 
 type BatchPosterOpts struct {
@@ -558,7 +562,8 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 func (b *BatchPoster) checkEspressoValidation(
 	msg *arbostypes.MessageWithMetadata,
 ) error {
-	if !b.streamer.chainConfig.ArbitrumChainParams.EnableEspresso {
+	if b.streamer.espressoClient == nil && b.streamer.lightClientReader == nil {
+		// We are not using espresso mode since these haven't been set
 		return nil
 	}
 	// We only submit the user transactions to hotshot. Only those messages created by
@@ -1461,7 +1466,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	// Submit message positions to pending queue
-	if !b.streamer.UseEscapeHatch || b.streamer.shouldSubmitEspressoTransaction() {
+	shouldSubmit := b.streamer.shouldSubmitEspressoTransaction()
+	if !b.streamer.UseEscapeHatch || shouldSubmit {
 		for p := b.building.msgCount; p < msgCount; p += 1 {
 			msg, err := b.streamer.GetMessage(p)
 			if err != nil {
@@ -1818,6 +1824,15 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	}
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
+		espresso, _ := b.streamer.isEspressoMode()
+		if !espresso {
+			if b.streamer.lightClientReader != nil && b.streamer.espressoClient != nil {
+				// This mostly happens when a non-espresso nitro is upgrading to espresso nitro.
+				// The batch poster is set a espresso client and a light client reader, but waiting
+				// for the upgrade action
+				return b.config().PollInterval
+			}
+		}
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
 			gasRefunderBalance, err := b.l1Reader.Client().BalanceAt(ctx, common.HexToAddress(b.config().GasRefunderAddress), nil)
 			if err != nil {
