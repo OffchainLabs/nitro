@@ -60,24 +60,25 @@ func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 type BidValidator struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
-	chainId                   *big.Int
-	stack                     *node.Node
-	producerCfg               *pubsub.ProducerConfig
-	producer                  *pubsub.Producer[*JsonValidatedBid, error]
-	redisClient               redis.UniversalClient
-	domainValue               []byte
-	client                    *ethclient.Client
-	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
-	auctionContractAddr       common.Address
-	bidsReceiver              chan *Bid
-	initialRoundTimestamp     time.Time
-	roundDuration             time.Duration
-	auctionClosingDuration    time.Duration
-	reserveSubmissionDuration time.Duration
-	reservePriceLock          sync.RWMutex
-	reservePrice              *big.Int
-	bidsPerSenderInRound      map[common.Address]uint8
-	maxBidsPerSenderInRound   uint8
+	chainId                        *big.Int
+	stack                          *node.Node
+	producerCfg                    *pubsub.ProducerConfig
+	producer                       *pubsub.Producer[*JsonValidatedBid, error]
+	redisClient                    redis.UniversalClient
+	domainValue                    []byte
+	client                         *ethclient.Client
+	auctionContract                *express_lane_auctiongen.ExpressLaneAuction
+	auctionContractAddr            common.Address
+	auctionContractDomainSeparator [32]byte
+	bidsReceiver                   chan *Bid
+	initialRoundTimestamp          time.Time
+	roundDuration                  time.Duration
+	auctionClosingDuration         time.Duration
+	reserveSubmissionDuration      time.Duration
+	reservePriceLock               sync.RWMutex
+	reservePrice                   *big.Int
+	bidsPerSenderInRound           map[common.Address]uint8
+	maxBidsPerSenderInRound        uint8
 }
 
 func NewBidValidator(
@@ -128,23 +129,32 @@ func NewBidValidator(
 	if err != nil {
 		return nil, err
 	}
+
+	domainSeparator, err := auctionContract.DomainSeparator(&bind.CallOpts{
+		Context: ctx,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	bidValidator := &BidValidator{
-		chainId:                   chainId,
-		client:                    sequencerClient,
-		redisClient:               redisClient,
-		stack:                     stack,
-		auctionContract:           auctionContract,
-		auctionContractAddr:       auctionContractAddr,
-		bidsReceiver:              make(chan *Bid, 10_000),
-		initialRoundTimestamp:     initialTimestamp,
-		roundDuration:             roundDuration,
-		auctionClosingDuration:    auctionClosingDuration,
-		reserveSubmissionDuration: reserveSubmissionDuration,
-		reservePrice:              reservePrice,
-		domainValue:               domainValue,
-		bidsPerSenderInRound:      make(map[common.Address]uint8),
-		maxBidsPerSenderInRound:   5, // 5 max bids per sender address in a round.
-		producerCfg:               &cfg.ProducerConfig,
+		chainId:                        chainId,
+		client:                         sequencerClient,
+		redisClient:                    redisClient,
+		stack:                          stack,
+		auctionContract:                auctionContract,
+		auctionContractAddr:            auctionContractAddr,
+		auctionContractDomainSeparator: domainSeparator,
+		bidsReceiver:                   make(chan *Bid, 10_000),
+		initialRoundTimestamp:          initialTimestamp,
+		roundDuration:                  roundDuration,
+		auctionClosingDuration:         auctionClosingDuration,
+		reserveSubmissionDuration:      reserveSubmissionDuration,
+		reservePrice:                   reservePrice,
+		domainValue:                    domainValue,
+		bidsPerSenderInRound:           make(map[common.Address]uint8),
+		maxBidsPerSenderInRound:        5, // 5 max bids per sender address in a round.
+		producerCfg:                    &cfg.ProducerConfig,
 	}
 	api := &BidValidatorAPI{bidValidator}
 	valAPIs := []rpc.API{{
@@ -313,10 +323,10 @@ func (bv *BidValidator) validateBid(
 	}
 
 	// Validate the signature.
-	packedBidBytes := bid.ToMessageBytes()
 	if len(bid.Signature) != 65 {
 		return nil, errors.Wrap(ErrMalformedData, "signature length is not 65")
 	}
+
 	// Recover the public key.
 	sigItem := make([]byte, len(bid.Signature))
 	copy(sigItem, bid.Signature)
@@ -327,7 +337,12 @@ func (bv *BidValidator) validateBid(
 	if sigItem[len(sigItem)-1] >= 27 {
 		sigItem[len(sigItem)-1] -= 27
 	}
-	pubkey, err := crypto.SigToPub(buildEthereumSignedMessage(packedBidBytes), sigItem)
+
+	bidHash, err := bid.ToEIP712Hash(bv.auctionContractDomainSeparator)
+	if err != nil {
+		return nil, err
+	}
+	pubkey, err := crypto.SigToPub(bidHash[:], sigItem)
 	if err != nil {
 		return nil, ErrMalformedData
 	}
