@@ -28,7 +28,7 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/state-commitments/history"
-	"github.com/offchainlabs/bold/util"
+	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -46,14 +46,14 @@ type incorrectBlockStateProvider struct {
 func (s *incorrectBlockStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
-	previousGlobalState *protocol.GoGlobalState,
+	previousGlobalState protocol.GoGlobalState,
 ) (*protocol.ExecutionState, error) {
 	maxNumberOfBlocks := s.chain.SpecChallengeManager().LayerZeroHeights().BlockChallengeHeight.Uint64()
 	executionState, err := s.honest.ExecutionStateAfterPreviousState(ctx, maxInboxCount, previousGlobalState)
 	if err != nil {
 		return nil, err
 	}
-	evilStates, err := s.L2MessageStatesUpTo(ctx, *previousGlobalState, l2stateprovider.Batch(maxInboxCount), option.Some(l2stateprovider.Height(maxNumberOfBlocks)))
+	evilStates, err := s.L2MessageStatesUpTo(ctx, previousGlobalState, l2stateprovider.Batch(maxInboxCount), option.Some(l2stateprovider.Height(maxNumberOfBlocks)))
 	if err != nil {
 		return nil, err
 	}
@@ -331,8 +331,8 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		builder.addresses.Rollup,
 		chalManagerAddr,
 		&txOpts,
-		util.NewBackendWrapper(builder.L1.Client, rpc.LatestBlockNumber),
-		solimpl.NewDataPosterTransactor(dp),
+		butil.NewBackendWrapper(builder.L1.Client, rpc.LatestBlockNumber),
+		bold.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
 

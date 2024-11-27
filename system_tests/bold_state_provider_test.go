@@ -208,13 +208,6 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		if lastInfo.GlobalState.Batch >= totalBatches {
 			break
 		}
-		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
-		if err != nil {
-			continue
-		}
-		if batchMsgCount >= totalMessageCount {
-			break
-		}
 	}
 
 	t.Run("StatesInBatchRange", func(t *testing.T) {
@@ -245,7 +238,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		_, err = stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			0,
-			&protocol.GoGlobalState{
+			protocol.GoGlobalState{
 				Batch:      0,
 				PosInBatch: 1,
 			},
@@ -261,7 +254,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		genesis, err := stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			1,
-			&protocol.GoGlobalState{
+			protocol.GoGlobalState{
 				Batch:      0,
 				PosInBatch: 0,
 			},
@@ -275,7 +268,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		first, err := stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			2,
-			&genesis.GlobalState,
+			genesis.GlobalState,
 		)
 		Require(t, err)
 		if first == nil {
@@ -286,7 +279,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		_, err = stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			10,
-			&first.GlobalState,
+			first.GlobalState,
 		)
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
@@ -305,7 +298,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 			SendRoot:  result.SendRoot,
 			Batch:     3,
 		}
-		got, err := stateManager.ExecutionStateAfterPreviousState(ctx, 3, &first.GlobalState)
+		got, err := stateManager.ExecutionStateAfterPreviousState(ctx, 3, first.GlobalState)
 		Require(t, err)
 		if state.Batch != got.GlobalState.Batch {
 			Fatal(t, "wrong batch")
@@ -322,7 +315,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		_, err = stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			state.Batch+1,
-			&got.GlobalState,
+			got.GlobalState,
 		)
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
@@ -332,7 +325,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 	})
 	t.Run("ExecutionStateAfterBatchCount", func(t *testing.T) {
-		_, err = stateManager.ExecutionStateAfterPreviousState(ctx, 0, &protocol.GoGlobalState{})
+		_, err = stateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
 		if err == nil {
 			Fatal(t, "should have failed")
 		}
@@ -340,9 +333,9 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 			Fatal(t, "wrong error message", err)
 		}
 
-		genesis, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &protocol.GoGlobalState{})
+		genesis, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, protocol.GoGlobalState{})
 		Require(t, err)
-		execState, err := stateManager.ExecutionStateAfterPreviousState(ctx, totalBatches, &genesis.GlobalState)
+		execState, err := stateManager.ExecutionStateAfterPreviousState(ctx, totalBatches, genesis.GlobalState)
 		Require(t, err)
 		if execState == nil {
 			Fatal(t, "should not be nil")
