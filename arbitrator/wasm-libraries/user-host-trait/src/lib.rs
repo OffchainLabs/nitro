@@ -978,14 +978,18 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     }
 
     fn toggle_measurement(&mut self) -> Result<(), Self::Err> {
+        let ink = self.ink_ready()?;
         let timer = self.timer();
         if let Some(instant) = timer.instant {
             timer.elapsed = Some(instant.elapsed());
             timer.cycles_total = Some(cpu_cycles().wrapping_sub(timer.cycles_start.unwrap()));
+            timer.ink_total = Some(timer.ink_start.unwrap() - ink);
             return Ok(());
         }
         timer.instant = Some(Instant::now());
         timer.cycles_start = Some(cpu_cycles());
+        timer.ink_start = Some(ink);
+
         Ok(())
     }
 }

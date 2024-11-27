@@ -1,6 +1,7 @@
 // Copyright 2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::evm::api::Ink;
 use std::time::{Duration, Instant};
 use derivative::Derivative;
 
@@ -11,4 +12,6 @@ pub struct Timer {
     pub elapsed: Option<Duration>,
     pub cycles_start: Option<u64>,
     pub cycles_total: Option<u64>,
+    pub ink_start: Option<Ink>,
+    pub ink_total: Option<Ink>,
 }
