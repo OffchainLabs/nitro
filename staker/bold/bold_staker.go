@@ -361,7 +361,7 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not get challenge manager: %w", err)
 	}
-	assertionChain, err := solimpl.NewAssertionChain(ctx, rollupAddress, chalManager, txOpts, client, NewDataPosterTransactor(dataPoster))
+	assertionChain, err := solimpl.NewAssertionChain(ctx, rollupAddress, chalManager, txOpts, client, NewDataPosterTransactor(dataPoster), solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber))
 	if err != nil {
 		return nil, fmt.Errorf("could not create assertion chain: %w", err)
 	}
