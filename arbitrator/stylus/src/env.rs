@@ -76,6 +76,8 @@ impl<D: DataReader, E: EvmApi<D>> WasmEnv<D, E> {
                 elapsed: None,
                 cycles_start: None,
                 cycles_total: None,
+                ink_start: None,
+                ink_total: None,
             },
             _data_reader_marker: PhantomData,
         }
