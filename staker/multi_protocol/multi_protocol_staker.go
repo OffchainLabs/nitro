@@ -18,6 +18,18 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+const boldArt = `
+ _______             __        _______
+/       \           /  |      /       \
+$$$$$$$  |  ______  $$ |      $$$$$$$  |
+$$ |__$$ | /      \ $$ |      $$ |  $$ |
+$$    $$< /$$$$$$  |$$ |      $$ |  $$ |
+$$$$$$$  |$$ |  $$ |$$ |      $$ |  $$ |
+$$ |__$$ |$$ \__$$ |$$ |_____ $$ |__$$ |
+$$    $$/ $$    $$/ $$       |$$    $$/
+$$$$$$$/   $$$$$$/  $$$$$$$$/ $$$$$$$/
+`
+
 type MultiProtocolStaker struct {
 	stopwaiter.StopWaiter
 	bridge                  *bridgegen.IBridge
@@ -95,7 +107,8 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 		return err
 	}
 	if boldActive {
-		log.Info("BOLD protocol is active, initializing BOLD staker")
+		log.Info("BoLD protocol is active, initializing BoLD staker")
+		log.Info(boldArt)
 		boldStaker, err := m.setupBoldStaker(ctx, rollupAddress)
 		if err != nil {
 			return err
