@@ -2,20 +2,25 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use arbutil::evm::EvmData;
+use clap::Parser;
+use core::time::Duration;
 use jit::machine::WasmEnv;
 use jit::program::{
-    exec_program, get_last_msg, pop_with_wasm_env, send_response_with_wasm_env,
-    set_response_with_wasm_env, start_program_with_wasm_env, JitConfig,
+    exec_program, get_last_msg, pop_with_wasm_env, start_program_with_wasm_env, JitConfig,
 };
 use prover::programs::{
     config::CompileConfig, config::CompileDebugParams, config::CompileMemoryParams,
     config::CompilePricingParams, config::PricingParams, prelude::StylusConfig,
 };
+use std::path::PathBuf;
+use std::str;
 use stylus::native::compile;
 use wasmer::Target;
-use std::str;
 
 const EVM_API_METHOD_REQ_OFFSET: u32 = 0x10000000;
+
+const NUMBER_OF_BENCHMARK_RUNS: u32 = 7;
+const NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD: u32 = 2;
 
 fn to_result(req_type: u32, req_data: &Vec<u8>) -> (&str, &str) {
     let msg = match str::from_utf8(req_data) {
@@ -24,26 +29,31 @@ fn to_result(req_type: u32, req_data: &Vec<u8>) -> (&str, &str) {
     };
 
     match req_type {
-        0 => return ("", ""), // userSuccess
+        0 => return ("", ""),                      // userSuccess
         1 => return (msg, "ErrExecutionReverted"), // userRevert
         2 => return (msg, "ErrExecutionReverted"), // userFailure
-        3 => return ("", "ErrOutOfGas"), // userOutOfInk
-        4 => return ("", "ErrDepth"), // userOutOfStack
-        _ => return ("", "ErrExecutionReverted") // userUnknown
+        3 => return ("", "ErrOutOfGas"),           // userOutOfInk
+        4 => return ("", "ErrDepth"),              // userOutOfStack
+        _ => return ("", "ErrExecutionReverted"),  // userUnknown
     }
 }
 
-fn main() -> eyre::Result<()> {
-    let wat = match std::fs::read("./programs_to_benchmark/add_one.wat") {
-        Ok(wasm) => wasm,
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    // Path to the wat file to be benchmarked
+    #[arg(short, long)]
+    wat_path: PathBuf,
+}
+
+fn run(wat_path: &PathBuf) -> Duration {
+    let wat = match std::fs::read(wat_path) {
+        Ok(wat) => wat,
         Err(err) => panic!("failed to read: {err}"),
     };
     let wasm = wasmer::wat2wasm(&wat).unwrap();
 
-    // enables debug in order to use log
-    let compiled_module = compile(&wasm, 0, true, Target::default())?;
-
-    let exec = &mut WasmEnv::default();
+    let compiled_module = compile(&wasm, 0, true, Target::default()).unwrap();
 
     let calldata = Vec::from([0u8; 32]);
     let evm_data = EvmData::default();
@@ -66,6 +76,8 @@ fn main() -> eyre::Result<()> {
         },
     };
 
+    let exec = &mut WasmEnv::default();
+
     let module = exec_program(
         exec,
         compiled_module.into(),
@@ -75,33 +87,55 @@ fn main() -> eyre::Result<()> {
         160000000,
     )
     .unwrap();
-    println!("module: {:?}", module);
 
-    let mut req_id = start_program_with_wasm_env(exec, module).unwrap();
-    loop {
-        let msg = get_last_msg(exec, req_id).unwrap();
+    let req_id = start_program_with_wasm_env(exec, module).unwrap();
+    let msg = get_last_msg(exec, req_id).unwrap();
+    println!(
+        "req_id: {:?}, msg.req_type: {:?}, msg.req_data: {:?}, msg.timer_elapsed: {:?}",
+        req_id, msg.req_type, msg.req_data, msg.timer_elapsed,
+    );
+
+    if msg.req_type < EVM_API_METHOD_REQ_OFFSET {
+        let _ = pop_with_wasm_env(exec);
+
+        let gas_left = u64::from_be_bytes(msg.req_data[..8].try_into().unwrap());
+        let req_data = msg.req_data[8..].to_vec();
+        let (msg, err) = to_result(msg.req_type, &req_data);
         println!(
-            "req_id: {:?}, msg.req_type: {:?}, msg.req_data: {:?}",
-            req_id, msg.req_type, msg.req_data
+            "gas_left: {:?}, msg: {:?}, err: {:?}, req_data: {:?}",
+            gas_left, msg, err, req_data
         );
-
-        if msg.req_type < EVM_API_METHOD_REQ_OFFSET {
-            let _ = pop_with_wasm_env(exec);
-
-            let gas_left = u64::from_be_bytes(msg.req_data[..8].try_into().unwrap());
-            let req_data = msg.req_data[8..].to_vec();
-            let (msg, err) = to_result(msg.req_type, &req_data);
-            println!("gas_left: {:?}, msg: {:?}, err: {:?}, req_data: {:?}", gas_left, msg, err, req_data);
-
-            break;
+        if err != "" {
+            panic!("error: {:?}", err);
         }
-
-        if msg.req_type != EVM_API_METHOD_REQ_OFFSET {
-            panic!("unsupported call");
-        }
-        set_response_with_wasm_env(exec, req_id, 1, vec![0u8; 32], msg.req_data)?;
-        req_id = send_response_with_wasm_env(exec, req_id).unwrap();
+    } else {
+        panic!("unsupported request");
     }
 
+    msg.timer_elapsed.expect("timer_elapsed")
+}
+
+fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
+    let mut durations: Vec<Duration> = Vec::new();
+
+    for i in 0..NUMBER_OF_BENCHMARK_RUNS {
+        println!("Benchmark run {:?} {:?}", i, wat_path);
+        let duration = run(wat_path);
+        durations.push(duration);
+    }
+
+    durations.sort();
+    println!("durations: {:?}", durations);
+
+    let l = NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD as usize;
+    let r = NUMBER_OF_BENCHMARK_RUNS as usize - NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD as usize;
+    let sum = durations[l..r].to_vec().iter().sum::<Duration>();
+    println!("sum {:?}, average duration: {:?}", sum, sum / (r - l) as u32);
+
     Ok(())
+}
+
+fn main() -> eyre::Result<()> {
+    let args = Args::parse();
+    return benchmark(&args.wat_path);
 }
