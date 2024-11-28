@@ -331,10 +331,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		return nil, err
 	}
 	if vs.IsSome() {
-		m := server_arb.NewFinishedMachine()
-		if err := m.SetGlobalState(vs.Unwrap()); err != nil {
-			return nil, err
-		}
+		m := server_arb.NewFinishedMachine(vs.Unwrap())
 		defer m.Destroy()
 		return []common.Hash{m.Hash()}, nil
 	}
@@ -509,10 +506,7 @@ func (s *BOLDStateProvider) CollectProof(
 		return nil, err
 	}
 	if vs.IsSome() {
-		m := server_arb.NewFinishedMachine()
-		if err := m.SetGlobalState(vs.Unwrap()); err != nil {
-			return nil, err
-		}
+		m := server_arb.NewFinishedMachine(vs.Unwrap())
 		defer m.Destroy()
 		return m.ProveNextStep(), nil
 	}

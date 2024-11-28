@@ -20,12 +20,7 @@ type boldMachine struct {
 var _ server_arb.MachineInterface = (*boldMachine)(nil)
 
 func newBoldMachine(inner server_arb.MachineInterface) *boldMachine {
-	z := server_arb.NewFinishedMachine()
-	if err := z.SetGlobalState(inner.GetGlobalState()); err != nil {
-		// This should only occur if the machine is frozen,
-		// which it isn't because we just created it.
-		panic(err)
-	}
+	z := server_arb.NewFinishedMachine(inner.GetGlobalState())
 	return &boldMachine{
 		inner:       inner,
 		zeroMachine: z,

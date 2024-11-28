@@ -1569,14 +1569,11 @@ impl Machine {
     //
     // This allows the Mahine to be set up to model the final state of the
     // machine at the end of the execution of a block.
-    //
-    // Callers should use set_global_state to set the global state of the
-    // machine to the global state at the end of the block.
-    pub fn new_finished() -> Machine {
+    pub fn new_finished(gs: GlobalState) -> Machine {
         Machine {
             steps: 0,
             status: MachineStatus::Finished,
-            global_state: Default::default(),
+            global_state: gs,
             // The machine is in the Finished state, so nothing else really matters.
             // values_stacks and frame_stacks cannot be empty for proof serialization,
             // but everything else can just be entirely blank.
