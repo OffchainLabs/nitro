@@ -35,6 +35,7 @@ struct MessageToCothread {
 pub struct MessageFromCothread {
     pub req_type: u32,
     pub req_data: Vec<u8>,
+    pub timer_elapsed: Option<Duration>,
 }
 
 struct CothreadRequestor {
@@ -51,6 +52,7 @@ impl RequestHandler<VecReader> for CothreadRequestor {
         let msg = MessageFromCothread {
             req_type: req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
             req_data: req_data.as_ref().to_vec(),
+            timer_elapsed: None,
         };
 
         if let Err(error) = self.tx.send(msg) {
@@ -147,9 +149,6 @@ pub fn exec_wasm(
         unsafe { NativeInstance::deserialize(&module, compile.clone(), evm_api, evm_data) }?;
 
     let thread = thread::spawn(move || {
-        let timer_before = instance.env().timer;
-        println!("timer_before: {:?}", timer_before);
-
         let outcome = instance.run_main(&calldata, config, ink);
 
         let ink_left = match outcome.as_ref() {
@@ -169,12 +168,10 @@ pub fn exec_wasm(
         output.extend(gas_left.to_be_bytes());
         output.extend(data);
 
-        let timer_after = instance.env().timer;
-        println!("timer_after: {:?}", timer_after);
-
         let msg = MessageFromCothread {
             req_data: output,
             req_type: out_kind as u32,
+            timer_elapsed: instance.env().timer.elapsed,
         };
         instance
             .env_mut()

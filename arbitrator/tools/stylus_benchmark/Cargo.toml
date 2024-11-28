@@ -11,3 +11,4 @@ wasmer-compiler-cranelift = { path = "../wasmer/lib/compiler-cranelift/" }
 arbutil = { path = "../../arbutil/" }
 prover = { path = "../../prover/", default-features = false, features = ["native"] }
 stylus = { path = "../../stylus/", default-features = false }
+clap = { version = "4.4.8", features = ["derive"] }
