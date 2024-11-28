@@ -80,8 +80,8 @@ fn run(wat_path: &PathBuf) -> Duration {
     let req_id = start_program_with_wasm_env(exec, module).unwrap();
     let msg = get_last_msg(exec, req_id).unwrap();
     println!(
-        "req_id: {:?}, msg.req_type: {:?}, msg.req_data: {:?}, msg.timer_elapsed: {:?}",
-        req_id, msg.req_type, msg.req_data, msg.timer_elapsed,
+        "req_id: {:?}, msg.req_type: {:?}, msg.req_data: {:?}, msg.benchmark.elapsed: {:?}",
+        req_id, msg.req_type, msg.req_data, msg.benchmark.unwrap().elapsed,
     );
 
     if msg.req_type < EVM_API_METHOD_REQ_OFFSET {
@@ -101,7 +101,7 @@ fn run(wat_path: &PathBuf) -> Duration {
         panic!("unsupported request");
     }
 
-    msg.timer_elapsed.expect("timer_elapsed")
+    msg.benchmark.unwrap().elapsed.expect("timer_elapsed")
 }
 
 fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
