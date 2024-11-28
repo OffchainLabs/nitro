@@ -1350,8 +1350,11 @@ func deployOnParentChain(
 			&parentChainTransactionOpts,
 			parentChainInfo.GetAddress("Sequencer"),
 			cfg,
-			false, // do not use mock bridge.
-			false, // do not use a mock one-step prover
+			setup.RollupStackConfig{
+				UseMockBridge:          false,
+				UseMockOneStepProver:   false,
+				MinimumAssertionPeriod: 0,
+			},
 		)
 		Require(t, err)
 		addresses = &chaininfo.RollupAddresses{

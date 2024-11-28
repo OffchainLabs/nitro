@@ -97,8 +97,22 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	ownerBal := big.NewInt(params.Ether)
 	ownerBal.Mul(ownerBal, big.NewInt(1_000_000))
 	l2info.GenerateGenesisAccount("Owner", ownerBal)
+	sconf := setup.RollupStackConfig{
+		UseMockBridge:          false,
+		UseMockOneStepProver:   false,
+		MinimumAssertionPeriod: 0,
+	}
 
-	_, l2nodeA, _, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, l2info)
+	_, l2nodeA, _, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr := createTestNodeOnL1ForBoldProtocol(
+		t,
+		ctx,
+		true,
+		nil,
+		l2chainConfig,
+		nil,
+		sconf,
+		l2info,
+	)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
@@ -109,7 +123,18 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	go keepChainMoving(t, ctx, l1info, l1client)
 
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
-	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, l2nodeConfig, nil, stakeTokenAddr)
+	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(
+		t,
+		ctx,
+		l2nodeA,
+		l1stack,
+		l1info,
+		&l2info.ArbInitData,
+		l2nodeConfig,
+		nil,
+		sconf,
+		stakeTokenAddr,
+	)
 	defer l2nodeB.StopAndWait()
 
 	genesisA, err := l2nodeA.Execution.ResultAtPos(0)
@@ -494,6 +519,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
 	_ *node.Config,
+	rollupStackConf setup.RollupStackConfig,
 	l2infoIn info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
@@ -554,7 +580,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	Require(t, err)
 	l1TransactionOpts.Value = nil
 
-	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeToken)
+	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeToken)
 	rollupUser, err := rollupgen.NewRollupUserLogic(addresses.Rollup, l1client)
 	Require(t, err)
 	chalManagerAddr, err := rollupUser.ChallengeManager(&bind.CallOpts{})
@@ -635,6 +661,7 @@ func deployContractsOnly(
 	l1info info,
 	backend *ethclient.Client,
 	chainId *big.Int,
+	rollupStackConf setup.RollupStackConfig,
 	stakeToken common.Address,
 ) *chaininfo.RollupAddresses {
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
@@ -679,8 +706,7 @@ func deployContractsOnly(
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
 		cfg,
-		false, // do not use mock bridge.
-		false, // do not use a mock one-step prover
+		rollupStackConf,
 	)
 	Require(t, err)
 
@@ -747,6 +773,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
 	stackConfig *node.Config,
+	rollupStackConf setup.RollupStackConfig,
 	stakeTokenAddr common.Address,
 ) (*ethclient.Client, *arbnode.Node, *solimpl.AssertionChain) {
 	fatalErrChan := make(chan error, 10)
@@ -757,7 +784,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		Fatal(t, "not geth execution node")
 	}
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
-	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeTokenAddr)
+	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeTokenAddr)
 
 	l1info.SetContract("EvilBridge", addresses.Bridge)
 	l1info.SetContract("EvilSequencerInbox", addresses.SequencerInbox)
