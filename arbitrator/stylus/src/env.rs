@@ -7,7 +7,7 @@ use arbutil::{
         EvmData,
     },
     pricing,
-    timer::Timer,
+    benchmark::Benchmark,
 };
 use caller_env::GuestPtr;
 use derivative::Derivative;
@@ -49,8 +49,8 @@ pub struct WasmEnv<D: DataReader, E: EvmApi<D>> {
     pub compile: CompileConfig,
     /// The runtime config
     pub config: Option<StylusConfig>,
-    // Used to measure execution time of blocks of code
-    pub timer: Timer,
+    // Used to benchmark execution blocks of code
+    pub benchmark: Benchmark,
     // Using the unused generic parameter D in a PhantomData field
     _data_reader_marker: PhantomData<D>,
 }
@@ -71,7 +71,7 @@ impl<D: DataReader, E: EvmApi<D>> WasmEnv<D, E> {
             outs: vec![],
             memory: None,
             meter: None,
-            timer: Timer {
+            benchmark: Benchmark {
                 instant: None,
                 elapsed: None,
                 cycles_start: None,
