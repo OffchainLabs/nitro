@@ -11,7 +11,7 @@ use arbutil::{
         EvmData, ARBOS_VERSION_STYLUS_CHARGING_FIXES,
     },
     pricing::{self, EVM_API_INK, HOSTIO_INK, PTR_INK},
-    timer::Timer,
+    benchmark::Benchmark,
     Bytes20, Bytes32,
 };
 pub use caller_env::GuestPtr;
@@ -81,7 +81,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
     fn evm_api(&mut self) -> &mut Self::A;
     fn evm_data(&self) -> &EvmData;
-    fn timer(&mut self) -> &mut Timer;
+    fn benchmark(&mut self) -> &mut Benchmark;
     fn evm_return_data_len(&mut self) -> &mut u32;
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, Self::MemoryErr>;
@@ -977,9 +977,9 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         Ok(value)
     }
 
-    fn toggle_measurement(&mut self) -> Result<(), Self::Err> {
+    fn toggle_benchmark(&mut self) -> Result<(), Self::Err> {
         let ink = self.ink_ready()?;
-        let timer = self.timer();
+        let timer = self.benchmark();
         if let Some(instant) = timer.instant {
             timer.elapsed = Some(instant.elapsed());
             timer.cycles_total = Some(cpu_cycles().wrapping_sub(timer.cycles_start.unwrap()));

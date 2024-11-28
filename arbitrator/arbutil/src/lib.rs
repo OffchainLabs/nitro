@@ -10,7 +10,7 @@ pub mod math;
 pub mod operator;
 pub mod pricing;
 pub mod types;
-pub mod timer;
+pub mod benchmark;
 
 pub use color::{Color, DebugColor};
 use num_traits::Unsigned;
