@@ -9,8 +9,7 @@ use jit::program::{
     exec_program, get_last_msg, pop_with_wasm_env, start_program_with_wasm_env, JitConfig,
 };
 use prover::programs::{
-    config::CompileConfig, config::CompileDebugParams, config::CompileMemoryParams,
-    config::CompilePricingParams, config::PricingParams, prelude::StylusConfig,
+    config::CompileConfig, config::PricingParams, prelude::StylusConfig,
 };
 use std::path::PathBuf;
 use std::str;
@@ -59,21 +58,11 @@ fn run(wat_path: &PathBuf) -> Duration {
     let evm_data = EvmData::default();
     let config = JitConfig {
         stylus: StylusConfig {
-            version: 0,
+            version: 2,
             max_depth: 10000,
             pricing: PricingParams { ink_price: 1 },
         },
-        compile: CompileConfig {
-            version: 0,
-            pricing: CompilePricingParams::default(),
-            bounds: CompileMemoryParams::default(),
-            debug: CompileDebugParams {
-                debug_funcs: true,
-                debug_info: true,
-                count_ops: true,
-                cranelift: true,
-            },
-        },
+        compile: CompileConfig::version(2, true),
     };
 
     let exec = &mut WasmEnv::default();
@@ -130,7 +119,11 @@ fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
     let l = NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD as usize;
     let r = NUMBER_OF_BENCHMARK_RUNS as usize - NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD as usize;
     let sum = durations[l..r].to_vec().iter().sum::<Duration>();
-    println!("sum {:?}, average duration: {:?}", sum, sum / (r - l) as u32);
+    println!(
+        "sum {:?}, average duration: {:?}",
+        sum,
+        sum / (r - l) as u32
+    );
 
     Ok(())
 }

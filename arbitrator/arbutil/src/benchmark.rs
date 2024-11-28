@@ -7,7 +7,7 @@ use derivative::Derivative;
 
 #[derive(Derivative, Clone, Copy)]
 #[derivative(Debug)]
-pub struct Timer {
+pub struct Benchmark {
     pub instant: Option<Instant>,
     pub elapsed: Option<Duration>,
     pub cycles_start: Option<u64>,
