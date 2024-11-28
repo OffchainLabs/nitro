@@ -221,8 +221,11 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 			anyTrustFastConfirmer,
 			opts...,
 		),
-		false, // Do not use a mock bridge.
-		true,  // Use a mock one step prover entry.
+		setup.RollupStackConfig{
+			UseMockBridge:          false,
+			UseMockOneStepProver:   true,
+			MinimumAssertionPeriod: 0,
+		},
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not deploy rollup stack")

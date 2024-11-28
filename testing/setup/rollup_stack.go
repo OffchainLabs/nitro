@@ -171,6 +171,7 @@ type ChainSetup struct {
 	useMockBridge              bool
 	useMockOneStepProver       bool
 	numAccountsToGen           uint64
+	minimumAssertionPeriod     int64
 	challengeTestingOpts       []challenge_testing.Opt
 	StateManagerOpts           []statemanager.Opt
 	EnableFastConfirmation     bool
@@ -200,6 +201,12 @@ func WithSafeFastConfirmation() Opt {
 func WithMockBridge() Opt {
 	return func(setup *ChainSetup) {
 		setup.useMockBridge = false
+	}
+}
+
+func WithMinimumAssertionPeriod(period int64) Opt {
+	return func(setup *ChainSetup) {
+		setup.minimumAssertionPeriod = period
 	}
 }
 
@@ -377,8 +384,11 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		accs[0].TxOpts,
 		accs[0].TxOpts.From, // Sequencer addr.
 		cfg,
-		setp.useMockBridge,
-		setp.useMockOneStepProver,
+		RollupStackConfig{
+			UseMockBridge:          setp.useMockBridge,
+			UseMockOneStepProver:   setp.useMockOneStepProver,
+			MinimumAssertionPeriod: setp.minimumAssertionPeriod,
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -486,17 +496,22 @@ type RollupAddresses struct {
 	DeployedAt             uint64         `json:"deployed-at"`
 }
 
+type RollupStackConfig struct {
+	UseMockBridge          bool
+	UseMockOneStepProver   bool
+	MinimumAssertionPeriod int64
+}
+
 func DeployFullRollupStack(
 	ctx context.Context,
 	backend protocol.ChainBackend,
 	deployAuth *bind.TransactOpts,
 	sequencer common.Address,
 	config rollupgen.Config,
-	useMockBridge bool,
-	useMockOneStepProver bool,
+	stackConf RollupStackConfig,
 ) (*RollupAddresses, error) {
 	log.Info("Deploying rollup creator")
-	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, deployAuth, useMockBridge, useMockOneStepProver)
+	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, deployAuth, stackConf.UseMockBridge, stackConf.UseMockOneStepProver)
 	if err != nil {
 		return nil, err
 	}
@@ -552,7 +567,7 @@ func DeployFullRollupStack(
 	if err != nil {
 		return nil, err
 	}
-	setMinimumAssertionPeriod, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(0))
+	setMinimumAssertionPeriod, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(stackConf.MinimumAssertionPeriod))
 	if err != nil {
 		return nil, err
 	}
