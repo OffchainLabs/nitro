@@ -172,7 +172,7 @@ pub fn exec_wasm(
         let msg = MessageFromCothread {
             req_data: output,
             req_type: out_kind as u32,
-            benchmark: Some(instance.env().benchmark),
+            benchmark: instance.env().benchmark,
         };
         instance
             .env_mut()
