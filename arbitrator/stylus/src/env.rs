@@ -50,7 +50,7 @@ pub struct WasmEnv<D: DataReader, E: EvmApi<D>> {
     /// The runtime config
     pub config: Option<StylusConfig>,
     // Used to benchmark execution blocks of code
-    pub benchmark: Benchmark,
+    pub benchmark: Option<Benchmark>,
     // Using the unused generic parameter D in a PhantomData field
     _data_reader_marker: PhantomData<D>,
 }
@@ -71,14 +71,7 @@ impl<D: DataReader, E: EvmApi<D>> WasmEnv<D, E> {
             outs: vec![],
             memory: None,
             meter: None,
-            benchmark: Benchmark {
-                instant: None,
-                elapsed: None,
-                cycles_start: None,
-                cycles_total: None,
-                ink_start: None,
-                ink_total: None,
-            },
+            benchmark: None,
             _data_reader_marker: PhantomData,
         }
     }

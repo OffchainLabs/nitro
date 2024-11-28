@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
+    benchmark::Benchmark,
     crypto,
     evm::{
         self,
@@ -11,7 +12,6 @@ use arbutil::{
         EvmData, ARBOS_VERSION_STYLUS_CHARGING_FIXES,
     },
     pricing::{self, EVM_API_INK, HOSTIO_INK, PTR_INK},
-    benchmark::Benchmark,
     Bytes20, Bytes32,
 };
 pub use caller_env::GuestPtr;
@@ -81,7 +81,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
     fn evm_api(&mut self) -> &mut Self::A;
     fn evm_data(&self) -> &EvmData;
-    fn benchmark(&mut self) -> &mut Benchmark;
+    fn benchmark(&mut self) -> &mut Option<Benchmark>;
     fn evm_return_data_len(&mut self) -> &mut u32;
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, Self::MemoryErr>;
@@ -977,19 +977,27 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         Ok(value)
     }
 
+    // Tracks benchmark data related to the block of instructions defined by instruction between the first and last `toggle_benchmark` calls.
     fn toggle_benchmark(&mut self) -> Result<(), Self::Err> {
-        let ink = self.ink_ready()?;
-        let timer = self.benchmark();
-        if let Some(instant) = timer.instant {
-            timer.elapsed = Some(instant.elapsed());
-            timer.cycles_total = Some(cpu_cycles().wrapping_sub(timer.cycles_start.unwrap()));
-            timer.ink_total = Some(timer.ink_start.unwrap() - ink);
-            return Ok(());
-        }
-        timer.instant = Some(Instant::now());
-        timer.cycles_start = Some(cpu_cycles());
-        timer.ink_start = Some(ink);
+        let ink_curr = self.ink_ready()?;
 
+        match self.benchmark() {
+            None => {
+                *self.benchmark() = Some(Benchmark {
+                    timer: Instant::now(),
+                    elapsed: None,
+                    cycles_start: cpu_cycles(),
+                    cycles_total: None,
+                    ink_start: ink_curr,
+                    ink_total: None,
+                });
+            }
+            Some(benchmark) => {
+                benchmark.elapsed = Some(benchmark.timer.elapsed());
+                benchmark.cycles_total = Some(cpu_cycles().wrapping_sub(benchmark.cycles_start));
+                benchmark.ink_total = Some(benchmark.ink_start.saturating_sub(ink_curr));
+            }
+        };
         Ok(())
     }
 }

@@ -2,16 +2,16 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::evm::api::Ink;
-use std::time::{Duration, Instant};
 use derivative::Derivative;
+use std::time::{Duration, Instant};
 
 #[derive(Derivative, Clone, Copy)]
 #[derivative(Debug)]
 pub struct Benchmark {
-    pub instant: Option<Instant>,
+    pub timer: Instant,
     pub elapsed: Option<Duration>,
-    pub cycles_start: Option<u64>,
+    pub cycles_start: u64,
     pub cycles_total: Option<u64>,
-    pub ink_start: Option<Ink>,
+    pub ink_start: Ink,
     pub ink_total: Option<Ink>,
 }
