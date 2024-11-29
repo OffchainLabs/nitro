@@ -129,8 +129,8 @@ pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char)
 
 #[no_mangle]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_new_finished() -> *mut Machine {
-    Box::into_raw(Box::new(Machine::new_finished()))
+pub unsafe extern "C" fn arbitrator_new_finished(gs: GlobalState) -> *mut Machine {
+    Box::into_raw(Box::new(Machine::new_finished(gs)))
 }
 
 unsafe fn cstr_to_string(c_str: *const c_char) -> String {

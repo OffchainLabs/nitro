@@ -72,26 +72,26 @@ func NewBOLDStateProvider(
 }
 
 // ExecutionStateAfterPreviousState Produces the L2 execution state for the next
-// assertion. Returns the state at maxInboxCount or blockChallengeLeafHeight
+// assertion. Returns the state at maxSeqInboxCount or blockChallengeLeafHeight
 // after the previous state, whichever is earlier. If previousGlobalState is
-// nil, defaults to returning the state at maxInboxCount.
+// nil, defaults to returning the state at maxSeqInboxCount.
 //
 // TODO: Check the block validator has validated the execution state we are
 // proposing.
 func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
-	maxInboxCount uint64,
+	maxSeqInboxCount uint64,
 	previousGlobalState protocol.GoGlobalState,
 ) (*protocol.ExecutionState, error) {
-	if maxInboxCount == 0 {
+	if maxSeqInboxCount == 0 {
 		return nil, errors.New("max inbox count cannot be zero")
 	}
-	batchIndex := maxInboxCount
+	batchIndex := maxSeqInboxCount
 	maxNumberOfBlocks := uint64(s.blockChallengeLeafHeight)
 	messageCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(batchIndex - 1)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
+			return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
 		}
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		previousMessageCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(previousGlobalState.Batch - 1)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
-				return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
+				return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
 			}
 			return nil, err
 		}
@@ -126,7 +126,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		return nil, err
 	}
 	if !stateValidatedAndMessageCountPastThreshold {
-		return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
+		return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
 	}
 
 	executionState := &protocol.ExecutionState{
@@ -330,10 +330,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		return nil, err
 	}
 	if vs.IsSome() {
-		m := server_arb.NewFinishedMachine()
-		if err := m.SetGlobalState(vs.Unwrap()); err != nil {
-			return nil, err
-		}
+		m := server_arb.NewFinishedMachine(vs.Unwrap())
 		defer m.Destroy()
 		return []common.Hash{m.Hash()}, nil
 	}
@@ -508,10 +505,7 @@ func (s *BOLDStateProvider) CollectProof(
 		return nil, err
 	}
 	if vs.IsSome() {
-		m := server_arb.NewFinishedMachine()
-		if err := m.SetGlobalState(vs.Unwrap()); err != nil {
-			return nil, err
-		}
+		m := server_arb.NewFinishedMachine(vs.Unwrap())
 		defer m.Destroy()
 		return m.ProveNextStep(), nil
 	}
