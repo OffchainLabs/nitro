@@ -117,7 +117,7 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 		m.oldStaker = nil
 		return m.boldStaker.Initialize(ctx)
 	}
-	log.Info("BOLD protocol not detected on startup, using old staker until upgrade")
+	log.Info("BoLD protocol not detected on startup, using old staker until upgrade")
 	return m.oldStaker.Initialize(ctx)
 }
 
