@@ -4,7 +4,7 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: linux-2xl
 
     steps:
       - name: Checkout
@@ -69,7 +69,7 @@ jobs:
           mv /tmp/.buildx-cache-linux-new /tmp/.buildx-cache-linux
 
   build-amd64:
-    runs-on: ubuntu-latest
+    runs-on: linux-2xl
 
     steps:
       - name: Checkout
