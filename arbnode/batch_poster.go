@@ -557,6 +557,9 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 	return l
 }
 
+var EspressoFetchMerkleRootErr = errors.New("failed to fetch the espresso merkle roof")
+var EspressoFetchTransactionErr = errors.New("failed to fetch the espresso transaction")
+
 // Adds a block merkle proof to an Espresso justification, providing a proof that a set of transactions
 // hashes to some light client state root.
 func (b *BatchPoster) checkEspressoValidation(
@@ -587,8 +590,6 @@ func (b *BatchPoster) checkEspressoValidation(
 		return nil
 	}
 
-	log.Warn("this message has not been finalized on L1 or validated")
-
 	if b.streamer.UseEscapeHatch {
 		skip, err := b.streamer.getSkipVerificationPos()
 		if err != nil {
@@ -612,7 +613,7 @@ func (b *BatchPoster) checkEspressoValidation(
 		return nil
 	}
 
-	return fmt.Errorf("waiting for espresso finalization, pos: %d", b.building.msgCount)
+	return fmt.Errorf("%w (height: %d)", EspressoFetchMerkleRootErr, b.building.msgCount)
 }
 
 func (b *BatchPoster) submitEspressoTransactionPos(pos arbutil.MessageIndex) error {
@@ -1203,7 +1204,6 @@ func (b *BatchPoster) getAttestationQuote(userData []byte) ([]byte, error) {
 		return []byte{}, fmt.Errorf("failed to read quote file: %w", err)
 	}
 
-	log.Info("Attestation quote generated", "quote", hex.EncodeToString(attestationQuote))
 	return attestationQuote, nil
 }
 
@@ -1815,12 +1815,14 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	storageRaceEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, storage.ErrStorageRace.Error(), time.Minute)
 	normalGasEstimationFailedEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, ErrNormalGasEstimationFailed.Error(), time.Minute)
 	accumulatorNotFoundEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, AccumulatorNotFoundErr.Error(), time.Minute)
+	espressoEphemeralErrorHandler := util.NewEphemeralErrorHandler(80*time.Minute, EspressoFetchMerkleRootErr.Error(), time.Hour)
 	resetAllEphemeralErrs := func() {
 		commonEphemeralErrorHandler.Reset()
 		exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
 		storageRaceEphemeralErrorHandler.Reset()
 		normalGasEstimationFailedEphemeralErrorHandler.Reset()
 		accumulatorNotFoundEphemeralErrorHandler.Reset()
+		espressoEphemeralErrorHandler.Reset()
 	}
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
@@ -1875,6 +1877,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			// Likely the inbox tracker just isn't caught up.
 			// Let's see if this error disappears naturally.
 			logLevel = commonEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = espressoEphemeralErrorHandler.LogLevel(err, logLevel)
 			// If the error matches one of these, it's only logged at debug for the first minute,
 			// then at warn for the next 4 minutes, then at error. If the error isn't one of these,
 			// it'll be logged at warn for the first minute, then at error.
