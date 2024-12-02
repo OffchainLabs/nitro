@@ -3,8 +3,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  docker:
-    runs-on: linux-2xl
+  build-linux:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -23,9 +23,9 @@ jobs:
       - name: Cache Docker layers
         uses: actions/cache@v3
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }}
-          restore-keys: ${{ runner.os }}-buildx-
+          path: /tmp/.buildx-cache-linux
+          key: linux-buildx-${{ hashFiles('Dockerfile') }}
+          restore-keys: linux-buildx-
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
@@ -51,26 +51,84 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=match,pattern=^(v\d+\.\d+\.\d+-\w*)\..*$,value=$1,enable={{is_default_branch}}
 
-      - name: "Build and push"
+      - name: "Build and push for linux"
         uses: docker/build-push-action@v5
         with:
+          platform: linux/amd64
           target: nitro-node-dev
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          cache-from: type=local,src=/tmp/.buildx-cache-linux
+          cache-to: type=local,dest=/tmp/.buildx-cache-linux-new,mode=max
 
       - name: Move cache
         run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          rm -rf /tmp/.buildx-cache-linux
+          mv /tmp/.buildx-cache-linux-new /tmp/.buildx-cache-linux
 
-      - name: Clear cache on failure
-        if: failure()
+  build-amd64:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache-amd
+          key: amd-buildx-${{ hashFiles('Dockerfile') }}
+          restore-keys: amd-buildx-
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/nitro-eigenda
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=ref,event=tag
+            type=ref,event=tag,suffix={{sha}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=,format=short,enable=true
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=match,pattern=^(v\d+\.\d+\.\d+-\w*)\..*$,value=$1,enable={{is_default_branch}}
+
+      - name: "Build and push for amd"
+        uses: docker/build-push-action@v5
+        with:
+          platform: amd64
+          target: nitro-node-dev
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=local,src=/tmp/.buildx-cache-amd
+          cache-to: type=local,dest=/tmp/.buildx-cache-amd-new,mode=max
+
+      - name: Move cache
         run: |
-          keys=(${{ runner.os }}-buildx- ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }})
-          for key in "${keys[@]}"; do
-            curl -X DELETE -H "Accept: application/vnd.github.v3+json" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${{ github.repository }}/actions/caches/$key"
-          done
+          rm -rf /tmp/.buildx-cache-amd
+          mv /tmp/.buildx-cache-amd-new /tmp/.buildx-cache-amd
