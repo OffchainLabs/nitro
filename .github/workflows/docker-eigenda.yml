@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-linux:
+  build-linux-amd64:
     runs-on: linux-2xl
 
     steps:
@@ -68,7 +68,7 @@ jobs:
           rm -rf /tmp/.buildx-cache-linux
           mv /tmp/.buildx-cache-linux-new /tmp/.buildx-cache-linux
 
-  build-amd64:
+  build-linux-arm64:
     runs-on: linux-2xl
 
     steps:
@@ -119,7 +119,7 @@ jobs:
       - name: "Build and push for amd"
         uses: docker/build-push-action@v5
         with:
-          platform: amd64
+          platform: linux/arm64/v8
           target: nitro-node-dev
           context: .
           push: true
