@@ -109,11 +109,9 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 	if boldActive {
 		log.Info("BoLD protocol is active, initializing BoLD staker")
 		log.Info(boldArt)
-		boldStaker, err := m.setupBoldStaker(ctx, rollupAddress)
-		if err != nil {
+		if err := m.setupBoldStaker(ctx, rollupAddress); err != nil {
 			return err
 		}
-		m.boldStaker = boldStaker
 		m.oldStaker = nil
 		return m.boldStaker.Initialize(ctx)
 	}
@@ -127,7 +125,6 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 	if m.boldStaker != nil {
 		log.Info("Starting BOLD staker")
 		m.boldStaker.Start(ctxIn)
-		m.StopOnly()
 	} else {
 		log.Info("Starting pre-BOLD staker")
 		m.oldStaker.Start(ctxIn)
@@ -190,11 +187,9 @@ func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) (b
 	if !shouldSwitch {
 		return false, nil
 	}
-	boldStaker, err := m.setupBoldStaker(ctx, rollupAddress)
-	if err != nil {
+	if err := m.setupBoldStaker(ctx, rollupAddress); err != nil {
 		return false, err
 	}
-	m.boldStaker = boldStaker
 	if err = m.boldStaker.Initialize(ctx); err != nil {
 		return false, err
 	}
@@ -211,15 +206,15 @@ func (m *MultiProtocolStaker) getCallOpts(ctx context.Context) *bind.CallOpts {
 func (m *MultiProtocolStaker) setupBoldStaker(
 	ctx context.Context,
 	rollupAddress common.Address,
-) (*boldstaker.BOLDStaker, error) {
+) error {
 	txBuilder, err := txbuilder.NewBuilder(m.wallet, m.legacyConfig().GasRefunder())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	boldStaker, err := boldstaker.NewBOLDStaker(
 		ctx,
 		rollupAddress,
-		*m.getCallOpts(ctx),
+		m.callOpts,
 		txBuilder.SingleTxAuth(),
 		m.l1Reader,
 		m.blockValidator,
@@ -231,7 +226,8 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		m.confirmedNotifiers,
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return boldStaker, nil
+	m.boldStaker = boldStaker
+	return nil
 }
