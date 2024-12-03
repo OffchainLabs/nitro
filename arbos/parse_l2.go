@@ -378,7 +378,7 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 	if msgBatchGasCost != nil {
 		batchDataGas = *msgBatchGasCost
 	} else {
-		return nil, errors.New("cannot compute batch gas cost")
+		panic("missing batch gas cost")
 	}
 	batchDataGas = arbmath.SaturatingUAdd(batchDataGas, extraGas)
 
