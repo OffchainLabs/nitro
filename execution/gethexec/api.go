@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -40,10 +41,18 @@ type ArbDebugAPI struct {
 	blockchain        *core.BlockChain
 	blockRangeBound   uint64
 	timeoutQueueBound uint64
+	isArchiveNode     bool
 }
 
-func NewArbDebugAPI(blockchain *core.BlockChain, blockRangeBound uint64, timeoutQueueBound uint64) *ArbDebugAPI {
-	return &ArbDebugAPI{blockchain, blockRangeBound, timeoutQueueBound}
+func NewArbDebugAPI(blockchain *core.BlockChain, blockRangeBound uint64, timeoutQueueBound uint64, isArchiveNode bool) *ArbDebugAPI {
+	return &ArbDebugAPI{blockchain, blockRangeBound, timeoutQueueBound, isArchiveNode}
+}
+
+func (api *ArbDebugAPI) CreateDBSnapshot(ctx context.Context) error {
+	if !api.isArchiveNode {
+		return errors.New("live database snapshot creation is not available for non-archive nodes")
+	}
+	return syscall.Kill(syscall.Getpid(), syscall.SIGUSR2)
 }
 
 type PricingModelHistory struct {

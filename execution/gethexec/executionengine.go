@@ -112,6 +112,10 @@ func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
 	}, nil
 }
 
+func (s *ExecutionEngine) CreateBlocksMutex() *sync.Mutex {
+	return &s.createBlocksMutex
+}
+
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
 	s.cachedL1PriceData.mutex.RLock()
 	defer s.cachedL1PriceData.mutex.RUnlock()
