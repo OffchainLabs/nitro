@@ -128,6 +128,10 @@ func (c *client) GetData(ctx context.Context, comm []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		return nil, ErrServiceUnavailable
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("received error response, code=%d, msg = %s", resp.StatusCode, string(b))
 	}
@@ -153,6 +157,10 @@ func (c *client) SetData(ctx context.Context, b []byte) ([]byte, error) {
 	b, err = io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		return nil, ErrServiceUnavailable
 	}
 
 	if resp.StatusCode != http.StatusOK {
