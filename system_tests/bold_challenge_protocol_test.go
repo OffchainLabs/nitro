@@ -920,17 +920,13 @@ func (m *boldMachine) Hash() common.Hash {
 // Destroy destroys the inner machine and the zeroth step machine.
 func (m *boldMachine) Destroy() {
 	m.inner.Destroy()
-	if !m.hasStepped {
-		m.zeroMachine.Destroy()
-	}
+	m.zeroMachine.Destroy()
 }
 
 // Freeze freezes the inner machine and the zeroth step machine.
 func (m *boldMachine) Freeze() {
 	m.inner.Freeze()
-	if !m.hasStepped {
-		m.zeroMachine.Freeze()
-	}
+	m.zeroMachine.Freeze()
 }
 
 // Status returns the status of the inner machine if the machine has not
@@ -969,7 +965,6 @@ func (m *boldMachine) Step(ctx context.Context, steps uint64) error {
 			return nil
 		}
 		m.hasStepped = true
-		m.zeroMachine.Destroy()
 		// Only the first step or set of steps needs to be adjusted.
 		steps = steps - 1
 	}
