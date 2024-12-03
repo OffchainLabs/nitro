@@ -1,0 +1,17 @@
+FROM ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:20241203-celestia
+
+RUN curl -L -o kzg10-aztec20-srs-1048584.bin https://github.com/EspressoSystems/ark-srs/releases/download/v0.2.0/kzg10-aztec20-srs-1048584.bin
+
+
+EXPOSE 8547
+EXPOSE 8548
+
+ENV AZTEC_SRS_PATH=/home/user/kzg10-aztec20-srs-1048584.bin
+ENV HOME=/home/user
+
+COPY --chown=user:user entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+USER user
+
+ENTRYPOINT ["/entrypoint.sh"]
