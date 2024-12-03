@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,18 +23,44 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 type ArbAPI struct {
 	txPublisher TransactionPublisher
+	blockchain  *core.BlockChain
+	signerFunc  signature.DataSignerFunc
 }
 
-func NewArbAPI(publisher TransactionPublisher) *ArbAPI {
-	return &ArbAPI{publisher}
+func NewArbAPI(publisher TransactionPublisher, blockchain *core.BlockChain, signerFunc signature.DataSignerFunc) *ArbAPI {
+	return &ArbAPI{publisher, blockchain, signerFunc}
 }
 
 func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
 	return a.txPublisher.CheckHealth(ctx)
+}
+
+func (a *ArbAPI) CommitToHead(ctx context.Context) ([]byte, error) {
+	if a.signerFunc == nil || a.blockchain == nil {
+		return nil, fmt.Errorf("this node will not commit")
+	}
+	price := big.NewInt(1 << 10)
+	commitment := common.BigToHash(price).Bytes()
+	head := a.blockchain.CurrentBlock()
+	if !head.Number.IsUint64() || head.Number.BitLen() == 0 {
+		return nil, errors.New("internal error: head not o.k")
+	}
+	numberUint := head.Number.Uint64()
+	numberBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(numberBytes, numberUint)
+	commitment = append(commitment, numberBytes...)
+	commitment = append(commitment, head.Hash().Bytes()...)
+	signature, err := a.signerFunc(commitment)
+	if err != nil {
+		return nil, err
+	}
+	commitment = append(commitment, signature...)
+	return commitment, nil
 }
 
 type ArbDebugAPI struct {

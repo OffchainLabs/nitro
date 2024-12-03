@@ -31,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 type StylusTargetConfig struct {
@@ -184,6 +185,7 @@ func CreateExecutionNode(
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
+	dataSigner signature.DataSignerFunc,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
 	execEngine, err := NewExecutionEngine(l2BlockChain)
@@ -267,7 +269,7 @@ func CreateExecutionNode(
 	apis := []rpc.API{{
 		Namespace: "arb",
 		Version:   "1.0",
-		Service:   NewArbAPI(txPublisher),
+		Service:   NewArbAPI(txPublisher, l2BlockChain, dataSigner),
 		Public:    false,
 	}}
 	apis = append(apis, rpc.API{

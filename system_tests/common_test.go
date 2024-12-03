@@ -476,7 +476,7 @@ func buildOnParentChain(
 	Require(t, execConfig.Validate())
 	execConfigToBeUsedInConfigFetcher := execConfig
 	execConfigFetcher := func() *gethexec.Config { return execConfigToBeUsedInConfigFetcher }
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher, nil)
 	Require(t, err)
 
 	fatalErrChan := make(chan error, 10)
@@ -596,7 +596,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	Require(t, b.execConfig.Validate())
 	execConfig := b.execConfig
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, nil)
 	Require(t, err)
 
 	fatalErrChan := make(chan error, 10)
@@ -645,7 +645,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.execConfig, b.wasmCacheTag)
 
 	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher, nil)
 	Require(t, err)
 
 	feedErrChan := make(chan error, 10)
@@ -1443,7 +1443,7 @@ func Create2ndNodeWithConfig(
 	Require(t, execConfig.Validate())
 	Require(t, nodeConfig.Validate())
 	configFetcher := func() *gethexec.Config { return execConfig }
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher, nil)
 	Require(t, err)
 
 	currentNode, err := arbnode.CreateNode(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
