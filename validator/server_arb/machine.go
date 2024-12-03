@@ -118,8 +118,8 @@ func LoadSimpleMachine(wasm string, libraries []string, debugChain bool) (*Arbit
 	return machineFromPointer(mach), nil
 }
 
-func NewFinishedMachine() *ArbitratorMachine {
-	mach := C.arbitrator_new_finished()
+func NewFinishedMachine(gs validator.GoGlobalState) *ArbitratorMachine {
+	mach := C.arbitrator_new_finished(GlobalStateToC(gs))
 	if mach == nil {
 		return nil
 	}

@@ -196,6 +196,12 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 		return err
 	}
 	walletAddressOrZero := b.wallet.AddressOrZero()
+	var stakerAddr common.Address
+	if b.wallet.DataPoster() != nil {
+		stakerAddr = b.wallet.DataPoster().Sender()
+	}
+	log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", walletAddressOrZero, "mode", b.config.Mode)
+
 	if b.blockValidator != nil && b.config.StartValidationFromStaked && !b.blockValidator.Started() {
 		rollupUserLogic, err := boldrollup.NewRollupUserLogic(b.rollupAddress, b.client)
 		if err != nil {
