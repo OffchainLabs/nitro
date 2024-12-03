@@ -119,8 +119,14 @@ func getAllStackTraces() string {
 
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	s.StopOnly()
+	if !s.Started() {
+		// No need to wait, because nothing can be started if it's already stopped.
+		return nil
+	}
 	// Even if StopOnly has been previously called, make sure we wait for everything to shut down.
 	// Otherwise, a StopOnly call followed by StopAndWait might return early without waiting.
+	// At this point started must be true (because it was true above and cannot go back to false),
+	// so GetWaitChannel won't return an error.
 	waitChan, err := s.GetWaitChannel()
 	if err != nil {
 		return err
