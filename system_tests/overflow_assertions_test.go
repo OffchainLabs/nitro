@@ -35,7 +35,6 @@ import (
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/server_arb"
-	"github.com/offchainlabs/nitro/validator/server_arb/boldmach"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -90,7 +89,7 @@ func TestOverflowAssertions(t *testing.T) {
 	valCfg.UseJit = false
 	boldWrapperOpt := server_arb.WithWrapper(
 		func(inner server_arb.MachineInterface) server_arb.MachineInterface {
-			return boldmach.MachineWrapper(inner)
+			return machineWrapper(inner)
 		})
 	_, valStack := createTestValidationNode(t, ctx, &valCfg, boldWrapperOpt)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
