@@ -92,7 +92,7 @@ func NewMockEigenDAProxyClient(shouldFail bool) *MockEigenDAProxyClient {
 
 func (c *MockEigenDAProxyClient) Put(ctx context.Context, data []byte) (*disperser.BlobInfo, error) {
 	if c.client.(*MockProxyClient).ShouldFail {
-		return nil, SvcUnavailableErr
+		return nil, ErrServiceUnavailable
 	}
 	return &mockBlobInfo, nil
 }
@@ -103,7 +103,7 @@ func (c *MockEigenDAProxyClient) Get(ctx context.Context, blobInfo *disperser.Bl
 	}
 
 	if c.client.(*MockProxyClient).ShouldReturn503 {
-		return nil, SvcUnavailableErr
+		return nil, ErrServiceUnavailable
 	}
 
 	return mockBlobData, nil
