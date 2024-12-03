@@ -80,9 +80,7 @@ type Cache struct {
 // New cache from a base directory path.
 func New(baseDir string) (*Cache, error) {
 	if _, err := os.Stat(baseDir); err != nil {
-		if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
-			return nil, fmt.Errorf("could not make initialize challenge cache directory %s: %w", baseDir, err)
-		}
+		os.MkdirAll(baseDir, os.ModePerm)
 	}
 	// We create a temp directory to write our hashes to first when putting to the cache.
 	// Once writing succeeds, we rename in an atomic operation to the correct file name

@@ -105,8 +105,7 @@ func (e *executionRun) machineHashesWithStepSize(
 	if err != nil {
 		return nil, err
 	}
-	log.Info(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
-	fmt.Printf("got machine type %T\n", machine)
+	log.Info("Advanced WASM machine index, beginning challenge hash computation", "machineStartIndex", machineStartIndex)
 
 	machineHashes := []common.Hash{machine.Hash()}
 	startHash := machineHashes[0]
