@@ -2,6 +2,7 @@ package multiprotocolstaker
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -44,6 +45,7 @@ type MultiProtocolStaker struct {
 	blockValidator          *staker.BlockValidator
 	callOpts                bind.CallOpts
 	boldConfig              *boldstaker.BoldConfig
+	stakeTokenAddress       common.Address
 }
 
 func NewMultiProtocolStaker(
@@ -55,6 +57,7 @@ func NewMultiProtocolStaker(
 	blockValidator *staker.BlockValidator,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
+	stakeTokenAddress common.Address,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
 	bridgeAddress common.Address,
@@ -98,6 +101,7 @@ func NewMultiProtocolStaker(
 		blockValidator:          blockValidator,
 		callOpts:                callOpts,
 		boldConfig:              boldConfig,
+		stakeTokenAddress:       stakeTokenAddress,
 	}, nil
 }
 
@@ -107,6 +111,13 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 		return err
 	}
 	if boldActive {
+		stakeTokenContract, err := m.l1Reader.Client().CodeAt(ctx, m.stakeTokenAddress, nil)
+		if err != nil {
+			return err
+		}
+		if len(stakeTokenContract) == 0 {
+			return fmt.Errorf("stake token address for BoLD %v does not point to a contract", m.stakeTokenAddress)
+		}
 		log.Info("BoLD protocol is active, initializing BoLD staker")
 		log.Info(boldArt)
 		if err := m.setupBoldStaker(ctx, rollupAddress); err != nil {
