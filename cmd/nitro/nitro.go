@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -641,6 +643,11 @@ func mainImpl() int {
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
 
+	// Live db snapshot creation is only supported on archive nodes
+	if nodeConfig.Execution.Caching.Archive {
+		go liveDBSnapshotter(ctx, chainDb, arbDb, execNode.ExecEngine.CreateBlocksMutex(), func() string { return liveNodeConfig.Get().SnapshotDir })
+	}
+
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
@@ -674,6 +681,43 @@ func mainImpl() int {
 	return 0
 }
 
+func liveDBSnapshotter(ctx context.Context, chainDb, arbDb ethdb.Database, createBlocksMutex *sync.Mutex, snapshotDirGetter func() string) {
+	sigusr2 := make(chan os.Signal, 1)
+	signal.Notify(sigusr2, syscall.SIGUSR2)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-sigusr2:
+			log.Info("Live databases snapshot creation triggered by SIGUSR2")
+		}
+
+		snapshotDir := snapshotDirGetter()
+		if snapshotDir == "" {
+			log.Error("Aborting live databases snapshot creation as destination directory is empty, try updating --snapshot-dir in the config file")
+			continue
+		}
+
+		createBlocksMutex.Lock()
+		log.Info("Beginning snapshot creation for l2chaindata, ancient and wasm databases")
+		err := chainDb.CreateDBSnapshot(snapshotDir)
+		createBlocksMutex.Unlock()
+		if err != nil {
+			log.Error("Snapshot creation for l2chaindata, ancient and wasm databases failed", "err", err)
+			continue
+		}
+		log.Info("Live snapshot of l2chaindata, ancient and wasm databases were successfully created")
+
+		log.Info("Beginning snapshot creation for arbitrumdata database")
+		if err := arbDb.CreateDBSnapshot(snapshotDir); err != nil {
+			log.Error("Snapshot creation for arbitrumdata database failed", "err", err)
+		} else {
+			log.Info("Live snapshot of arbitrumdata database was successfully created")
+		}
+	}
+}
+
 type NodeConfig struct {
 	Conf             genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node             arbnode.Config                  `koanf:"node" reload:"hot"`
@@ -697,6 +741,7 @@ type NodeConfig struct {
 	Init             conf.InitConfig                 `koanf:"init"`
 	Rpc              genericconf.RpcConfig           `koanf:"rpc"`
 	BlocksReExecutor blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
+	SnapshotDir      string                          `koanf:"snapshot-dir" reload:"hot"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -722,6 +767,7 @@ var NodeConfigDefault = NodeConfig{
 	PProf:            false,
 	PprofCfg:         genericconf.PProfDefault,
 	BlocksReExecutor: blocksreexecutor.DefaultConfig,
+	SnapshotDir:      "",
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -748,6 +794,8 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.InitConfigAddOptions("init", f)
 	genericconf.RpcConfigAddOptions("rpc", f)
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
+
+	f.String("snapshot-dir", NodeConfigDefault.SnapshotDir, "directory in which snapshot of databases would be stored")
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {

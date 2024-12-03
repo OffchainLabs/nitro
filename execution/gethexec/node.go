@@ -277,6 +277,7 @@ func CreateExecutionNode(
 			l2BlockChain,
 			config.RPC.ArbDebug.BlockRangeBound,
 			config.RPC.ArbDebug.TimeoutQueueBound,
+			config.Caching.Archive,
 		),
 		Public: false,
 	})
