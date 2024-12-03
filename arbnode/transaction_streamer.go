@@ -682,11 +682,7 @@ func (s *TransactionStreamer) isEspressoMode() (bool, error) {
 	if !isSetInConfig {
 		return false, nil
 	}
-	if s.lightClientReader != nil && s.espressoClient != nil {
-		return true, nil
-	}
-	log.Error("espresso verifier contract address has been set, no light client reader or espresso client")
-	return false, nil
+	return true, nil
 }
 
 // Used in redis tests
@@ -1825,9 +1821,13 @@ func (s *TransactionStreamer) shouldSubmitEspressoTransaction() bool {
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 
-	err := stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.espressoSwitch, s.newSovereignTxNotifier)
-	if err != nil {
-		return err
+	if s.lightClientReader != nil && s.espressoClient != nil {
+		err := stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.espressoSwitch, s.newSovereignTxNotifier)
+		if err != nil {
+			return err
+		}
+	} else {
+		log.Warn("light client reader or espresso client not set, skipping espresso verification")
 	}
 
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
