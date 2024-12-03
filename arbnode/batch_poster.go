@@ -1476,13 +1476,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		eigenDaBlobInfo, err = b.eigenDAWriter.Store(ctx, sequencerMsg)
 
-		if err != nil && errors.Is(err, eigenda.SvcUnavailableErr) && b.config().EnableEigenDAFailover && b.dapWriter != nil { // Failover to anytrust commitee if enabled
+		if err != nil && errors.Is(err, eigenda.ErrServiceUnavailable) && b.config().EnableEigenDAFailover && b.dapWriter != nil { // Failover to anytrust commitee if enabled
 			log.Error("EigenDA service is unavailable, failing over to any trust mode")
 			b.building.useEigenDA = false
 			failOver = true
 		}
 
-		if err != nil && errors.Is(err, eigenda.SvcUnavailableErr) && b.config().EnableEigenDAFailover && b.dapWriter == nil { // Failover to ETH DA if enabled
+		if err != nil && errors.Is(err, eigenda.ErrServiceUnavailable) && b.config().EnableEigenDAFailover && b.dapWriter == nil { // Failover to ETH DA if enabled
 			// when failing over to ETHDA (i.e 4844, calldata), we may need to re-encode the batch. To do this in compliance with the existing code, it's easiest
 			// to update an internal field and retrigger the poster's event loop. Since the batch poster can be distributed across mulitple nodes, there could be
 			// degraded temporary performance as each batch poster will re-encode the batch on another event loop tick using the coordination lock which could worst case
