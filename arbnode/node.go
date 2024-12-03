@@ -703,7 +703,6 @@ func createNodeImpl(
 		if dp != nil {
 			stakerAddr = dp.Sender()
 		}
-		log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", wallet.Address(), "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster

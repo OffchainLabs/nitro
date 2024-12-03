@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 	mockmanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/bold/testing/setup"
 )
 
 func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
@@ -354,8 +355,22 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	ownerBal := big.NewInt(params.Ether)
 	ownerBal.Mul(ownerBal, big.NewInt(1_000_000))
 	l2info.GenerateGenesisAccount("Owner", ownerBal)
+	sconf := setup.RollupStackConfig{
+		UseMockBridge:          false,
+		UseMockOneStepProver:   false,
+		MinimumAssertionPeriod: 0,
+	}
 
-	_, l2node, _, _, l1info, _, l1client, l1stack, _, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, false, nil, l2chainConfig, nil, l2info)
+	_, l2node, _, _, l1info, _, l1client, l1stack, _, _ := createTestNodeOnL1ForBoldProtocol(
+		t,
+		ctx,
+		false,
+		nil,
+		l2chainConfig,
+		nil,
+		sconf,
+		l2info,
+	)
 
 	valnode.TestValidationConfig.UseJit = false
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)

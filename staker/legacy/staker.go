@@ -354,6 +354,21 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	if walletAddressOrZero != (common.Address{}) {
 		s.updateStakerBalanceMetric(ctx)
 	}
+	var stakerAddr common.Address
+	if s.L1Validator.wallet.DataPoster() != nil {
+		stakerAddr = s.L1Validator.wallet.DataPoster().Sender()
+	}
+	whiteListed, err := s.isWhitelisted(ctx)
+	if err != nil {
+		return fmt.Errorf("error checking if whitelisted: %w", err)
+	}
+	log.Info(
+		"running as validator",
+		"txSender", stakerAddr,
+		"actingAsWallet", walletAddressOrZero,
+		"whitelisted", whiteListed,
+		"strategy", s.Strategy(),
+	)
 	if s.blockValidator != nil && s.config().StartValidationFromStaked {
 		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddressOrZero)
 		if err != nil {
