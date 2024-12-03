@@ -19,7 +19,7 @@ docker run -d --name eigenda-proxy-nitro-test-instance \
   -e EIGENDA_PROXY_EIGENDA_CERT_VERIFICATION_DISABLED=true \
   ghcr.io/layr-labs/eigenda-proxy:v1.6.0
 
-
+# shellcheck disable=SC2181
 if [ $? -ne 0 ]; then
   echo "==== Failed to start eigenda-proxy container ===="
   exit 1
