@@ -80,6 +80,7 @@ type Cache struct {
 // New cache from a base directory path.
 func New(baseDir string) (*Cache, error) {
 	if _, err := os.Stat(baseDir); err != nil {
+		//nolint:errcheck
 		os.MkdirAll(baseDir, os.ModePerm)
 	}
 	// We create a temp directory to write our hashes to first when putting to the cache.
