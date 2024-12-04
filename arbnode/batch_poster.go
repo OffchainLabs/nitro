@@ -1486,11 +1486,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 
 			log.Error("EigenDA service is unavailable and anytrust is disabled, failing over to ETH DA")
 
-			// // if the batch's size exceeds the native DA max size limit, we must re-encode the batch to accomodate the AnyTrust, calldata, and 4844 size limits
+			// if the batch's size exceeds the native DA max size limit, we must re-encode the batch to accomodate the AnyTrust, calldata, and 4844 size limits
 			if (len(sequencerMsg) > b.config().MaxSize && !b.building.use4844) || (len(sequencerMsg) > b.config().Max4844BatchSize && b.building.use4844) {
 				batchPosterDAFailureCounter.Inc(1)
 				batchPosterDAFailoverCount.Inc(1)
 
+				b.eigenDAFailoverToETHDA = true
 				b.building = nil
 				return false, nil
 			}
