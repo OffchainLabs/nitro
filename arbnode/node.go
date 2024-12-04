@@ -1018,6 +1018,10 @@ func (n *Node) StopAndWait() {
 	}
 }
 
+func (n *Node) GetBatchCount() (uint64, error) {
+	return n.InboxTracker.GetBatchCount()
+}
+
 func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error) {
 	return n.InboxTracker.FindInboxBatchContainingMessage(message)
 }
