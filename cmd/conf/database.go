@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -117,7 +116,7 @@ type PebbleConfig struct {
 }
 
 var PebbleConfigDefault = PebbleConfig{
-	MaxConcurrentCompactions: runtime.NumCPU(),
+	MaxConcurrentCompactions: 1,
 	Experimental:             PebbleExperimentalConfigDefault,
 }
 
