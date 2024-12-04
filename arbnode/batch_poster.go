@@ -1516,6 +1516,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 
+	// blob is successfully dipsersed to EigenDA w/ 4844 as a supported failover
+	// batch posting destination. Disable 4844 so encodeAddBatch will use
+	// EigenDA's blob info.
+	if b.building.useEigenDA && eigenDADispersed && b.building.use4844 {
+		b.building.use4844 = false
+	}
+
 	if b.dapWriter != nil && !eigenDADispersed {
 		if !b.redisLock.AttemptLock(ctx) {
 			return false, errAttemptLockFailed
