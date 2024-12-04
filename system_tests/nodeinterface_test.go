@@ -216,7 +216,7 @@ func TestGetParentBlockNumThatIncludesChildBlockSucceeds(t *testing.T) {
 	colors.PrintMint("Child chain block:", childChainBlock)
 	colors.PrintMint("Parent chain block:", parentChainBlock)
 
-	if parentChainBlock != firstParentChainBlock+1 {
+	if parentChainBlock.ParentBlockNum != firstParentChainBlock+1 {
 		Fatal(t, "unexpected parent chain block")
 	}
 }
