@@ -18,6 +18,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 func TestFindBatch(t *testing.T) {
@@ -180,5 +181,67 @@ func TestGetL1Confirmations(t *testing.T) {
 	// #nosec G115
 	if l1Confs+10 < uint64(numTransactions) {
 		t.Fatalf("L1Confirmations for latest block %v is only %v (did not hit expected %v)", genesisBlock.Number(), l1Confs, numTransactions)
+	}
+}
+
+func TestGetParentBlockNumThatIncludesChildBlockSucceeds(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	firstParentChainBlock, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+	colors.PrintMint("First parent chain block:", firstParentChainBlock)
+
+	user := builder.L1Info.GetDefaultTransactOpts("User", ctx)
+	tx, receipt := builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+	childChainBlock := receipt.BlockNumber.Uint64()
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// Wait for the transaction to arrive in the second node so we are sure it was batch posted
+	// on the next L1 block.
+	childNodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
+	_, err = childNodeB.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
+	Require(t, err)
+	parentChainBlock, err := nodeInterface.GetParentBlockNumThatIncludesChildBlock(nil, childChainBlock)
+	Require(t, err)
+	colors.PrintMint("Child chain block:", childChainBlock)
+	colors.PrintMint("Parent chain block:", parentChainBlock)
+
+	if parentChainBlock != firstParentChainBlock+1 {
+		Fatal(t, "unexpected parent chain block")
+	}
+}
+
+// Test GetParentBlockNumThatIncludesChildBlock fails when the batch poster is not enabled, so the
+// batch never gets posted to L1.
+func TestGetParentBlockNumThatIncludesChildBlockFails(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BatchPoster.Enable = false
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	user := builder.L1Info.GetDefaultTransactOpts("User", ctx)
+	tx, receipt := builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+	childChainBlock := receipt.BlockNumber.Uint64()
+	_, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
+	Require(t, err)
+	_, err = nodeInterface.GetParentBlockNumThatIncludesChildBlock(nil, childChainBlock)
+	if err.Error() != "execution reverted" {
+		Fatal(t, "expected error")
 	}
 }
