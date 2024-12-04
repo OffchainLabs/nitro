@@ -1018,6 +1018,15 @@ func (n *Node) StopAndWait() {
 	}
 }
 
+func (n *Node) GetBatchCount() (uint64, error) {
+	return n.InboxTracker.GetBatchCount()
+}
+
+func (n *Node) GetBlockByNumber(ctx context.Context, blockNum uint64) (*types.Block, error) {
+	// #nosec G115
+	return n.L1Reader.Client().BlockByNumber(ctx, big.NewInt(int64(blockNum)))
+}
+
 func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error) {
 	return n.InboxTracker.FindInboxBatchContainingMessage(message)
 }

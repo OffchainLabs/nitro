@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -78,6 +79,8 @@ type FullExecutionClient interface {
 type BatchFetcher interface {
 	FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error)
 	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
+	GetBatchCount() (uint64, error)
+	GetBlockByNumber(ctx context.Context, blockNum uint64) (*types.Block, error)
 }
 
 type ConsensusInfo interface {

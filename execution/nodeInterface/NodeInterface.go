@@ -735,3 +735,30 @@ func (n NodeInterface) L2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) (ui
 	}
 	return firstBlock, lastBlock, nil
 }
+
+func (n NodeInterface) GetParentBlockThatIncludesChildBlock(c ctx, evm mech, childBlockNum uint64) (uint64, common.Hash, error) {
+	node, err := gethExecFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, common.Hash{}, err
+	}
+	fetcher := node.ExecEngine.GetBatchFetcher()
+	if fetcher == nil {
+		return 0, common.Hash{}, errors.New("batch fetcher not set")
+	}
+
+	batch, err := n.FindBatchContainingBlock(c, nil, childBlockNum)
+	if err != nil {
+		return 0, common.Hash{}, err
+	}
+
+	parentBlockNum, err := fetcher.GetBatchParentChainBlock(batch)
+	if err != nil {
+		return 0, common.Hash{}, err
+	}
+	parentBlock, err := fetcher.GetBlockByNumber(n.context, parentBlockNum)
+	if err != nil {
+		return 0, common.Hash{}, err
+	}
+
+	return parentBlockNum, parentBlock.Hash(), nil
+}
