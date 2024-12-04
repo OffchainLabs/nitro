@@ -736,7 +736,7 @@ func (n NodeInterface) L2BlockRangeForL1(c ctx, evm mech, l1BlockNum uint64) (ui
 	return firstBlock, lastBlock, nil
 }
 
-func (n NodeInterface) GetParentBlockNumThatIncludesChildBlock(c ctx, childBlockNum uint64) (uint64, error) {
+func (n NodeInterface) GetParentBlockNumThatIncludesChildBlock(c ctx, evm mech, childBlockNum uint64) (uint64, error) {
 	node, err := gethExecFromNodeInterfaceBackend(n.backend)
 	if err != nil {
 		return 0, err
