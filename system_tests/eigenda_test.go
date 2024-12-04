@@ -64,7 +64,7 @@ func TestEigenDAProxyBatchPosting(t *testing.T) {
 	}
 }
 
-func TestEigenDAProxyFailOverToETHDA(t *testing.T) {
+func TestFailOverFromEigenDAToCallData(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer func() {
 		cancel()
@@ -105,6 +105,7 @@ func TestEigenDAProxyFailOverToETHDA(t *testing.T) {
 		// 2 - Cause EigenDA to fail and ensure that the system falls back to anytrust in the presence of 503 eigenda-proxy errors
 		builder.L2.ConsensusNode.BatchPoster.SetEigenDAClientMock()
 		checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(2000000000000), l2B.Client)
+
 		// 3 - Emulate EigenDA becoming healthy again and ensure that the system starts using it for DA
 		eigenWriter, _ := eigenda.NewEigenDA(&eigenda.EigenDAConfig{
 			Enable: true,
@@ -119,7 +120,7 @@ func TestEigenDAProxyFailOverToETHDA(t *testing.T) {
 	}
 }
 
-func TestEigenDAProxyFailOverToAnyTrust(t *testing.T) {
+func TestFailOverFromEigenDAToAnyTrust(t *testing.T) {
 	initTest(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
