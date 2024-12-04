@@ -184,7 +184,7 @@ func TestGetL1Confirmations(t *testing.T) {
 	}
 }
 
-func TestGetParentBlockNumThatIncludesChildBlockSucceeds(t *testing.T) {
+func TestGetParentBlockThatIncludesChildBlockSucceeds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -211,7 +211,7 @@ func TestGetParentBlockNumThatIncludesChildBlockSucceeds(t *testing.T) {
 
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
 	Require(t, err)
-	parentChainBlock, err := nodeInterface.GetParentBlockNumThatIncludesChildBlock(nil, childChainBlock)
+	parentChainBlock, err := nodeInterface.GetParentBlockThatIncludesChildBlock(nil, childChainBlock)
 	Require(t, err)
 	colors.PrintMint("Child chain block:", childChainBlock)
 	colors.PrintMint("Parent chain block:", parentChainBlock)
@@ -221,9 +221,9 @@ func TestGetParentBlockNumThatIncludesChildBlockSucceeds(t *testing.T) {
 	}
 }
 
-// Test GetParentBlockNumThatIncludesChildBlock fails when the batch poster is not enabled, so the
+// Test GetParentBlockThatIncludesChildBlock fails when the batch poster is not enabled, so the
 // batch never gets posted to L1.
-func TestGetParentBlockNumThatIncludesChildBlockFails(t *testing.T) {
+func TestGetParentBlockThatIncludesChildBlockFails(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -240,7 +240,7 @@ func TestGetParentBlockNumThatIncludesChildBlockFails(t *testing.T) {
 
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
 	Require(t, err)
-	_, err = nodeInterface.GetParentBlockNumThatIncludesChildBlock(nil, childChainBlock)
+	_, err = nodeInterface.GetParentBlockThatIncludesChildBlock(nil, childChainBlock)
 	if err.Error() != "execution reverted" {
 		Fatal(t, "expected error")
 	}
