@@ -75,9 +75,6 @@ func NewBOLDStateProvider(
 // assertion. Returns the state at maxSeqInboxCount or blockChallengeLeafHeight
 // after the previous state, whichever is earlier. If previousGlobalState is
 // nil, defaults to returning the state at maxSeqInboxCount.
-//
-// TODO: Check the block validator has validated the execution state we are
-// proposing.
 func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxSeqInboxCount uint64,
@@ -507,6 +504,14 @@ func (s *BOLDStateProvider) CollectProof(
 	if vs.IsSome() {
 		m := server_arb.NewFinishedMachine(vs.Unwrap())
 		defer m.Destroy()
+		log.Info(
+			"Getting machine OSP from virtual state",
+			"fromBatch", assertionMetadata.FromState.Batch,
+			"fromPosInBatch", assertionMetadata.FromState.PosInBatch,
+			"blockChallengeHeight", blockChallengeHeight,
+			"messageNum", messageNum,
+			"machineIndex", machineIndex,
+		)
 		return m.ProveNextStep(), nil
 	}
 	entry, err := s.statelessValidator.CreateReadyValidationEntry(ctx, messageNum)

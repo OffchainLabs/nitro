@@ -22,6 +22,7 @@ import (
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
 	boldtypes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
@@ -50,12 +51,6 @@ func init() {
 type BoldConfig struct {
 	Enable bool   `koanf:"enable"`
 	Mode   string `koanf:"mode"`
-	// The height constants at each challenge level for the BOLD challenge manager.
-	BlockChallengeLeafHeight uint64 `koanf:"block-challenge-leaf-height"`
-	BigStepLeafHeight        uint64 `koanf:"big-step-leaf-height"`
-	SmallStepLeafHeight      uint64 `koanf:"small-step-leaf-height"`
-	// Number of big step challenges in the BOLD protocol.
-	NumBigSteps uint64 `koanf:"num-big-steps"`
 	// How often to post assertions onchain.
 	AssertionPostingInterval time.Duration `koanf:"assertion-posting-interval"`
 	// How often to scan for newly created assertions onchain.
@@ -89,10 +84,6 @@ var DefaultStateProviderConfig = StateProviderConfig{
 var DefaultBoldConfig = BoldConfig{
 	Enable:                              false,
 	Mode:                                "make-mode",
-	BlockChallengeLeafHeight:            1 << 26,
-	BigStepLeafHeight:                   1 << 23,
-	SmallStepLeafHeight:                 1 << 19,
-	NumBigSteps:                         1,
 	AssertionPostingInterval:            time.Minute * 15,
 	AssertionScanningInterval:           time.Minute,
 	AssertionConfirmingInterval:         time.Minute,
@@ -116,10 +107,6 @@ var BoldModes = map[string]boldtypes.Mode{
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
 	f.String(prefix+".mode", DefaultBoldConfig.Mode, "define the bold validator staker strategy")
-	f.Uint64(prefix+".block-challenge-leaf-height", DefaultBoldConfig.BlockChallengeLeafHeight, "block challenge leaf height")
-	f.Uint64(prefix+".big-step-leaf-height", DefaultBoldConfig.BigStepLeafHeight, "big challenge leaf height")
-	f.Uint64(prefix+".small-step-leaf-height", DefaultBoldConfig.SmallStepLeafHeight, "small challenge leaf height")
-	f.Uint64(prefix+".num-big-steps", DefaultBoldConfig.NumBigSteps, "num big steps")
 	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "assertion posting interval")
 	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "scan assertion interval")
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
@@ -367,13 +354,43 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not get challenge manager: %w", err)
 	}
+	chalManagerBindings, err := challengeV2gen.NewEdgeChallengeManager(chalManager, client)
+	if err != nil {
+		return nil, fmt.Errorf("could not create challenge manager bindings: %w", err)
+	}
 	assertionChain, err := solimpl.NewAssertionChain(ctx, rollupAddress, chalManager, txOpts, client, NewDataPosterTransactor(dataPoster))
 	if err != nil {
 		return nil, fmt.Errorf("could not create assertion chain: %w", err)
 	}
-	blockChallengeLeafHeight := l2stateprovider.Height(config.BlockChallengeLeafHeight)
-	bigStepHeight := l2stateprovider.Height(config.BigStepLeafHeight)
-	smallStepHeight := l2stateprovider.Height(config.SmallStepLeafHeight)
+
+	blockChallengeHeightBig, err := chalManagerBindings.LAYERZEROBLOCKEDGEHEIGHT(&bind.CallOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get block challenge height: %w", err)
+	}
+	if !blockChallengeHeightBig.IsUint64() {
+		return nil, errors.New("block challenge height was not a uint64")
+	}
+	bigStepHeightBig, err := chalManagerBindings.LAYERZEROBIGSTEPEDGEHEIGHT(&bind.CallOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get big step challenge height: %w", err)
+	}
+	if !bigStepHeightBig.IsUint64() {
+		return nil, errors.New("big step challenge height was not a uint64")
+	}
+	smallStepHeightBig, err := chalManagerBindings.LAYERZEROSMALLSTEPEDGEHEIGHT(&bind.CallOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get small step challenge height: %w", err)
+	}
+	if !smallStepHeightBig.IsUint64() {
+		return nil, errors.New("small step challenge height was not a uint64")
+	}
+	numBigSteps, err := chalManagerBindings.NUMBIGSTEPLEVEL(&bind.CallOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get number of big steps: %w", err)
+	}
+	blockChallengeLeafHeight := l2stateprovider.Height(blockChallengeHeightBig.Uint64())
+	bigStepHeight := l2stateprovider.Height(bigStepHeightBig.Uint64())
+	smallStepHeight := l2stateprovider.Height(smallStepHeightBig.Uint64())
 
 	// Sets up the state provider interface that BOLD will use to request data such as
 	// execution states for assertions, history commitments for machine execution, and one step proofs.
@@ -389,7 +406,7 @@ func newBOLDChallengeManager(
 		return nil, fmt.Errorf("could not create state manager: %w", err)
 	}
 	providerHeights := []l2stateprovider.Height{blockChallengeLeafHeight}
-	for i := uint64(0); i < config.NumBigSteps; i++ {
+	for i := uint8(0); i < numBigSteps; i++ {
 		providerHeights = append(providerHeights, bigStepHeight)
 	}
 	providerHeights = append(providerHeights, smallStepHeight)
