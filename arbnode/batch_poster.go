@@ -174,7 +174,6 @@ type BatchPosterConfig struct {
 	RedisLock                      redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                  uint64                      `koanf:"extra-batch-gas" reload:"hot"`
 	Post4844Blobs                  bool                        `koanf:"post-4844-blobs" reload:"hot"`
-	PostEigenDA                    bool                        `koanf:"post-eigen-da" reload:"hot"`
 	IgnoreBlobPrice                bool                        `koanf:"ignore-blob-price" reload:"hot"`
 	ParentChainWallet              genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 	L1BlockBound                   string                      `koanf:"l1-block-bound" reload:"hot"`
@@ -231,7 +230,6 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.Bool(prefix+".post-4844-blobs", DefaultBatchPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
-	f.Bool(prefix+".post-eigen-da", DefaultBatchPosterConfig.PostEigenDA, "Post data to EigenDA")
 	f.Bool(prefix+".ignore-blob-price", DefaultBatchPosterConfig.IgnoreBlobPrice, "if the parent chain supports 4844 blobs and ignore-blob-price is true, post 4844 blobs even if it's not price efficient")
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
@@ -263,7 +261,6 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
-	PostEigenDA:                    false,
 	IgnoreBlobPrice:                false,
 	DataPoster:                     dataposter.DefaultDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
@@ -298,7 +295,6 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  10_000,
 	Post4844Blobs:                  true,
-	PostEigenDA:                    false,
 	IgnoreBlobPrice:                false,
 	DataPoster:                     dataposter.TestDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
@@ -323,7 +319,6 @@ var EigenDABatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  10_000,
 	Post4844Blobs:                  false,
-	PostEigenDA:                    true,
 	IgnoreBlobPrice:                false,
 	DataPoster:                     dataposter.TestDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
@@ -1490,17 +1485,19 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			// However, this is a rare event and the performance impact is minimal.
 
 			log.Error("EigenDA service is unavailable and anytrust is disabled, failing over to ETH DA")
-			b.eigenDAFailoverToETHDA = true
 
-			// // if the batch's size exceeds the native DA max size limit, we must re-encode the batch to accomodate the AnyTrust, calldata, and 4844 size limits
+			// if the batch's size exceeds the native DA max size limit, we must re-encode the batch to accomodate the AnyTrust, calldata, and 4844 size limits
 			if (len(sequencerMsg) > b.config().MaxSize && !b.building.use4844) || (len(sequencerMsg) > b.config().Max4844BatchSize && b.building.use4844) {
 				batchPosterDAFailureCounter.Inc(1)
 				batchPosterDAFailoverCount.Inc(1)
 
+				b.eigenDAFailoverToETHDA = true
 				b.building = nil
 				return false, nil
 			}
 
+			b.building.useEigenDA = false
+			failOver = true
 		}
 
 		if err != nil && !failOver {
