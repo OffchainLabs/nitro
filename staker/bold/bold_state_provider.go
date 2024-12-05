@@ -75,9 +75,6 @@ func NewBOLDStateProvider(
 // assertion. Returns the state at maxSeqInboxCount or blockChallengeLeafHeight
 // after the previous state, whichever is earlier. If previousGlobalState is
 // nil, defaults to returning the state at maxSeqInboxCount.
-//
-// TODO: Check the block validator has validated the execution state we are
-// proposing.
 func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxSeqInboxCount uint64,
@@ -373,7 +370,8 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	}
 	// TODO: Enable Redis streams.
 	wasmModRoot := cfg.AssertionMetadata.WasmModuleRoot
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input).Await(ctx)
+	useBoldMachine := true
+	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input, &useBoldMachine).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -458,9 +456,6 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 	// This is to ensure that we do not have the validator froze indefinitely if
 	// the execution run is no longer alive.
 	ctx, cancel := context.WithCancel(ctxIn)
-	// Create a context with cancel, so that we can cancel the check alive routine
-	// once the calling function returns.
-	ctxCheckAlive, cancelCheckAlive := context.WithCancel(ctxIn)
 	go func() {
 		// Call cancel so that the calling function is canceled if the check alive
 		// routine fails/returns.
@@ -469,12 +464,12 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 		defer ticker.Stop()
 		for {
 			select {
-			case <-ctxCheckAlive.Done():
+			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				// Create a context with a timeout, so that the check alive routine does
 				// not run indefinitely.
-				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctxCheckAlive, 5*time.Second)
+				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctx, 5*time.Second)
 				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
 				if err != nil {
 					executionNodeOfflineGauge.Inc(1)
@@ -485,7 +480,7 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 			}
 		}
 	}()
-	return ctx, cancelCheckAlive
+	return ctx, cancel
 }
 
 // CollectProof collects a one-step proof at a message number and OpcodeIndex.
@@ -507,6 +502,14 @@ func (s *BOLDStateProvider) CollectProof(
 	if vs.IsSome() {
 		m := server_arb.NewFinishedMachine(vs.Unwrap())
 		defer m.Destroy()
+		log.Info(
+			"Getting machine OSP from virtual state",
+			"fromBatch", assertionMetadata.FromState.Batch,
+			"fromPosInBatch", assertionMetadata.FromState.PosInBatch,
+			"blockChallengeHeight", blockChallengeHeight,
+			"messageNum", messageNum,
+			"machineIndex", machineIndex,
+		)
 		return m.ProveNextStep(), nil
 	}
 	entry, err := s.statelessValidator.CreateReadyValidationEntry(ctx, messageNum)
@@ -527,7 +530,8 @@ func (s *BOLDStateProvider) CollectProof(
 		"startState", fmt.Sprintf("%+v", input.StartState),
 	)
 	wasmModRoot := assertionMetadata.WasmModuleRoot
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input).Await(ctx)
+	useBoldMachine := true
+	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input, &useBoldMachine).Await(ctx)
 	if err != nil {
 		return nil, err
 	}

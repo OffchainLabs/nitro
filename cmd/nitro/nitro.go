@@ -290,7 +290,7 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("validator must have the parent chain reader enabled")
 		}
-		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
+		strategy, err := legacystaker.ParseStrategy(nodeConfig.Node.Staker.Strategy)
 		if err != nil {
 			log.Crit("couldn't parse staker strategy", "err", err)
 		}

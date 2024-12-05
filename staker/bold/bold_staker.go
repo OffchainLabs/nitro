@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -22,10 +24,12 @@ import (
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
 	boldtypes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -34,6 +38,7 @@ import (
 )
 
 var assertionCreatedId common.Hash
+var homeDir string
 
 func init() {
 	rollupAbi, err := boldrollup.RollupCoreMetaData.GetAbi()
@@ -45,17 +50,16 @@ func init() {
 		panic("RollupCore ABI missing AssertionCreated event")
 	}
 	assertionCreatedId = assertionCreatedEvent.ID
+	homeDirPath, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+	homeDir = homeDirPath
 }
 
 type BoldConfig struct {
-	Enable bool   `koanf:"enable"`
-	Mode   string `koanf:"mode"`
-	// The height constants at each challenge level for the BOLD challenge manager.
-	BlockChallengeLeafHeight uint64 `koanf:"block-challenge-leaf-height"`
-	BigStepLeafHeight        uint64 `koanf:"big-step-leaf-height"`
-	SmallStepLeafHeight      uint64 `koanf:"small-step-leaf-height"`
-	// Number of big step challenges in the BOLD protocol.
-	NumBigSteps uint64 `koanf:"num-big-steps"`
+	Enable   bool   `koanf:"enable"`
+	Strategy string `koanf:"strategy"`
 	// How often to post assertions onchain.
 	AssertionPostingInterval time.Duration `koanf:"assertion-posting-interval"`
 	// How often to scan for newly created assertions onchain.
@@ -70,6 +74,16 @@ type BoldConfig struct {
 	CheckStakerSwitchInterval           time.Duration       `koanf:"check-staker-switch-interval"`
 	StateProviderConfig                 StateProviderConfig `koanf:"state-provider-config"`
 	StartValidationFromStaked           bool                `koanf:"start-validation-from-staked"`
+	strategy                            legacystaker.StakerStrategy
+}
+
+func (c *BoldConfig) Validate() error {
+	strategy, err := legacystaker.ParseStrategy(c.Strategy)
+	if err != nil {
+		return err
+	}
+	c.strategy = strategy
+	return nil
 }
 
 type StateProviderConfig struct {
@@ -83,43 +97,35 @@ type StateProviderConfig struct {
 var DefaultStateProviderConfig = StateProviderConfig{
 	ValidatorName:          "default-validator",
 	CheckBatchFinality:     true,
-	MachineLeavesCachePath: "/tmp/machine-leaves-cache",
+	MachineLeavesCachePath: filepath.Join(homeDir, conf.PersistentConfigDefault.GlobalConfig, "machine-hashes-cache"),
 }
 
 var DefaultBoldConfig = BoldConfig{
 	Enable:                              false,
-	Mode:                                "make-mode",
-	BlockChallengeLeafHeight:            1 << 26,
-	BigStepLeafHeight:                   1 << 23,
-	SmallStepLeafHeight:                 1 << 19,
-	NumBigSteps:                         1,
+	Strategy:                            "Watchtower",
 	AssertionPostingInterval:            time.Minute * 15,
 	AssertionScanningInterval:           time.Minute,
 	AssertionConfirmingInterval:         time.Minute,
 	API:                                 false,
 	APIHost:                             "127.0.0.1",
 	APIPort:                             9393,
-	APIDBPath:                           "/tmp/bold-api-db",
+	APIDBPath:                           filepath.Join(homeDir, conf.PersistentConfigDefault.GlobalConfig, "bold-api-db"),
 	TrackChallengeParentAssertionHashes: []string{},
 	CheckStakerSwitchInterval:           time.Minute, // Every minute, check if the Nitro node staker should switch to using BOLD.
 	StateProviderConfig:                 DefaultStateProviderConfig,
 	StartValidationFromStaked:           true,
 }
 
-var BoldModes = map[string]boldtypes.Mode{
-	"watchtower-mode": boldtypes.WatchTowerMode,
-	"resolve-mode":    boldtypes.ResolveMode,
-	"defensive-mode":  boldtypes.DefensiveMode,
-	"make-mode":       boldtypes.MakeMode,
+var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
+	legacystaker.WatchtowerStrategy:   boldtypes.WatchTowerMode,
+	legacystaker.DefensiveStrategy:    boldtypes.DefensiveMode,
+	legacystaker.ResolveNodesStrategy: boldtypes.ResolveMode,
+	legacystaker.MakeNodesStrategy:    boldtypes.MakeMode,
 }
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
-	f.String(prefix+".mode", DefaultBoldConfig.Mode, "define the bold validator staker strategy")
-	f.Uint64(prefix+".block-challenge-leaf-height", DefaultBoldConfig.BlockChallengeLeafHeight, "block challenge leaf height")
-	f.Uint64(prefix+".big-step-leaf-height", DefaultBoldConfig.BigStepLeafHeight, "big challenge leaf height")
-	f.Uint64(prefix+".small-step-leaf-height", DefaultBoldConfig.SmallStepLeafHeight, "small challenge leaf height")
-	f.Uint64(prefix+".num-big-steps", DefaultBoldConfig.NumBigSteps, "num big steps")
+	f.String(prefix+".strategy", DefaultBoldConfig.Strategy, "define the bold validator staker strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "assertion posting interval")
 	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "scan assertion interval")
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
@@ -147,7 +153,6 @@ type BOLDStaker struct {
 	statelessBlockValidator *staker.StatelessBlockValidator
 	rollupAddress           common.Address
 	l1Reader                *headerreader.HeaderReader
-	lastWasmModuleRoot      common.Hash
 	client                  protocol.ChainBackend
 	callOpts                bind.CallOpts
 	wallet                  legacystaker.ValidatorWalletInterface
@@ -169,6 +174,9 @@ func NewBOLDStaker(
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
 ) (*BOLDStaker, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
 	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster)
 	if err != nil {
@@ -192,15 +200,16 @@ func NewBOLDStaker(
 // Initialize Updates the block validator module root.
 // And updates the init state of the block validator if block validator has not started yet.
 func (b *BOLDStaker) Initialize(ctx context.Context) error {
-	if err := b.updateBlockValidatorModuleRoot(ctx); err != nil {
-		return err
+	err := b.updateBlockValidatorModuleRoot(ctx)
+	if err != nil {
+		log.Warn("error updating latest wasm module root", "err", err)
 	}
 	walletAddressOrZero := b.wallet.AddressOrZero()
 	var stakerAddr common.Address
 	if b.wallet.DataPoster() != nil {
 		stakerAddr = b.wallet.DataPoster().Sender()
 	}
-	log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", walletAddressOrZero, "mode", b.config.Mode)
+	log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", walletAddressOrZero, "strategy", b.config.Strategy)
 
 	if b.blockValidator != nil && b.config.StartValidationFromStaked && !b.blockValidator.Started() {
 		rollupUserLogic, err := boldrollup.NewRollupUserLogic(b.rollupAddress, b.client)
@@ -326,16 +335,7 @@ func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if moduleRoot != b.lastWasmModuleRoot {
-		err := b.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
-		if err != nil {
-			return err
-		}
-		b.lastWasmModuleRoot = moduleRoot
-	} else if (moduleRoot == common.Hash{}) {
-		return errors.New("wasmModuleRoot in rollup is zero")
-	}
-	return nil
+	return b.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
 }
 
 func (b *BOLDStaker) getCallOpts(ctx context.Context) *bind.CallOpts {
@@ -367,13 +367,43 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not get challenge manager: %w", err)
 	}
+	chalManagerBindings, err := challengeV2gen.NewEdgeChallengeManager(chalManager, client)
+	if err != nil {
+		return nil, fmt.Errorf("could not create challenge manager bindings: %w", err)
+	}
 	assertionChain, err := solimpl.NewAssertionChain(ctx, rollupAddress, chalManager, txOpts, client, NewDataPosterTransactor(dataPoster), solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber))
 	if err != nil {
 		return nil, fmt.Errorf("could not create assertion chain: %w", err)
 	}
-	blockChallengeLeafHeight := l2stateprovider.Height(config.BlockChallengeLeafHeight)
-	bigStepHeight := l2stateprovider.Height(config.BigStepLeafHeight)
-	smallStepHeight := l2stateprovider.Height(config.SmallStepLeafHeight)
+
+	blockChallengeHeightBig, err := chalManagerBindings.LAYERZEROBLOCKEDGEHEIGHT(&bind.CallOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get block challenge height: %w", err)
+	}
+	if !blockChallengeHeightBig.IsUint64() {
+		return nil, errors.New("block challenge height was not a uint64")
+	}
+	bigStepHeightBig, err := chalManagerBindings.LAYERZEROBIGSTEPEDGEHEIGHT(&bind.CallOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get big step challenge height: %w", err)
+	}
+	if !bigStepHeightBig.IsUint64() {
+		return nil, errors.New("big step challenge height was not a uint64")
+	}
+	smallStepHeightBig, err := chalManagerBindings.LAYERZEROSMALLSTEPEDGEHEIGHT(&bind.CallOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get small step challenge height: %w", err)
+	}
+	if !smallStepHeightBig.IsUint64() {
+		return nil, errors.New("small step challenge height was not a uint64")
+	}
+	numBigSteps, err := chalManagerBindings.NUMBIGSTEPLEVEL(&bind.CallOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get number of big steps: %w", err)
+	}
+	blockChallengeLeafHeight := l2stateprovider.Height(blockChallengeHeightBig.Uint64())
+	bigStepHeight := l2stateprovider.Height(bigStepHeightBig.Uint64())
+	smallStepHeight := l2stateprovider.Height(smallStepHeightBig.Uint64())
 
 	// Sets up the state provider interface that BOLD will use to request data such as
 	// execution states for assertions, history commitments for machine execution, and one step proofs.
@@ -389,7 +419,7 @@ func newBOLDChallengeManager(
 		return nil, fmt.Errorf("could not create state manager: %w", err)
 	}
 	providerHeights := []l2stateprovider.Height{blockChallengeLeafHeight}
-	for i := uint64(0); i < config.NumBigSteps; i++ {
+	for i := uint8(0); i < numBigSteps; i++ {
 		providerHeights = append(providerHeights, bigStepHeight)
 	}
 	providerHeights = append(providerHeights, smallStepHeight)
@@ -410,7 +440,7 @@ func newBOLDChallengeManager(
 
 	stackOpts := []challengemanager.StackOpt{
 		challengemanager.StackWithName(config.StateProviderConfig.ValidatorName),
-		challengemanager.StackWithMode(BoldModes[config.Mode]),
+		challengemanager.StackWithMode(BoldModes[config.strategy]),
 		challengemanager.StackWithPollingInterval(scanningInterval),
 		challengemanager.StackWithPostingInterval(postingInterval),
 		challengemanager.StackWithConfirmationInterval(confirmingInterval),
@@ -453,7 +483,6 @@ func readBoldAssertionCreationInfo(
 			return nil, errors.New("rollup deployment block was not a uint64")
 		}
 		creationBlock = rollupDeploymentBlock.Uint64()
-		topics = [][]common.Hash{{assertionCreatedId}}
 	} else {
 		var b [32]byte
 		copy(b[:], assertionHash[:])
@@ -462,8 +491,8 @@ func readBoldAssertionCreationInfo(
 			return nil, err
 		}
 		creationBlock = node.CreatedAtBlock
-		topics = [][]common.Hash{{assertionCreatedId}, {assertionHash}}
 	}
+	topics = [][]common.Hash{{assertionCreatedId}, {assertionHash}}
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(creationBlock),
 		ToBlock:   new(big.Int).SetUint64(creationBlock),
