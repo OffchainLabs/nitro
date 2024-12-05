@@ -89,7 +89,7 @@ func TestOverflowAssertions(t *testing.T) {
 	valCfg.UseJit = false
 	boldWrapperOpt := server_arb.WithWrapper(
 		func(inner server_arb.MachineInterface) server_arb.MachineInterface {
-			return machineWrapper(inner)
+			return server_arb.BoldMachineWrapper(inner)
 		})
 	_, valStack := createTestValidationNode(t, ctx, &valCfg, boldWrapperOpt)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
