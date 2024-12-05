@@ -179,9 +179,6 @@ func NewBOLDStaker(
 // Initialize Updates the block validator module root.
 // And updates the init state of the block validator if block validator has not started yet.
 func (b *BOLDStaker) Initialize(ctx context.Context) error {
-	if err := b.updateBlockValidatorModuleRoot(ctx); err != nil {
-		return err
-	}
 	walletAddressOrZero := b.wallet.AddressOrZero()
 	var stakerAddr common.Address
 	if b.wallet.DataPoster() != nil {
@@ -225,10 +222,6 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
 	b.chalManager.Start(ctxIn)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
-		err := b.updateBlockValidatorModuleRoot(ctx)
-		if err != nil {
-			log.Warn("error updating latest wasm module root", "err", err)
-		}
 		agreedMsgCount, agreedGlobalState, err := b.getLatestState(ctx, false)
 		if err != nil {
 			log.Error("staker: error checking latest agreed", "err", err)
@@ -299,30 +292,6 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 func (b *BOLDStaker) StopAndWait() {
 	b.chalManager.StopAndWait()
 	b.StopWaiter.StopAndWait()
-}
-
-func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {
-	if b.blockValidator == nil {
-		return nil
-	}
-	boldRollup, err := boldrollup.NewRollupUserLogic(b.rollupAddress, b.client)
-	if err != nil {
-		return err
-	}
-	moduleRoot, err := boldRollup.WasmModuleRoot(b.getCallOpts(ctx))
-	if err != nil {
-		return err
-	}
-	if moduleRoot != b.lastWasmModuleRoot {
-		err := b.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
-		if err != nil {
-			return err
-		}
-		b.lastWasmModuleRoot = moduleRoot
-	} else if (moduleRoot == common.Hash{}) {
-		return errors.New("wasmModuleRoot in rollup is zero")
-	}
-	return nil
 }
 
 func (b *BOLDStaker) getCallOpts(ctx context.Context) *bind.CallOpts {

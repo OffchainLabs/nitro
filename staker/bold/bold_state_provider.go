@@ -455,9 +455,6 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 	// This is to ensure that we do not have the validator froze indefinitely if
 	// the execution run is no longer alive.
 	ctx, cancel := context.WithCancel(ctxIn)
-	// Create a context with cancel, so that we can cancel the check alive routine
-	// once the calling function returns.
-	ctxCheckAlive, cancelCheckAlive := context.WithCancel(ctxIn)
 	go func() {
 		// Call cancel so that the calling function is canceled if the check alive
 		// routine fails/returns.
@@ -466,12 +463,12 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 		defer ticker.Stop()
 		for {
 			select {
-			case <-ctxCheckAlive.Done():
+			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				// Create a context with a timeout, so that the check alive routine does
 				// not run indefinitely.
-				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctxCheckAlive, 5*time.Second)
+				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctx, 5*time.Second)
 				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
 				if err != nil {
 					executionNodeOfflineGauge.Inc(1)
@@ -482,7 +479,7 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 			}
 		}
 	}()
-	return ctx, cancelCheckAlive
+	return ctx, cancel
 }
 
 // CollectProof collects a one-step proof at a message number and OpcodeIndex.
