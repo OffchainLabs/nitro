@@ -80,12 +80,12 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 	}
 }
 
-func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON) (uint64, error) {
+func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON, useBoldMachine *bool) (uint64, error) {
 	input, err := server_api.ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
 	}
-	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input, useBoldMachine).Await(ctx)
 	if err != nil {
 		return 0, err
 	}
