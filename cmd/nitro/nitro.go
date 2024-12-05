@@ -595,6 +595,7 @@ func mainImpl() int {
 
 		if !nodeConfig.Node.BatchPoster.EnableEigenDAFailover && nodeConfig.Node.Dangerous.DisableBlobReader {
 			log.Error("4844 must be disabled if using EigenDA without failover enabled")
+			return 1
 		}
 	}
 	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
