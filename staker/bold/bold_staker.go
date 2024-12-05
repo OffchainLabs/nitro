@@ -49,8 +49,8 @@ func init() {
 }
 
 type BoldConfig struct {
-	Enable bool   `koanf:"enable"`
-	Mode   string `koanf:"mode"`
+	Enable   bool   `koanf:"enable"`
+	Strategy string `koanf:"strategy"`
 	// How often to post assertions onchain.
 	AssertionPostingInterval time.Duration `koanf:"assertion-posting-interval"`
 	// How often to scan for newly created assertions onchain.
@@ -65,6 +65,16 @@ type BoldConfig struct {
 	CheckStakerSwitchInterval           time.Duration       `koanf:"check-staker-switch-interval"`
 	StateProviderConfig                 StateProviderConfig `koanf:"state-provider-config"`
 	StartValidationFromStaked           bool                `koanf:"start-validation-from-staked"`
+	strategy                            legacystaker.StakerStrategy
+}
+
+func (c *BoldConfig) Validate() error {
+	strategy, err := legacystaker.ParseStrategy(c.Strategy)
+	if err != nil {
+		return err
+	}
+	c.strategy = strategy
+	return nil
 }
 
 type StateProviderConfig struct {
@@ -83,7 +93,7 @@ var DefaultStateProviderConfig = StateProviderConfig{
 
 var DefaultBoldConfig = BoldConfig{
 	Enable:                              false,
-	Mode:                                "make-mode",
+	Strategy:                            "Watchtower",
 	AssertionPostingInterval:            time.Minute * 15,
 	AssertionScanningInterval:           time.Minute,
 	AssertionConfirmingInterval:         time.Minute,
@@ -97,16 +107,16 @@ var DefaultBoldConfig = BoldConfig{
 	StartValidationFromStaked:           true,
 }
 
-var BoldModes = map[string]boldtypes.Mode{
-	"watchtower-mode": boldtypes.WatchTowerMode,
-	"resolve-mode":    boldtypes.ResolveMode,
-	"defensive-mode":  boldtypes.DefensiveMode,
-	"make-mode":       boldtypes.MakeMode,
+var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
+	legacystaker.WatchtowerStrategy:   boldtypes.WatchTowerMode,
+	legacystaker.DefensiveStrategy:    boldtypes.DefensiveMode,
+	legacystaker.ResolveNodesStrategy: boldtypes.ResolveMode,
+	legacystaker.MakeNodesStrategy:    boldtypes.MakeMode,
 }
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
-	f.String(prefix+".mode", DefaultBoldConfig.Mode, "define the bold validator staker strategy")
+	f.String(prefix+".strategy", DefaultBoldConfig.Strategy, "define the bold validator staker strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "assertion posting interval")
 	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "scan assertion interval")
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
@@ -134,7 +144,6 @@ type BOLDStaker struct {
 	statelessBlockValidator *staker.StatelessBlockValidator
 	rollupAddress           common.Address
 	l1Reader                *headerreader.HeaderReader
-	lastWasmModuleRoot      common.Hash
 	client                  protocol.ChainBackend
 	callOpts                bind.CallOpts
 	wallet                  legacystaker.ValidatorWalletInterface
@@ -156,6 +165,9 @@ func NewBOLDStaker(
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
 ) (*BOLDStaker, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
 	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster)
 	if err != nil {
@@ -184,7 +196,7 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 	if b.wallet.DataPoster() != nil {
 		stakerAddr = b.wallet.DataPoster().Sender()
 	}
-	log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", walletAddressOrZero, "mode", b.config.Mode)
+	log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", walletAddressOrZero, "strategy", b.config.Strategy)
 
 	if b.blockValidator != nil && b.config.StartValidationFromStaked && !b.blockValidator.Started() {
 		rollupUserLogic, err := boldrollup.NewRollupUserLogic(b.rollupAddress, b.client)
@@ -396,7 +408,7 @@ func newBOLDChallengeManager(
 
 	stackOpts := []challengemanager.StackOpt{
 		challengemanager.StackWithName(config.StateProviderConfig.ValidatorName),
-		challengemanager.StackWithMode(BoldModes[config.Mode]),
+		challengemanager.StackWithMode(BoldModes[config.strategy]),
 		challengemanager.StackWithPollingInterval(scanningInterval),
 		challengemanager.StackWithPostingInterval(postingInterval),
 		challengemanager.StackWithConfirmationInterval(confirmingInterval),

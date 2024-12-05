@@ -101,8 +101,8 @@ type L1ValidatorConfig struct {
 	gasRefunder common.Address
 }
 
-func (c *L1ValidatorConfig) ParseStrategy() (StakerStrategy, error) {
-	switch strings.ToLower(c.Strategy) {
+func ParseStrategy(strategy string) (StakerStrategy, error) {
+	switch strings.ToLower(strategy) {
 	case "watchtower":
 		return WatchtowerStrategy, nil
 	case "defensive":
@@ -114,7 +114,7 @@ func (c *L1ValidatorConfig) ParseStrategy() (StakerStrategy, error) {
 	case "makenodes":
 		return MakeNodesStrategy, nil
 	default:
-		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", c.Strategy)
+		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", strategy)
 	}
 }
 
@@ -132,7 +132,7 @@ func (c *L1ValidatorConfig) ValidatorRequired() bool {
 }
 
 func (c *L1ValidatorConfig) Validate() error {
-	strategy, err := c.ParseStrategy()
+	strategy, err := ParseStrategy(c.Strategy)
 	if err != nil {
 		return err
 	}
