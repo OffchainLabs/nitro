@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -27,6 +29,7 @@ import (
 	"github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -35,6 +38,7 @@ import (
 )
 
 var assertionCreatedId common.Hash
+var homeDir string
 
 func init() {
 	rollupAbi, err := boldrollup.RollupCoreMetaData.GetAbi()
@@ -46,6 +50,11 @@ func init() {
 		panic("RollupCore ABI missing AssertionCreated event")
 	}
 	assertionCreatedId = assertionCreatedEvent.ID
+	homeDirPath, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+	homeDir = homeDirPath
 }
 
 type BoldConfig struct {
@@ -88,7 +97,7 @@ type StateProviderConfig struct {
 var DefaultStateProviderConfig = StateProviderConfig{
 	ValidatorName:          "default-validator",
 	CheckBatchFinality:     true,
-	MachineLeavesCachePath: "/tmp/machine-leaves-cache",
+	MachineLeavesCachePath: filepath.Join(homeDir, conf.PersistentConfigDefault.GlobalConfig, "machine-hashes-cache"),
 }
 
 var DefaultBoldConfig = BoldConfig{
@@ -100,7 +109,7 @@ var DefaultBoldConfig = BoldConfig{
 	API:                                 false,
 	APIHost:                             "127.0.0.1",
 	APIPort:                             9393,
-	APIDBPath:                           "/tmp/bold-api-db",
+	APIDBPath:                           filepath.Join(homeDir, conf.PersistentConfigDefault.GlobalConfig, "bold-api-db"),
 	TrackChallengeParentAssertionHashes: []string{},
 	CheckStakerSwitchInterval:           time.Minute, // Every minute, check if the Nitro node staker should switch to using BOLD.
 	StateProviderConfig:                 DefaultStateProviderConfig,
@@ -474,7 +483,6 @@ func readBoldAssertionCreationInfo(
 			return nil, errors.New("rollup deployment block was not a uint64")
 		}
 		creationBlock = rollupDeploymentBlock.Uint64()
-		topics = [][]common.Hash{{assertionCreatedId}}
 	} else {
 		var b [32]byte
 		copy(b[:], assertionHash[:])
@@ -483,8 +491,8 @@ func readBoldAssertionCreationInfo(
 			return nil, err
 		}
 		creationBlock = node.CreatedAtBlock
-		topics = [][]common.Hash{{assertionCreatedId}, {assertionHash}}
 	}
+	topics = [][]common.Hash{{assertionCreatedId}, {assertionHash}}
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(creationBlock),
 		ToBlock:   new(big.Int).SetUint64(creationBlock),
