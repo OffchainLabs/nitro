@@ -734,12 +734,14 @@ func createNodeImpl(
 			nilWriter := false
 			switch strings.ToLower(providerName) {
 			case "anytrust":
+				log.Info("Adding DapWriter", "type", "anytrust")
 				if daWriter != nil {
 					dapWriters = append(dapWriters, daprovider.NewWriterForDAS(daWriter))
 				} else {
 					nilWriter = true
 				}
 			case "celestia":
+				log.Info("Adding DapWriter", "type", "celestia")
 				if celestiaWriter != nil {
 					dapWriters = append(dapWriters, celestiaTypes.NewWriterForCelestia(celestiaWriter))
 				} else {

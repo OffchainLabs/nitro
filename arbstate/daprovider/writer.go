@@ -19,6 +19,9 @@ type Writer interface {
 		timeout uint64,
 		disableFallbackStoreDataOnChain bool,
 	) ([]byte, error)
+
+	// Identifies a Writer by type
+	Type() string
 }
 
 // DAProviderWriterForDAS is generally meant to be only used by nitro.
@@ -44,4 +47,8 @@ func (d *writerForDAS) Store(ctx context.Context, message []byte, timeout uint64
 	} else {
 		return Serialize(cert), nil
 	}
+}
+
+func (d *writerForDAS) Type() string {
+	return "anytrust"
 }

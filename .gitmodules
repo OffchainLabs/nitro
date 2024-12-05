@@ -24,7 +24,7 @@
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/EspressoSystems/nitro-testnode
-	branch = integration
+	branch = celestia-integration
 [submodule "arbitrator/langs/rust"]
 	path = arbitrator/langs/rust
 	url = https://github.com/OffchainLabs/stylus-sdk-rs.git

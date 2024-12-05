@@ -24,3 +24,7 @@ func (c *writerForCelestia) Store(ctx context.Context, message []byte, timeout u
 	message = msg
 	return message, nil
 }
+
+func (d *writerForCelestia) Type() string {
+	return "celestia"
+}

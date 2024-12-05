@@ -421,7 +421,7 @@ pub unsafe extern "C" fn arbitrator_free_proof(proof: RustByteArray) {
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_get_opcode(mach: *mut Machine) -> u16 {
     match (*mach).get_next_instruction() {
-        Some(instruction) => return instruction.opcode.repr(),
+        Some(instruction) => instruction.opcode.repr(),
         None => panic!("Failed to get next opcode for Machine"),
     }
 }
