@@ -592,6 +592,11 @@ func mainImpl() int {
 			log.Error("batchPoster's MaxEigenDABatchSize too large.", "MaxEigenDABatchSize", eigenda.MaxBatchSize)
 			return 1
 		}
+
+		if !nodeConfig.Node.BatchPoster.EnableEigenDAFailover && nodeConfig.Node.Dangerous.DisableBlobReader {
+			log.Error("4844 must be disabled if using EigenDA without failover enabled")
+			return 1
+		}
 	}
 	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
 	// And since batchposter's MaxSize is to be at least 10kB below the sequencer inbox’s maxDataSize, this leads to another condition of atlest 15kB below the sequencer inbox’s maxDataSize.
