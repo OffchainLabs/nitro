@@ -1,0 +1,8 @@
+INFO [12-05|10:17:07.961] Running Arbitrum nitro validation node   revision=6365875 vcs.time=2024-12-05T16:13:54Z
+INFO [12-05|10:17:07.962] Starting peer-to-peer node               instance=nitro-val/v6365875/darwin-arm64/go1.23.3
+WARN [12-05|10:17:07.965] P2P server will be useless, neither dialing nor listening
+INFO [12-05|10:17:07.967] Loaded JWT secret file                   path=/Users/zypherpunk/Desktop/boldtestnetv2/jwt.hex crc32=0x565f8791
+INFO [12-05|10:17:07.968] New local node record                    seq=1,733,415,427,967 id=0a039aac49a7190b ip=127.0.0.1 udp=0 tcp=0
+INFO [12-05|10:17:07.971] Started P2P networking                   self=enode://12e6d1888c85b3918ffec635eb9e6264e8471d579d4d48b04670279792c75368a944f324ec10579fcf3aa78e7f5e5daeac2d011951e53faa3984967c81b65d10@127.0.0.1:0
+INFO [12-05|10:17:07.971] WebSocket enabled                        url=ws://127.0.0.1:8549
+INFO [12-05|10:17:07.971] HTTP server started                      endpoint=127.0.0.1:8549 auth=true prefix= cors=localhost vhosts=
