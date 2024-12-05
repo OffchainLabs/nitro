@@ -370,7 +370,8 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	}
 	// TODO: Enable Redis streams.
 	wasmModRoot := cfg.AssertionMetadata.WasmModuleRoot
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input).Await(ctx)
+	useBoldMachine := true
+	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input, &useBoldMachine).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +530,8 @@ func (s *BOLDStateProvider) CollectProof(
 		"startState", fmt.Sprintf("%+v", input.StartState),
 	)
 	wasmModRoot := assertionMetadata.WasmModuleRoot
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input).Await(ctx)
+	useBoldMachine := true
+	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input, &useBoldMachine).Await(ctx)
 	if err != nil {
 		return nil, err
 	}

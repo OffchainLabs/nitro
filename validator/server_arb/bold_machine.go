@@ -1,25 +1,24 @@
-package boldmach
+package server_arb
 
 import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
 // boldMachine wraps a server_arb.MachineInterface.
 type BoldMachine struct {
-	inner       server_arb.MachineInterface
-	zeroMachine *server_arb.ArbitratorMachine
+	inner       MachineInterface
+	zeroMachine *ArbitratorMachine
 	hasStepped  bool
 }
 
 // Ensure boldMachine implements server_arb.MachineInterface.
-var _ server_arb.MachineInterface = (*BoldMachine)(nil)
+var _ MachineInterface = (*BoldMachine)(nil)
 
-func newBoldMachine(inner server_arb.MachineInterface) *BoldMachine {
-	z := server_arb.NewFinishedMachine(inner.GetGlobalState())
+func newBoldMachine(inner MachineInterface) *BoldMachine {
+	z := NewFinishedMachine(inner.GetGlobalState())
 	return &BoldMachine{
 		inner:       inner,
 		zeroMachine: z,
@@ -33,12 +32,12 @@ func newBoldMachine(inner server_arb.MachineInterface) *BoldMachine {
 // This zeroth step should be at the same global state as the inner arbitrator
 // machine has at step 0, but the machine is in the Finished state rather than
 // the Running state.
-func MachineWrapper(inner server_arb.MachineInterface) server_arb.MachineInterface {
+func BoldMachineWrapper(inner MachineInterface) MachineInterface {
 	return newBoldMachine(inner)
 }
 
 // CloneMachineInterface returns a new boldMachine with the same inner machine.
-func (m *BoldMachine) CloneMachineInterface() server_arb.MachineInterface {
+func (m *BoldMachine) CloneMachineInterface() MachineInterface {
 	bMach := newBoldMachine(m.inner.CloneMachineInterface())
 	bMach.hasStepped = m.hasStepped
 	return bMach

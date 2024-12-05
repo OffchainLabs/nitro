@@ -232,7 +232,7 @@ func (v *ArbitratorSpawner) Room() int {
 	return avail
 }
 
-func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
+func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput, useBoldMachine *bool) containers.PromiseInterface[validator.ExecutionRun] {
 	getMachine := func(ctx context.Context) (MachineInterface, error) {
 		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
 		if err != nil {
@@ -244,7 +244,12 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 			machine.Destroy()
 			return nil, err
 		}
-		wrapped := MachineInterface(machine)
+		var wrapped MachineInterface
+		if *useBoldMachine {
+			wrapped = BoldMachineWrapper(machine)
+		} else {
+			wrapped = MachineInterface(machine)
+		}
 		for _, wrapper := range v.machineWrappers {
 			wrapped = wrapper(wrapped)
 		}
