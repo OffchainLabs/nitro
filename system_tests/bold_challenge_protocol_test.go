@@ -153,11 +153,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 
 	valCfg := valnode.TestValidationConfig
 	valCfg.UseJit = false
-	boldWrapperOpt := server_arb.WithWrapper(
-		func(inner server_arb.MachineInterface) server_arb.MachineInterface {
-			return server_arb.BoldMachineWrapper(inner)
-		})
-	_, valStack := createTestValidationNode(t, ctx, &valCfg, boldWrapperOpt)
+	_, valStack := createTestValidationNode(t, ctx, &valCfg)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	statelessA, err := staker.NewStatelessBlockValidator(
@@ -173,7 +169,6 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
-	spawnerOpts = append([]server_arb.SpawnerOption{boldWrapperOpt}, spawnerOpts...)
 	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
 	statelessB, err := staker.NewStatelessBlockValidator(

@@ -35,7 +35,7 @@ import (
 )
 
 type incorrectBlockStateProvider struct {
-	honest              *bold.BOLDStateProvider
+	honest              BoldStateProviderInterface
 	chain               protocol.AssertionChain
 	wrongAtFirstVirtual bool
 	wrongAtBlockHeight  uint64
@@ -162,7 +162,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 
 	_, cleanupEvilChallengeManager := startBoldChallengeManager(t, ctx, builder, evilNode, "EvilAsserter", func(stateManager BoldStateProviderInterface) BoldStateProviderInterface {
 		p := &incorrectBlockStateProvider{
-			honest:              stateManager.(*bold.BOLDStateProvider),
+			honest:              stateManager,
 			chain:               assertionChain,
 			wrongAtFirstVirtual: wrongAtFirstVirtual,
 		}
