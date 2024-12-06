@@ -14,6 +14,8 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/bold/api/backend"
 	"github.com/offchainlabs/bold/util/stopwaiter"
 )
@@ -53,11 +55,13 @@ func New(addr string, backend backend.BusinessLogicProvider) (*Server, error) {
 
 func (s *Server) Start(ctx context.Context) error {
 	s.StopWaiter.Start(ctx, s)
+	go func() {
+		<-ctx.Done()
+		if err := s.srv.Shutdown(ctx); err != nil {
+			log.Error("Could not shutdown API server", "err", err)
+		}
+	}()
 	return s.srv.ListenAndServe()
-}
-
-func (s *Server) Stop(ctx context.Context) error {
-	return s.srv.Shutdown(ctx)
 }
 
 func (s *Server) Addr() string {

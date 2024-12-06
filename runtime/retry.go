@@ -54,7 +54,11 @@ func UntilSucceedsMultipleReturnValue[T, U any](ctx context.Context, fn func() (
 				"err", err,
 			)
 			retryCounter.Inc(1)
-			time.Sleep(cfg.sleepTime)
+			select {
+			case <-ctx.Done():
+				return zeroVal[T](), zeroVal[U](), ctx.Err()
+			case <-time.After(cfg.sleepTime):
+			}
 			continue
 		}
 		return got, got2, nil
