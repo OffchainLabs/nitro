@@ -35,7 +35,7 @@ import (
 )
 
 type incorrectBlockStateProvider struct {
-	honest              *bold.BOLDStateProvider
+	honest              BoldStateProviderInterface
 	chain               protocol.AssertionChain
 	wrongAtFirstVirtual bool
 	wrongAtBlockHeight  uint64
@@ -162,7 +162,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 
 	_, cleanupEvilChallengeManager := startBoldChallengeManager(t, ctx, builder, evilNode, "EvilAsserter", func(stateManager BoldStateProviderInterface) BoldStateProviderInterface {
 		p := &incorrectBlockStateProvider{
-			honest:              stateManager.(*bold.BOLDStateProvider),
+			honest:              stateManager,
 			chain:               assertionChain,
 			wrongAtFirstVirtual: wrongAtFirstVirtual,
 		}
@@ -277,15 +277,17 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 
 	var stateManager BoldStateProviderInterface
 	var err error
+	cacheDir := t.TempDir()
 	stateManager, err = bold.NewBOLDStateProvider(
 		node.ConsensusNode.BlockValidator,
 		node.ConsensusNode.StatelessBlockValidator,
 		l2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          addressName,
-			MachineLeavesCachePath: t.TempDir(),
+			MachineLeavesCachePath: cacheDir,
 			CheckBatchFinality:     false,
 		},
+		cacheDir,
 	)
 	Require(t, err)
 
