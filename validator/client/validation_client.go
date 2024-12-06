@@ -160,7 +160,7 @@ func (c *ExecutionClient) CreateExecutionRun(
 ) containers.PromiseInterface[validator.ExecutionRun] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), useBoldMachine)
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), *useBoldMachine)
 		if err != nil {
 			return nil, err
 		}

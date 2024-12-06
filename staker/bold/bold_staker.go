@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
-	"path/filepath"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -17,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
@@ -29,7 +28,6 @@ import (
 	"github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -38,7 +36,6 @@ import (
 )
 
 var assertionCreatedId common.Hash
-var homeDir string
 
 func init() {
 	rollupAbi, err := boldrollup.RollupCoreMetaData.GetAbi()
@@ -50,11 +47,6 @@ func init() {
 		panic("RollupCore ABI missing AssertionCreated event")
 	}
 	assertionCreatedId = assertionCreatedEvent.ID
-	homeDirPath, err := os.UserHomeDir()
-	if err != nil {
-		panic(err)
-	}
-	homeDir = homeDirPath
 }
 
 type BoldConfig struct {
@@ -97,7 +89,7 @@ type StateProviderConfig struct {
 var DefaultStateProviderConfig = StateProviderConfig{
 	ValidatorName:          "default-validator",
 	CheckBatchFinality:     true,
-	MachineLeavesCachePath: filepath.Join(homeDir, conf.PersistentConfigDefault.GlobalConfig, "machine-hashes-cache"),
+	MachineLeavesCachePath: "machine-hashes-cache",
 }
 
 var DefaultBoldConfig = BoldConfig{
@@ -109,7 +101,7 @@ var DefaultBoldConfig = BoldConfig{
 	API:                                 false,
 	APIHost:                             "127.0.0.1",
 	APIPort:                             9393,
-	APIDBPath:                           filepath.Join(homeDir, conf.PersistentConfigDefault.GlobalConfig, "bold-api-db"),
+	APIDBPath:                           "bold-api-db",
 	TrackChallengeParentAssertionHashes: []string{},
 	CheckStakerSwitchInterval:           time.Minute, // Every minute, check if the Nitro node staker should switch to using BOLD.
 	StateProviderConfig:                 DefaultStateProviderConfig,
@@ -162,6 +154,7 @@ type BOLDStaker struct {
 
 func NewBOLDStaker(
 	ctx context.Context,
+	stack *node.Node,
 	rollupAddress common.Address,
 	callOpts bind.CallOpts,
 	txOpts *bind.TransactOpts,
@@ -178,7 +171,7 @@ func NewBOLDStaker(
 		return nil, err
 	}
 	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
-	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster)
+	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +342,7 @@ func (b *BOLDStaker) getCallOpts(ctx context.Context) *bind.CallOpts {
 // implements the StopWaiter pattern as part of the Nitro validator.
 func newBOLDChallengeManager(
 	ctx context.Context,
+	stack *node.Node,
 	rollupAddress common.Address,
 	txOpts *bind.TransactOpts,
 	l1Reader *headerreader.HeaderReader,
@@ -405,6 +399,15 @@ func newBOLDChallengeManager(
 	bigStepHeight := l2stateprovider.Height(bigStepHeightBig.Uint64())
 	smallStepHeight := l2stateprovider.Height(smallStepHeightBig.Uint64())
 
+	apiDBPath := config.APIDBPath
+	if apiDBPath != "" {
+		apiDBPath = stack.ResolvePath(apiDBPath)
+	}
+	machineHashesPath := config.StateProviderConfig.MachineLeavesCachePath
+	if machineHashesPath != "" {
+		machineHashesPath = stack.ResolvePath(machineHashesPath)
+	}
+
 	// Sets up the state provider interface that BOLD will use to request data such as
 	// execution states for assertions, history commitments for machine execution, and one step proofs.
 	stateProvider, err := NewBOLDStateProvider(
@@ -414,6 +417,7 @@ func newBOLDChallengeManager(
 		// TODO: Fetch these from the smart contract instead.
 		blockChallengeLeafHeight,
 		&config.StateProviderConfig,
+		machineHashesPath,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create state manager: %w", err)
@@ -449,7 +453,7 @@ func newBOLDChallengeManager(
 	}
 	if config.API {
 		apiAddr := fmt.Sprintf("%s:%d", config.APIHost, config.APIPort)
-		stackOpts = append(stackOpts, challengemanager.StackWithAPIEnabled(apiAddr, config.APIDBPath))
+		stackOpts = append(stackOpts, challengemanager.StackWithAPIEnabled(apiAddr, apiDBPath))
 	}
 
 	manager, err := challengemanager.NewChallengeStack(

@@ -84,7 +84,7 @@ func (s *mockSpawner) Stop()        {}
 func (s *mockSpawner) Name() string { return "mock" }
 func (s *mockSpawner) Room() int    { return 4 }
 
-func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput, useBoldMachine *bool) containers.PromiseInterface[validator.ExecutionRun] {
+func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput, _ *bool) containers.PromiseInterface[validator.ExecutionRun] {
 	s.ExecSpawned = append(s.ExecSpawned, input.Id)
 	return containers.NewReadyPromise[validator.ExecutionRun](&mockExecRun{
 		startState: input.StartState,

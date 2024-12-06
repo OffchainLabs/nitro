@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
@@ -46,9 +47,11 @@ type MultiProtocolStaker struct {
 	callOpts                bind.CallOpts
 	boldConfig              *boldstaker.BoldConfig
 	stakeTokenAddress       common.Address
+	stack                   *node.Node
 }
 
 func NewMultiProtocolStaker(
+	stack *node.Node,
 	l1Reader *headerreader.HeaderReader,
 	wallet legacystaker.ValidatorWalletInterface,
 	callOpts bind.CallOpts,
@@ -102,6 +105,7 @@ func NewMultiProtocolStaker(
 		callOpts:                callOpts,
 		boldConfig:              boldConfig,
 		stakeTokenAddress:       stakeTokenAddress,
+		stack:                   stack,
 	}, nil
 }
 
@@ -224,6 +228,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 	}
 	boldStaker, err := boldstaker.NewBOLDStaker(
 		ctx,
+		m.stack,
 		rollupAddress,
 		m.callOpts,
 		txBuilder.SingleTxAuth(),
