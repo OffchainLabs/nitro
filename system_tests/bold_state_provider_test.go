@@ -400,15 +400,17 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	Require(t, blockValidator.Initialize(ctx))
 	Require(t, blockValidator.Start(ctx))
 
+	dir := t.TempDir()
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
 		l2stateprovider.Height(blockChallengeHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "",
-			MachineLeavesCachePath: t.TempDir(),
+			MachineLeavesCachePath: dir,
 			CheckBatchFinality:     false,
 		},
+		dir,
 	)
 	Require(t, err)
 
