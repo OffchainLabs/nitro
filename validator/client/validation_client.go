@@ -156,11 +156,11 @@ func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) 
 func (c *ExecutionClient) CreateExecutionRun(
 	wasmModuleRoot common.Hash,
 	input *validator.ValidationInput,
-	useBoldMachine *bool,
+	useBoldMachine bool,
 ) containers.PromiseInterface[validator.ExecutionRun] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), *useBoldMachine)
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), useBoldMachine)
 		if err != nil {
 			return nil, err
 		}
