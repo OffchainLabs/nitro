@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ccoveille/go-safecast"
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -204,37 +203,26 @@ func (m *Manager) waitToPostIfNeeded(
 	ctx context.Context,
 	parentCreationInfo *protocol.AssertionCreatedInfo,
 ) error {
-	latestBlockNumber, err := m.backend.HeaderU64(ctx)
-	if err != nil {
-		return err
-	}
-	blocksSinceLast := uint64(0)
-	if parentCreationInfo.CreationBlock < latestBlockNumber {
-		blocksSinceLast = latestBlockNumber - parentCreationInfo.CreationBlock
-	}
 	minPeriodBlocks := m.chain.MinAssertionPeriodBlocks()
-	canPostNow := blocksSinceLast >= minPeriodBlocks
-
-	// If we cannot post just yet, we can wait.
-	if !canPostNow {
-		var blocksLeftForConfirmation int64
-		if minPeriodBlocks > blocksSinceLast {
-			blocksLeftForConfirmation = 0
-		} else {
-			blocksLeftForConfirmation, err = safecast.ToInt64(minPeriodBlocks - blocksSinceLast)
-			if err != nil {
-				return errors.Wrap(err, "could not convert blocks left for confirmation to int64")
-			}
+	for {
+		latestBlockNumber, err := m.backend.HeaderU64(ctx)
+		if err != nil {
+			return err
 		}
-		timeToWait := m.times.avgBlockTime * time.Duration(blocksLeftForConfirmation)
+		blocksSinceLast := uint64(0)
+		if parentCreationInfo.CreationBlock < latestBlockNumber {
+			blocksSinceLast = latestBlockNumber - parentCreationInfo.CreationBlock
+		}
+		if blocksSinceLast >= minPeriodBlocks {
+			return nil
+		}
+		// If we cannot post just yet, we can wait.
 		log.Info(
-			fmt.Sprintf(
-				"Need to wait %d blocks before posting next assertion, waiting for %v",
-				blocksLeftForConfirmation,
-				timeToWait,
+			fmt.Sprintf("Need to wait %d blocks before posting next assertion. Current block number: %d",
+				minPeriodBlocks-blocksSinceLast,
+				latestBlockNumber,
 			),
 		)
-		<-time.After(timeToWait)
+		<-time.After(m.times.avgBlockTime)
 	}
-	return nil
 }
