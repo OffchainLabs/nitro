@@ -47,9 +47,10 @@ func TestOverflowAssertions(t *testing.T) {
 	// Start the challenge manager with a minimumAssertionPeriod of 7 and make
 	// sure that it posts overflow-assertions right away instead of waiting for
 	// the 7 blocks to pass.
-	Require(t, os.RemoveAll("/tmp/good"))
+	goodDir, err := os.MkdirTemp("", "good_*")
+	Require(t, err)
 	t.Cleanup(func() {
-		Require(t, os.RemoveAll("/tmp/good"))
+		Require(t, os.RemoveAll(goodDir))
 	})
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
@@ -125,9 +126,10 @@ func TestOverflowAssertions(t *testing.T) {
 		l2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "good",
-			MachineLeavesCachePath: "/tmp/good",
+			MachineLeavesCachePath: goodDir,
 			CheckBatchFinality:     false,
 		},
+		goodDir,
 	)
 	Require(t, err)
 
