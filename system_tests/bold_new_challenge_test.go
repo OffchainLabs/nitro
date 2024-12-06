@@ -277,15 +277,17 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 
 	var stateManager BoldStateProviderInterface
 	var err error
+	cacheDir := t.TempDir()
 	stateManager, err = bold.NewBOLDStateProvider(
 		node.ConsensusNode.BlockValidator,
 		node.ConsensusNode.StatelessBlockValidator,
 		l2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          addressName,
-			MachineLeavesCachePath: t.TempDir(),
+			MachineLeavesCachePath: cacheDir,
 			CheckBatchFinality:     false,
 		},
+		cacheDir,
 	)
 	Require(t, err)
 

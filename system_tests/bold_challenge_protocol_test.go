@@ -78,11 +78,13 @@ func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
 }
 
 func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
-	Require(t, os.RemoveAll("/tmp/good"))
-	Require(t, os.RemoveAll("/tmp/evil"))
+	goodDir, err := os.MkdirTemp("", "good_*")
+	Require(t, err)
+	evilDir, err := os.MkdirTemp("", "evil_*")
+	Require(t, err)
 	t.Cleanup(func() {
-		Require(t, os.RemoveAll("/tmp/good"))
-		Require(t, os.RemoveAll("/tmp/evil"))
+		Require(t, os.RemoveAll(goodDir))
+		Require(t, os.RemoveAll(evilDir))
 	})
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
@@ -216,9 +218,10 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		l2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "good",
-			MachineLeavesCachePath: "/tmp/good",
+			MachineLeavesCachePath: goodDir,
 			CheckBatchFinality:     false,
 		},
+		goodDir,
 	)
 	Require(t, err)
 
@@ -228,9 +231,10 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		l2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "evil",
-			MachineLeavesCachePath: "/tmp/evil",
+			MachineLeavesCachePath: evilDir,
 			CheckBatchFinality:     false,
 		},
+		evilDir,
 	)
 	Require(t, err)
 
