@@ -56,8 +56,9 @@ func NewBOLDStateProvider(
 	statelessValidator *staker.StatelessBlockValidator,
 	blockChallengeLeafHeight l2stateprovider.Height,
 	stateProviderConfig *StateProviderConfig,
+	machineHashesCachePath string,
 ) (*BOLDStateProvider, error) {
-	historyCache, err := challengecache.New(stateProviderConfig.MachineLeavesCachePath)
+	historyCache, err := challengecache.New(machineHashesCachePath)
 	if err != nil {
 		return nil, err
 	}

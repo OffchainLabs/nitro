@@ -245,7 +245,7 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 			return nil, err
 		}
 		var wrapped MachineInterface
-		if *useBoldMachine {
+		if useBoldMachine != nil && *useBoldMachine {
 			wrapped = BoldMachineWrapper(machine)
 		} else {
 			wrapped = MachineInterface(machine)
