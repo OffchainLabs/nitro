@@ -1,6 +1,6 @@
 module github.com/offchainlabs/nitro
 
-go 1.21
+go 1.21.0
 
 replace github.com/VictoriaMetrics/fastcache => ./fastcache
 
@@ -58,6 +58,7 @@ require (
 require github.com/google/go-querystring v1.1.0 // indirect
 
 require (
+	github.com/Layr-Labs/eigenda-proxy/client v0.0.0-20241207145455-553417ea0500 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231016165738-49dd2c1f3d0b // indirect
 	google.golang.org/grpc v1.59.0 // indirect
 )

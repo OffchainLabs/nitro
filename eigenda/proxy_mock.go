@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/Layr-Labs/eigenda-proxy/client"
 	"github.com/Layr-Labs/eigenda/api/grpc/disperser"
 )
 
@@ -92,7 +93,7 @@ func NewMockEigenDAProxyClient(shouldFail bool) *MockEigenDAProxyClient {
 
 func (c *MockEigenDAProxyClient) Put(ctx context.Context, data []byte) (*disperser.BlobInfo, error) {
 	if c.client.(*MockProxyClient).ShouldFail {
-		return nil, ErrServiceUnavailable
+		return nil, client.ErrServiceUnavailable
 	}
 	return &mockBlobInfo, nil
 }
@@ -103,7 +104,7 @@ func (c *MockEigenDAProxyClient) Get(ctx context.Context, blobInfo *disperser.Bl
 	}
 
 	if c.client.(*MockProxyClient).ShouldReturn503 {
-		return nil, ErrServiceUnavailable
+		return nil, client.ErrServiceUnavailable
 	}
 
 	return mockBlobData, nil
