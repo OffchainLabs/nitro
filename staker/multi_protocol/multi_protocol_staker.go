@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
@@ -46,9 +47,11 @@ type MultiProtocolStaker struct {
 	callOpts                bind.CallOpts
 	boldConfig              *boldstaker.BoldConfig
 	stakeTokenAddress       common.Address
+	stack                   *node.Node
 }
 
 func NewMultiProtocolStaker(
+	stack *node.Node,
 	l1Reader *headerreader.HeaderReader,
 	wallet legacystaker.ValidatorWalletInterface,
 	callOpts bind.CallOpts,
@@ -102,6 +105,7 @@ func NewMultiProtocolStaker(
 		callOpts:                callOpts,
 		boldConfig:              boldConfig,
 		stakeTokenAddress:       stakeTokenAddress,
+		stack:                   stack,
 	}, nil
 }
 
@@ -111,13 +115,6 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 		return err
 	}
 	if boldActive {
-		stakeTokenContract, err := m.l1Reader.Client().CodeAt(ctx, m.stakeTokenAddress, nil)
-		if err != nil {
-			return err
-		}
-		if len(stakeTokenContract) == 0 {
-			return fmt.Errorf("stake token address for BoLD %v does not point to a contract", m.stakeTokenAddress)
-		}
 		log.Info("BoLD protocol is active, initializing BoLD staker")
 		log.Info(boldArt)
 		if err := m.setupBoldStaker(ctx, rollupAddress); err != nil {
@@ -218,12 +215,20 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 	ctx context.Context,
 	rollupAddress common.Address,
 ) error {
+	stakeTokenContract, err := m.l1Reader.Client().CodeAt(ctx, m.stakeTokenAddress, nil)
+	if err != nil {
+		return err
+	}
+	if len(stakeTokenContract) == 0 {
+		return fmt.Errorf("stake token address for BoLD %v does not point to a contract", m.stakeTokenAddress)
+	}
 	txBuilder, err := txbuilder.NewBuilder(m.wallet, m.legacyConfig().GasRefunder())
 	if err != nil {
 		return err
 	}
 	boldStaker, err := boldstaker.NewBOLDStaker(
 		ctx,
+		m.stack,
 		rollupAddress,
 		m.callOpts,
 		txBuilder.SingleTxAuth(),

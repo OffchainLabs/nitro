@@ -34,7 +34,6 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util"
-	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -47,9 +46,10 @@ func TestOverflowAssertions(t *testing.T) {
 	// Start the challenge manager with a minimumAssertionPeriod of 7 and make
 	// sure that it posts overflow-assertions right away instead of waiting for
 	// the 7 blocks to pass.
-	Require(t, os.RemoveAll("/tmp/good"))
+	goodDir, err := os.MkdirTemp("", "good_*")
+	Require(t, err)
 	t.Cleanup(func() {
-		Require(t, os.RemoveAll("/tmp/good"))
+		Require(t, os.RemoveAll(goodDir))
 	})
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
@@ -87,11 +87,7 @@ func TestOverflowAssertions(t *testing.T) {
 
 	valCfg := valnode.TestValidationConfig
 	valCfg.UseJit = false
-	boldWrapperOpt := server_arb.WithWrapper(
-		func(inner server_arb.MachineInterface) server_arb.MachineInterface {
-			return machineWrapper(inner)
-		})
-	_, valStack := createTestValidationNode(t, ctx, &valCfg, boldWrapperOpt)
+	_, valStack := createTestValidationNode(t, ctx, &valCfg)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
 	stateless, err := staker.NewStatelessBlockValidator(
@@ -125,9 +121,10 @@ func TestOverflowAssertions(t *testing.T) {
 		l2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "good",
-			MachineLeavesCachePath: "/tmp/good",
+			MachineLeavesCachePath: goodDir,
 			CheckBatchFinality:     false,
 		},
+		goodDir,
 	)
 	Require(t, err)
 
