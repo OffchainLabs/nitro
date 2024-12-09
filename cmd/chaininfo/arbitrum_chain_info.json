@@ -44,6 +44,7 @@
       "sequencer-inbox": "0x1c479675ad559dc151f6ec7ed3fbf8cee79582b6",
       "validator-utils": "0x9e40625f52829cf04bc4839f186d621ee33b0e67",
       "validator-wallet-creator": "0x960953f7c69cd2bc2322db9223a815c680ccc7ea",
+      "stake-token": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
       "deployed-at": 15411056
     }
   },
@@ -90,6 +91,7 @@
       "sequencer-inbox": "0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b",
       "validator-utils": "0x2B081fbaB646D9013f2699BebEf62B7e7d7F0976",
       "validator-wallet-creator": "0xe05465Aab36ba1277dAE36aa27a7B74830e74DE4",
+      "stake-token": "0x765277eebeca2e31912c9946eae1021199b39c61",
       "deployed-at": 15016829
     }
   },
