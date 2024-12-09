@@ -35,11 +35,11 @@ var (
 )
 
 type DASRPCClient struct { // implements DataAvailabilityService
-	clnt                *rpc.Client
-	url                 string
-	signer              signature.DataSignerFunc
-	chunkSize           uint64
-	disableChunkedStore bool
+	clnt               *rpc.Client
+	url                string
+	signer             signature.DataSignerFunc
+	chunkSize          uint64
+	enableChunkedStore bool
 }
 
 func nilSigner(_ []byte) ([]byte, error) {
@@ -48,7 +48,7 @@ func nilSigner(_ []byte) ([]byte, error) {
 
 const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
-func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChunkBodySize int, disableChunkedStore bool) (*DASRPCClient, error) {
+func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChunkBodySize int, enableChunkedStore bool) (*DASRPCClient, error) {
 	clnt, err := rpc.Dial(target)
 	if err != nil {
 		return nil, err
@@ -58,14 +58,14 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 	}
 
 	client := &DASRPCClient{
-		clnt:                clnt,
-		url:                 target,
-		signer:              signer,
-		disableChunkedStore: disableChunkedStore,
+		clnt:               clnt,
+		url:                target,
+		signer:             signer,
+		enableChunkedStore: enableChunkedStore,
 	}
 
 	// Byte arrays are encoded in base64
-	if !disableChunkedStore {
+	if enableChunkedStore {
 		chunkSize := (maxStoreChunkBodySize - len(sendChunkJSONBoilerplate) - 512 /* headers */) / 2
 		if chunkSize <= 0 {
 			return nil, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
@@ -89,7 +89,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		rpcClientStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	if c.disableChunkedStore {
+	if !c.enableChunkedStore {
 		log.Info("Legacy store is being force-used by the DAS client", "url", c.url)
 		return c.legacyStore(ctx, message, timeout)
 	}
