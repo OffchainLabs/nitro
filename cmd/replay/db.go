@@ -18,6 +18,10 @@ import (
 
 type PreimageDb struct{}
 
+func (db PreimageDb) CreateDBSnapshot(dir string) error {
+	return errors.New("createDBSnapshot method is not supported by PreimageDb")
+}
+
 func (db PreimageDb) Has(key []byte) (bool, error) {
 	if len(key) != 32 {
 		return false, nil
