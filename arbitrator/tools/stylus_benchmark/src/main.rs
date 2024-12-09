@@ -98,16 +98,15 @@ fn run(compiled_module: Vec<u8>) -> Duration {
 }
 
 fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
-    let mut durations: Vec<Duration> = Vec::new();
-
     let wat = match std::fs::read(wat_path) {
         Ok(wat) => wat,
         Err(err) => panic!("failed to read: {err}"),
     };
-    let wasm = wasmer::wat2wasm(&wat).unwrap();
+    let wasm = wasmer::wat2wasm(&wat)?;
 
-    let compiled_module = compile(&wasm, 0, true, Target::default()).unwrap();
+    let compiled_module = compile(&wasm, 0, true, Target::default())?;
 
+    let mut durations: Vec<Duration> = Vec::new();
     for i in 0..NUMBER_OF_BENCHMARK_RUNS {
         println!("Benchmark run {:?} {:?}", i, wat_path);
         let duration = run(compiled_module.clone());
@@ -115,14 +114,11 @@ fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
     }
 
     durations.sort();
-    println!("durations: {:?}", durations);
-
     let l = NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD as usize;
     let r = NUMBER_OF_BENCHMARK_RUNS as usize - NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD as usize;
     let sum = durations[l..r].to_vec().iter().sum::<Duration>();
     println!(
-        "sum {:?}, average duration: {:?}",
-        sum,
+        "average duration: {:?}",
         sum / (r - l) as u32
     );
 
