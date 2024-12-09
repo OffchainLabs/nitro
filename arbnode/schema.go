@@ -21,6 +21,7 @@ var (
 	espressoSubmittedHash        []byte = []byte("_espressoSubmittedHash")        // contains the hash of the last submitted txn
 	espressoPendingTxnsPositions []byte = []byte("_espressoPendingTxnsPositions") // contains the index of the pending txns that need to be submitted to espresso
 	espressoLastConfirmedPos     []byte = []byte("_espressoLastConfirmedPos")     // contains the position of the last confirmed message
+	espressoSkipVerificationPos  []byte = []byte("_espressoSkipVerificationPos")  // contains the position of the latest message that should skip the validation due to hotshot liveness failure
 )
 
 const currentDbSchemaVersion uint64 = 1

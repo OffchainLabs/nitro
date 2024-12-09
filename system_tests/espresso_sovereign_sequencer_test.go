@@ -11,7 +11,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func()) {
+func createL1AndL2Node(
+	ctx context.Context,
+	t *testing.T,
+	delayedSequencer bool,
+) (*NodeBuilder, func()) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.useL1StackConfig = true // Do not overwrite the L1 stack config when building
 	builder.l1StackConfig.HTTPPort = 8545
@@ -21,7 +25,7 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func())
 	builder.l1StackConfig.WSHost = "0.0.0.0"
 	builder.l1StackConfig.DataDir = t.TempDir()
 	builder.l1StackConfig.WSModules = append(builder.l1StackConfig.WSModules, "eth")
-	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
+	builder.chainConfig.ArbitrumChainParams.EspressoTEEVerifierAddress = common.HexToAddress(verifierAddress)
 
 	// poster config
 	builder.nodeConfig.BatchPoster.Enable = true
@@ -36,24 +40,16 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func())
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
-	builder.nodeConfig.DelayedSequencer.Enable = true
+	builder.nodeConfig.DelayedSequencer.Enable = delayedSequencer
 	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
 
 	// sequencer config
 	builder.nodeConfig.Sequencer = true
 	builder.nodeConfig.ParentChainReader.Enable = true // This flag is necessary to enable sequencing transactions with espresso behavior
 	builder.nodeConfig.Dangerous.NoSequencerCoordinator = true
-	builder.execConfig.Sequencer.EnableEspressoSovereign = true
 	builder.execConfig.Sequencer.Enable = true
-	builder.execConfig.Sequencer.LightClientAddress = lightClientAddress
-	builder.execConfig.Sequencer.SwitchDelayThreshold = 5
 	builder.execConfig.Caching.StateScheme = "hash"
 	builder.execConfig.Caching.Archive = true
-
-	// transaction stream config
-	builder.nodeConfig.TransactionStreamer.SovereignSequencerEnabled = true
-	builder.nodeConfig.TransactionStreamer.EspressoNamespace = builder.chainConfig.ChainID.Uint64()
-	builder.nodeConfig.TransactionStreamer.HotShotUrl = hotShotUrl
 
 	cleanup := builder.Build(t)
 
@@ -72,7 +68,7 @@ func TestEspressoSovereignSequencer(t *testing.T) {
 	valNodeCleanup := createValidationNode(ctx, t, true)
 	defer valNodeCleanup()
 
-	builder, cleanup := createL1AndL2Node(ctx, t)
+	builder, cleanup := createL1AndL2Node(ctx, t, true)
 	defer cleanup()
 
 	err := waitForL1Node(ctx)

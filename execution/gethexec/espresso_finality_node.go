@@ -96,7 +96,7 @@ func (n *EspressoFinalityNode) createBlock(ctx context.Context) (returnValue boo
 	}
 
 	hooks := arbos.NoopSequencingHooks()
-	_, err = n.execEngine.SequenceTransactions(arbHeader, txes, hooks, false)
+	_, err = n.execEngine.SequenceTransactions(arbHeader, txes, hooks)
 	if err != nil {
 		log.Error("espresso finality node: failed to sequence transactions", "err", err)
 		return false

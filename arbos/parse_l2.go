@@ -2,14 +2,12 @@ package arbos
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"time"
 
-	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -18,8 +16,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
-
-const ESPRESSO_TRANSACTION_SIZE_LIMIT int = 10 * 1024
 
 func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (types.Transactions, error) {
 	if len(msg.L2msg) > arbostypes.MaxL2MessageSize {
@@ -396,22 +392,4 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 		Data:    data,
 		// don't need to fill in the other fields, since they exist only to ensure uniqueness, and batchNum is already unique
 	}), nil
-}
-
-func BuildHotShotPayload(msgs *[]arbostypes.L1IncomingMessage) (espressoTypes.Bytes, int) {
-	payload := []byte{}
-	msgCnt := 0
-
-	sizeBuf := make([]byte, 8)
-	for _, msg := range *msgs {
-		if len(payload) >= ESPRESSO_TRANSACTION_SIZE_LIMIT {
-			break
-		}
-		msgByte := msg.L2msg
-		binary.BigEndian.PutUint64(sizeBuf, uint64(len(msgByte)))
-		payload = append(payload, sizeBuf...)
-		payload = append(payload, msgByte...)
-		msgCnt += 1
-	}
-	return payload, msgCnt
 }

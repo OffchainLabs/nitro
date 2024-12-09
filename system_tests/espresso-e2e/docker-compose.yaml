@@ -13,7 +13,14 @@ services:
       - ESPRESSO_SEQUENCER_API_PORT
       - ESPRESSO_SEQUENCER_ETH_MNEMONIC
       - ESPRESSO_SEQUENCER_L1_PROVIDER
+      - ESPRESSO_SEQUENCER_DATABASE_MAX_CONNECTIONS=25
+      - ESPRESSO_SEQUENCER_STORAGE_PATH=/data/espresso
       - RUST_LOG=info
       - RUST_LOG_FORMAT
+    volumes:
+      - espresso_storage:/data/espresso
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+volumes:
+  espresso_storage:

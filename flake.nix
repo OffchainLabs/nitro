@@ -1,12 +1,7 @@
 {
-  description = "A Nix-flake-based Go 1.21 development environment";
+  description = "A Nix-flake-based Nitro development environment";
 
-  # go v1.21 has been removed from nixpkgs-unstable due to end-of-life so we pin
-  # an older revision because as of nitro v3.2.1 they still use go-lang v1.21,
-  # when upgrading the go-lang version this pinnning should be removed, e. g.
-  # changed back to:
-  # inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/aae672db41edf5e11c970db7089191877db3fd7f";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs";
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.flake-compat.url = "github:edolstra/flake-compat";
   inputs.flake-compat.flake = false;
@@ -95,8 +90,6 @@
                 llvmPackages_16.bintools # provides wasm-ld
                 cmake
                 wabt  # wasm2wat, wat2wasm, etc
-                cmake
-                wabt # wasm2wat, wat2wasm, etc.
 
                 # Docker
                 docker-compose # provides the `docker-compose` command
@@ -129,6 +122,8 @@
                 cmake
                 cargo-with-nightly
                 stableToolchain
+                openssl
+                pkg-config
 
                 llvmPkgs.clang
                 llvmPkgs.bintools # provides wasm-ld
@@ -160,9 +155,7 @@
                 # provides abigen
                 go-ethereum
               ] ++ lib.optionals stdenv.isDarwin [
-                darwin.libobjc
-                darwin.IOKit
-                darwin.apple_sdk.frameworks.CoreFoundation
+                apple-sdk_11
               ] ++ lib.optionals (! stdenv.isDarwin) [
                 glibc_multi.dev # provides gnu/stubs-32.h
               ];
@@ -170,7 +163,19 @@
                 export LIBCLANG_PATH="${pkgs.llvmPackages_16.libclang.lib}/lib"
                 export CC="${pkgs.clang-tools_16.clang}/bin/clang"
                 export AR="${pkgs.llvm_16}/bin/llvm-ar"
-              '';
+              ''
+                # The clang wrapper cannot find SystemConfiguration symbols on darwin
+                # Undefined symbols for architecture arm64: "_SCDynamicStoreCopyProxies", referenced from:
+                # system_configuration::dynamic_store::SCDynamicStore::get_proxies::h29c4032f420db6e7
+                # in libespresso_crypto_helper.a(system_configuration-0133a45c6b0a8ed2.system_configuration.3319bd173d7021d9-cgu.0.rcgu.o)
+                #
+                # TODO: I think this shouldn't be required. We should probably
+                # re-think how this flake works on darwin after the changes in
+                # https://github.com/NixOS/nixpkgs/pull/346043
+                + pkgs.lib.optionalString pkgs.stdenv.isDarwin
+                ''
+                  export NIX_LDFLAGS="-framework SystemConfiguration $NIX_LDFLAGS"
+                '';
             };
           };
       });

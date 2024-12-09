@@ -3,8 +3,9 @@ package execution
 import (
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/params"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -13,9 +14,8 @@ import (
 )
 
 type MessageResult struct {
-	BlockHash     common.Hash
-	SendRoot      common.Hash
-	HotShotHeight uint64
+	BlockHash common.Hash
+	SendRoot  common.Hash
 }
 
 type RecordResult struct {

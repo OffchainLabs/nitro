@@ -309,7 +309,7 @@ func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, e
 	seqInbox, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
 	Require(t, err)
 	seqOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
-	tx, err := seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, big.NewInt(1), big.NewInt(10))
+	tx, err := seqInbox.AddSequencerL2Batch99020501(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, big.NewInt(1), big.NewInt(10), []byte{})
 	Require(t, err)
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)

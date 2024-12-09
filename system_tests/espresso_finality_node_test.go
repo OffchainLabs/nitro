@@ -28,8 +28,6 @@ func createEspressoFinalityNode(t *testing.T, builder *NodeBuilder) (*TestClient
 	execConfig.Sequencer.EspressoFinalityNodeConfig.StartBlock = 1
 	execConfig.Sequencer.EspressoFinalityNodeConfig.HotShotUrl = hotShotUrl
 
-	builder.nodeConfig.TransactionStreamer.SovereignSequencerEnabled = false
-
 	return builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig: nodeConfig,
 		execConfig: execConfig,
@@ -43,7 +41,7 @@ func TestEspressoFinalityNode(t *testing.T) {
 	valNodeCleanup := createValidationNode(ctx, t, true)
 	defer valNodeCleanup()
 
-	builder, cleanup := createL1AndL2Node(ctx, t)
+	builder, cleanup := createL1AndL2Node(ctx, t, true)
 	defer cleanup()
 
 	err := waitForL1Node(ctx)

@@ -117,6 +117,8 @@ COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
 RUN apt-get update && apt-get install -y cmake
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
+
+RUN apt-get install -y libssl-dev pkg-config
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-espresso-crypto-lib
 
 FROM scratch AS prover-header-export
@@ -221,16 +223,6 @@ COPY ./scripts/download-machine.sh .
 RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
 RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
 RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
-
-#Download Espresso WASM machine
-COPY ./scripts/download-machine-espresso.sh .
-# To use a new wasm machine
-# 1. Create a release on github: for example YYYYMMDD-consensus
-# 2. Find the module module-root.txt in the release artifacts on
-#    https://github.com/EspressoSystems/nitro-espresso-integration/releases
-#    and add the corresponding download step below.
-# 3. Create a new release on github with the change: for example YYYYMMDD
-RUN ./download-machine-espresso.sh 20240723-consensus 0x2422802a7cda99737209430b103689205bc8e56eab8b08c6ad409e65e45c3145
 
 FROM golang:1.21.10-bookworm AS node-builder
 WORKDIR /workspace
