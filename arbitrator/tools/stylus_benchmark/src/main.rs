@@ -19,19 +19,19 @@ const EVM_API_METHOD_REQ_OFFSET: u32 = 0x10000000;
 const NUMBER_OF_BENCHMARK_RUNS: u32 = 7;
 const NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD: u32 = 2;
 
-fn to_result(req_type: u32, req_data: &Vec<u8>) -> (&str, &str) {
-    let msg = match str::from_utf8(req_data) {
+fn check_result(req_type: u32, req_data: &Vec<u8>) {
+    let _ = match str::from_utf8(req_data) {
         Ok(v) => v,
         Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
     };
 
     match req_type {
-        0 => return ("", ""),                      // userSuccess
-        1 => return (msg, "ErrExecutionReverted"), // userRevert
-        2 => return (msg, "ErrExecutionReverted"), // userFailure
-        3 => return ("", "ErrOutOfGas"),           // userOutOfInk
-        4 => return ("", "ErrDepth"),              // userOutOfStack
-        _ => return ("", "ErrExecutionReverted"),  // userUnknown
+        0 => return,                         // userSuccess
+        1 => panic!("ErrExecutionReverted"), // userRevert
+        2 => panic!("ErrExecutionReverted"), // userFailure
+        3 => panic!("ErrOutOfGas"),          // userOutOfInk
+        4 => panic!("ErrDepth"),             // userOutOfStack
+        _ => panic!("ErrExecutionReverted"), // userUnknown
     }
 }
 
@@ -82,16 +82,13 @@ fn run(compiled_module: Vec<u8>) -> Duration {
 
         let gas_left = u64::from_be_bytes(msg.req_data[..8].try_into().unwrap());
         let req_data = msg.req_data[8..].to_vec();
-        let (msg, err) = to_result(msg.req_type, &req_data);
+        check_result(msg.req_type, &req_data);
         println!(
-            "gas_left: {:?}, msg: {:?}, err: {:?}, req_data: {:?}",
-            gas_left, msg, err, req_data
+            "gas_left: {:?}, req_data: {:?}",
+            gas_left, req_data
         );
-        if err != "" {
-            panic!("error: {:?}", err);
-        }
     } else {
-        panic!("unsupported request");
+        panic!("unsupported request type {:?}", msg.req_type);
     }
 
     msg.benchmark.unwrap().elapsed.expect("timer_elapsed")
