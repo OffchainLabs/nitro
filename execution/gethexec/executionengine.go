@@ -382,7 +382,6 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 
 func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
 	var l2Message []byte
-
 	if len(txes) == 1 && txErrors[0] == nil {
 		txBytes, err := txes[0].MarshalBinary()
 		if err != nil {
@@ -474,7 +473,6 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 	attempts := 0
 	for {
 		s.createBlocksMutex.Lock()
-		log.Info("locking block mutex, attempting to sequence transactions")
 		block, err := sequencerFunc()
 		s.createBlocksMutex.Unlock()
 		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {

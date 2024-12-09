@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/big"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -92,6 +93,20 @@ func (c *SequencerConfig) Validate() error {
 		if !common.IsHexAddress(address) {
 			return fmt.Errorf("sequencer sender whitelist entry \"%v\" is not a valid address", address)
 		}
+	}
+	var err error
+	if c.ExpectedSurplusSoftThreshold != "default" {
+		if c.expectedSurplusSoftThreshold, err = strconv.Atoi(c.ExpectedSurplusSoftThreshold); err != nil {
+			return fmt.Errorf("invalid expected-surplus-soft-threshold value provided in batchposter config %w", err)
+		}
+	}
+	if c.ExpectedSurplusHardThreshold != "default" {
+		if c.expectedSurplusHardThreshold, err = strconv.Atoi(c.ExpectedSurplusHardThreshold); err != nil {
+			return fmt.Errorf("invalid expected-surplus-hard-threshold value provided in batchposter config %w", err)
+		}
+	}
+	if c.expectedSurplusSoftThreshold < c.expectedSurplusHardThreshold {
+		return errors.New("expected-surplus-soft-threshold cannot be lower than expected-surplus-hard-threshold")
 	}
 	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
 		return errors.New("max-tx-data-size too large for MaxL2MessageSize")

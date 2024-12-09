@@ -387,7 +387,6 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
-	log.Info("Building L1")
 	b.L1 = NewTestClient(b.ctx)
 	var l1StackConfig *node.Config
 	if b.useL1StackConfig {
