@@ -344,6 +344,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		challengemanager.StackWithPostingInterval(time.Second * 3),
 		challengemanager.StackWithPollingInterval(time.Second),
 		challengemanager.StackWithAverageBlockCreationTime(time.Second),
+		challengemanager.StackWithMinimumGapToParentAssertionCreationTime(0),
 	}
 
 	challengeManager, err := challengemanager.NewChallengeStack(

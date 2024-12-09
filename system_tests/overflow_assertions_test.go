@@ -224,6 +224,7 @@ func TestOverflowAssertions(t *testing.T) {
 		challengemanager.StackWithPostingInterval(time.Second),
 		challengemanager.StackWithPollingInterval(time.Millisecond * 500),
 		challengemanager.StackWithAverageBlockCreationTime(time.Second),
+		challengemanager.StackWithMinimumGapToParentAssertionCreationTime(0),
 	}
 
 	manager, err := challengemanager.NewChallengeStack(
