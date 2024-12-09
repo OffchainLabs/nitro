@@ -113,14 +113,14 @@ fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
         durations.push(duration);
     }
 
+    // discard top and bottom runs
     durations.sort();
     let l = NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD as usize;
     let r = NUMBER_OF_BENCHMARK_RUNS as usize - NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD as usize;
-    let sum = durations[l..r].to_vec().iter().sum::<Duration>();
-    println!(
-        "average duration: {:?}",
-        sum / (r - l) as u32
-    );
+    durations = durations[l..r].to_vec();
+
+    let sum = durations.iter().sum::<Duration>();
+    println!("average duration: {:?}", sum / (r - l) as u32);
 
     Ok(())
 }
