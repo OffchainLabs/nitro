@@ -118,7 +118,7 @@ type SequencingHooks struct {
 	TxErrors                []error
 	DiscardInvalidTxsEarly  bool
 	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
-	PostTxFilter            func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	PostTxFilter            func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 }
 
@@ -129,7 +129,7 @@ func NoopSequencingHooks() *SequencingHooks {
 		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
 			return nil
 		},
-		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
+		func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
 		nil,
@@ -322,7 +322,7 @@ func ProduceBlockAdvanced(
 				vm.Config{},
 				runMode,
 				func(result *core.ExecutionResult) error {
-					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
+					return hooks.PostTxFilter(header, statedb, state, tx, sender, dataGas, result)
 				},
 			)
 			if err != nil {
