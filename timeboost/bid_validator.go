@@ -195,16 +195,19 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 	}
 	bv.producer.Start(ctx_in)
 
-	// Set reserve price thread.
+	// Thread to set reserve price and clear per-round map of bid count per account.
 	bv.StopWaiter.LaunchThread(func(ctx context.Context) {
-		ticker := newAuctionCloseTicker(bv.roundDuration, bv.auctionClosingDuration+bv.reserveSubmissionDuration)
-		go ticker.start()
+		reservePriceTicker := newAuctionCloseTicker(bv.roundDuration, bv.auctionClosingDuration+bv.reserveSubmissionDuration)
+		go reservePriceTicker.start()
+		clearBidCountTicker := newAuctionCloseTicker(bv.roundDuration, bv.auctionClosingDuration)
+		go clearBidCountTicker.start()
+
 		for {
 			select {
 			case <-ctx.Done():
 				log.Error("Context closed, autonomous auctioneer shutting down")
 				return
-			case <-ticker.c:
+			case <-reservePriceTicker.c:
 				rp, err := bv.auctionContract.ReservePrice(&bind.CallOpts{})
 				if err != nil {
 					log.Error("Could not get reserve price", "error", err)
@@ -219,6 +222,7 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 				log.Info("Reserve price updated", "old", currentReservePrice.String(), "new", rp.String())
 				bv.setReservePrice(rp)
 
+			case <-reservePriceTicker.c:
 				bv.Lock()
 				bv.bidsPerSenderInRound = make(map[common.Address]uint8)
 				bv.Unlock()
