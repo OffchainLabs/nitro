@@ -59,7 +59,7 @@ func (db PreimageDb) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 	return ErrorIterator{}
 }
 
-func (db PreimageDb) Stat(property string) (string, error) {
+func (db PreimageDb) Stat() (string, error) {
 	return "", errors.New("preimage DB doesn't support Stat")
 }
 
