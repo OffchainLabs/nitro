@@ -593,7 +593,7 @@ func mainImpl() int {
 			return 1
 		}
 
-		if !nodeConfig.Node.BatchPoster.EnableEigenDAFailover && nodeConfig.Node.Dangerous.DisableBlobReader {
+		if !nodeConfig.Node.BatchPoster.EnableEigenDAFailover && !nodeConfig.Node.Dangerous.DisableBlobReader {
 			log.Error("4844 must be disabled if using EigenDA without failover enabled")
 			return 1
 		}
