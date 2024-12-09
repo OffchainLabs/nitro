@@ -8,9 +8,7 @@ use jit::machine::WasmEnv;
 use jit::program::{
     exec_program, get_last_msg, pop_with_wasm_env, start_program_with_wasm_env, JitConfig,
 };
-use prover::programs::{
-    config::CompileConfig, config::PricingParams, prelude::StylusConfig,
-};
+use prover::programs::{config::CompileConfig, config::PricingParams, prelude::StylusConfig};
 use std::path::PathBuf;
 use std::str;
 use stylus::native::compile;
@@ -45,15 +43,7 @@ struct Args {
     wat_path: PathBuf,
 }
 
-fn run(wat_path: &PathBuf) -> Duration {
-    let wat = match std::fs::read(wat_path) {
-        Ok(wat) => wat,
-        Err(err) => panic!("failed to read: {err}"),
-    };
-    let wasm = wasmer::wat2wasm(&wat).unwrap();
-
-    let compiled_module = compile(&wasm, 0, true, Target::default()).unwrap();
-
+fn run(compiled_module: Vec<u8>) -> Duration {
     let calldata = Vec::from([0u8; 32]);
     let evm_data = EvmData::default();
     let config = JitConfig {
@@ -81,7 +71,10 @@ fn run(wat_path: &PathBuf) -> Duration {
     let msg = get_last_msg(exec, req_id).unwrap();
     println!(
         "req_id: {:?}, msg.req_type: {:?}, msg.req_data: {:?}, msg.benchmark.elapsed: {:?}",
-        req_id, msg.req_type, msg.req_data, msg.benchmark.unwrap().elapsed,
+        req_id,
+        msg.req_type,
+        msg.req_data,
+        msg.benchmark.unwrap().elapsed,
     );
 
     if msg.req_type < EVM_API_METHOD_REQ_OFFSET {
@@ -107,9 +100,17 @@ fn run(wat_path: &PathBuf) -> Duration {
 fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
     let mut durations: Vec<Duration> = Vec::new();
 
+    let wat = match std::fs::read(wat_path) {
+        Ok(wat) => wat,
+        Err(err) => panic!("failed to read: {err}"),
+    };
+    let wasm = wasmer::wat2wasm(&wat).unwrap();
+
+    let compiled_module = compile(&wasm, 0, true, Target::default()).unwrap();
+
     for i in 0..NUMBER_OF_BENCHMARK_RUNS {
         println!("Benchmark run {:?} {:?}", i, wat_path);
-        let duration = run(wat_path);
+        let duration = run(compiled_module.clone());
         durations.push(duration);
     }
 
