@@ -10,8 +10,6 @@ use std::time::{Duration, Instant};
 pub struct Benchmark {
     pub timer: Instant,
     pub elapsed: Option<Duration>,
-    pub cycles_start: u64,
-    pub cycles_total: Option<u64>,
     pub ink_start: Ink,
     pub ink_total: Option<Ink>,
 }
