@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -92,7 +93,7 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 					return time.Second
 				}
 				run, err := s.spawner.CreateExecutionRun(moduleRoot,
-					req.Value.ValidationInput).Await(ctx)
+					req.Value.ValidationInput, true).Await(ctx)
 				if err != nil {
 					log.Error("Creating BOLD execution", "error", err)
 					return 0
