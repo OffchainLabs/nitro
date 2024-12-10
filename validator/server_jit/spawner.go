@@ -3,10 +3,11 @@ package server_jit
 import (
 	"context"
 	"fmt"
-	flag "github.com/spf13/pflag"
 	"runtime"
 	"sync/atomic"
 	"time"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"

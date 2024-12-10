@@ -6,12 +6,13 @@ package genericconf
 import (
 	"errors"
 	"io"
+	"log/slog"
 	"time"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	flag "github.com/spf13/pflag"
-	"golang.org/x/exp/slog"
 )
 
 type ConfConfig struct {

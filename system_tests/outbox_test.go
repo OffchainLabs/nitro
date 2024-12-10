@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -53,7 +54,6 @@ func TestP256VerifyEnabled(t *testing.T) {
 func TestOutboxProofs(t *testing.T) {
 	t.Parallel()
 	gethhook.RequireHookedGeth()
-	rand.Seed(time.Now().UTC().UnixNano())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
