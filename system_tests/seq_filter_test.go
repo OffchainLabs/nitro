@@ -95,8 +95,8 @@ func setupSequencerFilterTest(t *testing.T, withBlock bool) (*NodeBuilder, *arbo
 		}
 		return nil
 	}
-	postTxFilter := func(_ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, _ *types.Transaction, _ common.Address, _ uint64, _ *core.ExecutionResult) error {
-		if statedb.IsTxInvalid() {
+	postTxFilter := func(_ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, _ common.Address, _ uint64, _ *core.ExecutionResult) error {
+		if statedb.IsTxFiltered() {
 			return errors.New("internal error")
 		}
 		return nil
