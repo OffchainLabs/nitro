@@ -90,7 +90,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	}()
 
 	if !c.enableChunkedStore {
-		log.Info("Legacy store is being force-used by the DAS client", "url", c.url)
+		log.Debug("Legacy store is being force-used by the DAS client", "url", c.url)
 		return c.legacyStore(ctx, message, timeout)
 	}
 

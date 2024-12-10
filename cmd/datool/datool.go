@@ -105,7 +105,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	f.Int("max-store-chunk-body-size", 512*1024, "The maximum HTTP POST body size for a chunked store request")
-	f.Bool("enable-chunked-store", true, "force data to always be sent to DAS all at once instead of splitting into chunks")
+	f.Bool("enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
