@@ -36,7 +36,7 @@ func (con ArbAggregator) GetBatchPosters(c ctx, evm mech) ([]addr, error) {
 	return c.State.L1PricingState().BatchPosterTable().AllPosters(65536)
 }
 
-// Adds newBatchPoster as a batch poster
+// Adds additional batch poster address
 func (con ArbAggregator) AddBatchPoster(c ctx, evm mech, newBatchPoster addr) error {
 	isOwner, err := c.State.ChainOwners().IsMember(c.caller)
 	if err != nil {
