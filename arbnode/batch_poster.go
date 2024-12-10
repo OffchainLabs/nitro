@@ -34,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
@@ -44,7 +45,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
@@ -80,8 +80,10 @@ var (
 const (
 	batchPosterSimpleRedisLockKey = "node.batch-poster.redis-lock.simple-lock-key"
 
-	sequencerBatchPostMethodName          = "addSequencerL2BatchFromOrigin0"
-	sequencerBatchPostWithBlobsMethodName = "addSequencerL2BatchFromBlobs"
+	sequencerBatchPostMethodName                    = "addSequencerL2BatchFromOrigin0"
+	sequencerBatchPostWithBlobsMethodName           = "addSequencerL2BatchFromBlobs"
+	sequencerBatchPostDelayProofMethodName          = "addSequencerL2BatchFromOriginDelayProof"
+	sequencerBatchPostWithBlobsDelayProofMethodName = "addSequencerL2BatchFromBlobsDelayProof"
 )
 
 type batchPosterPosition struct {
@@ -725,6 +727,7 @@ type buildingBatch struct {
 	haveUsefulMessage  bool
 	use4844            bool
 	muxBackend         *simulatedMuxBackend
+	firstDelayedMsg    *arbostypes.MessageWithMetadata
 	firstNonDelayedMsg *arbostypes.MessageWithMetadata
 	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
@@ -963,15 +966,25 @@ func (b *BatchPoster) encodeAddBatch(
 	l2MessageData []byte,
 	delayedMsg uint64,
 	use4844 bool,
+	delayProof *bridgegen.DelayProof,
 ) ([]byte, []kzg4844.Blob, error) {
-	methodName := sequencerBatchPostMethodName
+	var methodName string
 	if use4844 {
-		methodName = sequencerBatchPostWithBlobsMethodName
+		if delayProof != nil {
+			methodName = sequencerBatchPostWithBlobsDelayProofMethodName
+		} else {
+			methodName = sequencerBatchPostWithBlobsMethodName
+		}
+	} else if delayProof != nil {
+		methodName = sequencerBatchPostDelayProofMethodName
+	} else {
+		methodName = sequencerBatchPostMethodName
 	}
 	method, ok := b.seqInboxABI.Methods[methodName]
 	if !ok {
 		return nil, nil, errors.New("failed to find add batch method")
 	}
+
 	var calldata []byte
 	var kzgBlobs []kzg4844.Blob
 	var err error
@@ -980,6 +993,9 @@ func (b *BatchPoster) encodeAddBatch(
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to encode blobs: %w", err)
 		}
+	}
+	switch methodName {
+	case sequencerBatchPostWithBlobsMethodName:
 		// EIP4844 transactions to the sequencer inbox will not use transaction calldata for L2 info.
 		calldata, err = method.Inputs.Pack(
 			seqNum,
@@ -988,7 +1004,16 @@ func (b *BatchPoster) encodeAddBatch(
 			new(big.Int).SetUint64(uint64(prevMsgNum)),
 			new(big.Int).SetUint64(uint64(newMsgNum)),
 		)
-	} else {
+	case sequencerBatchPostWithBlobsDelayProofMethodName:
+		calldata, err = method.Inputs.Pack(
+			seqNum,
+			new(big.Int).SetUint64(delayedMsg),
+			b.config().gasRefunder,
+			new(big.Int).SetUint64(uint64(prevMsgNum)),
+			new(big.Int).SetUint64(uint64(newMsgNum)),
+			delayProof,
+		)
+	case sequencerBatchPostMethodName:
 		calldata, err = method.Inputs.Pack(
 			seqNum,
 			l2MessageData,
@@ -997,6 +1022,18 @@ func (b *BatchPoster) encodeAddBatch(
 			new(big.Int).SetUint64(uint64(prevMsgNum)),
 			new(big.Int).SetUint64(uint64(newMsgNum)),
 		)
+	case sequencerBatchPostDelayProofMethodName:
+		calldata, err = method.Inputs.Pack(
+			seqNum,
+			l2MessageData,
+			new(big.Int).SetUint64(delayedMsg),
+			b.config().gasRefunder,
+			new(big.Int).SetUint64(uint64(prevMsgNum)),
+			new(big.Int).SetUint64(uint64(newMsgNum)),
+			delayProof,
+		)
+	default:
+		panic("impossible")
 	}
 	if err != nil {
 		return nil, nil, err
@@ -1023,7 +1060,17 @@ func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimat
 	return uint64(gas), err
 }
 
-func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realBlobs []kzg4844.Blob, realNonce uint64, realAccessList types.AccessList) (uint64, error) {
+func (b *BatchPoster) estimateGas(
+	ctx context.Context,
+	sequencerMessage []byte,
+	delayedMessages uint64,
+	realData []byte,
+	realBlobs []kzg4844.Blob,
+	realNonce uint64,
+	realAccessList types.AccessList,
+	delayProof *bridgegen.DelayProof,
+) (uint64, error) {
+
 	config := b.config()
 	rpcClient := b.l1Reader.Client()
 	rawRpcClient := rpcClient.Client()
@@ -1065,7 +1112,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	// However, we set nextMsgNum to 1 because it is necessary for a correct estimation for the final to be non-zero.
 	// Because we're likely estimating against older state, this might not be the actual next message,
 	// but the gas used should be the same.
-	data, kzgBlobs, err := b.encodeAddBatch(abi.MaxUint256, 0, 1, sequencerMessage, delayedMessages, len(realBlobs) > 0)
+	data, kzgBlobs, err := b.encodeAddBatch(abi.MaxUint256, 0, 1, sequencerMessage, delayedMessages, len(realBlobs) > 0, delayProof)
 	if err != nil {
 		return 0, err
 	}
@@ -1319,7 +1366,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				b.building.firstUsefulMsg = msg
 			}
 		}
-		if !isDelayed && b.building.firstNonDelayedMsg == nil {
+		if isDelayed {
+			if b.building.firstDelayedMsg == nil {
+				b.building.firstDelayedMsg = msg
+			}
+		} else if b.building.firstNonDelayedMsg == nil {
 			b.building.firstNonDelayedMsg = msg
 		}
 		b.building.msgCount++
@@ -1330,6 +1381,26 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// #nosec G115
 		firstUsefulMsgTime = time.Unix(int64(b.building.firstUsefulMsg.Message.Header.Timestamp), 0)
 		if time.Since(firstUsefulMsgTime) >= config.MaxDelay {
+			forcePostBatch = true
+		}
+	}
+
+	delayBuffer, err := GetDelayBufferConfig(ctx, b.seqInbox)
+	if err != nil {
+		return false, err
+	}
+	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil {
+		latestHeader, err := b.l1Reader.LastHeader(ctx)
+		if err != nil {
+			return false, err
+		}
+		latestBlock := latestHeader.Number.Uint64()
+		firstDelayedMsgBlock := b.building.firstDelayedMsg.Message.Header.BlockNumber
+		if latestBlock >= firstDelayedMsgBlock+delayBuffer.Threshold {
+			log.Info("force post batch because of the delay buffer",
+				"firstDelayedMsgBlock", firstDelayedMsgBlock,
+				"threshold", delayBuffer.Threshold,
+				"latestBlock", latestBlock)
 			forcePostBatch = true
 		}
 	}
@@ -1425,7 +1496,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		prevMessageCount = 0
 	}
 
-	data, kzgBlobs, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), prevMessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg, b.building.use4844)
+	var delayProof *bridgegen.DelayProof
+	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil {
+		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.inbox)
+		if err != nil {
+			return false, fmt.Errorf("failed to generate delay proof: %w", err)
+		}
+	}
+
+	data, kzgBlobs, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), prevMessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg, b.building.use4844, delayProof)
 	if err != nil {
 		return false, err
 	}
@@ -1440,7 +1519,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	// In theory, this might reduce gas usage, but only by a factor that's already
 	// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
 	// posts a new delayed message that we didn't see while gas estimating.
-	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList)
+	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList, delayProof)
 	if err != nil {
 		return false, err
 	}
