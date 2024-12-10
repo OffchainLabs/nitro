@@ -202,8 +202,6 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 			WrapL2ForDelayed(t, delayedTx, builder.L1Info, "User", 100000),
 		})
-		// give the inbox reader a bit of time to pick up the delayed message
-		time.Sleep(time.Millisecond * 500)
 
 		// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 		for i := 0; i < 30; i++ {
