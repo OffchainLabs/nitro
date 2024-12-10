@@ -10,20 +10,20 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/offchainlabs/nitro/staker/txbuilder"
-	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/validator"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 type ConfirmType uint8
@@ -62,16 +62,17 @@ func NewL1Validator(
 	client *ethclient.Client,
 	wallet ValidatorWalletInterface,
 	validatorUtilsAddress common.Address,
+	gasRefunder common.Address,
 	callOpts bind.CallOpts,
 	inboxTracker staker.InboxTrackerInterface,
 	txStreamer staker.TransactionStreamerInterface,
 	blockValidator *staker.BlockValidator,
 ) (*L1Validator, error) {
-	builder, err := txbuilder.NewBuilder(wallet)
+	builder, err := txbuilder.NewBuilder(wallet, gasRefunder)
 	if err != nil {
 		return nil, err
 	}
-	rollup, err := staker.NewRollupWatcher(wallet.RollupAddress(), builder, callOpts)
+	rollup, err := staker.NewRollupWatcher(wallet.RollupAddress(), wallet.L1Client(), callOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -159,11 +160,7 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *staker.StakerIn
 			return false, nil
 		}
 		log.Warn("rejecting node", "node", unresolvedNodeIndex)
-		auth, err := v.builder.Auth(ctx)
-		if err != nil {
-			return false, err
-		}
-		_, err = v.rollup.RejectNextNode(auth, *addr)
+		_, err = v.rollup.RejectNextNode(v.builder.Auth(ctx), *addr)
 		return true, err
 	case CONFIRM_TYPE_VALID:
 		nodeInfo, err := v.rollup.LookupNode(ctx, unresolvedNodeIndex)
@@ -172,11 +169,7 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *staker.StakerIn
 		}
 		afterGs := nodeInfo.AfterState().GlobalState
 		log.Info("confirming node", "node", unresolvedNodeIndex)
-		auth, err := v.builder.Auth(ctx)
-		if err != nil {
-			return false, err
-		}
-		_, err = v.rollup.ConfirmNextNode(auth, afterGs.BlockHash, afterGs.SendRoot)
+		_, err = v.rollup.ConfirmNextNode(v.builder.Auth(ctx), afterGs.BlockHash, afterGs.SendRoot)
 		if err != nil {
 			return false, err
 		}

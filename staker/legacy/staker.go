@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/btree"
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -25,15 +28,11 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-
-	"github.com/google/btree"
-	flag "github.com/spf13/pflag"
 )
 
 var (
@@ -102,8 +101,8 @@ type L1ValidatorConfig struct {
 	gasRefunder common.Address
 }
 
-func (c *L1ValidatorConfig) ParseStrategy() (StakerStrategy, error) {
-	switch strings.ToLower(c.Strategy) {
+func ParseStrategy(strategy string) (StakerStrategy, error) {
+	switch strings.ToLower(strategy) {
 	case "watchtower":
 		return WatchtowerStrategy, nil
 	case "defensive":
@@ -115,7 +114,7 @@ func (c *L1ValidatorConfig) ParseStrategy() (StakerStrategy, error) {
 	case "makenodes":
 		return MakeNodesStrategy, nil
 	default:
-		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", c.Strategy)
+		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", strategy)
 	}
 }
 
@@ -133,7 +132,7 @@ func (c *L1ValidatorConfig) ValidatorRequired() bool {
 }
 
 func (c *L1ValidatorConfig) Validate() error {
-	strategy, err := c.ParseStrategy()
+	strategy, err := ParseStrategy(c.Strategy)
 	if err != nil {
 		return err
 	}
@@ -292,7 +291,7 @@ type ValidatorWalletInterface interface {
 	ChallengeManagerAddress() common.Address
 	L1Client() *ethclient.Client
 	TestTransactions(context.Context, []*types.Transaction) error
-	ExecuteTransactions(context.Context, *txbuilder.Builder, common.Address) (*types.Transaction, error)
+	ExecuteTransactions(context.Context, []*types.Transaction, common.Address) (*types.Transaction, error)
 	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
 	CanBatchTxs() bool
 	AuthIfEoa() *bind.TransactOpts
@@ -314,13 +313,19 @@ func NewStaker(
 	validatorUtilsAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
+	if err := config().Validate(); err != nil {
+		return nil, err
+	}
 	client := l1Reader.Client()
-	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts,
+	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, config().GasRefunder(), callOpts,
 		statelessBlockValidator.InboxTracker(), statelessBlockValidator.InboxStreamer(), blockValidator)
 	if err != nil {
 		return nil, err
 	}
 	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
+	if config().StartValidationFromStaked && blockValidator != nil {
+		stakedNotifiers = append(stakedNotifiers, blockValidator)
+	}
 	inactiveValidatedNodes := btree.NewG(2, func(a, b validatedNode) bool {
 		return a.number < b.number || (a.number == b.number && a.hash.Cmp(b.hash) < 0)
 	})
@@ -349,6 +354,21 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	if walletAddressOrZero != (common.Address{}) {
 		s.updateStakerBalanceMetric(ctx)
 	}
+	var stakerAddr common.Address
+	if s.L1Validator.wallet.DataPoster() != nil {
+		stakerAddr = s.L1Validator.wallet.DataPoster().Sender()
+	}
+	whiteListed, err := s.isWhitelisted(ctx)
+	if err != nil {
+		return fmt.Errorf("error checking if whitelisted: %w", err)
+	}
+	log.Info(
+		"running as validator",
+		"txSender", stakerAddr,
+		"actingAsWallet", walletAddressOrZero,
+		"whitelisted", whiteListed,
+		"strategy", s.Strategy(),
+	)
 	if s.blockValidator != nil && s.config().StartValidationFromStaked {
 		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddressOrZero)
 		if err != nil {
@@ -446,12 +466,9 @@ func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash,
 	if s.fastConfirmSafe != nil {
 		return s.fastConfirmSafe.tryFastConfirmation(ctx, blockHash, sendRoot, nodeHash)
 	}
-	auth, err := s.builder.Auth(ctx)
-	if err != nil {
-		return err
-	}
+	auth := s.builder.Auth(ctx)
 	log.Info("Fast confirming node with wallet", "wallet", auth.From, "nodeHash", nodeHash)
-	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
+	_, err := s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
 	return err
 }
 
@@ -817,7 +834,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				}
 				if s.builder.BuildingTransactionCount() > 0 {
 					// Try to fast confirm previous nodes before working on new ones
-					return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.GasRefunder())
+					return s.builder.ExecuteTransactions(ctx)
 				}
 			}
 		}
@@ -887,24 +904,17 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		stakeIsUnwanted := effectiveStrategy < StakeLatestStrategy
 		if stakeIsTooOutdated || stakeIsUnwanted {
 			// Note: we must have an address if rawInfo != nil
-			auth, err := s.builder.Auth(ctx)
-			if err != nil {
-				return nil, err
-			}
+			auth := s.builder.Auth(ctx)
 			_, err = s.rollup.ReturnOldDeposit(auth, walletAddressOrZero)
 			if err != nil {
 				return nil, fmt.Errorf("error returning old deposit (from our staker %v): %w", walletAddressOrZero, err)
-			}
-			auth, err = s.builder.Auth(ctx)
-			if err != nil {
-				return nil, err
 			}
 			_, err = s.rollup.WithdrawStakerFunds(auth)
 			if err != nil {
 				return nil, fmt.Errorf("error withdrawing staker funds from our staker %v: %w", walletAddressOrZero, err)
 			}
 			log.Info("removing old stake and withdrawing funds")
-			return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.GasRefunder())
+			return s.builder.ExecuteTransactions(ctx)
 		}
 	}
 
@@ -914,11 +924,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			return nil, fmt.Errorf("error checking withdrawable funds of our staker %v: %w", walletAddressOrZero, err)
 		}
 		if withdrawable.Sign() > 0 {
-			auth, err := s.builder.Auth(ctx)
-			if err != nil {
-				return nil, err
-			}
-			_, err = s.rollup.WithdrawStakerFunds(auth)
+			_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx))
 			if err != nil {
 				return nil, fmt.Errorf("error withdrawing our staker %v funds: %w", walletAddressOrZero, err)
 			}
@@ -958,7 +964,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if info.StakerInfo == nil && info.StakeExists {
 		log.Info("staking to execute transactions")
 	}
-	return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.GasRefunder())
+	return s.builder.ExecuteTransactions(ctx)
 }
 
 func (s *Staker) handleConflict(ctx context.Context, info *staker.StakerInfo) error {
@@ -977,8 +983,8 @@ func (s *Staker) handleConflict(ctx context.Context, info *staker.StakerInfo) er
 
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
-			s.builder,
-			s.builder.BuilderAuth(),
+			s.client,
+			s.builder.Auth(context.TODO()),
 			*s.builder.WalletAddress(),
 			s.wallet.ChallengeManagerAddress(),
 			*info.CurrentChallenge,
@@ -1036,11 +1042,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 
 		// We'll return early if we already have a stake
 		if info.StakeExists {
-			auth, err := s.builder.Auth(ctx)
-			if err != nil {
-				return err
-			}
-			_, err = s.rollup.StakeOnNewNode(auth, action.assertion.AsSolidityStruct(), action.hash, action.prevInboxMaxCount)
+			_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsSolidityStruct(), action.hash, action.prevInboxMaxCount)
 			if err != nil {
 				return fmt.Errorf("error staking on new node: %w", err)
 			}
@@ -1052,12 +1054,8 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		if err != nil {
 			return fmt.Errorf("error getting current required stake: %w", err)
 		}
-		auth, err := s.builder.AuthWithAmount(ctx, stakeAmount)
-		if err != nil {
-			return err
-		}
 		_, err = s.rollup.NewStakeOnNewNode(
-			auth,
+			s.builder.AuthWithAmount(ctx, stakeAmount),
 			action.assertion.AsSolidityStruct(),
 			action.hash,
 			action.prevInboxMaxCount,
@@ -1090,11 +1088,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		log.Info("staking on existing node", "node", action.number)
 		// We'll return early if we already havea stake
 		if info.StakeExists {
-			auth, err := s.builder.Auth(ctx)
-			if err != nil {
-				return err
-			}
-			_, err = s.rollup.StakeOnExistingNode(auth, action.number, action.hash)
+			_, err = s.rollup.StakeOnExistingNode(s.builder.Auth(ctx), action.number, action.hash)
 			if err != nil {
 				return fmt.Errorf("error staking on existing node: %w", err)
 			}
@@ -1106,12 +1100,8 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		if err != nil {
 			return fmt.Errorf("error getting current required stake: %w", err)
 		}
-		auth, err := s.builder.AuthWithAmount(ctx, stakeAmount)
-		if err != nil {
-			return err
-		}
 		_, err = s.rollup.NewStakeOnExistingNode(
-			auth,
+			s.builder.AuthWithAmount(ctx, stakeAmount),
 			action.number,
 			action.hash,
 		)
@@ -1187,12 +1177,8 @@ func (s *Staker) createConflict(ctx context.Context, info *staker.StakerInfo) er
 			return fmt.Errorf("error looking up node %v: %w", conflictInfo.Node2, err)
 		}
 		log.Warn("creating challenge", "node1", conflictInfo.Node1, "node2", conflictInfo.Node2, "otherStaker", staker)
-		auth, err := s.builder.Auth(ctx)
-		if err != nil {
-			return err
-		}
 		_, err = s.rollup.CreateChallenge(
-			auth,
+			s.builder.Auth(ctx),
 			[2]common.Address{staker1, staker2},
 			[2]uint64{conflictInfo.Node1, conflictInfo.Node2},
 			node1Info.MachineStatuses(),

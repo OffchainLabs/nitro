@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
@@ -90,7 +91,7 @@ type Config struct {
 	BlockValidator      staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
 	Feed                broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
 	Staker              legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
-	BOLD                boldstaker.BoldConfig          `koanf:"bold"`
+	Bold                boldstaker.BoldConfig          `koanf:"bold"`
 	SeqCoordinator      SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig     `koanf:"data-availability"`
 	SyncMonitor         SyncMonitorConfig              `koanf:"sync-monitor"`
@@ -176,7 +177,7 @@ var ConfigDefault = Config{
 	BlockValidator:      staker.DefaultBlockValidatorConfig,
 	Feed:                broadcastclient.FeedConfigDefault,
 	Staker:              legacystaker.DefaultL1ValidatorConfig,
-	BOLD:                boldstaker.DefaultBoldConfig,
+	Bold:                boldstaker.DefaultBoldConfig,
 	SeqCoordinator:      DefaultSeqCoordinatorConfig,
 	DataAvailability:    das.DefaultDataAvailabilityConfig,
 	SyncMonitor:         DefaultSyncMonitorConfig,
@@ -692,7 +693,7 @@ func createNodeImpl(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().BOLD, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}
@@ -702,7 +703,6 @@ func createNodeImpl(
 		if dp != nil {
 			stakerAddr = dp.Sender()
 		}
-		log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", wallet.Address(), "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster
@@ -906,8 +906,7 @@ func (n *Node) Start(ctx context.Context) error {
 		n.MessagePruner.Start(ctx)
 	}
 	if n.Staker != nil {
-		err = n.Staker.
-			Initialize(ctx)
+		err = n.Staker.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing staker: %w", err)
 		}

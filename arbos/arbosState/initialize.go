@@ -9,16 +9,19 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -51,7 +54,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	}
 	genesisHeaderInfo.UpdateHeaderWithInfo(head)
 
-	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
+	return types.NewBlock(head, nil, nil, trie.NewStackTrie(nil))
 }
 
 func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
@@ -96,6 +99,16 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
 
+	chainOwner, err := initData.GetChainOwner()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if chainOwner != (common.Address{}) {
+		err = arbosState.ChainOwners().Add(chainOwner)
+		if err != nil {
+			return common.Hash{}, err
+		}
+	}
 	addrTable := arbosState.AddressTable()
 	addrTableSize, err := addrTable.Size()
 	if err != nil {
@@ -159,7 +172,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		if err != nil {
 			return common.Hash{}, err
 		}
-		statedb.SetBalance(account.Addr, uint256.MustFromBig(account.EthBalance))
+		statedb.SetBalance(account.Addr, uint256.MustFromBig(account.EthBalance), tracing.BalanceChangeUnspecified)
 		statedb.SetNonce(account.Addr, account.Nonce)
 		if account.ContractInfo != nil {
 			statedb.SetCode(account.Addr, account.ContractInfo.Code)
@@ -190,7 +203,7 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 			return err
 		}
 		if r.Timeout <= currentTimestamp {
-			statedb.AddBalance(r.Beneficiary, uint256.MustFromBig(r.Callvalue))
+			statedb.AddBalance(r.Beneficiary, uint256.MustFromBig(r.Callvalue), tracing.BalanceChangeUnspecified)
 			continue
 		}
 		retryablesList = append(retryablesList, r)
@@ -209,7 +222,7 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 			addr := r.To
 			to = &addr
 		}
-		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), uint256.MustFromBig(r.Callvalue))
+		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), uint256.MustFromBig(r.Callvalue), tracing.BalanceChangeUnspecified)
 		_, err := rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err
