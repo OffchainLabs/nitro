@@ -5,11 +5,11 @@
 
 use crate::env::{Escape, HostioInfo, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::{
+    benchmark::Benchmark,
     evm::{
         api::{DataReader, EvmApi, Gas, Ink},
         EvmData,
     },
-    benchmark::Benchmark,
     Color,
 };
 use caller_env::GuestPtr;
@@ -471,7 +471,7 @@ pub(crate) fn console_tee<D: DataReader, E: EvmApi<D>, T: Into<Value> + Copy>(
 pub(crate) fn null_host<D: DataReader, E: EvmApi<D>>(_: WasmEnvMut<D, E>) {}
 
 pub(crate) fn toggle_benchmark<D: DataReader, E: EvmApi<D>>(
-    mut env: WasmEnvMut<D, E>
+    mut env: WasmEnvMut<D, E>,
 ) -> MaybeEscape {
     hostio!(env, toggle_benchmark())
 }

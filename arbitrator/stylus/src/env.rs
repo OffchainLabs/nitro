@@ -2,12 +2,12 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
+    benchmark::Benchmark,
     evm::{
         api::{DataReader, EvmApi, Ink},
         EvmData,
     },
     pricing,
-    benchmark::Benchmark,
 };
 use caller_env::GuestPtr;
 use derivative::Derivative;

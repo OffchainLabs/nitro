@@ -1,6 +1,7 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+pub mod benchmark;
 /// cbindgen:ignore
 pub mod color;
 pub mod crypto;
@@ -10,7 +11,6 @@ pub mod math;
 pub mod operator;
 pub mod pricing;
 pub mod types;
-pub mod benchmark;
 
 pub use color::{Color, DebugColor};
 use num_traits::Unsigned;
