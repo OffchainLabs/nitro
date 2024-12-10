@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
@@ -128,7 +129,7 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 		log.Crit("failed to init empty statedb", "error", err)
 	}
 	burner := burn.NewSystemBurner(nil, false)
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	newState, err := InitializeArbosState(statedb, burner, chainConfig, arbostypes.TestInitMessage)
 	if err != nil {
 		log.Crit("failed to open the ArbOS state", "error", err)
