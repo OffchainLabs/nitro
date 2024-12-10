@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"sync/atomic"
 
+	"github.com/redis/go-redis/v9"
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -16,8 +20,6 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
-	"github.com/redis/go-redis/v9"
-	"github.com/spf13/pflag"
 )
 
 type ValidationClientConfig struct {

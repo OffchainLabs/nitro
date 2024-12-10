@@ -9,13 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/util/pretty"
@@ -101,6 +102,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	var startChunkedStoreResult StartChunkedStoreResult
 	if err := c.clnt.CallContext(ctx, &startChunkedStoreResult, "das_startChunkedStore", hexutil.Uint64(timestamp), hexutil.Uint64(nChunks), hexutil.Uint64(c.chunkSize), hexutil.Uint64(totalSize), hexutil.Uint64(timeout), hexutil.Bytes(startReqSig)); err != nil {
 		if strings.Contains(err.Error(), "the method das_startChunkedStore does not exist") {
+			log.Info("Legacy store is used by the DAS client", "url", c.url)
 			return c.legacyStore(ctx, message, timeout)
 		}
 		return nil, err

@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package staker
+package legacystaker
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum"
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -19,8 +19,10 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -48,7 +50,7 @@ type ChallengeBackend interface {
 }
 
 // Assert that ExecutionChallengeBackend implements ChallengeBackend
-var _ ChallengeBackend = (*ExecutionChallengeBackend)(nil)
+var _ ChallengeBackend = (*staker.ExecutionChallengeBackend)(nil)
 
 type challengeCore struct {
 	con                  *challengegen.ChallengeManager
@@ -69,13 +71,13 @@ type ChallengeManager struct {
 	blockChallengeBackend *BlockChallengeBackend
 
 	// fields below are only used to create execution challenge from block challenge
-	validator      *StatelessBlockValidator
+	validator      *staker.StatelessBlockValidator
 	maxBatchesRead uint64
 	wasmModuleRoot common.Hash
 
 	// these fields are empty until working on execution challenge
 	initialMachineMessageCount arbutil.MessageIndex
-	executionChallengeBackend  *ExecutionChallengeBackend
+	executionChallengeBackend  *staker.ExecutionChallengeBackend
 	machineFinalStepCount      uint64
 }
 
@@ -88,7 +90,7 @@ func NewChallengeManager(
 	fromAddr common.Address,
 	challengeManagerAddr common.Address,
 	challengeIndex uint64,
-	val *StatelessBlockValidator,
+	val *staker.StatelessBlockValidator,
 	startL1Block uint64,
 	confirmationBlocks int64,
 ) (*ChallengeManager, error) {
@@ -128,8 +130,8 @@ func NewChallengeManager(
 	backend, err := NewBlockChallengeBackend(
 		parsedLog,
 		challengeInfo.MaxInboxMessages,
-		val.streamer,
-		val.inboxTracker,
+		val.InboxStreamer(),
+		val.InboxTracker(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating block challenge backend for challenge %v: %w", challengeIndex, err)
@@ -166,7 +168,7 @@ func NewExecutionChallengeManager(
 	if err != nil {
 		return nil, err
 	}
-	backend, err := NewExecutionChallengeBackend(exec)
+	backend, err := staker.NewExecutionChallengeBackend(exec)
 	if err != nil {
 		return nil, err
 	}
@@ -481,9 +483,9 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 	}
 	input.BatchInfo = prunedBatches
 	var execRun validator.ExecutionRun
-	for _, spawner := range m.validator.execSpawners {
+	for _, spawner := range m.validator.ExecutionSpawners() {
 		if validator.SpawnerSupportsModule(spawner, m.wasmModuleRoot) {
-			execRun, err = spawner.CreateExecutionRun(m.wasmModuleRoot, input).Await(ctx)
+			execRun, err = spawner.CreateExecutionRun(m.wasmModuleRoot, input, false).Await(ctx)
 			if err != nil {
 				return fmt.Errorf("error creating execution backend for msg %v: %w", initialCount, err)
 			}
@@ -493,7 +495,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 	if execRun == nil {
 		return fmt.Errorf("did not find valid execution backend")
 	}
-	backend, err := NewExecutionChallengeBackend(execRun)
+	backend, err := staker.NewExecutionChallengeBackend(execRun)
 	if err != nil {
 		return err
 	}

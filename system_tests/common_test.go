@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -21,27 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/blsSignatures"
-	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/cmd/conf"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/deploy"
-	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/signature"
-	"github.com/offchainlabs/nitro/validator/inputs"
-	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/offchainlabs/nitro/validator/server_common"
-	"github.com/offchainlabs/nitro/validator/valnode"
-	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/ethereum/go-ethereum"
@@ -71,17 +51,42 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	boldMocksgen "github.com/offchainlabs/bold/solgen/go/mocksgen"
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/bold/testing/setup"
+	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/deploy"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
-	"golang.org/x/exp/slog"
+	"github.com/offchainlabs/nitro/validator/inputs"
+	"github.com/offchainlabs/nitro/validator/server_api"
+	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/valnode"
+	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
 type info = *BlockchainTestInfo
@@ -237,6 +242,7 @@ type NodeBuilder struct {
 	l2StackConfig *node.Config
 	valnodeConfig *valnode.Config
 	l3Config      *NitroConfig
+	deployBold    bool
 	L1Info        info
 	L2Info        info
 	L3Info        info
@@ -286,7 +292,7 @@ func L3NitroConfigDefaultTest(t *testing.T) *NitroConfig {
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
-		ArbitrumChainParams: params.ArbitrumDevTestParams(),
+		ArbitrumChainParams: chaininfo.ArbitrumDevTestParams(),
 		Clique: &params.CliqueConfig{
 			Period: 0,
 			Epoch:  0,
@@ -320,7 +326,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 		b.takeOwnership = true
 		b.nodeConfig = arbnode.ConfigDefaultL2Test()
 	}
-	b.chainConfig = params.ArbitrumDevTestChainConfig()
+	b.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	b.L1Info = NewL1TestInfo(t)
 	b.L2Info = NewArbTestInfo(t, b.chainConfig.ChainID)
 	b.dataDir = t.TempDir()
@@ -342,6 +348,11 @@ func (b *NodeBuilder) WithArbOSVersion(arbosVersion uint64) *NodeBuilder {
 
 func (b *NodeBuilder) WithProdConfirmPeriodBlocks() *NodeBuilder {
 	b.withProdConfirmPeriodBlocks = true
+	return b
+}
+
+func (b *NodeBuilder) WithBoldDeployment() *NodeBuilder {
+	b.deployBold = true
 	return b
 }
 
@@ -375,7 +386,7 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 
 func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.chainConfig == nil {
-		b.chainConfig = params.ArbitrumDevTestChainConfig()
+		b.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	}
 	if b.nodeConfig == nil {
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
@@ -413,6 +424,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		locator.LatestWasmModuleRoot(),
 		b.withProdConfirmPeriodBlocks,
 		true,
+		b.deployBold,
 	)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
@@ -516,6 +528,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		locator.LatestWasmModuleRoot(),
 		b.l3Config.withProdConfirmPeriodBlocks,
 		false,
+		b.deployBold,
 	)
 
 	b.L3 = buildOnParentChain(
@@ -1079,7 +1092,7 @@ func destroyRedisGroup(ctx context.Context, t *testing.T, streamName string, cli
 	}
 }
 
-func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode.Config) (*valnode.ValidationNode, *node.Node) {
+func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode.Config, spawnerOpts ...server_arb.SpawnerOption) (*valnode.ValidationNode, *node.Node) {
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.DataDir = ""
@@ -1096,7 +1109,7 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	Require(t, err)
 
 	configFetcher := func() *valnode.Config { return config }
-	valnode, err := valnode.CreateValidationNode(configFetcher, stack, nil)
+	valnode, err := valnode.CreateValidationNode(configFetcher, stack, nil, spawnerOpts...)
 	Require(t, err)
 
 	err = stack.Start()
@@ -1179,7 +1192,7 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	l1info.GenerateAccount("Faucet")
 
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
 	stack, err := node.New(stackConfig)
@@ -1196,6 +1209,7 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
 	nodeConf.Genesis = l1Genesis
 	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
+	nodeConf.Miner.PendingFeeRecipient = l1info.GetAddress("Faucet")
 	nodeConf.SyncMode = downloader.FullSync
 
 	l1backend, err := eth.New(stack, &nodeConf)
@@ -1206,26 +1220,23 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
 	stack.RegisterLifecycle(simBeacon)
 
-	tempKeyStore := keystore.NewPlaintextKeyStore(t.TempDir())
+	tempKeyStore := keystore.NewKeyStore(t.TempDir(), keystore.LightScryptN, keystore.LightScryptP)
 	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
 	Require(t, err)
 	Require(t, tempKeyStore.Unlock(faucetAccount, "passphrase"))
 	l1backend.AccountManager().AddBackend(tempKeyStore)
-	l1backend.SetEtherbase(l1info.GetAddress("Faucet"))
 
 	stack.RegisterLifecycle(&lifecycle{stop: func() error {
-		l1backend.StopMining()
-		return nil
+		return l1backend.Stop()
 	}})
 
 	stack.RegisterAPIs([]rpc.API{{
 		Namespace: "eth",
-		Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{}), false),
+		Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{})),
 	}})
 	stack.RegisterAPIs(tracers.APIs(l1backend.APIBackend))
 
 	Require(t, stack.Start())
-	Require(t, l1backend.StartMining())
 
 	rpcClient := stack.Attach()
 
@@ -1249,6 +1260,12 @@ func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethcli
 	return initMessage
 }
 
+var (
+	blockChallengeLeafHeight     = uint64(1 << 5) // 32
+	bigStepChallengeLeafHeight   = uint64(1 << 10)
+	smallStepChallengeLeafHeight = uint64(1 << 10)
+)
+
 func deployOnParentChain(
 	t *testing.T,
 	ctx context.Context,
@@ -1259,6 +1276,7 @@ func deployOnParentChain(
 	wasmModuleRoot common.Hash,
 	prodConfirmPeriodBlocks bool,
 	chainSupportsBlobs bool,
+	deployBold bool,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	parentChainInfo.GenerateAccount("RollupOwner")
 	parentChainInfo.GenerateAccount("Sequencer")
@@ -1283,18 +1301,88 @@ func deployOnParentChain(
 
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
-	addresses, err := deploy.DeployOnParentChain(
-		ctx,
-		parentChainReader,
-		&parentChainTransactionOpts,
-		[]common.Address{parentChainInfo.GetAddress("Sequencer")},
-		parentChainInfo.GetAddress("RollupOwner"),
-		0,
-		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
-		nativeToken,
-		maxDataSize,
-		chainSupportsBlobs,
-	)
+	var addresses *chaininfo.RollupAddresses
+	if deployBold {
+		stakeToken, tx, _, err := boldMocksgen.DeployTestWETH9(
+			&parentChainTransactionOpts,
+			parentChainReader.Client(),
+			"Weth",
+			"WETH",
+		)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+		Require(t, err)
+		miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2), big.NewInt(1)}
+		genesisExecutionState := rollupgen.AssertionState{
+			GlobalState:    rollupgen.GlobalState{},
+			MachineStatus:  1, // Finished
+			EndHistoryRoot: [32]byte{},
+		}
+		cfg := rollupgen.Config{
+			MiniStakeValues:     miniStakeValues,
+			ConfirmPeriodBlocks: 120,
+			StakeToken:          stakeToken,
+			BaseStake:           big.NewInt(1),
+			WasmModuleRoot:      wasmModuleRoot,
+			Owner:               parentChainTransactionOpts.From,
+			LoserStakeEscrow:    parentChainTransactionOpts.From,
+			ChainId:             chainConfig.ChainID,
+			ChainConfig:         string(serializedChainConfig),
+			SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
+				DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
+				FutureBlocks:  big.NewInt(12),
+				DelaySeconds:  big.NewInt(60 * 60 * 24),
+				FutureSeconds: big.NewInt(60 * 60),
+			},
+			LayerZeroBlockEdgeHeight:     new(big.Int).SetUint64(blockChallengeLeafHeight),
+			LayerZeroBigStepEdgeHeight:   new(big.Int).SetUint64(bigStepChallengeLeafHeight),
+			LayerZeroSmallStepEdgeHeight: new(big.Int).SetUint64(smallStepChallengeLeafHeight),
+			GenesisAssertionState:        genesisExecutionState,
+			GenesisInboxCount:            common.Big0,
+			AnyTrustFastConfirmer:        common.Address{},
+			NumBigStepLevel:              3,
+			ChallengeGracePeriodBlocks:   3,
+		}
+		wrappedClient := butil.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)
+		boldAddresses, err := setup.DeployFullRollupStack(
+			ctx,
+			wrappedClient,
+			&parentChainTransactionOpts,
+			parentChainInfo.GetAddress("Sequencer"),
+			cfg,
+			setup.RollupStackConfig{
+				UseMockBridge:          false,
+				UseMockOneStepProver:   false,
+				MinimumAssertionPeriod: 0,
+			},
+		)
+		Require(t, err)
+		addresses = &chaininfo.RollupAddresses{
+			Bridge:                 boldAddresses.Bridge,
+			Inbox:                  boldAddresses.Inbox,
+			SequencerInbox:         boldAddresses.SequencerInbox,
+			Rollup:                 boldAddresses.Rollup,
+			NativeToken:            nativeToken,
+			UpgradeExecutor:        boldAddresses.UpgradeExecutor,
+			ValidatorUtils:         boldAddresses.ValidatorUtils,
+			ValidatorWalletCreator: boldAddresses.ValidatorWalletCreator,
+			StakeToken:             stakeToken,
+			DeployedAt:             boldAddresses.DeployedAt,
+		}
+	} else {
+		addresses, err = deploy.DeployOnParentChain(
+			ctx,
+			parentChainReader,
+			&parentChainTransactionOpts,
+			[]common.Address{parentChainInfo.GetAddress("Sequencer")},
+			parentChainInfo.GetAddress("RollupOwner"),
+			0,
+			arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+			nativeToken,
+			maxDataSize,
+			chainSupportsBlobs,
+		)
+	}
 	Require(t, err)
 	parentChainInfo.SetContract("Bridge", addresses.Bridge)
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
@@ -1511,7 +1599,7 @@ func setupConfigWithDAS(
 	t *testing.T, ctx context.Context, dasModeString string,
 ) (*params.ChainConfig, *arbnode.Config, *das.LifecycleManager, string, *blsSignatures.PublicKey) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
 
@@ -1519,10 +1607,10 @@ func setupConfigWithDAS(
 	switch dasModeString {
 	case "db":
 		enableDbStorage = true
-		chainConfig = params.ArbitrumDevTestDASChainConfig()
+		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	case "files":
 		enableFileStorage = true
-		chainConfig = params.ArbitrumDevTestDASChainConfig()
+		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	case "onchain":
 		enableDas = false
 	default:

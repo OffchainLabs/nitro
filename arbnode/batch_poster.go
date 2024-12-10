@@ -171,6 +171,7 @@ type BatchPosterConfig struct {
 	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
 	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
 	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
+	MaxEmptyBatchDelay             time.Duration               `koanf:"max-empty-batch-delay"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -202,11 +203,15 @@ func (c *BatchPosterConfig) Validate() error {
 
 type BatchPosterConfigFetcher func() *BatchPosterConfig
 
+func DangerousBatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".allow-posting-first-batch-when-sequencer-message-count-mismatch", DefaultBatchPosterConfig.Dangerous.AllowPostingFirstBatchWhenSequencerMessageCountMismatch, "allow posting the first batch even if sequence number doesn't match chain (useful after force-inclusion)")
+}
+
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
-	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
-	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum 4844 blob enabled batch size")
+	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum estimated compressed batch size")
+	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum estimated compressed 4844 blob enabled batch size")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
 	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxDelay, "wait for the max batch delay, even if the batch is full")
 	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
@@ -224,9 +229,11 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
 	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from layer 1 minimum bounds. Requires l1-block-bound option not be set to \"ignore\"")
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
+	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
+	DangerousBatchPosterConfigAddOptions(prefix+".dangerous", f)
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -255,6 +262,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	ReorgResistanceMargin:          10 * time.Minute,
 	CheckBatchCorrectness:          true,
+	MaxEmptyBatchDelay:             3 * 24 * time.Hour,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -277,7 +285,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	DASRetentionPeriod:             daprovider.DefaultDASRetentionPeriod,
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  10_000,
-	Post4844Blobs:                  true,
+	Post4844Blobs:                  false,
 	IgnoreBlobPrice:                false,
 	DataPoster:                     dataposter.TestDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
@@ -1303,7 +1311,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				b.building.muxBackend.delayedInbox = append(b.building.muxBackend.delayedInbox, msg)
 			}
 		}
-		if msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport {
+		// #nosec G115
+		timeSinceMsg := time.Since(time.Unix(int64(msg.Message.Header.Timestamp), 0))
+		if (msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport) || (timeSinceMsg >= config.MaxEmptyBatchDelay) {
 			b.building.haveUsefulMessage = true
 			if b.building.firstUsefulMsg == nil {
 				b.building.firstUsefulMsg = msg

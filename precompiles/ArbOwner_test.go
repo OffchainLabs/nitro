@@ -9,17 +9,19 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/holiman/uint256"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -114,7 +116,7 @@ func TestArbOwner(t *testing.T) {
 		Fail(t, avail)
 	}
 	deposited := big.NewInt(1000000)
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(deposited))
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(deposited), tracing.BalanceChangeUnspecified)
 	avail, err = gasInfo.GetL1FeesAvailable(callCtx, evm)
 	Require(t, err)
 	if avail.Sign() != 0 {
@@ -151,6 +153,23 @@ func TestArbOwner(t *testing.T) {
 	if avail.Cmp(deposited) != 0 {
 		Fail(t, avail, deposited)
 	}
+
+	err = prec.SetNetworkFeeAccount(callCtx, evm, addr1)
+	Require(t, err)
+	retrievedNetworkFeeAccount, err := prec.GetNetworkFeeAccount(callCtx, evm)
+	Require(t, err)
+	if retrievedNetworkFeeAccount.Cmp(addr1) != 0 {
+		Fail(t, "Expected", addr1, "got", retrievedNetworkFeeAccount)
+	}
+
+	l2BaseFee := big.NewInt(123)
+	err = prec.SetL2BaseFee(callCtx, evm, l2BaseFee)
+	Require(t, err)
+	retrievedL2BaseFee, err := state.L2PricingState().BaseFeeWei()
+	Require(t, err)
+	if l2BaseFee.Cmp(retrievedL2BaseFee) != 0 {
+		Fail(t, "Expected", l2BaseFee, "got", retrievedL2BaseFee)
+	}
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
@@ -163,7 +182,7 @@ func TestArbOwnerSetChainConfig(t *testing.T) {
 	prec := &ArbOwner{}
 	callCtx := testContext(caller, evm)
 
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams.AllowDebugPrecompiles = false
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)

@@ -14,14 +14,15 @@ import (
 
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/metricsutil"
 	"github.com/offchainlabs/nitro/util/signature"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type BackendConfig struct {

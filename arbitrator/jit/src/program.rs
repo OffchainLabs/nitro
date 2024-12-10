@@ -6,6 +6,7 @@
 use crate::caller_env::JitEnv;
 use crate::machine::{Escape, MaybeEscape, WasmEnvMut};
 use crate::stylus_backend::exec_wasm;
+use arbutil::evm::api::Gas;
 use arbutil::Bytes32;
 use arbutil::{evm::EvmData, format::DebugBytes, heapify};
 use caller_env::{GuestPtr, MemAccess};
@@ -131,7 +132,7 @@ pub fn new_program(
 
     // buy ink
     let pricing = config.stylus.pricing;
-    let ink = pricing.gas_to_ink(gas);
+    let ink = pricing.gas_to_ink(Gas(gas));
 
     let Some(module) = exec.module_asms.get(&compiled_hash).cloned() else {
         return Err(Escape::Failure(format!(
@@ -217,7 +218,7 @@ pub fn set_response(
     let raw_data = mem.read_slice(raw_data_ptr, raw_data_len as usize);
 
     let thread = exec.threads.last_mut().unwrap();
-    thread.set_response(id, result, raw_data, gas)
+    thread.set_response(id, result, raw_data, Gas(gas))
 }
 
 /// sends previos response
