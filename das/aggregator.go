@@ -257,7 +257,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		var sigs []blsSignatures.Signature
 		var aggSignersMask uint64
 		var successfullyStoredCount int
-		var returned bool
+		var returned int // 0-no status, 1-succeeded, 2-failed
 		for i := 0; i < len(a.services); i++ {
 			select {
 			case <-ctx.Done():
@@ -279,26 +279,26 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 			// certDetailsChan, so the Store function can return, but also continue
 			// running until all responses are received (or the context is canceled)
 			// in order to produce accurate logs/metrics.
-			if !returned {
+			if returned == 0 {
 				if successfullyStoredCount >= a.requiredServicesForStore {
 					cd := certDetails{}
 					cd.pubKeys = append(cd.pubKeys, pubKeys...)
 					cd.sigs = append(cd.sigs, sigs...)
 					cd.aggSignersMask = aggSignersMask
 					certDetailsChan <- cd
-					returned = true
-					if a.maxAllowedServiceStoreFailures > 0 && // Ignore the case where AssumedHonest = 1, probably a testnet
-						int(storeFailures.Load())+1 > a.maxAllowedServiceStoreFailures {
-						log.Error("das.Aggregator: storing the batch data succeeded to enough DAS commitee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
-					}
+					returned = 1
 				} else if int(storeFailures.Load()) > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
 					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, daprovider.ErrBatchToDasFailed)
 					certDetailsChan <- cd
-					returned = true
+					returned = 2
 				}
 			}
-
+		}
+		if returned == 1 &&
+			a.maxAllowedServiceStoreFailures > 0 && // Ignore the case where AssumedHonest = 1, probably a testnet
+			int(storeFailures.Load())+1 > a.maxAllowedServiceStoreFailures {
+			log.Error("das.Aggregator: storing the batch data succeeded to enough DAS commitee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
 		}
 	}()
 
