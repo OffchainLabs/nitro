@@ -16,12 +16,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -31,7 +34,6 @@ import (
 	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/spf13/pflag"
 )
 
 var (
@@ -1115,7 +1117,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		}
 		v.validations.Delete(iPos)
 	}
-	v.nextCreateStartGS = buildGlobalState(*res, endPosition)
+	v.nextCreateStartGS = BuildGlobalState(*res, endPosition)
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	v.nextCreateBatchReread = true
 	v.prevBatchCache = make(map[uint64][]byte)

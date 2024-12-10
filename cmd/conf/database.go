@@ -12,8 +12,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/ethereum/go-ethereum/ethdb/pebble"
 	flag "github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/ethdb/pebble"
 )
 
 type PersistentConfig struct {

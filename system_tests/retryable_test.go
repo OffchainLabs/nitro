@@ -16,13 +16,14 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
-
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
@@ -75,7 +76,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 			if !msgTypes[message.Message.Header.Kind] {
 				continue
 			}
-			txs, err := arbos.ParseL2Transactions(message.Message, params.ArbitrumDevTestChainConfig().ChainID)
+			txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID)
 			Require(t, err)
 			for _, tx := range txs {
 				if txTypes[tx.Type()] {
@@ -420,6 +421,118 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	}
 	if parsed.Redeemer != ownerTxOpts.From {
 		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
+	}
+}
+
+func TestGetLifetime(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	Require(t, err)
+
+	lifetime, err := arbRetryableTx.GetLifetime(callOpts)
+	Require(t, err)
+	if lifetime.Cmp(big.NewInt(retryables.RetryableLifetimeSeconds)) != 0 {
+		t.Fatal("Expected to be ", retryables.RetryableLifetimeSeconds, " but got ", lifetime)
+	}
+}
+
+func TestKeepaliveAndCancelRetryable(t *testing.T) {
+	t.Parallel()
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	defer teardown()
+
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	usertxopts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+
+	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
+	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	Require(t, err)
+
+	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&usertxopts,
+		simpleAddr,
+		common.Big0,
+		big.NewInt(1e16),
+		beneficiaryAddress,
+		beneficiaryAddress,
+		// send enough L2 gas for intrinsic but not compute
+		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
+		big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		simpleABI.Methods["incrementRedeem"].ID,
+	)
+	Require(t, err)
+
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
+	Require(t, err)
+	if l1Receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1Receipt indicated failure")
+	}
+
+	waitForL1DelayBlocks(t, builder)
+
+	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
+	Require(t, err)
+	if len(receipt.Logs) != 2 {
+		Fatal(t, len(receipt.Logs))
+	}
+	ticketId := receipt.Logs[0].Topics[1]
+	firstRetryTxId := receipt.Logs[1].Topics[2]
+
+	// make sure it failed
+	receipt, err = WaitForTx(ctx, builder.L2.Client, firstRetryTxId, time.Second*5)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusFailed {
+		Fatal(t, receipt.GasUsed)
+	}
+
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	Require(t, err)
+
+	// checks that the ticket exists and gets current timeout
+	timeoutBeforeKeepalive, err := arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
+	Require(t, err)
+
+	// checks beneficiary
+	retrievedBeneficiaryAddress, err := arbRetryableTx.GetBeneficiary(&bind.CallOpts{}, ticketId)
+	Require(t, err)
+	if retrievedBeneficiaryAddress != beneficiaryAddress {
+		Fatal(t, "expected beneficiary to be", beneficiaryAddress, "but got", retrievedBeneficiaryAddress)
+	}
+
+	// checks that keepalive increases the timeout as expected
+	_, err = arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
+	Require(t, err)
+	timeoutAfterKeepalive, err := arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
+	Require(t, err)
+	expectedTimeoutAfterKeepAlive := timeoutBeforeKeepalive
+	expectedTimeoutAfterKeepAlive.Add(expectedTimeoutAfterKeepAlive, big.NewInt(retryables.RetryableLifetimeSeconds))
+	if timeoutAfterKeepalive.Cmp(expectedTimeoutAfterKeepAlive) != 0 {
+		Fatal(t, "expected timeout after keepalive to be", expectedTimeoutAfterKeepAlive, "but got", timeoutAfterKeepalive)
+	}
+
+	// cancel the ticket
+	beneficiaryTxOpts := builder.L2Info.GetDefaultTransactOpts("Beneficiary", ctx)
+	tx, err := arbRetryableTx.Cancel(&beneficiaryTxOpts, ticketId)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// checks that the ticket no longer exists
+	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
+	if (err == nil) || (err.Error() != "execution reverted: error NoTicketWithID(): NoTicketWithID()") {
+		Fatal(t, "didn't get expected NoTicketWithID error")
 	}
 }
 

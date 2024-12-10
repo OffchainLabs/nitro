@@ -13,17 +13,17 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
-
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 var rollupInitializedID common.Hash
@@ -135,6 +135,10 @@ func (r *RollupWatcher) Initialize(ctx context.Context) error {
 	var err error
 	r.fromBlock, err = r.getNodeCreationBlock(ctx, 0)
 	return err
+}
+
+func (r *RollupWatcher) Client() RollupWatcherL1Interface {
+	return r.client
 }
 
 func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUserLogicRollupInitialized, error) {
