@@ -137,6 +137,10 @@ func (r *RollupWatcher) Initialize(ctx context.Context) error {
 	return err
 }
 
+func (r *RollupWatcher) Client() RollupWatcherL1Interface {
+	return r.client
+}
+
 func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUserLogicRollupInitialized, error) {
 	var query = ethereum.FilterQuery{
 		FromBlock: r.fromBlock,
