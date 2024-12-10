@@ -20,6 +20,10 @@ import (
 	"time"
 
 	"github.com/Knetic/govaluate"
+	"github.com/holiman/uint256"
+	"github.com/redis/go-redis/v9"
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -35,9 +39,10 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -46,10 +51,6 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/redis/go-redis/v9"
-	"github.com/spf13/pflag"
-
-	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 var (
@@ -711,13 +712,23 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
 }
 
-func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
-	return p.PostTransaction(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
+func (p *DataPoster) PostSimpleTransaction(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	nonce, _, _, _, err := p.getNextNonceAndMaybeMeta(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
+	return p.postTransactionWithMutex(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
 }
 
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+	return p.postTransactionWithMutex(ctx, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
+}
+
+func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 
 	if p.config().DisableNewTx {
 		return nil, fmt.Errorf("posting new transaction is disabled")

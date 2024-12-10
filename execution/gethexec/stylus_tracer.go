@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
