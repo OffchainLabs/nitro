@@ -2,13 +2,15 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use arbutil::evm::{api::Ink, EvmData};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use core::time::Duration;
 use jit::machine::WasmEnv;
 use jit::program::{
     exec_program, get_last_msg, pop_with_wasm_env, start_program_with_wasm_env, JitConfig,
 };
 use prover::programs::{config::CompileConfig, config::PricingParams, prelude::StylusConfig};
+use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
 use std::str;
 use stylus::native::compile;
@@ -35,12 +37,21 @@ fn check_result(req_type: u32, req_data: &Vec<u8>) {
     }
 }
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    // Path to the wat file to be benchmarked
-    #[arg(short, long)]
-    wat_path: PathBuf,
+#[derive(Debug, Parser)]
+#[command(name = "stylus_benchmark")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    #[command(arg_required_else_help = true)]
+    Benchmark { wat_path: PathBuf },
+    GenerateWats {
+        #[arg(value_name = "OUT_PATH")]
+        out_path: PathBuf,
+    },
 }
 
 fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
@@ -84,6 +95,8 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
 }
 
 fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
+    println!("Benchmarking {:?}", wat_path);
+
     let wat = match std::fs::read(wat_path) {
         Ok(wat) => wat,
         Err(err) => panic!("failed to read: {err}"),
@@ -92,7 +105,6 @@ fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
 
     let compiled_module = compile(&wasm, 0, true, Target::default())?;
 
-    println!("Benchmarking {:?}", wat_path);
     let mut durations: Vec<Duration> = Vec::new();
     for i in 0..NUMBER_OF_BENCHMARK_RUNS {
         print!("Run {:?}, ", i);
@@ -116,7 +128,51 @@ fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
     Ok(())
 }
 
+fn generate_add_i32_wat(mut out_path: PathBuf) -> eyre::Result<()> {
+    let number_of_ops = 20_000_000;
+
+    out_path.push("add_i32.wat");
+    println!(
+        "Generating {:?}, number_of_ops: {:?}",
+        out_path, number_of_ops
+    );
+
+    let mut file = File::create(out_path)?;
+
+    file.write_all(b"(module\n")?;
+    file.write_all(b"    (import \"debug\" \"toggle_benchmark\" (func $toggle_benchmark))\n")?;
+    file.write_all(b"    (memory (export \"memory\") 0 0)\n")?;
+    file.write_all(b"    (func (export \"user_entrypoint\") (param i32) (result i32)\n")?;
+
+    file.write_all(b"        call $toggle_benchmark\n")?;
+
+    file.write_all(b"        i32.const 1\n")?;
+    for _ in 0..number_of_ops {
+        file.write_all(b"        i32.const 1\n")?;
+        file.write_all(b"        i32.add\n")?;
+    }
+
+    file.write_all(b"        call $toggle_benchmark\n")?;
+
+    file.write_all(b"        drop\n")?;
+    file.write_all(b"        i32.const 0)\n")?;
+    file.write_all(b")")?;
+
+    Ok(())
+}
+
+fn generate_wats(out_path: PathBuf) -> eyre::Result<()> {
+    return generate_add_i32_wat(out_path);
+}
+
 fn main() -> eyre::Result<()> {
-    let args = Args::parse();
-    return benchmark(&args.wat_path);
+    let args = Cli::parse();
+    match args.command {
+        Commands::Benchmark { wat_path } => {
+            return benchmark(&wat_path);
+        }
+        Commands::GenerateWats { out_path } => {
+            return generate_wats(out_path);
+        }
+    }
 }
