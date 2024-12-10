@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/staker/txbuilder"
 )
 
 // NoOp validator wallet is used for watchtower mode.
@@ -38,7 +38,7 @@ func (*NoOp) TxSenderAddress() *common.Address { return nil }
 
 func (*NoOp) From() common.Address { return common.Address{} }
 
-func (*NoOp) ExecuteTransactions(context.Context, *txbuilder.Builder, common.Address) (*types.Transaction, error) {
+func (*NoOp) ExecuteTransactions(context.Context, []*types.Transaction, common.Address) (*types.Transaction, error) {
 	return nil, errors.New("no op validator wallet cannot execute transactions")
 }
 
