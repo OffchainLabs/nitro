@@ -15,11 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -34,10 +29,16 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -892,7 +893,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
 			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
-			"localTimestamp", time.Unix(int64(timestamp), 0),
+			"localTimestamp", time.Unix(timestamp, 0),
 		)
 		return true
 	}
@@ -901,7 +902,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		Kind:        arbostypes.L1MessageType_L2Message,
 		Poster:      l1pricing.BatchPosterAddress,
 		BlockNumber: l1Block,
-		Timestamp:   uint64(timestamp),
+		Timestamp:   arbmath.SaturatingUCast[uint64](timestamp),
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}

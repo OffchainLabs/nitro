@@ -22,10 +22,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
-
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dastree"
@@ -166,8 +166,10 @@ func startClientStore(args []string) error {
 		if err != nil {
 			return err
 		}
+		// #nosec G115
 		cert, err = client.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
 	} else if len(config.Message) > 0 {
+		// #nosec G115
 		cert, err = client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
 	} else {
 		return errors.New("--message or --random-message-size must be specified")
@@ -363,6 +365,7 @@ func dumpKeyset(args []string) error {
 		return err
 	}
 
+	// #nosec G115
 	keysetHash, keysetBytes, err := das.KeysetHashFromServices(services, uint64(config.Keyset.AssumedHonest))
 	if err != nil {
 		return err

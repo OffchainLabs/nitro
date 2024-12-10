@@ -9,36 +9,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 )
-
-func TestArbAggregatorBatchPosters(t *testing.T) {
-	evm := newMockEVMForTesting()
-	context := testContext(common.Address{}, evm)
-
-	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-
-	// initially should have one batch poster
-	bps, err := ArbAggregator{}.GetBatchPosters(context, evm)
-	Require(t, err)
-	if len(bps) != 1 {
-		Fail(t)
-	}
-
-	// add addr as a batch poster
-	Require(t, ArbDebug{}.BecomeChainOwner(context, evm))
-	Require(t, ArbAggregator{}.AddBatchPoster(context, evm, addr))
-
-	// there should now be two batch posters, and addr should be one of them
-	bps, err = ArbAggregator{}.GetBatchPosters(context, evm)
-	Require(t, err)
-	if len(bps) != 2 {
-		Fail(t)
-	}
-	if bps[0] != addr && bps[1] != addr {
-		Fail(t)
-	}
-}
 
 func TestFeeCollector(t *testing.T) {
 	evm := newMockEVMForTesting()

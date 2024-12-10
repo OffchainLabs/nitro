@@ -3,13 +3,13 @@ package validator
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type BatchInfo struct {
-	Number    uint64
-	BlockHash common.Hash
-	Data      []byte
+	Number uint64
+	Data   []byte
 }
 
 type ValidationInput struct {

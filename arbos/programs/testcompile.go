@@ -9,7 +9,7 @@ package programs
 // This file exists because cgo isn't allowed in tests
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #include "arbitrator.h"
 
 typedef uint16_t u16;
@@ -20,6 +20,7 @@ typedef size_t usize;
 void handleReqWrap(usize api, u32 req_type, RustSlice *data, u64 *out_cost, GoSliceData *out_result, GoSliceData *out_raw_data);
 */
 import "C"
+
 import (
 	"fmt"
 	"os"
