@@ -4,6 +4,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::machine::{Escape, MaybeEscape};
+use arbutil::benchmark::Benchmark;
 use arbutil::evm::api::{Gas, Ink, VecReader};
 use arbutil::evm::{
     api::{EvmApiMethod, EVM_API_METHOD_REQ_OFFSET},
@@ -12,7 +13,6 @@ use arbutil::evm::{
     user::UserOutcome,
     EvmData,
 };
-use arbutil::benchmark::Benchmark;
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
 use std::thread;
