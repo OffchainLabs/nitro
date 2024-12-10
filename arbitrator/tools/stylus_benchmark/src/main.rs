@@ -1,7 +1,7 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use arbutil::evm::EvmData;
+use arbutil::evm::{api::Ink, EvmData};
 use clap::Parser;
 use core::time::Duration;
 use jit::machine::WasmEnv;
@@ -43,7 +43,7 @@ struct Args {
     wat_path: PathBuf,
 }
 
-fn run(compiled_module: Vec<u8>) -> Duration {
+fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
     let calldata = Vec::from([0u8; 32]);
     let evm_data = EvmData::default();
     let config = JitConfig {
@@ -83,15 +83,14 @@ fn run(compiled_module: Vec<u8>) -> Duration {
         let gas_left = u64::from_be_bytes(msg.req_data[..8].try_into().unwrap());
         let req_data = msg.req_data[8..].to_vec();
         check_result(msg.req_type, &req_data);
-        println!(
-            "gas_left: {:?}, req_data: {:?}",
-            gas_left, req_data
-        );
+        println!("gas_left: {:?}, req_data: {:?}", gas_left, req_data);
     } else {
         panic!("unsupported request type {:?}", msg.req_type);
     }
 
-    msg.benchmark.unwrap().elapsed.expect("timer_elapsed")
+    let elapsed = msg.benchmark.unwrap().elapsed.expect("elapsed");
+    let ink = msg.benchmark.unwrap().ink_total.expect("ink");
+    (elapsed, ink)
 }
 
 fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
@@ -104,9 +103,11 @@ fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
     let compiled_module = compile(&wasm, 0, true, Target::default())?;
 
     let mut durations: Vec<Duration> = Vec::new();
+    let mut ink: Ink = Ink(0);
     for i in 0..NUMBER_OF_BENCHMARK_RUNS {
         println!("Benchmark run {:?} {:?}", i, wat_path);
-        let duration = run(compiled_module.clone());
+        let (duration, ink_run) = run(compiled_module.clone());
+        ink = ink_run;
         durations.push(duration);
     }
 
@@ -117,7 +118,7 @@ fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
     durations = durations[l..r].to_vec();
 
     let sum = durations.iter().sum::<Duration>();
-    println!("average duration: {:?}", sum / (r - l) as u32);
+    println!("average duration: {:?}, ink: {:?}", sum / (r - l) as u32, ink);
 
     Ok(())
 }
