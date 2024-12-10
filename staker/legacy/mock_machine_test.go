@@ -1,33 +1,37 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package server_arb
+package legacystaker
 
 import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
+// IncorrectMachine will report a bad global state after the incorrectStep onwards.
+// It'll also extend the step count to incorrectStep if necessary.
 type IncorrectMachine struct {
-	inner         *ArbitratorMachine
+	inner         *server_arb.ArbitratorMachine
 	incorrectStep uint64
 	stepCount     uint64
 }
 
 var badGlobalState = validator.GoGlobalState{Batch: 0xbadbadbadbad, PosInBatch: 0xbadbadbadbad}
 
-var _ MachineInterface = (*IncorrectMachine)(nil)
+var _ server_arb.MachineInterface = (*IncorrectMachine)(nil)
 
-func NewIncorrectMachine(inner *ArbitratorMachine, incorrectStep uint64) *IncorrectMachine {
+func NewIncorrectMachine(inner *server_arb.ArbitratorMachine, incorrectStep uint64) *IncorrectMachine {
 	return &IncorrectMachine{
 		inner:         inner.Clone(),
 		incorrectStep: incorrectStep,
 	}
 }
 
-func (m *IncorrectMachine) CloneMachineInterface() MachineInterface {
+func (m *IncorrectMachine) CloneMachineInterface() server_arb.MachineInterface {
 	return &IncorrectMachine{
 		inner:         m.inner.Clone(),
 		incorrectStep: m.incorrectStep,
@@ -55,6 +59,10 @@ func (m *IncorrectMachine) GetStepCount() uint64 {
 
 func (m *IncorrectMachine) IsRunning() bool {
 	return m.inner.IsRunning() || m.stepCount < m.incorrectStep
+}
+
+func (m *IncorrectMachine) IsErrored() bool {
+	return !m.IsRunning() && m.inner.IsErrored()
 }
 
 func (m *IncorrectMachine) ValidForStep(step uint64) bool {

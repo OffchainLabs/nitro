@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"net"
 	"testing"
 	"time"
 
@@ -153,7 +152,15 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	nodeForwardTarget := func(nodeNum int) int {
 		execNode := testNodes[nodeNum].ExecNode
-		fwTarget := execNode.TxPublisher.(*gethexec.TxPreChecker).TransactionPublisher.(*gethexec.Sequencer).ForwardTarget()
+		preChecker, ok := execNode.TxPublisher.(*gethexec.TxPreChecker)
+		if !ok {
+			return -1
+		}
+		sequencer, ok := preChecker.TransactionPublisher.(*gethexec.Sequencer)
+		if !ok {
+			return -1
+		}
+		fwTarget := sequencer.ForwardTarget()
 		if fwTarget == "" {
 			return -1
 		}
@@ -323,7 +330,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	// nodeB doesn't sequence transactions, but adds messages related to them to its output feed.
 	// nodeBOutputFeedReader reads those messages from this feed and processes them.
 	// nodeBOutputFeedReader doesn't read messages from L1 since none of the nodes posts to L1.
-	nodeBPort := testClientB.ConsensusNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	nodeBPort := testhelpers.AddrTCPPort(testClientB.ConsensusNode.BroadcastServer.ListenerAddr(), t)
 	nodeConfigNodeBOutputFeedReader := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigNodeBOutputFeedReader.Feed.Input = *newBroadcastClientConfigTest(nodeBPort)
 	testClientNodeBOutputFeedReader, cleanupNodeBOutputFeedReader := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigNodeBOutputFeedReader})

@@ -59,7 +59,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/dbutil"
@@ -257,7 +257,7 @@ func mainImpl() int {
 	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
 	nodeConfig.Node.Staker.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
-	defaultValidatorL1WalletConfig := staker.DefaultValidatorL1WalletConfig
+	defaultValidatorL1WalletConfig := legacystaker.DefaultValidatorL1WalletConfig
 	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
 	nodeConfig.Node.BatchPoster.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
@@ -290,11 +290,11 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("validator must have the parent chain reader enabled")
 		}
-		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
+		strategy, err := legacystaker.ParseStrategy(nodeConfig.Node.Staker.Strategy)
 		if err != nil {
 			log.Crit("couldn't parse staker strategy", "err", err)
 		}
-		if strategy != staker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
+		if strategy != legacystaker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
@@ -466,24 +466,29 @@ func mainImpl() int {
 
 	fatalErrChan := make(chan error, 10)
 
-	var blocksReExecutor *blocksreexecutor.BlocksReExecutor
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
-		blocksReExecutor = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
-		if nodeConfig.Init.ThenQuit {
-			if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
-				log.Error("error populating stylus target cache", "err", err)
-				return 1
-			}
-			success := make(chan struct{})
-			blocksReExecutor.Start(ctx, success)
-			deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
-			select {
-			case err := <-fatalErrChan:
-				log.Error("shutting down due to fatal error", "err", err)
-				defer log.Error("shut down due to fatal error", "err", err)
-				return 1
-			case <-success:
-			}
+		if !nodeConfig.Init.ThenQuit {
+			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
+			return 1
+		}
+		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
+		if err != nil {
+			log.Error("error initializing blocksReExecutor", "err", err)
+			return 1
+		}
+		if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+			log.Error("error populating stylus target cache", "err", err)
+			return 1
+		}
+		success := make(chan struct{})
+		blocksReExecutor.Start(ctx, success)
+		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
+		select {
+		case err := <-fatalErrChan:
+			log.Error("shutting down due to fatal error", "err", err)
+			defer log.Error("shut down due to fatal error", "err", err)
+			return 1
+		case <-success:
 		}
 	}
 
@@ -634,10 +639,6 @@ func mainImpl() int {
 		}
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
-	}
-	if blocksReExecutor != nil && !nodeConfig.Init.ThenQuit {
-		blocksReExecutor.Start(ctx, nil)
-		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
 	}
 
 	sigint := make(chan os.Signal, 1)

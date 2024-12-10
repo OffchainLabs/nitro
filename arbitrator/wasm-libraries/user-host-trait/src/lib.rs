@@ -936,7 +936,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn pay_for_memory_grow(&mut self, pages: u16) -> Result<(), Self::Err> {
         if pages == 0 {
             self.buy_ink(HOSTIO_INK)?;
-            return Ok(());
+            return trace!("pay_for_memory_grow", self, be!(pages), &[]);
         }
         let gas_cost = self.evm_api().add_pages(pages); // no sentry needed since the work happens after the hostio
         self.buy_gas(gas_cost)?;

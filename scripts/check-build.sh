@@ -21,7 +21,6 @@ EXIT_CODE=0
 # Detect operating system
 OS=$(uname -s)
 echo -e "${BLUE}Detected OS: $OS${NC}"
-echo -e "${BLUE}Checking prerequisites for building Nitro locally...${NC}"
 
 # Step 1: Check Docker Installation
 if command_exists docker; then
@@ -32,7 +31,7 @@ else
 fi
 
 # Step 2: Check if Docker service is running
-if [[ "$OS" == "Linux" ]] && ! sudo service docker status >/dev/null; then
+if [[ "$OS" == "Linux" ]] && ! pidof dockerd >/dev/null; then
     echo -e "${YELLOW}Docker service is not running on Linux. Start it with: sudo service docker start${NC}"
     EXIT_CODE=1
 elif [[ "$OS" == "Darwin" ]] && ! docker info >/dev/null 2>&1; then
@@ -43,8 +42,12 @@ else
 fi
 
 # Step 3: Check the version tag
-VERSION_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV | sed 's/_$//' | head -n 1 | grep ^ || git show -s --pretty=%D | sed 's/, /\n/g' | grep -v '^origin/' | grep -v '^grafted\|HEAD\|master\|main$' || echo "dev")
-echo -e "${YELLOW}You are on the version tag: $VERSION_TAG${NC}"
+VERSION_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV | sed 's/_$//' | head -n 1 | grep ^ || git show -s --pretty=%D | sed 's/, /\n/g' | grep -v '^origin/' | grep -v '^grafted\|HEAD\|master\|main$' || echo "")
+if [[ -z "${VERSION_TAG}" ]]; then
+    echo -e "${YELLOW}Untagged version of Nitro checked out, may not be fully tested.${NC}"
+else
+    echo -e "${GREEN}You are on Nitro version tag: $VERSION_TAG${NC}"
+fi
 
 # Check if submodules are properly initialized and updated
 if git submodule status | grep -qE '^-|\+'; then
@@ -62,7 +65,6 @@ else
 fi
 
 # Step 5: Check prerequisites for building binaries
-echo -e "${BLUE}Checking prerequisites for building Nitro's binaries...${NC}"
 if [[ "$OS" == "Linux" ]]; then
     prerequisites=(git curl make cmake npm golang clang make gotestsum wasm2wat wasm-ld python3 yarn)
 else
@@ -128,10 +130,11 @@ else
     EXIT_CODE=1
 fi
 
-echo -e "${BLUE}Verification complete.${NC}"
 
 if [ $EXIT_CODE != 0 ]; then
     echo -e "${RED}One or more dependencies missing. $INSTALLATION_DOCS_URL${NC}"
+else
+    echo -e "${BLUE}Build readiness check passed.${NC}"
 fi
 
 exit $EXIT_CODE

@@ -18,17 +18,12 @@ import (
 var _ HistoryCommitmentCacher = (*Cache)(nil)
 
 func TestCache(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	basePath := t.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
 		t.Fatal(err)
 	}
 	cache, err := New(basePath)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err = cache.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
 	key := &Key{
@@ -79,9 +74,6 @@ func TestPrune(t *testing.T) {
 	}
 	cache, err := New(basePath)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err = cache.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
 	key := &Key{
@@ -212,16 +204,6 @@ func TestPrune(t *testing.T) {
 }
 
 func TestReadWriteStatehashes(t *testing.T) {
-	t.Run("read up to, but had empty reader", func(t *testing.T) {
-		b := bytes.NewBuffer([]byte{})
-		_, err := readHashes(b, 100)
-		if err == nil {
-			t.Fatal("Wanted error")
-		}
-		if !strings.Contains(err.Error(), "only read 0 hashes") {
-			t.Fatal("Unexpected error")
-		}
-	})
 	t.Run("read single root", func(t *testing.T) {
 		b := bytes.NewBuffer([]byte{})
 		want := common.BytesToHash([]byte("foo"))
@@ -324,19 +306,19 @@ func Test_readHashes(t *testing.T) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 	})
-	t.Run("EOF, but did not read as much as was expected", func(t *testing.T) {
+	t.Run("EOF, but did not read as much as was possible", func(t *testing.T) {
 		want := []common.Hash{
 			common.BytesToHash([]byte("foo")),
 			common.BytesToHash([]byte("bar")),
 			common.BytesToHash([]byte("baz")),
 		}
-		m := &mockReader{wantErr: true, hashes: want, err: io.EOF}
-		_, err := readHashes(m, 100)
-		if err == nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(err.Error(), "wanted to read 100") {
+		m := &mockReader{wantErr: false, hashes: want, bytesRead: 32}
+		hashes, err := readHashes(m, 100)
+		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
+		}
+		if len(hashes) != len(want) {
+			t.Fatalf("Wrong number of hashes. Expected %d, got %d", len(want), len(hashes))
 		}
 	})
 	t.Run("Reads wrong number of bytes", func(t *testing.T) {
@@ -424,8 +406,6 @@ func Test_determineFilePath(t *testing.T) {
 }
 
 func BenchmarkCache_Read_32Mb(b *testing.B) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	b.StopTimer()
 	basePath := os.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
@@ -433,9 +413,6 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	}
 	cache, err := New(basePath)
 	if err != nil {
-		b.Fatal(err)
-	}
-	if err = cache.Init(ctx); err != nil {
 		b.Fatal(err)
 	}
 	key := &Key{

@@ -4,9 +4,10 @@ import (
 	"errors"
 	"fmt"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	flag "github.com/spf13/pflag"
 )
 
 type DBConfig struct {

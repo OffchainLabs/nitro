@@ -2,13 +2,16 @@ package das
 
 import (
 	"bytes"
-	googlestorage "cloud.google.com/go/storage"
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/das/dastree"
 	"testing"
 	"time"
+
+	googlestorage "cloud.google.com/go/storage"
+
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 type mockGCSClient struct {
