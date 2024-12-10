@@ -59,17 +59,6 @@ type Address = Bytes20;
 type Wei = Bytes32;
 type U256 = Uint<256, 4>;
 
-#[inline(always)]
-pub fn cpu_cycles() -> u64 {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        core::arch::x86_64::_rdtsc()
-    }
-
-    #[cfg(not(target_arch = "x86_64"))]
-    0
-}
-
 #[allow(clippy::too_many_arguments)]
 pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     type Err: From<OutOfInkError> + From<Self::MemoryErr> + From<eyre::ErrReport>;
@@ -986,15 +975,12 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
                 *self.benchmark() = Some(Benchmark {
                     timer: Instant::now(),
                     elapsed: None,
-                    cycles_start: cpu_cycles(),
-                    cycles_total: None,
                     ink_start: ink_curr,
                     ink_total: None,
                 });
             }
             Some(benchmark) => {
                 benchmark.elapsed = Some(benchmark.timer.elapsed());
-                benchmark.cycles_total = Some(cpu_cycles().wrapping_sub(benchmark.cycles_start));
                 benchmark.ink_total = Some(benchmark.ink_start.saturating_sub(ink_curr));
             }
         };
