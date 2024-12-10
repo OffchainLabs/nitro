@@ -69,21 +69,11 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
 
     let req_id = start_program_with_wasm_env(exec, module).unwrap();
     let msg = get_last_msg(exec, req_id).unwrap();
-    println!(
-        "req_id: {:?}, msg.req_type: {:?}, msg.req_data: {:?}, msg.benchmark.elapsed: {:?}",
-        req_id,
-        msg.req_type,
-        msg.req_data,
-        msg.benchmark.unwrap().elapsed,
-    );
-
     if msg.req_type < EVM_API_METHOD_REQ_OFFSET {
         let _ = pop_with_wasm_env(exec);
 
-        let gas_left = u64::from_be_bytes(msg.req_data[..8].try_into().unwrap());
         let req_data = msg.req_data[8..].to_vec();
         check_result(msg.req_type, &req_data);
-        println!("gas_left: {:?}, req_data: {:?}", gas_left, req_data);
     } else {
         panic!("unsupported request type {:?}", msg.req_type);
     }
@@ -102,13 +92,13 @@ fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
 
     let compiled_module = compile(&wasm, 0, true, Target::default())?;
 
+    println!("Benchmarking {:?}", wat_path);
     let mut durations: Vec<Duration> = Vec::new();
-    let mut ink: Ink = Ink(0);
     for i in 0..NUMBER_OF_BENCHMARK_RUNS {
-        println!("Benchmark run {:?} {:?}", i, wat_path);
-        let (duration, ink_run) = run(compiled_module.clone());
-        ink = ink_run;
+        print!("Run {:?}, ", i);
+        let (duration, ink) = run(compiled_module.clone());
         durations.push(duration);
+        println!("duration: {:?}, ink: {:?}", duration, ink);
     }
 
     // discard top and bottom runs
@@ -118,7 +108,7 @@ fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
     durations = durations[l..r].to_vec();
 
     let sum = durations.iter().sum::<Duration>();
-    println!("average duration: {:?}, ink: {:?}", sum / (r - l) as u32, ink);
+    println!("Average duration after discarding top and bottom runs: {:?}", sum / (r - l) as u32);
 
     Ok(())
 }
