@@ -252,10 +252,6 @@ pub fn set_response_with_wasm_env(
 /// returns request_id for the next request
 pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
     let (_, exec) = env.jit_env();
-    send_response_with_wasm_env(exec, req_id)
-}
-
-pub fn send_response_with_wasm_env(exec: &mut WasmEnv, req_id: u32) -> Result<u32, Escape> {
     let thread = exec.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != req_id {
