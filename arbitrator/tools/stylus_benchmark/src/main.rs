@@ -26,12 +26,12 @@ fn check_result(req_type: u32, req_data: &Vec<u8>) {
     };
 
     match req_type {
-        0 => return,                         // userSuccess
-        1 => panic!("ErrExecutionReverted"), // userRevert
-        2 => panic!("ErrExecutionReverted"), // userFailure
-        3 => panic!("ErrOutOfGas"),          // userOutOfInk
-        4 => panic!("ErrDepth"),             // userOutOfStack
-        _ => panic!("ErrExecutionReverted"), // userUnknown
+        0 => return,
+        1 => panic!("ErrExecutionReverted user revert"),
+        2 => panic!("ErrExecutionReverted user failure"),
+        3 => panic!("ErrOutOfGas user out of ink"),
+        4 => panic!("ErrDepth user out of stack"),
+        _ => panic!("ErrExecutionReverted user unknown"),
     }
 }
 
