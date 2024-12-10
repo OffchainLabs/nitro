@@ -13,6 +13,7 @@ replace github.com/cockroachdb/pebble => github.com/cockroachdb/pebble v0.0.0-20
 require (
 	github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible
 	github.com/Layr-Labs/eigenda v0.6.1
+	github.com/Layr-Labs/eigenda-proxy/client v0.1.0
 	github.com/Layr-Labs/eigenda/api v0.6.1
 	github.com/Shopify/toxiproxy v2.1.4+incompatible
 	github.com/alicebob/miniredis/v2 v2.32.1
@@ -58,7 +59,6 @@ require (
 require github.com/google/go-querystring v1.1.0 // indirect
 
 require (
-	github.com/Layr-Labs/eigenda-proxy/client v0.0.0-20241207145455-553417ea0500 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231016165738-49dd2c1f3d0b // indirect
 	google.golang.org/grpc v1.59.0 // indirect
 )
