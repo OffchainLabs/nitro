@@ -401,13 +401,13 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %s does not match sequencer auction contract address %s", msg.AuctionContractAddress, es.auctionContractAddr)
 	}
 
-	currentTime := time.Now()
 	for {
 		currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
 		if msg.Round == currentRound {
 			break
 		}
 
+		currentTime := time.Now()
 		if msg.Round == currentRound+1 &&
 			timeboost.TimeTilNextRoundAfterTimestamp(es.initialTimestamp, currentTime, es.roundDuration) <= es.earlySubmissionGrace {
 			// If it becomes the next round in between checking the currentRound
