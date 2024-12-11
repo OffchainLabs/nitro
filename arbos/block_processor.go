@@ -119,6 +119,7 @@ type SequencingHooks struct {
 	DiscardInvalidTxsEarly  bool
 	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
 	PostTxFilter            func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	BlockFilter             func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 }
 
@@ -130,6 +131,9 @@ func NoopSequencingHooks() *SequencingHooks {
 			return nil
 		},
 		func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
+			return nil
+		},
+		func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error {
 			return nil
 		},
 		nil,
@@ -297,9 +301,6 @@ func ProduceBlockAdvanced(
 				return nil, nil, core.ErrGasLimitReached
 			}
 
-			if statedb.IsTxFiltered() {
-				return nil, nil, errors.New("cannot process a new transaction when the previous one was filtered and the statedb wasn't reverted to a snapshot")
-			}
 			snap := statedb.Snapshot()
 
 			if err = hooks.PreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info); err != nil {
@@ -458,6 +459,12 @@ func ProduceBlockAdvanced(
 
 		if isUserTx {
 			userTxsProcessed++
+		}
+	}
+
+	if sequencingHooks.BlockFilter != nil {
+		if err = sequencingHooks.BlockFilter(header, statedb, complete, receipts); err != nil {
+			return nil, nil, err
 		}
 	}
 
