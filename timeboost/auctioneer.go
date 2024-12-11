@@ -268,6 +268,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 				log.Error("Error setting result for request", "id", req.ID, "result", nil, "error", err)
 				return 0
 			}
+			req.Ack()
 			return 0
 		})
 	})
