@@ -39,6 +39,8 @@ var (
 	sourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
 )
 
+var TransactionStreamerBlockCreationStopped = errors.New("block creation stopped in transaction streamer")
+
 type FeedConfig struct {
 	Output wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
 	Input  Config                              `koanf:"input" reload:"hot"`
@@ -455,6 +457,10 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							bc.nextSeqNum = message.SequenceNumber + 1
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
+							if errors.Is(err, TransactionStreamerBlockCreationStopped) {
+								log.Info("stopping block creation in broadcast client because transaction streamer has stopped")
+								return
+							}
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}
