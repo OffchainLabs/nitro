@@ -8,6 +8,7 @@ use arbutil::{
         user::UserOutcomeKind,
         EvmData,
     },
+    benchmark::Benchmark,
     Bytes20, Bytes32, Color,
 };
 use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
@@ -28,6 +29,7 @@ impl From<MemoryBoundsError> for eyre::ErrReport {
 /// Mock type representing a `user_host::Program`
 pub struct Program {
     evm_api: MockEvmApi,
+    benchmark: Option<Benchmark>,
 }
 
 #[allow(clippy::unit_arg)]
@@ -50,6 +52,10 @@ impl UserHost<VecReader> for Program {
 
     fn evm_data(&self) -> &EvmData {
         &EVM_DATA
+    }
+
+    fn benchmark(&mut self) -> &mut Option<Benchmark> {
+        &mut self.benchmark
     }
 
     fn evm_return_data_len(&mut self) -> &mut u32 {
@@ -91,6 +97,7 @@ impl Program {
     pub fn current() -> Self {
         Self {
             evm_api: MockEvmApi,
+            benchmark: None,
         }
     }
 
