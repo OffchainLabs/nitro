@@ -246,7 +246,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 				}
 				for it.Next() {
 					log.Info(
-						"New express lane controller assigned",
+						"AuctionResolved: New express lane controller assigned",
 						"round", it.Event.Round,
 						"controller", it.Event.FirstPriceExpressLaneController,
 					)
@@ -255,31 +255,58 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 						sequence:   0,
 					})
 				}
+
 				setExpressLaneIterator, err := es.auctionContract.FilterSetExpressLaneController(filterOpts, nil, nil, nil)
 				if err != nil {
 					log.Error("Could not filter express lane controller transfer event", "error", err)
 					continue
 				}
+
 				for setExpressLaneIterator.Next() {
+					if (setExpressLaneIterator.Event.PreviousExpressLaneController == common.Address{}) {
+						// The ExpressLaneAuction contract emits both AuctionResolved and SetExpressLaneController
+						// events when an auction is resolved. They contain redundant information so
+						// the SetExpressLaneController event can be skipped if it's related to a new round, as
+						// indicated by an empty PreviousExpressLaneController field (a new round has no
+						// previous controller).
+						// It is more explicit and thus clearer to use the AuctionResovled event only for the
+						// new round setup logic and SetExpressLaneController event only for transfers, rather
+						// than trying to overload everything onto SetExpressLaneController.
+						continue
+					}
 					round := setExpressLaneIterator.Event.Round
 					roundInfo, ok := es.roundControl.Get(round)
 					if !ok {
-						log.Warn("Could not find round info for express lane controller transfer event", "round", round)
+						log.Warn("Could not find round info for ExpressLaneConroller transfer event", "round", round)
 						continue
 					}
 					prevController := setExpressLaneIterator.Event.PreviousExpressLaneController
 					if roundInfo.controller != prevController {
-						log.Warn("New express lane controller did not match previous controller",
+						log.Warn("Previous ExpressLaneController in SetExpressLaneController event does not match Sequencer previous controller, continuing with transfer to new controller anyway",
+							"round", round,
+							"sequencerRoundController", roundInfo.controller,
+							"previous", setExpressLaneIterator.Event.PreviousExpressLaneController,
+							"new", setExpressLaneIterator.Event.NewExpressLaneController)
+					}
+					if roundInfo.controller != prevController {
+						log.Warn("SetExpressLaneController: Previous and New ExpressLaneControllers are the same, not transferring control.",
 							"round", round,
 							"previous", setExpressLaneIterator.Event.PreviousExpressLaneController,
 							"new", setExpressLaneIterator.Event.NewExpressLaneController)
 						continue
 					}
-					newController := setExpressLaneIterator.Event.NewExpressLaneController
+
+					es.Lock()
+					// Changes to roundControl by itself are atomic but we need to udpate both roundControl
+					// and messagesBySequenceNumber atomically here.
 					es.roundControl.Add(round, &expressLaneControl{
-						controller: newController,
+						controller: setExpressLaneIterator.Event.NewExpressLaneController,
 						sequence:   0,
 					})
+					// Since the sequence number for this round has been reset to zero, the map of messages
+					// by sequence number must be reset otherwise old messages would be replayed.
+					es.messagesBySequenceNumber = make(map[uint64]*timeboost.ExpressLaneSubmission)
+					es.Unlock()
 				}
 				fromBlock = toBlock
 			}
@@ -313,14 +340,16 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	ctx context.Context,
 	msg *timeboost.ExpressLaneSubmission,
 ) error {
-	// no service lock needed since roundControl is thread-safe
+	es.Lock()
+	defer es.Unlock()
+	// Although access to roundControl by itself is thread-safe, when the round control is transferred
+	// we need to reset roundControl and messagesBySequenceNumber atomically, so the following access
+	// must be within the lock.
 	control, ok := es.roundControl.Get(msg.Round)
 	if !ok {
 		return timeboost.ErrNoOnchainController
 	}
 
-	es.Lock()
-	defer es.Unlock()
 	// Check if the submission nonce is too low.
 	if msg.SequenceNumber < control.sequence {
 		return timeboost.ErrSequenceNumberTooLow
