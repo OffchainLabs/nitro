@@ -1,7 +1,7 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-package staker
+package legacystaker
 
 import (
 	"context"
@@ -46,7 +46,7 @@ func NewFastConfirmSafe(
 		gasRefunder: gasRefunder,
 		l1Reader:    l1Reader,
 	}
-	safe, err := contractsgen.NewSafe(fastConfirmSafeAddress, builder)
+	safe, err := contractsgen.NewSafe(fastConfirmSafeAddress, wallet.L1Client())
 	if err != nil {
 		return nil, err
 	}
@@ -121,15 +121,13 @@ func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash com
 		return err
 	}
 	if alreadyApproved.Cmp(common.Big1) == 0 {
+		log.Info("Already approved Safe tx hash for fast confirmation, checking if we can execute the Safe tx", "safeHash", safeTxHash, "nodeHash", nodeHash)
 		_, err = f.checkApprovedHashAndExecTransaction(ctx, fastConfirmCallData, safeTxHash)
 		return err
 	}
 
-	auth, err := f.builder.Auth(ctx)
-	if err != nil {
-		return err
-	}
-	_, err = f.safe.ApproveHash(auth, safeTxHash)
+	log.Info("Approving Safe tx hash to fast confirm", "safeHash", safeTxHash, "nodeHash", nodeHash)
+	_, err = f.safe.ApproveHash(f.builder.Auth(ctx), safeTxHash)
 	if err != nil {
 		return err
 	}
@@ -158,7 +156,7 @@ func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash com
 }
 
 func (f *FastConfirmSafe) flushTransactions(ctx context.Context) error {
-	arbTx, err := f.wallet.ExecuteTransactions(ctx, f.builder, f.gasRefunder)
+	arbTx, err := f.builder.ExecuteTransactions(ctx)
 	if err != nil {
 		return err
 	}
@@ -170,7 +168,6 @@ func (f *FastConfirmSafe) flushTransactions(ctx context.Context) error {
 			return fmt.Errorf("error waiting for tx receipt: %w", err)
 		}
 	}
-	f.builder.ClearTransactions()
 	return nil
 }
 
@@ -227,12 +224,9 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		}
 	}
 	if approvedHashCount >= f.threshold {
-		auth, err := f.builder.Auth(ctx)
-		if err != nil {
-			return false, err
-		}
-		_, err = f.safe.ExecTransaction(
-			auth,
+		log.Info("Executing Safe tx to fast confirm", "safeHash", safeTxHash)
+		_, err := f.safe.ExecTransaction(
+			f.builder.Auth(ctx),
 			f.wallet.RollupAddress(),
 			big.NewInt(0),
 			fastConfirmCallData,
@@ -249,5 +243,6 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		}
 		return true, nil
 	}
+	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", safeTxHash)
 	return false, nil
 }

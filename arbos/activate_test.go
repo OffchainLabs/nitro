@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -20,6 +21,7 @@ func TestActivationDataFee(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	state, _ := arbosState.NewArbosMemoryBackedArbOSState()
 	pricer := state.Programs().DataPricer()
+	// #nosec G115
 	time := uint64(time.Now().Unix())
 
 	assert := func(cond bool) {

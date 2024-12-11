@@ -6,7 +6,9 @@ package arbtest
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"io"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -19,43 +21,36 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-	"golang.org/x/exp/slog"
 )
 
 func startLocalDASServer(
 	t *testing.T,
 	ctx context.Context,
 	dataDir string,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	seqInboxAddress common.Address,
 ) (*http.Server, *blsSignatures.PublicKey, das.BackendConfig, *das.RestfulDasServer, string) {
 	keyDir := t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 
-	config := das.DataAvailabilityConfig{
-		Enable: true,
-		Key: das.KeyConfig{
-			KeyDir: keyDir,
-		},
-		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:  true,
-			DataDir: dataDir,
-		},
-		ParentChainNodeURL: "none",
-		RequestTimeout:     5 * time.Second,
-	}
+	config := das.DefaultDataAvailabilityConfig
+	config.Enable = true
+	config.Key = das.KeyConfig{KeyDir: keyDir}
+	config.ParentChainNodeURL = "none"
+	config.LocalFileStorage = das.DefaultLocalFileStorageConfig
+	config.LocalFileStorage.Enable = true
+	config.LocalFileStorage.DataDir = dataDir
 
 	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
@@ -206,7 +201,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	// Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = params.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	builder.BuildL1(t)
 
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
@@ -326,4 +321,81 @@ func initTest(t *testing.T) {
 		Require(t, err, "Failed to parse string")
 		enableLogging(logLvl)
 	}
+}
+
+func TestDASBatchPosterFallback(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Setup L1
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.BuildL1(t)
+	l1client := builder.L1.Client
+	l1info := builder.L1Info
+
+	// Setup DAS server
+	dasDataDir := t.TempDir()
+	dasRpcServer, pubkey, backendConfig, _, restServerUrl := startLocalDASServer(
+		t, ctx, dasDataDir, l1client, builder.addresses.SequencerInbox)
+	authorizeDASKeyset(t, ctx, pubkey, l1info, l1client)
+
+	// Setup sequence/batch-poster L2 node
+	builder.nodeConfig.DataAvailability.Enable = true
+	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
+	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
+	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true // Disable DAS fallback
+	builder.nodeConfig.BatchPoster.ErrorDelay = time.Millisecond * 250       // Increase error delay because we expect errors
+	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
+	builder.L2Info.GenerateAccount("User2")
+	cleanup := builder.BuildL2OnL1(t)
+	defer cleanup()
+	l2client := builder.L2.Client
+	l2info := builder.L2Info
+
+	// Setup secondary L2 node
+	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfigB.BlockValidator.Enable = false
+	nodeConfigB.DataAvailability.Enable = true
+	nodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DataAvailability.RestAggregator.Enable = true
+	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	nodeConfigB.DataAvailability.ParentChainNodeURL = "none"
+	nodeBParams := SecondNodeParams{
+		nodeConfig: nodeConfigB,
+		initData:   &l2info.ArbInitData,
+	}
+	l2B, cleanupB := builder.Build2ndNode(t, &nodeBParams)
+	defer cleanupB()
+
+	// Check batch posting using the DAS
+	checkBatchPosting(t, ctx, l1client, l2client, l1info, l2info, big.NewInt(1e12), l2B.Client)
+
+	// Shutdown the DAS
+	err := dasRpcServer.Shutdown(ctx)
+	Require(t, err)
+
+	// Send 2nd transaction and check it doesn't arrive on second node
+	tx, _ := TransferBalanceTo(t, "Owner", l2info.GetAddress("User2"), big.NewInt(1e12), l2info, l2client, ctx)
+	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Second*3)
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		Fatal(t, "expected context-deadline exceeded error, but got:", err)
+	}
+
+	// Enable the DAP fallback and check the transaction on the second node.
+	// (We don't need to restart the node because of the hot-reload.)
+	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
+	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Second*3)
+	Require(t, err)
+	l2balance, err := l2B.Client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+	Require(t, err)
+	if l2balance.Cmp(big.NewInt(2e12)) != 0 {
+		Fatal(t, "Unexpected balance:", l2balance)
+	}
+
+	// Send another transaction with fallback on
+	checkBatchPosting(t, ctx, l1client, l2client, l1info, l2info, big.NewInt(3e12), l2B.Client)
 }

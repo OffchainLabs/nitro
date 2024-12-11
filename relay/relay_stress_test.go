@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -47,6 +48,7 @@ func (r *DummyUpStream) PopulateFeedBacklogByNumber(ctx context.Context, backlog
 	was := r.broadcaster.GetCachedMessageCount()
 	var seqNums []arbutil.MessageIndex
 	for i := was; i < was+backlogSize; i++ {
+		// #nosec G115
 		seqNums = append(seqNums, arbutil.MessageIndex(i))
 	}
 

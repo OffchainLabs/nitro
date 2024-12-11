@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -12,9 +13,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
-	"github.com/offchainlabs/nitro/util/stack"
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func init() {
@@ -24,8 +28,8 @@ func init() {
 // stylusTracer captures Stylus HostIOs and returns them in a structured format to be used in Cargo
 // Stylus Replay.
 type stylusTracer struct {
-	open      *stack.Stack[HostioTraceInfo]
-	stack     *stack.Stack[*stack.Stack[HostioTraceInfo]]
+	open      *containers.Stack[HostioTraceInfo]
+	stack     *containers.Stack[*containers.Stack[HostioTraceInfo]]
 	interrupt atomic.Bool
 	reason    error
 }
@@ -55,7 +59,7 @@ type HostioTraceInfo struct {
 	Address *common.Address `json:"address,omitempty"`
 
 	// For *call HostIOs, the steps performed by the called contract.
-	Steps *stack.Stack[HostioTraceInfo] `json:"steps,omitempty"`
+	Steps *containers.Stack[HostioTraceInfo] `json:"steps,omitempty"`
 }
 
 // nestsHostios contains the hostios with nested calls.
@@ -65,10 +69,20 @@ var nestsHostios = map[string]bool{
 	"static_call_contract":   true,
 }
 
-func newStylusTracer(ctx *tracers.Context, _ json.RawMessage) (tracers.Tracer, error) {
-	return &stylusTracer{
-		open:  stack.NewStack[HostioTraceInfo](),
-		stack: stack.NewStack[*stack.Stack[HostioTraceInfo]](),
+func newStylusTracer(ctx *tracers.Context, _ json.RawMessage) (*tracers.Tracer, error) {
+	t := &stylusTracer{
+		open:  containers.NewStack[HostioTraceInfo](),
+		stack: containers.NewStack[*containers.Stack[HostioTraceInfo]](),
+	}
+
+	return &tracers.Tracer{
+		Hooks: &tracing.Hooks{
+			OnEnter:             t.OnEnter,
+			OnExit:              t.OnExit,
+			CaptureStylusHostio: t.CaptureStylusHostio,
+		},
+		GetResult: t.GetResult,
+		Stop:      t.Stop,
 	}, nil
 }
 
@@ -102,16 +116,18 @@ func (t *stylusTracer) CaptureStylusHostio(name string, args, outs []byte, start
 	}
 	t.open.Push(info)
 }
-
-func (t *stylusTracer) CaptureEnter(typ vm.OpCode, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
+func (t *stylusTracer) OnEnter(depth int, typ byte, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
 	if t.interrupt.Load() {
+		return
+	}
+	if depth == 0 {
 		return
 	}
 
 	// This function adds the prefix evm_ because it assumes the opcode came from the EVM.
 	// If the opcode comes from WASM, the CaptureStylusHostio function will remove the evm prefix.
 	var name string
-	switch typ {
+	switch vm.OpCode(typ) {
 	case vm.CALL:
 		name = "evm_call_contract"
 	case vm.DELEGATECALL:
@@ -126,7 +142,7 @@ func (t *stylusTracer) CaptureEnter(typ vm.OpCode, from common.Address, to commo
 		name = "evm_self_destruct"
 	}
 
-	inner := stack.NewStack[HostioTraceInfo]()
+	inner := containers.NewStack[HostioTraceInfo]()
 	info := HostioTraceInfo{
 		Name:    name,
 		Address: &to,
@@ -137,8 +153,11 @@ func (t *stylusTracer) CaptureEnter(typ vm.OpCode, from common.Address, to commo
 	t.open = inner
 }
 
-func (t *stylusTracer) CaptureExit(output []byte, gasUsed uint64, _ error) {
+func (t *stylusTracer) OnExit(depth int, output []byte, gasUsed uint64, _ error, reverted bool) {
 	if t.interrupt.Load() {
+		return
+	}
+	if depth == 0 {
 		return
 	}
 	var err error
@@ -152,9 +171,22 @@ func (t *stylusTracer) GetResult() (json.RawMessage, error) {
 	if t.reason != nil {
 		return nil, t.reason
 	}
+
+	var internalErr error
 	if t.open == nil {
-		return nil, fmt.Errorf("trace is nil")
+		internalErr = errors.Join(internalErr, fmt.Errorf("tracer.open is nil"))
 	}
+	if t.stack == nil {
+		internalErr = errors.Join(internalErr, fmt.Errorf("tracer.stack is nil"))
+	}
+	if !t.stack.Empty() {
+		internalErr = errors.Join(internalErr, fmt.Errorf("tracer.stack should be empty, but has %d values", t.stack.Len()))
+	}
+	if internalErr != nil {
+		log.Error("stylusTracer: internal error when generating a trace", "error", internalErr)
+		return nil, fmt.Errorf("internal error: %w", internalErr)
+	}
+
 	msg, err := json.Marshal(t.open)
 	if err != nil {
 		return nil, err
@@ -166,19 +198,3 @@ func (t *stylusTracer) Stop(err error) {
 	t.reason = err
 	t.interrupt.Store(true)
 }
-
-// Unimplemented EVMLogger interface methods
-
-func (t *stylusTracer) CaptureArbitrumTransfer(env *vm.EVM, from, to *common.Address, value *big.Int, before bool, purpose string) {
-}
-func (t *stylusTracer) CaptureArbitrumStorageGet(key common.Hash, depth int, before bool)        {}
-func (t *stylusTracer) CaptureArbitrumStorageSet(key, value common.Hash, depth int, before bool) {}
-func (t *stylusTracer) CaptureStart(env *vm.EVM, from common.Address, to common.Address, create bool, input []byte, gas uint64, value *big.Int) {
-}
-func (t *stylusTracer) CaptureEnd(output []byte, gasUsed uint64, err error) {}
-func (t *stylusTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
-}
-func (t *stylusTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, _ *vm.ScopeContext, depth int, err error) {
-}
-func (t *stylusTracer) CaptureTxStart(gasLimit uint64) {}
-func (t *stylusTracer) CaptureTxEnd(restGas uint64)    {}

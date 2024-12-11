@@ -7,12 +7,14 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/google/go-cmp/cmp"
+
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
-	"github.com/offchainlabs/nitro/util/stack"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -89,7 +91,7 @@ func TestStylusTracer(t *testing.T) {
 					Args:    append(stylusMulticall.Bytes(), common.Hex2Bytes("ffffffffffffffff000000000000000000000000000000000000000000000000000000000000000000")...),
 					Outs:    common.Hex2Bytes("0000000000"),
 					Address: &stylusMulticall,
-					Steps: (*stack.Stack[gethexec.HostioTraceInfo])(&[]gethexec.HostioTraceInfo{
+					Steps: (*containers.Stack[gethexec.HostioTraceInfo])(&[]gethexec.HostioTraceInfo{
 						{Name: "user_entrypoint", Args: intToBe32(1)},
 						{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x01}},
 						{Name: "read_args", Outs: []byte{0x00}},
@@ -117,7 +119,7 @@ func TestStylusTracer(t *testing.T) {
 					Args:    append(evmMulticall.Bytes(), common.Hex2Bytes("ffffffffffffffff000000000000000000000000000000000000000000000000000000000000000000")...),
 					Outs:    common.Hex2Bytes("0000000000"),
 					Address: &evmMulticall,
-					Steps:   stack.NewStack[gethexec.HostioTraceInfo](),
+					Steps:   containers.NewStack[gethexec.HostioTraceInfo](),
 				},
 				{Name: "storage_flush_cache", Args: []byte{0x00}},
 				{Name: "write_result"},
@@ -133,7 +135,7 @@ func TestStylusTracer(t *testing.T) {
 				{
 					Name:    "evm_call_contract",
 					Address: &stylusMulticall,
-					Steps: (*stack.Stack[gethexec.HostioTraceInfo])(&[]gethexec.HostioTraceInfo{
+					Steps: (*containers.Stack[gethexec.HostioTraceInfo])(&[]gethexec.HostioTraceInfo{
 						{Name: "user_entrypoint", Args: intToBe32(1)},
 						{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x01}},
 						{Name: "read_args", Outs: []byte{0x00}},

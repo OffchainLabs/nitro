@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 func TestRedisStorageService(t *testing.T) {
 	ctx := context.Background()
+	// #nosec G115
 	timeout := uint64(time.Now().Add(time.Hour).Unix())
 	baseStorageService := NewMemoryBackedStorageService(ctx)
 	server, err := miniredis.Run()

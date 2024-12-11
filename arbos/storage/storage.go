@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -322,11 +323,11 @@ func (s *Storage) Burner() burn.Burner {
 }
 
 func (s *Storage) Keccak(data ...[]byte) ([]byte, error) {
-	byteCount := 0
+	var byteCount uint64
 	for _, part := range data {
-		byteCount += len(part)
+		byteCount += uint64(len(part))
 	}
-	cost := 30 + 6*arbmath.WordsForBytes(uint64(byteCount))
+	cost := 30 + 6*arbmath.WordsForBytes(byteCount)
 	if err := s.burner.Burn(cost); err != nil {
 		return nil, err
 	}
@@ -420,6 +421,7 @@ func (sbu *StorageBackedInt64) Get() (int64, error) {
 }
 
 func (sbu *StorageBackedInt64) Set(value int64) error {
+	// #nosec G115
 	return sbu.StorageSlot.Set(util.UintToHash(uint64(value))) // see implementation note above
 }
 
@@ -456,7 +458,7 @@ func (sbu *StorageBackedUBips) Get() (arbmath.UBips, error) {
 }
 
 func (sbu *StorageBackedUBips) Set(bips arbmath.UBips) error {
-	return sbu.backing.Set(bips.Uint64())
+	return sbu.backing.Set(uint64(bips))
 }
 
 type StorageBackedUint16 struct {

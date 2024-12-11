@@ -1,7 +1,7 @@
 // Copyright 2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-package stack
+package containers
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ func (s *Stack[T]) Pop() (T, error) {
 		var zeroVal T
 		return zeroVal, fmt.Errorf("trying to pop nil stack")
 	}
-	if len(*s) == 0 {
+	if s.Empty() {
 		var zeroVal T
 		return zeroVal, fmt.Errorf("trying to pop empty stack")
 	}
@@ -36,4 +36,15 @@ func (s *Stack[T]) Pop() (T, error) {
 	val := (*s)[i]
 	*s = (*s)[:i]
 	return val, nil
+}
+
+func (s *Stack[T]) Empty() bool {
+	return s == nil || len(*s) == 0
+}
+
+func (s *Stack[T]) Len() int {
+	if s == nil {
+		return 0
+	}
+	return len(*s)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -66,6 +67,7 @@ func parsePreimageBytes(path string) {
 		if err != nil {
 			panic(err)
 		}
+		// #nosec G115
 		if uint64(read) != fieldSize {
 			panic("missing bytes reading data")
 		}
@@ -77,18 +79,18 @@ func parsePreimageBytes(path string) {
 func StubInit() {
 	preimages = make(map[common.Hash][]byte)
 	var delayedMsgPath arrayFlags
-	seqMsgPosFlag := flag.Int("inbox-position", 0, "position for sequencer inbox message")
-	posWithinMsgFlag := flag.Int("position-within-message", 0, "position inside sequencer inbox message")
-	delayedPositionFlag := flag.Int("delayed-inbox-position", 0, "position for first delayed inbox message")
+	seqMsgPosFlag := flag.Uint64("inbox-position", 0, "position for sequencer inbox message")
+	posWithinMsgFlag := flag.Uint64("position-within-message", 0, "position inside sequencer inbox message")
+	delayedPositionFlag := flag.Uint64("delayed-inbox-position", 0, "position for first delayed inbox message")
 	lastBlockFlag := flag.String("last-block-hash", "0000000000000000000000000000000000000000000000000000000000000000", "lastBlockHash")
 	flag.Var(&delayedMsgPath, "delayed-inbox", "delayed inbox messages (multiple values)")
 	inboxPath := flag.String("inbox", "", "file to load sequencer message")
 	preimagesPath := flag.String("preimages", "", "file to load preimages from")
 	flag.Parse()
 
-	seqMsgPos = uint64(*seqMsgPosFlag)
-	posWithinMsg = uint64(*posWithinMsgFlag)
-	delayedMsgFirstPos = uint64(*delayedPositionFlag)
+	seqMsgPos = *seqMsgPosFlag
+	posWithinMsg = *posWithinMsgFlag
+	delayedMsgFirstPos = *delayedPositionFlag
 	lastBlockHash = common.HexToHash(*lastBlockFlag)
 	for _, path := range delayedMsgPath {
 		msg, err := os.ReadFile(path)

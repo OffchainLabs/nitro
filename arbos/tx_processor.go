@@ -9,22 +9,20 @@ import (
 	"math/big"
 
 	"github.com/holiman/uint256"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
-
-	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/util/arbmath"
-
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos/retryables"
-
-	"github.com/offchainlabs/nitro/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	glog "github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var arbosAddress = types.ArbosAddress
@@ -153,13 +151,17 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 		evm.IncrementDepth() // fake a call
 		from := p.msg.From
-		tracer.CaptureStart(evm, from, *p.msg.To, false, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+		if tracer.OnEnter != nil {
+			tracer.OnEnter(evm.Depth(), byte(vm.CALL), from, *p.msg.To, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+		}
 
 		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingDuringEVM)
 		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 
 		return func() {
-			tracer.CaptureEnd(nil, p.state.Burner.Burned(), nil)
+			if tracer.OnExit != nil {
+				tracer.OnExit(evm.Depth(), nil, p.state.Burner.Burned(), nil, false)
+			}
 			evm.DecrementDepth() // fake the return to the first faked call
 
 			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingAfterEVM)
@@ -532,6 +534,20 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		refund := func(refundFrom common.Address, amount *big.Int) {
 			const errLog = "fee address doesn't have enough funds to give user refund"
 
+			logMissingRefund := func(err error) {
+				if !errors.Is(err, vm.ErrInsufficientBalance) {
+					log.Error("unexpected error refunding balance", "err", err, "feeAddress", refundFrom)
+					return
+				}
+				logLevel := log.Error
+				isContract := p.evm.StateDB.GetCodeSize(refundFrom) > 0
+				if isContract {
+					// It's expected that the balance might not still be in this address if it's a contract.
+					logLevel = log.Debug
+				}
+				logLevel(errLog, "err", err, "feeAddress", refundFrom)
+			}
+
 			// Refund funds to the fee refund address without overdrafting the L1 deposit.
 			toRefundAddr := takeFunds(maxRefund, amount)
 			err = util.TransferBalance(&refundFrom, &inner.RefundTo, toRefundAddr, p.evm, scenario, "refund")
@@ -539,13 +555,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 				// Normally the network fee address should be holding any collected fees.
 				// However, in theory, they could've been transferred out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
-				log.Error(errLog, "err", err, "feeAddress", refundFrom)
+				logMissingRefund(err)
 			}
 			// Any extra refund can't be given to the fee refund address if it didn't come from the L1 deposit.
 			// Instead, give the refund to the retryable from address.
 			err = util.TransferBalance(&refundFrom, &inner.From, arbmath.BigSub(amount, toRefundAddr), p.evm, scenario, "refund")
 			if err != nil {
-				log.Error(errLog, "err", err, "feeAddress", refundFrom)
+				logMissingRefund(err)
 			}
 		}
 
