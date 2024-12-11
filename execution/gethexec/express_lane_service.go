@@ -52,6 +52,7 @@ type expressLaneService struct {
 	initialTimestamp         time.Time
 	roundDuration            time.Duration
 	auctionClosing           time.Duration
+	earlySubmissionGrace     time.Duration
 	chainConfig              *params.ChainConfig
 	logs                     chan []*types.Log
 	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
@@ -128,6 +129,7 @@ func newExpressLaneService(
 	filterSystem *filters.FilterSystem,
 	auctionContractAddr common.Address,
 	bc *core.BlockChain,
+	earlySubmissionGrace time.Duration,
 ) (*expressLaneService, error) {
 	chainConfig := bc.Config()
 
@@ -167,6 +169,7 @@ pending:
 		chainConfig:              chainConfig,
 		initialTimestamp:         initialTimestamp,
 		auctionClosing:           auctionClosingDuration,
+		earlySubmissionGrace:     earlySubmissionGrace,
 		roundControl:             lru.NewCache[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
 		auctionContractAddr:      auctionContractAddr,
 		roundDuration:            roundDuration,
@@ -397,9 +400,23 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 	if msg.AuctionContractAddress != es.auctionContractAddr {
 		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %s does not match sequencer auction contract address %s", msg.AuctionContractAddress, es.auctionContractAddr)
 	}
-	currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
-	if msg.Round != currentRound {
-		return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
+
+	for {
+		currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
+		if msg.Round == currentRound {
+			break
+		}
+
+		currentTime := time.Now()
+		if msg.Round == currentRound+1 &&
+			timeboost.TimeTilNextRoundAfterTimestamp(es.initialTimestamp, currentTime, es.roundDuration) <= es.earlySubmissionGrace {
+			// If it becomes the next round in between checking the currentRound
+			// above, and here, then this will be a negative duration which is
+			// treated as time.Sleep(0), which is fine.
+			time.Sleep(timeboost.TimeTilNextRoundAfterTimestamp(es.initialTimestamp, currentTime, es.roundDuration))
+		} else {
+			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
+		}
 	}
 	if !es.currentRoundHasController() {
 		return timeboost.ErrNoOnchainController
