@@ -199,8 +199,8 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 	bv.StopWaiter.LaunchThread(func(ctx context.Context) {
 		reservePriceTicker := newAuctionCloseTicker(bv.roundDuration, bv.auctionClosingDuration+bv.reserveSubmissionDuration)
 		go reservePriceTicker.start()
-		clearBidCountTicker := newAuctionCloseTicker(bv.roundDuration, bv.auctionClosingDuration)
-		go clearBidCountTicker.start()
+		auctionCloseTicker := newAuctionCloseTicker(bv.roundDuration, bv.auctionClosingDuration)
+		go auctionCloseTicker.start()
 
 		for {
 			select {
@@ -222,7 +222,7 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 				log.Info("Reserve price updated", "old", currentReservePrice.String(), "new", rp.String())
 				bv.setReservePrice(rp)
 
-			case <-reservePriceTicker.c:
+			case <-auctionCloseTicker.c:
 				bv.Lock()
 				bv.bidsPerSenderInRound = make(map[common.Address]uint8)
 				bv.Unlock()
