@@ -36,6 +36,7 @@ func (con ArbAggregator) GetBatchPosters(c ctx, evm mech) ([]addr, error) {
 	return c.State.L1PricingState().BatchPosterTable().AllPosters(65536)
 }
 
+// Adds additional batch poster address
 func (con ArbAggregator) AddBatchPoster(c ctx, evm mech, newBatchPoster addr) error {
 	isOwner, err := c.State.ChainOwners().IsMember(c.caller)
 	if err != nil {
@@ -90,12 +91,14 @@ func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, batchPoster addr, newF
 }
 
 // GetTxBaseFee gets an aggregator's current fixed fee to submit a tx
+// Deprecated: always returns zero
 func (con ArbAggregator) GetTxBaseFee(c ctx, evm mech, aggregator addr) (huge, error) {
 	// This is deprecated and now always returns zero.
 	return big.NewInt(0), nil
 }
 
 // SetTxBaseFee sets an aggregator's fixed fee (caller must be the aggregator, its fee collector, or an owner)
+// Deprecated: no-op
 func (con ArbAggregator) SetTxBaseFee(c ctx, evm mech, aggregator addr, feeInL1Gas huge) error {
 	// This is deprecated and is now a no-op.
 	return nil
