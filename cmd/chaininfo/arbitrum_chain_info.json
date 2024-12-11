@@ -247,6 +247,7 @@
       "rollup": "0xd80810638dbDF9081b72C1B33c65375e807281C8",
       "validator-utils": "0x1f6860C3cac255fFFa72B7410b1183c3a0D261e0",
       "validator-wallet-creator": "0x894fC71fA0A666352824EC954B401573C861D664",
+      "stake-token": "0xefb383126640fe4a760010c6e59c397d2b6c7141",
       "deployed-at": 4139226
     }
   },
