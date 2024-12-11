@@ -115,12 +115,12 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 
 type SequencingHooks struct {
-	TxErrors                []error
-	DiscardInvalidTxsEarly  bool
-	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
-	PostTxFilter            func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
-	BlockFilter             func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
-	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
+	TxErrors                []error                                                                                                                                                                 // This can be unset
+	DiscardInvalidTxsEarly  bool                                                                                                                                                                    // This can be unset
+	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error // This has to be set
+	PostTxFilter            func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error                                    // This has to be set
+	BlockFilter             func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error                                                                                           // This can be unset
+	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions                                                                                                                                    // This can be unset
 }
 
 func NoopSequencingHooks() *SequencingHooks {
@@ -133,9 +133,7 @@ func NoopSequencingHooks() *SequencingHooks {
 		func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
-		func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error {
-			return nil
-		},
+		nil,
 		nil,
 	}
 }
@@ -176,7 +174,7 @@ func ProduceBlockAdvanced(
 	runMode core.MessageRunMode,
 ) (*types.Block, types.Receipts, error) {
 
-	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -193,11 +191,11 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
+	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
-	blockGasLeft, _ := state.L2PricingState().PerBlockGasLimit()
+	blockGasLeft, _ := arbState.L2PricingState().PerBlockGasLimit()
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
@@ -230,7 +228,7 @@ func ProduceBlockAdvanced(
 			if !ok {
 				return nil, nil, errors.New("retryable tx is somehow not a retryable")
 			}
-			retryable, _ := state.RetryableState().OpenRetryable(retry.TicketId, time)
+			retryable, _ := arbState.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
 				// retryable was already deleted
 				continue
@@ -269,11 +267,11 @@ func ProduceBlockAdvanced(
 
 			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
-				brotliCompressionLevel, err := state.BrotliCompressionLevel()
+				brotliCompressionLevel, err := arbState.BrotliCompressionLevel()
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
 				}
-				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster, brotliCompressionLevel)
+				posterCost, _ := arbState.L1PricingState().GetPosterInfo(tx, poster, brotliCompressionLevel)
 				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)
 
 				if posterCostInL2Gas.IsUint64() {
@@ -303,13 +301,13 @@ func ProduceBlockAdvanced(
 
 			snap := statedb.Snapshot()
 
-			if err = hooks.PreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info); err != nil {
+			if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 				statedb.RevertToSnapshot(snap)
 				return nil, nil, err
 			}
 
 			// Additional pre-transaction validity check
-			if err = extraPreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info); err != nil {
+			if err = extraPreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 				statedb.RevertToSnapshot(snap)
 				return nil, nil, err
 			}
@@ -329,7 +327,7 @@ func ProduceBlockAdvanced(
 				vm.Config{},
 				runMode,
 				func(result *core.ExecutionResult) error {
-					return hooks.PostTxFilter(header, statedb, state, tx, sender, dataGas, result)
+					return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
 				},
 			)
 			if err != nil {
@@ -339,7 +337,7 @@ func ProduceBlockAdvanced(
 			}
 
 			// Additional post-transaction validity check
-			if err = extraPostTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info, result); err != nil {
+			if err = extraPostTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info, result); err != nil {
 				statedb.RevertToSnapshot(snap)
 				return nil, nil, err
 			}
@@ -370,13 +368,13 @@ func ProduceBlockAdvanced(
 
 		if tx.Type() == types.ArbitrumInternalTxType {
 			// ArbOS might have upgraded to a new version, so we need to refresh our state
-			state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+			arbState, err = arbosState.OpenSystemArbosState(statedb, nil, true)
 			if err != nil {
 				return nil, nil, err
 			}
 			// Update the ArbOS version in the header (if it changed)
 			extraInfo := types.DeserializeHeaderExtraInformation(header)
-			extraInfo.ArbOSFormatVersion = state.ArbOSVersion()
+			extraInfo.ArbOSFormatVersion = arbState.ArbOSVersion()
 			extraInfo.UpdateHeaderWithInfo(header)
 		}
 
@@ -460,6 +458,10 @@ func ProduceBlockAdvanced(
 		if isUserTx {
 			userTxsProcessed++
 		}
+	}
+
+	if statedb.IsTxFiltered() {
+		return nil, nil, state.ErrArbTxFilter
 	}
 
 	if sequencingHooks.BlockFilter != nil {
