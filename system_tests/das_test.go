@@ -90,6 +90,7 @@ func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 		AssumedHonest:         1,
 		Backends:              das.BackendConfigList{backendConfig},
 		MaxStoreChunkBodySize: 512 * 1024,
+		EnableChunkedStore:    true,
 	}
 }
 
