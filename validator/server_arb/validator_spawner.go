@@ -215,9 +215,8 @@ func (v *ArbitratorSpawner) execute(
 }
 
 func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	println("LAUCHING ARBITRATOR VALIDATION")
 	v.count.Add(1)
-	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
+	promise := stopwaiter.LaunchPromiseThread(v, func(ctx context.Context) (validator.GoGlobalState, error) {
 		defer v.count.Add(-1)
 		return v.execute(ctx, entry, moduleRoot)
 	})
