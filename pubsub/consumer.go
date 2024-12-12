@@ -36,6 +36,8 @@ var TestConsumerConfig = ConsumerConfig{
 	IdletimeToAutoclaim:  30 * time.Millisecond,
 }
 
+var AlreadySetError = errors.New("redis key already set")
+
 func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".response-entry-timeout", DefaultConsumerConfig.ResponseEntryTimeout, "timeout for response entry")
 	f.Duration(prefix+".idletime-to-autoclaim", DefaultConsumerConfig.IdletimeToAutoclaim, "After a message spends this amount of time in PEL (Pending Entries List i.e claimed by another consumer but not Acknowledged) it will be allowed to be autoclaimed by other consumers")
@@ -221,7 +223,10 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID s
 	resultKey := ResultKeyFor(c.StreamName(), messageID)
 	log.Debug("consumer: setting result", "cid", c.id, "msgIdInStream", messageID, "resultKeyInRedis", resultKey)
 	acquired, err := c.client.SetNX(ctx, resultKey, resp, c.cfg.ResponseEntryTimeout).Result()
-	if err != nil || !acquired {
+	if !acquired && err == nil {
+		err = AlreadySetError
+	}
+	if err != nil {
 		return fmt.Errorf("setting result for message with message-id in stream: %v, error: %w", messageID, err)
 	}
 	log.Debug("consumer: xack", "cid", c.id, "messageId", messageID)
@@ -242,7 +247,10 @@ func (c *Consumer[Request, Response]) SetError(ctx context.Context, messageID st
 	errorKey := ErrorKeyFor(c.StreamName(), messageID)
 	log.Debug("consumer: setting error", "cid", c.id, "msgIdInStream", messageID, "errorKeyInRedis", errorKey)
 	acquired, err := c.client.SetNX(ctx, errorKey, resp, c.cfg.ResponseEntryTimeout).Result()
-	if err != nil || !acquired {
+	if !acquired && err == nil {
+		err = AlreadySetError
+	}
+	if err != nil {
 		return fmt.Errorf("setting error for message with message-id in stream: %v, error: %w", messageID, err)
 	}
 	log.Debug("consumer: xack", "cid", c.id, "messageId", messageID)
