@@ -674,7 +674,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	statedb.StartPrefetcher("TransactionStreamer")
+	statedb.StartPrefetcher("TransactionStreamer", nil)
 	defer statedb.StopPrefetcher()
 
 	runMode := core.MessageCommitMode
