@@ -450,10 +450,16 @@ func addressToBytes20(addr common.Address) bytes20 {
 }
 
 func (slice *rustSlice) read() []byte {
+	if slice.len == 0 {
+		return nil
+	}
 	return arbutil.PointerToSlice((*byte)(slice.ptr), int(slice.len))
 }
 
 func (vec *rustBytes) read() []byte {
+	if vec.len == 0 {
+		return nil
+	}
 	return arbutil.PointerToSlice((*byte)(vec.ptr), int(vec.len))
 }
 
