@@ -340,18 +340,6 @@ func ProduceBlockAdvanced(
 			return receipt, result, nil
 		})()
 
-		if tx.Type() == types.ArbitrumInternalTxType {
-			// ArbOS might have upgraded to a new version, so we need to refresh our state
-			state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
-			if err != nil {
-				return nil, nil, err
-			}
-			// Update the ArbOS version in the header (if it changed)
-			extraInfo := types.DeserializeHeaderExtraInformation(header)
-			extraInfo.ArbOSFormatVersion = state.ArbOSVersion()
-			extraInfo.UpdateHeaderWithInfo(header)
-		}
-
 		// append the err, even if it is nil
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
@@ -371,6 +359,18 @@ func ProduceBlockAdvanced(
 				}
 			}
 			continue
+		}
+
+		if tx.Type() == types.ArbitrumInternalTxType {
+			// ArbOS might have upgraded to a new version, so we need to refresh our state
+			state, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Update the ArbOS version in the header (if it changed)
+			extraInfo := types.DeserializeHeaderExtraInformation(header)
+			extraInfo.ArbOSFormatVersion = state.ArbOSVersion()
+			extraInfo.UpdateHeaderWithInfo(header)
 		}
 
 		if tx.Type() == types.ArbitrumInternalTxType && result.Err != nil {
@@ -460,7 +460,7 @@ func ProduceBlockAdvanced(
 	FinalizeBlock(header, complete, statedb, chainConfig)
 
 	// Touch up the block hashes in receipts
-	tmpBlock := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
+	tmpBlock := types.NewBlock(header, &types.Body{Transactions: complete}, receipts, trie.NewStackTrie(nil))
 	blockHash := tmpBlock.Hash()
 
 	for _, receipt := range receipts {
@@ -470,7 +470,7 @@ func ProduceBlockAdvanced(
 		}
 	}
 
-	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
+	block := types.NewBlock(header, &types.Body{Transactions: complete}, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
 		return nil, nil, fmt.Errorf("block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
