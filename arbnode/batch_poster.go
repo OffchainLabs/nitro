@@ -984,57 +984,27 @@ func (b *BatchPoster) encodeAddBatch(
 	if !ok {
 		return nil, nil, errors.New("failed to find add batch method")
 	}
-
-	var calldata []byte
+	var args []any
 	var kzgBlobs []kzg4844.Blob
 	var err error
+	args = append(args, seqNum)
 	if use4844 {
 		kzgBlobs, err = blobs.EncodeBlobs(l2MessageData)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to encode blobs: %w", err)
 		}
-	}
-	switch methodName {
-	case sequencerBatchPostWithBlobsMethodName:
+	} else {
 		// EIP4844 transactions to the sequencer inbox will not use transaction calldata for L2 info.
-		calldata, err = method.Inputs.Pack(
-			seqNum,
-			new(big.Int).SetUint64(delayedMsg),
-			b.config().gasRefunder,
-			new(big.Int).SetUint64(uint64(prevMsgNum)),
-			new(big.Int).SetUint64(uint64(newMsgNum)),
-		)
-	case sequencerBatchPostWithBlobsDelayProofMethodName:
-		calldata, err = method.Inputs.Pack(
-			seqNum,
-			new(big.Int).SetUint64(delayedMsg),
-			b.config().gasRefunder,
-			new(big.Int).SetUint64(uint64(prevMsgNum)),
-			new(big.Int).SetUint64(uint64(newMsgNum)),
-			delayProof,
-		)
-	case sequencerBatchPostMethodName:
-		calldata, err = method.Inputs.Pack(
-			seqNum,
-			l2MessageData,
-			new(big.Int).SetUint64(delayedMsg),
-			b.config().gasRefunder,
-			new(big.Int).SetUint64(uint64(prevMsgNum)),
-			new(big.Int).SetUint64(uint64(newMsgNum)),
-		)
-	case sequencerBatchPostDelayProofMethodName:
-		calldata, err = method.Inputs.Pack(
-			seqNum,
-			l2MessageData,
-			new(big.Int).SetUint64(delayedMsg),
-			b.config().gasRefunder,
-			new(big.Int).SetUint64(uint64(prevMsgNum)),
-			new(big.Int).SetUint64(uint64(newMsgNum)),
-			delayProof,
-		)
-	default:
-		panic("impossible")
+		args = append(args, l2MessageData)
 	}
+	args = append(args, new(big.Int).SetUint64(delayedMsg))
+	args = append(args, b.config().gasRefunder)
+	args = append(args, new(big.Int).SetUint64(uint64(prevMsgNum)))
+	args = append(args, new(big.Int).SetUint64(uint64(newMsgNum)))
+	if delayProof != nil {
+		args = append(args, delayProof)
+	}
+	calldata, err := method.Inputs.Pack(args...)
 	if err != nil {
 		return nil, nil, err
 	}
