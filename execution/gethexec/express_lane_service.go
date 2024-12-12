@@ -291,7 +291,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 							"previous", setExpressLaneIterator.Event.PreviousExpressLaneController,
 							"new", setExpressLaneIterator.Event.NewExpressLaneController)
 					}
-					if roundInfo.controller != prevController {
+					if roundInfo.controller == setExpressLaneIterator.Event.NewExpressLaneController {
 						log.Warn("SetExpressLaneController: Previous and New ExpressLaneControllers are the same, not transferring control.",
 							"round", round,
 							"previous", setExpressLaneIterator.Event.PreviousExpressLaneController,
