@@ -5,6 +5,7 @@ package stopwaiter
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -72,4 +73,20 @@ func TestStopWaiterStopAndWaitMultipleTimes(t *testing.T) {
 	sw.StopAndWait()
 	sw.StopAndWait()
 	sw.StopAndWait()
+}
+
+func TestStopWaiterStopOnlyThenStopAndWait(t *testing.T) {
+	t.Parallel()
+	sw := StopWaiter{}
+	sw.Start(context.Background(), &TestStruct{})
+	var threadStopping atomic.Bool
+	sw.LaunchThread(func(context.Context) {
+		time.Sleep(time.Second)
+		threadStopping.Store(true)
+	})
+	sw.StopOnly()
+	sw.StopAndWait()
+	if !threadStopping.Load() {
+		t.Error("StopAndWait returned before background thread stopped")
+	}
 }
