@@ -5,8 +5,8 @@ package redisutil
 
 import (
 	"context"
+	"flag"
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -14,12 +14,16 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-// CreateTestRedis Provides external redis url, this is only done in TEST_REDIS env,
+var (
+	redisFlag = flag.String("TEST_REDIS", "", "Redis URL for testing")
+)
+
+// CreateTestRedis Provides external redis url, this is only done with -TEST_REDIS flag,
 // else creates a new miniredis and returns its url.
 func CreateTestRedis(ctx context.Context, t *testing.T) string {
-	redisUrl := os.Getenv("TEST_REDIS")
-	if redisUrl != "" {
-		return redisUrl
+	flag.Parse()
+	if *redisFlag != "" {
+		return *redisFlag
 	}
 	redisServer, err := miniredis.Run()
 	testhelpers.RequireImpl(t, err)

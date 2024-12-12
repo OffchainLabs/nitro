@@ -1,7 +1,7 @@
 #!/bin/bash
 
 check_missing_value() {
-    if [[ $1 -eq 0 || $2 == -* ]]; then
+    if [[ $1 -eq 0 || ($2 == -* && $3 != "--flags") ]]; then
         echo "missing $3 argument value"
         exit 1
     fi
@@ -10,6 +10,7 @@ check_missing_value() {
 timeout=""
 tags=""
 run=""
+flags=""
 race=false
 cover=false
 while [[ $# -gt 0 ]]; do
@@ -30,6 +31,12 @@ while [[ $# -gt 0 ]]; do
       shift
       check_missing_value $# "$1" "--run"
       run=$1
+      shift
+      ;;
+    --flags)
+      shift
+      check_missing_value $# "$1" "--flags"
+      flags=$1
       shift
       ;;
     --race)
@@ -61,6 +68,10 @@ for package in $packages; do
 
   if [ "$run" != "" ]; then
     cmd="$cmd -run=$run"
+  fi
+
+  if [ "$flags" != "" ]; then
+    cmd="$cmd $flags"
   fi
 
   if [ "$race" == true ]; then
