@@ -1,4 +1,4 @@
-name: Build nitro-eigenda Docker Image
+name: Build and Publish Docker Image
 on:
   workflow_dispatch:
 
