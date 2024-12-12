@@ -84,6 +84,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 			AssumedHonest:         1,
 			Backends:              beConfigs,
 			MaxStoreChunkBodySize: (chunkSize * 2) + len(sendChunkJSONBoilerplate),
+			EnableChunkedStore:    true,
 		},
 		RequestTimeout: time.Minute,
 	}

@@ -41,12 +41,14 @@ type AggregatorConfig struct {
 	AssumedHonest         int               `koanf:"assumed-honest"`
 	Backends              BackendConfigList `koanf:"backends"`
 	MaxStoreChunkBodySize int               `koanf:"max-store-chunk-body-size"`
+	EnableChunkedStore    bool              `koanf:"enable-chunked-store"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
 	AssumedHonest:         0,
 	Backends:              nil,
 	MaxStoreChunkBodySize: 512 * 1024,
+	EnableChunkedStore:    true,
 }
 
 var parsedBackendsConf BackendConfigList
@@ -56,6 +58,7 @@ func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.Var(&parsedBackendsConf, prefix+".backends", "JSON RPC backend configuration. This can be specified on the command line as a JSON array, eg: [{\"url\": \"...\", \"pubkey\": \"...\"},...], or as a JSON array in the config file.")
 	f.Int(prefix+".max-store-chunk-body-size", DefaultAggregatorConfig.MaxStoreChunkBodySize, "maximum HTTP POST body size to use for individual batch chunks, including JSON RPC overhead and an estimated overhead of 512B of headers")
+	f.Bool(prefix+".enable-chunked-store", DefaultAggregatorConfig.EnableChunkedStore, "enable data to be sent to DAS in chunks instead of all at once")
 }
 
 type Aggregator struct {
