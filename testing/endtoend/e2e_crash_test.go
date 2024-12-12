@@ -221,7 +221,7 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 
 				isChallengeChild := parent.FirstChildBlock > 0 && parent.SecondChildBlock > 0
 				if !isChallengeChild {
-					// Assertion must be be a challenge child.
+					// Assertion must be a challenge child.
 					continue
 				}
 				// We expect the honest party to have confirmed it.

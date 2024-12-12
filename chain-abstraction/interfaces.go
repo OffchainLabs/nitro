@@ -405,7 +405,7 @@ type ReadOnlyEdge interface {
 	// The inherited timer from the edge's children or claiming edges based on the latest block number.
 	// NOT reorg safe.
 	LatestInheritedTimer(ctx context.Context) (InheritedTimer, error)
-	// The inherited timer from the edge's children or claiming edges based on the the safe block number.
+	// The inherited timer from the edge's children or claiming edges based on the safe block number.
 	SafeHeadInheritedTimer(ctx context.Context) (InheritedTimer, error)
 	// Whether or not an edge has rivals.
 	HasRival(ctx context.Context) (bool, error)

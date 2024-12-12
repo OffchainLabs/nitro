@@ -3,7 +3,7 @@
 // https://github.com/offchainlabs/bold/blob/main/LICENSE.md
 
 // Package stateprovider defines smarter mocks for testing purposes that can
-// simulate a layer 2 state provider and and layer 2 state execution.
+// simulate a layer 2 state provider and layer 2 state execution.
 package stateprovider
 
 import (
