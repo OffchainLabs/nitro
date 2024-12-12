@@ -9,22 +9,20 @@ import (
 	"math/big"
 
 	"github.com/holiman/uint256"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
-
-	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/util/arbmath"
-
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos/retryables"
-
-	"github.com/offchainlabs/nitro/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	glog "github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var arbosAddress = types.ArbosAddress
@@ -153,13 +151,17 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 		evm.IncrementDepth() // fake a call
 		from := p.msg.From
-		tracer.CaptureStart(evm, from, *p.msg.To, false, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+		if tracer.OnEnter != nil {
+			tracer.OnEnter(evm.Depth(), byte(vm.CALL), from, *p.msg.To, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+		}
 
 		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingDuringEVM)
 		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 
 		return func() {
-			tracer.CaptureEnd(nil, p.state.Burner.Burned(), nil)
+			if tracer.OnExit != nil {
+				tracer.OnExit(evm.Depth(), nil, p.state.Burner.Burned(), nil, false)
+			}
 			evm.DecrementDepth() // fake the return to the first faked call
 
 			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingAfterEVM)
