@@ -174,6 +174,7 @@ type BatchPosterConfig struct {
 	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
 	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
 	MaxEmptyBatchDelay             time.Duration               `koanf:"max-empty-batch-delay"`
+	DelayBufferThresholdMargin     uint64                      `koanf:"delay-buffer-threshold-margin"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -232,6 +233,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from layer 1 minimum bounds. Requires l1-block-bound option not be set to \"ignore\"")
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
 	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed")
+	f.Uint64(prefix+".delay-buffer-threshold-margin", DefaultBatchPosterConfig.DelayBufferThresholdMargin, "the number of blocks to post the batch before reaching the delay buffer threshold")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -265,6 +267,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ReorgResistanceMargin:          10 * time.Minute,
 	CheckBatchCorrectness:          true,
 	MaxEmptyBatchDelay:             3 * 24 * time.Hour,
+	DelayBufferThresholdMargin:     25, // 5 minutes considering 12-second blocks
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -296,6 +299,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	UseAccessLists:                 true,
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	CheckBatchCorrectness:          true,
+	DelayBufferThresholdMargin:     0,
 }
 
 type BatchPosterOpts struct {
@@ -1366,7 +1370,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		latestBlock := latestHeader.Number.Uint64()
 		firstDelayedMsgBlock := b.building.firstDelayedMsg.Message.Header.BlockNumber
-		if latestBlock >= firstDelayedMsgBlock+delayBuffer.Threshold {
+		threasholdLimit := firstDelayedMsgBlock + delayBuffer.Threshold - b.config().DelayBufferThresholdMargin
+		if latestBlock >= threasholdLimit {
 			log.Info("force post batch because of the delay buffer",
 				"firstDelayedMsgBlock", firstDelayedMsgBlock,
 				"threshold", delayBuffer.Threshold,
