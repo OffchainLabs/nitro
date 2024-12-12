@@ -6,8 +6,9 @@ package arbmath
 import (
 	"encoding/binary"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type bytes32 = common.Hash

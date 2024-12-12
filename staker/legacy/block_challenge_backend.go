@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package staker
+package legacystaker
 
 import (
 	"context"
@@ -13,19 +13,21 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 )
 
 type BlockChallengeBackend struct {
-	streamer               TransactionStreamerInterface
+	streamer               staker.TransactionStreamerInterface
 	startMsgCount          arbutil.MessageIndex
 	startPosition          uint64
 	endPosition            uint64
 	startGs                validator.GoGlobalState
 	endGs                  validator.GoGlobalState
-	inboxTracker           InboxTrackerInterface
+	inboxTracker           staker.InboxTrackerInterface
 	tooFarStartsAtPosition uint64
 }
 
@@ -35,8 +37,8 @@ var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 func NewBlockChallengeBackend(
 	initialState *challengegen.ChallengeManagerInitiatedChallenge,
 	maxBatchesRead uint64,
-	streamer TransactionStreamerInterface,
-	inboxTracker InboxTrackerInterface,
+	streamer staker.TransactionStreamerInterface,
+	inboxTracker staker.InboxTrackerInterface,
 ) (*BlockChallengeBackend, error) {
 	startGs := validator.GoGlobalStateFromSolidity(initialState.StartState)
 

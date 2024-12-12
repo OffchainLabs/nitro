@@ -14,9 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -37,7 +38,7 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	Require(t, err, "could not deploy ArbSys contract")
 	chainId, err := arbSys.ArbChainID(&bind.CallOpts{})
 	Require(t, err, "failed to get the ChainID")
-	if chainId.Uint64() != params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
+	if chainId.Uint64() != chaininfo.ArbitrumDevTestChainConfig().ChainID.Uint64() {
 		Fatal(t, "Wrong ChainID", chainId.Uint64())
 	}
 
@@ -433,12 +434,15 @@ func TestGasAccountingParams(t *testing.T) {
 	Require(t, err)
 	arbGasInfoSpeedLimit, arbGasInfoPoolSize, arbGasInfoTxGasLimit, err := arbGasInfo.GetGasAccountingParams(&bind.CallOpts{Context: ctx})
 	Require(t, err)
+	// #nosec G115
 	if arbGasInfoSpeedLimit.Cmp(big.NewInt(int64(speedLimit))) != 0 {
 		Fatal(t, "expected speed limit to be", speedLimit, "got", arbGasInfoSpeedLimit)
 	}
+	// #nosec G115
 	if arbGasInfoPoolSize.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
 		Fatal(t, "expected pool size to be", txGasLimit, "got", arbGasInfoPoolSize)
 	}
+	// #nosec G115
 	if arbGasInfoTxGasLimit.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
 		Fatal(t, "expected tx gas limit to be", txGasLimit, "got", arbGasInfoTxGasLimit)
 	}
