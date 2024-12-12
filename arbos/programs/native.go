@@ -464,7 +464,7 @@ func (vec *rustBytes) intoBytes() []byte {
 }
 
 func (vec *rustBytes) drop() {
-	C.stylus_drop_vec(*vec)
+	C.free_rust_bytes(*vec)
 }
 
 func goSlice(slice []byte) C.GoSliceData {
