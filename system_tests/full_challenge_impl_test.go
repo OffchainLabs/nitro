@@ -30,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/staker"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
@@ -99,8 +100,8 @@ func CreateChallenge(
 		auth,
 		wasmModuleRoot,
 		[2]uint8{
-			staker.StatusFinished,
-			staker.StatusFinished,
+			legacystaker.StatusFinished,
+			legacystaker.StatusFinished,
 		},
 		[2]mocksgen.GlobalState{
 			{
@@ -390,7 +391,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		Fatal(t, err)
 	}
 	defer asserterValidator.Stop()
-	asserterManager, err := staker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterValidator, 0, 0)
+	asserterManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterValidator, 0, 0)
 	if err != nil {
 		Fatal(t, err)
 	}
@@ -407,7 +408,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		Fatal(t, err)
 	}
 	defer challengerValidator.Stop()
-	challengerManager, err := staker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerValidator, 0, 0)
+	challengerManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerValidator, 0, 0)
 	if err != nil {
 		Fatal(t, err)
 	}

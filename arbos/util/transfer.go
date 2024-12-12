@@ -66,11 +66,10 @@ func TransferBalance(
 		if arbmath.BigLessThan(balance.ToBig(), amount) {
 			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
 		}
-		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
-		if evm.Context.ArbOSVersion >= 30 {
-			// ensure the from account is "touched" for EIP-161
-			evm.StateDB.AddBalance(*from, &uint256.Int{}, tracing.BalanceChangeTransfer)
+		if evm.Context.ArbOSVersion < 30 && amount.Sign() == 0 {
+			evm.StateDB.CreateZombieIfDeleted(*from)
 		}
+		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
 	}
 	if to != nil {
 		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)

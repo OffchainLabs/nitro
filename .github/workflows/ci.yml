@@ -20,7 +20,7 @@ jobs:
       redis:
         image: redis
         ports:
-            - 6379:6379
+          - 6379:6379
 
     strategy:
       fail-fast: false
@@ -186,7 +186,7 @@ jobs:
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --cover
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --timeout 60m --cover
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
