@@ -1,7 +1,7 @@
 #!/bin/bash
 
 check_missing_value() {
-    if [[ $1 -eq 0 || $2 == -* ]]; then
+    if [[ $1 -eq 0 || ($2 == -* && $3 != "--flags") ]]; then
         echo "missing $3 argument value"
         exit 1
     fi
