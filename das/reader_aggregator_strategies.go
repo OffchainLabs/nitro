@@ -5,6 +5,7 @@ package das
 
 import (
 	"errors"
+	"maps"
 	"math/rand"
 	"sort"
 	"sync"
@@ -33,10 +34,7 @@ func (s *abstractAggregatorStrategy) update(readers []daprovider.DASReader, stat
 	s.readers = make([]daprovider.DASReader, len(readers))
 	copy(s.readers, readers)
 
-	s.stats = make(map[daprovider.DASReader]readerStats)
-	for k, v := range stats {
-		s.stats[k] = v
-	}
+	s.stats = maps.Clone(stats)
 }
 
 // Exponentially growing Explore Exploit Strategy
