@@ -306,8 +306,11 @@ func (m *ArbitratorMachine) ProveNextStep() []byte {
 
 	output := &C.RustBytes{}
 	C.arbitrator_gen_proof(m.ptr, output)
+	defer C.free_rust_bytes(*output)
+	if output.len == 0 {
+		return nil
+	}
 	proofBytes := C.GoBytes(unsafe.Pointer(output.ptr), C.int(output.len))
-	C.free_rust_bytes(*output)
 
 	return proofBytes
 }
