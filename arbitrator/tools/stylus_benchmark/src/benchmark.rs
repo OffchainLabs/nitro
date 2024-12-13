@@ -54,7 +54,7 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
         calldata,
         config,
         evm_data,
-        160000000,
+        u64::MAX,
     )
     .unwrap();
 
@@ -92,7 +92,7 @@ pub fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
     };
     let wasm = wasmer::wat2wasm(&wat)?;
 
-    let compiled_module = compile(&wasm, 0, true, Target::default())?;
+    let compiled_module = compile(&wasm, 2, true, Target::default())?;
 
     let mut durations: Vec<Duration> = Vec::new();
     for i in 0..NUMBER_OF_BENCHMARK_RUNS {
