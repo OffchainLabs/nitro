@@ -40,6 +40,114 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+func TestExpressLaneControlTransfer(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tmpDir, err := os.MkdirTemp("", "*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	})
+	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
+
+	seq, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
+	defer cleanupSeq()
+	chainId, err := seqClient.ChainID(ctx)
+	Require(t, err)
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
+	Require(t, err)
+	info, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+
+	// Prepare clients that can submit txs to the sequencer via the express lane.
+	seqDial, err := rpc.Dial(seq.Stack.HTTPEndpoint())
+	Require(t, err)
+	createExpressLaneClient := func(name string) (*expressLaneClient, bind.TransactOpts) {
+		priv := seqInfo.Accounts[name].PrivateKey
+		expressLaneClient := newExpressLaneClient(
+			priv,
+			chainId,
+			time.Unix(info.OffsetTimestamp, 0),
+			arbmath.SaturatingCast[time.Duration](info.RoundDurationSeconds)*time.Second,
+			auctionContractAddr,
+			seqDial,
+		)
+		expressLaneClient.Start(ctx)
+		transacOpts := seqInfo.GetDefaultTransactOpts(name, ctx)
+		transacOpts.NoSend = true
+		return expressLaneClient, transacOpts
+	}
+	bobExpressLaneClient, bobOpts := createExpressLaneClient("Bob")
+	aliceExpressLaneClient, aliceOpts := createExpressLaneClient("Alice")
+
+	// Transfer express lane control from Bob to Alice
+	roundDuration := time.Minute
+	currRound := timeboost.CurrentRound(time.Unix(info.OffsetTimestamp, 0), roundDuration)
+	fmt.Println("asdfasdff ", currRound, err)
+
+	duringRoundTransferTx, err := auctionContract.ExpressLaneAuctionTransactor.TransferExpressLaneController(&bobOpts, currRound, seqInfo.Accounts["Alice"].Address)
+	Require(t, err)
+	err = bobExpressLaneClient.SendTransaction(ctx, duringRoundTransferTx)
+	Require(t, err)
+
+	// Alice and Bob submit bids and Alice wins
+	t.Logf("Alice and Bob now submitting their bids at %v", time.Now())
+	aliceBid, err := aliceBidderClient.Bid(ctx, big.NewInt(2), aliceOpts.From)
+	Require(t, err)
+	bobBid, err := bobBidderClient.Bid(ctx, big.NewInt(1), bobOpts.From)
+	Require(t, err)
+	t.Logf("Alice bid %+v", aliceBid)
+	t.Logf("Bob bid %+v", bobBid)
+
+	// Subscribe to auction resolutions and wait for Alice to win the auction.
+	winner, winnerRound := awaitAuctionResolved(t, ctx, seqClient, auctionContract)
+	fmt.Println("winner is ", winner, winnerRound)
+
+	// Verify Alice owns the express lane this round
+	if winner != aliceOpts.From {
+		t.Fatal("Alice should have won the express lane auction")
+	}
+	if winnerRound != currRound+1 {
+		t.Fatalf("winner round mismatch. Want: %d, Got: %d", currRound+1, winnerRound)
+	}
+	t.Log("Alice won the express lane auction for upcoming round, now try to transfer control before the next round begins...")
+
+	// Alice now transfers control to bob before her round begins
+	currRound = timeboost.CurrentRound(time.Unix(info.OffsetTimestamp, 0), roundDuration)
+	if currRound >= winnerRound {
+		t.Fatal("next round already began, try running the test again")
+	}
+
+	beforeRoundTransferTx, err := auctionContract.ExpressLaneAuctionTransactor.TransferExpressLaneController(&aliceOpts, winnerRound, seqInfo.Accounts["Bob"].Address)
+	Require(t, err)
+	err = aliceExpressLaneClient.SendTransaction(ctx, beforeRoundTransferTx)
+	Require(t, err)
+
+	setExpressLaneIterator, err := auctionContract.FilterSetExpressLaneController(&bind.FilterOpts{Context: ctx}, nil, nil, nil)
+	Require(t, err)
+	verifyControllerChange := func(round uint64, prev, new common.Address) {
+		setExpressLaneIterator.Next()
+		if setExpressLaneIterator.Event.Round != round {
+			t.Fatalf("unexpected round number. Want: %d, Got: %d", round, setExpressLaneIterator.Event.Round)
+		}
+		if setExpressLaneIterator.Event.PreviousExpressLaneController != prev {
+			t.Fatalf("unexpected previous express lane controller. Want: %v, Got: %v", prev, setExpressLaneIterator.Event.PreviousExpressLaneController)
+		}
+		if setExpressLaneIterator.Event.NewExpressLaneController != new {
+			t.Fatalf("unexpected new express lane controller. Want: %v, Got: %v", new, setExpressLaneIterator.Event.NewExpressLaneController)
+		}
+	}
+	// Verify during round control change
+	verifyControllerChange(currRound, common.Address{}, bobOpts.From) // Bob wins auction
+	verifyControllerChange(currRound, bobOpts.From, aliceOpts.From)   // Bob transfers control to Alice
+	// Verify before round control change
+	verifyControllerChange(winnerRound, common.Address{}, aliceOpts.From) // Alice wins auction
+	verifyControllerChange(winnerRound, aliceOpts.From, bobOpts.From)     // Alice transfers control to Bob before the round begins
+}
+
 func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -52,7 +160,7 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	seq, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
+	seq, seqClient, seqInfo, auctionContractAddr, _, _, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
 	defer cleanupSeq()
 	chainId, err := seqClient.ChainID(ctx)
 	Require(t, err)
@@ -142,7 +250,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
-	seq, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
+	seq, seqClient, seqInfo, auctionContractAddr, _, _, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
 	defer cleanupSeq()
 	chainId, err := seqClient.ChainID(ctx)
 	Require(t, err)
@@ -245,7 +353,7 @@ func setupExpressLaneAuction(
 	dbDirPath string,
 	ctx context.Context,
 	jwtSecretPath string,
-) (*arbnode.Node, *ethclient.Client, *BlockchainTestInfo, common.Address, func()) {
+) (*arbnode.Node, *ethclient.Client, *BlockchainTestInfo, common.Address, *timeboost.BidderClient, *timeboost.BidderClient, func()) {
 
 	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
@@ -539,6 +647,7 @@ func setupExpressLaneAuction(
 	time.Sleep(time.Second * 5)
 
 	// We are now in the bidding round, both issue their bids. Bob will win.
+	// asdff
 	t.Logf("Alice and Bob now submitting their bids at %v", time.Now())
 	aliceBid, err := alice.Bid(ctx, big.NewInt(1), aliceOpts.From)
 	Require(t, err)
@@ -585,7 +694,7 @@ func setupExpressLaneAuction(
 	if !bobWon {
 		t.Fatal("Bob should have won the auction")
 	}
-	return seqNode, seqClient, seqInfo, proxyAddr, cleanupSeq
+	return seqNode, seqClient, seqInfo, proxyAddr, alice, bob, cleanupSeq
 }
 
 func awaitAuctionResolved(
