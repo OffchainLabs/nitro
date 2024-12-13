@@ -95,7 +95,10 @@ pub fn benchmark(wat_path: PathBuf) -> eyre::Result<()> {
         let (duration_run, ink_spent_run) = run(compiled_module.clone());
         durations.push(duration_run);
         ink_spent = ink_spent_run;
-        println!("duration: {:?}, ink_spent: {:?}", duration_run, ink_spent_run);
+        println!(
+            "duration: {:?}, ink_spent: {:?}",
+            duration_run, ink_spent_run
+        );
     }
 
     // discard top and bottom runs
@@ -107,7 +110,10 @@ pub fn benchmark(wat_path: PathBuf) -> eyre::Result<()> {
     let avg_duration = durations.iter().sum::<Duration>() / (r - l) as u32;
     let avg_ink_spent_per_micro_second = ink_spent.0 / avg_duration.as_micros() as u64;
     println!("After discarding top and bottom runs: ");
-    println!("avg_duration: {:?}, avg_ink_spent_per_micro_second: {:?}", avg_duration, avg_ink_spent_per_micro_second);
+    println!(
+        "avg_duration: {:?}, avg_ink_spent_per_micro_second: {:?}",
+        avg_duration, avg_ink_spent_per_micro_second
+    );
 
     Ok(())
 }
