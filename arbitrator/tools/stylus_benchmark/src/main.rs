@@ -28,7 +28,7 @@ fn main() -> eyre::Result<()> {
     let args = Cli::parse();
     match args.command {
         Commands::Benchmark { wat_path } => {
-            return benchmark::benchmark(&wat_path);
+            return benchmark::benchmark(wat_path);
         }
         Commands::GenerateWats { out_path } => {
             return generate_wats::generate_wats(out_path);

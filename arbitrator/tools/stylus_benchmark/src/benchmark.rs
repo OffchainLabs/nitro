@@ -77,7 +77,7 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
     (elapsed, ink)
 }
 
-pub fn benchmark(wat_path: &PathBuf) -> eyre::Result<()> {
+pub fn benchmark(wat_path: PathBuf) -> eyre::Result<()> {
     println!("Benchmarking {:?}", wat_path);
 
     let wat = match std::fs::read(wat_path) {
