@@ -69,17 +69,11 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
         panic!("unsupported request type {:?}", msg.req_type);
     }
 
-    let benchmark_none_msg = "toggle_measurement block likely not present in program";
-    let elapsed = msg
+    let result = msg
         .benchmark
-        .expect(benchmark_none_msg)
-        .elapsed
-        .expect("elapsed");
-    let ink = msg
-        .benchmark
-        .expect(benchmark_none_msg)
-        .ink_total
-        .expect("ink");
+        .expect("toggle_measurement block likely not present in program");
+    let elapsed = result.elapsed.expect("elapsed");
+    let ink = result.ink_total.expect("ink");
     (elapsed, ink)
 }
 
