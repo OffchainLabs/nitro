@@ -5,10 +5,13 @@ package arbtest
 
 import (
 	"context"
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -61,4 +64,53 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 	if scheduled.ArbosVersion != testVersion || scheduled.ScheduledForTimestamp != testTimestamp {
 		t.Errorf("expected upgrade to be scheduled for version %v timestamp %v, got version %v timestamp %v", testVersion, testTimestamp, scheduled.ArbosVersion, scheduled.ScheduledForTimestamp)
 	}
+}
+
+func checkArbOSVersion(t *testing.T, builder *NodeBuilder, expectedVersion uint64, scenario string) {
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err, "could not get statedb", scenario)
+	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	Require(t, err, "could not open ArbOS state", scenario)
+	if state.ArbOSVersion() != expectedVersion {
+		t.Errorf("%s: expected ArbOS version %v, got %v", scenario, expectedVersion, state.ArbOSVersion())
+	}
+
+}
+
+func TestArbos11To32Upgrade(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	initialVersion := uint64(11)
+	finalVersion := uint64(32)
+
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, false).
+		WithArbOSVersion(initialVersion)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	checkArbOSVersion(t, builder, initialVersion, "initial")
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err, "could not bind ArbOwner contract")
+
+	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, finalVersion, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// generate a new block to trigger the upgrade
+	builder.L2Info.GenerateAccount("User2")
+	tx = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	checkArbOSVersion(t, builder, finalVersion, "final")
 }
