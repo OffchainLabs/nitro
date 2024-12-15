@@ -62,6 +62,10 @@ jobs:
       #     labels: ${{ steps.meta.outputs.labels }}
           # cache-from: type=local,src=/tmp/.buildx-cache
           # cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+      
       - name: "Build and push arm64"
         uses: docker/build-push-action@v6.10.0
         with:
