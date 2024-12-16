@@ -89,7 +89,27 @@ func NewS3StorageService(config *S3StorageServiceConfig, sqlDB *SqliteDatabase) 
 
 func (s *S3StorageService) Start(ctx context.Context) {
 	s.StopWaiter.Start(ctx, s)
-	s.CallIteratively(s.uploadBatches)
+	if err := s.LaunchThreadSafe(func(ctx context.Context) {
+		ticker := time.NewTicker(s.config.UploadInterval)
+		defer ticker.Stop()
+		for {
+			interval := s.uploadBatches(ctx)
+			if ctx.Err() != nil {
+				return
+			}
+			if interval != s.config.UploadInterval { // Indicates error case, so we'll retry sooner than upload-interval
+				time.Sleep(interval)
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}); err != nil {
+		log.Error("Failed to launch s3-storage service of auctioneer", "err", err)
+	}
 }
 
 func (s *S3StorageService) uploadBatch(ctx context.Context, batch []byte, fistRound uint64) error {
