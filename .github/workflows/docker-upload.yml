@@ -57,6 +57,8 @@ jobs:
           target: nitro-node-dev
           context: .
           push: true
+          platforms: linux/amd64
+          provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=local,src=/tmp/.buildx-cache
