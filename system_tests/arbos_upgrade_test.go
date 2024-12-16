@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -97,19 +98,28 @@ func TestArbos11To32Upgrade(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
-	Require(t, err, "could not bind ArbOwner contract")
+	Require(t, err)
 
-	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, finalVersion, 0)
+	_, tx, contract, err := mocksgen.DeployArbOS11To32UpgradeTest(&auth, builder.L2.Client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+
+	tx, err = arbOwner.ScheduleArbOSUpgrade(&auth, finalVersion, 0)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// generate a new block to trigger the upgrade
+	// generates a new block to trigger the upgrade
 	builder.L2Info.GenerateAccount("User2")
 	tx = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	err = contract.Mcopy(callOpts)
 	Require(t, err)
 
 	checkArbOSVersion(t, builder, finalVersion, "final")
