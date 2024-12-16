@@ -1,7 +1,7 @@
 #!/bin/bash
 
 check_missing_value() {
-    if [[ $1 -eq 0 || ($2 == -* && $3 != "--flags") ]]; then
+    if [[ $1 -eq 0 || $2 == -* ]]; then
         echo "missing $3 argument value"
         exit 1
     fi
@@ -10,7 +10,7 @@ check_missing_value() {
 timeout=""
 tags=""
 run=""
-flags=""
+test_state_scheme=""
 race=false
 cover=false
 while [[ $# -gt 0 ]]; do
@@ -33,10 +33,10 @@ while [[ $# -gt 0 ]]; do
       run=$1
       shift
       ;;
-    --flags)
+    --test_state_scheme)
       shift
-      check_missing_value $# "$1" "--flags"
-      flags=$1
+      check_missing_value $# "$1" "--test_state_scheme"
+      test_state_scheme=$1
       shift
       ;;
     --race)
@@ -56,7 +56,7 @@ done
 
 packages=$(go list ./...)
 for package in $packages; do
-  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=2 --no-color=false --"
+  cmd="stdbuf -oL gotestsum --format short-verbose --no-color=false -- \"$package\""
 
   if [ "$timeout" != "" ]; then
     cmd="$cmd -timeout $timeout"
@@ -70,10 +70,6 @@ for package in $packages; do
     cmd="$cmd -run=$run"
   fi
 
-  if [ "$flags" != "" ]; then
-    cmd="$cmd $flags"
-  fi
-
   if [ "$race" == true ]; then
     cmd="$cmd -race"
   fi
@@ -81,6 +77,10 @@ for package in $packages; do
   if [ "$cover" == true ]; then
     cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
   fi
+
+  if [ "$test_state_scheme" != "" ]; then
+      cmd="$cmd -- -TEST_STATE_SCHEME=$test_state_scheme"
+    fi
 
   cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
 
