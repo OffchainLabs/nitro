@@ -369,10 +369,10 @@ func (bv *BidValidator) validateBid(
 		return nil, err
 	}
 	if depositBal.Cmp(new(big.Int)) == 0 {
-		return nil, ErrNotDepositor
+		return nil, errors.Wrapf(ErrNotDepositor, "bidder %s", bidder.Hex())
 	}
 	if depositBal.Cmp(bid.Amount) < 0 {
-		return nil, errors.Wrapf(ErrInsufficientBalance, "onchain balance %#x, bid amount %#x", depositBal, bid.Amount)
+		return nil, errors.Wrapf(ErrInsufficientBalance, "bidder %s, onchain balance %#x, bid amount %#x", bidder.Hex(), depositBal, bid.Amount)
 	}
 	vb := &ValidatedBid{
 		ExpressLaneController:  bid.ExpressLaneController,
