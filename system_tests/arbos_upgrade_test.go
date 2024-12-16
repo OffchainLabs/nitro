@@ -125,13 +125,13 @@ func TestArbos11To32Upgrade(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// generates a new block to trigger the upgrade
-	builder.L2Info.GenerateAccount("User2")
-	tx = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	err = builder.L2.Client.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	// // generates a new block to trigger the upgrade
+	// builder.L2Info.GenerateAccount("User2")
+	// tx = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	// err = builder.L2.Client.SendTransaction(ctx, tx)
+	// Require(t, err)
+	// _, err = builder.L2.EnsureTxSucceeded(tx)
+	// Require(t, err)
 
 	checkArbOSVersion(t, builder.L2, finalVersion, "final")
 	_, err = contract.Mcopy(&auth)
