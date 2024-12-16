@@ -67,8 +67,8 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 	}
 }
 
-func checkArbOSVersion(t *testing.T, builder *NodeBuilder, expectedVersion uint64, scenario string) {
-	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+func checkArbOSVersion(t *testing.T, testClient *TestClient, expectedVersion uint64, scenario string) {
+	statedb, err := testClient.ExecNode.Backend.ArbInterface().BlockChain().State()
 	Require(t, err, "could not get statedb", scenario)
 	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	Require(t, err, "could not open ArbOS state", scenario)
@@ -93,18 +93,25 @@ func TestArbos11To32Upgrade(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	checkArbOSVersion(t, builder, initialVersion, "initial")
-
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
-	Require(t, err)
-
+	// deploys test contract
 	_, tx, contract, err := mocksgen.DeployArbOS11To32UpgradeTest(&auth, builder.L2.Client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
 	Require(t, err)
 
+	checkArbOSVersion(t, builder.L2, initialVersion, "initial")
+
+	// mcopy should revert since arbos 11 doesn't support it
+	_, err = contract.Mcopy(&auth)
+	if (err == nil) || (err.Error() != "invalid opcode: MCOPY") {
+		t.Fatalf("expected MCOPY to revert, got %v", err)
+	}
+
+	// upgrade arbos to final version
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
 	tx, err = arbOwner.ScheduleArbOSUpgrade(&auth, finalVersion, 0)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
@@ -118,9 +125,7 @@ func TestArbos11To32Upgrade(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	callOpts := &bind.CallOpts{Context: ctx}
-	err = contract.Mcopy(callOpts)
+	checkArbOSVersion(t, builder.L2, finalVersion, "final")
+	_, err = contract.Mcopy(&auth)
 	Require(t, err)
-
-	checkArbOSVersion(t, builder, finalVersion, "final")
 }
