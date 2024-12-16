@@ -88,12 +88,20 @@ func TestArbos11To32Upgrade(t *testing.T) {
 	finalVersion := uint64(32)
 
 	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, false).
+		DefaultConfig(t, true).
 		WithArbOSVersion(initialVersion)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	// makes Owner a chain owner
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbDebug.BecomeChainOwner(&auth)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
 
 	// deploys test contract
 	_, tx, contract, err := mocksgen.DeployArbOS11To32UpgradeTest(&auth, builder.L2.Client)
