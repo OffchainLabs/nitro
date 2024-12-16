@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -57,16 +58,21 @@ type BoldConfig struct {
 	// How often to scan for newly created assertions onchain.
 	AssertionScanningInterval time.Duration `koanf:"assertion-scanning-interval"`
 	// How often to confirm assertions onchain.
-	AssertionConfirmingInterval         time.Duration       `koanf:"assertion-confirming-interval"`
-	API                                 bool                `koanf:"api"`
-	APIHost                             string              `koanf:"api-host"`
-	APIPort                             uint16              `koanf:"api-port"`
-	APIDBPath                           string              `koanf:"api-db-path"`
-	TrackChallengeParentAssertionHashes []string            `koanf:"track-challenge-parent-assertion-hashes"`
-	CheckStakerSwitchInterval           time.Duration       `koanf:"check-staker-switch-interval"`
-	StateProviderConfig                 StateProviderConfig `koanf:"state-provider-config"`
-	StartValidationFromStaked           bool                `koanf:"start-validation-from-staked"`
+	AssertionConfirmingInterval         time.Duration          `koanf:"assertion-confirming-interval"`
+	API                                 bool                   `koanf:"api"`
+	APIHost                             string                 `koanf:"api-host"`
+	APIPort                             uint16                 `koanf:"api-port"`
+	APIDBPath                           string                 `koanf:"api-db-path"`
+	TrackChallengeParentAssertionHashes []string               `koanf:"track-challenge-parent-assertion-hashes"`
+	CheckStakerSwitchInterval           time.Duration          `koanf:"check-staker-switch-interval"`
+	StateProviderConfig                 StateProviderConfig    `koanf:"state-provider-config"`
+	StartValidationFromStaked           bool                   `koanf:"start-validation-from-staked"`
+	AutoDeposit                         bool                   `koanf:"auto-deposit"`
+	AutoIncreaseAllowance               bool                   `koanf:"auto-increase-allowance"`
+	DelegatedStaking                    DelegatedStakingConfig `koanf:"delegated-staking"`
+	RPCBlockNumber                      string                 `koanf:"rpc-block-number"`
 	strategy                            legacystaker.StakerStrategy
+	blockNum                            rpc.BlockNumber
 }
 
 func (c *BoldConfig) Validate() error {
@@ -75,7 +81,29 @@ func (c *BoldConfig) Validate() error {
 		return err
 	}
 	c.strategy = strategy
+	var blockNum rpc.BlockNumber
+	switch strings.ToLower(c.RPCBlockNumber) {
+	case "safe":
+		blockNum = rpc.SafeBlockNumber
+	case "finalized":
+		blockNum = rpc.FinalizedBlockNumber
+	case "latest":
+		blockNum = rpc.LatestBlockNumber
+	default:
+		return fmt.Errorf("unknown rpc block number \"%v\", expected either latest, safe, or finalized", c.RPCBlockNumber)
+	}
+	c.blockNum = blockNum
 	return nil
+}
+
+type DelegatedStakingConfig struct {
+	Enable                  bool   `koanf:"enable"`
+	CustomWithdrawalAddress string `koanf:"custom-withdrawal-address"`
+}
+
+var DefaultDelegatedStakingConfig = DelegatedStakingConfig{
+	Enable:                  false,
+	CustomWithdrawalAddress: "",
 }
 
 type StateProviderConfig struct {
@@ -106,6 +134,10 @@ var DefaultBoldConfig = BoldConfig{
 	CheckStakerSwitchInterval:           time.Minute, // Every minute, check if the Nitro node staker should switch to using BOLD.
 	StateProviderConfig:                 DefaultStateProviderConfig,
 	StartValidationFromStaked:           true,
+	AutoDeposit:                         true,
+	AutoIncreaseAllowance:               true,
+	DelegatedStaking:                    DefaultDelegatedStakingConfig,
+	RPCBlockNumber:                      "finalized",
 }
 
 var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
@@ -118,6 +150,7 @@ var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
 	f.String(prefix+".strategy", DefaultBoldConfig.Strategy, "define the bold validator staker strategy, either watchtower, defensive, stakeLatest, or makeNodes")
+	f.String(prefix+".rpc-block-number", DefaultBoldConfig.RPCBlockNumber, "define the block number to use for reading data onchain, either latest, safe, or finalized")
 	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "assertion posting interval")
 	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "scan assertion interval")
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
@@ -129,12 +162,20 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".track-challenge-parent-assertion-hashes", DefaultBoldConfig.TrackChallengeParentAssertionHashes, "only track challenges/edges with these parent assertion hashes")
 	StateProviderConfigAddOptions(prefix+".state-provider-config", f)
 	f.Bool(prefix+".start-validation-from-staked", DefaultBoldConfig.StartValidationFromStaked, "assume staked nodes are valid")
+	f.Bool(prefix+".auto-deposit", DefaultBoldConfig.StartValidationFromStaked, "assume staked nodes are valid")
+	f.Bool(prefix+".auto-increase-allowance", DefaultBoldConfig.StartValidationFromStaked, "assume staked nodes are valid")
+	DelegatedStakingConfigAddOptions(prefix+".delegated-staking", f)
 }
 
 func StateProviderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".validator-name", DefaultStateProviderConfig.ValidatorName, "name identifier for cosmetic purposes")
 	f.Bool(prefix+".check-batch-finality", DefaultStateProviderConfig.CheckBatchFinality, "check batch finality")
 	f.String(prefix+".machine-leaves-cache-path", DefaultStateProviderConfig.MachineLeavesCachePath, "path to machine cache")
+}
+
+func DelegatedStakingConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultDelegatedStakingConfig.Enable, "check batch finality")
+	f.String(prefix+".custom-withdrawal-address", DefaultDelegatedStakingConfig.CustomWithdrawalAddress, "path to machine cache")
 }
 
 type BOLDStaker struct {
@@ -365,7 +406,25 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not create challenge manager bindings: %w", err)
 	}
-	assertionChain, err := solimpl.NewAssertionChain(ctx, rollupAddress, chalManager, txOpts, client, NewDataPosterTransactor(dataPoster))
+	assertionChainOpts := []solimpl.Opt{
+		solimpl.WithRpcHeadBlockNumber(config.blockNum),
+	}
+	if config.DelegatedStaking.Enable && config.DelegatedStaking.CustomWithdrawalAddress != "" {
+		withdrawalAddr := common.HexToAddress(config.DelegatedStaking.CustomWithdrawalAddress)
+		assertionChainOpts = append(assertionChainOpts, solimpl.WithCustomWithdrawalAddress(withdrawalAddr))
+	}
+	if !config.AutoDeposit {
+		assertionChainOpts = append(assertionChainOpts, solimpl.WithoutAutoDeposit())
+	}
+	assertionChain, err := solimpl.NewAssertionChain(
+		ctx,
+		rollupAddress,
+		chalManager,
+		txOpts,
+		client,
+		NewDataPosterTransactor(dataPoster),
+		assertionChainOpts...,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create assertion chain: %w", err)
 	}
@@ -454,6 +513,15 @@ func newBOLDChallengeManager(
 	if config.API {
 		apiAddr := fmt.Sprintf("%s:%d", config.APIHost, config.APIPort)
 		stackOpts = append(stackOpts, challengemanager.StackWithAPIEnabled(apiAddr, apiDBPath))
+	}
+	if !config.AutoDeposit {
+		stackOpts = append(stackOpts, challengemanager.StackWithoutAutoDeposit())
+	}
+	if !config.AutoIncreaseAllowance {
+		stackOpts = append(stackOpts, challengemanager.StackWithoutAutoAllowanceApproval())
+	}
+	if config.DelegatedStaking.Enable {
+		stackOpts = append(stackOpts, challengemanager.StackWithDelegatedStaking())
 	}
 
 	manager, err := challengemanager.NewChallengeStack(
