@@ -34,7 +34,9 @@ import (
 	retry "github.com/offchainlabs/bold/runtime"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/bold/solgen/go/contractsgen"
+	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/bold/solgen/go/testgen"
 )
 
 var (
@@ -125,6 +127,9 @@ type AssertionChain struct {
 	fastConfirmSafeOwners                    []common.Address
 	fastConfirmSafeApprovedHashesOwners      map[common.Hash]map[common.Address]bool
 	fastConfirmSafeThreshold                 uint64
+	withdrawalAddress                        common.Address
+	stakeTokenAddr                           common.Address
+	autoDeposit                              bool
 	// rpcHeadBlockNumber is the block number of the latest block on the chain.
 	// It is set to rpc.FinalizedBlockNumber by default.
 	// WithRpcHeadBlockNumber can be used to set a different block number.
@@ -157,6 +162,22 @@ func WithFastConfirmSafeAddress(fastConfirmSafeAddress common.Address) Opt {
 	}
 }
 
+// WithCustomWithdrawalAddress specifies a custom withdrawal address for validators that
+// choose to perform a delegated stake to participate in BoLD.
+func WithCustomWithdrawalAddress(address common.Address) Opt {
+	return func(a *AssertionChain) {
+		a.withdrawalAddress = address
+	}
+}
+
+// WithoutAutoDeposit prevents the assertion chain from automatically depositing stake token
+// funds when making stakes on assertions or challenge edges.
+func WithoutAutoDeposit() Opt {
+	return func(a *AssertionChain) {
+		a.autoDeposit = false
+	}
+}
+
 // NewAssertionChain instantiates an assertion chain
 // instance from a chain backend and provided options.
 func NewAssertionChain(
@@ -180,6 +201,8 @@ func NewAssertionChain(
 		averageTimeForBlockCreation:              time.Second * 12,
 		transactor:                               transactor,
 		rpcHeadBlockNumber:                       rpc.FinalizedBlockNumber,
+		withdrawalAddress:                        copiedOpts.From, // Default to the tx opts' sender.
+		autoDeposit:                              true,
 	}
 	for _, opt := range opts {
 		opt(chain)
@@ -197,7 +220,8 @@ func NewAssertionChain(
 		return nil, err
 	}
 	chain.rollup = coreBinding
-	minPeriod, err := chain.rollup.MinimumAssertionPeriod(chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+	callOpts := chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
+	minPeriod, err := chain.rollup.MinimumAssertionPeriod(callOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +231,18 @@ func NewAssertionChain(
 	if minPeriod.Uint64() == 0 {
 		minPeriod = big.NewInt(1)
 	}
+	stakeTokenAddr, err := chain.rollup.StakeToken(callOpts)
+	if err != nil {
+		return nil, err
+	}
+	code, err := backend.CodeAt(ctx, stakeTokenAddr, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(code) == 0 {
+		return nil, fmt.Errorf("stake token address %#x has no code", stakeTokenAddr)
+	}
+	chain.stakeTokenAddr = stakeTokenAddr
 	log.Info("Minimum assertion period", "blocks", minPeriod.Uint64())
 	chain.minAssertionPeriodBlocks = minPeriod.Uint64()
 	chain.userLogic = assertionChainBinding
@@ -228,7 +264,7 @@ func NewAssertionChain(
 		}
 		chain.fastConfirmSafe = safe
 		owners, err := retry.UntilSucceeds(ctx, func() ([]common.Address, error) {
-			return safe.GetOwners(chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+			return safe.GetOwners(callOpts)
 		})
 		if err != nil {
 			return nil, err
@@ -240,7 +276,7 @@ func NewAssertionChain(
 		})
 		chain.fastConfirmSafeOwners = owners
 		threshold, err := retry.UntilSucceeds(ctx, func() (*big.Int, error) {
-			return safe.GetThreshold(chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+			return safe.GetThreshold(callOpts)
 		})
 		if err != nil {
 			return nil, err
@@ -346,6 +382,117 @@ func (a *AssertionChain) IsChallengeComplete(
 	return challengeConfirmed, nil
 }
 
+func (a *AssertionChain) Deposit(
+	ctx context.Context,
+	amount *big.Int,
+) error {
+	return a.autoDepositFunds(ctx, amount)
+}
+
+func (a *AssertionChain) autoDepositFunds(ctx context.Context, amount *big.Int) error {
+	if !a.autoDeposit {
+		return nil
+	}
+	callOpts := a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
+	// The validity of the stake token address containing code is checked in the constructor
+	// of the assertion chain.
+	erc20, err := testgen.NewERC20Token(a.stakeTokenAddr, a.backend)
+	if err != nil {
+		return err
+	}
+	balance, err := erc20.BalanceOf(callOpts, a.txOpts.From)
+	if err != nil {
+		return err
+	}
+	// Get the difference between the required amount and the current balance.
+	// If we have more than enough balance, we exit early.
+	if balance.Cmp(amount) >= 0 {
+		return nil
+	}
+	diff := new(big.Int).Sub(amount, balance)
+	weth, err := mocksgen.NewIWETH9(a.stakeTokenAddr, a.backend)
+	if err != nil {
+		return err
+	}
+	// Otherwise, we deposit the difference.
+	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		opts.Value = diff
+		return weth.Deposit(opts)
+	})
+	if err != nil {
+		return err
+	}
+	_ = receipt
+	return nil
+}
+
+func (a *AssertionChain) ApproveAllowances(
+	ctx context.Context,
+) error {
+	opts := a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
+	// The validity of the stake token address containing code is checked in the constructor
+	// of the assertion chain.
+	erc20, err := testgen.NewERC20Token(a.stakeTokenAddr, a.backend)
+	if err != nil {
+		return err
+	}
+	rollupAllowance, err := erc20.Allowance(opts, a.txOpts.From, a.rollupAddr)
+	if err != nil {
+		return err
+	}
+	chalManagerAllowance, err := erc20.Allowance(opts, a.txOpts.From, a.chalManagerAddr)
+	if err != nil {
+		return err
+	}
+	maxUint256 := new(big.Int)
+	maxUint256.SetString("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 16)
+	if rollupAllowance.Cmp(maxUint256) == 0 {
+		return nil
+	}
+	// Approve the rollup and challenge manager spending the user's stake token.
+	if _, err = a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return erc20.Approve(opts, a.rollupAddr, maxUint256)
+	}); err != nil {
+		return err
+	}
+	if chalManagerAllowance.Cmp(maxUint256) == 0 {
+		return nil
+	}
+	if _, err = a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return erc20.Approve(opts, a.chalManagerAddr, maxUint256)
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// NewStake is a function made for stakers that are delegated. It allows them to mark themselves as a "pending"
+// staker in the rollup contracts with some required stake and allows another party to fund the staker onchain
+// to proceed with its activities.
+func (a *AssertionChain) NewStake(
+	ctx context.Context,
+) error {
+	staked, err := a.IsStaked(ctx)
+	if err != nil {
+		return err
+	}
+	if !staked {
+		return nil
+	}
+	latestConfirmed, err := a.LatestConfirmed(ctx, a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+	if err != nil {
+		return err
+	}
+	info, err := a.ReadAssertionCreationInfo(ctx, latestConfirmed.Id())
+	if err != nil {
+		return err
+	}
+	_, err = a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return a.userLogic.RollupUserLogicTransactor.NewStake(opts, info.RequiredStake, a.withdrawalAddress)
+	})
+	return err
+}
+
 // NewStakeOnNewAssertion makes an onchain claim given a previous assertion hash, execution state,
 // and a commitment to a post-state. It also adds a new stake to the newly created assertion.
 // if the validator is already staked, use StakeOnNewAssertion instead.
@@ -354,11 +501,25 @@ func (a *AssertionChain) NewStakeOnNewAssertion(
 	parentAssertionCreationInfo *protocol.AssertionCreatedInfo,
 	postState *protocol.ExecutionState,
 ) (protocol.Assertion, error) {
+	stakeFn := func(
+		opts *bind.TransactOpts,
+		tokenAmount *big.Int,
+		assertionInputs rollupgen.AssertionInputs,
+		expectedAssertionHash [32]byte,
+	) (*types.Transaction, error) {
+		return a.userLogic.RollupUserLogicTransactor.NewStakeOnNewAssertion50f32f68(
+			opts,
+			tokenAmount,
+			assertionInputs,
+			expectedAssertionHash,
+			a.withdrawalAddress,
+		)
+	}
 	return a.createAndStakeOnAssertion(
 		ctx,
 		parentAssertionCreationInfo,
 		postState,
-		a.userLogic.RollupUserLogicTransactor.NewStakeOnNewAssertion7300201c,
+		stakeFn,
 	)
 }
 
@@ -429,6 +590,9 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	case !errors.Is(err, ErrNotFound):
 		return nil, errors.Wrapf(err, "could not fetch assertion with computed hash %#x", computedHash)
 	default:
+	}
+	if err = a.autoDepositFunds(ctx, parentAssertionCreationInfo.RequiredStake); err != nil {
+		return nil, errors.Wrapf(err, "could not auto-deposit funds for assertion creation")
 	}
 	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		return stakeFn(

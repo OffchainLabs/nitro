@@ -164,6 +164,16 @@ type AssertionChain interface {
 	TopLevelClaimHeights(ctx context.Context, edgeId EdgeId) (OriginHeights, error)
 
 	// Mutating methods.
+	Deposit(
+		ctx context.Context,
+		amount *big.Int,
+	) error
+	ApproveAllowances(
+		ctx context.Context,
+	) error
+	NewStake(
+		ctx context.Context,
+	) error
 	NewStakeOnNewAssertion(
 		ctx context.Context,
 		assertionCreationInfo *AssertionCreatedInfo,

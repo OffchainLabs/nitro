@@ -22,6 +22,7 @@ import (
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/bold/solgen/go/mocksgen"
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/setup"
 )
@@ -505,4 +506,28 @@ func TestIsChallengeComplete(t *testing.T) {
 	chalComplete, err = chain.IsChallengeComplete(ctx, challengeParentAssertionHash)
 	require.NoError(t, err)
 	require.Equal(t, true, chalComplete)
+}
+
+func Test_autoDepositFunds(t *testing.T) {
+	setupCfg, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
+	require.NoError(t, err)
+	rollupAddr := setupCfg.Addrs.Rollup
+	rollup, err := rollupgen.NewRollupUserLogic(rollupAddr, setupCfg.Backend)
+	require.NoError(t, err)
+	stakeTokenAddr, err := rollup.StakeToken(&bind.CallOpts{})
+	require.NoError(t, err)
+	erc20, err := mocksgen.NewTestWETH9(stakeTokenAddr, setupCfg.Backend)
+	require.NoError(t, err)
+	account := setupCfg.Accounts[1]
+
+	balance, err := erc20.BalanceOf(&bind.CallOpts{}, account.AccountAddr)
+	require.NoError(t, err)
+
+	expectedNewBalance := new(big.Int).Add(balance, big.NewInt(20))
+	ctx := context.Background()
+	require.NoError(t, setupCfg.Chains[0].Deposit(ctx, expectedNewBalance))
+
+	newBalance, err := erc20.BalanceOf(&bind.CallOpts{}, account.AccountAddr)
+	require.NoError(t, err)
+	require.Equal(t, expectedNewBalance, newBalance)
 }

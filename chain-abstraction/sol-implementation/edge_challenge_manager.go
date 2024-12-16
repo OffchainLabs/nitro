@@ -1034,6 +1034,14 @@ func (cm *specChallengeManager) AddBlockChallengeLevelZeroEdge(
 		PrefixProof:    startEndPrefixProof,
 		Proof:          blockEdgeProof,
 	}
+	callOpts := cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
+	stakeAmount, err := cm.caller.StakeAmounts(callOpts, big.NewInt(0) /* block challenge level */)
+	if err != nil {
+		return nil, err
+	}
+	if err = cm.assertionChain.autoDepositFunds(ctx, stakeAmount); err != nil {
+		return nil, errors.Wrap(err, "could not auto-deposit funds to make block challenge root edge stake")
+	}
 	receipt, err := cm.assertionChain.transact(ctx, cm.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		return cm.writer.CreateLayerZeroEdge(
 			opts,
@@ -1150,6 +1158,14 @@ func (cm *specChallengeManager) AddSubChallengeLevelZeroEdge(
 	endCommitInt64, err := safecast.ToInt64(endCommit.Height)
 	if err != nil {
 		return nil, err
+	}
+	callOpts := cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
+	stakeAmount, err := cm.caller.StakeAmounts(callOpts, big.NewInt(int64(chalLevel)) /* subchallenge level */)
+	if err != nil {
+		return nil, err
+	}
+	if err = cm.assertionChain.autoDepositFunds(ctx, stakeAmount); err != nil {
+		return nil, errors.Wrapf(err, "could not auto-deposit funds to make subchallenge level %d root edge", chalLevel)
 	}
 	_, err = cm.assertionChain.transact(ctx, cm.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		return cm.writer.CreateLayerZeroEdge(
