@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -23,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -35,7 +38,6 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
@@ -67,8 +69,8 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	expressLaneClient := newExpressLaneClient(
 		bobPriv,
 		chainId,
-		time.Unix(int64(info.OffsetTimestamp), 0),
-		time.Duration(info.RoundDurationSeconds)*time.Second,
+		time.Unix(info.OffsetTimestamp, 0),
+		arbmath.SaturatingCast[time.Duration](info.RoundDurationSeconds)*time.Second,
 		auctionContractAddr,
 		seqDial,
 	)
@@ -158,7 +160,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 		bobPriv,
 		chainId,
 		time.Unix(int64(info.OffsetTimestamp), 0),
-		time.Duration(info.RoundDurationSeconds)*time.Second,
+		arbmath.SaturatingCast[time.Duration](info.RoundDurationSeconds)*time.Second,
 		auctionContractAddr,
 		seqDial,
 	)
@@ -258,9 +260,8 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builderSeq.execConfig.Sequencer.Enable = true
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
-		Enable:                false, // We need to start without timeboost initially to create the auction contract
-		ExpressLaneAdvantage:  time.Second * 5,
-		SequencerHTTPEndpoint: fmt.Sprintf("http://localhost:%d", seqPort),
+		Enable:               false, // We need to start without timeboost initially to create the auction contract
+		ExpressLaneAdvantage: time.Second * 5,
 	}
 	cleanupSeq := builderSeq.Build(t)
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
@@ -357,7 +358,7 @@ func setupExpressLaneAuction(
 			BiddingToken: biddingToken,
 			Beneficiary:  beneficiary,
 			RoundTimingInfo: express_lane_auctiongen.RoundTimingInfo{
-				OffsetTimestamp:          initialTimestamp.Uint64(),
+				OffsetTimestamp:          initialTimestamp.Int64(),
 				RoundDurationSeconds:     bidRoundSeconds,
 				AuctionClosingSeconds:    auctionClosingSeconds,
 				ReserveSubmissionSeconds: reserveSubmissionSeconds,
@@ -414,7 +415,7 @@ func setupExpressLaneAuction(
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
 	builderSeq.execConfig.Sequencer.Timeboost.Enable = true
-	builderSeq.L2.ExecNode.Sequencer.StartExpressLane(ctx, proxyAddr, seqInfo.GetAddress("AuctionContract"))
+	builderSeq.L2.ExecNode.Sequencer.StartExpressLane(ctx, builderSeq.L2.ExecNode.Backend.APIBackend(), builderSeq.L2.ExecNode.FilterSystem, proxyAddr, seqInfo.GetAddress("AuctionContract"), gethexec.DefaultTimeboostConfig.EarlySubmissionGrace)
 	t.Log("Started express lane service in sequencer")
 
 	// Set up an autonomous auction contract service that runs in the background in this test.
@@ -676,7 +677,7 @@ func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *
 		Round:                  hexutil.Uint64(timeboost.CurrentRound(elc.initialRoundTimestamp, elc.roundDuration)),
 		AuctionContractAddress: elc.auctionContractAddr,
 		Transaction:            encodedTx,
-		Sequence:               hexutil.Uint64(elc.sequence),
+		SequenceNumber:         hexutil.Uint64(elc.sequence),
 		Signature:              hexutil.Bytes{},
 	}
 	msgGo, err := timeboost.JsonSubmissionToGo(msg)

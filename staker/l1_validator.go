@@ -10,18 +10,19 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/offchainlabs/nitro/staker/txbuilder"
-	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/validator"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 type ConfirmType uint8
@@ -45,7 +46,7 @@ type L1Validator struct {
 	rollup         *RollupWatcher
 	rollupAddress  common.Address
 	validatorUtils *rollupgen.ValidatorUtils
-	client         arbutil.L1Interface
+	client         *ethclient.Client
 	builder        *txbuilder.Builder
 	wallet         ValidatorWalletInterface
 	callOpts       bind.CallOpts
@@ -57,7 +58,7 @@ type L1Validator struct {
 }
 
 func NewL1Validator(
-	client arbutil.L1Interface,
+	client *ethclient.Client,
 	wallet ValidatorWalletInterface,
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
@@ -247,6 +248,7 @@ func (v *L1Validator) generateNodeAction(
 			startStateProposedParentChain, err,
 		)
 	}
+	// #nosec G115
 	startStateProposedTime := time.Unix(int64(startStateProposedHeader.Time), 0)
 
 	v.txStreamer.PauseReorgs()
@@ -375,6 +377,7 @@ func (v *L1Validator) generateNodeAction(
 		return nil, false, fmt.Errorf("error getting rollup minimum assertion period: %w", err)
 	}
 
+	// #nosec G115
 	timeSinceProposed := big.NewInt(int64(l1BlockNumber) - int64(startStateProposedL1))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert

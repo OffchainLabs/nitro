@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
@@ -92,7 +93,6 @@ func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
 
 // MyCallersAddressWithoutAliasing gets the caller's caller without any potential aliasing
 func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
-
 	address := addr{}
 
 	if evm.Depth() > 1 {
@@ -162,7 +162,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		}
 	}
 
-	leafNum := big.NewInt(int64(size - 1))
+	leafNum := new(big.Int).SetUint64(size - 1)
 
 	var blockTime big.Int
 	blockTime.SetUint64(evm.Context.Time)
@@ -199,7 +199,7 @@ func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, bytes32, []bytes32
 	for i, par := range rawPartials {
 		partials[i] = par
 	}
-	return big.NewInt(int64(size)), rootHash, partials, nil
+	return new(big.Int).SetUint64(size), rootHash, partials, nil
 }
 
 // WithdrawEth send paid eth to the destination on L1

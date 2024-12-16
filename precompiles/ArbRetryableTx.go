@@ -9,8 +9,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -149,12 +149,11 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, e
 	if err != nil {
 		return nil, err
 	}
-	return big.NewInt(int64(timeout)), nil
+	return new(big.Int).SetUint64(timeout), nil
 }
 
 // Keepalive adds one lifetime period to the ticket's expiry
 func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, error) {
-
 	// charge for the expiry update
 	retryableState := c.State.RetryableState()
 	nbytes, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time)
@@ -176,8 +175,9 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 		return big.NewInt(0), err
 	}
 
-	err = con.LifetimeExtended(c, evm, ticketId, big.NewInt(int64(newTimeout)))
-	return big.NewInt(int64(newTimeout)), err
+	bigNewTimeout := new(big.Int).SetUint64(newTimeout)
+	err = con.LifetimeExtended(c, evm, ticketId, bigNewTimeout)
+	return bigNewTimeout, err
 }
 
 // GetBeneficiary gets the beneficiary of the ticket

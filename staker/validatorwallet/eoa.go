@@ -10,8 +10,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
@@ -19,7 +20,7 @@ import (
 
 type EOA struct {
 	auth                    *bind.TransactOpts
-	client                  arbutil.L1Interface
+	client                  *ethclient.Client
 	rollupAddress           common.Address
 	challengeManager        *challengegen.ChallengeManager
 	challengeManagerAddress common.Address
@@ -27,7 +28,7 @@ type EOA struct {
 	getExtraGas             func() uint64
 }
 
-func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, getExtraGas func() uint64) (*EOA, error) {
+func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client *ethclient.Client, getExtraGas func() uint64) (*EOA, error) {
 	return &EOA{
 		auth:          dataPoster.Auth(),
 		client:        l1Client,
@@ -63,7 +64,7 @@ func (w *EOA) TxSenderAddress() *common.Address {
 	return &w.auth.From
 }
 
-func (w *EOA) L1Client() arbutil.L1Interface {
+func (w *EOA) L1Client() *ethclient.Client {
 	return w.client
 }
 

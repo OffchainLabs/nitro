@@ -4,18 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
-
 	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/util/gzip"
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/spf13/pflag"
 )
 
 type S3StorageServiceConfig struct {

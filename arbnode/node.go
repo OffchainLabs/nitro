@@ -18,11 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
@@ -339,6 +341,29 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
+func DataposterOnlyUsedToCreateValidatorWalletContract(
+	ctx context.Context,
+	l1Reader *headerreader.HeaderReader,
+	transactOpts *bind.TransactOpts,
+	cfg *dataposter.DataPosterConfig,
+	parentChainID *big.Int,
+) (*dataposter.DataPoster, error) {
+	cfg.UseNoOpStorage = true
+	return dataposter.NewDataPoster(ctx,
+		&dataposter.DataPosterOpts{
+			HeaderReader: l1Reader,
+			Auth:         transactOpts,
+			Config: func() *dataposter.DataPosterConfig {
+				return cfg
+			},
+			MetadataRetriever: func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
+				return nil, nil
+			},
+			ParentChainID: parentChainID,
+		},
+	)
+}
+
 func StakerDataposter(
 	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
@@ -384,7 +409,7 @@ func createNodeImpl(
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	txOptsValidator *bind.TransactOpts,
 	txOptsBatchPoster *bind.TransactOpts,
@@ -515,6 +540,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
+	// #nosec G115
 	sequencerInbox, err := NewSequencerInbox(l1client, deployInfo.SequencerInbox, int64(deployInfo.DeployedAt))
 	if err != nil {
 		return nil, err
@@ -639,6 +665,7 @@ func createNodeImpl(
 					tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 					existingWalletAddress = &tmpAddress
 				}
+				// #nosec G115
 				wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
 				if err != nil {
 					return nil, err
@@ -756,7 +783,7 @@ func CreateNode(
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	txOptsValidator *bind.TransactOpts,
 	txOptsBatchPoster *bind.TransactOpts,

@@ -50,16 +50,16 @@ func (bc *bidCache) topTwoBids() *auctionResult {
 			result.secondPlace = result.firstPlace
 			result.firstPlace = bid
 		} else if bid.Amount.Cmp(result.firstPlace.Amount) == 0 {
-			if bid.BigIntHash().Cmp(result.firstPlace.BigIntHash()) > 0 {
+			if bid.bigIntHash().Cmp(result.firstPlace.bigIntHash()) > 0 {
 				result.secondPlace = result.firstPlace
 				result.firstPlace = bid
-			} else if result.secondPlace == nil || bid.BigIntHash().Cmp(result.secondPlace.BigIntHash()) > 0 {
+			} else if result.secondPlace == nil || bid.bigIntHash().Cmp(result.secondPlace.bigIntHash()) > 0 {
 				result.secondPlace = bid
 			}
 		} else if result.secondPlace == nil || bid.Amount.Cmp(result.secondPlace.Amount) > 0 {
 			result.secondPlace = bid
 		} else if bid.Amount.Cmp(result.secondPlace.Amount) == 0 {
-			if bid.BigIntHash().Cmp(result.secondPlace.BigIntHash()) > 0 {
+			if bid.bigIntHash().Cmp(result.secondPlace.bigIntHash()) > 0 {
 				result.secondPlace = bid
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 )
 
 type Bid struct {
@@ -33,19 +34,40 @@ func (b *Bid) ToJson() *JsonBid {
 	}
 }
 
-func (b *Bid) ToMessageBytes() []byte {
-	buf := new(bytes.Buffer)
-	// Encode uint256 values - each occupies 32 bytes
-	buf.Write(domainValue)
-	buf.Write(padBigInt(b.ChainId))
-	buf.Write(b.AuctionContractAddress[:])
-	roundBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(roundBuf, b.Round)
-	buf.Write(roundBuf)
-	buf.Write(padBigInt(b.Amount))
-	buf.Write(b.ExpressLaneController[:])
+func (b *Bid) ToEIP712Hash(domainSeparator [32]byte) (common.Hash, error) {
+	types := apitypes.Types{
+		"Bid": []apitypes.Type{
+			{Name: "round", Type: "uint64"},
+			{Name: "expressLaneController", Type: "address"},
+			{Name: "amount", Type: "uint256"},
+		},
+	}
 
-	return buf.Bytes()
+	message := apitypes.TypedDataMessage{
+		"round":                 big.NewInt(0).SetUint64(b.Round),
+		"expressLaneController": [20]byte(b.ExpressLaneController),
+		"amount":                b.Amount,
+	}
+
+	typedData := apitypes.TypedData{
+		Types:       types,
+		PrimaryType: "Bid",
+		Message:     message,
+		Domain:      apitypes.TypedDataDomain{Salt: "Unused; domain separator fetched from method on contract. This must be nonempty for validation."},
+	}
+
+	messageHash, err := typedData.HashStruct(typedData.PrimaryType, typedData.Message)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	bidHash := crypto.Keccak256Hash(
+		[]byte("\x19\x01"),
+		domainSeparator[:],
+		messageHash,
+	)
+
+	return bidHash, nil
 }
 
 type JsonBid struct {
@@ -72,17 +94,20 @@ type ValidatedBid struct {
 // The hash is equivalent to the following Solidity implementation:
 //
 //	uint256(keccak256(abi.encodePacked(bidder, bidBytes)))
-func (v *ValidatedBid) BigIntHash() *big.Int {
-	bidBytes := v.BidBytes()
+//
+// This is only used for breaking ties amongst equivalent bids and not used for
+// Bid signing, which uses EIP 712 as the hashing scheme.
+func (v *ValidatedBid) bigIntHash() *big.Int {
+	bidBytes := v.bidBytes()
 	bidder := v.Bidder.Bytes()
 
 	return new(big.Int).SetBytes(crypto.Keccak256Hash(bidder, bidBytes).Bytes())
 }
 
-// BidBytes returns the byte representation equivalent to the Solidity implementation of
+// bidBytes returns the byte representation equivalent to the Solidity implementation of
 //
 //	abi.encodePacked(BID_DOMAIN, block.chainid, address(this), _round, _amount, _expressLaneController)
-func (v *ValidatedBid) BidBytes() []byte {
+func (v *ValidatedBid) bidBytes() []byte {
 	var buffer bytes.Buffer
 
 	buffer.Write(domainValue)
@@ -139,7 +164,7 @@ type JsonExpressLaneSubmission struct {
 	AuctionContractAddress common.Address                     `json:"auctionContractAddress"`
 	Transaction            hexutil.Bytes                      `json:"transaction"`
 	Options                *arbitrum_types.ConditionalOptions `json:"options"`
-	Sequence               hexutil.Uint64
+	SequenceNumber         hexutil.Uint64
 	Signature              hexutil.Bytes `json:"signature"`
 }
 
@@ -149,7 +174,7 @@ type ExpressLaneSubmission struct {
 	AuctionContractAddress common.Address
 	Transaction            *types.Transaction
 	Options                *arbitrum_types.ConditionalOptions `json:"options"`
-	Sequence               uint64
+	SequenceNumber         uint64
 	Signature              []byte
 }
 
@@ -164,7 +189,7 @@ func JsonSubmissionToGo(submission *JsonExpressLaneSubmission) (*ExpressLaneSubm
 		AuctionContractAddress: submission.AuctionContractAddress,
 		Transaction:            tx,
 		Options:                submission.Options,
-		Sequence:               uint64(submission.Sequence),
+		SequenceNumber:         uint64(submission.SequenceNumber),
 		Signature:              submission.Signature,
 	}, nil
 }
@@ -180,7 +205,7 @@ func (els *ExpressLaneSubmission) ToJson() (*JsonExpressLaneSubmission, error) {
 		AuctionContractAddress: els.AuctionContractAddress,
 		Transaction:            encoded,
 		Options:                els.Options,
-		Sequence:               hexutil.Uint64(els.Sequence),
+		SequenceNumber:         hexutil.Uint64(els.SequenceNumber),
 		Signature:              els.Signature,
 	}, nil
 }
@@ -189,13 +214,13 @@ func (els *ExpressLaneSubmission) ToMessageBytes() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	buf.Write(domainValue)
 	buf.Write(padBigInt(els.ChainId))
-	seqBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(seqBuf, els.Sequence)
-	buf.Write(seqBuf)
 	buf.Write(els.AuctionContractAddress[:])
 	roundBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBuf, els.Round)
 	buf.Write(roundBuf)
+	seqBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(seqBuf, els.SequenceNumber)
+	buf.Write(seqBuf)
 	rlpTx, err := els.Transaction.MarshalBinary()
 	if err != nil {
 		return nil, err
