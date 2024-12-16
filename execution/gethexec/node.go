@@ -244,6 +244,10 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
+	if sequencer != nil {
+		sequencer.apiBackend = backend.APIBackend()
+		sequencer.filterSystem = filterSystem
+	}
 
 	syncMon := NewSyncMonitor(&config.SyncMonitor, execEngine)
 

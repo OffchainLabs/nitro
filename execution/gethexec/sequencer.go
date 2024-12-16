@@ -389,9 +389,17 @@ type Sequencer struct {
 	expectedSurplusUpdated            bool
 	auctioneerAddr                    common.Address
 	timeboostAuctionResolutionTxQueue chan txQueueItem
+
+	// ExecutionNode dependencies needed by ExpressLaneService.
+	apiBackend   *arbitrum.APIBackend
+	filterSystem *filters.FilterSystem
 }
 
-func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
+func NewSequencer(
+	execEngine *ExecutionEngine,
+	l1Reader *headerreader.HeaderReader,
+	configFetcher SequencerConfigFetcher,
+) (*Sequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -1277,6 +1285,27 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		return 0
 	})
 
+	if config.Timeboost.Enable {
+		if config.Timeboost.AuctionContractAddress == "" {
+			return errors.New("auction contract address required for timeboost")
+		}
+		if config.Timeboost.AuctioneerAddress == "" {
+			return errors.New("auctioneer address required for timeboost")
+		}
+
+		err := s.StartExpressLane(
+			ctxIn,
+			s.apiBackend,
+			s.filterSystem,
+			common.HexToAddress(config.Timeboost.AuctionContractAddress),
+			common.HexToAddress(config.Timeboost.AuctioneerAddress),
+			config.Timeboost.EarlySubmissionGrace,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1287,9 +1316,9 @@ func (s *Sequencer) StartExpressLane(
 	auctionContractAddr common.Address,
 	auctioneerAddr common.Address,
 	earlySubmissionGrace time.Duration,
-) {
+) error {
 	if !s.config().Timeboost.Enable {
-		log.Crit("Timeboost is not enabled, but StartExpressLane was called")
+		return errors.New("Timeboost is not enabled, but StartExpressLane was called")
 	}
 
 	els, err := newExpressLaneService(
@@ -1301,11 +1330,12 @@ func (s *Sequencer) StartExpressLane(
 		earlySubmissionGrace,
 	)
 	if err != nil {
-		log.Crit("Failed to create express lane service", "err", err, "auctionContractAddr", auctionContractAddr)
+		return fmt.Errorf("Failed to create express lane service: err %w, auctionContractAddr %s", err, auctionContractAddr)
 	}
 	s.auctioneerAddr = auctioneerAddr
 	s.expressLaneService = els
 	s.expressLaneService.Start(ctx)
+	return nil
 }
 
 func (s *Sequencer) StopAndWait() {
