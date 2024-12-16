@@ -97,8 +97,9 @@ func TestExpressLaneControlTransfer(t *testing.T) {
 	err = bobExpressLaneClient.SendTransaction(ctx, duringRoundTransferTx)
 	Require(t, err)
 
+	time.Sleep(time.Second) // Wait for controller to change on the sequencer side
 	// Check that now Alice's tx gets priority since she's the controller after bob transfered it
-	verifyControllerAdvantage(t, ctx, seqClient, bobExpressLaneClient, seqInfo, "Alice", "Bob")
+	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
 
 	// Alice and Bob submit bids and Alice wins for the next round
 	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Alice", "Bob", aliceBidderClient, bobBidderClient, roundDuration)
@@ -302,7 +303,7 @@ func placeBidsAndDecideWinner(t *testing.T, ctx context.Context, seqClient *ethc
 	Require(t, err)
 	currRound := timeboost.CurrentRound(time.Unix(int64(info.OffsetTimestamp), 0), roundDuration)
 	// We are now in the bidding round, both issue their bids. winner will win
-	t.Logf("Alice and Bob now submitting their bids at %v", time.Now())
+	t.Logf("%s and %s now submitting their bids at %v", winner, loser, time.Now())
 	winnerBid, err := winnerBidderClient.Bid(ctx, big.NewInt(2), seqInfo.GetAddress(winner))
 	Require(t, err)
 	loserBid, err := loserBidderClient.Bid(ctx, big.NewInt(1), seqInfo.GetAddress(loser))
@@ -388,10 +389,10 @@ func verifyControllerAdvantage(t *testing.T, ctx context.Context, seqClient *eth
 	controllerBlock := controllerBoostableTxReceipt.BlockNumber.Uint64()
 
 	if otherUserBlock < controllerBlock {
-		t.Fatal("Alice's tx should not have been sequenced before Bob's in different blocks")
+		t.Fatalf("%s's tx should not have been sequenced before %s's in different blocks", otherUser, controller)
 	} else if otherUserBlock == controllerBlock {
 		if otherUserTxReceipt.TransactionIndex < controllerBoostableTxReceipt.TransactionIndex {
-			t.Fatal("Bob should have been sequenced before Alice with express lane")
+			t.Fatalf("%s should have been sequenced before %s with express lane", controller, otherUser)
 		}
 	}
 }
