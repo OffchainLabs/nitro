@@ -162,8 +162,8 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".track-challenge-parent-assertion-hashes", DefaultBoldConfig.TrackChallengeParentAssertionHashes, "only track challenges/edges with these parent assertion hashes")
 	StateProviderConfigAddOptions(prefix+".state-provider-config", f)
 	f.Bool(prefix+".start-validation-from-staked", DefaultBoldConfig.StartValidationFromStaked, "assume staked nodes are valid")
-	f.Bool(prefix+".auto-deposit", DefaultBoldConfig.StartValidationFromStaked, "assume staked nodes are valid")
-	f.Bool(prefix+".auto-increase-allowance", DefaultBoldConfig.StartValidationFromStaked, "assume staked nodes are valid")
+	f.Bool(prefix+".auto-deposit", DefaultBoldConfig.AutoDeposit, "auto-deposit stake token whenever making a move in BoLD that does not have enough stake token balance")
+	f.Bool(prefix+".auto-increase-allowance", DefaultBoldConfig.AutoIncreaseAllowance, "auto-increase spending allowance of the stake token by the rollup and challenge manager contracts")
 	DelegatedStakingConfigAddOptions(prefix+".delegated-staking", f)
 }
 
@@ -174,8 +174,8 @@ func StateProviderConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func DelegatedStakingConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultDelegatedStakingConfig.Enable, "check batch finality")
-	f.String(prefix+".custom-withdrawal-address", DefaultDelegatedStakingConfig.CustomWithdrawalAddress, "path to machine cache")
+	f.Bool(prefix+".enable", DefaultDelegatedStakingConfig.Enable, "enable delegated staking by having the validator call newStake on startup")
+	f.String(prefix+".custom-withdrawal-address", DefaultDelegatedStakingConfig.CustomWithdrawalAddress, "enable a custom withdrawal address for staking on the rollup contract, useful for delegated stakers")
 }
 
 type BOLDStaker struct {
