@@ -523,10 +523,16 @@ func addressToBytes20(addr common.Address) bytes20 {
 }
 
 func (slice *rustSlice) read() []byte {
+	if slice.len == 0 {
+		return nil
+	}
 	return arbutil.PointerToSlice((*byte)(slice.ptr), int(slice.len))
 }
 
 func (vec *rustBytes) read() []byte {
+	if vec.len == 0 {
+		return nil
+	}
 	return arbutil.PointerToSlice((*byte)(vec.ptr), int(vec.len))
 }
 
@@ -537,7 +543,7 @@ func (vec *rustBytes) intoBytes() []byte {
 }
 
 func (vec *rustBytes) drop() {
-	C.stylus_drop_vec(*vec)
+	C.free_rust_bytes(*vec)
 }
 
 func goSlice(slice []byte) C.GoSliceData {

@@ -19,6 +19,13 @@ type GoGlobalState struct {
 	PosInBatch uint64
 }
 
+func (g GoGlobalState) String() string {
+	return fmt.Sprintf(
+		"BlockHash: %s, SendRoot: %s, Batch: %d, PosInBatch: %d",
+		g.BlockHash.Hex(), g.SendRoot.Hex(), g.Batch, g.PosInBatch,
+	)
+}
+
 type MachineStatus uint8
 
 const (
