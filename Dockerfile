@@ -207,6 +207,7 @@ WORKDIR /workspace/machines
 # Download WAVM machines
 # no fetch since these replay artifacts are only used for backwards compatibility for Arbitrum One and Nova
 COPY ./scripts/download-machine.sh .
+COPY ./scripts/download-machine-eigenda.sh .
 #RUN ./download-machine.sh consensus-v1-rc1 0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41
 #RUN ./download-machine.sh consensus-v2.1 0x9d68e40c47e3b87a8a7e6368cc52915720a6484bb2f47ceabad7e573e3a11232
 #RUN ./download-machine.sh consensus-v3 0x53c288a0ca7100c0f2db8ab19508763a51c7fd1be125d376d940a65378acaee7
@@ -228,8 +229,7 @@ COPY ./scripts/download-machine.sh .
 # RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
 # RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
 RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
-# TODO: Insert eigenda machine here once we're post audit and have a final artifact to push
-# RUN ./download-machine.sh consensus-eigenda-v32 0x...0
+RUN ./download-machine-eigenda.sh consensus-eigenda-v32 0x951009942c00b5bd0abec233174fe33fadf7cd5013d17b042f9b28b3b00b469c
 
 FROM golang:1.21.10-bookworm AS node-builder
 WORKDIR /workspace
