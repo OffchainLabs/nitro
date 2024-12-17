@@ -6,11 +6,14 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -92,48 +95,92 @@ func TestArbos11To32Upgrade(t *testing.T) {
 		WithArbOSVersion(initialVersion)
 	cleanup := builder.Build(t)
 	defer cleanup()
+	seqTestClient := builder.L2
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	auth.GasLimit = 32000000
 
 	// makes Owner a chain owner
-	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, seqTestClient.Client)
 	Require(t, err)
 	tx, err := arbDebug.BecomeChainOwner(&auth)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	_, err = EnsureTxSucceeded(ctx, seqTestClient.Client, tx)
 	Require(t, err)
 
 	// deploys test contract
-	_, tx, contract, err := mocksgen.DeployArbOS11To32UpgradeTest(&auth, builder.L2.Client)
+	_, tx, contract, err := mocksgen.DeployArbOS11To32UpgradeTest(&auth, seqTestClient.Client)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	_, err = EnsureTxSucceeded(ctx, seqTestClient.Client, tx)
 	Require(t, err)
 
-	checkArbOSVersion(t, builder.L2, initialVersion, "initial")
+	// build replica node
+	replicaConfig := arbnode.ConfigDefaultL1Test()
+	replicaConfig.BatchPoster.Enable = false
+	replicaTestClient, replicaCleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: replicaConfig})
+	defer replicaCleanup()
 
-	// mcopy should revert since arbos 11 doesn't support it
-	_, err = contract.Mcopy(&auth)
-	if (err == nil) || (err.Error() != "invalid opcode: MCOPY") {
-		t.Fatalf("expected MCOPY to revert, got %v", err)
+	checkArbOSVersion(t, seqTestClient, initialVersion, "initial sequencer")
+	checkArbOSVersion(t, replicaTestClient, initialVersion, "initial replica")
+
+	// mcopy should fail since arbos 11 doesn't support it
+	tx, err = contract.Mcopy(&auth)
+	Require(t, err)
+	_, err = seqTestClient.EnsureTxSucceeded(tx)
+	if (err == nil) || !strings.Contains(err.Error(), "invalid opcode: MCOPY") {
+		t.Errorf("expected MCOPY to fail, got %v", err)
 	}
+	_, err = WaitForTx(ctx, replicaTestClient.Client, tx.Hash(), time.Second*15)
+	Require(t, err)
 
 	// upgrade arbos to final version
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, seqTestClient.Client)
 	Require(t, err)
 	tx, err = arbOwner.ScheduleArbOSUpgrade(&auth, finalVersion, 0)
 	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
+	_, err = seqTestClient.EnsureTxSucceeded(tx)
+	Require(t, err)
+	_, err = WaitForTx(ctx, replicaTestClient.Client, tx.Hash(), time.Second*15)
 	Require(t, err)
 
-	// // generates a new block to trigger the upgrade
-	// builder.L2Info.GenerateAccount("User2")
-	// tx = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	// err = builder.L2.Client.SendTransaction(ctx, tx)
-	// Require(t, err)
-	// _, err = builder.L2.EnsureTxSucceeded(tx)
-	// Require(t, err)
-
-	checkArbOSVersion(t, builder.L2, finalVersion, "final")
-	_, err = contract.Mcopy(&auth)
+	// checks upgrade worked
+	tx, err = contract.Mcopy(&auth)
 	Require(t, err)
+	_, err = seqTestClient.EnsureTxSucceeded(tx)
+	Require(t, err)
+	_, err = WaitForTx(ctx, replicaTestClient.Client, tx.Hash(), time.Second*15)
+	Require(t, err)
+
+	checkArbOSVersion(t, seqTestClient, finalVersion, "final sequencer")
+	checkArbOSVersion(t, replicaTestClient, finalVersion, "final replica")
+
+	// generates more blocks
+	builder.L2Info.GenerateAccount("User2")
+	for i := 0; i < 3; i++ {
+		tx = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+		err = seqTestClient.Client.SendTransaction(ctx, tx)
+		Require(t, err)
+		_, err = seqTestClient.EnsureTxSucceeded(tx)
+		Require(t, err)
+		_, err = WaitForTx(ctx, replicaTestClient.Client, tx.Hash(), time.Second*15)
+		Require(t, err)
+	}
+
+	blockNumberSeq, err := seqTestClient.Client.BlockNumber(ctx)
+	Require(t, err)
+	blockNumberReplica, err := replicaTestClient.Client.BlockNumber(ctx)
+	Require(t, err)
+	if blockNumberSeq != blockNumberReplica {
+		t.Errorf("expected sequencer and replica to have same block number, got %v and %v", blockNumberSeq, blockNumberReplica)
+	}
+	// #nosec G115
+	blockNumber := big.NewInt(int64(blockNumberSeq))
+
+	blockSeq, err := seqTestClient.Client.BlockByNumber(ctx, blockNumber)
+	Require(t, err)
+	blockReplica, err := replicaTestClient.Client.BlockByNumber(ctx, blockNumber)
+	Require(t, err)
+	if blockSeq.Hash() != blockReplica.Hash() {
+		t.Errorf("expected sequencer and replica to have same block hash, got %v and %v", blockSeq.Hash(), blockReplica.Hash())
+	}
 }
