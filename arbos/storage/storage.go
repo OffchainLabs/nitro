@@ -130,7 +130,7 @@ func (s *Storage) Get(key common.Hash) (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	if info := s.burner.TracingInfo(); info != nil {
-		info.RecordStorageGet(key, s.mapAddress(key))
+		info.RecordStorageGet(s.mapAddress(key))
 	}
 	return s.GetFree(key), nil
 }
@@ -167,7 +167,7 @@ func (s *Storage) Set(key common.Hash, value common.Hash) error {
 		return err
 	}
 	if info := s.burner.TracingInfo(); info != nil {
-		info.RecordStorageSet(key, s.mapAddress(key), value)
+		info.RecordStorageSet(s.mapAddress(key), value)
 	}
 	s.db.SetState(s.account, s.mapAddress(key), value)
 	return nil
@@ -377,7 +377,7 @@ func (ss *StorageSlot) Get() (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	if info := ss.burner.TracingInfo(); info != nil {
-		info.RecordStorageGet(ss.slot, ss.slot)
+		info.RecordStorageGet(ss.slot)
 	}
 	return ss.db.GetState(ss.account, ss.slot), nil
 }
@@ -392,7 +392,7 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 		return err
 	}
 	if info := ss.burner.TracingInfo(); info != nil {
-		info.RecordStorageSet(ss.slot, ss.slot, value)
+		info.RecordStorageSet(ss.slot, value)
 	}
 	ss.db.SetState(ss.account, ss.slot, value)
 	return nil
