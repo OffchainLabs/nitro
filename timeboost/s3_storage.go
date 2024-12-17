@@ -116,7 +116,7 @@ func (s *S3StorageService) Start(ctx context.Context) {
 // Used in padding round numbers to a fixed length for naming the batch being uploaded to s3. <firstRound>-<lastRound>
 const fixedRoundStrLen = 7
 
-func (s *S3StorageService) getBatchName(fistRound, lastRound uint64) string {
+func (s *S3StorageService) getBatchName(firstRound, lastRound uint64) string {
 	padRound := func(round uint64) string {
 		padStr := fmt.Sprintf("%d", round)
 		if len(padStr) < fixedRoundStrLen {
@@ -125,15 +125,15 @@ func (s *S3StorageService) getBatchName(fistRound, lastRound uint64) string {
 		return padStr
 	}
 	now := time.Now()
-	return fmt.Sprintf("%svalidated-timeboost-bids/%d/%02d/%02d/%s-%s.csv.gzip", s.objectPrefix, now.Year(), now.Month(), now.Day(), padRound(fistRound), padRound(lastRound))
+	return fmt.Sprintf("%svalidated-timeboost-bids/%d/%02d/%02d/%s-%s.csv.gzip", s.objectPrefix, now.Year(), now.Month(), now.Day(), padRound(firstRound), padRound(lastRound))
 }
 
-func (s *S3StorageService) uploadBatch(ctx context.Context, batch []byte, fistRound, lastRound uint64) error {
+func (s *S3StorageService) uploadBatch(ctx context.Context, batch []byte, firstRound, lastRound uint64) error {
 	compressedData, err := gzip.CompressGzip(batch)
 	if err != nil {
 		return err
 	}
-	key := s.getBatchName(fistRound, lastRound)
+	key := s.getBatchName(firstRound, lastRound)
 	putObjectInput := s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
