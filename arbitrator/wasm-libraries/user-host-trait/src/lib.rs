@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
+    benchmark::Benchmark,
     crypto,
     evm::{
         self,
@@ -21,6 +22,7 @@ use prover::{
 };
 use ruint2::Uint;
 use std::fmt::Display;
+use std::time::Instant;
 
 macro_rules! be {
     ($int:expr) => {
@@ -68,6 +70,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
     fn evm_api(&mut self) -> &mut Self::A;
     fn evm_data(&self) -> &EvmData;
+    fn benchmark(&mut self) -> &mut Option<Benchmark>;
     fn evm_return_data_len(&mut self) -> &mut u32;
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, Self::MemoryErr>;
@@ -961,5 +964,26 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn console_tee<T: Into<Value> + Copy>(&mut self, value: T) -> Result<T, Self::Err> {
         self.say(value.into());
         Ok(value)
+    }
+
+    // Tracks benchmark data related to the block of instructions defined by instruction between the first and last `toggle_benchmark` calls.
+    fn toggle_benchmark(&mut self) -> Result<(), Self::Err> {
+        let ink_curr = self.ink_ready()?;
+
+        match self.benchmark() {
+            None => {
+                *self.benchmark() = Some(Benchmark {
+                    timer: Instant::now(),
+                    elapsed: None,
+                    ink_start: ink_curr,
+                    ink_total: None,
+                });
+            }
+            Some(benchmark) => {
+                benchmark.elapsed = Some(benchmark.timer.elapsed());
+                benchmark.ink_total = Some(benchmark.ink_start.saturating_sub(ink_curr));
+            }
+        };
+        Ok(())
     }
 }

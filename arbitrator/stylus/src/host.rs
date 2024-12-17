@@ -5,6 +5,7 @@
 
 use crate::env::{Escape, HostioInfo, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::{
+    benchmark::Benchmark,
     evm::{
         api::{DataReader, EvmApi, Gas, Ink},
         EvmData,
@@ -44,6 +45,10 @@ where
 
     fn evm_data(&self) -> &EvmData {
         &self.evm_data
+    }
+
+    fn benchmark(&mut self) -> &mut Option<Benchmark> {
+        &mut self.env.benchmark
     }
 
     fn evm_return_data_len(&mut self) -> &mut u32 {
@@ -464,3 +469,9 @@ pub(crate) fn console_tee<D: DataReader, E: EvmApi<D>, T: Into<Value> + Copy>(
 }
 
 pub(crate) fn null_host<D: DataReader, E: EvmApi<D>>(_: WasmEnvMut<D, E>) {}
+
+pub(crate) fn toggle_benchmark<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> MaybeEscape {
+    hostio!(env, toggle_benchmark())
+}
