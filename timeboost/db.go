@@ -129,6 +129,36 @@ func (d *SqliteDatabase) InsertBid(b *ValidatedBid) error {
 	return nil
 }
 
+func (d *SqliteDatabase) GetBids(maxDbRows int) ([]*SqliteDatabaseBid, uint64, error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	var maxRound uint64
+	query := `SELECT MAX(Round) FROM Bids`
+	err := d.sqlDB.Get(&maxRound, query)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to fetch maxRound from bids: %w", err)
+	}
+	var sqlDBbids []*SqliteDatabaseBid
+	if maxDbRows == 0 {
+		if err := d.sqlDB.Select(&sqlDBbids, "SELECT * FROM Bids WHERE Round < ? ORDER BY Round ASC", maxRound); err != nil {
+			return nil, 0, err
+		}
+		return sqlDBbids, maxRound, nil
+	}
+	if err := d.sqlDB.Select(&sqlDBbids, "SELECT * FROM Bids WHERE Round < ? ORDER BY Round ASC LIMIT ?", maxRound, maxDbRows); err != nil {
+		return nil, 0, err
+	}
+	// We should return contiguous set of bids
+	for i := len(sqlDBbids) - 1; i > 0; i-- {
+		if sqlDBbids[i].Round != sqlDBbids[i-1].Round {
+			return sqlDBbids[:i], sqlDBbids[i].Round, nil
+		}
+	}
+	// If we can't determine a contiguous set of bids, we abort and retry again.
+	// Saves us from cases where we sometime push same batch data twice
+	return nil, 0, nil
+}
+
 func (d *SqliteDatabase) DeleteBids(round uint64) error {
 	d.lock.Lock()
 	defer d.lock.Unlock()
