@@ -14,10 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -38,7 +38,7 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	Require(t, err, "could not deploy ArbSys contract")
 	chainId, err := arbSys.ArbChainID(&bind.CallOpts{})
 	Require(t, err, "failed to get the ChainID")
-	if chainId.Uint64() != params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
+	if chainId.Uint64() != chaininfo.ArbitrumDevTestChainConfig().ChainID.Uint64() {
 		Fatal(t, "Wrong ChainID", chainId.Uint64())
 	}
 
