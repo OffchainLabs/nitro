@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -112,13 +113,27 @@ func (s *S3StorageService) Start(ctx context.Context) {
 	}
 }
 
-func (s *S3StorageService) uploadBatch(ctx context.Context, batch []byte, fistRound uint64) error {
+// Used in padding round numbers to a fixed length for naming the batch being uploaded to s3. <firstRound>-<lastRound>
+const fixedRoundStrLen = 7
+
+func (s *S3StorageService) getBatchName(fistRound, lastRound uint64) string {
+	padRound := func(round uint64) string {
+		padStr := fmt.Sprintf("%d", round)
+		if len(padStr) < fixedRoundStrLen {
+			padStr = strings.Repeat("0", fixedRoundStrLen-len(padStr)) + padStr
+		}
+		return padStr
+	}
+	now := time.Now()
+	return fmt.Sprintf("%svalidated-timeboost-bids/%d/%02d/%02d/%s-%s.csv.gzip", s.objectPrefix, now.Year(), now.Month(), now.Day(), padRound(fistRound), padRound(lastRound))
+}
+
+func (s *S3StorageService) uploadBatch(ctx context.Context, batch []byte, fistRound, lastRound uint64) error {
 	compressedData, err := gzip.CompressGzip(batch)
 	if err != nil {
 		return err
 	}
-	now := time.Now()
-	key := fmt.Sprintf("%svalidated-timeboost-bids/%d/%02d/%02d/%d.csv.gzip", s.objectPrefix, now.Year(), now.Month(), now.Day(), fistRound)
+	key := s.getBatchName(fistRound, lastRound)
 	putObjectInput := s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -174,15 +189,15 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 	var size int
 	var firstBidId int
 	csvWriter := csv.NewWriter(&csvBuffer)
-	uploadAndDeleteBids := func(firstRound, deletRound uint64) error {
+	uploadAndDeleteBids := func(firstRound, lastRound, deletRound uint64) error {
 		// End current batch when size exceeds MaxBatchSize and the current round ends
 		csvWriter.Flush()
 		if err := csvWriter.Error(); err != nil {
 			log.Error("Error flushing csv writer", "err", err)
 			return err
 		}
-		if err := s.uploadBatch(ctx, csvBuffer.Bytes(), firstRound); err != nil {
-			log.Error("Error uploading batch to s3", "firstRound", firstRound, "err", err)
+		if err := s.uploadBatch(ctx, csvBuffer.Bytes(), firstRound, lastRound); err != nil {
+			log.Error("Error uploading batch to s3", "firstRound", firstRound, "lastRound", lastRound, "err", err)
 			return err
 		}
 		// After successful upload we should go ahead and delete the uploaded bids from DB to prevent duplicate uploads
@@ -211,7 +226,7 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 		if s.config.MaxBatchSize != 0 {
 			size += csvRecordSize(record)
 			if size >= s.config.MaxBatchSize && index < len(bids)-1 && bid.Round != bids[index+1].Round {
-				if uploadAndDeleteBids(bids[firstBidId].Round, bids[index+1].Round) != nil {
+				if uploadAndDeleteBids(bids[firstBidId].Round, bid.Round, bids[index+1].Round) != nil {
 					return 5 * time.Second
 				}
 				// Reset csv for next batch
@@ -226,7 +241,7 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 		}
 	}
 	if s.config.MaxBatchSize == 0 || size > 0 {
-		if uploadAndDeleteBids(bids[firstBidId].Round, round) != nil {
+		if uploadAndDeleteBids(bids[firstBidId].Round, bids[len(bids)-1].Round, round) != nil {
 			return 5 * time.Second
 		}
 	}

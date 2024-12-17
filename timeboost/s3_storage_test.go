@@ -8,7 +8,6 @@ import (
 	"io"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -66,9 +65,8 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 
 	// Test upload and download of data
 	testData := []byte{1, 2, 3, 4}
-	require.NoError(t, s3StorageService.uploadBatch(ctx, testData, 10))
-	now := time.Now()
-	key := fmt.Sprintf("validated-timeboost-bids/%d/%02d/%02d/%d.csv.gzip", now.Year(), now.Month(), now.Day(), 10)
+	require.NoError(t, s3StorageService.uploadBatch(ctx, testData, 10, 11))
+	key := s3StorageService.getBatchName(10, 11)
 	gotData, err := s3StorageService.downloadBatch(ctx, key)
 	require.NoError(t, err)
 	require.Equal(t, testData, gotData)
@@ -77,6 +75,15 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 	mockClient.clear()
 	db, err := NewDatabase(t.TempDir())
 	require.NoError(t, err)
+	require.NoError(t, db.InsertBid(&ValidatedBid{
+		ChainId:                big.NewInt(2),
+		ExpressLaneController:  common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		AuctionContractAddress: common.HexToAddress("0x0000000000000000000000000000000000000002"),
+		Bidder:                 common.HexToAddress("0x0000000000000000000000000000000000000003"),
+		Round:                  0,
+		Amount:                 big.NewInt(10),
+		Signature:              []byte("signature0"),
+	}))
 	require.NoError(t, db.InsertBid(&ValidatedBid{
 		ChainId:                big.NewInt(1),
 		ExpressLaneController:  common.HexToAddress("0x0000000000000000000000000000000000000001"),
@@ -99,9 +106,8 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 
 	// Helper functions to verify correctness of batch uploads and
 	// Check if all the uploaded bids are removed from sql DB
-	verifyBatchUploadCorrectness := func(firstRound uint64, wantBatch []byte) {
-		now = time.Now()
-		key = fmt.Sprintf("validated-timeboost-bids/%d/%02d/%02d/%d.csv.gzip", now.Year(), now.Month(), now.Day(), firstRound)
+	verifyBatchUploadCorrectness := func(firstRound, lastRound uint64, wantBatch []byte) {
+		key = s3StorageService.getBatchName(firstRound, lastRound)
 		data, err := s3StorageService.downloadBatch(ctx, key)
 		require.NoError(t, err)
 		require.Equal(t, wantBatch, data)
@@ -115,7 +121,8 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 
 	// UploadBatches should upload only the first bid and only one bid (round = 2) should remain in the sql database
 	s3StorageService.uploadBatches(ctx)
-	verifyBatchUploadCorrectness(1, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+	verifyBatchUploadCorrectness(0, 1, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,0,10,signature0
 1,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,1,100,signature1
 `))
 	checkUploadedBidsRemoval(2)
@@ -153,14 +160,14 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 
 	// Round 2 bids should all be in the same batch even though the resulting batch exceeds MaxBatchSize
 	s3StorageService.uploadBatches(ctx)
-	verifyBatchUploadCorrectness(2, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+	verifyBatchUploadCorrectness(2, 2, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
 2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,2,200,signature2
 1,0x0000000000000000000000000000000000000009,0x0000000000000000000000000000000000000007,0x0000000000000000000000000000000000000008,2,150,signature3
 `))
 
 	// After Batching Round 2 bids we end that batch and create a new batch for Round 3 bids to adhere to MaxBatchSize rule
 	s3StorageService.uploadBatches(ctx)
-	verifyBatchUploadCorrectness(3, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+	verifyBatchUploadCorrectness(3, 3, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
 2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,3,250,signature4
 `))
 	checkUploadedBidsRemoval(4)
@@ -216,11 +223,11 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 	// Since config.MaxBatchSize is kept same and config.MaxDbRows is 5, sqldb.GetBids would return all bids from round 4 and 5, with round used for DeletBids as 6
 	// maxBatchSize would then batch bids from round 4 & 5 separately and uploads them to s3
 	s3StorageService.uploadBatches(ctx)
-	verifyBatchUploadCorrectness(4, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+	verifyBatchUploadCorrectness(4, 4, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
 2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,4,350,signature5
 1,0x0000000000000000000000000000000000000009,0x0000000000000000000000000000000000000007,0x0000000000000000000000000000000000000008,4,450,signature6
 `))
-	verifyBatchUploadCorrectness(5, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+	verifyBatchUploadCorrectness(5, 5, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
 2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,5,550,signature7
 2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,5,650,signature8
 `))
