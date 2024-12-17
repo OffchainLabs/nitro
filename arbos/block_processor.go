@@ -265,6 +265,15 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
+			if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
+				return nil, nil, err
+			}
+
+			// Additional pre-transaction validity check
+			if err = extraPreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
+				return nil, nil, err
+			}
+
 			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
 				brotliCompressionLevel, err := arbState.BrotliCompressionLevel()
@@ -300,18 +309,6 @@ func ProduceBlockAdvanced(
 			}
 
 			snap := statedb.Snapshot()
-
-			if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
-				statedb.RevertToSnapshot(snap)
-				return nil, nil, err
-			}
-
-			// Additional pre-transaction validity check
-			if err = extraPreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
-				statedb.RevertToSnapshot(snap)
-				return nil, nil, err
-			}
-
 			statedb.SetTxContext(tx.Hash(), len(receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
@@ -333,12 +330,14 @@ func ProduceBlockAdvanced(
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
 				statedb.RevertToSnapshot(snap)
+				statedb.ClearTxFilter()
 				return nil, nil, err
 			}
 
 			// Additional post-transaction validity check
 			if err = extraPostTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info, result); err != nil {
 				statedb.RevertToSnapshot(snap)
+				statedb.ClearTxFilter()
 				return nil, nil, err
 			}
 
