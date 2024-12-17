@@ -261,7 +261,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	var mockSpawn *mockSpawner
 	builder.valnodeConfig.Wasm.RootPath = wasmRootDir
 	if useStubs {
-		mockSpawn, valStack = createMockValidationNode(t, ctx, &builder.valnodeConfig.Arbitrator)
+		mockSpawn, valStack = createMockValidationNode(t, ctx, &builder.valnodeConfig.Arbitrator, "")
 	} else {
 		// For now validation only works with HashScheme set
 		builder.execConfig.Caching.StateScheme = rawdb.HashScheme

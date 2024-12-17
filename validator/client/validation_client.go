@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
@@ -145,12 +146,36 @@ func (c *ValidationClient) Room() int {
 
 type ExecutionClient struct {
 	ValidationClient
+	boldValClient *redis.BoldValidationClient
 }
 
-func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
+func NewExecutionClient(config rpcclient.ClientConfigFetcher, redisBoldValidationClientConfig *redis.ValidationClientConfig, stack *node.Node) *ExecutionClient {
+	var boldClient *redis.BoldValidationClient
+	if redisBoldValidationClientConfig != nil && redisBoldValidationClientConfig.Enabled() {
+		var err error
+		boldClient, err = redis.NewBoldValidationClient(redisBoldValidationClientConfig)
+		if err != nil {
+			log.Error("Creating new redis bold validation client", "error", err)
+		}
+	}
 	return &ExecutionClient{
 		ValidationClient: *NewValidationClient(config, stack),
+		boldValClient:    boldClient,
 	}
+}
+func (c *ExecutionClient) Start(ctx context.Context) error {
+	if err := c.ValidationClient.Start(ctx); err != nil {
+		return err
+	}
+	if c.boldValClient != nil {
+		if err := c.boldValClient.Initialize(ctx, c.wasmModuleRoots); err != nil {
+			return err
+		}
+		if err := c.boldValClient.Start(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *ExecutionClient) CreateExecutionRun(
@@ -165,8 +190,10 @@ func (c *ExecutionClient) CreateExecutionRun(
 			return nil, err
 		}
 		run := &ExecutionClientRun{
-			client: c,
-			id:     res,
+			wasmModuleRoot: wasmModuleRoot,
+			client:         c,
+			id:             res,
+			input:          input,
 		}
 		run.Start(c.GetContext()) // note: not this temporary thread's context!
 		return run, nil
@@ -175,8 +202,10 @@ func (c *ExecutionClient) CreateExecutionRun(
 
 type ExecutionClientRun struct {
 	stopwaiter.StopWaiter
-	client *ExecutionClient
-	id     uint64
+	client         *ExecutionClient
+	id             uint64
+	wasmModuleRoot common.Hash
+	input          *validator.ValidationInput
 }
 
 func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
@@ -223,6 +252,15 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 }
 
 func (r *ExecutionClientRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash] {
+	if r.client.boldValClient != nil {
+		return r.client.boldValClient.GetLeavesWithStepSize(&server_api.GetLeavesWithStepSizeInput{
+			ModuleRoot:        r.wasmModuleRoot,
+			MachineStartIndex: machineStartIndex,
+			StepSize:          stepSize,
+			NumDesiredLeaves:  maxIterations,
+			ValidationInput:   r.input,
+		})
+	}
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
 		var resJson []common.Hash
 		err := r.client.client.CallContext(ctx, &resJson, server_api.Namespace+"_getMachineHashesWithStepSize", r.id, machineStartIndex, stepSize, maxIterations)
