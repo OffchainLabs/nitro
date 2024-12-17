@@ -188,6 +188,7 @@ type BatchPosterConfig struct {
 	UseEscapeHatch               bool          `koanf:"use-escape-hatch"`
 	EspressoTxnsPollingInterval  time.Duration `koanf:"espresso-txns-polling-interval"`
 	EspressoSwitchDelayThreshold uint64        `koanf:"espresso-switch-delay-threshold"`
+	EspressoTEEVerifierAddress   string        `koanf:"espresso-tee-verifier-address"`
 }
 
 func (c *BatchPosterConfig) Validate() error {
@@ -249,6 +250,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".use-escape-hatch", DefaultBatchPosterConfig.UseEscapeHatch, "if true, batches will be posted without doing the espresso verification when hotshot is down. If false, wait for hotshot being up")
 	f.Duration(prefix+".espresso-txns-polling-interval", DefaultBatchPosterConfig.EspressoTxnsPollingInterval, "interval between polling for transactions to be included in the block")
 	f.Uint64(prefix+".espresso-switch-delay-threshold", DefaultBatchPosterConfig.EspressoSwitchDelayThreshold, "specifies the switch delay threshold used to determine hotshot liveness")
+	f.String(prefix+".espresso-tee-verifier-address", DefaultBatchPosterConfig.EspressoTEEVerifierAddress, "")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -287,6 +289,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	EspressoSwitchDelayThreshold:   350,
 	LightClientAddress:             "",
 	HotShotUrl:                     "",
+	EspressoTEEVerifierAddress:     "",
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -387,6 +390,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		opts.Streamer.UseEscapeHatch = opts.Config().UseEscapeHatch
 		opts.Streamer.espressoTxnsPollingInterval = opts.Config().EspressoTxnsPollingInterval
 		opts.Streamer.espressoSwitchDelayThreshold = opts.Config().EspressoSwitchDelayThreshold
+		opts.Streamer.espressoTEEVerifierAddress = common.HexToAddress(opts.Config().EspressoTEEVerifierAddress)
 	}
 
 	b := &BatchPoster{
@@ -1827,15 +1831,6 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	}
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
-		espresso, _ := b.streamer.isEspressoMode()
-		if !espresso {
-			if b.streamer.lightClientReader != nil && b.streamer.espressoClient != nil {
-				// This mostly happens when a non-espresso nitro is upgrading to espresso nitro.
-				// The batch poster is set a espresso client and a light client reader, but waiting
-				// for the upgrade action
-				return b.config().PollInterval
-			}
-		}
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
 			gasRefunderBalance, err := b.l1Reader.Client().BalanceAt(ctx, common.HexToAddress(b.config().GasRefunderAddress), nil)
 			if err != nil {
