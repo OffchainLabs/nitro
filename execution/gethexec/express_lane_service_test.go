@@ -39,6 +39,15 @@ func init() {
 	testPriv2 = privKey2
 }
 
+func defaultTestRoundTimingInfo(offset time.Time) timeboost.RoundTimingInfo {
+	return timeboost.RoundTimingInfo{
+		Offset:            offset,
+		Round:             time.Minute,
+		AuctionClosing:    time.Second * 15,
+		ReserveSubmission: time.Second * 15,
+	}
+}
+
 func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -110,6 +119,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "no onchain controller",
 			es: &expressLaneService{
 				auctionContractAddr: common.Address{'a'},
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -127,8 +137,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "bad round number",
 			es: &expressLaneService{
 				auctionContractAddr: common.Address{'a'},
-				initialTimestamp:    time.Now(),
-				roundDuration:       time.Minute,
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -150,8 +159,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "malformed signature",
 			es: &expressLaneService{
 				auctionContractAddr: common.Address{'a'},
-				initialTimestamp:    time.Now(),
-				roundDuration:       time.Minute,
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -173,8 +181,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "wrong signature",
 			es: &expressLaneService{
 				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-				initialTimestamp:    time.Now(),
-				roundDuration:       time.Minute,
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -190,8 +197,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "not express lane controller",
 			es: &expressLaneService{
 				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-				initialTimestamp:    time.Now(),
-				roundDuration:       time.Minute,
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -207,8 +213,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "OK",
 			es: &expressLaneService{
 				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-				initialTimestamp:    time.Now(),
-				roundDuration:       time.Minute,
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -241,10 +246,12 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 func Test_expressLaneService_validateExpressLaneTx_gracePeriod(t *testing.T) {
 	auctionContractAddr := common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6")
 	es := &expressLaneService{
-		auctionContractAddr:  auctionContractAddr,
-		initialTimestamp:     time.Now(),
-		roundDuration:        time.Second * 10,
-		auctionClosing:       time.Second * 5,
+		auctionContractAddr: auctionContractAddr,
+		roundTimingInfo: timeboost.RoundTimingInfo{
+			Offset:         time.Now(),
+			Round:          time.Second * 10,
+			AuctionClosing: time.Second * 5,
+		},
 		earlySubmissionGrace: time.Second * 2,
 		chainConfig: &params.ChainConfig{
 			ChainID: big.NewInt(1),
@@ -439,16 +446,10 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	require.Equal(t, []uint64{1, 2, 3}, stubPublisher.publishedTxOrder)
 }
 
+// TODO this test is just for RoundTimingInfo
 func TestIsWithinAuctionCloseWindow(t *testing.T) {
 	initialTimestamp := time.Date(2024, 8, 8, 15, 0, 0, 0, time.UTC)
-	roundDuration := 1 * time.Minute
-	auctionClosing := 15 * time.Second
-
-	es := &expressLaneService{
-		initialTimestamp: initialTimestamp,
-		roundDuration:    roundDuration,
-		auctionClosing:   auctionClosing,
-	}
+	roundTimingInfo := defaultTestRoundTimingInfo(initialTimestamp)
 
 	tests := []struct {
 		name         string
@@ -484,9 +485,9 @@ func TestIsWithinAuctionCloseWindow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := es.isWithinAuctionCloseWindow(tt.arrivalTime)
+			actual := roundTimingInfo.IsWithinAuctionCloseWindow(tt.arrivalTime)
 			if actual != tt.expectedBool {
-				t.Errorf("isWithinAuctionCloseWindow(%v) = %v; want %v", tt.arrivalTime, actual, tt.expectedBool)
+				t.Errorf("IsWithinAuctionCloseWindow(%v) = %v; want %v", tt.arrivalTime, actual, tt.expectedBool)
 			}
 		})
 	}
@@ -497,8 +498,7 @@ func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 	addr := crypto.PubkeyToAddress(testPriv.PublicKey)
 	es := &expressLaneService{
 		auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-		initialTimestamp:    time.Now(),
-		roundDuration:       time.Minute,
+		roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 		roundControl:        lru.NewCache[uint64, *expressLaneControl](8),
 		chainConfig: &params.ChainConfig{
 			ChainID: big.NewInt(1),

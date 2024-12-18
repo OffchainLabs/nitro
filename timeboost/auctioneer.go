@@ -29,7 +29,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -114,9 +113,7 @@ type AuctioneerServer struct {
 	auctionContractAddr       common.Address
 	bidsReceiver              chan *JsonValidatedBid
 	bidCache                  *bidCache
-	initialRoundTimestamp     time.Time
-	auctionClosingDuration    time.Duration
-	roundDuration             time.Duration
+	roundTimingInfo           RoundTimingInfo
 	streamTimeout             time.Duration
 	auctionResolutionWaitTime time.Duration
 	database                  *SqliteDatabase
@@ -189,17 +186,17 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err != nil {
 		return nil, err
 	}
-	var roundTimingInfo RoundTimingInfo
-	roundTimingInfo, err = auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
 		return nil, err
 	}
-	if err = roundTimingInfo.Validate(&cfg.AuctionResolutionWaitTime); err != nil {
+	roundTimingInfo, err := NewRoundTimingInfo(rawRoundTimingInfo)
+	if err != nil {
 		return nil, err
 	}
-	auctionClosingDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.AuctionClosingSeconds) * time.Second
-	initialTimestamp := time.Unix(roundTimingInfo.OffsetTimestamp, 0)
-	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
+	if err = roundTimingInfo.ValidateResolutionWaitTime(cfg.AuctionResolutionWaitTime); err != nil {
+		return nil, err
+	}
 	return &AuctioneerServer{
 		txOpts:                    txOpts,
 		sequencerRpc:              client,
@@ -211,9 +208,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		auctionContractAddr:       auctionContractAddr,
 		bidsReceiver:              make(chan *JsonValidatedBid, 100_000), // TODO(Terence): Is 100k enough? Make this configurable?
 		bidCache:                  newBidCache(),
-		initialRoundTimestamp:     initialTimestamp,
-		auctionClosingDuration:    auctionClosingDuration,
-		roundDuration:             roundDuration,
+		roundTimingInfo:           *roundTimingInfo,
 		auctionResolutionWaitTime: cfg.AuctionResolutionWaitTime,
 	}, nil
 }
@@ -306,8 +301,8 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 
 	// Auction resolution thread.
 	a.StopWaiter.LaunchThread(func(ctx context.Context) {
-		ticker := newAuctionCloseTicker(a.roundDuration, a.auctionClosingDuration)
-		go ticker.start()
+		ticker := newRoundTicker(a.roundTimingInfo)
+		go ticker.tickAtAuctionClose()
 		for {
 			select {
 			case <-ctx.Done():
@@ -328,7 +323,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 
 // Resolves the auction by calling the smart contract with the top two bids.
 func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
-	upcomingRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration) + 1
+	upcomingRound := a.roundTimingInfo.RoundNumber() + 1
 	result := a.bidCache.topTwoBids()
 	first := result.firstPlace
 	second := result.secondPlace
@@ -376,8 +371,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		return err
 	}
 
-	currentRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration)
-	roundEndTime := a.initialRoundTimestamp.Add(arbmath.SaturatingCast[time.Duration](currentRound) * a.roundDuration)
+	roundEndTime := a.roundTimingInfo.TimeOfNextRound()
 	retryInterval := 1 * time.Second
 
 	if err := retryUntil(ctx, func() error {
