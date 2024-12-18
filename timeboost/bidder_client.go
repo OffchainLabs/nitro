@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
@@ -20,7 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -67,8 +65,7 @@ type BidderClient struct {
 	auctionContract        *express_lane_auctiongen.ExpressLaneAuction
 	biddingTokenContract   *bindings.MockERC20
 	auctioneerClient       *rpc.Client
-	initialRoundTimestamp  time.Time
-	roundDuration          time.Duration
+	roundTimingInfo        RoundTimingInfo
 	domainValue            []byte
 }
 
@@ -96,18 +93,16 @@ func NewBidderClient(
 	if err != nil {
 		return nil, err
 	}
-	var roundTimingInfo RoundTimingInfo
-	roundTimingInfo, err = auctionContract.RoundTimingInfo(&bind.CallOpts{
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{
 		Context: ctx,
 	})
 	if err != nil {
 		return nil, err
 	}
-	if err = roundTimingInfo.Validate(nil); err != nil {
+	roundTimingInfo, err := NewRoundTimingInfo(rawRoundTimingInfo)
+	if err != nil {
 		return nil, err
 	}
-	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
-	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
 	txOpts, signer, err := util.OpenWallet("bidder-client", &cfg.Wallet, chainId)
 	if err != nil {
 		return nil, errors.Wrap(err, "opening wallet")
@@ -138,8 +133,7 @@ func NewBidderClient(
 		auctionContract:        auctionContract,
 		biddingTokenContract:   biddingTokenContract,
 		auctioneerClient:       bidValidatorClient,
-		initialRoundTimestamp:  initialTimestamp,
-		roundDuration:          roundDuration,
+		roundTimingInfo:        *roundTimingInfo,
 		domainValue:            domainValue,
 	}, nil
 }
@@ -205,7 +199,7 @@ func (bd *BidderClient) Bid(
 		ChainId:                bd.chainId,
 		ExpressLaneController:  expressLaneController,
 		AuctionContractAddress: bd.auctionContractAddress,
-		Round:                  CurrentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1,
+		Round:                  bd.roundTimingInfo.RoundNumber() + 1,
 		Amount:                 amount,
 	}
 	bidHash, err := newBid.ToEIP712Hash(domainSeparator)
