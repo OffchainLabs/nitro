@@ -357,14 +357,14 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		if !exists {
 			break
 		}
+		delete(es.messagesBySequenceNumber, nextMsg.SequenceNumber)
 		if err := es.transactionPublisher.PublishTimeboostedTransaction(
 			ctx,
 			nextMsg.Transaction,
 			msg.Options,
 		); err != nil {
-			// If the tx failed, clear it from the sequence map.
-			delete(es.messagesBySequenceNumber, msg.SequenceNumber)
-			return err
+			// If the tx fails we return an error with all the necessary info for the controller to successfully try again
+			return fmt.Errorf("express lane transaction of sequence number: %d and transaction hash: %v, failed with an error: %w", nextMsg.SequenceNumber, nextMsg.Transaction.Hash(), err)
 		}
 		// Increase the global round sequence number.
 		control.sequence += 1
