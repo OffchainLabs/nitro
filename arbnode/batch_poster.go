@@ -12,12 +12,9 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"os"
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/andybalholm/brotli"
 	"github.com/spf13/pflag"
@@ -43,7 +40,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
@@ -185,11 +181,11 @@ type BatchPosterConfig struct {
 	// Espresso specific flags
 	LightClientAddress           string        `koanf:"light-client-address"`
 	HotShotUrl                   string        `koanf:"hotshot-url"`
-	UserDataAttestationFile      string        `koanf:"user-data-attestation-file"`
-	QuoteFile                    string        `koanf:"quote-file"`
 	UseEscapeHatch               bool          `koanf:"use-escape-hatch"`
 	EspressoTxnsPollingInterval  time.Duration `koanf:"espresso-txns-polling-interval"`
 	EspressoSwitchDelayThreshold uint64        `koanf:"espresso-switch-delay-threshold"`
+	EspressoMaxTransactionSize   uint64        `koanf:"espresso-max-transaction-size"`
+	EspressoTEEVerifierAddress   string        `koanf:"espresso-tee-verifier-address"`
 }
 
 func (c *BatchPosterConfig) Validate() error {
@@ -246,14 +242,14 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
 	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from layer 1 minimum bounds. Requires l1-block-bound option not be set to \"ignore\"")
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
-	f.String(prefix+".user-data-attestation-file", DefaultBatchPosterConfig.UserDataAttestationFile, "specifies the file containing the user data attestation")
-	f.String(prefix+".quote-file", DefaultBatchPosterConfig.QuoteFile, "specifies the file containing the quote")
 	f.Bool(prefix+".use-escape-hatch", DefaultBatchPosterConfig.UseEscapeHatch, "if true, batches will be posted without doing the espresso verification when hotshot is down. If false, wait for hotshot being up")
 	f.Duration(prefix+".espresso-txns-polling-interval", DefaultBatchPosterConfig.EspressoTxnsPollingInterval, "interval between polling for transactions to be included in the block")
 	f.Uint64(prefix+".espresso-switch-delay-threshold", DefaultBatchPosterConfig.EspressoSwitchDelayThreshold, "specifies the switch delay threshold used to determine hotshot liveness")
+	f.String(prefix+".espresso-tee-verifier-address", DefaultBatchPosterConfig.EspressoTEEVerifierAddress, "")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
+	f.Uint64(prefix+".espresso-max-transaction-size", DefaultBatchPosterConfig.EspressoMaxTransactionSize, "specifies the max size of a espresso transasction")
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -282,13 +278,13 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	ReorgResistanceMargin:          10 * time.Minute,
 	CheckBatchCorrectness:          true,
-	UserDataAttestationFile:        "",
-	QuoteFile:                      "",
 	UseEscapeHatch:                 false,
 	EspressoTxnsPollingInterval:    time.Millisecond * 500,
 	EspressoSwitchDelayThreshold:   350,
 	LightClientAddress:             "",
 	HotShotUrl:                     "",
+	EspressoMaxTransactionSize:     900 * 1024,
+	EspressoTEEVerifierAddress:     "",
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -325,6 +321,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	EspressoSwitchDelayThreshold:   10,
 	LightClientAddress:             "",
 	HotShotUrl:                     "",
+	EspressoMaxTransactionSize:     900 * 1024,
 }
 
 type BatchPosterOpts struct {
@@ -389,6 +386,8 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		opts.Streamer.UseEscapeHatch = opts.Config().UseEscapeHatch
 		opts.Streamer.espressoTxnsPollingInterval = opts.Config().EspressoTxnsPollingInterval
 		opts.Streamer.espressoSwitchDelayThreshold = opts.Config().EspressoSwitchDelayThreshold
+		opts.Streamer.espressoMaxTransactionSize = opts.Config().EspressoMaxTransactionSize
+		opts.Streamer.espressoTEEVerifierAddress = common.HexToAddress(opts.Config().EspressoTEEVerifierAddress)
 	}
 
 	b := &BatchPoster{
@@ -564,20 +563,9 @@ var EspressoFetchTransactionErr = errors.New("failed to fetch the espresso trans
 
 // Adds a block merkle proof to an Espresso justification, providing a proof that a set of transactions
 // hashes to some light client state root.
-func (b *BatchPoster) checkEspressoValidation(
-	msg *arbostypes.MessageWithMetadata,
-) error {
+func (b *BatchPoster) checkEspressoValidation() error {
 	if b.streamer.espressoClient == nil && b.streamer.lightClientReader == nil {
 		// We are not using espresso mode since these haven't been set
-		return nil
-	}
-	// We only submit the user transactions to hotshot. Only those messages created by
-	// sequencer should wait for the finality
-	if msg.Message.Header.Kind != arbostypes.L1MessageType_L2Message {
-		return nil
-	}
-	kind := msg.Message.L2msg[0]
-	if kind != arbos.L2MessageKind_Batch && kind != arbos.L2MessageKind_SignedTx {
 		return nil
 	}
 
@@ -605,8 +593,6 @@ func (b *BatchPoster) checkEspressoValidation(
 				log.Warn("skipped espresso verification due to hotshot failure", "pos", b.building.msgCount)
 				return nil
 			}
-			// TODO: if current position is greater than the `skip`, should set the
-			// the skip value to nil. This should contribute to better efficiency.
 		}
 	}
 
@@ -1143,7 +1129,7 @@ func (b *BatchPoster) encodeAddBatch(
 			return nil, nil, fmt.Errorf("failed to pack calldata without attestation quote: %w", err)
 		}
 
-		attestationQuote, err := b.getAttestationQuote(calldata)
+		attestationQuote, err := b.streamer.getAttestationQuote(calldata)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get attestation quote: %w", err)
 		}
@@ -1172,41 +1158,6 @@ func (b *BatchPoster) encodeAddBatch(
 	}
 
 	return fullCalldata, kzgBlobs, nil
-}
-
-/**
- * This function generates the attestation quote for the user data.
- * The user data is hashed using keccak256 and then 32 bytes of padding is added to the hash.
- * The hash is then written to a file specified in the config. (For SGX: /dev/attestation/user_report_data)
- * The quote is then read from the file specified in the config. (For SGX: /dev/attestation/quote)
- */
-func (b *BatchPoster) getAttestationQuote(userData []byte) ([]byte, error) {
-	if (b.config().UserDataAttestationFile == "") || (b.config().QuoteFile == "") {
-		return []byte{}, nil
-	}
-
-	// keccak256 hash of userData
-	userDataHash := crypto.Keccak256(userData)
-
-	// Add 32 bytes of padding to the user data hash
-	// because keccak256 hash is 32 bytes and sgx requires 64 bytes of user data
-	for i := 0; i < 32; i += 1 {
-		userDataHash = append(userDataHash, 0)
-	}
-
-	// Write the message to "/dev/attestation/user_report_data" in SGX
-	err := os.WriteFile(b.config().UserDataAttestationFile, userDataHash, 0600)
-	if err != nil {
-		return []byte{}, fmt.Errorf("failed to create user report data file: %w", err)
-	}
-
-	// Read the quote from "/dev/attestation/quote" in SGX
-	attestationQuote, err := os.ReadFile(b.config().QuoteFile)
-	if err != nil {
-		return []byte{}, fmt.Errorf("failed to read quote file: %w", err)
-	}
-
-	return attestationQuote, nil
 }
 
 var ErrNormalGasEstimationFailed = errors.New("normal gas estimation failed")
@@ -1471,19 +1422,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	shouldSubmit := b.streamer.shouldSubmitEspressoTransaction()
 	if !b.streamer.UseEscapeHatch || shouldSubmit {
 		for p := b.building.msgCount; p < msgCount; p += 1 {
-			msg, err := b.streamer.GetMessage(p)
-			if err != nil {
-				log.Error("error getting message from streamer", "error", err)
-				break
-			}
-			// We only submit the user transactions to hotshot.
-			if msg.Message.Header.Kind != arbostypes.L1MessageType_L2Message {
-				continue
-			}
-			kind := msg.Message.L2msg[0]
-			if kind != arbos.L2MessageKind_Batch && kind != arbos.L2MessageKind_SignedTx {
-				continue
-			}
 			err = b.submitEspressoTransactionPos(p)
 			if err != nil {
 				log.Error("error submitting position", "error", err, "pos", p)
@@ -1522,7 +1460,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			break
 		}
 
-		err = b.checkEspressoValidation(msg)
+		err = b.checkEspressoValidation()
 		if err != nil {
 			return false, fmt.Errorf("error checking espresso valdiation: %w", err)
 		}
@@ -1820,15 +1758,6 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	}
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
-		espresso, _ := b.streamer.isEspressoMode()
-		if !espresso {
-			if b.streamer.lightClientReader != nil && b.streamer.espressoClient != nil {
-				// This mostly happens when a non-espresso nitro is upgrading to espresso nitro.
-				// The batch poster is set a espresso client and a light client reader, but waiting
-				// for the upgrade action
-				return b.config().PollInterval
-			}
-		}
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
 			gasRefunderBalance, err := b.l1Reader.Client().BalanceAt(ctx, common.HexToAddress(b.config().GasRefunderAddress), nil)
 			if err != nil {
