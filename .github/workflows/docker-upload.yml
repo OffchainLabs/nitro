@@ -48,7 +48,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           platform: linux/amd64
-          target: nitro-node-dev
+          target: nitro-node
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -106,7 +106,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           platform: linux/arm64/v8
-          target: nitro-node-dev
+          target: nitro-node
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
