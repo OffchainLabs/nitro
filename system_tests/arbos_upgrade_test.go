@@ -55,7 +55,6 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 		t.Errorf("expected completed scheduled upgrade to be ignored, got version %v timestamp %v", scheduled.ArbosVersion, scheduled.ScheduledForTimestamp)
 	}
 
-	// TODO: Once we have an ArbOS 30, test a real upgrade with it
 	// We can't test 11 -> 20 because 11 doesn't have the GetScheduledUpgrade method we want to test
 	var testVersion uint64 = 100
 	var testTimestamp uint64 = 1 << 62
