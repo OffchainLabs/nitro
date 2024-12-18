@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"sort"
@@ -538,6 +539,17 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 	if scheduled.ArbosVersion != 0 || scheduled.ScheduledForTimestamp != 0 {
 		t.Errorf("expected completed scheduled upgrade to be ignored, got version %v timestamp %v", scheduled.ArbosVersion, scheduled.ScheduledForTimestamp)
 	}
+
+	l2rpc := builder.L2.Stack.Attach()
+	var result json.RawMessage
+	traceConfig := map[string]interface{}{
+		"tracer": "prestateTracer",
+		"tracerConfig": map[string]interface{}{
+			"diffMode": true,
+		},
+	}
+	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), traceConfig)
+	Require(t, err)
 
 	// TODO: Once we have an ArbOS 30, test a real upgrade with it
 	// We can't test 11 -> 20 because 11 doesn't have the GetScheduledUpgrade method we want to test
