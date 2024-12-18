@@ -21,7 +21,6 @@ import (
 
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -71,10 +70,7 @@ type BidValidator struct {
 	auctionContractAddr            common.Address
 	auctionContractDomainSeparator [32]byte
 	bidsReceiver                   chan *Bid
-	initialRoundTimestamp          time.Time
-	roundDuration                  time.Duration
-	auctionClosingDuration         time.Duration
-	reserveSubmissionDuration      time.Duration
+	roundTimingInfo                RoundTimingInfo
 	reservePriceLock               sync.RWMutex
 	reservePrice                   *big.Int
 	bidsPerSenderInRound           map[common.Address]uint8
@@ -112,18 +108,14 @@ func NewBidValidator(
 	if err != nil {
 		return nil, err
 	}
-	var roundTimingInfo RoundTimingInfo
-	roundTimingInfo, err = auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
 		return nil, err
 	}
-	if err = roundTimingInfo.Validate(nil); err != nil {
+	roundTimingInfo, err := NewRoundTimingInfo(rawRoundTimingInfo)
+	if err != nil {
 		return nil, err
 	}
-	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
-	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
-	auctionClosingDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.AuctionClosingSeconds) * time.Second
-	reserveSubmissionDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.ReserveSubmissionSeconds) * time.Second
 
 	reservePrice, err := auctionContract.ReservePrice(&bind.CallOpts{})
 	if err != nil {
@@ -146,10 +138,7 @@ func NewBidValidator(
 		auctionContractAddr:            auctionContractAddr,
 		auctionContractDomainSeparator: domainSeparator,
 		bidsReceiver:                   make(chan *Bid, 10_000),
-		initialRoundTimestamp:          initialTimestamp,
-		roundDuration:                  roundDuration,
-		auctionClosingDuration:         auctionClosingDuration,
-		reserveSubmissionDuration:      reserveSubmissionDuration,
+		roundTimingInfo:                *roundTimingInfo,
 		reservePrice:                   reservePrice,
 		domainValue:                    domainValue,
 		bidsPerSenderInRound:           make(map[common.Address]uint8),
@@ -207,10 +196,10 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 
 	// Thread to set reserve price and clear per-round map of bid count per account.
 	bv.StopWaiter.LaunchThread(func(ctx context.Context) {
-		reservePriceTicker := newAuctionCloseTicker(bv.roundDuration, bv.auctionClosingDuration+bv.reserveSubmissionDuration)
-		go reservePriceTicker.start()
-		auctionCloseTicker := newAuctionCloseTicker(bv.roundDuration, bv.auctionClosingDuration)
-		go auctionCloseTicker.start()
+		reservePriceTicker := newRoundTicker(bv.roundTimingInfo)
+		go reservePriceTicker.tickAtReserveSubmissionDeadline()
+		auctionCloseTicker := newRoundTicker(bv.roundTimingInfo)
+		go auctionCloseTicker.tickAtAuctionClose()
 
 		for {
 			select {
@@ -306,18 +295,13 @@ func (bv *BidValidator) validateBid(
 	}
 
 	// Check if the bid is intended for upcoming round.
-	upcomingRound := CurrentRound(bv.initialRoundTimestamp, bv.roundDuration) + 1
+	upcomingRound := bv.roundTimingInfo.RoundNumber() + 1
 	if bid.Round != upcomingRound {
 		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
 	}
 
 	// Check if the auction is closed.
-	if isAuctionRoundClosed(
-		time.Now(),
-		bv.initialRoundTimestamp,
-		bv.roundDuration,
-		bv.auctionClosingDuration,
-	) {
+	if bv.roundTimingInfo.isAuctionRoundClosed() {
 		return nil, errors.Wrap(ErrBadRoundNumber, "auction is closed")
 	}
 

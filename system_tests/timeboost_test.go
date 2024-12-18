@@ -59,7 +59,9 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
 	Require(t, err)
-	info, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
 	Require(t, err)
 	bobPriv := seqInfo.Accounts["Bob"].PrivateKey
 
@@ -69,8 +71,7 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	expressLaneClient := newExpressLaneClient(
 		bobPriv,
 		chainId,
-		time.Unix(info.OffsetTimestamp, 0),
-		arbmath.SaturatingCast[time.Duration](info.RoundDurationSeconds)*time.Second,
+		*roundTimingInfo,
 		auctionContractAddr,
 		seqDial,
 	)
@@ -149,7 +150,11 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
 	Require(t, err)
-	info, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
+	Require(t, err)
+
 	Require(t, err)
 	bobPriv := seqInfo.Accounts["Bob"].PrivateKey
 
@@ -159,8 +164,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 	expressLaneClient := newExpressLaneClient(
 		bobPriv,
 		chainId,
-		time.Unix(int64(info.OffsetTimestamp), 0),
-		arbmath.SaturatingCast[time.Duration](info.RoundDurationSeconds)*time.Second,
+		*roundTimingInfo,
 		auctionContractAddr,
 		seqDial,
 	)
@@ -520,7 +524,9 @@ func setupExpressLaneAuction(
 	bob.Start(ctx)
 
 	// Wait until the initial round.
-	info, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
 	Require(t, err)
 	timeToWait := time.Until(initialTimestampUnix)
 	t.Logf("Waiting until the initial round %v and %v, current time %v", timeToWait, initialTimestampUnix, time.Now())
@@ -561,7 +567,7 @@ func setupExpressLaneAuction(
 	waitTime = roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
 	time.Sleep(waitTime)
 
-	currRound := timeboost.CurrentRound(time.Unix(int64(info.OffsetTimestamp), 0), roundDuration)
+	currRound := roundTimingInfo.RoundNumber()
 	t.Log("curr round", currRound)
 	if currRound != winnerRound {
 		now = time.Now()
@@ -633,31 +639,28 @@ func awaitAuctionResolved(
 type expressLaneClient struct {
 	stopwaiter.StopWaiter
 	sync.Mutex
-	privKey               *ecdsa.PrivateKey
-	chainId               *big.Int
-	initialRoundTimestamp time.Time
-	roundDuration         time.Duration
-	auctionContractAddr   common.Address
-	client                *rpc.Client
-	sequence              uint64
+	privKey             *ecdsa.PrivateKey
+	chainId             *big.Int
+	roundTimingInfo     timeboost.RoundTimingInfo
+	auctionContractAddr common.Address
+	client              *rpc.Client
+	sequence            uint64
 }
 
 func newExpressLaneClient(
 	privKey *ecdsa.PrivateKey,
 	chainId *big.Int,
-	initialRoundTimestamp time.Time,
-	roundDuration time.Duration,
+	roundTimingInfo timeboost.RoundTimingInfo,
 	auctionContractAddr common.Address,
 	client *rpc.Client,
 ) *expressLaneClient {
 	return &expressLaneClient{
-		privKey:               privKey,
-		chainId:               chainId,
-		initialRoundTimestamp: initialRoundTimestamp,
-		roundDuration:         roundDuration,
-		auctionContractAddr:   auctionContractAddr,
-		client:                client,
-		sequence:              0,
+		privKey:             privKey,
+		chainId:             chainId,
+		roundTimingInfo:     roundTimingInfo,
+		auctionContractAddr: auctionContractAddr,
+		client:              client,
+		sequence:            0,
 	}
 }
 
@@ -674,7 +677,7 @@ func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *
 	}
 	msg := &timeboost.JsonExpressLaneSubmission{
 		ChainId:                (*hexutil.Big)(elc.chainId),
-		Round:                  hexutil.Uint64(timeboost.CurrentRound(elc.initialRoundTimestamp, elc.roundDuration)),
+		Round:                  hexutil.Uint64(elc.roundTimingInfo.RoundNumber()),
 		AuctionContractAddress: elc.auctionContractAddr,
 		Transaction:            encodedTx,
 		SequenceNumber:         hexutil.Uint64(elc.sequence),
