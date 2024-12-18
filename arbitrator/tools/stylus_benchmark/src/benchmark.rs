@@ -8,7 +8,6 @@ use jit::program::{
     exec_program, get_last_msg, pop_with_wasm_env, start_program_with_wasm_env, JitConfig,
 };
 use prover::programs::{config::CompileConfig, config::PricingParams, prelude::StylusConfig};
-use std::path::PathBuf;
 use std::str;
 use stylus::native::compile;
 use wasmer::Target;
@@ -77,13 +76,7 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
     (elapsed, ink)
 }
 
-pub fn benchmark(wat_path: PathBuf) -> eyre::Result<()> {
-    println!("Benchmarking {:?}", wat_path);
-
-    let wat = match std::fs::read(wat_path) {
-        Ok(wat) => wat,
-        Err(err) => panic!("failed to read: {err}"),
-    };
+pub fn benchmark(wat: Vec<u8>) -> eyre::Result<()> {
     let wasm = wasmer::wat2wasm(&wat)?;
 
     let compiled_module = compile(&wasm, 2, true, Target::default())?;

@@ -1,37 +1,34 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use std::path::PathBuf;
 
 mod benchmark;
-mod generate_wats;
+mod scenario;
 
-#[derive(Debug, Parser)]
-#[command(name = "stylus_benchmark")]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    output_wat_dir_path: Option<PathBuf>,
 
-#[derive(Debug, Subcommand)]
-enum Commands {
-    #[command(arg_required_else_help = true)]
-    Benchmark { wat_path: PathBuf },
-    GenerateWats {
-        #[arg(value_name = "OUT_PATH")]
-        out_path: PathBuf,
-    },
+    #[arg(short, long)]
+    scenario: Option<scenario::Scenario>,
 }
 
 fn main() -> eyre::Result<()> {
-    let args = Cli::parse();
-    match args.command {
-        Commands::Benchmark { wat_path } => {
-            return benchmark::benchmark(wat_path);
+    let args = Args::parse();
+
+    match args.scenario {
+        Some(scenario) => {
+            println!("Benchmarking {:?}", scenario);
+            let wat = scenario::generate_wat(scenario, args.output_wat_dir_path);
+            benchmark::benchmark(wat)
         }
-        Commands::GenerateWats { out_path } => {
-            return generate_wats::generate_wats(out_path);
+        None => {
+            println!("No scenario specified, benchmarking all scenarios");
+            Ok(())
         }
     }
 }
