@@ -4,32 +4,12 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use strum_macros::{EnumString, Display};
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, EnumString, Display)]
 pub enum Scenario {
+    #[strum(serialize = "add_i32")]
     AddI32,
-}
-
-const ADD_I32: &str = "add_i32";
-
-impl std::fmt::Display for Scenario {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            Self::AddI32 => ADD_I32,
-        };
-        s.fmt(f)
-    }
-}
-
-impl std::str::FromStr for Scenario {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            ADD_I32 => Ok(Self::AddI32),
-            _ => Err(format!("Unknown scenario: {s}")),
-        }
-    }
 }
 
 fn generate_add_i32_wat() -> Vec<u8> {
@@ -66,7 +46,7 @@ pub fn generate_wat(scenario: Scenario, output_wat_dir_path: Option<PathBuf>) ->
 
     if let Some(output_wat_dir_path) = output_wat_dir_path {
         let mut output_wat_path = output_wat_dir_path;
-        output_wat_path.push(format!("{:?}.wat", scenario));
+        output_wat_path.push(format!("{}.wat", scenario));
         let mut file = File::create(output_wat_path).unwrap();
         file.write_all(&wat).unwrap();
     }
