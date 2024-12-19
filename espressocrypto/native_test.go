@@ -11,7 +11,6 @@ import (
 type merkleProofTestData struct {
 	Proof             json.RawMessage `json:"proof"`
 	Header            json.RawMessage `json:"header"`
-	HeaderCommitment  []uint8         `json:"header_commitment"`
 	BlockMerkleRoot   string          `json:"block_merkle_root"`
 	HotShotCommitment []uint8         `json:"hotshot_commitment"`
 }

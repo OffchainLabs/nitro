@@ -1274,9 +1274,15 @@ func (s *TransactionStreamer) pollSubmittedTransactionForFinality(ctx context.Co
 
 	height := data.BlockHeight
 
-	header, err := s.espressoClient.FetchHeaderByHeight(ctx, height)
+	jsonHeader, err := s.espressoClient.FetchRawHeaderByHeight(ctx, height)
 	if err != nil {
 		return fmt.Errorf("could not get the header (height: %d): %w", height, err)
+	}
+
+	var header espressoTypes.HeaderImpl
+	err = json.Unmarshal(jsonHeader, &header)
+	if err != nil {
+		return fmt.Errorf("could not unmarshal header from bytes (height: %d): %w", height, err)
 	}
 
 	// Verify the merkle proof
@@ -1300,12 +1306,8 @@ func (s *TransactionStreamer) pollSubmittedTransactionForFinality(ctx context.Co
 	}
 
 	blockMerkleTreeRoot := nextHeader.Header.GetBlockMerkleTreeRoot()
-	jstHeader, err := json.Marshal(header)
-	if err != nil {
-		return fmt.Errorf("failed to marshal the header: %w", err)
-	}
 
-	ok := espressocrypto.VerifyMerkleProof(proof.Proof, jstHeader, *blockMerkleTreeRoot, snapshot.Root)
+	ok := espressocrypto.VerifyMerkleProof(proof.Proof, jsonHeader, *blockMerkleTreeRoot, snapshot.Root)
 	if !ok {
 		return fmt.Errorf("error validating merkle proof (height: %d, snapshot height: %d)", height, snapshot.Height)
 	}
