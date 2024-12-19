@@ -4,12 +4,10 @@
 use arbutil::evm::{api::Ink, EvmData};
 use core::time::Duration;
 use jit::machine::WasmEnv;
-use jit::program::{
-    exec_program, get_last_msg, pop_with_wasm_env, start_program_with_wasm_env, JitConfig,
-};
+use jit::program::JitConfig;
 use prover::programs::{config::CompileConfig, config::PricingParams, prelude::StylusConfig};
 use std::str;
-use stylus::native::compile;
+use stylus::native;
 use wasmer::Target;
 
 const EVM_API_METHOD_REQ_OFFSET: u32 = 0x10000000;
@@ -47,7 +45,7 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
 
     let exec = &mut WasmEnv::default();
 
-    let module = exec_program(
+    let module = jit::program::exec_program(
         exec,
         compiled_module.into(),
         calldata,
@@ -57,10 +55,10 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
     )
     .unwrap();
 
-    let req_id = start_program_with_wasm_env(exec, module).unwrap();
-    let msg = get_last_msg(exec, req_id).unwrap();
+    let req_id = jit::program::start_program_with_wasm_env(exec, module).unwrap();
+    let msg = jit::program::get_last_msg(exec, req_id).unwrap();
     if msg.req_type < EVM_API_METHOD_REQ_OFFSET {
-        let _ = pop_with_wasm_env(exec);
+        let _ = jit::program::pop_with_wasm_env(exec);
 
         let req_data = msg.req_data[8..].to_vec();
         check_result(msg.req_type, &req_data);
@@ -79,7 +77,7 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
 pub fn benchmark(wat: Vec<u8>) -> eyre::Result<()> {
     let wasm = wasmer::wat2wasm(&wat)?;
 
-    let compiled_module = compile(&wasm, 2, true, Target::default())?;
+    let compiled_module = native::compile(&wasm, 2, true, Target::default())?;
 
     let mut durations: Vec<Duration> = Vec::new();
     let mut ink_spent = Ink(0);

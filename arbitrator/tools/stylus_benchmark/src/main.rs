@@ -1,12 +1,13 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use clap::Parser;
-use std::path::PathBuf;
-use strum::IntoEnumIterator;
-
 mod benchmark;
 mod scenario;
+
+use clap::Parser;
+use scenario::Scenario;
+use std::path::PathBuf;
+use strum::IntoEnumIterator;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -15,11 +16,11 @@ struct Args {
     output_wat_dir_path: Option<PathBuf>,
 
     #[arg(short, long)]
-    scenario: Option<scenario::Scenario>,
+    scenario: Option<Scenario>,
 }
 
 fn handle_scenario(
-    scenario: scenario::Scenario,
+    scenario: Scenario,
     output_wat_dir_path: Option<PathBuf>,
 ) -> eyre::Result<()> {
     println!("Benchmarking {}", scenario);
@@ -34,7 +35,7 @@ fn main() -> eyre::Result<()> {
         Some(scenario) => handle_scenario(scenario, args.output_wat_dir_path),
         None => {
             println!("No scenario specified, benchmarking all scenarios\n");
-            for scenario in scenario::Scenario::iter() {
+            for scenario in Scenario::iter() {
                 let benchmark_result = handle_scenario(scenario, args.output_wat_dir_path.clone());
                 if let Err(err) = benchmark_result {
                     return Err(err);

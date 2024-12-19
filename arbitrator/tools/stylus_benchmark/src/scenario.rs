@@ -47,6 +47,7 @@ pub fn generate_wat(scenario: Scenario, output_wat_dir_path: Option<PathBuf>) ->
         Scenario::AddI32 => generate_add_i32_wat(),
     };
 
+    // print wat to file if needed
     if let Some(output_wat_dir_path) = output_wat_dir_path {
         let mut output_wat_path = output_wat_dir_path;
         output_wat_path.push(format!("{}.wat", scenario));
