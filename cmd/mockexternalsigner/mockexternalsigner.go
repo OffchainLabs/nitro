@@ -3,8 +3,6 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
-	"fmt"
 	"math/big"
 	"net/http"
 	"os"
@@ -37,12 +35,15 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	signerCfgBytes, err := json.Marshal(signerCfg)
-	if err != nil {
-		panic(err)
+	print(" --externalSignerUrl " + signerCfg.URL)
+	print(" --externalSignerAddress " + signerCfg.Address)
+	print(" --externalSignerMethod " + signerCfg.Method)
+	print(" --externalSignerRootCA " + signerCfg.RootCA)
+	print(" --externalSignerClientCert " + signerCfg.ClientCert)
+	print(" --externalSignerClientPrivateKey " + signerCfg.ClientPrivateKey)
+	if signerCfg.InsecureSkipVerify {
+		print(" --externalSignerInsecureSkipVerify ")
 	}
-	fmt.Println(string(signerCfgBytes))
-
 }
 
 func NewServer(privateKey string) (*externalsignertest.SignerServer, error) {
