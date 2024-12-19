@@ -3,6 +3,7 @@
 
 use clap::Parser;
 use std::path::PathBuf;
+use strum::IntoEnumIterator;
 
 mod benchmark;
 mod scenario;
@@ -17,17 +18,28 @@ struct Args {
     scenario: Option<scenario::Scenario>,
 }
 
+fn handle_scenario(
+    scenario: scenario::Scenario,
+    output_wat_dir_path: Option<PathBuf>,
+) -> eyre::Result<()> {
+    println!("Benchmarking {}", scenario);
+    let wat = scenario::generate_wat(scenario, output_wat_dir_path);
+    benchmark::benchmark(wat)
+}
+
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
     match args.scenario {
-        Some(scenario) => {
-            println!("Benchmarking {:?}", scenario);
-            let wat = scenario::generate_wat(scenario, args.output_wat_dir_path);
-            benchmark::benchmark(wat)
-        }
+        Some(scenario) => handle_scenario(scenario, args.output_wat_dir_path),
         None => {
-            println!("No scenario specified, benchmarking all scenarios");
+            println!("No scenario specified, benchmarking all scenarios\n");
+            for scenario in scenario::Scenario::iter() {
+                let benchmark_result = handle_scenario(scenario, args.output_wat_dir_path.clone());
+                if let Err(err) = benchmark_result {
+                    return Err(err);
+                }
+            }
             Ok(())
         }
     }

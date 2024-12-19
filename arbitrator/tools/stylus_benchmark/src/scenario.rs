@@ -4,9 +4,9 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use strum_macros::{EnumString, Display};
+use strum_macros::{Display, EnumIter, EnumString};
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, EnumString, Display)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, EnumString, Display, EnumIter)]
 pub enum Scenario {
     #[strum(serialize = "add_i32")]
     AddI32,
@@ -18,9 +18,12 @@ fn generate_add_i32_wat() -> Vec<u8> {
     let mut wat = Vec::new();
 
     wat.write_all(b"(module\n").unwrap();
-    wat.write_all(b"    (import \"debug\" \"toggle_benchmark\" (func $toggle_benchmark))\n").unwrap();
-    wat.write_all(b"    (memory (export \"memory\") 0 0)\n").unwrap();
-    wat.write_all(b"    (func (export \"user_entrypoint\") (param i32) (result i32)\n").unwrap();
+    wat.write_all(b"    (import \"debug\" \"toggle_benchmark\" (func $toggle_benchmark))\n")
+        .unwrap();
+    wat.write_all(b"    (memory (export \"memory\") 0 0)\n")
+        .unwrap();
+    wat.write_all(b"    (func (export \"user_entrypoint\") (param i32) (result i32)\n")
+        .unwrap();
 
     wat.write_all(b"        call $toggle_benchmark\n").unwrap();
 
