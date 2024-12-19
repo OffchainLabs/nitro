@@ -39,6 +39,7 @@ type MachineInterface interface {
 	CloneMachineInterface() MachineInterface
 	GetStepCount() uint64
 	IsRunning() bool
+	IsErrored() bool
 	ValidForStep(uint64) bool
 	Status() uint8
 	Step(context.Context, uint64) error
@@ -115,6 +116,14 @@ func LoadSimpleMachine(wasm string, libraries []string, debugChain bool) (*Arbit
 		return nil, fmt.Errorf("failed to load simple machine at path %v", wasm)
 	}
 	return machineFromPointer(mach), nil
+}
+
+func NewFinishedMachine(gs validator.GoGlobalState) *ArbitratorMachine {
+	mach := C.arbitrator_new_finished(GlobalStateToC(gs))
+	if mach == nil {
+		return nil
+	}
+	return machineFromPointer(mach)
 }
 
 func (m *ArbitratorMachine) Freeze() {
@@ -295,9 +304,13 @@ func (m *ArbitratorMachine) ProveNextStep() []byte {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	rustProof := C.arbitrator_gen_proof(m.ptr)
-	proofBytes := C.GoBytes(unsafe.Pointer(rustProof.ptr), C.int(rustProof.len))
-	C.arbitrator_free_proof(rustProof)
+	output := &C.RustBytes{}
+	C.arbitrator_gen_proof(m.ptr, output)
+	defer C.free_rust_bytes(*output)
+	if output.len == 0 {
+		return nil
+	}
+	proofBytes := C.GoBytes(unsafe.Pointer(output.ptr), C.int(output.len))
 
 	return proofBytes
 }
