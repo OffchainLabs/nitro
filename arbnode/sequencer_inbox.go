@@ -45,7 +45,7 @@ func init() {
 	}
 	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
 	sequencerBatchDataABI = sequencerBridgeABI.Events[sequencerBatchDataEvent]
-	addSequencerL2BatchFromOriginCallABI = sequencerBridgeABI.Methods["addSequencerL2BatchFromOrigin"]
+	addSequencerL2BatchFromOriginCallABI = sequencerBridgeABI.Methods["addSequencerL2BatchFromOrigin0"]
 }
 
 type SequencerInbox struct {
