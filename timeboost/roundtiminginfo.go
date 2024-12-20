@@ -98,7 +98,7 @@ func (info *RoundTimingInfo) TimeTilNextRound() time.Duration {
 // TimeTilNextRoundAt returns the time til the next round,
 // where the next round is determined from the timestamp passed in.
 func (info *RoundTimingInfo) TimeTilNextRoundAt(currentTime time.Time) time.Duration {
-	return time.Until(info.TimeOfNextRoundAt(currentTime))
+	return info.TimeOfNextRoundAt(currentTime).Sub(currentTime)
 }
 
 func (info *RoundTimingInfo) TimeOfNextRound() time.Time {
