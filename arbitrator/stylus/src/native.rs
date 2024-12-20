@@ -212,7 +212,8 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
             imports.define("console", "tee_f32", func!(host::console_tee::<D, E, f32>));
             imports.define("console", "tee_f64", func!(host::console_tee::<D, E, f64>));
             imports.define("debug", "null_host", func!(host::null_host));
-            imports.define("debug", "toggle_benchmark", func!(host::toggle_benchmark));
+            imports.define("debug", "start_benchmark", func!(host::start_benchmark));
+            imports.define("debug", "end_benchmark", func!(host::end_benchmark));
         }
         let instance = Instance::new(&mut store, &module, &imports)?;
         let exports = &instance.exports;
@@ -430,7 +431,8 @@ pub fn module(wasm: &[u8], compile: CompileConfig, target: Target) -> Result<Vec
         imports.define("console", "tee_f32", stub!(f32 <- |_: f32|));
         imports.define("console", "tee_f64", stub!(f64 <- |_: f64|));
         imports.define("debug", "null_host", stub!(||));
-        imports.define("debug", "toggle_benchmark", stub!(||));
+        imports.define("debug", "start_benchmark", stub!(||));
+        imports.define("debug", "end_benchmark", stub!(||));
     }
 
     let module = module.serialize()?;

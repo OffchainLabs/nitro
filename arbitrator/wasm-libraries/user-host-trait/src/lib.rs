@@ -21,8 +21,8 @@ use prover::{
     value::Value,
 };
 use ruint2::Uint;
-use std::fmt::Display;
 use std::time::Instant;
+use std::{fmt::Display, time::Duration};
 
 macro_rules! be {
     ($int:expr) => {
@@ -966,23 +966,49 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         Ok(value)
     }
 
-    // Tracks benchmark data related to the block of instructions defined by instruction between the first and last `toggle_benchmark` calls.
-    fn toggle_benchmark(&mut self) -> Result<(), Self::Err> {
+    // Initializes benchmark data related to a block of instruction, defined by instruction between the start_benchmark and end_benchmark calls
+    // If there are multiple start_benchmark calls without a end_benchmark in between them, then
+    // the block defined by the last start_benchmark call, and the next end_benchmark call, is the
+    // one to be benchmarked
+    fn start_benchmark(&mut self) -> Result<(), Self::Err> {
         let ink_curr = self.ink_ready()?;
 
         match self.benchmark() {
             None => {
                 *self.benchmark() = Some(Benchmark {
-                    timer: Instant::now(),
-                    elapsed: None,
-                    ink_start: ink_curr,
-                    ink_total: None,
+                    timer: Some(Instant::now()),
+                    elapsed_total: Duration::new(0, 0),
+                    ink_start: Some(ink_curr),
+                    ink_total: Ink(0),
                 });
             }
             Some(benchmark) => {
-                benchmark.elapsed = Some(benchmark.timer.elapsed());
-                benchmark.ink_total = Some(benchmark.ink_start.saturating_sub(ink_curr));
+                benchmark.timer = Some(Instant::now());
+                benchmark.ink_start = Some(ink_curr);
             }
+        };
+        Ok(())
+    }
+
+    fn end_benchmark(&mut self) -> Result<(), Self::Err> {
+        let ink_curr = self.ink_ready()?;
+
+        match self.benchmark() {
+            Some(benchmark) => {
+                match benchmark.timer {
+                    Some(timer) => {
+                        benchmark.elapsed_total = benchmark.elapsed_total.saturating_add(timer.elapsed());
+
+                        let block_ink = benchmark.ink_start.unwrap().saturating_sub(ink_curr);
+                        benchmark.ink_total = benchmark.ink_total.saturating_add(block_ink);
+
+                        benchmark.timer = None;
+                        benchmark.ink_start = None;
+                    }
+                    None => {}
+                };
+            }
+            None => {},
         };
         Ok(())
     }

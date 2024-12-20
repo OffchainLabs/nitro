@@ -5,12 +5,12 @@ use crate::evm::api::Ink;
 use derivative::Derivative;
 use std::time::{Duration, Instant};
 
-// Benchmark is used to track the performance of a block of code in stylus
+// Benchmark is used to track the performance of blocks of code in stylus
 #[derive(Derivative, Clone, Copy)]
 #[derivative(Debug)]
 pub struct Benchmark {
-    pub timer: Instant,
-    pub elapsed: Option<Duration>,
-    pub ink_start: Ink,
-    pub ink_total: Option<Ink>,
+    pub timer: Option<Instant>,
+    pub elapsed_total: Duration,
+    pub ink_start: Option<Ink>,
+    pub ink_total: Ink,
 }

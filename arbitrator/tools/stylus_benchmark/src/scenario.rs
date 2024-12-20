@@ -21,7 +21,9 @@ fn generate_add_i32_wat() -> Vec<u8> {
 
     // preamble
     wat.write_all(b"(module\n").unwrap();
-    wat.write_all(b"    (import \"debug\" \"toggle_benchmark\" (func $toggle_benchmark))\n")
+    wat.write_all(b"    (import \"debug\" \"start_benchmark\" (func $start_benchmark))\n")
+        .unwrap();
+    wat.write_all(b"    (import \"debug\" \"end_benchmark\" (func $end_benchmark))\n")
         .unwrap();
     wat.write_all(b"    (memory (export \"memory\") 0 0)\n")
         .unwrap();
@@ -30,7 +32,7 @@ fn generate_add_i32_wat() -> Vec<u8> {
     wat.write_all(b"    (func (export \"user_entrypoint\") (param i32) (result i32)\n")
         .unwrap();
 
-    wat.write_all(b"        call $toggle_benchmark\n").unwrap();
+    wat.write_all(b"        call $start_benchmark\n").unwrap();
 
     // ops to be benchmarked
     wat.write_all(b"        (loop $loop\n").unwrap();
@@ -55,7 +57,7 @@ fn generate_add_i32_wat() -> Vec<u8> {
     wat.write_all(b"            i32.lt_s\n").unwrap();
     wat.write_all(b"            br_if $loop)\n").unwrap();
 
-    wat.write_all(b"        call $toggle_benchmark\n").unwrap();
+    wat.write_all(b"        call $end_benchmark\n").unwrap();
 
     wat.write_all(b"        i32.const 0)\n").unwrap();
     wat.write_all(b")").unwrap();

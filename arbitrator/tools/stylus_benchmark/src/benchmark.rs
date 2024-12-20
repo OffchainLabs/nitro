@@ -68,9 +68,9 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
 
     let result = msg
         .benchmark
-        .expect("toggle_benchmark block likely not present in program");
-    let elapsed = result.elapsed.expect("elapsed");
-    let ink = result.ink_total.expect("ink");
+        .expect("start_benchmark/end_benchmark block likely not present in program");
+    let elapsed = result.elapsed_total;
+    let ink = result.ink_total;
     (elapsed, ink)
 }
 

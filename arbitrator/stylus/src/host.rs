@@ -470,8 +470,14 @@ pub(crate) fn console_tee<D: DataReader, E: EvmApi<D>, T: Into<Value> + Copy>(
 
 pub(crate) fn null_host<D: DataReader, E: EvmApi<D>>(_: WasmEnvMut<D, E>) {}
 
-pub(crate) fn toggle_benchmark<D: DataReader, E: EvmApi<D>>(
+pub(crate) fn start_benchmark<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
 ) -> MaybeEscape {
-    hostio!(env, toggle_benchmark())
+    hostio!(env, start_benchmark())
+}
+
+pub(crate) fn end_benchmark<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> MaybeEscape {
+    hostio!(env, end_benchmark())
 }
