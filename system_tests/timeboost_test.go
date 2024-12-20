@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -282,6 +283,9 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 	wg.Wait()
 	if err2 == nil {
 		t.Fatal("Charlie should not be able to send tx with nonce 1")
+	}
+	if !strings.Contains(err2.Error(), timeboost.ErrAcceptedTxFailed.Error()) {
+		t.Fatal("Charlie's first tx should've consumed a sequence number as it was initially accepted")
 	}
 	// After round is done, verify that Charlie beats Alice in the final sequence, and that the emitted txs
 	// for Charlie are correct.
@@ -809,6 +813,9 @@ func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *
 	msg.Signature = signature
 	promise := elc.sendExpressLaneRPC(msg)
 	if _, err := promise.Await(ctx); err != nil {
+		if strings.Contains(err.Error(), timeboost.ErrAcceptedTxFailed.Error()) {
+			elc.sequence += 1
+		}
 		return err
 	}
 	elc.sequence += 1

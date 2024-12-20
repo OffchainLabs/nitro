@@ -461,14 +461,25 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	return s.publishTransactionImpl(parentCtx, tx, options, false /* delay tx if express lane is active */)
+	return s.publishTransactionImpl(parentCtx, tx, options, nil, false /* delay tx if express lane is active */)
 }
 
-func (s *Sequencer) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	return s.publishTransactionImpl(parentCtx, tx, options, true)
+func (s *Sequencer) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, txIsQueuedNotifier chan struct{}) error {
+	return s.publishTransactionImpl(parentCtx, tx, options, txIsQueuedNotifier, true)
 }
 
-func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, isExpressLaneController bool) error {
+func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, txIsQueuedNotifier chan struct{}, isExpressLaneController bool) error {
+	closeNotifier := func() {
+		if txIsQueuedNotifier != nil {
+			close(txIsQueuedNotifier) // Notifies express lane service to continue with next tx
+		}
+	}
+	closeByDefer := true
+	defer func() {
+		if closeByDefer {
+			closeNotifier()
+		}
+	}()
 	config := s.config()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
 	// And hard threshold was enabled, this prevents spamming of read locks when not needed
@@ -539,6 +550,8 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 	}
 	select {
 	case s.txQueue <- queueItem:
+		closeByDefer = false
+		closeNotifier()
 	case <-queueCtx.Done():
 		return queueCtx.Err()
 	}
@@ -1299,6 +1312,7 @@ func (s *Sequencer) StartExpressLane(
 		auctionContractAddr,
 		s.execEngine.bc,
 		earlySubmissionGrace,
+		s.config().QueueTimeout,
 	)
 	if err != nil {
 		log.Crit("Failed to create express lane service", "err", err, "auctionContractAddr", auctionContractAddr)

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"testing"
 	"time"
 
@@ -297,8 +298,9 @@ func makeStubPublisher(els *expressLaneService) *stubPublisher {
 	}
 }
 
-func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	if tx == nil {
+func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, txIsQueuedNotifier chan struct{}) error {
+	defer close(txIsQueuedNotifier)
+	if tx.CalldataUnits != 0 {
 		return errors.New("oops, bad tx")
 	}
 	control, _ := s.els.roundControl.Get(0)
@@ -311,9 +313,10 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
-		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
+		msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
+		roundControl:                 lru.NewCache[uint64, *expressLaneControl](8),
 	}
+	els.StopWaiter.Start(ctx, els)
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 	els.roundControl.Add(0, &expressLaneControl{
@@ -331,9 +334,11 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
-		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+		roundControl:                 lru.NewCache[uint64, *expressLaneControl](8),
+		msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
+		roundTimingInfo:              defaultTestRoundTimingInfo(time.Now()),
 	}
+	els.StopWaiter.Start(ctx, els)
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 	els.roundControl.Add(0, &expressLaneControl{
@@ -342,13 +347,15 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	msg := &timeboost.ExpressLaneSubmission{
 		SequenceNumber: 2,
 	}
-	err := els.sequenceExpressLaneSubmission(ctx, msg)
-	require.NoError(t, err)
+	go func() {
+		_ = els.sequenceExpressLaneSubmission(ctx, msg)
+	}()
+	time.Sleep(time.Second) // wait for the above tx to go through
 	// Because the message is for a future sequence number, it
 	// should get queued, but not yet published.
 	require.Equal(t, 0, len(stubPublisher.publishedTxOrder))
 	// Sending it again should give us an error.
-	err = els.sequenceExpressLaneSubmission(ctx, msg)
+	err := els.sequenceExpressLaneSubmission(ctx, msg)
 	require.ErrorIs(t, err, timeboost.ErrDuplicateSequenceNumber)
 }
 
@@ -356,9 +363,11 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
-		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+		roundControl:                 lru.NewCache[uint64, *expressLaneControl](8),
+		msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
+		roundTimingInfo:              defaultTestRoundTimingInfo(time.Now()),
 	}
+	els.StopWaiter.Start(ctx, els)
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
@@ -388,26 +397,41 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 			Transaction:    &types.Transaction{},
 		},
 	}
+	var wg sync.WaitGroup
+	wg.Add(7)
 	for _, msg := range messages {
-		err := els.sequenceExpressLaneSubmission(ctx, msg)
-		require.NoError(t, err)
+		go func(w *sync.WaitGroup) {
+			w.Done()
+			err := els.sequenceExpressLaneSubmission(ctx, msg)
+			require.NoError(t, err)
+			w.Done()
+		}(&wg)
 	}
-	// We should have only published 2, as we are missing sequence number 3.
-	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
-	require.Equal(t, len(messages), len(els.messagesBySequenceNumber))
+	wg.Wait()
 
+	// We should have only published 2, as we are missing sequence number 3.
+	time.Sleep(2 * time.Second)
+	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
+	require.Equal(t, 3, len(els.msgAndResultBySequenceNumber)) // Processed txs are deleted
+
+	wg.Add(2) // 4 & 5 should be able to get in after 3
 	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3, Transaction: &types.Transaction{}})
 	require.NoError(t, err)
+	wg.Wait()
 	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
+
+	require.Equal(t, 1, len(els.msgAndResultBySequenceNumber)) // Tx with seq num 10 should still be present
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		roundControl:             lru.NewCache[uint64, *expressLaneControl](8),
-		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+		roundControl:                 lru.NewCache[uint64, *expressLaneControl](8),
+		msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
+		roundTimingInfo:              defaultTestRoundTimingInfo(time.Now()),
 	}
+	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Add(0, &expressLaneControl{
 		sequence: 1,
 	})
@@ -420,20 +444,21 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 			Transaction:    &types.Transaction{},
 		},
 		{
+			SequenceNumber: 2,
+			Transaction:    types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}),
+		},
+		{
 			SequenceNumber: 3,
 			Transaction:    &types.Transaction{},
 		},
 		{
-			SequenceNumber: 2,
-			Transaction:    nil,
-		},
-		{
-			SequenceNumber: 2,
+			SequenceNumber: 4,
 			Transaction:    &types.Transaction{},
 		},
 	}
+	messages[1].Transaction.CalldataUnits = 1
 	for _, msg := range messages {
-		if msg.Transaction == nil {
+		if msg.Transaction.CalldataUnits != 0 {
 			err := els.sequenceExpressLaneSubmission(ctx, msg)
 			require.ErrorContains(t, err, "oops, bad tx")
 		} else {
@@ -442,8 +467,9 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 		}
 	}
 	// One tx out of the four should have failed, so we should have only published 3.
+	// Since sequence number 2 failed after submission stage, that nonce is used up
 	require.Equal(t, 3, len(stubPublisher.publishedTxOrder))
-	require.Equal(t, []uint64{1, 2, 3}, stubPublisher.publishedTxOrder)
+	require.Equal(t, []uint64{1, 3, 4}, stubPublisher.publishedTxOrder)
 }
 
 // TODO this test is just for RoundTimingInfo
