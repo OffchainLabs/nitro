@@ -170,7 +170,7 @@ impl Program {
             outs: vec![],
             evm_api: EvmApiRequestor::new(UserHostRequester::default()),
             evm_data,
-            benchmark: None,
+            benchmark: Benchmark::default(),
             module,
             config,
             early_exit: None,
