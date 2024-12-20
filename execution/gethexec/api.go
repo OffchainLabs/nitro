@@ -285,14 +285,16 @@ func stateAndHeader(blockchain *core.BlockChain, block uint64) (*arbosState.Arbo
 type ArbTraceForwarderAPI struct {
 	fallbackClientUrl     string
 	fallbackClientTimeout time.Duration
+	blockchain            *core.BlockChain
 
 	initialized    atomic.Bool
 	mutex          sync.Mutex
 	fallbackClient types.FallbackClient
 }
 
-func NewArbTraceForwarderAPI(fallbackClientUrl string, fallbackClientTimeout time.Duration) *ArbTraceForwarderAPI {
+func NewArbTraceForwarderAPI(blockchain *core.BlockChain, fallbackClientUrl string, fallbackClientTimeout time.Duration) *ArbTraceForwarderAPI {
 	return &ArbTraceForwarderAPI{
+		blockchain:            blockchain,
 		fallbackClientUrl:     fallbackClientUrl,
 		fallbackClientTimeout: fallbackClientTimeout,
 	}
@@ -332,16 +334,46 @@ func (api *ArbTraceForwarderAPI) forward(ctx context.Context, method string, arg
 	return resp, nil
 }
 
-func (api *ArbTraceForwarderAPI) Call(ctx context.Context, callArgs json.RawMessage, traceTypes json.RawMessage, blockNum json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_call", callArgs, traceTypes, blockNum)
+func (api *ArbTraceForwarderAPI) ClipToPostNitroGenesis(blockNumOrHash json.RawMessage) (json.RawMessage, error) {
+	var bnh rpc.BlockNumberOrHash
+	err := bnh.UnmarshalJSON(blockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+	blockNum, isNum := bnh.Number()
+	if !isNum {
+		return blockNumOrHash, nil
+	}
+	blockNum, _ = api.blockchain.ClipToPostNitroGenesis(blockNum)
+	bnh.BlockNumber = &blockNum
+	return json.Marshal(bnh)
 }
 
-func (api *ArbTraceForwarderAPI) CallMany(ctx context.Context, calls json.RawMessage, blockNum json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_callMany", calls, blockNum)
+func (api *ArbTraceForwarderAPI) Call(ctx context.Context, callArgs json.RawMessage, traceTypes json.RawMessage, blockNumOrHash json.RawMessage) (*json.RawMessage, error) {
+	var err error
+	blockNumOrHash, err = api.ClipToPostNitroGenesis(blockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+	return api.forward(ctx, "arbtrace_call", callArgs, traceTypes, blockNumOrHash)
 }
 
-func (api *ArbTraceForwarderAPI) ReplayBlockTransactions(ctx context.Context, blockNum json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_replayBlockTransactions", blockNum, traceTypes)
+func (api *ArbTraceForwarderAPI) CallMany(ctx context.Context, calls json.RawMessage, blockNumOrHash json.RawMessage) (*json.RawMessage, error) {
+	var err error
+	blockNumOrHash, err = api.ClipToPostNitroGenesis(blockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+	return api.forward(ctx, "arbtrace_callMany", calls, blockNumOrHash)
+}
+
+func (api *ArbTraceForwarderAPI) ReplayBlockTransactions(ctx context.Context, blockNumOrHash json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
+	var err error
+	blockNumOrHash, err = api.ClipToPostNitroGenesis(blockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+	return api.forward(ctx, "arbtrace_replayBlockTransactions", blockNumOrHash, traceTypes)
 }
 
 func (api *ArbTraceForwarderAPI) ReplayTransaction(ctx context.Context, txHash json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
@@ -356,8 +388,13 @@ func (api *ArbTraceForwarderAPI) Get(ctx context.Context, txHash json.RawMessage
 	return api.forward(ctx, "arbtrace_get", txHash, path)
 }
 
-func (api *ArbTraceForwarderAPI) Block(ctx context.Context, blockNum json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_block", blockNum)
+func (api *ArbTraceForwarderAPI) Block(ctx context.Context, blockNumOrHash json.RawMessage) (*json.RawMessage, error) {
+	var err error
+	blockNumOrHash, err = api.ClipToPostNitroGenesis(blockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+	return api.forward(ctx, "arbtrace_block", blockNumOrHash)
 }
 
 func (api *ArbTraceForwarderAPI) Filter(ctx context.Context, filter json.RawMessage) (*json.RawMessage, error) {
