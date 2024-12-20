@@ -335,12 +335,12 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 	}
 	// Make sure we don't allow accidentally downgrading ArbOS
 	if chainConfig.DebugMode() {
-		if currentArbosState.ArbOSVersion() > arbosState.MaxDebugArbosVersionSupported {
-			return fmt.Errorf("attempted to launch node in debug mode with ArbOS version %v on ArbOS state with version %v", arbosState.MaxDebugArbosVersionSupported, currentArbosState.ArbOSVersion())
+		if currentArbosState.ArbOSVersion() > params.MaxDebugArbosVersionSupported {
+			return fmt.Errorf("attempted to launch node in debug mode with ArbOS version %v on ArbOS state with version %v", params.MaxDebugArbosVersionSupported, currentArbosState.ArbOSVersion())
 		}
 	} else {
-		if currentArbosState.ArbOSVersion() > arbosState.MaxArbosVersionSupported {
-			return fmt.Errorf("attempted to launch node with ArbOS version %v on ArbOS state with version %v", arbosState.MaxArbosVersionSupported, currentArbosState.ArbOSVersion())
+		if currentArbosState.ArbOSVersion() > params.MaxArbosVersionSupported {
+			return fmt.Errorf("attempted to launch node with ArbOS version %v on ArbOS state with version %v", params.MaxArbosVersionSupported, currentArbosState.ArbOSVersion())
 		}
 
 	}

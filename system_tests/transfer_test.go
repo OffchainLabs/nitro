@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 func TestTransfer(t *testing.T) {
@@ -51,12 +52,12 @@ func TestP256Verify(t *testing.T) {
 	}{
 		{
 			desc:           "p256 should not be enabled on arbOS 20",
-			initialVersion: 20,
+			initialVersion: params.ArbosVersion_20,
 			want:           nil,
 		},
 		{
 			desc:           "p256 should be enabled on arbOS 20",
-			initialVersion: 30,
+			initialVersion: params.ArbosVersion_30,
 			want:           common.Hex2Bytes("0000000000000000000000000000000000000000000000000000000000000001"),
 		},
 	} {

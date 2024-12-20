@@ -5,6 +5,7 @@ package precompiles
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // ArbOwnerPublic precompile provides non-owners with info about the current chain owners.
@@ -42,7 +43,7 @@ func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 
 // GetInfraFeeAccount gets the infrastructure fee collector
 func (con ArbOwnerPublic) GetInfraFeeAccount(c ctx, evm mech) (addr, error) {
-	if c.State.ArbOSVersion() < 6 {
+	if c.State.ArbOSVersion() < params.ArbosVersion_6 {
 		return c.State.NetworkFeeAccount()
 	}
 	return c.State.InfraFeeAccount()

@@ -89,10 +89,10 @@ func TestSequencerFeePaid(t *testing.T) {
 		feePaidForL2 := arbmath.BigMulByUint(gasPrice, gasUsedForL2)
 		tipPaidToNet := arbmath.BigMulByUint(tipCap, receipt.GasUsedForL1)
 		gotTip := arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipPaidToNet))
-		if !gotTip && version == 9 {
+		if !gotTip && version == params.ArbosVersion_9 {
 			Fatal(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
 		}
-		if gotTip && version != 9 {
+		if gotTip && version != params.ArbosVersion_9 {
 			Fatal(t, "tips are somehow enabled")
 		}
 
@@ -110,7 +110,7 @@ func TestSequencerFeePaid(t *testing.T) {
 		return networkRevenue, tipPaidToNet
 	}
 
-	if version != 9 {
+	if version != params.ArbosVersion_9 {
 		testFees(3)
 		return
 	}

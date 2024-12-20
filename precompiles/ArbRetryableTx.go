@@ -39,7 +39,7 @@ type ArbRetryableTx struct {
 var ErrSelfModifyingRetryable = errors.New("retryable cannot modify itself")
 
 func (con ArbRetryableTx) oldNotFoundError(c ctx) error {
-	if c.State.ArbOSVersion() >= 3 {
+	if c.State.ArbOSVersion() >= params.ArbosVersion_3 {
 		return con.NoTicketWithIDError()
 	}
 	return errors.New("ticketId not found")

@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -218,7 +219,7 @@ func TestArbInfraFeeAccount(t *testing.T) {
 	err = prec.SetInfraFeeAccount(callCtx, evm, newAddr) // this should be a no-op (because ArbOS version 0)
 	Require(t, err)
 
-	version5 := uint64(5)
+	version5 := params.ArbosVersion_5
 	evm = newMockEVMForTestingWithVersion(&version5)
 	callCtx = testContext(caller, evm)
 	prec = &ArbOwner{}

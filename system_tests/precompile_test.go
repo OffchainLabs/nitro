@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -27,7 +28,7 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	arbosVersion := uint64(31)
+	arbosVersion := params.ArbosVersion_31
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, false).
 		WithArbOSVersion(arbosVersion)
