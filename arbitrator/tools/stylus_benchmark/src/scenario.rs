@@ -70,7 +70,7 @@ fn write_wat_end(
 }
 
 fn generate_add_i32_wat() -> Vec<u8> {
-    let number_of_loop_iterations = 10_000;
+    let number_of_loop_iterations = 200_000;
     let number_of_ops_per_loop_iteration = 2000;
 
     let mut wat = Vec::new();
@@ -95,7 +95,7 @@ fn generate_add_i32_wat() -> Vec<u8> {
 }
 
 fn generate_xor_i32_wat() -> Vec<u8> {
-    let number_of_loop_iterations = 10_000;
+    let number_of_loop_iterations = 200_000;
     let number_of_ops_per_loop_iteration = 2000;
 
     let mut wat = Vec::new();
