@@ -284,6 +284,7 @@ func CreateExecutionNode(
 		Namespace: "arbtrace",
 		Version:   "1.0",
 		Service: NewArbTraceForwarderAPI(
+			l2BlockChain,
 			config.RPC.ClassicRedirect,
 			config.RPC.ClassicRedirectTimeout,
 		),
