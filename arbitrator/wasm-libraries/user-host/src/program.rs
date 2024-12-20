@@ -77,7 +77,7 @@ pub(crate) struct Program {
     /// EVM Context info.
     pub evm_data: EvmData,
     // Used to benchmark execution blocks of code
-    pub benchmark: Option<Benchmark>,
+    pub benchmark: Benchmark,
     /// WAVM module index.
     pub module: u32,
     /// Call configuration.
@@ -241,7 +241,7 @@ impl UserHost<VecReader> for Program {
         &self.evm_data
     }
 
-    fn benchmark(&mut self) -> &mut Option<Benchmark> {
+    fn benchmark(&mut self) -> &mut Benchmark {
         &mut self.benchmark
     }
 

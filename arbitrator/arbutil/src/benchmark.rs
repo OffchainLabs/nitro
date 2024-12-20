@@ -6,7 +6,7 @@ use derivative::Derivative;
 use std::time::{Duration, Instant};
 
 // Benchmark is used to track the performance of blocks of code in stylus
-#[derive(Derivative, Clone, Copy)]
+#[derive(Derivative, Clone, Copy, Default)]
 #[derivative(Debug)]
 pub struct Benchmark {
     pub timer: Option<Instant>,

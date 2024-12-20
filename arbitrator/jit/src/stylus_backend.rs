@@ -36,7 +36,7 @@ struct MessageToCothread {
 pub struct MessageFromCothread {
     pub req_type: u32,
     pub req_data: Vec<u8>,
-    pub benchmark: Option<Benchmark>,
+    pub benchmark: Benchmark,
 }
 
 struct CothreadRequestor {
@@ -53,7 +53,7 @@ impl RequestHandler<VecReader> for CothreadRequestor {
         let msg = MessageFromCothread {
             req_type: req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
             req_data: req_data.as_ref().to_vec(),
-            benchmark: None,
+            benchmark: Benchmark::default(),
         };
 
         if let Err(error) = self.tx.send(msg) {

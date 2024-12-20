@@ -47,7 +47,7 @@ where
         &self.evm_data
     }
 
-    fn benchmark(&mut self) -> &mut Option<Benchmark> {
+    fn benchmark(&mut self) -> &mut Benchmark {
         &mut self.env.benchmark
     }
 

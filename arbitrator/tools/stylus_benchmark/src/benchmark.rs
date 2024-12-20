@@ -66,12 +66,7 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
         panic!("unsupported request type {:?}", msg.req_type);
     }
 
-    let result = msg
-        .benchmark
-        .expect("start_benchmark/end_benchmark block likely not present in program");
-    let elapsed = result.elapsed_total;
-    let ink = result.ink_total;
-    (elapsed, ink)
+    (msg.benchmark.elapsed_total, msg.benchmark.ink_total)
 }
 
 pub fn benchmark(wat: Vec<u8>) -> eyre::Result<()> {

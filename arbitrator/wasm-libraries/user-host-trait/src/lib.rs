@@ -21,8 +21,8 @@ use prover::{
     value::Value,
 };
 use ruint2::Uint;
+use std::fmt::Display;
 use std::time::Instant;
-use std::{fmt::Display, time::Duration};
 
 macro_rules! be {
     ($int:expr) => {
@@ -70,7 +70,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
     fn evm_api(&mut self) -> &mut Self::A;
     fn evm_data(&self) -> &EvmData;
-    fn benchmark(&mut self) -> &mut Option<Benchmark>;
+    fn benchmark(&mut self) -> &mut Benchmark;
     fn evm_return_data_len(&mut self) -> &mut u32;
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, Self::MemoryErr>;
@@ -966,50 +966,40 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         Ok(value)
     }
 
-    // Initializes benchmark data related to a block of instruction, defined by instruction between the start_benchmark and end_benchmark calls
-    // If there are multiple start_benchmark calls without a end_benchmark in between them, then
-    // the block defined by the last start_benchmark call, and the next end_benchmark call, is the
-    // one to be benchmarked
+    // Initializes benchmark data related to a code block.
+    // A code block is defined by the instructions between start_benchmark and end_benchmark calls.
+    // If start_benchmark is called multiple times without end_benchmark being called,
+    // then only the last start_benchmark before end_benchmark will be used.
+    // It is possible to have multiple code blocks benchmarked in the same program.
     fn start_benchmark(&mut self) -> Result<(), Self::Err> {
         let ink_curr = self.ink_ready()?;
 
-        match self.benchmark() {
-            None => {
-                *self.benchmark() = Some(Benchmark {
-                    timer: Some(Instant::now()),
-                    elapsed_total: Duration::new(0, 0),
-                    ink_start: Some(ink_curr),
-                    ink_total: Ink(0),
-                });
-            }
-            Some(benchmark) => {
-                benchmark.timer = Some(Instant::now());
-                benchmark.ink_start = Some(ink_curr);
-            }
-        };
+        let benchmark = self.benchmark();
+        benchmark.timer = Some(Instant::now());
+        benchmark.ink_start = Some(ink_curr);
+
         Ok(())
     }
 
+    // Updates cumulative benchmark data related to a code block.
+    // If end_benchmark is called without a corresponding start_benchmark nothing will happen.
     fn end_benchmark(&mut self) -> Result<(), Self::Err> {
         let ink_curr = self.ink_ready()?;
 
-        match self.benchmark() {
-            Some(benchmark) => {
-                match benchmark.timer {
-                    Some(timer) => {
-                        benchmark.elapsed_total = benchmark.elapsed_total.saturating_add(timer.elapsed());
+        let benchmark = self.benchmark();
+        match benchmark.timer {
+            Some(timer) => {
+                benchmark.elapsed_total = benchmark.elapsed_total.saturating_add(timer.elapsed());
 
-                        let block_ink = benchmark.ink_start.unwrap().saturating_sub(ink_curr);
-                        benchmark.ink_total = benchmark.ink_total.saturating_add(block_ink);
+                let code_block_ink = benchmark.ink_start.unwrap().saturating_sub(ink_curr);
+                benchmark.ink_total = benchmark.ink_total.saturating_add(code_block_ink);
 
-                        benchmark.timer = None;
-                        benchmark.ink_start = None;
-                    }
-                    None => {}
-                };
+                benchmark.timer = None;
+                benchmark.ink_start = None;
             }
-            None => {},
+            None => {}
         };
+
         Ok(())
     }
 }
