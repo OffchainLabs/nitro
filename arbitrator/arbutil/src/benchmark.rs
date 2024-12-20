@@ -2,12 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::evm::api::Ink;
-use derivative::Derivative;
 use std::time::{Duration, Instant};
 
 // Benchmark is used to track the performance of blocks of code in stylus
-#[derive(Derivative, Clone, Copy, Default)]
-#[derivative(Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Benchmark {
     pub timer: Option<Instant>,
     pub elapsed_total: Duration,

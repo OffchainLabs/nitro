@@ -111,7 +111,6 @@ dependencies = [
 name = "arbutil"
 version = "0.1.0"
 dependencies = [
- "derivative",
  "digest 0.10.7",
  "eyre",
  "fnv",
