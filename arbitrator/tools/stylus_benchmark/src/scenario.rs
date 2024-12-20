@@ -10,6 +10,8 @@ use strum_macros::{Display, EnumIter, EnumString};
 pub enum Scenario {
     #[strum(serialize = "add_i32")]
     AddI32,
+    #[strum(serialize = "xor_i32")]
+    XorI32,
 }
 
 fn write_wat_beginning(wat: &mut Vec<u8>) {
@@ -92,9 +94,35 @@ fn generate_add_i32_wat() -> Vec<u8> {
     wat.to_vec()
 }
 
+fn generate_xor_i32_wat() -> Vec<u8> {
+    let number_of_loop_iterations = 10_000;
+    let number_of_ops_per_loop_iteration = 2000;
+
+    let mut wat = Vec::new();
+
+    write_wat_beginning(&mut wat);
+
+    // ops to be benchmarked
+    wat.write_all(b"            i32.const 1231\n").unwrap();
+    for _ in 0..number_of_ops_per_loop_iteration {
+        wat.write_all(b"            i32.const 12312313\n").unwrap();
+        wat.write_all(b"            i32.xor\n").unwrap();
+    }
+    wat.write_all(b"            drop\n").unwrap();
+
+    write_wat_end(
+        &mut wat,
+        number_of_loop_iterations,
+        number_of_ops_per_loop_iteration,
+    );
+
+    wat.to_vec()
+}
+
 pub fn generate_wat(scenario: Scenario, output_wat_dir_path: Option<PathBuf>) -> Vec<u8> {
     let wat = match scenario {
         Scenario::AddI32 => generate_add_i32_wat(),
+        Scenario::XorI32 => generate_xor_i32_wat(),
     };
 
     // print wat to file if needed
