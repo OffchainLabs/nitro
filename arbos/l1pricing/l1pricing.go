@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -520,10 +519,13 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 	if poster != BatchPosterAddress {
 		return common.Big0, 0
 	}
-	units := atomic.LoadUint64(&tx.CalldataUnits)
-	if units == 0 {
+	var units uint64
+	if cachedUnits := tx.GetCachedCalldataUnits(brotliCompressionLevel); cachedUnits != nil {
+		units = *cachedUnits
+	} else {
+		// The cache is empty or invalid, so we need to compute the calldata units
 		units = ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
-		atomic.StoreUint64(&tx.CalldataUnits, units)
+		tx.SetCachedCalldataUnits(brotliCompressionLevel, units)
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
