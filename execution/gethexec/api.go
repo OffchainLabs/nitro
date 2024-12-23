@@ -344,7 +344,7 @@ func (api *ArbTraceForwarderAPI) blockSupportedByClassicNode(blockNumOrHash json
 	if !isNum {
 		return nil
 	}
-	blockNum, _ = api.blockchain.ClipToPostNitroGenesis(blockNum)
+	// #nosec G115
 	if blockNum < 0 || blockNum > rpc.BlockNumber(api.blockchain.Config().ArbitrumChainParams.GenesisBlockNum) {
 		return fmt.Errorf("block number %v is not supported by classic node", blockNum)
 	}
@@ -352,8 +352,7 @@ func (api *ArbTraceForwarderAPI) blockSupportedByClassicNode(blockNumOrHash json
 }
 
 func (api *ArbTraceForwarderAPI) Call(ctx context.Context, callArgs json.RawMessage, traceTypes json.RawMessage, blockNumOrHash json.RawMessage) (*json.RawMessage, error) {
-	var err error
-	err = api.blockSupportedByClassicNode(blockNumOrHash)
+	err := api.blockSupportedByClassicNode(blockNumOrHash)
 	if err != nil {
 		return nil, err
 	}
@@ -361,8 +360,7 @@ func (api *ArbTraceForwarderAPI) Call(ctx context.Context, callArgs json.RawMess
 }
 
 func (api *ArbTraceForwarderAPI) CallMany(ctx context.Context, calls json.RawMessage, blockNumOrHash json.RawMessage) (*json.RawMessage, error) {
-	var err error
-	err = api.blockSupportedByClassicNode(blockNumOrHash)
+	err := api.blockSupportedByClassicNode(blockNumOrHash)
 	if err != nil {
 		return nil, err
 	}
@@ -370,8 +368,7 @@ func (api *ArbTraceForwarderAPI) CallMany(ctx context.Context, calls json.RawMes
 }
 
 func (api *ArbTraceForwarderAPI) ReplayBlockTransactions(ctx context.Context, blockNumOrHash json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
-	var err error
-	err = api.blockSupportedByClassicNode(blockNumOrHash)
+	err := api.blockSupportedByClassicNode(blockNumOrHash)
 	if err != nil {
 		return nil, err
 	}
@@ -391,8 +388,7 @@ func (api *ArbTraceForwarderAPI) Get(ctx context.Context, txHash json.RawMessage
 }
 
 func (api *ArbTraceForwarderAPI) Block(ctx context.Context, blockNumOrHash json.RawMessage) (*json.RawMessage, error) {
-	var err error
-	err = api.blockSupportedByClassicNode(blockNumOrHash)
+	err := api.blockSupportedByClassicNode(blockNumOrHash)
 	if err != nil {
 		return nil, err
 	}
