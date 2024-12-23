@@ -32,8 +32,7 @@ fn write_wat_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"    (func (export \"user_entrypoint\") (param i32) (result i32)\n")
         .unwrap();
 
-    wat.write_all(b"        call $start_benchmark\n")
-        .unwrap();
+    wat.write_all(b"        call $start_benchmark\n").unwrap();
 
     wat.write_all(b"        (loop $loop\n").unwrap();
 }
