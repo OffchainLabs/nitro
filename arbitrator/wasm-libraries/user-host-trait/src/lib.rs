@@ -987,17 +987,14 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let ink_curr = self.ink_ready()?;
 
         let benchmark = self.benchmark();
-        match benchmark.timer {
-            Some(timer) => {
-                benchmark.elapsed_total = benchmark.elapsed_total.saturating_add(timer.elapsed());
+        if let Some(timer) = benchmark.timer {
+            benchmark.elapsed_total = benchmark.elapsed_total.saturating_add(timer.elapsed());
 
-                let code_block_ink = benchmark.ink_start.unwrap().saturating_sub(ink_curr);
-                benchmark.ink_total = benchmark.ink_total.saturating_add(code_block_ink);
+            let code_block_ink = benchmark.ink_start.unwrap().saturating_sub(ink_curr);
+            benchmark.ink_total = benchmark.ink_total.saturating_add(code_block_ink);
 
-                benchmark.timer = None;
-                benchmark.ink_start = None;
-            }
-            None => {}
+            benchmark.timer = None;
+            benchmark.ink_start = None;
         };
 
         Ok(())
