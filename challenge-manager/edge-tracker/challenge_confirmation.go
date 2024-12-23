@@ -321,7 +321,11 @@ func (cc *challengeConfirmer) waitForTxToBeSafe(
 				}
 			}
 			timeToWait := cc.averageTimeForBlockCreation * time.Duration(blocksLeftForTxToBeSafe)
-			<-time.After(timeToWait)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(timeToWait):
+			}
 		} else {
 			break
 		}

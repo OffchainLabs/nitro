@@ -98,7 +98,11 @@ func NewChainBackendTransactor(backend protocol.ChainBackend) *ChainBackendTrans
 func (d *ChainBackendTransactor) SendTransaction(ctx context.Context, fn func(opts *bind.TransactOpts) (*types.Transaction, error), opts *bind.TransactOpts, gas uint64) (*types.Transaction, error) {
 	// Try to acquire lock and if it fails, wait for a bit and try again.
 	for !d.fifo.Lock() {
-		<-time.After(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 	defer d.fifo.Unlock()
 	tx, err := fn(opts)
@@ -707,7 +711,11 @@ func TryConfirmingAssertion(
 					timeToWait,
 				),
 			)
-			<-time.After(timeToWait)
+			select {
+			case <-time.After(timeToWait):
+			case <-ctx.Done():
+				return false, ctx.Err()
+			}
 		} else {
 			break
 		}

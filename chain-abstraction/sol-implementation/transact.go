@@ -162,7 +162,11 @@ func (a *AssertionChain) waitForTxToBeSafe(
 				}
 			}
 			timeToWait := a.averageTimeForBlockCreation * time.Duration(blocksLeftForTxToBeSafe)
-			<-time.After(timeToWait)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(timeToWait):
+			}
 		} else {
 			break
 		}

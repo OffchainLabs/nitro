@@ -223,6 +223,10 @@ func (m *Manager) waitToPostIfNeeded(
 				latestBlockNumber,
 			),
 		)
-		<-time.After(m.times.avgBlockTime)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(m.times.avgBlockTime):
+		}
 	}
 }
