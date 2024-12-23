@@ -346,6 +346,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	})
 	msg := &timeboost.ExpressLaneSubmission{
 		SequenceNumber: 2,
+		Transaction:    types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}),
 	}
 	go func() {
 		_ = els.sequenceExpressLaneSubmission(ctx, msg)
@@ -378,7 +379,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
 			SequenceNumber: 10,
-			Transaction:    &types.Transaction{},
+			Transaction:    types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}),
 		},
 		{
 			SequenceNumber: 5,
@@ -403,8 +404,10 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 		go func(w *sync.WaitGroup) {
 			w.Done()
 			err := els.sequenceExpressLaneSubmission(ctx, msg)
-			require.NoError(t, err)
-			w.Done()
+			if msg.SequenceNumber != 10 { // Because this go-routine will be interrupted after the test itself ends and 10 will still be waiting for result
+				require.NoError(t, err)
+				w.Done()
+			}
 		}(&wg)
 	}
 	wg.Wait()
@@ -412,7 +415,9 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	// We should have only published 2, as we are missing sequence number 3.
 	time.Sleep(2 * time.Second)
 	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
+	els.Lock()
 	require.Equal(t, 3, len(els.msgAndResultBySequenceNumber)) // Processed txs are deleted
+	els.Unlock()
 
 	wg.Add(2) // 4 & 5 should be able to get in after 3
 	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3, Transaction: &types.Transaction{}})
@@ -420,7 +425,9 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	wg.Wait()
 	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
 
+	els.Lock()
 	require.Equal(t, 1, len(els.msgAndResultBySequenceNumber)) // Tx with seq num 10 should still be present
+	els.Unlock()
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.T) {
