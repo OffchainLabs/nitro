@@ -97,7 +97,7 @@ impl Program {
     pub fn current() -> Self {
         Self {
             evm_api: MockEvmApi,
-            benchmark: None,
+            benchmark: Benchmark::default(),
         }
     }
 
