@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
@@ -40,6 +41,134 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
+
+func TestExpressLaneTransactionHandling(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tmpDir, err := os.MkdirTemp("", "*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	})
+	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
+
+	seq, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
+	defer cleanupSeq()
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
+	Require(t, err)
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
+	Require(t, err)
+
+	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Bob", "Alice", bobBidderClient, aliceBidderClient, roundDuration)
+	time.Sleep(roundTimingInfo.TimeTilNextRound())
+
+	chainId, err := seqClient.ChainID(ctx)
+	Require(t, err)
+
+	// Prepare a client that can submit txs to the sequencer via the express lane.
+	bobPriv := seqInfo.Accounts["Bob"].PrivateKey
+	seqDial, err := rpc.Dial(seq.Stack.HTTPEndpoint())
+	Require(t, err)
+	expressLaneClient := newExpressLaneClient(
+		bobPriv,
+		chainId,
+		*roundTimingInfo,
+		auctionContractAddr,
+		seqDial,
+	)
+	expressLaneClient.Start(ctx)
+
+	currNonce, err := seqClient.PendingNonceAt(ctx, seqInfo.GetAddress("Alice"))
+	Require(t, err)
+	seqInfo.GetInfoWithPrivKey("Alice").Nonce.Store(currNonce)
+
+	// Send txs out of order
+	var txs types.Transactions
+	txs = append(txs, seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)) // currNonce
+	txs = append(txs, seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)) // currNonce + 1
+	txs = append(txs, seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)) // currNonce + 2
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	for i := uint64(2); i > 0; i-- {
+		go func(w *sync.WaitGroup) {
+			err := expressLaneClient.SendTransactionWithSequence(ctx, txs[i], i)
+			Require(t, err)
+			w.Done()
+		}(&wg)
+	}
+
+	time.Sleep(time.Second) // Wait for both txs to be submitted
+
+	// Send the first transaction which will unblock the future ones
+	err = expressLaneClient.SendTransactionWithSequence(ctx, txs[0], 0) // we'll wait for the result
+	Require(t, err)
+
+	wg.Wait() // Make sure future sequence number txs that were sent earlier did not error
+
+	var txReceipts types.Receipts
+	for _, tx := range txs {
+		receipt, err := seqClient.TransactionReceipt(ctx, tx.Hash())
+		Require(t, err)
+		txReceipts = append(txReceipts, receipt)
+	}
+
+	if !(txReceipts[0].BlockNumber.Cmp(txReceipts[1].BlockNumber) <= 0 &&
+		txReceipts[1].BlockNumber.Cmp(txReceipts[2].BlockNumber) <= 0) {
+		t.Fatal("incorrect ordering of txs acceptance, lower sequence number txs should appear earlier block")
+	}
+
+	if txReceipts[0].BlockNumber.Cmp(txReceipts[1].BlockNumber) == 0 &&
+		txReceipts[0].TransactionIndex > txReceipts[1].TransactionIndex {
+		t.Fatal("incorrect ordering of txs in a block, lower sequence number txs should appear earlier")
+	}
+
+	if txReceipts[1].BlockNumber.Cmp(txReceipts[2].BlockNumber) == 0 &&
+		txReceipts[1].TransactionIndex > txReceipts[2].TransactionIndex {
+		t.Fatal("incorrect ordering of txs in a block, lower sequence number txs should appear earlier")
+	}
+
+	// Test that failed txs are given responses
+	passTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)  // currNonce + 3
+	passTx2 := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil) // currNonce + 4
+
+	seqInfo.GetInfoWithPrivKey("Alice").Nonce.Store(20)
+	failTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
+
+	currSeqNumber := uint64(3)
+	wg.Add(2)
+	var failErr error
+	go func(w *sync.WaitGroup) {
+		failErr = expressLaneClient.SendTransactionWithSequence(ctx, failTx, currSeqNumber+1) // Should give out nonce too high error
+		w.Done()
+	}(&wg)
+
+	time.Sleep(time.Second)
+
+	go func(w *sync.WaitGroup) {
+		err := expressLaneClient.SendTransactionWithSequence(ctx, passTx2, currSeqNumber+2)
+		Require(t, err)
+		w.Done()
+	}(&wg)
+
+	err = expressLaneClient.SendTransactionWithSequence(ctx, passTx, currSeqNumber)
+	Require(t, err)
+
+	wg.Wait()
+
+	if failErr == nil {
+		t.Fatal("incorrect express lane tx didn't fail upon submission")
+	}
+	if !strings.Contains(failErr.Error(), timeboost.ErrAcceptedTxFailed.Error()) || // Should be an ErrAcceptedTxFailed error that would consume sequence number
+		!strings.Contains(failErr.Error(), core.ErrNonceTooHigh.Error()) { // Main error should be ErrNonceTooHigh
+		t.Fatalf("unexpected error string returned: %s", failErr.Error())
+	}
+}
 
 func TestExpressLaneControlTransfer(t *testing.T) {
 	t.Parallel()
@@ -783,9 +912,7 @@ func (elc *expressLaneClient) Start(ctxIn context.Context) {
 	elc.StopWaiter.Start(ctxIn, elc)
 }
 
-func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) error {
-	elc.Lock()
-	defer elc.Unlock()
+func (elc *expressLaneClient) SendTransactionWithSequence(ctx context.Context, transaction *types.Transaction, seq uint64) error {
 	encodedTx, err := transaction.MarshalBinary()
 	if err != nil {
 		return err
@@ -795,7 +922,7 @@ func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *
 		Round:                  hexutil.Uint64(elc.roundTimingInfo.RoundNumber()),
 		AuctionContractAddress: elc.auctionContractAddr,
 		Transaction:            encodedTx,
-		SequenceNumber:         hexutil.Uint64(elc.sequence),
+		SequenceNumber:         hexutil.Uint64(seq),
 		Signature:              hexutil.Bytes{},
 	}
 	msgGo, err := timeboost.JsonSubmissionToGo(msg)
@@ -813,13 +940,19 @@ func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *
 	msg.Signature = signature
 	promise := elc.sendExpressLaneRPC(msg)
 	if _, err := promise.Await(ctx); err != nil {
-		if strings.Contains(err.Error(), timeboost.ErrAcceptedTxFailed.Error()) {
-			elc.sequence += 1
-		}
 		return err
 	}
-	elc.sequence += 1
 	return nil
+}
+
+func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) error {
+	elc.Lock()
+	defer elc.Unlock()
+	err := elc.SendTransactionWithSequence(ctx, transaction, elc.sequence)
+	if err == nil || strings.Contains(err.Error(), timeboost.ErrAcceptedTxFailed.Error()) {
+		elc.sequence += 1
+	}
+	return err
 }
 
 func (elc *expressLaneClient) sendExpressLaneRPC(msg *timeboost.JsonExpressLaneSubmission) containers.PromiseInterface[struct{}] {
