@@ -476,8 +476,6 @@ pub(crate) fn start_benchmark<D: DataReader, E: EvmApi<D>>(
     hostio!(env, start_benchmark())
 }
 
-pub(crate) fn end_benchmark<D: DataReader, E: EvmApi<D>>(
-    mut env: WasmEnvMut<D, E>,
-) -> MaybeEscape {
+pub(crate) fn end_benchmark<D: DataReader, E: EvmApi<D>>(mut env: WasmEnvMut<D, E>) -> MaybeEscape {
     hostio!(env, end_benchmark())
 }
