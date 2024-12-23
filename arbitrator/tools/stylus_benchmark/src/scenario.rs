@@ -14,6 +14,11 @@ pub enum Scenario {
     XorI32,
 }
 
+// Programs to be benchmarked have a loop in which several similar operations are executed.
+// The number of operations per loop is chosen to be large enough so the overhead related to the loop is negligible,
+// but not too large to avoid a big program size.
+// Keeping a small program size is important to better use CPU cache, trying to keep the code in the cache.
+
 fn write_wat_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"(module\n").unwrap();
     wat.write_all(b"    (import \"debug\" \"start_benchmark\" (func $start_benchmark))\n")
