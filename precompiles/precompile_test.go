@@ -190,20 +190,27 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 	log.SetDefault(log.NewLogger(glogger))
 
 	expectedNewMethodsPerArbosVersion := map[uint64]int{
-		0:  89,
+		0:  98,
 		5:  3,
 		10: 2,
 		11: 4,
 		20: 8,
-		30: 38,
+		30: 39,
 		31: 1,
 	}
 
 	precompiles := Precompiles()
 	newMethodsPerArbosVersion := make(map[uint64]int)
 	for _, precompile := range precompiles {
-		for _, method := range precompile.Precompile().methods {
-			version := arbmath.MaxInt(method.arbosVersion, precompile.Precompile().arbosVersion)
+		innerPrecompile := precompile.Precompile()
+		newMethodsPerArbosVersion[innerPrecompile.arbosVersion]++
+		_, isDebug := precompile.(*DebugPrecompile)
+		if isDebug {
+			// Debug methods are disabled on production chains
+			continue
+		}
+		for _, method := range innerPrecompile.methods {
+			version := arbmath.MaxInt(method.arbosVersion, innerPrecompile.arbosVersion)
 			newMethodsPerArbosVersion[version]++
 		}
 	}
