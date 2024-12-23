@@ -32,7 +32,7 @@ fn write_wat_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"    (func (export \"user_entrypoint\") (param i32) (result i32)\n")
         .unwrap();
 
-    wat.write_all(b"            call $start_benchmark\n")
+    wat.write_all(b"        call $start_benchmark\n")
         .unwrap();
 
     wat.write_all(b"        (loop $loop\n").unwrap();
@@ -68,13 +68,13 @@ fn write_wat_end(
     wat.write_all(b"            i32.lt_s\n").unwrap();
     wat.write_all(b"            br_if $loop)\n").unwrap();
 
-    wat.write_all(b"            call $end_benchmark\n").unwrap();
+    wat.write_all(b"        call $end_benchmark\n").unwrap();
 
     wat.write_all(b"        i32.const 0)\n").unwrap();
     wat.write_all(b")").unwrap();
 }
 
-fn generate_add_i32_wat() -> Vec<u8> {
+fn wat(write_wat_ops: fn(&mut Vec<u8>, usize)) -> Vec<u8> {
     let number_of_loop_iterations = 200_000;
     let number_of_ops_per_loop_iteration = 2000;
 
@@ -82,52 +82,39 @@ fn generate_add_i32_wat() -> Vec<u8> {
 
     write_wat_beginning(&mut wat);
 
-    // ops to be benchmarked
+    write_wat_ops(&mut wat, number_of_ops_per_loop_iteration);
+
+    write_wat_end(
+        &mut wat,
+        number_of_loop_iterations,
+        number_of_ops_per_loop_iteration,
+    );
+
+    wat.to_vec()
+}
+
+fn write_add_i32_wat_ops(wat: &mut Vec<u8>, number_of_ops_per_loop_iteration: usize) {
     wat.write_all(b"            i32.const 0\n").unwrap();
     for _ in 0..number_of_ops_per_loop_iteration {
         wat.write_all(b"            i32.const 1\n").unwrap();
         wat.write_all(b"            i32.add\n").unwrap();
     }
     wat.write_all(b"            drop\n").unwrap();
-
-    write_wat_end(
-        &mut wat,
-        number_of_loop_iterations,
-        number_of_ops_per_loop_iteration,
-    );
-
-    wat.to_vec()
 }
 
-fn generate_xor_i32_wat() -> Vec<u8> {
-    let number_of_loop_iterations = 200_000;
-    let number_of_ops_per_loop_iteration = 2000;
-
-    let mut wat = Vec::new();
-
-    write_wat_beginning(&mut wat);
-
-    // ops to be benchmarked
+fn write_xor_i32_wat_ops(wat: &mut Vec<u8>, number_of_ops_per_loop_iteration: usize) {
     wat.write_all(b"            i32.const 1231\n").unwrap();
     for _ in 0..number_of_ops_per_loop_iteration {
         wat.write_all(b"            i32.const 12312313\n").unwrap();
         wat.write_all(b"            i32.xor\n").unwrap();
     }
     wat.write_all(b"            drop\n").unwrap();
-
-    write_wat_end(
-        &mut wat,
-        number_of_loop_iterations,
-        number_of_ops_per_loop_iteration,
-    );
-
-    wat.to_vec()
 }
 
 pub fn generate_wat(scenario: Scenario, output_wat_dir_path: Option<PathBuf>) -> Vec<u8> {
     let wat = match scenario {
-        Scenario::AddI32 => generate_add_i32_wat(),
-        Scenario::XorI32 => generate_xor_i32_wat(),
+        Scenario::AddI32 => wat(write_add_i32_wat_ops),
+        Scenario::XorI32 => wat(write_xor_i32_wat_ops),
     };
 
     // print wat to file if needed
