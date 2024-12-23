@@ -19,10 +19,7 @@ struct Args {
     scenario: Option<Scenario>,
 }
 
-fn handle_scenario(
-    scenario: Scenario,
-    output_wat_dir_path: Option<PathBuf>,
-) -> eyre::Result<()> {
+fn handle_scenario(scenario: Scenario, output_wat_dir_path: Option<PathBuf>) -> eyre::Result<()> {
     println!("Benchmarking {}", scenario);
     let wat = scenario::generate_wat(scenario, output_wat_dir_path);
     benchmark::benchmark(wat)
