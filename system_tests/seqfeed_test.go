@@ -152,7 +152,7 @@ func compareAllMsgResultsFromConsensusAndExecution(
 	testClient *TestClient,
 	testScenario string,
 ) *execution.MessageResult {
-	execHeadMsgNum, err := testClient.ExecNode.HeadMessageNumber()
+	execHeadMsgNum, err := testClient.ExecNode.HeadMessageNumber().Await(context.Background())
 	Require(t, err)
 	consensusMsgCount, err := testClient.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
