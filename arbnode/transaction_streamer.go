@@ -1278,7 +1278,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		}
 		msgForPrefetch = msg
 	}
-	msgResult, err := s.exec.DigestMessage(pos, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch)
+	msgResult, err := s.exec.DigestMessage(pos, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch).Await(ctx)
 	if err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {

@@ -413,8 +413,8 @@ func (n *ExecutionNode) StopAndWait() {
 	// }
 }
 
-func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
-	return n.ExecEngine.DigestMessage(num, msg, msgForPrefetch)
+func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.DigestMessage(num, msg, msgForPrefetch))
 }
 func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	return n.ExecEngine.Reorg(count, newMessages, oldMessages)
