@@ -33,7 +33,7 @@ type ExecutionClient interface {
 	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
 	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*MessageResult]
 	HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex]
-	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
+	HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex]
 	ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
 	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)

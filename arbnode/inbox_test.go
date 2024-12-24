@@ -78,8 +78,8 @@ func (w *execClientWrapper) HeadMessageNumber() containers.PromiseInterface[arbu
 	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageNumber())
 }
 
-func (w *execClientWrapper) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
-	return w.ExecutionEngine.HeadMessageNumberSync(t)
+func (w *execClientWrapper) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageNumberSync(t))
 }
 
 func (w *execClientWrapper) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
