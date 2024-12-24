@@ -524,7 +524,7 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 	if err != nil {
 		return 0, err
 	}
-	digestedHead, err := s.exec.HeadMessageNumber().Await(s.GetContext())
+	digestedHead, err := s.exec.HeadMessageNumber().Await(context.Background())
 	if err != nil {
 		return 0, err
 	}
@@ -1176,7 +1176,7 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	}
 	log.Info(FailedToGetMsgResultFromDB, "count", count)
 
-	msgResult, err := s.exec.ResultAtPos(pos).Await(s.GetContext())
+	msgResult, err := s.exec.ResultAtPos(pos).Await(context.Background())
 	if err != nil {
 		return nil, err
 	}
