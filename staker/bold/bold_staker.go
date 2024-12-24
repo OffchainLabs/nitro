@@ -260,6 +260,13 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 		}
 
 		if confirmedGlobalState != nil {
+			if agreedGlobalState == nil {
+				// If we don't have a latest agreed global state, we should fall back to
+				// using the latest confirmed global state.
+				for _, notifier := range b.stakedNotifiers {
+					notifier.UpdateLatestStaked(confirmedMsgCount, *confirmedGlobalState)
+				}
+			}
 			for _, notifier := range b.confirmedNotifiers {
 				notifier.UpdateLatestConfirmed(confirmedMsgCount, *confirmedGlobalState)
 			}
