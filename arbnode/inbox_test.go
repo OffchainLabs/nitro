@@ -70,8 +70,8 @@ func (w *execClientWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbosty
 	return containers.NewReadyPromise(w.ExecutionEngine.DigestMessage(num, msg, msgForPrefetch))
 }
 
-func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
-	return w.ExecutionEngine.Reorg(count, newMessages, oldMessages)
+func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[[]*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages, oldMessages))
 }
 
 func (w *execClientWrapper) HeadMessageNumber() (arbutil.MessageIndex, error) {

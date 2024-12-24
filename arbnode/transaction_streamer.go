@@ -366,7 +366,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	messagesResults, err := s.exec.Reorg(count, newMessages, oldMessages)
+	messagesResults, err := s.exec.Reorg(count, newMessages, oldMessages).Await(context.Background())
 	if err != nil {
 		return err
 	}
