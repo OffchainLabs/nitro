@@ -366,7 +366,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	messagesResults, err := s.exec.Reorg(count, newMessages, oldMessages).Await(context.Background())
+	messagesResults, err := s.exec.Reorg(count, newMessages, oldMessages).Await(s.GetContext())
 	if err != nil {
 		return err
 	}
@@ -524,7 +524,7 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 	if err != nil {
 		return 0, err
 	}
-	digestedHead, err := s.exec.HeadMessageNumber().Await(context.Background())
+	digestedHead, err := s.exec.HeadMessageNumber().Await(s.GetContext())
 	if err != nil {
 		return 0, err
 	}
@@ -1176,7 +1176,7 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	}
 	log.Info(FailedToGetMsgResultFromDB, "count", count)
 
-	msgResult, err := s.exec.ResultAtPos(pos).Await(context.Background())
+	msgResult, err := s.exec.ResultAtPos(pos).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}

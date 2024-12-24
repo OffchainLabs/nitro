@@ -149,6 +149,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 
 func compareAllMsgResultsFromConsensusAndExecution(
 	t *testing.T,
+	ctx context.Context,
 	testClient *TestClient,
 	testScenario string,
 ) *execution.MessageResult {
@@ -166,7 +167,7 @@ func compareAllMsgResultsFromConsensusAndExecution(
 	var lastResult *execution.MessageResult
 	for msgCount := arbutil.MessageIndex(1); msgCount <= consensusMsgCount; msgCount++ {
 		pos := msgCount - 1
-		resultExec, err := testClient.ExecNode.ResultAtPos(arbutil.MessageIndex(pos)).Await(context.Background())
+		resultExec, err := testClient.ExecNode.ResultAtPos(arbutil.MessageIndex(pos)).Await(ctx)
 		Require(t, err)
 
 		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(msgCount)
@@ -267,7 +268,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
 
-	fraudResult := compareAllMsgResultsFromConsensusAndExecution(t, testClientB, "fraud")
+	fraudResult := compareAllMsgResultsFromConsensusAndExecution(t, ctx, testClientB, "fraud")
 
 	// Send the real transaction to client A, will cause a reorg on nodeB
 	err = l2clientA.SendTransaction(ctx, realTx)
@@ -319,7 +320,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("Consensus relied on execution database to return the result")
 	}
 	// Consensus should update message result stored in its database after a reorg
-	realResult := compareAllMsgResultsFromConsensusAndExecution(t, testClientB, "real")
+	realResult := compareAllMsgResultsFromConsensusAndExecution(t, ctx, testClientB, "real")
 	// Checks that results changed
 	if reflect.DeepEqual(fraudResult, realResult) {
 		t.Fatal("realResult and fraudResult are equal")
