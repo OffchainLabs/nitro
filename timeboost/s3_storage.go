@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -117,17 +117,10 @@ func (s *S3StorageService) Start(ctx context.Context) {
 const fixedRoundStrLen = 7
 
 func (s *S3StorageService) getBatchName(firstRound, lastRound uint64) string {
-	padRound := func(round uint64) string {
-		padStr := fmt.Sprintf("%d", round)
-		if len(padStr) < fixedRoundStrLen {
-			padStr = strings.Repeat("0", fixedRoundStrLen-len(padStr)) + padStr
-		}
-		return padStr
-	}
+	padder := "%0" + strconv.Itoa(fixedRoundStrLen) + "d"
 	now := time.Now()
-	return fmt.Sprintf("%svalidated-timeboost-bids/%d/%02d/%02d/%s-%s.csv.gzip", s.objectPrefix, now.Year(), now.Month(), now.Day(), padRound(firstRound), padRound(lastRound))
+	return fmt.Sprintf("%svalidated-timeboost-bids/%d/%02d/%02d/"+padder+"-"+padder+".csv.gzip", s.objectPrefix, now.Year(), now.Month(), now.Day(), firstRound, lastRound)
 }
-
 func (s *S3StorageService) uploadBatch(ctx context.Context, batch []byte, firstRound, lastRound uint64) error {
 	compressedData, err := gzip.CompressGzip(batch)
 	if err != nil {
