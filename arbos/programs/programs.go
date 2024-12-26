@@ -269,7 +269,6 @@ func (p Programs) CallProgram(
 
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runModeToString(runmode)), nil).Inc(1)
 	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
-	gasUsed := callCost
 	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
@@ -279,12 +278,9 @@ func (p Programs) CallProgram(
 		}
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
-		if evmCost > gasUsed {
-			gasUsed = evmCost
-		}
 	}
 	// #nosec G115
-	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runModeToString(runmode)), nil).Inc(int64(gasUsed))
+	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runModeToString(runmode)), nil).Inc(int64(startingGas - contract.Gas))
 	return ret, err
 }
 
