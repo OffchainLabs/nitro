@@ -932,23 +932,26 @@ func CreateNode(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
-	if !ok {
-		execClient = nil
+	executionNode, isExecutionNode := n.Execution.(*gethexec.ExecutionNode)
+	nonFullExecutionClient, isNonFullExecutionClient := n.Execution.(*gethexec.NonFullExecutionClient)
+
+	var err error
+	if isExecutionNode {
+		err = executionNode.Initialize(ctx)
+	} else if isNonFullExecutionClient {
+		err = nonFullExecutionClient.Initialize(ctx)
 	}
-	if execClient != nil {
-		err := execClient.Initialize(ctx)
-		if err != nil {
-			return fmt.Errorf("error initializing exec client: %w", err)
-		}
+	if err != nil {
+		return fmt.Errorf("error initializing exec client: %w", err)
 	}
+
 	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
-	err := n.Stack.Start()
+	err = n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
 	}
-	if execClient != nil {
-		execClient.SetConsensusClient(n)
+	if isExecutionNode {
+		executionNode.SetConsensusClient(n)
 	}
 	err = n.Execution.Start(ctx)
 	if err != nil {
