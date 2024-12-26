@@ -933,13 +933,13 @@ func CreateNode(
 
 func (n *Node) Start(ctx context.Context) error {
 	executionNode, isExecutionNode := n.Execution.(*gethexec.ExecutionNode)
-	nonFullExecutionClient, isNonFullExecutionClient := n.Execution.(*gethexec.NonFullExecutionClient)
+	executionClientImpl, isExecutionClientImpl := n.Execution.(*gethexec.ExecutionClientImpl)
 
 	var err error
 	if isExecutionNode {
 		err = executionNode.Initialize(ctx)
-	} else if isNonFullExecutionClient {
-		err = nonFullExecutionClient.Initialize(ctx)
+	} else if isExecutionClientImpl {
+		err = executionClientImpl.Initialize(ctx)
 	}
 	if err != nil {
 		return fmt.Errorf("error initializing exec client: %w", err)

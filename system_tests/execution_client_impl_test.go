@@ -12,7 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 )
 
-func TestNonFullExecutionClient(t *testing.T) {
+func TestExecutionClientImplAsFullExecutionClient(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -23,12 +23,10 @@ func TestNonFullExecutionClient(t *testing.T) {
 	defer cleanup()
 	seqTestClient := builder.L2
 
-	// build replica node
 	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
-	replicaTestClient, replicaCleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: replicaConfig, nonFullExecutionClient: true})
+	replicaTestClient, replicaCleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: replicaConfig, useExecutionClientImplAsFullExecutionClient: true})
 	defer replicaCleanup()
 
-	// generates blocks
 	builder.L2Info.GenerateAccount("User2")
 	for i := 0; i < 3; i++ {
 		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)

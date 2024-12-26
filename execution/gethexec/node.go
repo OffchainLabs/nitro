@@ -510,84 +510,84 @@ func (n *ExecutionNode) SetFinalityData(ctx context.Context, finalityData *arbut
 }
 
 // Used to check if only implementing ExecutionClient from FullExecutionClient interface is enough in some scenarios
-type NonFullExecutionClient struct {
+type ExecutionClientImpl struct {
 	ExecutionNode *ExecutionNode
 }
 
 // ExecutionClient interface implementation
-func (n *NonFullExecutionClient) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+func (n *ExecutionClientImpl) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
 	return n.ExecutionNode.DigestMessage(num, msg, msgForPrefetch)
 }
-func (n *NonFullExecutionClient) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
+func (n *ExecutionClientImpl) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
 	return n.ExecutionNode.Reorg(count, newMessages, oldMessages)
 }
-func (n *NonFullExecutionClient) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
+func (n *ExecutionClientImpl) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
 	return n.ExecutionNode.HeadMessageNumber()
 }
-func (n *NonFullExecutionClient) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
+func (n *ExecutionClientImpl) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
 	return n.ExecutionNode.HeadMessageNumberSync(t)
 }
-func (n *NonFullExecutionClient) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+func (n *ExecutionClientImpl) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return n.ExecutionNode.ResultAtPos(pos)
 }
-func (n *NonFullExecutionClient) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+func (n *ExecutionClientImpl) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return n.ExecutionNode.MarkFeedStart(to)
 }
 
 // ExecutionRecorder interface implementation
-func (n *NonFullExecutionClient) RecordBlockCreation(
+func (n *ExecutionClientImpl) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
 ) (*execution.RecordResult, error) {
 	panic("RecordBlockCreation not supported")
 }
-func (n *NonFullExecutionClient) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
+func (n *ExecutionClientImpl) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
 	panic("MarkValid not supported")
 }
-func (n *NonFullExecutionClient) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
+func (n *ExecutionClientImpl) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
 	panic("PrepareForRecord not supported")
 }
 
 // ExecutionSequence interface implementation
-func (n *NonFullExecutionClient) Pause() {
+func (n *ExecutionClientImpl) Pause() {
 	panic("Pause not supported")
 }
-func (n *NonFullExecutionClient) Activate() {
+func (n *ExecutionClientImpl) Activate() {
 	// panic("Activate not supported")
 }
-func (n *NonFullExecutionClient) ForwardTo(url string) error {
+func (n *ExecutionClientImpl) ForwardTo(url string) error {
 	panic("ForwardTo not supported")
 }
-func (n *NonFullExecutionClient) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
+func (n *ExecutionClientImpl) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	panic("SequenceDelayedMessage not supported")
 }
-func (n *NonFullExecutionClient) NextDelayedMessageNumber() (uint64, error) {
+func (n *ExecutionClientImpl) NextDelayedMessageNumber() (uint64, error) {
 	panic("NextDelayedMessageNumber not supported")
 }
-func (n *NonFullExecutionClient) Synced() bool {
+func (n *ExecutionClientImpl) Synced() bool {
 	panic("Synced not supported")
 }
-func (n *NonFullExecutionClient) FullSyncProgressMap() map[string]interface{} {
+func (n *ExecutionClientImpl) FullSyncProgressMap() map[string]interface{} {
 	panic("FullSyncProgressMap not supported")
 }
 
 // Other funcs from FullExecutionClient
 // not thread safe
-func (n *NonFullExecutionClient) Start(ctx context.Context) error {
+func (n *ExecutionClientImpl) Start(ctx context.Context) error {
 	return n.ExecutionNode.Start(ctx)
 }
-func (n *NonFullExecutionClient) StopAndWait() {
+func (n *ExecutionClientImpl) StopAndWait() {
 	n.ExecutionNode.StopAndWait()
 }
-func (n *NonFullExecutionClient) Maintenance() error {
+func (n *ExecutionClientImpl) Maintenance() error {
 	return n.ExecutionNode.Maintenance()
 }
-func (n *NonFullExecutionClient) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
+func (n *ExecutionClientImpl) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
 	return n.ExecutionNode.ArbOSVersionForMessageNumber(messageNum)
 }
 
 // Not part of FullExecutionClient interface, but needed to start the node
-func (n *NonFullExecutionClient) Initialize(ctx context.Context) error {
+func (n *ExecutionClientImpl) Initialize(ctx context.Context) error {
 	return n.ExecutionNode.Initialize(ctx)
 }
