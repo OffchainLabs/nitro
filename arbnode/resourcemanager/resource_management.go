@@ -114,7 +114,7 @@ func newHttpServer(inner http.Handler, c LimitChecker) *httpServer {
 }
 
 // ServeHTTP passes req to inner unless any configured system resource
-// limit is exceeded, in which case it returns a HTTP 429 error.
+// limit is exceeded, in which case it returns an HTTP 429 error.
 func (s *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	start := time.Now()
 	exceeded, err := s.c.IsLimitExceeded()
