@@ -139,6 +139,7 @@ func TestExpressLaneTransactionHandling(t *testing.T) {
 
 	seqInfo.GetInfoWithPrivKey("Alice").Nonce.Store(20)
 	failTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
+	failTxDueToTimeout := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
 
 	currSeqNumber := uint64(3)
 	wg.Add(2)
@@ -161,13 +162,25 @@ func TestExpressLaneTransactionHandling(t *testing.T) {
 
 	wg.Wait()
 
-	if failErr == nil {
-		t.Fatal("incorrect express lane tx didn't fail upon submission")
+	checkFailErr := func(reason string) {
+		if failErr == nil {
+			t.Fatal("incorrect express lane tx didn't fail upon submission")
+		}
+		if !strings.Contains(failErr.Error(), timeboost.ErrAcceptedTxFailed.Error()) || // Should be an ErrAcceptedTxFailed error that would consume sequence number
+			!strings.Contains(failErr.Error(), reason) {
+			t.Fatalf("unexpected error string returned: %s", failErr.Error())
+		}
 	}
-	if !strings.Contains(failErr.Error(), timeboost.ErrAcceptedTxFailed.Error()) || // Should be an ErrAcceptedTxFailed error that would consume sequence number
-		!strings.Contains(failErr.Error(), core.ErrNonceTooHigh.Error()) { // Main error should be ErrNonceTooHigh
-		t.Fatalf("unexpected error string returned: %s", failErr.Error())
-	}
+	checkFailErr(core.ErrNonceTooHigh.Error())
+
+	wg.Add(1)
+	go func(w *sync.WaitGroup) {
+		failErr = expressLaneClient.SendTransactionWithSequence(ctx, failTxDueToTimeout, currSeqNumber+4) // Should give out a tx aborted error as this tx is never processed
+		w.Done()
+	}(&wg)
+	wg.Wait()
+
+	checkFailErr("Transaction sequencing hit timeout")
 }
 
 func TestExpressLaneControlTransfer(t *testing.T) {
