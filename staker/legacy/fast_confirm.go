@@ -209,7 +209,7 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 
 		// If the owner has approved the hash, we add the signature to the transaction.
 		// We add the signature in the format r, s, v.
-		// We set v to 1, as it is the only possible value for a approved hash.
+		// We set v to 1, as it is the only possible value for an approved hash.
 		// We set r to the owner's address.
 		// We set s to the empty hash.
 		// Refer to the Safe contract for more information.
