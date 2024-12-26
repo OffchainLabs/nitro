@@ -21,7 +21,6 @@ import (
 
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -60,24 +59,22 @@ func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 type BidValidator struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
-	chainId                   *big.Int
-	stack                     *node.Node
-	producerCfg               *pubsub.ProducerConfig
-	producer                  *pubsub.Producer[*JsonValidatedBid, error]
-	redisClient               redis.UniversalClient
-	domainValue               []byte
-	client                    *ethclient.Client
-	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
-	auctionContractAddr       common.Address
-	bidsReceiver              chan *Bid
-	initialRoundTimestamp     time.Time
-	roundDuration             time.Duration
-	auctionClosingDuration    time.Duration
-	reserveSubmissionDuration time.Duration
-	reservePriceLock          sync.RWMutex
-	reservePrice              *big.Int
-	bidsPerSenderInRound      map[common.Address]uint8
-	maxBidsPerSenderInRound   uint8
+	chainId                        *big.Int
+	stack                          *node.Node
+	producerCfg                    *pubsub.ProducerConfig
+	producer                       *pubsub.Producer[*JsonValidatedBid, error]
+	redisClient                    redis.UniversalClient
+	domainValue                    []byte
+	client                         *ethclient.Client
+	auctionContract                *express_lane_auctiongen.ExpressLaneAuction
+	auctionContractAddr            common.Address
+	auctionContractDomainSeparator [32]byte
+	bidsReceiver                   chan *Bid
+	roundTimingInfo                RoundTimingInfo
+	reservePriceLock               sync.RWMutex
+	reservePrice                   *big.Int
+	bidsPerSenderInRound           map[common.Address]uint8
+	maxBidsPerSenderInRound        uint8
 }
 
 func NewBidValidator(
@@ -111,40 +108,42 @@ func NewBidValidator(
 	if err != nil {
 		return nil, err
 	}
-	var roundTimingInfo RoundTimingInfo
-	roundTimingInfo, err = auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
 		return nil, err
 	}
-	if err = roundTimingInfo.Validate(nil); err != nil {
+	roundTimingInfo, err := NewRoundTimingInfo(rawRoundTimingInfo)
+	if err != nil {
 		return nil, err
 	}
-	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
-	roundDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.RoundDurationSeconds) * time.Second
-	auctionClosingDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.AuctionClosingSeconds) * time.Second
-	reserveSubmissionDuration := arbmath.SaturatingCast[time.Duration](roundTimingInfo.ReserveSubmissionSeconds) * time.Second
 
 	reservePrice, err := auctionContract.ReservePrice(&bind.CallOpts{})
 	if err != nil {
 		return nil, err
 	}
+
+	domainSeparator, err := auctionContract.DomainSeparator(&bind.CallOpts{
+		Context: ctx,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	bidValidator := &BidValidator{
-		chainId:                   chainId,
-		client:                    sequencerClient,
-		redisClient:               redisClient,
-		stack:                     stack,
-		auctionContract:           auctionContract,
-		auctionContractAddr:       auctionContractAddr,
-		bidsReceiver:              make(chan *Bid, 10_000),
-		initialRoundTimestamp:     initialTimestamp,
-		roundDuration:             roundDuration,
-		auctionClosingDuration:    auctionClosingDuration,
-		reserveSubmissionDuration: reserveSubmissionDuration,
-		reservePrice:              reservePrice,
-		domainValue:               domainValue,
-		bidsPerSenderInRound:      make(map[common.Address]uint8),
-		maxBidsPerSenderInRound:   5, // 5 max bids per sender address in a round.
-		producerCfg:               &cfg.ProducerConfig,
+		chainId:                        chainId,
+		client:                         sequencerClient,
+		redisClient:                    redisClient,
+		stack:                          stack,
+		auctionContract:                auctionContract,
+		auctionContractAddr:            auctionContractAddr,
+		auctionContractDomainSeparator: domainSeparator,
+		bidsReceiver:                   make(chan *Bid, 10_000),
+		roundTimingInfo:                *roundTimingInfo,
+		reservePrice:                   reservePrice,
+		domainValue:                    domainValue,
+		bidsPerSenderInRound:           make(map[common.Address]uint8),
+		maxBidsPerSenderInRound:        5, // 5 max bids per sender address in a round.
+		producerCfg:                    &cfg.ProducerConfig,
 	}
 	api := &BidValidatorAPI{bidValidator}
 	valAPIs := []rpc.API{{
@@ -195,16 +194,19 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 	}
 	bv.producer.Start(ctx_in)
 
-	// Set reserve price thread.
+	// Thread to set reserve price and clear per-round map of bid count per account.
 	bv.StopWaiter.LaunchThread(func(ctx context.Context) {
-		ticker := newAuctionCloseTicker(bv.roundDuration, bv.auctionClosingDuration+bv.reserveSubmissionDuration)
-		go ticker.start()
+		reservePriceTicker := newRoundTicker(bv.roundTimingInfo)
+		go reservePriceTicker.tickAtReserveSubmissionDeadline()
+		auctionCloseTicker := newRoundTicker(bv.roundTimingInfo)
+		go auctionCloseTicker.tickAtAuctionClose()
+
 		for {
 			select {
 			case <-ctx.Done():
 				log.Error("Context closed, autonomous auctioneer shutting down")
 				return
-			case <-ticker.c:
+			case <-reservePriceTicker.c:
 				rp, err := bv.auctionContract.ReservePrice(&bind.CallOpts{})
 				if err != nil {
 					log.Error("Could not get reserve price", "error", err)
@@ -219,6 +221,7 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 				log.Info("Reserve price updated", "old", currentReservePrice.String(), "new", rp.String())
 				bv.setReservePrice(rp)
 
+			case <-auctionCloseTicker.c:
 				bv.Lock()
 				bv.bidsPerSenderInRound = make(map[common.Address]uint8)
 				bv.Unlock()
@@ -292,18 +295,13 @@ func (bv *BidValidator) validateBid(
 	}
 
 	// Check if the bid is intended for upcoming round.
-	upcomingRound := CurrentRound(bv.initialRoundTimestamp, bv.roundDuration) + 1
+	upcomingRound := bv.roundTimingInfo.RoundNumber() + 1
 	if bid.Round != upcomingRound {
 		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
 	}
 
 	// Check if the auction is closed.
-	if isAuctionRoundClosed(
-		time.Now(),
-		bv.initialRoundTimestamp,
-		bv.roundDuration,
-		bv.auctionClosingDuration,
-	) {
+	if bv.roundTimingInfo.isAuctionRoundClosed() {
 		return nil, errors.Wrap(ErrBadRoundNumber, "auction is closed")
 	}
 
@@ -313,10 +311,10 @@ func (bv *BidValidator) validateBid(
 	}
 
 	// Validate the signature.
-	packedBidBytes := bid.ToMessageBytes()
 	if len(bid.Signature) != 65 {
 		return nil, errors.Wrap(ErrMalformedData, "signature length is not 65")
 	}
+
 	// Recover the public key.
 	sigItem := make([]byte, len(bid.Signature))
 	copy(sigItem, bid.Signature)
@@ -327,7 +325,12 @@ func (bv *BidValidator) validateBid(
 	if sigItem[len(sigItem)-1] >= 27 {
 		sigItem[len(sigItem)-1] -= 27
 	}
-	pubkey, err := crypto.SigToPub(buildEthereumSignedMessage(packedBidBytes), sigItem)
+
+	bidHash, err := bid.ToEIP712Hash(bv.auctionContractDomainSeparator)
+	if err != nil {
+		return nil, err
+	}
+	pubkey, err := crypto.SigToPub(bidHash[:], sigItem)
 	if err != nil {
 		return nil, ErrMalformedData
 	}
@@ -350,10 +353,10 @@ func (bv *BidValidator) validateBid(
 		return nil, err
 	}
 	if depositBal.Cmp(new(big.Int)) == 0 {
-		return nil, ErrNotDepositor
+		return nil, errors.Wrapf(ErrNotDepositor, "bidder %s", bidder.Hex())
 	}
 	if depositBal.Cmp(bid.Amount) < 0 {
-		return nil, errors.Wrapf(ErrInsufficientBalance, "onchain balance %#x, bid amount %#x", depositBal, bid.Amount)
+		return nil, errors.Wrapf(ErrInsufficientBalance, "bidder %s, onchain balance %#x, bid amount %#x", bidder.Hex(), depositBal, bid.Amount)
 	}
 	vb := &ValidatedBid{
 		ExpressLaneController:  bid.ExpressLaneController,

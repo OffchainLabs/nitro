@@ -24,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/timeboost"
 )
 
-var testPriv *ecdsa.PrivateKey
+var testPriv, testPriv2 *ecdsa.PrivateKey
 
 func init() {
 	privKey, err := crypto.HexToECDSA("93be75cc4df7acbb636b6abe6de2c0446235ac1dc7da9f290a70d83f088b486d")
@@ -32,6 +32,20 @@ func init() {
 		panic(err)
 	}
 	testPriv = privKey
+	privKey2, err := crypto.HexToECDSA("93be75cc4df7acbb636b6abe6de2c0446235ac1dc7da9f290a70d83f088b486e")
+	if err != nil {
+		panic(err)
+	}
+	testPriv2 = privKey2
+}
+
+func defaultTestRoundTimingInfo(offset time.Time) timeboost.RoundTimingInfo {
+	return timeboost.RoundTimingInfo{
+		Offset:            offset,
+		Round:             time.Minute,
+		AuctionClosing:    time.Second * 15,
+		ReserveSubmission: time.Second * 15,
+	}
 }
 
 func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
@@ -105,6 +119,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "no onchain controller",
 			es: &expressLaneService{
 				auctionContractAddr: common.Address{'a'},
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -122,8 +137,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "bad round number",
 			es: &expressLaneService{
 				auctionContractAddr: common.Address{'a'},
-				initialTimestamp:    time.Now(),
-				roundDuration:       time.Minute,
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -145,8 +159,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "malformed signature",
 			es: &expressLaneService{
 				auctionContractAddr: common.Address{'a'},
-				initialTimestamp:    time.Now(),
-				roundDuration:       time.Minute,
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -168,8 +181,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "wrong signature",
 			es: &expressLaneService{
 				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-				initialTimestamp:    time.Now(),
-				roundDuration:       time.Minute,
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -185,8 +197,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "not express lane controller",
 			es: &expressLaneService{
 				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-				initialTimestamp:    time.Now(),
-				roundDuration:       time.Minute,
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -195,15 +206,14 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			control: expressLaneControl{
 				controller: common.Address{'b'},
 			},
-			sub:         buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv),
+			sub:         buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0),
 			expectedErr: timeboost.ErrNotExpressLaneController,
 		},
 		{
 			name: "OK",
 			es: &expressLaneService{
 				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-				initialTimestamp:    time.Now(),
-				roundDuration:       time.Minute,
+				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -212,7 +222,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			control: expressLaneControl{
 				controller: crypto.PubkeyToAddress(testPriv.PublicKey),
 			},
-			sub:   buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv),
+			sub:   buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0),
 			valid: true,
 		},
 	}
@@ -233,6 +243,48 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	}
 }
 
+func Test_expressLaneService_validateExpressLaneTx_gracePeriod(t *testing.T) {
+	auctionContractAddr := common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6")
+	es := &expressLaneService{
+		auctionContractAddr: auctionContractAddr,
+		roundTimingInfo: timeboost.RoundTimingInfo{
+			Offset:         time.Now(),
+			Round:          time.Second * 10,
+			AuctionClosing: time.Second * 5,
+		},
+		earlySubmissionGrace: time.Second * 2,
+		chainConfig: &params.ChainConfig{
+			ChainID: big.NewInt(1),
+		},
+		roundControl: lru.NewCache[uint64, *expressLaneControl](8),
+	}
+	es.roundControl.Add(0, &expressLaneControl{
+		controller: crypto.PubkeyToAddress(testPriv.PublicKey),
+	})
+	es.roundControl.Add(1, &expressLaneControl{
+		controller: crypto.PubkeyToAddress(testPriv2.PublicKey),
+	})
+
+	sub1 := buildValidSubmission(t, auctionContractAddr, testPriv, 0)
+	err := es.validateExpressLaneTx(sub1)
+	require.NoError(t, err)
+
+	// Send req for next round
+	sub2 := buildValidSubmission(t, auctionContractAddr, testPriv2, 1)
+	err = es.validateExpressLaneTx(sub2)
+	require.ErrorIs(t, err, timeboost.ErrBadRoundNumber)
+
+	// Sleep til 2 seconds before grace
+	time.Sleep(time.Second * 6)
+	err = es.validateExpressLaneTx(sub2)
+	require.ErrorIs(t, err, timeboost.ErrBadRoundNumber)
+
+	// Send req for next round within grace period
+	time.Sleep(time.Second * 2)
+	err = es.validateExpressLaneTx(sub2)
+	require.NoError(t, err)
+}
+
 type stubPublisher struct {
 	els              *expressLaneService
 	publishedTxOrder []uint64
@@ -246,7 +298,7 @@ func makeStubPublisher(els *expressLaneService) *stubPublisher {
 }
 
 func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	if tx == nil {
+	if tx.CalldataUnits != 0 {
 		return errors.New("oops, bad tx")
 	}
 	control, _ := s.els.roundControl.Get(0)
@@ -342,7 +394,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	}
 	// We should have only published 2, as we are missing sequence number 3.
 	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
-	require.Equal(t, len(messages), len(els.messagesBySequenceNumber))
+	require.Equal(t, 3, len(els.messagesBySequenceNumber)) // Processed txs are deleted
 
 	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3, Transaction: &types.Transaction{}})
 	require.NoError(t, err)
@@ -373,15 +425,16 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 		},
 		{
 			SequenceNumber: 2,
-			Transaction:    nil,
+			Transaction:    types.NewTx(&types.DynamicFeeTx{}),
 		},
 		{
 			SequenceNumber: 2,
 			Transaction:    &types.Transaction{},
 		},
 	}
+	messages[2].Transaction.CalldataUnits = 1
 	for _, msg := range messages {
-		if msg.Transaction == nil {
+		if msg.Transaction.CalldataUnits != 0 {
 			err := els.sequenceExpressLaneSubmission(ctx, msg)
 			require.ErrorContains(t, err, "oops, bad tx")
 		} else {
@@ -394,16 +447,10 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	require.Equal(t, []uint64{1, 2, 3}, stubPublisher.publishedTxOrder)
 }
 
+// TODO this test is just for RoundTimingInfo
 func TestIsWithinAuctionCloseWindow(t *testing.T) {
 	initialTimestamp := time.Date(2024, 8, 8, 15, 0, 0, 0, time.UTC)
-	roundDuration := 1 * time.Minute
-	auctionClosing := 15 * time.Second
-
-	es := &expressLaneService{
-		initialTimestamp: initialTimestamp,
-		roundDuration:    roundDuration,
-		auctionClosing:   auctionClosing,
-	}
+	roundTimingInfo := defaultTestRoundTimingInfo(initialTimestamp)
 
 	tests := []struct {
 		name         string
@@ -439,9 +486,9 @@ func TestIsWithinAuctionCloseWindow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := es.isWithinAuctionCloseWindow(tt.arrivalTime)
+			actual := roundTimingInfo.IsWithinAuctionCloseWindow(tt.arrivalTime)
 			if actual != tt.expectedBool {
-				t.Errorf("isWithinAuctionCloseWindow(%v) = %v; want %v", tt.arrivalTime, actual, tt.expectedBool)
+				t.Errorf("IsWithinAuctionCloseWindow(%v) = %v; want %v", tt.arrivalTime, actual, tt.expectedBool)
 			}
 		})
 	}
@@ -452,8 +499,7 @@ func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 	addr := crypto.PubkeyToAddress(testPriv.PublicKey)
 	es := &expressLaneService{
 		auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-		initialTimestamp:    time.Now(),
-		roundDuration:       time.Minute,
+		roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 		roundControl:        lru.NewCache[uint64, *expressLaneControl](8),
 		chainConfig: &params.ChainConfig{
 			ChainID: big.NewInt(1),
@@ -463,7 +509,7 @@ func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 		sequence:   1,
 		controller: addr,
 	})
-	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv)
+	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0)
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		err := es.validateExpressLaneTx(sub)
@@ -512,13 +558,14 @@ func buildValidSubmission(
 	t testing.TB,
 	auctionContractAddr common.Address,
 	privKey *ecdsa.PrivateKey,
+	round uint64,
 ) *timeboost.ExpressLaneSubmission {
 	b := &timeboost.ExpressLaneSubmission{
 		ChainId:                big.NewInt(1),
 		AuctionContractAddress: auctionContractAddr,
 		Transaction:            types.NewTransaction(0, common.Address{}, big.NewInt(0), 0, big.NewInt(0), nil),
 		Signature:              make([]byte, 65),
-		Round:                  0,
+		Round:                  round,
 	}
 	data, err := b.ToMessageBytes()
 	require.NoError(t, err)

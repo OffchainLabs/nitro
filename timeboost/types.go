@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 )
 
 type Bid struct {
@@ -33,19 +34,40 @@ func (b *Bid) ToJson() *JsonBid {
 	}
 }
 
-func (b *Bid) ToMessageBytes() []byte {
-	buf := new(bytes.Buffer)
-	// Encode uint256 values - each occupies 32 bytes
-	buf.Write(domainValue)
-	buf.Write(padBigInt(b.ChainId))
-	buf.Write(b.AuctionContractAddress[:])
-	roundBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(roundBuf, b.Round)
-	buf.Write(roundBuf)
-	buf.Write(padBigInt(b.Amount))
-	buf.Write(b.ExpressLaneController[:])
+func (b *Bid) ToEIP712Hash(domainSeparator [32]byte) (common.Hash, error) {
+	types := apitypes.Types{
+		"Bid": []apitypes.Type{
+			{Name: "round", Type: "uint64"},
+			{Name: "expressLaneController", Type: "address"},
+			{Name: "amount", Type: "uint256"},
+		},
+	}
 
-	return buf.Bytes()
+	message := apitypes.TypedDataMessage{
+		"round":                 big.NewInt(0).SetUint64(b.Round),
+		"expressLaneController": [20]byte(b.ExpressLaneController),
+		"amount":                b.Amount,
+	}
+
+	typedData := apitypes.TypedData{
+		Types:       types,
+		PrimaryType: "Bid",
+		Message:     message,
+		Domain:      apitypes.TypedDataDomain{Salt: "Unused; domain separator fetched from method on contract. This must be nonempty for validation."},
+	}
+
+	messageHash, err := typedData.HashStruct(typedData.PrimaryType, typedData.Message)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	bidHash := crypto.Keccak256Hash(
+		[]byte("\x19\x01"),
+		domainSeparator[:],
+		messageHash,
+	)
+
+	return bidHash, nil
 }
 
 type JsonBid struct {
@@ -72,17 +94,20 @@ type ValidatedBid struct {
 // The hash is equivalent to the following Solidity implementation:
 //
 //	uint256(keccak256(abi.encodePacked(bidder, bidBytes)))
-func (v *ValidatedBid) BigIntHash() *big.Int {
-	bidBytes := v.BidBytes()
+//
+// This is only used for breaking ties amongst equivalent bids and not used for
+// Bid signing, which uses EIP 712 as the hashing scheme.
+func (v *ValidatedBid) bigIntHash() *big.Int {
+	bidBytes := v.bidBytes()
 	bidder := v.Bidder.Bytes()
 
 	return new(big.Int).SetBytes(crypto.Keccak256Hash(bidder, bidBytes).Bytes())
 }
 
-// BidBytes returns the byte representation equivalent to the Solidity implementation of
+// bidBytes returns the byte representation equivalent to the Solidity implementation of
 //
 //	abi.encodePacked(BID_DOMAIN, block.chainid, address(this), _round, _amount, _expressLaneController)
-func (v *ValidatedBid) BidBytes() []byte {
+func (v *ValidatedBid) bidBytes() []byte {
 	var buffer bytes.Buffer
 
 	buffer.Write(domainValue)
