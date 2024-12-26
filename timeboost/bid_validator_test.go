@@ -101,11 +101,13 @@ func TestBidValidator_validateBid(t *testing.T) {
 
 	for _, tt := range tests {
 		bv := BidValidator{
-			chainId:                 big.NewInt(1),
-			initialRoundTimestamp:   time.Now().Add(-time.Second * 3),
+			chainId: big.NewInt(1),
+			roundTimingInfo: RoundTimingInfo{
+				Offset:         time.Now().Add(-time.Second * 3),
+				Round:          10 * time.Second,
+				AuctionClosing: 5 * time.Second,
+			},
 			reservePrice:            big.NewInt(2),
-			roundDuration:           10 * time.Second,
-			auctionClosingDuration:  5 * time.Second,
 			auctionContract:         setup.expressLaneAuction,
 			auctionContractAddr:     setup.expressLaneAuctionAddr,
 			bidsPerSenderInRound:    make(map[common.Address]uint8),
@@ -129,11 +131,13 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 	}
 	auctionContractAddr := common.Address{'a'}
 	bv := BidValidator{
-		chainId:                        big.NewInt(1),
-		initialRoundTimestamp:          time.Now().Add(-time.Second),
+		chainId: big.NewInt(1),
+		roundTimingInfo: RoundTimingInfo{
+			Offset:         time.Now().Add(-time.Second),
+			Round:          time.Minute,
+			AuctionClosing: 45 * time.Second,
+		},
 		reservePrice:                   big.NewInt(2),
-		roundDuration:                  time.Minute,
-		auctionClosingDuration:         45 * time.Second,
 		bidsPerSenderInRound:           make(map[common.Address]uint8),
 		maxBidsPerSenderInRound:        5,
 		auctionContractAddr:            auctionContractAddr,

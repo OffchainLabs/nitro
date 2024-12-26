@@ -153,7 +153,9 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 
 	// We verify that the auctioneer has consumed all validated bids from the single Redis stream.
 	// We also verify the top two bids are those we expect.
+	am.bidCache.Lock()
 	require.Equal(t, 3, len(am.bidCache.bidsByExpressLaneControllerAddr))
+	am.bidCache.Unlock()
 	result := am.bidCache.topTwoBids()
 	require.Equal(t, big.NewInt(7), result.firstPlace.Amount) // Best bid should be Charlie's last bid 7
 	require.Equal(t, charlieAddr, result.firstPlace.Bidder)

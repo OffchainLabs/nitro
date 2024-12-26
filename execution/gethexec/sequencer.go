@@ -594,7 +594,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if sender != auctioneerAddr {
 		return fmt.Errorf("sender %#x is not the auctioneer address %#x", sender, auctioneerAddr)
 	}
-	if !s.expressLaneService.isWithinAuctionCloseWindow(arrivalTime) {
+	if !s.expressLaneService.roundTimingInfo.IsWithinAuctionCloseWindow(arrivalTime) {
 		return fmt.Errorf("transaction arrival time not within auction closure window: %v", arrivalTime)
 	}
 	txBytes, err := tx.MarshalBinary()
