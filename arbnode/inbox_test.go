@@ -51,8 +51,12 @@ func (w *execClientWrapper) NextDelayedMessageNumber() (uint64, error) {
 	return w.ExecutionEngine.NextDelayedMessageNumber()
 }
 
-func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) {
-	w.ExecutionEngine.MarkFeedStart(to)
+func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	markFeedStartWithReturn := func(to arbutil.MessageIndex) (struct{}, error) {
+		w.ExecutionEngine.MarkFeedStart(to)
+		return struct{}{}, nil
+	}
+	return containers.NewReadyPromise(markFeedStartWithReturn(to))
 }
 
 func (w *execClientWrapper) Synced() bool { w.t.Error("not supported"); return false }
