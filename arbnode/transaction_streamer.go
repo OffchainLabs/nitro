@@ -710,7 +710,10 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, m
 
 	if messagesAreConfirmed {
 		// Trim confirmed messages from l1pricedataCache
-		s.exec.MarkFeedStart(pos + arbutil.MessageIndex(len(messages))).Await(s.GetContext())
+		_, err := s.exec.MarkFeedStart(pos + arbutil.MessageIndex(len(messages))).Await(s.GetContext())
+		if err != nil {
+			log.Warn("TransactionStreamer: failed to mark feed start", "pos", pos, "err", err)
+		}
 		s.reorgMutex.RLock()
 		dups, _, _, err := s.countDuplicateMessages(pos, messagesWithBlockInfo, nil)
 		s.reorgMutex.RUnlock()
