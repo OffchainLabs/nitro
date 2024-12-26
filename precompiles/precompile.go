@@ -14,13 +14,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbos/programs"
-	"github.com/offchainlabs/nitro/arbos/util"
-	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util/arbmath"
-
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -30,6 +23,13 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	glog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/programs"
+	"github.com/offchainlabs/nitro/arbos/util"
+	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type ArbosPrecompile interface {
@@ -329,6 +329,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 		gascost := func(args []reflect.Value) []reflect.Value {
 
 			cost := params.LogGas
+			// #nosec G115
 			cost += params.LogTopicGas * uint64(1+len(topicInputs))
 
 			var dataValues []interface{}
@@ -712,6 +713,8 @@ func (p *Precompile) Call(
 		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
 	}
 
+	// len(input) must be at least 4 because of the check near the start of this function
+	// #nosec G115
 	argsCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(input)-4))
 	if err := callerCtx.Burn(argsCost); err != nil {
 		// user cannot afford the argument data supplied

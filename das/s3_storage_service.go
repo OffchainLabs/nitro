@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -15,14 +16,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
-	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/util/pretty"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
-	flag "github.com/spf13/pflag"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type S3Uploader interface {
@@ -110,7 +111,8 @@ func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint
 		Bucket: aws.String(s3s.bucket),
 		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(dastree.Hash(value))),
 		Body:   bytes.NewReader(value)}
-	if !s3s.discardAfterTimeout {
+	if s3s.discardAfterTimeout && timeout <= math.MaxInt64 {
+		// #nosec G115
 		expires := time.Unix(int64(timeout), 0)
 		putObjectInput.Expires = &expires
 	}

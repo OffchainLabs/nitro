@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -21,11 +22,10 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
+	validatorclient "github.com/offchainlabs/nitro/validator/client"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/valnode"
-
-	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
 
 type mockSpawner struct {
@@ -61,8 +61,8 @@ func (s *mockSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return mockWasmModuleRoots, nil
 }
 
-func (s *mockSpawner) StylusArchs() []rawdb.Target {
-	return []rawdb.Target{"mock"}
+func (s *mockSpawner) StylusArchs() []ethdb.WasmTarget {
+	return []ethdb.WasmTarget{"mock"}
 }
 
 func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
@@ -94,10 +94,6 @@ func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *vali
 
 func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
 	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoots[0], nil)
-}
-
-func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
 type mockValRun struct {

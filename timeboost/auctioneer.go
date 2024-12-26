@@ -11,6 +11,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
+	"golang.org/x/crypto/sha3"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -19,16 +24,13 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/golang-jwt/jwt/v4"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
-	"github.com/spf13/pflag"
-	"golang.org/x/crypto/sha3"
 )
 
 // domainValue holds the Keccak256 hash of the string "TIMEBOOST_BID".
@@ -60,26 +62,29 @@ type AuctioneerServerConfig struct {
 	RedisURL       string                `koanf:"redis-url"`
 	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
 	// Timeout on polling for existence of each redis stream.
-	StreamTimeout          time.Duration            `koanf:"stream-timeout"`
-	Wallet                 genericconf.WalletConfig `koanf:"wallet"`
-	SequencerEndpoint      string                   `koanf:"sequencer-endpoint"`
-	SequencerJWTPath       string                   `koanf:"sequencer-jwt-path"`
-	AuctionContractAddress string                   `koanf:"auction-contract-address"`
-	DbDirectory            string                   `koanf:"db-directory"`
+	StreamTimeout             time.Duration            `koanf:"stream-timeout"`
+	Wallet                    genericconf.WalletConfig `koanf:"wallet"`
+	SequencerEndpoint         string                   `koanf:"sequencer-endpoint"`
+	SequencerJWTPath          string                   `koanf:"sequencer-jwt-path"`
+	AuctionContractAddress    string                   `koanf:"auction-contract-address"`
+	DbDirectory               string                   `koanf:"db-directory"`
+	AuctionResolutionWaitTime time.Duration            `koanf:"auction-resolution-wait-time"`
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
-	Enable:         true,
-	RedisURL:       "",
-	ConsumerConfig: pubsub.DefaultConsumerConfig,
-	StreamTimeout:  10 * time.Minute,
+	Enable:                    true,
+	RedisURL:                  "",
+	ConsumerConfig:            pubsub.DefaultConsumerConfig,
+	StreamTimeout:             10 * time.Minute,
+	AuctionResolutionWaitTime: 2 * time.Second,
 }
 
 var TestAuctioneerServerConfig = AuctioneerServerConfig{
-	Enable:         true,
-	RedisURL:       "",
-	ConsumerConfig: pubsub.TestConsumerConfig,
-	StreamTimeout:  time.Minute,
+	Enable:                    true,
+	RedisURL:                  "",
+	ConsumerConfig:            pubsub.TestConsumerConfig,
+	StreamTimeout:             time.Minute,
+	AuctionResolutionWaitTime: 2 * time.Second,
 }
 
 func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -92,26 +97,26 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".sequencer-jwt-path", DefaultAuctioneerServerConfig.SequencerJWTPath, "sequencer jwt file path")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
+	f.Duration(prefix+".auction-resolution-wait-time", DefaultAuctioneerServerConfig.AuctionResolutionWaitTime, "wait time after auction closing before resolving the auction")
 }
 
 // AuctioneerServer is a struct that represents an autonomous auctioneer.
 // It is responsible for receiving bids, validating them, and resolving auctions.
 type AuctioneerServer struct {
 	stopwaiter.StopWaiter
-	consumer               *pubsub.Consumer[*JsonValidatedBid, error]
-	txOpts                 *bind.TransactOpts
-	chainId                *big.Int
-	sequencerRpc           *rpc.Client
-	client                 *ethclient.Client
-	auctionContract        *express_lane_auctiongen.ExpressLaneAuction
-	auctionContractAddr    common.Address
-	bidsReceiver           chan *JsonValidatedBid
-	bidCache               *bidCache
-	initialRoundTimestamp  time.Time
-	auctionClosingDuration time.Duration
-	roundDuration          time.Duration
-	streamTimeout          time.Duration
-	database               *SqliteDatabase
+	consumer                  *pubsub.Consumer[*JsonValidatedBid, error]
+	txOpts                    *bind.TransactOpts
+	chainId                   *big.Int
+	sequencerRpc              *rpc.Client
+	client                    *ethclient.Client
+	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
+	auctionContractAddr       common.Address
+	bidsReceiver              chan *JsonValidatedBid
+	bidCache                  *bidCache
+	roundTimingInfo           RoundTimingInfo
+	streamTimeout             time.Duration
+	auctionResolutionWaitTime time.Duration
+	database                  *SqliteDatabase
 }
 
 // NewAuctioneerServer creates a new autonomous auctioneer struct.
@@ -181,27 +186,30 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err != nil {
 		return nil, err
 	}
-	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
 		return nil, err
 	}
-	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
-	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
-	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
+	roundTimingInfo, err := NewRoundTimingInfo(rawRoundTimingInfo)
+	if err != nil {
+		return nil, err
+	}
+	if err = roundTimingInfo.ValidateResolutionWaitTime(cfg.AuctionResolutionWaitTime); err != nil {
+		return nil, err
+	}
 	return &AuctioneerServer{
-		txOpts:                 txOpts,
-		sequencerRpc:           client,
-		chainId:                chainId,
-		client:                 sequencerClient,
-		database:               database,
-		consumer:               c,
-		auctionContract:        auctionContract,
-		auctionContractAddr:    auctionContractAddr,
-		bidsReceiver:           make(chan *JsonValidatedBid, 100_000), // TODO(Terence): Is 100k enough? Make this configurable?
-		bidCache:               newBidCache(),
-		initialRoundTimestamp:  initialTimestamp,
-		auctionClosingDuration: auctionClosingDuration,
-		roundDuration:          roundDuration,
+		txOpts:                    txOpts,
+		sequencerRpc:              client,
+		chainId:                   chainId,
+		client:                    sequencerClient,
+		database:                  database,
+		consumer:                  c,
+		auctionContract:           auctionContract,
+		auctionContractAddr:       auctionContractAddr,
+		bidsReceiver:              make(chan *JsonValidatedBid, 100_000), // TODO(Terence): Is 100k enough? Make this configurable?
+		bidCache:                  newBidCache(),
+		roundTimingInfo:           *roundTimingInfo,
+		auctionResolutionWaitTime: cfg.AuctionResolutionWaitTime,
 	}, nil
 }
 
@@ -255,6 +263,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 				log.Error("Error setting result for request", "id", req.ID, "result", nil, "error", err)
 				return 0
 			}
+			req.Ack()
 			return 0
 		})
 	})
@@ -292,8 +301,8 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 
 	// Auction resolution thread.
 	a.StopWaiter.LaunchThread(func(ctx context.Context) {
-		ticker := newAuctionCloseTicker(a.roundDuration, a.auctionClosingDuration)
-		go ticker.start()
+		ticker := newRoundTicker(a.roundTimingInfo)
+		go ticker.tickAtAuctionClose()
 		for {
 			select {
 			case <-ctx.Done():
@@ -301,8 +310,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 				return
 			case auctionClosingTime := <-ticker.c:
 				log.Info("New auction closing time reached", "closingTime", auctionClosingTime, "totalBids", a.bidCache.size())
-				// Wait for two seconds, just to give some leeway for latency of bids received last minute.
-				time.Sleep(2 * time.Second)
+				time.Sleep(a.auctionResolutionWaitTime)
 				if err := a.resolveAuction(ctx); err != nil {
 					log.Error("Could not resolve auction for round", "error", err)
 				}
@@ -315,7 +323,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 
 // Resolves the auction by calling the smart contract with the top two bids.
 func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
-	upcomingRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration) + 1
+	upcomingRound := a.roundTimingInfo.RoundNumber() + 1
 	result := a.bidCache.topTwoBids()
 	first := result.firstPlace
 	second := result.secondPlace
@@ -363,8 +371,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		return err
 	}
 
-	currentRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration)
-	roundEndTime := a.initialRoundTimestamp.Add(time.Duration(currentRound) * a.roundDuration)
+	roundEndTime := a.roundTimingInfo.TimeOfNextRound()
 	retryInterval := 1 * time.Second
 
 	if err := retryUntil(ctx, func() error {

@@ -10,13 +10,13 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 // ArbOwner precompile provides owners with tools for managing the rollup.
@@ -69,6 +69,9 @@ func (con ArbOwner) SetL2BaseFee(c ctx, evm mech, priceInWei huge) error {
 
 // SetMinimumL2BaseFee sets the minimum base fee needed for a transaction to succeed
 func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error {
+	if c.txProcessor.MsgIsNonMutating() && priceInWei.Sign() == 0 {
+		return errors.New("minimum base fee must be nonzero")
+	}
 	return c.State.L2PricingState().SetMinBaseFeeWei(priceInWei)
 }
 

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -22,6 +22,7 @@ const MESSAGE_KEY_PREFIX string = "coordinator.msg."                   // Per Me
 const SIGNATURE_KEY_PREFIX string = "coordinator.msg.sig."             // Per Message. Only written by sequencer holding CHOSEN
 const BLOCKMETADATA_KEY_PREFIX string = "coordinator.blockMetadata."   // Per Message. Only written by sequencer holding CHOSEN
 const WANTS_LOCKOUT_VAL string = "OK"
+const SWITCHED_REDIS string = "SWITCHED_REDIS"
 const INVALID_VAL string = "INVALID"
 const INVALID_URL string = "<?INVALID-URL?>"
 

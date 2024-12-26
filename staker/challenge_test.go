@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/validator"
@@ -77,7 +78,7 @@ func CreateChallenge(
 		resultReceiverAddr,
 		maxInboxMessage,
 		[2][32]byte{startHashBytes, endHashBytes},
-		big.NewInt(int64(endMachineSteps)),
+		new(big.Int).SetUint64(endMachineSteps),
 		asserter,
 		challenger,
 		big.NewInt(100),

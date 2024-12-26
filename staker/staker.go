@@ -12,14 +12,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/btree"
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/google/btree"
-	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -268,7 +270,6 @@ type Staker struct {
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
 	fatalErr                chan<- error
-	enableFastConfirmation  bool
 	fastConfirmSafe         *FastConfirmSafe
 }
 
@@ -281,7 +282,7 @@ type ValidatorWalletInterface interface {
 	TxSenderAddress() *common.Address
 	RollupAddress() common.Address
 	ChallengeManagerAddress() common.Address
-	L1Client() arbutil.L1Interface
+	L1Client() *ethclient.Client
 	TestTransactions(context.Context, []*types.Transaction) error
 	ExecuteTransactions(context.Context, *txbuilder.Builder, common.Address) (*types.Transaction, error)
 	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
@@ -305,7 +306,6 @@ func NewStaker(
 	validatorUtilsAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
-
 	if err := config().Validate(); err != nil {
 		return nil, err
 	}
@@ -352,6 +352,7 @@ func (s *Staker) Initialize(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		// #nosec G115
 		stakerLatestStakedNodeGauge.Update(int64(latestStaked))
 		if latestStaked == 0 {
 			return nil
@@ -362,7 +363,10 @@ func (s *Staker) Initialize(ctx context.Context) error {
 			return err
 		}
 
-		return s.blockValidator.InitAssumeValid(stakedInfo.AfterState().GlobalState)
+		err = s.blockValidator.InitAssumeValid(stakedInfo.AfterState().GlobalState)
+		if err != nil {
+			return err
+		}
 	}
 	return s.setupFastConfirmation(ctx)
 }
@@ -389,9 +393,9 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("getting rollup fast confirmer address: %w", err)
 	}
+	log.Info("Setting up fast confirmation", "wallet", walletAddress, "fastConfirmer", fastConfirmer)
 	if fastConfirmer == walletAddress {
 		// We can directly fast confirm nodes
-		s.enableFastConfirmation = true
 		return nil
 	} else if fastConfirmer == (common.Address{}) {
 		// No fast confirmer enabled
@@ -418,13 +422,12 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 	if !isOwner {
 		return fmt.Errorf("staker wallet address %v is not an owner of the fast confirm safe %v", walletAddress, fastConfirmer)
 	}
-	s.enableFastConfirmation = true
 	s.fastConfirmSafe = fastConfirmSafe
 	return nil
 }
 
 func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint64, hash common.Hash) error {
-	if !s.enableFastConfirmation {
+	if !s.config().EnableFastConfirmation {
 		return nil
 	}
 	nodeInfo, err := s.rollup.LookupNode(ctx, number)
@@ -435,7 +438,7 @@ func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint6
 }
 
 func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash, nodeHash common.Hash) error {
-	if !s.enableFastConfirmation {
+	if !s.config().EnableFastConfirmation {
 		return nil
 	}
 	if s.fastConfirmSafe != nil {
@@ -445,7 +448,8 @@ func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash,
 	if err != nil {
 		return err
 	}
-	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot)
+	log.Info("Fast confirming node with wallet", "wallet", auth.From, "nodeHash", nodeHash)
+	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
 	return err
 }
 
@@ -508,7 +512,9 @@ func (s *Staker) Start(ctxIn context.Context) {
 	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
-	ephemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
+	isAheadOfOnChainNonceEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
+	exceedsMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), 0)
+	blockValidationPendingEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "block validation is still pending", 0)
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
 		defer func() {
 			panicErr := recover()
@@ -542,7 +548,9 @@ func (s *Staker) Start(ctxIn context.Context) {
 			}
 		}
 		if err == nil {
-			ephemeralErrorHandler.Reset()
+			isAheadOfOnChainNonceEphemeralErrorHandler.Reset()
+			exceedsMaxMempoolSizeEphemeralErrorHandler.Reset()
+			blockValidationPendingEphemeralErrorHandler.Reset()
 			backoff = time.Second
 			stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
 			stakerActionSuccessCounter.Inc(1)
@@ -560,7 +568,9 @@ func (s *Staker) Start(ctxIn context.Context) {
 		} else {
 			logLevel = log.Warn
 		}
-		logLevel = ephemeralErrorHandler.LogLevel(err, logLevel)
+		logLevel = isAheadOfOnChainNonceEphemeralErrorHandler.LogLevel(err, logLevel)
+		logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+		logLevel = blockValidationPendingEphemeralErrorHandler.LogLevel(err, logLevel)
 		logLevel("error acting as staker", "err", err)
 		return backoff
 	})
@@ -570,6 +580,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		if err != nil && ctx.Err() == nil {
 			log.Error("staker: error checking latest staked", "err", err)
 		}
+		// #nosec G115
 		stakerLatestStakedNodeGauge.Update(int64(staked))
 		if stakedGlobalState != nil {
 			for _, notifier := range s.stakedNotifiers {
@@ -585,6 +596,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 				log.Error("staker: error checking latest confirmed", "err", err)
 			}
 		}
+		// #nosec G115
 		stakerLatestConfirmedNodeGauge.Update(int64(confirmed))
 		if confirmedGlobalState != nil {
 			for _, notifier := range s.confirmedNotifiers {
@@ -726,6 +738,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting latest staked node of own wallet %v: %w", walletAddressOrZero, err)
 	}
+	// #nosec G115
 	stakerLatestStakedNodeGauge.Update(int64(latestStakedNodeNum))
 	if rawInfo != nil {
 		rawInfo.LatestStakedNode = latestStakedNodeNum
@@ -798,13 +811,13 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				confirmedCorrect = stakedOnNode
 			}
 			if confirmedCorrect {
+				log.Info("trying to fast confirm previous node", "node", firstUnresolvedNode, "nodeHash", nodeInfo.NodeHash)
 				err = s.tryFastConfirmationNodeNumber(ctx, firstUnresolvedNode, nodeInfo.NodeHash)
 				if err != nil {
 					return nil, err
 				}
 				if s.builder.BuildingTransactionCount() > 0 {
 					// Try to fast confirm previous nodes before working on new ones
-					log.Info("fast confirming previous node", "node", firstUnresolvedNode)
 					return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.gasRefunder)
 				}
 			}
@@ -1214,7 +1227,7 @@ func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
 	}
 	balance, err := s.client.BalanceAt(ctx, *txSenderAddress, nil)
 	if err != nil {
-		log.Error("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
+		log.Warn("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
 		return
 	}
 	stakerBalanceGauge.Update(arbmath.BalancePerEther(balance))

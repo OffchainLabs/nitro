@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -43,7 +44,7 @@ func TestDebugAPI(t *testing.T) {
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
 	Require(t, err)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	tx, err := arbSys.WithdrawEth(&auth, common.Address{})
+	tx, err := arbSys.SendTxToL1(&auth, common.Address{}, []byte{})
 	Require(t, err)
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)

@@ -371,13 +371,16 @@ impl Module {
         for import in &bin.imports {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];
-            let (forward, import_name) = match import.name.strip_prefix(Module::FORWARDING_PREFIX) {
-                Some(name) => (true, name),
-                None => (false, import.name),
-            };
+            // allow_hostapi is only set for system modules like the
+            // forwarder. We restrict stripping the prefix for user modules.
+            let (forward, import_name) =
+                if allow_hostapi && import.name.starts_with(Self::FORWARDING_PREFIX) {
+                    (true, &import.name[Self::FORWARDING_PREFIX.len()..])
+                } else {
+                    (false, import.name)
+                };
 
-            let mut qualified_name = format!("{module}__{import_name}");
-            qualified_name = qualified_name.replace(&['/', '.', '-'] as &[char], "_");
+            let qualified_name = format!("{module}__{import_name}");
 
             let func = if let Some(import) = available_imports.get(&qualified_name) {
                 let call = match forward {
@@ -1813,7 +1816,12 @@ impl Machine {
     }
 
     #[cfg(feature = "native")]
-    pub fn call_user_func(&mut self, func: &str, args: Vec<Value>, ink: u64) -> Result<Vec<Value>> {
+    pub fn call_user_func(
+        &mut self,
+        func: &str,
+        args: Vec<Value>,
+        ink: arbutil::evm::api::Ink,
+    ) -> Result<Vec<Value>> {
         self.set_ink(ink);
         self.call_function("user", func, args)
     }

@@ -126,7 +126,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 		Require(t, err)
 		coordinator := &SeqCoordinator{
-			RedisCoordinator: *redisCoordinator,
+			redisCoordinator: *redisCoordinator,
 			config:           config,
 			signer:           nullSigner,
 		}
@@ -182,7 +182,7 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	Require(t, err)
 	coordinator := &SeqCoordinator{
-		RedisCoordinator: *redisCoordinator,
+		redisCoordinator: *redisCoordinator,
 		config:           config,
 		signer:           nullSigner,
 	}
@@ -192,18 +192,18 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	msgBytes, err := coordinator.msgCountToSignedBytes(0)
 	Require(t, err)
 	for i := arbutil.MessageIndex(1); i <= 10; i++ {
-		err = coordinator.Client.Set(ctx, redisutil.MessageKeyFor(i), msgBytes, time.Hour).Err()
+		err = coordinator.RedisCoordinator().Client.Set(ctx, redisutil.MessageKeyFor(i), msgBytes, time.Hour).Err()
 		Require(t, err)
-		err = coordinator.Client.Set(ctx, redisutil.MessageSigKeyFor(i), msgBytes, time.Hour).Err()
+		err = coordinator.RedisCoordinator().Client.Set(ctx, redisutil.MessageSigKeyFor(i), msgBytes, time.Hour).Err()
 		Require(t, err)
 		keys = append(keys, redisutil.MessageKeyFor(i), redisutil.MessageSigKeyFor(i))
 	}
 	// Set msgCount key
 	msgCountBytes, err := coordinator.msgCountToSignedBytes(11)
 	Require(t, err)
-	err = coordinator.Client.Set(ctx, redisutil.MSG_COUNT_KEY, msgCountBytes, time.Hour).Err()
+	err = coordinator.RedisCoordinator().Client.Set(ctx, redisutil.MSG_COUNT_KEY, msgCountBytes, time.Hour).Err()
 	Require(t, err)
-	exists, err := coordinator.Client.Exists(ctx, keys...).Result()
+	exists, err := coordinator.RedisCoordinator().Client.Exists(ctx, keys...).Result()
 	Require(t, err)
 	if exists != 20 {
 		t.Fatal("couldn't find all messages and signatures in redis")
@@ -214,7 +214,7 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	Require(t, err)
 
 	// Check if messages and signatures were deleted successfully
-	exists, err = coordinator.Client.Exists(ctx, keys[:8]...).Result()
+	exists, err = coordinator.RedisCoordinator().Client.Exists(ctx, keys[:8]...).Result()
 	Require(t, err)
 	if exists != 0 {
 		t.Fatal("finalized messages and signatures in range 1 to 4 were not deleted")
@@ -230,7 +230,7 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	// Try deleting finalized messages when theres already a finalizedMsgCount
 	err = coordinator.deleteFinalizedMsgsFromRedis(ctx, 7)
 	Require(t, err)
-	exists, err = coordinator.Client.Exists(ctx, keys[8:12]...).Result()
+	exists, err = coordinator.RedisCoordinator().Client.Exists(ctx, keys[8:12]...).Result()
 	Require(t, err)
 	if exists != 0 {
 		t.Fatal("finalized messages and signatures in range 5 to 6 were not deleted")
@@ -242,7 +242,7 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	}
 
 	// Check that non-finalized messages are still available in redis
-	exists, err = coordinator.Client.Exists(ctx, keys[12:]...).Result()
+	exists, err = coordinator.RedisCoordinator().Client.Exists(ctx, keys[12:]...).Result()
 	Require(t, err)
 	if exists != 8 {
 		t.Fatal("non-finalized messages and signatures in range 7 to 10 are not fully available")
@@ -273,7 +273,7 @@ func TestSeqCoordinatorAddsBlockMetadata(t *testing.T) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	Require(t, err)
 	coordinator := &SeqCoordinator{
-		RedisCoordinator: *redisCoordinator,
+		redisCoordinator: *redisCoordinator,
 		config:           config,
 		signer:           nullSigner,
 	}

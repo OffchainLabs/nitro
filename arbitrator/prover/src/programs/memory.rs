@@ -1,6 +1,8 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+use arbutil::evm::api::Gas;
+
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct MemoryModel {
@@ -28,20 +30,20 @@ impl MemoryModel {
     }
 
     /// Determines the gas cost of allocating `new` pages given `open` are active and `ever` have ever been.
-    pub fn gas_cost(&self, new: u16, open: u16, ever: u16) -> u64 {
+    pub fn gas_cost(&self, new: u16, open: u16, ever: u16) -> Gas {
         let new_open = open.saturating_add(new);
         let new_ever = ever.max(new_open);
 
         // free until expansion beyond the first few
         if new_ever <= self.free_pages {
-            return 0;
+            return Gas(0);
         }
 
         let credit = |pages: u16| pages.saturating_sub(self.free_pages);
         let adding = credit(new_open).saturating_sub(credit(open)) as u64;
         let linear = adding.saturating_mul(self.page_gas.into());
         let expand = Self::exp(new_ever) - Self::exp(ever);
-        linear.saturating_add(expand)
+        Gas(linear.saturating_add(expand))
     }
 
     fn exp(pages: u16) -> u64 {
@@ -81,14 +83,14 @@ fn test_model() {
     let model = MemoryModel::new(2, 1000);
 
     for jump in 1..=128 {
-        let mut total = 0;
+        let mut total = Gas(0);
         let mut pages = 0;
         while pages < 128 {
             let jump = jump.min(128 - pages);
             total += model.gas_cost(jump, pages, pages);
             pages += jump;
         }
-        assert_eq!(total, 31999998);
+        assert_eq!(total, Gas(31999998));
     }
 
     for jump in 1..=128 {
@@ -98,7 +100,7 @@ fn test_model() {
         let mut adds = 0;
         while ever < 128 {
             let jump = jump.min(128 - open);
-            total += model.gas_cost(jump, open, ever);
+            total += model.gas_cost(jump, open, ever).0;
             open += jump;
             ever = ever.max(open);
 
@@ -114,12 +116,12 @@ fn test_model() {
     }
 
     // check saturation
-    assert_eq!(u64::MAX, model.gas_cost(129, 0, 0));
-    assert_eq!(u64::MAX, model.gas_cost(u16::MAX, 0, 0));
+    assert_eq!(Gas(u64::MAX), model.gas_cost(129, 0, 0));
+    assert_eq!(Gas(u64::MAX), model.gas_cost(u16::MAX, 0, 0));
 
     // check free pages
     let model = MemoryModel::new(128, 1000);
-    assert_eq!(0, model.gas_cost(128, 0, 0));
-    assert_eq!(0, model.gas_cost(128, 0, 128));
-    assert_eq!(u64::MAX, model.gas_cost(129, 0, 0));
+    assert_eq!(Gas(0), model.gas_cost(128, 0, 0));
+    assert_eq!(Gas(0), model.gas_cost(128, 0, 128));
+    assert_eq!(Gas(u64::MAX), model.gas_cost(129, 0, 0));
 }
