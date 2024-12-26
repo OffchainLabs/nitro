@@ -298,7 +298,7 @@ func makeStubPublisher(els *expressLaneService) *stubPublisher {
 }
 
 func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	if tx == nil {
+	if tx.CalldataUnits != 0 {
 		return errors.New("oops, bad tx")
 	}
 	control, _ := s.els.roundControl.Get(0)
@@ -394,7 +394,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	}
 	// We should have only published 2, as we are missing sequence number 3.
 	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
-	require.Equal(t, len(messages), len(els.messagesBySequenceNumber))
+	require.Equal(t, 3, len(els.messagesBySequenceNumber)) // Processed txs are deleted
 
 	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3, Transaction: &types.Transaction{}})
 	require.NoError(t, err)
@@ -425,15 +425,16 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 		},
 		{
 			SequenceNumber: 2,
-			Transaction:    nil,
+			Transaction:    types.NewTx(&types.DynamicFeeTx{}),
 		},
 		{
 			SequenceNumber: 2,
 			Transaction:    &types.Transaction{},
 		},
 	}
+	messages[2].Transaction.CalldataUnits = 1
 	for _, msg := range messages {
-		if msg.Transaction == nil {
+		if msg.Transaction.CalldataUnits != 0 {
 			err := els.sequenceExpressLaneSubmission(ctx, msg)
 			require.ErrorContains(t, err, "oops, bad tx")
 		} else {
