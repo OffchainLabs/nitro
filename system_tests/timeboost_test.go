@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -41,6 +42,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestExpressLaneControlTransfer(t *testing.T) {
@@ -192,7 +194,7 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrect(t *testing.T) {
 	t.Parallel()
 
-	// logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
+	logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -320,10 +322,9 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_Timeboo
 	verifyTimeboostedCorrectness(t, ctx, "Alice", feedListener.ConsensusNode, feedListener.Client, false, aliceTx, aliceBlock)
 	verifyTimeboostedCorrectness(t, ctx, "Charlie", feedListener.ConsensusNode, feedListener.Client, true, charlie0, charlieBlock)
 
-	// arbnode.BlockHashMismatchLogMsg has been randomly appearing and disappearing when running this test, not sure why that might be happening
-	// if logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg) {
-	// 	t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
-	// }
+	if logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg) {
+		t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
+	}
 }
 
 // verifyTimeboostedCorrectness is used to check if the timeboosted byte array in both the sequencer's tx streamer and the client node's tx streamer (which is connected
