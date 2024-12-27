@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS Bids (
     Amount TEXT NOT NULL,
     Signature TEXT NOT NULL
 );
+CREATE INDEX idx_bids_round ON Bids(Round);
 `
 	schemaList = []string{version1}
 )

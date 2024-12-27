@@ -298,9 +298,11 @@ func makeStubPublisher(els *expressLaneService) *stubPublisher {
 	}
 }
 
+var emptyTx = types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), nil)
+
 func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, txIsQueuedNotifier chan struct{}) error {
 	defer close(txIsQueuedNotifier)
-	if tx.CalldataUnits != 0 {
+	if tx.Hash() != emptyTx.Hash() {
 		return errors.New("oops, bad tx")
 	}
 	control, _ := s.els.roundControl.Get(0)
@@ -379,23 +381,23 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
 			SequenceNumber: 10,
-			Transaction:    types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}),
+			Transaction:    types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), []byte{1}),
 		},
 		{
 			SequenceNumber: 5,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 1,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 4,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 2,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 	}
 	var wg sync.WaitGroup
@@ -420,7 +422,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	els.Unlock()
 
 	wg.Add(2) // 4 & 5 should be able to get in after 3
-	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3, Transaction: &types.Transaction{}})
+	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3, Transaction: emptyTx})
 	require.NoError(t, err)
 	wg.Wait()
 	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
@@ -448,24 +450,23 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
 			SequenceNumber: 1,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 2,
-			Transaction:    types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}),
+			Transaction:    types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), []byte{1}),
 		},
 		{
 			SequenceNumber: 3,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 4,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 	}
-	messages[1].Transaction.CalldataUnits = 1
 	for _, msg := range messages {
-		if msg.Transaction.CalldataUnits != 0 {
+		if msg.Transaction.Hash() != emptyTx.Hash() {
 			err := els.sequenceExpressLaneSubmission(ctx, msg)
 			require.ErrorContains(t, err, "oops, bad tx")
 		} else {

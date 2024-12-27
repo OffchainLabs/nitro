@@ -109,7 +109,7 @@ func activateProgramInternal(
 		(*u64)(gasLeft),
 	))
 
-	module, msg, err := status_mod.toResult(output.intoBytes(), debug)
+	module, msg, err := status_mod.toResult(rustBytesIntoBytes(output), debug)
 	if err != nil {
 		if debug {
 			log.Warn("activation failed", "err", err, "msg", msg, "program", addressForLogging)
@@ -119,7 +119,7 @@ func activateProgramInternal(
 		}
 		return nil, nil, err
 	}
-	hash := moduleHash.toHash()
+	hash := bytes32ToHash(moduleHash)
 	targets := db.Database().WasmTargets()
 	type result struct {
 		target ethdb.WasmTarget
@@ -141,7 +141,7 @@ func activateProgramInternal(
 					goSlice([]byte(target)),
 					output,
 				)
-				asm := output.intoBytes()
+				asm := rustBytesIntoBytes(output)
 				if status_asm != 0 {
 					results <- result{target, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))}
 					return
@@ -279,7 +279,7 @@ func callProgram(
 	))
 
 	depth := interpreter.Depth()
-	data, msg, err := status.toResult(output.intoBytes(), debug)
+	data, msg, err := status.toResult(rustBytesIntoBytes(output), debug)
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
@@ -292,7 +292,7 @@ func callProgram(
 //export handleReqImpl
 func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out_response *C.GoSliceData, out_raw_data *C.GoSliceData) {
 	api := getApi(apiId)
-	reqData := data.read()
+	reqData := readRustSlice(data)
 	reqType := RequestType(req_type - EvmApiMethodReqOffset)
 	response, raw_data, cost := api.handler(reqType, reqData)
 	*costPtr = u64(cost)
@@ -418,14 +418,14 @@ func SetTarget(name ethdb.WasmTarget, description string, native bool) error {
 		cbool(native),
 	))
 	if status != userSuccess {
-		msg := arbutil.ToStringOrHex(output.intoBytes())
+		msg := arbutil.ToStringOrHex(rustBytesIntoBytes(output))
 		log.Error("failed to set stylus compilation target", "status", status, "msg", msg)
 		return fmt.Errorf("failed to set stylus compilation target, status %v: %v", status, msg)
 	}
 	return nil
 }
 
-func (value bytes32) toHash() common.Hash {
+func bytes32ToHash(value *bytes32) common.Hash {
 	hash := common.Hash{}
 	for index, b := range value.bytes {
 		hash[index] = byte(b)
@@ -449,22 +449,28 @@ func addressToBytes20(addr common.Address) bytes20 {
 	return value
 }
 
-func (slice *rustSlice) read() []byte {
+func readRustSlice(slice *rustSlice) []byte {
+	if slice.len == 0 {
+		return nil
+	}
 	return arbutil.PointerToSlice((*byte)(slice.ptr), int(slice.len))
 }
 
-func (vec *rustBytes) read() []byte {
+func readRustBytes(vec *rustBytes) []byte {
+	if vec.len == 0 {
+		return nil
+	}
 	return arbutil.PointerToSlice((*byte)(vec.ptr), int(vec.len))
 }
 
-func (vec *rustBytes) intoBytes() []byte {
-	slice := vec.read()
-	vec.drop()
+func rustBytesIntoBytes(vec *rustBytes) []byte {
+	slice := readRustBytes(vec)
+	dropRustBytes(vec)
 	return slice
 }
 
-func (vec *rustBytes) drop() {
-	C.stylus_drop_vec(*vec)
+func dropRustBytes(vec *rustBytes) {
+	C.free_rust_bytes(*vec)
 }
 
 func goSlice(slice []byte) C.GoSliceData {

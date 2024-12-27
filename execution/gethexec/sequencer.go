@@ -204,6 +204,7 @@ type txQueueItem struct {
 	returnedResult  *atomic.Bool
 	ctx             context.Context
 	firstAppearance time.Time
+	isTimeboosted   bool
 }
 
 func (i *txQueueItem) returnResult(err error) {
@@ -547,6 +548,7 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 		&atomic.Bool{},
 		queueCtx,
 		time.Now(),
+		isExpressLaneController,
 	}
 	select {
 	case s.txQueue <- queueItem:
@@ -623,6 +625,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		returnedResult:  &atomic.Bool{},
 		ctx:             context.TODO(),
 		firstAppearance: time.Now(),
+		isTimeboosted:   true,
 	}
 	return nil
 }
@@ -1018,6 +1021,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.nonceCache.BeginNewBlock()
 	queueItems = s.precheckNonces(queueItems, totalBlockSize)
 	txes := make([]*types.Transaction, len(queueItems))
+	timeboostedTxs := make(map[common.Hash]struct{})
 	hooks := s.makeSequencingHooks()
 	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
 	totalBlockSize = 0 // recompute the totalBlockSize to double check it
@@ -1025,6 +1029,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		txes[i] = queueItem.tx
 		totalBlockSize = arbmath.SaturatingAdd(totalBlockSize, queueItem.txSize)
 		hooks.ConditionalOptionsForTx[i] = queueItem.options
+		if queueItem.isTimeboosted {
+			timeboostedTxs[queueItem.tx.Hash()] = struct{}{}
+		}
 	}
 
 	if totalBlockSize > config.MaxTxDataSize {
@@ -1079,9 +1086,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		err   error
 	)
 	if config.EnableProfiling {
-		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks)
+		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks, timeboostedTxs)
 	} else {
-		block, err = s.execEngine.SequenceTransactions(header, txes, hooks)
+		block, err = s.execEngine.SequenceTransactions(header, txes, hooks, timeboostedTxs)
 	}
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed)
