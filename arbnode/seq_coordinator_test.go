@@ -4,6 +4,7 @@
 package arbnode
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/rand"
@@ -50,7 +51,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 			}
 			asIndex := arbutil.MessageIndex(messageCount)
 			holdingLockout := atomicTimeRead(&coord.lockoutUntil)
-			err := coord.acquireLockoutAndWriteMessage(ctx, asIndex, asIndex+1, &arbostypes.EmptyTestMessageWithMetadata)
+			err := coord.acquireLockoutAndWriteMessage(ctx, asIndex, asIndex+1, &arbostypes.EmptyTestMessageWithMetadata, nil)
 			if err == nil {
 				sequenced[messageCount] = true
 				data.messageCount.Store(messageCount + 1)
@@ -245,5 +246,44 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	Require(t, err)
 	if exists != 8 {
 		t.Fatal("non-finalized messages and signatures in range 7 to 10 are not fully available")
+	}
+}
+
+func TestSeqCoordinatorAddsBlockMetadata(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	coordConfig := TestSeqCoordinatorConfig
+	coordConfig.LockoutDuration = time.Millisecond * 100
+	coordConfig.LockoutSpare = time.Millisecond * 10
+	coordConfig.Signer.ECDSA.AcceptSequencer = false
+	coordConfig.Signer.SymmetricFallback = true
+	coordConfig.Signer.SymmetricSign = true
+	coordConfig.Signer.Symmetric.Dangerous.DisableSignatureVerification = true
+	coordConfig.Signer.Symmetric.SigningKey = ""
+
+	nullSigner, err := signature.NewSignVerify(&coordConfig.Signer, nil, nil)
+	Require(t, err)
+
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
+	coordConfig.RedisUrl = redisUrl
+
+	config := coordConfig
+	config.MyUrl = "test"
+	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
+	Require(t, err)
+	coordinator := &SeqCoordinator{
+		redisCoordinator: *redisCoordinator,
+		config:           config,
+		signer:           nullSigner,
+	}
+
+	pos := arbutil.MessageIndex(1)
+	blockMetadataWant := arbostypes.BlockMetadata{0, 4}
+	Require(t, coordinator.acquireLockoutAndWriteMessage(ctx, pos, pos+1, &arbostypes.EmptyTestMessageWithMetadata, blockMetadataWant))
+	blockMetadataGot, err := coordinator.blockMetadataAt(ctx, pos)
+	Require(t, err)
+	if !bytes.Equal(blockMetadataWant, blockMetadataGot) {
+		t.Fatal("got incorrect blockMetadata")
 	}
 }

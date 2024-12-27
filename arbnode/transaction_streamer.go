@@ -521,8 +521,8 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 	return msgCount, nil
 }
 
-func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata) error {
-	return s.AddMessagesAndEndBatch(pos, messagesAreConfirmed, messages, nil)
+func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, blockMetadataArr []arbostypes.BlockMetadata) error {
+	return s.AddMessagesAndEndBatch(pos, messagesAreConfirmed, messages, blockMetadataArr, nil)
 }
 
 func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
@@ -662,7 +662,7 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 			L2msg: msg,
 		},
 		DelayedMessagesRead: 1,
-	}})
+	}}, nil)
 }
 
 // Used in redis tests
@@ -679,12 +679,20 @@ func endBatch(batch ethdb.Batch) error {
 	return batch.Write()
 }
 
-func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, blockMetadataArr []arbostypes.BlockMetadata, batch ethdb.Batch) error {
 	messagesWithBlockInfo := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(messages))
 	for _, message := range messages {
 		messagesWithBlockInfo = append(messagesWithBlockInfo, arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: message,
 		})
+	}
+
+	if len(blockMetadataArr) == len(messagesWithBlockInfo) {
+		for i, blockMetadata := range blockMetadataArr {
+			messagesWithBlockInfo[i].BlockMetadata = blockMetadata
+		}
+	} else if len(blockMetadataArr) > 0 {
+		return fmt.Errorf("size of blockMetadata array doesn't match the size of messages array. lockMetadataArrSize: %d, messagesSize: %d", len(blockMetadataArr), len(messages))
 	}
 
 	if messagesAreConfirmed {
@@ -987,7 +995,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	}
 
 	if s.coordinator != nil {
-		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta); err != nil {
+		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta, blockMetadata); err != nil {
 			return err
 		}
 	}

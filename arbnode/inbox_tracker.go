@@ -832,7 +832,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	}
 
 	// This also writes the batch
-	err = t.txStreamer.AddMessagesAndEndBatch(prevbatchmeta.MessageCount, true, messages, dbBatch)
+	err = t.txStreamer.AddMessagesAndEndBatch(prevbatchmeta.MessageCount, true, messages, nil, dbBatch)
 	if err != nil {
 		return err
 	}
