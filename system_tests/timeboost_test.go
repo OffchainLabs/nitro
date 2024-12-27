@@ -93,8 +93,10 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	}
 	var sampleBulkData []arbostypes.BlockMetadata
 	for i := 1; i <= int(latestL2); i++ {
+		// #nosec G115
 		blockMetadata := []byte{0, uint8(i)}
 		sampleBulkData = append(sampleBulkData, blockMetadata)
+		// #nosec G115
 		Require(t, arbDb.Put(dbKey([]byte("t"), uint64(i)), blockMetadata))
 	}
 
