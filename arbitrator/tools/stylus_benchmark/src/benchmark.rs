@@ -45,7 +45,7 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
 
     let exec = &mut WasmEnv::default();
 
-    let module = jit::program::exec_program(
+    let module = jit::program::launch_program_thread(
         exec,
         compiled_module.into(),
         calldata,
