@@ -3,11 +3,13 @@ package gethexec
 import (
 	"context"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/execution"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/execution"
 )
 
 type SyncMonitorConfig struct {

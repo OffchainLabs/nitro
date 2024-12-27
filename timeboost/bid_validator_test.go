@@ -2,16 +2,15 @@ package timeboost
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBidValidator_validateBid(t *testing.T) {
@@ -102,20 +101,22 @@ func TestBidValidator_validateBid(t *testing.T) {
 
 	for _, tt := range tests {
 		bv := BidValidator{
-			chainId:                 big.NewInt(1),
-			initialRoundTimestamp:   time.Now().Add(-time.Second),
+			chainId: big.NewInt(1),
+			roundTimingInfo: RoundTimingInfo{
+				Offset:         time.Now().Add(-time.Second * 3),
+				Round:          10 * time.Second,
+				AuctionClosing: 5 * time.Second,
+			},
 			reservePrice:            big.NewInt(2),
-			roundDuration:           time.Minute,
-			auctionClosingDuration:  45 * time.Second,
 			auctionContract:         setup.expressLaneAuction,
 			auctionContractAddr:     setup.expressLaneAuctionAddr,
 			bidsPerSenderInRound:    make(map[common.Address]uint8),
 			maxBidsPerSenderInRound: 5,
 		}
-		if tt.auctionClosed {
-			bv.roundDuration = 0
-		}
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.auctionClosed {
+				time.Sleep(time.Second * 3)
+			}
 			_, err := bv.validateBid(tt.bid, setup.expressLaneAuction.BalanceOf)
 			require.ErrorIs(t, err, tt.expectedErr)
 			require.Contains(t, err.Error(), tt.errMsg)
@@ -130,14 +131,17 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 	}
 	auctionContractAddr := common.Address{'a'}
 	bv := BidValidator{
-		chainId:                 big.NewInt(1),
-		initialRoundTimestamp:   time.Now().Add(-time.Second),
-		reservePrice:            big.NewInt(2),
-		roundDuration:           time.Minute,
-		auctionClosingDuration:  45 * time.Second,
-		bidsPerSenderInRound:    make(map[common.Address]uint8),
-		maxBidsPerSenderInRound: 5,
-		auctionContractAddr:     auctionContractAddr,
+		chainId: big.NewInt(1),
+		roundTimingInfo: RoundTimingInfo{
+			Offset:         time.Now().Add(-time.Second),
+			Round:          time.Minute,
+			AuctionClosing: 45 * time.Second,
+		},
+		reservePrice:                   big.NewInt(2),
+		bidsPerSenderInRound:           make(map[common.Address]uint8),
+		maxBidsPerSenderInRound:        5,
+		auctionContractAddr:            auctionContractAddr,
+		auctionContractDomainSeparator: common.Hash{},
 	}
 	privateKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
@@ -149,7 +153,11 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 		Amount:                 big.NewInt(3),
 		Signature:              []byte{'a'},
 	}
-	signature, err := buildSignature(privateKey, bid.ToMessageBytes())
+
+	bidHash, err := bid.ToEIP712Hash(bv.auctionContractDomainSeparator)
+	require.NoError(t, err)
+
+	signature, err := crypto.Sign(bidHash[:], privateKey)
 	require.NoError(t, err)
 
 	bid.Signature = signature
@@ -160,15 +168,6 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 	_, err = bv.validateBid(bid, balanceCheckerFn)
 	require.ErrorIs(t, err, ErrTooManyBids)
 
-}
-
-func buildSignature(privateKey *ecdsa.PrivateKey, data []byte) ([]byte, error) {
-	prefixedData := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(data))), data...))
-	signature, err := crypto.Sign(prefixedData, privateKey)
-	if err != nil {
-		return nil, err
-	}
-	return signature, nil
 }
 
 func buildValidBid(t *testing.T, auctionContractAddr common.Address) *Bid {
@@ -183,7 +182,10 @@ func buildValidBid(t *testing.T, auctionContractAddr common.Address) *Bid {
 		Signature:              []byte{'a'},
 	}
 
-	signature, err := buildSignature(privateKey, bid.ToMessageBytes())
+	bidHash, err := bid.ToEIP712Hash(common.Hash{})
+	require.NoError(t, err)
+
+	signature, err := crypto.Sign(bidHash[:], privateKey)
 	require.NoError(t, err)
 
 	bid.Signature = signature

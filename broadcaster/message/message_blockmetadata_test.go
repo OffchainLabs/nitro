@@ -30,11 +30,13 @@ func TestTimeboostedInDifferentScenarios(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			for txIndex, isTxTimeBoosted := range tc.txs {
-				if isTxTimeBoosted && !tc.blockMetadata.IsTxTimeboosted(txIndex) {
-					t.Fatalf("incorrect timeboosted bit for tx of index %d, it should be timeboosted", txIndex)
-				} else if !isTxTimeBoosted && tc.blockMetadata.IsTxTimeboosted(txIndex) {
-					t.Fatalf("incorrect timeboosted bit for tx of index %d, it shouldn't be timeboosted", txIndex)
+			for txIndex, want := range tc.txs {
+				have, err := tc.blockMetadata.IsTxTimeboosted(txIndex)
+				if err != nil {
+					t.Fatalf("error getting timeboosted bit for tx of index %d: %v", txIndex, err)
+				}
+				if want != have {
+					t.Fatalf("incorrect timeboosted bit for tx of index %d, Got: %v, Want: %v", txIndex, have, want)
 				}
 			}
 		})

@@ -13,9 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
@@ -61,12 +62,11 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	raw := rawdb.NewMemoryDatabase()
 
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 
 	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
 	stateroot, err := InitializeArbosInDatabase(raw, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
-
 	triedbConfig := cacheConfig.TriedbConfig()
 	stateDb, err := state.New(stateroot, state.NewDatabaseWithConfig(raw, triedbConfig), nil)
 	Require(t, err)
@@ -109,6 +109,7 @@ func pseudorandomAccountInitInfoForTesting(prand *testhelpers.PseudoRandomDataSo
 }
 
 func pseudorandomHashHashMapForTesting(prand *testhelpers.PseudoRandomDataSource, maxItems uint64) map[common.Hash]common.Hash {
+	// #nosec G115
 	size := int(prand.GetUint64() % maxItems)
 	ret := make(map[common.Hash]common.Hash)
 	for i := 0; i < size; i++ {
@@ -125,6 +126,7 @@ func checkAddressTable(arbState *ArbosState, addrTable []common.Address, t *test
 		Fail(t)
 	}
 	for i, addr := range addrTable {
+		// #nosec G115
 		res, exists, err := atab.LookupIndex(uint64(i))
 		Require(t, err)
 		if !exists {

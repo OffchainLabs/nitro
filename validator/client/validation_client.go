@@ -11,27 +11,26 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/validator"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
 	client          *rpcclient.RpcClient
 	name            string
-	stylusArchs     []rawdb.Target
+	stylusArchs     []ethdb.WasmTarget
 	room            atomic.Int32
 	wasmModuleRoots []common.Hash
 }
@@ -40,7 +39,7 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 	return &ValidationClient{
 		client:      rpcclient.NewRpcClient(config, stack),
 		name:        "not started",
-		stylusArchs: []rawdb.Target{"not started"},
+		stylusArchs: []ethdb.WasmTarget{"not started"},
 	}
 }
 
@@ -67,20 +66,20 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
-	var stylusArchs []rawdb.Target
+	var stylusArchs []ethdb.WasmTarget
 	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
 		var rpcError rpc.Error
 		ok := errors.As(err, &rpcError)
 		if !ok || rpcError.ErrorCode() != -32601 {
 			return fmt.Errorf("could not read stylus arch from server: %w", err)
 		}
-		stylusArchs = []rawdb.Target{rawdb.Target("pre-stylus")} // invalid, will fail if trying to validate block with stylus
+		stylusArchs = []ethdb.WasmTarget{ethdb.WasmTarget("pre-stylus")} // invalid, will fail if trying to validate block with stylus
 	} else {
 		if len(stylusArchs) == 0 {
 			return fmt.Errorf("could not read stylus archs from validation server")
 		}
 		for _, stylusArch := range stylusArchs {
-			if stylusArch != rawdb.TargetWavm && stylusArch != rawdb.LocalTarget() && stylusArch != "mock" {
+			if !rawdb.IsSupportedWasmTarget(ethdb.WasmTarget(stylusArch)) && stylusArch != "mock" {
 				return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
 			}
 		}
@@ -102,6 +101,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	} else {
 		log.Info("connected to validation server", "name", name, "room", room)
 	}
+	// #nosec G115
 	c.room.Store(int32(room))
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
@@ -117,11 +117,11 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 	return nil, errors.New("not started")
 }
 
-func (c *ValidationClient) StylusArchs() []rawdb.Target {
+func (c *ValidationClient) StylusArchs() []ethdb.WasmTarget {
 	if c.Started() {
 		return c.stylusArchs
 	}
-	return []rawdb.Target{"not started"}
+	return []ethdb.WasmTarget{"not started"}
 }
 
 func (c *ValidationClient) Stop() {
@@ -153,10 +153,14 @@ func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) 
 	}
 }
 
-func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
+func (c *ExecutionClient) CreateExecutionRun(
+	wasmModuleRoot common.Hash,
+	input *validator.ValidationInput,
+	useBoldMachine bool,
+) containers.PromiseInterface[validator.ExecutionRun] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input))
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), useBoldMachine)
 		if err != nil {
 			return nil, err
 		}
@@ -186,25 +190,16 @@ func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[com
 	})
 }
 
-func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	jsonInput := server_api.ValidationInputToJson(input)
-	if err := jsonInput.WriteToFile(); err != nil {
-		return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
-			return struct{}{}, err
-		})
-	}
-	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, server_api.Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
-		return struct{}{}, err
-	})
-}
-
 func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
 	err := r.client.client.CallContext(ctx, nil, server_api.Namespace+"_execKeepAlive", r.id)
 	if err != nil {
 		log.Error("execution run keepalive failed", "err", err)
 	}
 	return time.Minute // TODO: configurable
+}
+
+func (r *ExecutionClientRun) CheckAlive(ctx context.Context) error {
+	return r.client.client.CallContext(ctx, nil, server_api.Namespace+"_checkAlive", r.id)
 }
 
 func (r *ExecutionClientRun) Start(ctx_in context.Context) {

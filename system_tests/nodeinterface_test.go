@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 )
@@ -163,6 +164,7 @@ func TestGetL1Confirmations(t *testing.T) {
 
 	numTransactions := 200
 
+	// #nosec G115
 	if l1Confs >= uint64(numTransactions) {
 		t.Fatalf("L1Confirmations for latest block %v is already %v (over %v)", genesisBlock.Number(), l1Confs, numTransactions)
 	}
@@ -175,6 +177,7 @@ func TestGetL1Confirmations(t *testing.T) {
 	Require(t, err)
 
 	// Allow a gap of 10 for asynchronicity, just in case
+	// #nosec G115
 	if l1Confs+10 < uint64(numTransactions) {
 		t.Fatalf("L1Confirmations for latest block %v is only %v (did not hit expected %v)", genesisBlock.Number(), l1Confs, numTransactions)
 	}
