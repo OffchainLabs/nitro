@@ -2,6 +2,7 @@ package message
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -37,12 +38,13 @@ type BroadcastFeedMessage struct {
 	Message        arbostypes.MessageWithMetadata `json:"message"`
 	BlockHash      *common.Hash                   `json:"blockHash,omitempty"`
 	Signature      []byte                         `json:"signature"`
-	BlockMetadata  arbostypes.BlockMetadata       `json:"blockMetadata"`
+	BlockMetadata  arbostypes.BlockMetadata       `json:"blockMetadata,omitempty"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`
 }
 
 func (m *BroadcastFeedMessage) Size() uint64 {
+	// #nosec G115
 	return uint64(len(m.Signature) + len(m.Message.Message.L2msg) + 160)
 }
 

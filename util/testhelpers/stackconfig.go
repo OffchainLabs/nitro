@@ -9,12 +9,12 @@ func CreateStackConfigForTest(dataDir string) *node.Config {
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = dataDir
 	stackConf.UseLightweightKDF = true
-	stackConf.AuthPort = 0
 	stackConf.WSPort = 0
 	stackConf.WSModules = append(stackConf.WSModules, "eth", "debug")
 	stackConf.HTTPPort = 0
 	stackConf.HTTPHost = ""
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth", "debug")
+	stackConf.AuthPort = 0
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.ListenAddr = ""

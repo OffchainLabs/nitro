@@ -6,6 +6,7 @@ package merkleAccumulator
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -97,6 +98,7 @@ func (acc *MerkleAccumulator) GetPartials() ([]*common.Hash, error) {
 	}
 	partials := make([]*common.Hash, CalcNumPartials(size))
 	for i := range partials {
+		// #nosec G115
 		p, err := acc.getPartial(uint64(i))
 		if err != nil {
 			return nil, err

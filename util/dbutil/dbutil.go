@@ -6,13 +6,14 @@ package dbutil
 import (
 	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"regexp"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/syndtr/goleveldb/leveldb"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
-	"github.com/syndtr/goleveldb/leveldb"
 )
 
 func IsErrNotFound(err error) bool {
@@ -22,13 +23,15 @@ func IsErrNotFound(err error) bool {
 var pebbleNotExistErrorRegex = regexp.MustCompile("pebble: database .* does not exist")
 
 func isPebbleNotExistError(err error) bool {
-	return pebbleNotExistErrorRegex.MatchString(err.Error())
+	return err != nil && pebbleNotExistErrorRegex.MatchString(err.Error())
 }
 
 func isLeveldbNotExistError(err error) bool {
-	return os.IsNotExist(err)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
+// IsNotExistError returns true if the error is a "database not found" error.
+// It must return false if err is nil.
 func IsNotExistError(err error) bool {
 	return isLeveldbNotExistError(err) || isPebbleNotExistError(err)
 }

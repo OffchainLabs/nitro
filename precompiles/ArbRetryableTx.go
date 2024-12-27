@@ -9,8 +9,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -39,7 +39,7 @@ type ArbRetryableTx struct {
 var ErrSelfModifyingRetryable = errors.New("retryable cannot modify itself")
 
 func (con ArbRetryableTx) oldNotFoundError(c ctx) error {
-	if c.State.ArbOSVersion() >= 3 {
+	if c.State.ArbOSVersion() >= params.ArbosVersion_3 {
 		return con.NoTicketWithIDError()
 	}
 	return errors.New("ticketId not found")
@@ -149,12 +149,11 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, e
 	if err != nil {
 		return nil, err
 	}
-	return big.NewInt(int64(timeout)), nil
+	return new(big.Int).SetUint64(timeout), nil
 }
 
 // Keepalive adds one lifetime period to the ticket's expiry
 func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, error) {
-
 	// charge for the expiry update
 	retryableState := c.State.RetryableState()
 	nbytes, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time)
@@ -176,8 +175,9 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 		return big.NewInt(0), err
 	}
 
-	err = con.LifetimeExtended(c, evm, ticketId, big.NewInt(int64(newTimeout)))
-	return big.NewInt(int64(newTimeout)), err
+	bigNewTimeout := new(big.Int).SetUint64(newTimeout)
+	err = con.LifetimeExtended(c, evm, ticketId, bigNewTimeout)
+	return bigNewTimeout, err
 }
 
 // GetBeneficiary gets the beneficiary of the ticket
@@ -222,6 +222,9 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	return con.Canceled(c, evm, ticketId)
 }
 
+// Gets the redeemer of the current retryable redeem attempt.
+// Returns the zero address if the current transaction is not a retryable redeem attempt.
+// If this is an auto-redeem, returns the fee refund address of the retryable.
 func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, error) {
 	if c.txProcessor.CurrentRefundTo != nil {
 		return *c.txProcessor.CurrentRefundTo, nil
@@ -229,6 +232,7 @@ func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, e
 	return common.Address{}, nil
 }
 
+// Do not call. This method represents a retryable submission to aid explorers. Calling it will always revert.
 func (con ArbRetryableTx) SubmitRetryable(
 	c ctx, evm mech, requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
 	gasLimit uint64, maxSubmissionFee huge,
