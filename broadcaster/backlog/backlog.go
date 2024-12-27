@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -97,6 +98,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		if err != nil {
 			log.Warn("error calculating backlogSizeInBytes", "err", err)
 		} else {
+			// #nosec G115
 			backlogSizeInBytesGauge.Update(int64(size))
 		}
 	}
@@ -108,6 +110,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			segment = newBacklogSegment()
 			b.head.Store(segment)
 			b.tail.Store(segment)
+			// #nosec G115
 			confirmedSequenceNumberGauge.Update(int64(msg.SequenceNumber))
 		}
 
@@ -143,9 +146,11 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		}
 		lookupByIndex.Store(uint64(msg.SequenceNumber), segment)
 		b.messageCount.Add(1)
+		// #nosec G115
 		backlogSizeInBytesGauge.Inc(int64(msg.Size()))
 	}
 
+	// #nosec G115
 	backlogSizeGauge.Update(int64(b.Count()))
 	return nil
 }
@@ -174,7 +179,7 @@ func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 	}
 
 	bm := &m.BroadcastMessage{Version: 1}
-	required := int(end-start) + 1
+	required := end - start + 1
 	for {
 		segMsgs, err := segment.Get(arbmath.MaxInt(start, segment.Start()), arbmath.MinInt(end, segment.End()))
 		if err != nil {
@@ -183,7 +188,7 @@ func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 
 		bm.Messages = append(bm.Messages, segMsgs...)
 		segment = segment.Next()
-		if len(bm.Messages) == required {
+		if uint64(len(bm.Messages)) == required {
 			break
 		} else if segment == nil {
 			return nil, errOutOfBounds
@@ -213,6 +218,7 @@ func (b *backlog) delete(confirmed uint64) {
 		return
 	}
 
+	// #nosec G115
 	confirmedSequenceNumberGauge.Update(int64(confirmed))
 
 	// find the segment containing the confirmed message
@@ -323,7 +329,13 @@ func newBacklogSegment() *backlogSegment {
 func IsBacklogSegmentNil(segment BacklogSegment) bool {
 	if segment == nil {
 		return true
-	} else if segment.(*backlogSegment) == nil {
+	}
+	bs, ok := segment.(*backlogSegment)
+	if !ok {
+		log.Error("error in backlogSegment type assertion: clearing backlog")
+		return false
+	}
+	if bs == nil {
 		return true
 	}
 	return false

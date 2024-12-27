@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
@@ -161,7 +162,7 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_10
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -214,7 +215,7 @@ func TestComponentEstimate(t *testing.T) {
 
 	userBalance := big.NewInt(1e16)
 	maxPriorityFeePerGas := big.NewInt(0)
-	maxFeePerGas := arbmath.BigMulByUfrac(l2BaseFee, 3, 2)
+	maxFeePerGas := arbmath.BigMulByUFrac(l2BaseFee, 3, 2)
 
 	builder.L2Info.GenerateAccount("User")
 	builder.L2.TransferBalance(t, "Owner", "User", userBalance, builder.L2Info)

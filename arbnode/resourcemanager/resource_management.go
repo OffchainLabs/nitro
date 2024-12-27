@@ -14,10 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/spf13/pflag"
 )
 
 var (
@@ -256,6 +257,7 @@ func readIntFromFile(fileName string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	defer file.Close()
 
 	var limit int
 	if _, err = fmt.Fscanf(file, "%d", &limit); err != nil {
@@ -269,6 +271,7 @@ func readFromMemStats(fileName string, re *regexp.Regexp) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {

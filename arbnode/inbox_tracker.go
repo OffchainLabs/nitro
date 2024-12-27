@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -604,7 +605,7 @@ type multiplexerBackend struct {
 	positionWithinMessage uint64
 
 	ctx    context.Context
-	client arbutil.L1Interface
+	client *ethclient.Client
 	inbox  *InboxTracker
 }
 
@@ -644,7 +645,7 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1Inco
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
-func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L1Interface, batches []*SequencerInboxBatch) error {
+func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) error {
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
 	sequenceNumberToKeep := uint64(0)
@@ -701,22 +702,26 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 
 	for _, batch := range batches {
 		if batch.SequenceNumber != pos {
-			return errors.New("unexpected batch sequence number")
+			return fmt.Errorf("unexpected batch sequence number %v expected %v", batch.SequenceNumber, pos)
 		}
 		if nextAcc != batch.BeforeInboxAcc {
-			return errors.New("previous batch accumulator mismatch")
+			return fmt.Errorf("previous batch accumulator %v mismatch expected %v", batch.BeforeInboxAcc, nextAcc)
 		}
 
 		if batch.AfterDelayedCount > 0 {
 			haveDelayedAcc, err := t.GetDelayedAcc(batch.AfterDelayedCount - 1)
-			if errors.Is(err, AccumulatorNotFoundErr) {
-				// We somehow missed a referenced delayed message; go back and look for it
-				return delayedMessagesMismatch
-			}
-			if err != nil {
+			notFound := errors.Is(err, AccumulatorNotFoundErr)
+			if err != nil && !notFound {
 				return err
 			}
-			if haveDelayedAcc != batch.AfterDelayedAcc {
+			if notFound || haveDelayedAcc != batch.AfterDelayedAcc {
+				log.Debug(
+					"Delayed message accumulator doesn't match sequencer batch",
+					"batch", batch.SequenceNumber,
+					"delayedPosition", batch.AfterDelayedCount-1,
+					"haveDelayedAcc", haveDelayedAcc,
+					"batchDelayedAcc", batch.AfterDelayedAcc,
+				)
 				// We somehow missed a delayed message reorg; go back and look for it
 				return delayedMessagesMismatch
 			}
@@ -809,6 +814,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	if len(messages) > 0 {
 		latestTimestamp = messages[len(messages)-1].Message.Header.Timestamp
 	}
+	// #nosec G115
 	log.Info(
 		"InboxTracker",
 		"sequencerBatchCount", pos,
@@ -816,7 +822,9 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		"l1Block", latestL1Block,
 		"l1Timestamp", time.Unix(int64(latestTimestamp), 0),
 	)
+	// #nosec G115
 	inboxLatestBatchGauge.Update(int64(pos))
+	// #nosec G115
 	inboxLatestBatchMessageGauge.Update(int64(newMessageCount))
 
 	if t.validator != nil {
@@ -824,7 +832,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 
 	// This also writes the batch
-	err = t.txStreamer.AddMessagesAndEndBatch(prevbatchmeta.MessageCount, true, messages, dbBatch)
+	err = t.txStreamer.AddMessagesAndEndBatch(prevbatchmeta.MessageCount, true, messages, nil, dbBatch)
 	if err != nil {
 		return err
 	}

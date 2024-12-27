@@ -12,8 +12,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/ethereum/go-ethereum/ethdb/pebble"
 	flag "github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/ethdb/pebble"
 )
 
 type PersistentConfig struct {
@@ -111,16 +112,19 @@ func (c *PersistentConfig) Validate() error {
 }
 
 type PebbleConfig struct {
+	SyncMode                 bool                     `koanf:"sync-mode"`
 	MaxConcurrentCompactions int                      `koanf:"max-concurrent-compactions"`
 	Experimental             PebbleExperimentalConfig `koanf:"experimental"`
 }
 
 var PebbleConfigDefault = PebbleConfig{
+	SyncMode:                 false, // use NO-SYNC mode, see: https://github.com/ethereum/go-ethereum/issues/29819
 	MaxConcurrentCompactions: runtime.NumCPU(),
 	Experimental:             PebbleExperimentalConfigDefault,
 }
 
 func PebbleConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *PebbleConfig) {
+	f.Bool(prefix+".sync-mode", defaultConfig.SyncMode, "if true sync mode is used (data needs to be written to WAL before the write is marked as completed)")
 	f.Int(prefix+".max-concurrent-compactions", defaultConfig.MaxConcurrentCompactions, "maximum number of concurrent compactions")
 	PebbleExperimentalConfigAddOptions(prefix+".experimental", f, &defaultConfig.Experimental)
 }
@@ -179,7 +183,7 @@ var PebbleExperimentalConfigDefault = PebbleExperimentalConfig{
 	BlockSize:                 4 << 10, // 4 KB
 	IndexBlockSize:            4 << 10, // 4 KB
 	TargetFileSize:            2 << 20, // 2 MB
-	TargetFileSizeEqualLevels: true,
+	TargetFileSizeEqualLevels: false,
 
 	L0CompactionConcurrency:   10,
 	CompactionDebtConcurrency: 1 << 30, // 1GB
@@ -250,6 +254,7 @@ func (c *PebbleConfig) ExtraOptions(namespace string) *pebble.ExtraOptions {
 		walDir = path.Join(walDir, namespace)
 	}
 	return &pebble.ExtraOptions{
+		SyncMode:                    c.SyncMode,
 		BytesPerSync:                c.Experimental.BytesPerSync,
 		L0CompactionFileThreshold:   c.Experimental.L0CompactionFileThreshold,
 		L0CompactionThreshold:       c.Experimental.L0CompactionThreshold,

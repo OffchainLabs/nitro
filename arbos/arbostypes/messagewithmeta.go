@@ -3,11 +3,13 @@ package arbostypes
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -36,12 +38,18 @@ var TestMessageWithMetadataAndRequestId = MessageWithMetadata{
 }
 
 // IsTxTimeboosted given a tx's index in the block returns whether the tx was timeboosted or not
-func (b BlockMetadata) IsTxTimeboosted(txIndex int) bool {
+func (b BlockMetadata) IsTxTimeboosted(txIndex int) (bool, error) {
+	if len(b) == 0 {
+		return false, errors.New("blockMetadata is not set")
+	}
+	if txIndex < 0 {
+		return false, fmt.Errorf("invalid transaction index- %d, should be positive", txIndex)
+	}
 	maxTxCount := (len(b) - 1) * 8
 	if txIndex >= maxTxCount {
-		return false
+		return false, nil
 	}
-	return b[1+(txIndex/8)]&(1<<(txIndex%8)) != 0
+	return b[1+(txIndex/8)]&(1<<(txIndex%8)) != 0, nil
 }
 
 func (m *MessageWithMetadata) Hash(sequenceNumber arbutil.MessageIndex, chainId uint64) (common.Hash, error) {

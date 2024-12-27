@@ -4,12 +4,14 @@
 package programs
 
 import (
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
@@ -254,7 +256,9 @@ func newApiClosures(
 		return memoryModel.GasCost(pages, open, ever)
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
-		tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
+		if tracingInfo.Tracer != nil && tracingInfo.Tracer.CaptureStylusHostio != nil {
+			tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
+		}
 		tracingInfo.CaptureEVMTraceForHostio(name, args, outs, startInk, endInk)
 	}
 
@@ -400,9 +404,9 @@ func newApiClosures(
 			}
 			startInk := takeU64()
 			endInk := takeU64()
-			nameLen := takeU16()
-			argsLen := takeU16()
-			outsLen := takeU16()
+			nameLen := takeU32()
+			argsLen := takeU32()
+			outsLen := takeU32()
 			name := string(takeFixed(int(nameLen)))
 			args := takeFixed(int(argsLen))
 			outs := takeFixed(int(outsLen))

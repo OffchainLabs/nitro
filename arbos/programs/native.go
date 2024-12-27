@@ -7,7 +7,7 @@
 package programs
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
@@ -18,6 +18,7 @@ typedef uint64_t u64;
 typedef size_t usize;
 */
 import "C"
+
 import (
 	"errors"
 	"fmt"
@@ -27,7 +28,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -44,17 +48,31 @@ type bytes32 = C.Bytes32
 type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
+var (
+	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
+	stylusLRUCacheCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
+	stylusLRUCacheHitsCounter       = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/hits", nil)
+	stylusLRUCacheMissesCounter     = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/misses", nil)
+	stylusLRUCacheDoesNotFitCounter = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/does_not_fit", nil)
+
+	stylusLongTermCacheSizeBytesGauge = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/long_term/size_bytes", nil)
+	stylusLongTermCacheCountGauge     = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/long_term/count", nil)
+	stylusLongTermCacheHitsCounter    = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/long_term/hits", nil)
+	stylusLongTermCacheMissesCounter  = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/long_term/misses", nil)
+)
+
 func activateProgram(
 	db vm.StateDB,
 	program common.Address,
 	codehash common.Hash,
 	wasm []byte,
 	page_limit uint16,
-	version uint16,
+	stylusVersion uint16,
+	arbosVersionForGas uint64,
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
-	info, asmMap, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner.GasLeft())
+	info, asmMap, err := activateProgramInternal(db, program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, burner.GasLeft())
 	if err != nil {
 		return nil, err
 	}
@@ -68,10 +86,11 @@ func activateProgramInternal(
 	codehash common.Hash,
 	wasm []byte,
 	page_limit uint16,
-	version uint16,
+	stylusVersion uint16,
+	arbosVersionForGas uint64,
 	debug bool,
 	gasLeft *uint64,
-) (*activationInfo, map[rawdb.Target][]byte, error) {
+) (*activationInfo, map[ethdb.WasmTarget][]byte, error) {
 	output := &rustBytes{}
 	moduleHash := &bytes32{}
 	stylusData := &C.StylusData{}
@@ -80,7 +99,8 @@ func activateProgramInternal(
 	status_mod := userStatus(C.stylus_activate(
 		goSlice(wasm),
 		u16(page_limit),
-		u16(version),
+		u16(stylusVersion),
+		u64(arbosVersionForGas),
 		cbool(debug),
 		output,
 		&codeHash,
@@ -89,7 +109,7 @@ func activateProgramInternal(
 		(*u64)(gasLeft),
 	))
 
-	module, msg, err := status_mod.toResult(output.intoBytes(), debug)
+	module, msg, err := status_mod.toResult(rustBytesIntoBytes(output), debug)
 	if err != nil {
 		if debug {
 			log.Warn("activation failed", "err", err, "msg", msg, "program", addressForLogging)
@@ -99,24 +119,57 @@ func activateProgramInternal(
 		}
 		return nil, nil, err
 	}
-	target := rawdb.LocalTarget()
-	status_asm := C.stylus_compile(
-		goSlice(wasm),
-		u16(version),
-		cbool(debug),
-		goSlice([]byte(target)),
-		output,
-	)
-	asm := output.intoBytes()
-	if status_asm != 0 {
-		return nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
+	hash := bytes32ToHash(moduleHash)
+	targets := db.Database().WasmTargets()
+	type result struct {
+		target ethdb.WasmTarget
+		asm    []byte
+		err    error
 	}
-	asmMap := map[rawdb.Target][]byte{
-		rawdb.TargetWavm: module,
-		target:           asm,
+	results := make(chan result, len(targets))
+	for _, target := range targets {
+		target := target
+		if target == rawdb.TargetWavm {
+			results <- result{target, module, nil}
+		} else {
+			go func() {
+				output := &rustBytes{}
+				status_asm := C.stylus_compile(
+					goSlice(wasm),
+					u16(stylusVersion),
+					cbool(debug),
+					goSlice([]byte(target)),
+					output,
+				)
+				asm := rustBytesIntoBytes(output)
+				if status_asm != 0 {
+					results <- result{target, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))}
+					return
+				}
+				results <- result{target, asm, nil}
+			}()
+		}
 	}
-
-	hash := moduleHash.toHash()
+	asmMap := make(map[ethdb.WasmTarget][]byte, len(targets))
+	for range targets {
+		res := <-results
+		if res.err != nil {
+			err = errors.Join(res.err, err)
+		} else {
+			asmMap[res.target] = res.asm
+		}
+	}
+	if err != nil {
+		log.Error(
+			"Compilation failed for one or more targets despite activation succeeding",
+			"address", addressForLogging,
+			"codeHash", codeHash,
+			"moduleHash", hash,
+			"targets", targets,
+			"err", err,
+		)
+		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding: %v", addressForLogging, err))
+	}
 
 	info := &activationInfo{
 		moduleHash:    hash,
@@ -142,9 +195,12 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
 	}
 
-	unlimitedGas := uint64(0xffffffffffff)
+	// don't charge gas
+	zeroArbosVersion := uint64(0)
+	zeroGas := uint64(0)
+
 	// we know program is activated, so it must be in correct version and not use too much memory
-	info, asmMap, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
+	info, asmMap, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -171,7 +227,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 	}
 	asm, exists := asmMap[localTarget]
 	if !exists {
-		var availableTargets []rawdb.Target
+		var availableTargets []ethdb.WasmTarget
 		for target := range asmMap {
 			availableTargets = append(availableTargets, target)
 		}
@@ -202,12 +258,8 @@ func callProgram(
 		panic("missing asm")
 	}
 
-	if db, ok := db.(*state.StateDB); ok {
-		targets := []rawdb.Target{
-			rawdb.TargetWavm,
-			rawdb.LocalTarget(),
-		}
-		db.RecordProgram(targets, moduleHash)
+	if stateDb, ok := db.(*state.StateDB); ok {
+		stateDb.RecordProgram(db.Database().WasmTargets(), moduleHash)
 	}
 
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
@@ -227,7 +279,7 @@ func callProgram(
 	))
 
 	depth := interpreter.Depth()
-	data, msg, err := status.toResult(output.intoBytes(), debug)
+	data, msg, err := status.toResult(rustBytesIntoBytes(output), debug)
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
@@ -240,7 +292,7 @@ func callProgram(
 //export handleReqImpl
 func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out_response *C.GoSliceData, out_raw_data *C.GoSliceData) {
 	api := getApi(apiId)
-	reqData := data.read()
+	reqData := readRustSlice(data)
 	reqType := RequestType(req_type - EvmApiMethodReqOffset)
 	response, raw_data, cost := api.handler(reqType, reqData)
 	*costPtr = u64(cost)
@@ -284,14 +336,80 @@ func init() {
 	}
 }
 
-func ResizeWasmLruCache(size uint32) {
-	C.stylus_cache_lru_resize(u32(size))
+func SetWasmLruCacheCapacity(capacityBytes uint64) {
+	C.stylus_set_cache_lru_capacity(u64(capacityBytes))
+}
+
+func UpdateWasmCacheMetrics() {
+	metrics := &C.CacheMetrics{}
+	C.stylus_get_cache_metrics(metrics)
+
+	stylusLRUCacheSizeBytesGauge.Update(int64(metrics.lru.size_bytes))
+	stylusLRUCacheCountGauge.Update(int64(metrics.lru.count))
+	stylusLRUCacheHitsCounter.Inc(int64(metrics.lru.hits))
+	stylusLRUCacheMissesCounter.Inc(int64(metrics.lru.misses))
+	stylusLRUCacheDoesNotFitCounter.Inc(int64(metrics.lru.does_not_fit))
+
+	stylusLongTermCacheSizeBytesGauge.Update(int64(metrics.long_term.size_bytes))
+	stylusLongTermCacheCountGauge.Update(int64(metrics.long_term.count))
+	stylusLongTermCacheHitsCounter.Inc(int64(metrics.long_term.hits))
+	stylusLongTermCacheMissesCounter.Inc(int64(metrics.long_term.misses))
+}
+
+// Used for testing
+type WasmLruCacheMetrics struct {
+	SizeBytes uint64
+	Count     uint32
+}
+
+// Used for testing
+type WasmLongTermCacheMetrics struct {
+	SizeBytes uint64
+	Count     uint32
+}
+
+// Used for testing
+type WasmCacheMetrics struct {
+	Lru      WasmLruCacheMetrics
+	LongTerm WasmLongTermCacheMetrics
+}
+
+// Used for testing
+func GetWasmCacheMetrics() *WasmCacheMetrics {
+	metrics := &C.CacheMetrics{}
+	C.stylus_get_cache_metrics(metrics)
+
+	return &WasmCacheMetrics{
+		Lru: WasmLruCacheMetrics{
+			SizeBytes: uint64(metrics.lru.size_bytes),
+			Count:     uint32(metrics.lru.count),
+		},
+		LongTerm: WasmLongTermCacheMetrics{
+			SizeBytes: uint64(metrics.long_term.size_bytes),
+			Count:     uint32(metrics.long_term.count),
+		},
+	}
+}
+
+// Used for testing
+func ClearWasmLruCache() {
+	C.stylus_clear_lru_cache()
+}
+
+// Used for testing
+func ClearWasmLongTermCache() {
+	C.stylus_clear_long_term_cache()
+}
+
+// Used for testing
+func GetEntrySizeEstimateBytes(module []byte, version uint16, debug bool) uint64 {
+	return uint64(C.stylus_get_entry_size_estimate_bytes(goSlice(module), u16(version), cbool(debug)))
 }
 
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
-const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2"
+const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2+lzcnt+bmi"
 
-func SetTarget(name rawdb.Target, description string, native bool) error {
+func SetTarget(name ethdb.WasmTarget, description string, native bool) error {
 	output := &rustBytes{}
 	status := userStatus(C.stylus_target_set(
 		goSlice([]byte(name)),
@@ -300,14 +418,14 @@ func SetTarget(name rawdb.Target, description string, native bool) error {
 		cbool(native),
 	))
 	if status != userSuccess {
-		msg := arbutil.ToStringOrHex(output.intoBytes())
+		msg := arbutil.ToStringOrHex(rustBytesIntoBytes(output))
 		log.Error("failed to set stylus compilation target", "status", status, "msg", msg)
 		return fmt.Errorf("failed to set stylus compilation target, status %v: %v", status, msg)
 	}
 	return nil
 }
 
-func (value bytes32) toHash() common.Hash {
+func bytes32ToHash(value *bytes32) common.Hash {
 	hash := common.Hash{}
 	for index, b := range value.bytes {
 		hash[index] = byte(b)
@@ -331,22 +449,28 @@ func addressToBytes20(addr common.Address) bytes20 {
 	return value
 }
 
-func (slice *rustSlice) read() []byte {
+func readRustSlice(slice *rustSlice) []byte {
+	if slice.len == 0 {
+		return nil
+	}
 	return arbutil.PointerToSlice((*byte)(slice.ptr), int(slice.len))
 }
 
-func (vec *rustBytes) read() []byte {
+func readRustBytes(vec *rustBytes) []byte {
+	if vec.len == 0 {
+		return nil
+	}
 	return arbutil.PointerToSlice((*byte)(vec.ptr), int(vec.len))
 }
 
-func (vec *rustBytes) intoBytes() []byte {
-	slice := vec.read()
-	vec.drop()
+func rustBytesIntoBytes(vec *rustBytes) []byte {
+	slice := readRustBytes(vec)
+	dropRustBytes(vec)
 	return slice
 }
 
-func (vec *rustBytes) drop() {
-	C.stylus_drop_vec(*vec)
+func dropRustBytes(vec *rustBytes) {
+	C.free_rust_bytes(*vec)
 }
 
 func goSlice(slice []byte) C.GoSliceData {
@@ -369,6 +493,7 @@ func (params *ProgParams) encode() C.StylusConfig {
 
 func (data *EvmData) encode() C.EvmData {
 	return C.EvmData{
+		arbos_version:    u64(data.arbosVersion),
 		block_basefee:    hashToBytes32(data.blockBasefee),
 		chainid:          u64(data.chainId),
 		block_coinbase:   addressToBytes20(data.blockCoinbase),

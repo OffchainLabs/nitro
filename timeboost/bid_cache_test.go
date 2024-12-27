@@ -7,13 +7,15 @@ import (
 	"net"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/stretchr/testify/require"
 )
 
 func TestTopTwoBids(t *testing.T) {
@@ -208,5 +210,9 @@ func getRandomPort(t testing.TB) int {
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("failed to cast listener address to *net.TCPAddr")
+	}
+	return tcpAddr.Port
 }
