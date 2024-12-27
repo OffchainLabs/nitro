@@ -13,7 +13,7 @@ Given state transitions are deterministic, this guarantees only one correct resu
 
 For our research specification of BOLD, see [BOLDChallengeProtocol.pdf](docs/research-specs/BOLDChallengeProtocol.pdf).
 
-For our a technical deep dive into BOLD, see [TechnicalDeepDive.pdf](docs/research-specs/TechnicalDeepDive.pdf)
+For our technical deep dive into BOLD, see [TechnicalDeepDive.pdf](docs/research-specs/TechnicalDeepDive.pdf)
 
 For documentation on the economics of BOLD, see [Economics.pdf](docs/research-specs/Economics.pdf)
 
@@ -41,7 +41,7 @@ math/
 runtime/
     Tools for managing function lifecycles
 state-commitments/
-    Proofs, history commitments, and Merkleizatins
+    Proofs, history commitments, and Merkleizations
 testing/
     All non-production code
 third_party/
@@ -143,7 +143,7 @@ Install [Foundry](https://book.getfoundry.sh/getting-started/installation) to ge
 go test ./...
 ```
 
-Alternatively, tests can be ran with Bazel as follows:
+Alternatively, tests can be run with Bazel as follows:
 
 ```
 bazel test //...
@@ -207,7 +207,7 @@ You should now have Go bindings inside of `solgen/go`
 
 ## Documentation
 
-Go doc reference is available at [pkg.go.dev][https://pkg.go.dev/github.com/OffchainLabs/bold], and all documentation about the codebase can be found under `docs/`
+Go doc reference is available at [pkg.go.dev](https://pkg.go.dev/github.com/OffchainLabs/bold), and all documentation about the codebase can be found under `docs/`
 
 ## Security Audit
 
@@ -217,7 +217,7 @@ The audit report can be found under [docs/audits/TrailOfBitsAudit](./docs/audits
 
 ## License
 
-BOLD uses [Business Source License 1.1](./LICENSE)
+BOLD uses [Business Source License 1.1](./LICENSE.md)
 
 ## Credits
 
