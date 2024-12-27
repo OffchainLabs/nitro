@@ -78,6 +78,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 		Require(t, err)
 		// Clean BlockMetadata from arbDB so that we can modify it at will
 		Require(t, arbDb.Delete(blockMetadataInputFeedKey(latestL2)))
+		// #nosec G115
 		if latestL2 > uint64(end)+10 {
 			break
 		}
@@ -85,11 +86,13 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	var sampleBulkData []gethexec.NumberAndBlockMetadata
 	for i := start; i <= end; i += 2 {
 		sampleData := gethexec.NumberAndBlockMetadata{
+			// #nosec G115
 			BlockNumber: uint64(i),
+			// #nosec G115
 			RawMetadata: []byte{0, uint8(i)},
 		}
 		sampleBulkData = append(sampleBulkData, sampleData)
-		arbDb.Put(blockMetadataInputFeedKey(sampleData.BlockNumber), sampleData.RawMetadata)
+		Require(t, arbDb.Put(blockMetadataInputFeedKey(sampleData.BlockNumber), sampleData.RawMetadata))
 	}
 
 	l2rpc := builder.L2.Stack.Attach()
@@ -111,7 +114,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 
 	// Test that without cache the result returned is always in sync with ArbDB
 	sampleBulkData[0].RawMetadata = []byte{1, 11}
-	arbDb.Put(blockMetadataInputFeedKey(1), sampleBulkData[0].RawMetadata)
+	Require(t, arbDb.Put(blockMetadataInputFeedKey(1), sampleBulkData[0].RawMetadata))
 
 	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(1), rpc.BlockNumber(1))
 	Require(t, err)
@@ -132,7 +135,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 
 	arbDb = builder.L2.ConsensusNode.ArbDB
 	updatedBlockMetadata := []byte{2, 12}
-	arbDb.Put(blockMetadataInputFeedKey(1), updatedBlockMetadata)
+	Require(t, arbDb.Put(blockMetadataInputFeedKey(1), updatedBlockMetadata))
 
 	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(1), rpc.BlockNumber(1))
 	Require(t, err)
@@ -153,7 +156,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	}
 
 	// A Reorg event should clear the cache, hence the data fetched now should be accurate
-	builder.L2.ConsensusNode.TxStreamer.ReorgTo(10)
+	Require(t, builder.L2.ConsensusNode.TxStreamer.ReorgTo(10))
 	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
 	Require(t, err)
 	if !bytes.Equal(updatedBlockMetadata, result[0].RawMetadata) {

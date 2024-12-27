@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -52,10 +53,12 @@ func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetch
 func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]NumberAndBlockMetadata, error) {
 	fromBlock, _ = b.bc.ClipToPostNitroGenesis(fromBlock)
 	toBlock, _ = b.bc.ClipToPostNitroGenesis(toBlock)
+	// #nosec G115
 	start, err := b.fetcher.BlockNumberToMessageIndex(uint64(fromBlock))
 	if err != nil {
 		return nil, fmt.Errorf("error converting fromBlock blocknumber to message index: %w", err)
 	}
+	// #nosec G115
 	end, err := b.fetcher.BlockNumberToMessageIndex(uint64(toBlock))
 	if err != nil {
 		return nil, fmt.Errorf("error converting toBlock blocknumber to message index: %w", err)
@@ -99,7 +102,7 @@ func (b *BulkBlockMetadataFetcher) ClearCache(ctx context.Context, ignored struc
 func (b *BulkBlockMetadataFetcher) Start(ctx context.Context) {
 	b.StopWaiter.Start(ctx, b)
 	if b.reorgDetector != nil {
-		stopwaiter.CallWhenTriggeredWith[struct{}](&b.StopWaiterSafe, b.ClearCache, b.reorgDetector)
+		_ = stopwaiter.CallWhenTriggeredWith[struct{}](&b.StopWaiterSafe, b.ClearCache, b.reorgDetector)
 	}
 }
 
