@@ -297,8 +297,10 @@ func makeStubPublisher(els *expressLaneService) *stubPublisher {
 	}
 }
 
+var emptyTx = types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), nil)
+
 func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	if tx == nil {
+	if tx.Hash() != emptyTx.Hash() {
 		return errors.New("oops, bad tx")
 	}
 	control, _ := s.els.roundControl.Get(0)
@@ -369,23 +371,23 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
 			SequenceNumber: 10,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 5,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 1,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 4,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 2,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 	}
 	for _, msg := range messages {
@@ -396,7 +398,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
 	require.Equal(t, 3, len(els.messagesBySequenceNumber)) // Processed txs are deleted
 
-	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3, Transaction: &types.Transaction{}})
+	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3, Transaction: emptyTx})
 	require.NoError(t, err)
 	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
 }
@@ -417,23 +419,23 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	messages := []*timeboost.ExpressLaneSubmission{
 		{
 			SequenceNumber: 1,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 3,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 		{
 			SequenceNumber: 2,
-			Transaction:    nil,
+			Transaction:    types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), []byte{1}),
 		},
 		{
 			SequenceNumber: 2,
-			Transaction:    &types.Transaction{},
+			Transaction:    emptyTx,
 		},
 	}
 	for _, msg := range messages {
-		if msg.Transaction == nil {
+		if msg.Transaction.Hash() != emptyTx.Hash() {
 			err := els.sequenceExpressLaneSubmission(ctx, msg)
 			require.ErrorContains(t, err, "oops, bad tx")
 		} else {
