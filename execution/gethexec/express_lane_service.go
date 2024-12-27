@@ -363,8 +363,12 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 			nextMsg.Transaction,
 			msg.Options,
 		); err != nil {
+			txHash := common.Hash{}
+			if nextMsg.Transaction != nil {
+				txHash = nextMsg.Transaction.Hash()
+			}
 			// If the tx fails we return an error with all the necessary info for the controller to successfully try again
-			return fmt.Errorf("express lane transaction of sequence number: %d and transaction hash: %v, failed with an error: %w", nextMsg.SequenceNumber, nextMsg.Transaction.Hash(), err)
+			return fmt.Errorf("express lane transaction of sequence number: %d and transaction hash: %v, failed with an error: %w", nextMsg.SequenceNumber, txHash, err)
 		}
 		// Increase the global round sequence number.
 		control.sequence += 1
