@@ -137,10 +137,10 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if c.Sequencer && c.TransactionStreamer.TrackBlockMetadataFrom == 0 {
-		return errors.New("when sequencer is enabled track-missing-block-metadata-from should be set as well")
+		return errors.New("when sequencer is enabled track-block-metadata-from should be set as well")
 	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
-		log.Warn("track-missing-block-metadata-from is set but blockMetadata fetcher is not enabled")
+		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
 	return nil
 }
@@ -172,7 +172,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
-	BlockMetadataFetcherConfigAddOptions(prefix+"block-metadata-fetcher", f)
+	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 }
 
 var ConfigDefault = Config{
@@ -204,6 +204,7 @@ func ConfigDefaultL1Test() *Config {
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Sequencer = true
 	config.Dangerous.NoSequencerCoordinator = true
+	config.TransactionStreamer.TrackBlockMetadataFrom = 1
 
 	return config
 }

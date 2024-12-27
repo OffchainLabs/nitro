@@ -22,7 +22,7 @@ import (
 
 type BlockMetadataFetcherConfig struct {
 	Enable         bool                   `koanf:"enable"`
-	Source         rpcclient.ClientConfig `koanf:"source"`
+	Source         rpcclient.ClientConfig `koanf:"source" reload:"hot"`
 	SyncInterval   time.Duration          `koanf:"sync-interval"`
 	APIBlocksLimit uint64                 `koanf:"api-blocks-limit"`
 }
