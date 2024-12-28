@@ -45,6 +45,104 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+func TestExpressLaneTransactionHandlingComplex(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tmpDir, err := os.MkdirTemp("", "*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	})
+	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
+
+	seq, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, cleanupSeq, _, cleanupFeedListener := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
+	defer cleanupSeq()
+	defer cleanupFeedListener()
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
+	Require(t, err)
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
+	Require(t, err)
+
+	// Prepare clients that can submit txs to the sequencer via the express lane.
+	chainId, err := seqClient.ChainID(ctx)
+	Require(t, err)
+	seqDial, err := rpc.Dial(seq.Stack.HTTPEndpoint())
+	Require(t, err)
+	createExpressLaneClientFor := func(name string) (*expressLaneClient, bind.TransactOpts) {
+		priv := seqInfo.Accounts[name].PrivateKey
+		expressLaneClient := newExpressLaneClient(
+			priv,
+			chainId,
+			*roundTimingInfo,
+			auctionContractAddr,
+			seqDial,
+		)
+		expressLaneClient.Start(ctx)
+		transacOpts := seqInfo.GetDefaultTransactOpts(name, ctx)
+		transacOpts.NoSend = true
+		return expressLaneClient, transacOpts
+	}
+	bobExpressLaneClient, _ := createExpressLaneClientFor("Bob")
+	aliceExpressLaneClient, _ := createExpressLaneClientFor("Alice")
+
+	// Bob will win the auction and become controller for next round = x
+	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Bob", "Alice", bobBidderClient, aliceBidderClient, roundDuration)
+	time.Sleep(roundTimingInfo.TimeTilNextRound())
+
+	// Check that Bob's tx gets priority since he's the controller
+	verifyControllerAdvantage(t, ctx, seqClient, bobExpressLaneClient, seqInfo, "Bob", "Alice")
+
+	currNonce, err := seqClient.PendingNonceAt(ctx, seqInfo.GetAddress("Alice"))
+	Require(t, err)
+	seqInfo.GetInfoWithPrivKey("Alice").Nonce.Store(currNonce)
+	unblockingTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
+
+	bobExpressLaneClient.Lock()
+	currSeq := bobExpressLaneClient.sequence
+	bobExpressLaneClient.Unlock()
+
+	// Send bunch of future txs so that they are queued up waiting for the unblocking seq num tx
+	var bobExpressLaneTxs types.Transactions
+	for i := currSeq + 1; i < 1000; i++ {
+		futureSeqTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
+		bobExpressLaneTxs = append(bobExpressLaneTxs, futureSeqTx)
+		go func(tx *types.Transaction, seqNum uint64) {
+			err := bobExpressLaneClient.SendTransactionWithSequence(ctx, tx, seqNum)
+			t.Logf("got error for tx: hash-%s, seqNum-%d, err-%s", tx.Hash(), seqNum, err.Error())
+		}(futureSeqTx, i)
+	}
+
+	// Alice will win the auction for next round = x+1
+	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Alice", "Bob", aliceBidderClient, bobBidderClient, roundDuration)
+
+	time.Sleep(roundTimingInfo.TimeTilNextRound() - 500*time.Millisecond) // we'll wait till the 1/2 second mark to the next round and then send the unblocking tx
+
+	Require(t, bobExpressLaneClient.SendTransactionWithSequence(ctx, unblockingTx, currSeq)) // the unblockingTx itself should ideally pass, but the released 1000 txs shouldn't affect the round for which alice has won the bid for
+
+	time.Sleep(500 * time.Millisecond) // Wait for controller change after the current round's end
+
+	// Check that Alice's tx gets priority since she's the controller
+	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
+
+	// Binary search and find how many of bob's futureSeqTxs were able to go through
+	s, f := 0, len(bobExpressLaneTxs)
+	for s < f {
+		m := (s + f + 1) / 2
+		_, err := seqClient.TransactionReceipt(ctx, bobExpressLaneTxs[m].Hash())
+		if err != nil {
+			f = m - 1
+		} else {
+			s = m
+		}
+	}
+	t.Logf("%d of the total %d bob's pending txs were accepted", s+1, len(bobExpressLaneTxs))
+}
+
 func TestExpressLaneTransactionHandling(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
