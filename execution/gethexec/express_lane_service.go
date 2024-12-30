@@ -39,22 +39,28 @@ type expressLaneControl struct {
 }
 
 type transactionPublisher interface {
-	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions) error
+	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions, chan struct{}) error
+}
+
+type msgAndResult struct {
+	msg        *timeboost.ExpressLaneSubmission
+	resultChan chan error
 }
 
 type expressLaneService struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
-	transactionPublisher     transactionPublisher
-	auctionContractAddr      common.Address
-	apiBackend               *arbitrum.APIBackend
-	roundTimingInfo          timeboost.RoundTimingInfo
-	earlySubmissionGrace     time.Duration
-	chainConfig              *params.ChainConfig
-	logs                     chan []*types.Log
-	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
-	roundControl             *lru.Cache[uint64, *expressLaneControl] // thread safe
-	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
+	transactionPublisher         transactionPublisher
+	auctionContractAddr          common.Address
+	apiBackend                   *arbitrum.APIBackend
+	roundTimingInfo              timeboost.RoundTimingInfo
+	earlySubmissionGrace         time.Duration
+	txQueueTimeout               time.Duration
+	chainConfig                  *params.ChainConfig
+	logs                         chan []*types.Log
+	auctionContract              *express_lane_auctiongen.ExpressLaneAuction
+	roundControl                 *lru.Cache[uint64, *expressLaneControl] // thread safe
+	msgAndResultBySequenceNumber map[uint64]*msgAndResult
 }
 
 type contractAdapter struct {
@@ -127,6 +133,7 @@ func newExpressLaneService(
 	auctionContractAddr common.Address,
 	bc *core.BlockChain,
 	earlySubmissionGrace time.Duration,
+	txQueueTimeout time.Duration,
 ) (*expressLaneService, error) {
 	chainConfig := bc.Config()
 
@@ -158,16 +165,17 @@ pending:
 	}
 
 	return &expressLaneService{
-		transactionPublisher:     transactionPublisher,
-		auctionContract:          auctionContract,
-		apiBackend:               apiBackend,
-		chainConfig:              chainConfig,
-		roundTimingInfo:          *roundTimingInfo,
-		earlySubmissionGrace:     earlySubmissionGrace,
-		roundControl:             lru.NewCache[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
-		auctionContractAddr:      auctionContractAddr,
-		logs:                     make(chan []*types.Log, 10_000),
-		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+		transactionPublisher:         transactionPublisher,
+		auctionContract:              auctionContract,
+		apiBackend:                   apiBackend,
+		chainConfig:                  chainConfig,
+		roundTimingInfo:              *roundTimingInfo,
+		earlySubmissionGrace:         earlySubmissionGrace,
+		roundControl:                 lru.NewCache[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
+		auctionContractAddr:          auctionContractAddr,
+		logs:                         make(chan []*types.Log, 10_000),
+		msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
+		txQueueTimeout:               txQueueTimeout,
 	}, nil
 }
 
@@ -204,7 +212,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 				)
 				es.Lock()
 				// Reset the sequence numbers map for the new round.
-				es.messagesBySequenceNumber = make(map[uint64]*timeboost.ExpressLaneSubmission)
+				es.msgAndResultBySequenceNumber = make(map[uint64]*msgAndResult)
 				es.Unlock()
 			}
 		}
@@ -296,14 +304,14 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 
 					es.Lock()
 					// Changes to roundControl by itself are atomic but we need to udpate both roundControl
-					// and messagesBySequenceNumber atomically here.
+					// and msgAndResultBySequenceNumber atomically here.
 					es.roundControl.Add(round, &expressLaneControl{
 						controller: setExpressLaneIterator.Event.NewExpressLaneController,
 						sequence:   0,
 					})
 					// Since the sequence number for this round has been reset to zero, the map of messages
 					// by sequence number must be reset otherwise old messages would be replayed.
-					es.messagesBySequenceNumber = make(map[uint64]*timeboost.ExpressLaneSubmission)
+					es.msgAndResultBySequenceNumber = make(map[uint64]*msgAndResult)
 					es.Unlock()
 				}
 				fromBlock = toBlock
@@ -326,10 +334,15 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	ctx context.Context,
 	msg *timeboost.ExpressLaneSubmission,
 ) error {
+	unlockByDefer := true
 	es.Lock()
-	defer es.Unlock()
+	defer func() {
+		if unlockByDefer {
+			es.Unlock()
+		}
+	}()
 	// Although access to roundControl by itself is thread-safe, when the round control is transferred
-	// we need to reset roundControl and messagesBySequenceNumber atomically, so the following access
+	// we need to reset roundControl and msgAndResultBySequenceNumber atomically, so the following access
 	// must be within the lock.
 	control, ok := es.roundControl.Get(msg.Round)
 	if !ok {
@@ -341,7 +354,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		return timeboost.ErrSequenceNumberTooLow
 	}
 	// Check if a duplicate submission exists already, and reject if so.
-	if _, exists := es.messagesBySequenceNumber[msg.SequenceNumber]; exists {
+	if _, exists := es.msgAndResultBySequenceNumber[msg.SequenceNumber]; exists {
 		return timeboost.ErrDuplicateSequenceNumber
 	}
 	// Log an informational warning if the message's sequence number is in the future.
@@ -349,27 +362,44 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
 	// Put into the sequence number map.
-	es.messagesBySequenceNumber[msg.SequenceNumber] = msg
+	resultChan := make(chan error, 1)
+	es.msgAndResultBySequenceNumber[msg.SequenceNumber] = &msgAndResult{msg, resultChan}
 
-	for {
+	now := time.Now()
+	for es.roundTimingInfo.RoundNumber() == msg.Round { // This check ensures that the controller for this round is not allowed to send transactions from msgAndResultBySequenceNumber map once the next round starts
 		// Get the next message in the sequence.
-		nextMsg, exists := es.messagesBySequenceNumber[control.sequence]
+		nextMsgAndResult, exists := es.msgAndResultBySequenceNumber[control.sequence]
 		if !exists {
 			break
 		}
-		delete(es.messagesBySequenceNumber, nextMsg.SequenceNumber)
-		if err := es.transactionPublisher.PublishTimeboostedTransaction(
-			ctx,
-			nextMsg.Transaction,
-			nextMsg.Options,
-		); err != nil {
-			// If the tx fails we return an error with all the necessary info for the controller to successfully try again
-			return fmt.Errorf("express lane transaction of sequence number: %d and transaction hash: %v, failed with an error: %w", nextMsg.SequenceNumber, nextMsg.Transaction.Hash(), err)
-		}
+		delete(es.msgAndResultBySequenceNumber, nextMsgAndResult.msg.SequenceNumber)
+		txIsQueued := make(chan struct{})
+		es.LaunchThread(func(ctx context.Context) {
+			nextMsgAndResult.resultChan <- es.transactionPublisher.PublishTimeboostedTransaction(ctx, nextMsgAndResult.msg.Transaction, nextMsgAndResult.msg.Options, txIsQueued)
+		})
+		<-txIsQueued
 		// Increase the global round sequence number.
 		control.sequence += 1
 	}
 	es.roundControl.Add(msg.Round, control)
+	unlockByDefer = false
+	es.Unlock() // Release lock so that other timeboost txs can be processed
+
+	abortCtx, cancel := ctxWithTimeout(ctx, es.txQueueTimeout*2) // We use the same timeout value that sequencer imposes
+	defer cancel()
+	var err error
+	select {
+	case err = <-resultChan:
+	case <-abortCtx.Done():
+		if ctx.Err() == nil {
+			log.Warn("Transaction sequencing hit abort deadline", "err", abortCtx.Err(), "submittedAt", now, "TxProcessingTimeout", es.txQueueTimeout*2, "txHash", msg.Transaction.Hash())
+		}
+		err = fmt.Errorf("Transaction sequencing hit timeout, result for the submitted transaction is not yet available: %w", abortCtx.Err())
+	}
+	if err != nil {
+		// If the tx fails we return an error with all the necessary info for the controller
+		return fmt.Errorf("%w: Sequence number: %d (consumed), Transaction hash: %v, Error: %w", timeboost.ErrAcceptedTxFailed, msg.SequenceNumber, msg.Transaction.Hash(), err)
+	}
 	return nil
 }
 
