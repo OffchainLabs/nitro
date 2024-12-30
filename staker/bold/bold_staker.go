@@ -248,19 +248,26 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
 		}
+		confirmedMsgCount, confirmedGlobalState, err := b.getLatestState(ctx, true)
+		if err != nil {
+			log.Error("staker: error checking latest confirmed", "err", err)
+		}
+
 		agreedMsgCount, agreedGlobalState, err := b.getLatestState(ctx, false)
 		if err != nil {
 			log.Error("staker: error checking latest agreed", "err", err)
 		}
 
+		if agreedGlobalState == nil {
+			// If we don't have a latest agreed global state, we should fall back to
+			// using the latest confirmed global state.
+			agreedGlobalState = confirmedGlobalState
+			agreedMsgCount = confirmedMsgCount
+		}
 		if agreedGlobalState != nil {
 			for _, notifier := range b.stakedNotifiers {
 				notifier.UpdateLatestStaked(agreedMsgCount, *agreedGlobalState)
 			}
-		}
-		confirmedMsgCount, confirmedGlobalState, err := b.getLatestState(ctx, true)
-		if err != nil {
-			log.Error("staker: error checking latest confirmed", "err", err)
 		}
 
 		if confirmedGlobalState != nil {
