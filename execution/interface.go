@@ -34,6 +34,8 @@ type ExecutionClient interface {
 	HeadMessageNumber() (arbutil.MessageIndex, error)
 	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
 	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
+	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
+	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
 }
 
 // needed for validators / stakers
