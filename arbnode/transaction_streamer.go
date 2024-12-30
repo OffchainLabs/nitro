@@ -44,7 +44,7 @@ type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
 	chainConfig      *params.ChainConfig
-	exec             execution.ExecutionSequencer
+	exec             execution.ExecutionClient
 	execLastMsgCount arbutil.MessageIndex
 	validator        *staker.BlockValidator
 
@@ -104,7 +104,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 func NewTransactionStreamer(
 	db ethdb.Database,
 	chainConfig *params.ChainConfig,
-	exec execution.ExecutionSequencer,
+	exec execution.ExecutionClient,
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
