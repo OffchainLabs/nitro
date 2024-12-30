@@ -17,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
@@ -270,7 +271,7 @@ func (c *SeqCoordinator) signedBytesToMsgCount(ctx context.Context, data []byte)
 }
 
 // Acquires or refreshes the chosen one lockout and optionally writes a message into redis atomically.
-func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbostypes.MessageWithMetadata, blockMetadata arbostypes.BlockMetadata) error {
+func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbostypes.MessageWithMetadata, blockMetadata common.BlockMetadata) error {
 	var messageData *string
 	var messageSigData *string
 	if lastmsg != nil {
@@ -600,7 +601,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	return nil
 }
 
-func (c *SeqCoordinator) blockMetadataAt(ctx context.Context, pos arbutil.MessageIndex) (arbostypes.BlockMetadata, error) {
+func (c *SeqCoordinator) blockMetadataAt(ctx context.Context, pos arbutil.MessageIndex) (common.BlockMetadata, error) {
 	blockMetadataStr, err := c.RedisCoordinator().Client.Get(ctx, redisutil.BlockMetadataKeyFor(pos)).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
@@ -608,7 +609,7 @@ func (c *SeqCoordinator) blockMetadataAt(ctx context.Context, pos arbutil.Messag
 		}
 		return nil, err
 	}
-	return arbostypes.BlockMetadata(blockMetadataStr), nil
+	return common.BlockMetadata(blockMetadataStr), nil
 }
 
 func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
@@ -675,7 +676,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		log.Info("coordinator caught up to prev redis coordinator", "msgcount", localMsgCount, "prevMsgCount", c.prevRedisMessageCount)
 	}
 	var messages []arbostypes.MessageWithMetadata
-	var blockMetadataArr []arbostypes.BlockMetadata
+	var blockMetadataArr []common.BlockMetadata
 	msgToRead := localMsgCount
 	var msgReadErr error
 	for msgToRead < readUntil && localMsgCount >= remoteFinalizedMsgCount {
@@ -991,7 +992,7 @@ func (c *SeqCoordinator) CurrentlyChosen() bool {
 	return time.Now().Before(atomicTimeRead(&c.lockoutUntil))
 }
 
-func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, blockMetadata arbostypes.BlockMetadata) error {
+func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, blockMetadata common.BlockMetadata) error {
 	if !c.CurrentlyChosen() {
 		return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)
 	}

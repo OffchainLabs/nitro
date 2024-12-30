@@ -250,6 +250,26 @@ func CallIterativelyWith[T any](
 	})
 }
 
+func CallWhenTriggeredWith[T any](
+	s ThreadLauncher,
+	foo func(context.Context, T),
+	triggerChan <-chan T,
+) error {
+	return s.LaunchThreadSafe(func(ctx context.Context) {
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case val := <-triggerChan:
+				foo(ctx, val)
+			}
+		}
+	})
+}
+
 func LaunchPromiseThread[T any](
 	s ThreadLauncher,
 	foo func(context.Context) (T, error),
