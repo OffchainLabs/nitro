@@ -59,8 +59,8 @@ func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) containers.Pr
 	return containers.NewReadyPromise(markFeedStartWithReturn(to))
 }
 
-func (w *execClientWrapper) Maintenance() error {
-	return nil
+func (w *execClientWrapper) Maintenance() containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (w *execClientWrapper) Synced() bool { w.t.Error("not supported"); return false }

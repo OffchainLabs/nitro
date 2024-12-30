@@ -38,7 +38,7 @@ type ExecutionClient interface {
 	SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 
-	Maintenance() error
+	Maintenance() containers.PromiseInterface[struct{}]
 }
 
 // needed for validators / stakers

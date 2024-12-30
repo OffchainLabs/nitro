@@ -488,13 +488,15 @@ func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) (arbutil.Mess
 	return n.ExecEngine.BlockNumberToMessageIndex(blockNum)
 }
 
-func (n *ExecutionNode) Maintenance() error {
+func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
 	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
 	err := n.ExecEngine.Maintenance(trieCapLimitBytes)
 	if err != nil {
-		return err
+		return containers.NewReadyPromise(struct{}{}, err)
 	}
-	return n.ChainDB.Compact(nil, nil)
+
+	err = n.ChainDB.Compact(nil, nil)
+	return containers.NewReadyPromise(struct{}{}, err)
 }
 
 func (n *ExecutionNode) Synced() bool {
@@ -518,7 +520,7 @@ type ExecutionClientImpl struct {
 func (n *ExecutionClientImpl) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
 	return n.ExecutionNode.DigestMessage(num, msg, msgForPrefetch)
 }
-func (n *ExecutionClientImpl) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
+func (n *ExecutionClientImpl) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
 	return n.ExecutionNode.Reorg(count, newMessages, oldMessages)
 }
 func (n *ExecutionClientImpl) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
@@ -577,7 +579,7 @@ func (n *ExecutionClientImpl) Start(ctx context.Context) error {
 func (n *ExecutionClientImpl) StopAndWait() {
 	n.ExecutionNode.StopAndWait()
 }
-func (n *ExecutionClientImpl) Maintenance() error {
+func (n *ExecutionClientImpl) Maintenance() containers.PromiseInterface[struct{}] {
 	return n.ExecutionNode.Maintenance()
 }
 func (n *ExecutionClientImpl) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
