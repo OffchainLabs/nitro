@@ -37,6 +37,8 @@ type ExecutionClient interface {
 	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
 	SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
+
+	Maintenance() error
 }
 
 // needed for validators / stakers
@@ -69,8 +71,6 @@ type FullExecutionClient interface {
 
 	Start(ctx context.Context) error
 	StopAndWait()
-
-	Maintenance() error
 
 	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
 }
