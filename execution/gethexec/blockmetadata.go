@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -18,7 +18,7 @@ import (
 var ErrBlockMetadataApiBlocksLimitExceeded = errors.New("number of blocks requested for blockMetadata exceeded")
 
 type BlockMetadataFetcher interface {
-	BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error)
+	BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error)
 	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
 	SetReorgEventsNotifier(reorgEventsNotifier chan struct{})
@@ -30,14 +30,14 @@ type BulkBlockMetadataFetcher struct {
 	fetcher       BlockMetadataFetcher
 	reorgDetector chan struct{}
 	blocksLimit   uint64
-	cache         *lru.SizeConstrainedCache[arbutil.MessageIndex, arbostypes.BlockMetadata]
+	cache         *lru.SizeConstrainedCache[arbutil.MessageIndex, common.BlockMetadata]
 }
 
 func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetcher, cacheSize, blocksLimit uint64) *BulkBlockMetadataFetcher {
-	var cache *lru.SizeConstrainedCache[arbutil.MessageIndex, arbostypes.BlockMetadata]
+	var cache *lru.SizeConstrainedCache[arbutil.MessageIndex, common.BlockMetadata]
 	var reorgDetector chan struct{}
 	if cacheSize != 0 {
-		cache = lru.NewSizeConstrainedCache[arbutil.MessageIndex, arbostypes.BlockMetadata](cacheSize)
+		cache = lru.NewSizeConstrainedCache[arbutil.MessageIndex, common.BlockMetadata](cacheSize)
 		reorgDetector = make(chan struct{})
 		fetcher.SetReorgEventsNotifier(reorgDetector)
 	}
@@ -71,7 +71,7 @@ func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]
 	}
 	var result []NumberAndBlockMetadata
 	for i := start; i <= end; i++ {
-		var data arbostypes.BlockMetadata
+		var data common.BlockMetadata
 		var found bool
 		if b.cache != nil {
 			data, found = b.cache.Get(i)
