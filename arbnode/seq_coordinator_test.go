@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -279,7 +281,7 @@ func TestSeqCoordinatorAddsBlockMetadata(t *testing.T) {
 	}
 
 	pos := arbutil.MessageIndex(1)
-	blockMetadataWant := arbostypes.BlockMetadata{0, 4}
+	blockMetadataWant := common.BlockMetadata{0, 4}
 	Require(t, coordinator.acquireLockoutAndWriteMessage(ctx, pos, pos+1, &arbostypes.EmptyTestMessageWithMetadata, blockMetadataWant))
 	blockMetadataGot, err := coordinator.blockMetadataAt(ctx, pos)
 	Require(t, err)
