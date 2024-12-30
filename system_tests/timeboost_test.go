@@ -138,7 +138,7 @@ func TestExpressLaneTransactionHandlingComplex(t *testing.T) {
 	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
 
 	// Binary search and find how many of bob's futureSeqTxs were able to go through
-	s, f := 0, len(bobExpressLaneTxs)
+	s, f := 0, len(bobExpressLaneTxs)-1
 	for s < f {
 		m := (s + f + 1) / 2
 		_, err := seqClient.TransactionReceipt(ctx, bobExpressLaneTxs[m].Hash())
@@ -1099,11 +1099,10 @@ func setupExpressLaneAuction(
 		t.Fatalf("failed to cast listener address to *net.TCPAddr")
 	}
 	port := tcpAddr.Port
-	builderFeedListener := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builderFeedListener.isSequencer = false
-	builderFeedListener.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
-	builderFeedListener.nodeConfig.Feed.Input.Timeout = broadcastclient.DefaultConfig.Timeout
-	cleanupFeedListener := builderFeedListener.Build(t)
+	nodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+	nodeConfig.Feed.Input.Timeout = broadcastclient.DefaultConfig.Timeout
+	feedListener, cleanupFeedListener := builderSeq.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig, stackConfig: testhelpers.CreateStackConfigForTest(t.TempDir())})
 
 	// Send an L2 tx in the background every two seconds to keep the chain moving.
 	go func() {
@@ -1376,7 +1375,7 @@ func setupExpressLaneAuction(
 	time.Sleep(roundTimingInfo.TimeTilNextRound())
 	t.Logf("Reached the bidding round at %v", time.Now())
 	time.Sleep(time.Second * 5)
-	return seqNode, seqClient, seqInfo, proxyAddr, alice, bob, roundDuration, cleanupSeq, builderFeedListener.L2, cleanupFeedListener
+	return seqNode, seqClient, seqInfo, proxyAddr, alice, bob, roundDuration, cleanupSeq, feedListener, cleanupFeedListener
 }
 
 func awaitAuctionResolved(

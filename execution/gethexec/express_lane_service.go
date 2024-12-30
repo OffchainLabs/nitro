@@ -286,8 +286,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 						log.Warn("Could not find round info for ExpressLaneConroller transfer event", "round", round)
 						continue
 					}
-					prevController := setExpressLaneIterator.Event.PreviousExpressLaneController
-					if roundInfo.controller != prevController {
+					if roundInfo.controller != setExpressLaneIterator.Event.PreviousExpressLaneController {
 						log.Warn("Previous ExpressLaneController in SetExpressLaneController event does not match Sequencer previous controller, continuing with transfer to new controller anyway",
 							"round", round,
 							"sequencerRoundController", roundInfo.controller,
@@ -297,7 +296,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 					if roundInfo.controller == setExpressLaneIterator.Event.NewExpressLaneController {
 						log.Warn("SetExpressLaneController: Previous and New ExpressLaneControllers are the same, not transferring control.",
 							"round", round,
-							"previous", setExpressLaneIterator.Event.PreviousExpressLaneController,
+							"previous", roundInfo.controller,
 							"new", setExpressLaneIterator.Event.NewExpressLaneController)
 						continue
 					}

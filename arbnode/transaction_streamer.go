@@ -1276,7 +1276,6 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 
-	// we just log the error but not update the value in db itself with msgResult.BlockHash? and instead forward the new block hash
 	s.checkResult(pos, msgResult, msgAndBlockInfo)
 
 	batch := s.db.NewBatch()
@@ -1294,8 +1293,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 		MessageWithMeta: msgAndBlockInfo.MessageWithMeta,
 		BlockHash:       &msgResult.BlockHash,
-		// maybe if blockhash is differing we clear out previous timeboosted and not send timeboosted info to broadcasting?
-		BlockMetadata: msgAndBlockInfo.BlockMetadata,
+		BlockMetadata:   msgAndBlockInfo.BlockMetadata,
 	}
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, pos)
 
