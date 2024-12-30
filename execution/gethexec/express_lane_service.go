@@ -366,7 +366,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	es.msgAndResultBySequenceNumber[msg.SequenceNumber] = &msgAndResult{msg, resultChan}
 
 	now := time.Now()
-	for es.roundTimingInfo.RoundNumber() == msg.Round { // This is an important check that mitigates a security concern
+	for es.roundTimingInfo.RoundNumber() == msg.Round { // This check ensures that the controller for this round is not allowed to send transactions from msgAndResultBySequenceNumber map once the next round starts
 		// Get the next message in the sequence.
 		nextMsgAndResult, exists := es.msgAndResultBySequenceNumber[control.sequence]
 		if !exists {
@@ -394,11 +394,11 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		if ctx.Err() == nil {
 			log.Warn("Transaction sequencing hit abort deadline", "err", abortCtx.Err(), "submittedAt", now, "TxProcessingTimeout", es.txQueueTimeout*2, "txHash", msg.Transaction.Hash())
 		}
-		err = fmt.Errorf("Transaction sequencing hit timeout: %w", abortCtx.Err())
+		err = fmt.Errorf("Transaction sequencing hit timeout, result for the submitted transaction is not yet available: %w", abortCtx.Err())
 	}
 	if err != nil {
 		// If the tx fails we return an error with all the necessary info for the controller
-		return fmt.Errorf("%w: Sequence number: %d, Transaction hash: %v, Error: %w", timeboost.ErrAcceptedTxFailed, msg.SequenceNumber, msg.Transaction.Hash(), err)
+		return fmt.Errorf("%w: Sequence number: %d (consumed), Transaction hash: %v, Error: %w", timeboost.ErrAcceptedTxFailed, msg.SequenceNumber, msg.Transaction.Hash(), err)
 	}
 	return nil
 }

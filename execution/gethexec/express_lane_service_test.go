@@ -350,16 +350,29 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 		SequenceNumber: 2,
 		Transaction:    types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}),
 	}
-	go func() {
-		_ = els.sequenceExpressLaneSubmission(ctx, msg)
-	}()
-	time.Sleep(time.Second) // wait for the above tx to go through
-	// Because the message is for a future sequence number, it
-	// should get queued, but not yet published.
-	require.Equal(t, 0, len(stubPublisher.publishedTxOrder))
-	// Sending it again should give us an error.
-	err := els.sequenceExpressLaneSubmission(ctx, msg)
-	require.ErrorIs(t, err, timeboost.ErrDuplicateSequenceNumber)
+	var wg sync.WaitGroup
+	wg.Add(3) // We expect only of the below two to return with an error here
+	var err1, err2 error
+	go func(w *sync.WaitGroup) {
+		w.Done()
+		err1 = els.sequenceExpressLaneSubmission(ctx, msg)
+		wg.Done()
+	}(&wg)
+	go func(w *sync.WaitGroup) {
+		w.Done()
+		err2 = els.sequenceExpressLaneSubmission(ctx, msg)
+		wg.Done()
+	}(&wg)
+	wg.Wait()
+	if err1 != nil && err2 != nil || err1 == nil && err2 == nil {
+		t.Fatalf("cannot have err1 and err2 both nil or non-nil. err1: %v, err2: %v", err1, err2)
+	}
+	if err1 != nil {
+		require.ErrorIs(t, err1, timeboost.ErrDuplicateSequenceNumber)
+	} else {
+		require.ErrorIs(t, err2, timeboost.ErrDuplicateSequenceNumber)
+	}
+	wg.Add(1) // As the goroutine that's still running will call wg.Done() after the test ends
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing.T) {
@@ -400,6 +413,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 			Transaction:    emptyTx,
 		},
 	}
+	// We launch 5 goroutines out of which 2 would return with a result hence we initially add a delta of 7
 	var wg sync.WaitGroup
 	wg.Add(7)
 	for _, msg := range messages {
@@ -421,7 +435,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	require.Equal(t, 3, len(els.msgAndResultBySequenceNumber)) // Processed txs are deleted
 	els.Unlock()
 
-	wg.Add(2) // 4 & 5 should be able to get in after 3
+	wg.Add(2) // 4 & 5 should be able to get in after 3 so we add a delta of 2
 	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{SequenceNumber: 3, Transaction: emptyTx})
 	require.NoError(t, err)
 	wg.Wait()

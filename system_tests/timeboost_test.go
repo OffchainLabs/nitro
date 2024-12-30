@@ -198,7 +198,7 @@ func TestExpressLaneTransactionHandling(t *testing.T) {
 	txs = append(txs, seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)) // currNonce + 2
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(2) // We send two txs in out of order
 	for i := uint64(2); i > 0; i-- {
 		go func(w *sync.WaitGroup) {
 			err := expressLaneClient.SendTransactionWithSequence(ctx, txs[i], i)
@@ -246,7 +246,7 @@ func TestExpressLaneTransactionHandling(t *testing.T) {
 	failTxDueToTimeout := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
 
 	currSeqNumber := uint64(3)
-	wg.Add(2)
+	wg.Add(2) // We send a failing and a passing tx with cummulative future seq numbers, followed by a unblocking seq num tx
 	var failErr error
 	go func(w *sync.WaitGroup) {
 		failErr = expressLaneClient.SendTransactionWithSequence(ctx, failTx, currSeqNumber+1) // Should give out nonce too high error
