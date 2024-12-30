@@ -84,6 +84,7 @@ type ConsensusInfo interface {
 	Synced() bool
 	FullSyncProgressMap() map[string]interface{}
 	SyncTargetMessageCount() arbutil.MessageIndex
+	BlockMetadataAtCount(count arbutil.MessageIndex) (arbostypes.BlockMetadata, error)
 
 	// TODO: switch from pulling to pushing safe/finalized
 	GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
