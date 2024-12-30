@@ -524,9 +524,6 @@ func (n *ExecutionClientImpl) Reorg(count arbutil.MessageIndex, newMessages []ar
 func (n *ExecutionClientImpl) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
 	return n.ExecutionNode.HeadMessageNumber()
 }
-func (n *ExecutionClientImpl) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
-	return n.ExecutionNode.HeadMessageNumberSync(t)
-}
 func (n *ExecutionClientImpl) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return n.ExecutionNode.ResultAtPos(pos)
 }
