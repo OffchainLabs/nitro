@@ -53,7 +53,6 @@ type expressLaneService struct {
 	roundTimingInfo              timeboost.RoundTimingInfo
 	earlySubmissionGrace         time.Duration
 	chainConfig                  *params.ChainConfig
-	logs                         chan []*types.Log
 	auctionContract              *express_lane_auctiongen.ExpressLaneAuction
 	roundControl                 *lru.Cache[uint64, *expressLaneControl] // thread safe
 	msgAndResultBySequenceNumber map[uint64]*msgAndResult
@@ -105,7 +104,6 @@ pending:
 		earlySubmissionGrace:         earlySubmissionGrace,
 		roundControl:                 lru.NewCache[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
 		auctionContractAddr:          auctionContractAddr,
-		logs:                         make(chan []*types.Log, 10_000),
 		msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
 	}, nil
 }
