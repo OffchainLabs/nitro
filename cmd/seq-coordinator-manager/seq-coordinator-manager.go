@@ -7,11 +7,13 @@ import (
 	"strconv"
 
 	"github.com/enescakir/emoji"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
+
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/cmd/seq-coordinator-manager/rediscoordinator"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/rivo/tview"
 )
 
 // Tview
