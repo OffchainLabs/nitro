@@ -6,14 +6,11 @@ package gethexec
 import (
 	"context"
 	"fmt"
-	"math"
-	"math/big"
 	"sync"
 	"time"
 
 	"github.com/pkg/errors"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
@@ -21,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
@@ -40,6 +36,7 @@ type expressLaneControl struct {
 
 type transactionPublisher interface {
 	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions, chan struct{}) error
+	Config() *SequencerConfig
 }
 
 type msgAndResult struct {
@@ -55,75 +52,11 @@ type expressLaneService struct {
 	apiBackend                   *arbitrum.APIBackend
 	roundTimingInfo              timeboost.RoundTimingInfo
 	earlySubmissionGrace         time.Duration
-	txQueueTimeout               time.Duration
 	chainConfig                  *params.ChainConfig
 	logs                         chan []*types.Log
 	auctionContract              *express_lane_auctiongen.ExpressLaneAuction
 	roundControl                 *lru.Cache[uint64, *expressLaneControl] // thread safe
 	msgAndResultBySequenceNumber map[uint64]*msgAndResult
-}
-
-type contractAdapter struct {
-	*filters.FilterAPI
-	bind.ContractTransactor // We leave this member unset as it is not used.
-
-	apiBackend *arbitrum.APIBackend
-}
-
-func (a *contractAdapter) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
-	logPointers, err := a.GetLogs(ctx, filters.FilterCriteria(q))
-	if err != nil {
-		return nil, err
-	}
-	logs := make([]types.Log, 0, len(logPointers))
-	for _, log := range logPointers {
-		logs = append(logs, *log)
-	}
-	return logs, nil
-}
-
-func (a *contractAdapter) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
-	panic("contractAdapter doesn't implement SubscribeFilterLogs - shouldn't be needed")
-}
-
-func (a *contractAdapter) CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error) {
-	panic("contractAdapter doesn't implement CodeAt - shouldn't be needed")
-}
-
-func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
-	var num rpc.BlockNumber = rpc.LatestBlockNumber
-	if blockNumber != nil {
-		num = rpc.BlockNumber(blockNumber.Int64())
-	}
-
-	state, header, err := a.apiBackend.StateAndHeaderByNumber(ctx, num)
-	if err != nil {
-		return nil, err
-	}
-
-	msg := &core.Message{
-		From:              call.From,
-		To:                call.To,
-		Value:             big.NewInt(0),
-		GasLimit:          math.MaxUint64,
-		GasPrice:          big.NewInt(0),
-		GasFeeCap:         big.NewInt(0),
-		GasTipCap:         big.NewInt(0),
-		Data:              call.Data,
-		AccessList:        call.AccessList,
-		SkipAccountChecks: true,
-		TxRunMode:         core.MessageEthcallMode, // Indicate this is an eth_call
-		SkipL1Charging:    true,                    // Skip L1 data fees
-	}
-
-	evm := a.apiBackend.GetEVM(ctx, msg, state, header, &vm.Config{NoBaseFee: true}, nil)
-	gp := new(core.GasPool).AddGas(math.MaxUint64)
-	result, err := core.ApplyMessage(evm, msg, gp)
-	if err != nil {
-		return nil, err
-	}
-
-	return result.ReturnData, nil
 }
 
 func newExpressLaneService(
@@ -133,7 +66,6 @@ func newExpressLaneService(
 	auctionContractAddr common.Address,
 	bc *core.BlockChain,
 	earlySubmissionGrace time.Duration,
-	txQueueTimeout time.Duration,
 ) (*expressLaneService, error) {
 	chainConfig := bc.Config()
 
@@ -175,15 +107,14 @@ pending:
 		auctionContractAddr:          auctionContractAddr,
 		logs:                         make(chan []*types.Log, 10_000),
 		msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
-		txQueueTimeout:               txQueueTimeout,
 	}, nil
 }
 
 func (es *expressLaneService) Start(ctxIn context.Context) {
 	es.StopWaiter.Start(ctxIn, es)
 
-	// Log every new express lane auction round.
 	es.LaunchThread(func(ctx context.Context) {
+		// Log every new express lane auction round.
 		log.Info("Watching for new express lane rounds")
 		waitTime := es.roundTimingInfo.TimeTilNextRound()
 		// Wait until the next round starts
@@ -196,125 +127,139 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 
 		ticker := time.NewTicker(es.roundTimingInfo.Round)
 		defer ticker.Stop()
+		for {
+			var t time.Time
+			select {
+			case <-ctx.Done():
+				return
+			case t = <-ticker.C:
+			}
 
+			round := es.roundTimingInfo.RoundNumber()
+			// TODO (BUG?) is there a race here where messages for a new round can come
+			// in before this tick has been processed?
+			log.Info(
+				"New express lane auction round",
+				"round", round,
+				"timestamp", t,
+			)
+			es.Lock()
+			// Reset the sequence numbers map for the new round.
+			es.msgAndResultBySequenceNumber = make(map[uint64]*msgAndResult)
+			es.Unlock()
+		}
+	})
+
+	es.LaunchThread(func(ctx context.Context) {
+		// Monitor for auction resolutions from the auction manager smart contract
+		// and set the express lane controller for the upcoming round accordingly.
+		log.Info("Monitoring express lane auction contract")
+
+		var fromBlock uint64
+		latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
+		if err != nil {
+			log.Error("ExpressLaneService could not get the latest header", "err", err)
+		} else {
+			maxBlocksPerRound := es.roundTimingInfo.Round / es.transactionPublisher.Config().MaxBlockSpeed
+			fromBlock = latestBlock.Number.Uint64()
+			// #nosec G115
+			if fromBlock > uint64(maxBlocksPerRound) {
+				// #nosec G115
+				fromBlock -= uint64(maxBlocksPerRound)
+			}
+		}
+		ticker := time.NewTicker(es.transactionPublisher.Config().MaxBlockSpeed)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case t := <-ticker.C:
-				round := es.roundTimingInfo.RoundNumber()
-				// TODO (BUG?) is there a race here where messages for a new round can come
-				// in before this tick has been processed?
+			case <-ticker.C:
+			}
+
+			latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
+			if err != nil {
+				log.Error("ExpressLaneService could not get the latest header", "err", err)
+				continue
+			}
+			toBlock := latestBlock.Number.Uint64()
+			if fromBlock == toBlock {
+				continue
+			}
+			filterOpts := &bind.FilterOpts{
+				Context: ctx,
+				Start:   fromBlock,
+				End:     &toBlock,
+			}
+			it, err := es.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
+			if err != nil {
+				log.Error("Could not filter auction resolutions event", "error", err)
+				continue
+			}
+			for it.Next() {
 				log.Info(
-					"New express lane auction round",
-					"round", round,
-					"timestamp", t,
+					"AuctionResolved: New express lane controller assigned",
+					"round", it.Event.Round,
+					"controller", it.Event.FirstPriceExpressLaneController,
 				)
+				es.roundControl.Add(it.Event.Round, &expressLaneControl{
+					controller: it.Event.FirstPriceExpressLaneController,
+					sequence:   0,
+				})
+			}
+
+			setExpressLaneIterator, err := es.auctionContract.FilterSetExpressLaneController(filterOpts, nil, nil, nil)
+			if err != nil {
+				log.Error("Could not filter express lane controller transfer event", "error", err)
+				continue
+			}
+
+			for setExpressLaneIterator.Next() {
+				if (setExpressLaneIterator.Event.PreviousExpressLaneController == common.Address{}) {
+					// The ExpressLaneAuction contract emits both AuctionResolved and SetExpressLaneController
+					// events when an auction is resolved. They contain redundant information so
+					// the SetExpressLaneController event can be skipped if it's related to a new round, as
+					// indicated by an empty PreviousExpressLaneController field (a new round has no
+					// previous controller).
+					// It is more explicit and thus clearer to use the AuctionResovled event only for the
+					// new round setup logic and SetExpressLaneController event only for transfers, rather
+					// than trying to overload everything onto SetExpressLaneController.
+					continue
+				}
+				round := setExpressLaneIterator.Event.Round
+				roundInfo, ok := es.roundControl.Get(round)
+				if !ok {
+					log.Warn("Could not find round info for ExpressLaneConroller transfer event", "round", round)
+					continue
+				}
+				if roundInfo.controller != setExpressLaneIterator.Event.PreviousExpressLaneController {
+					log.Warn("Previous ExpressLaneController in SetExpressLaneController event does not match Sequencer previous controller, continuing with transfer to new controller anyway",
+						"round", round,
+						"sequencerRoundController", roundInfo.controller,
+						"previous", setExpressLaneIterator.Event.PreviousExpressLaneController,
+						"new", setExpressLaneIterator.Event.NewExpressLaneController)
+				}
+				if roundInfo.controller == setExpressLaneIterator.Event.NewExpressLaneController {
+					log.Warn("SetExpressLaneController: Previous and New ExpressLaneControllers are the same, not transferring control.",
+						"round", round,
+						"previous", roundInfo.controller,
+						"new", setExpressLaneIterator.Event.NewExpressLaneController)
+					continue
+				}
+
 				es.Lock()
-				// Reset the sequence numbers map for the new round.
+				// Changes to roundControl by itself are atomic but we need to udpate both roundControl
+				// and msgAndResultBySequenceNumber atomically here.
+				es.roundControl.Add(round, &expressLaneControl{
+					controller: setExpressLaneIterator.Event.NewExpressLaneController,
+					sequence:   0,
+				})
+				// Since the sequence number for this round has been reset to zero, the map of messages
+				// by sequence number must be reset otherwise old messages would be replayed.
 				es.msgAndResultBySequenceNumber = make(map[uint64]*msgAndResult)
 				es.Unlock()
 			}
-		}
-	})
-	es.LaunchThread(func(ctx context.Context) {
-		log.Info("Monitoring express lane auction contract")
-		// Monitor for auction resolutions from the auction manager smart contract
-		// and set the express lane controller for the upcoming round accordingly.
-		latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
-		if err != nil {
-			// TODO: Should not be a crit.
-			log.Crit("Could not get latest header", "err", err)
-		}
-		fromBlock := latestBlock.Number.Uint64()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Millisecond * 250):
-				latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
-				if err != nil {
-					log.Crit("Could not get latest header", "err", err)
-				}
-				toBlock := latestBlock.Number.Uint64()
-				if fromBlock == toBlock {
-					continue
-				}
-				filterOpts := &bind.FilterOpts{
-					Context: ctx,
-					Start:   fromBlock,
-					End:     &toBlock,
-				}
-				it, err := es.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
-				if err != nil {
-					log.Error("Could not filter auction resolutions event", "error", err)
-					continue
-				}
-				for it.Next() {
-					log.Info(
-						"AuctionResolved: New express lane controller assigned",
-						"round", it.Event.Round,
-						"controller", it.Event.FirstPriceExpressLaneController,
-					)
-					es.roundControl.Add(it.Event.Round, &expressLaneControl{
-						controller: it.Event.FirstPriceExpressLaneController,
-						sequence:   0,
-					})
-				}
-
-				setExpressLaneIterator, err := es.auctionContract.FilterSetExpressLaneController(filterOpts, nil, nil, nil)
-				if err != nil {
-					log.Error("Could not filter express lane controller transfer event", "error", err)
-					continue
-				}
-
-				for setExpressLaneIterator.Next() {
-					if (setExpressLaneIterator.Event.PreviousExpressLaneController == common.Address{}) {
-						// The ExpressLaneAuction contract emits both AuctionResolved and SetExpressLaneController
-						// events when an auction is resolved. They contain redundant information so
-						// the SetExpressLaneController event can be skipped if it's related to a new round, as
-						// indicated by an empty PreviousExpressLaneController field (a new round has no
-						// previous controller).
-						// It is more explicit and thus clearer to use the AuctionResovled event only for the
-						// new round setup logic and SetExpressLaneController event only for transfers, rather
-						// than trying to overload everything onto SetExpressLaneController.
-						continue
-					}
-					round := setExpressLaneIterator.Event.Round
-					roundInfo, ok := es.roundControl.Get(round)
-					if !ok {
-						log.Warn("Could not find round info for ExpressLaneConroller transfer event", "round", round)
-						continue
-					}
-					if roundInfo.controller != setExpressLaneIterator.Event.PreviousExpressLaneController {
-						log.Warn("Previous ExpressLaneController in SetExpressLaneController event does not match Sequencer previous controller, continuing with transfer to new controller anyway",
-							"round", round,
-							"sequencerRoundController", roundInfo.controller,
-							"previous", setExpressLaneIterator.Event.PreviousExpressLaneController,
-							"new", setExpressLaneIterator.Event.NewExpressLaneController)
-					}
-					if roundInfo.controller == setExpressLaneIterator.Event.NewExpressLaneController {
-						log.Warn("SetExpressLaneController: Previous and New ExpressLaneControllers are the same, not transferring control.",
-							"round", round,
-							"previous", roundInfo.controller,
-							"new", setExpressLaneIterator.Event.NewExpressLaneController)
-						continue
-					}
-
-					es.Lock()
-					// Changes to roundControl by itself are atomic but we need to udpate both roundControl
-					// and msgAndResultBySequenceNumber atomically here.
-					es.roundControl.Add(round, &expressLaneControl{
-						controller: setExpressLaneIterator.Event.NewExpressLaneController,
-						sequence:   0,
-					})
-					// Since the sequence number for this round has been reset to zero, the map of messages
-					// by sequence number must be reset otherwise old messages would be replayed.
-					es.msgAndResultBySequenceNumber = make(map[uint64]*msgAndResult)
-					es.Unlock()
-				}
-				fromBlock = toBlock
-			}
+			fromBlock = toBlock
 		}
 	})
 }
@@ -384,14 +329,15 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	unlockByDefer = false
 	es.Unlock() // Release lock so that other timeboost txs can be processed
 
-	abortCtx, cancel := ctxWithTimeout(ctx, es.txQueueTimeout*2) // We use the same timeout value that sequencer imposes
+	queueTimeout := es.transactionPublisher.Config().QueueTimeout
+	abortCtx, cancel := ctxWithTimeout(ctx, queueTimeout*2) // We use the same timeout value that sequencer imposes
 	defer cancel()
 	var err error
 	select {
 	case err = <-resultChan:
 	case <-abortCtx.Done():
 		if ctx.Err() == nil {
-			log.Warn("Transaction sequencing hit abort deadline", "err", abortCtx.Err(), "submittedAt", now, "TxProcessingTimeout", es.txQueueTimeout*2, "txHash", msg.Transaction.Hash())
+			log.Warn("Transaction sequencing hit abort deadline", "err", abortCtx.Err(), "submittedAt", now, "TxProcessingTimeout", queueTimeout*2, "txHash", msg.Transaction.Hash())
 		}
 		err = fmt.Errorf("Transaction sequencing hit timeout, result for the submitted transaction is not yet available: %w", abortCtx.Err())
 	}
@@ -413,12 +359,8 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %s does not match sequencer auction contract address %s", msg.AuctionContractAddress, es.auctionContractAddr)
 	}
 
-	for {
-		currentRound := es.roundTimingInfo.RoundNumber()
-		if msg.Round == currentRound {
-			break
-		}
-
+	currentRound := es.roundTimingInfo.RoundNumber()
+	if msg.Round != currentRound {
 		timeTilNextRound := es.roundTimingInfo.TimeTilNextRound()
 		// We allow txs to come in for the next round if it is close enough to that round,
 		// but we sleep until the round starts.
@@ -428,7 +370,9 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
 		}
 	}
-	if !es.currentRoundHasController() {
+
+	control, ok := es.roundControl.Get(msg.Round)
+	if !ok {
 		return timeboost.ErrNoOnchainController
 	}
 	// Reconstruct the message being signed over and recover the sender address.
@@ -455,10 +399,6 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 		return timeboost.ErrMalformedData
 	}
 	sender := crypto.PubkeyToAddress(*pubkey)
-	control, ok := es.roundControl.Get(msg.Round)
-	if !ok {
-		return timeboost.ErrNoOnchainController
-	}
 	if sender != control.controller {
 		return timeboost.ErrNotExpressLaneController
 	}

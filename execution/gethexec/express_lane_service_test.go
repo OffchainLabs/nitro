@@ -231,7 +231,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	for _, _tt := range tests {
 		tt := _tt
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.sub != nil {
+			if tt.sub != nil && !errors.Is(tt.expectedErr, timeboost.ErrNoOnchainController) {
 				tt.es.roundControl.Add(tt.sub.Round, &tt.control)
 			}
 			err := tt.es.validateExpressLaneTx(tt.sub)
@@ -309,6 +309,10 @@ func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context,
 	s.publishedTxOrder = append(s.publishedTxOrder, control.sequence)
 	return nil
 
+}
+
+func (s *stubPublisher) Config() *SequencerConfig {
+	return &SequencerConfig{}
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testing.T) {
