@@ -976,7 +976,8 @@ func getNodeParentChainReaderDisabled(
 func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
-	exec execution.FullExecutionClient,
+	fullExecutionClient execution.FullExecutionClient,
+	executionClient execution.ExecutionClient,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -1008,7 +1009,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	txStreamer, err := getTransactionStreamer(arbDb, l2Config, exec, broadcastServer, configFetcher, fatalErrChan)
+	txStreamer, err := getTransactionStreamer(arbDb, l2Config, executionClient, broadcastServer, configFetcher, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1018,12 +1019,15 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	coordinator, err := getSeqCoordinator(configFetcher, dataSigner, bpVerifier, txStreamer, syncMonitor, exec)
-	if err != nil {
-		return nil, err
+	var coordinator *SeqCoordinator
+	if fullExecutionClient != nil {
+		coordinator, err = getSeqCoordinator(configFetcher, dataSigner, bpVerifier, txStreamer, syncMonitor, fullExecutionClient)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	maintenanceRunner, err := getMaintenanceRunner(arbDb, configFetcher, coordinator, exec)
+	maintenanceRunner, err := getMaintenanceRunner(arbDb, configFetcher, coordinator, executionClient)
 	if err != nil {
 		return nil, err
 	}
@@ -1033,13 +1037,13 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, exec)
+	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, fullExecutionClient)
 	if err != nil {
 		return nil, err
 	}
 
 	if !config.ParentChainReader.Enable {
-		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, exec, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
+		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, fullExecutionClient, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
 	}
 
 	delayedBridge, sequencerInbox, err := getDelayedBridgeAndSequencerInbox(deployInfo, l1client)
@@ -1052,14 +1056,17 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, exec)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, fullExecutionClient)
 	if err != nil {
 		return nil, err
 	}
 
-	statelessBlockValidator, err := getStatelessBlockValidator(configFetcher, inboxReader, inboxTracker, txStreamer, exec, arbDb, dapReaders, stack)
-	if err != nil {
-		return nil, err
+	var statelessBlockValidator *staker.StatelessBlockValidator
+	if fullExecutionClient != nil {
+		statelessBlockValidator, err = getStatelessBlockValidator(configFetcher, inboxReader, inboxTracker, txStreamer, fullExecutionClient, arbDb, dapReaders, stack)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	blockValidator, err := getBlockValidator(configFetcher, statelessBlockValidator, inboxTracker, txStreamer, fatalErrChan)
@@ -1072,25 +1079,31 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, configFetcher, txOptsBatchPoster, daWriter, l1Reader, inboxTracker, txStreamer, exec, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
-	if err != nil {
-		return nil, err
+	var batchPoster *BatchPoster
+	if fullExecutionClient != nil {
+		batchPoster, err = getBatchPoster(ctx, configFetcher, txOptsBatchPoster, daWriter, l1Reader, inboxTracker, txStreamer, fullExecutionClient, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, exec, configFetcher, coordinator)
-	if err != nil {
-		return nil, err
+	var delayedSequencer *DelayedSequencer
+	if fullExecutionClient != nil {
+		delayedSequencer, err = getDelayedSequencer(l1Reader, inboxReader, fullExecutionClient, configFetcher, coordinator)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
 		return &configFetcher.Get().ConsensusExecutionSyncer
 	}
-	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, exec, blockValidator)
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, executionClient, blockValidator)
 
 	return &Node{
 		ArbDB:                    arbDb,
 		Stack:                    stack,
-		Execution:                exec,
+		Execution:                fullExecutionClient,
 		L1Reader:                 l1Reader,
 		TxStreamer:               txStreamer,
 		DeployInfo:               deployInfo,
@@ -1201,7 +1214,7 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 	stack.RegisterAPIs(apis)
 }
 
-func CreateNode(
+func CreateNodeFullExecutionClient(
 	ctx context.Context,
 	stack *node.Node,
 	exec execution.FullExecutionClient,
@@ -1217,7 +1230,7 @@ func CreateNode(
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, exec, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
 	if err != nil {
 		return nil, err
 	}
