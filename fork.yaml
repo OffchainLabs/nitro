@@ -1,0 +1,163 @@
+title: "layr-labs/nitro"  # Define the HTML page title
+logo: "logo.png"
+footer: |  # define the footer with markdown
+  [Nitro](https://github.com/Layr-Labs/nitro) fork overview &middot created with [Forkdiff](https://github.com/protolambda/forkdiff)
+base:
+  name: OffchainLabs/nitro
+  url: https://github.com/OffchainLabs/nitro
+  hash: d81324daee7340281ee61c0f5db5231ec1d88eea
+fork:
+  name: Layr-Labs/nitro
+  url: https://github.com/Layr-Labs/nitro
+  ref: refs/tags/v3.2.1
+def:
+    title: "EigenDA x Arbitrum Nitro Fork diff"
+    description: | # description in markdown
+      The original nitro codebase can be found at [`github.com/OffchainLabs/nitro`](https://github.com/OffchainLabs/nitro).
+      And the fork at [`github.com/Layr-Labs/nitro`](https://github.com/Layr-Labs/nitro).
+    globs:
+      # - "arbitrator/*"  # list files of which the patches should be included
+      # - "hello/util/*"  # use file globs to include multiple files
+      # - "hello/util/*[!_test].go"  # you can ignore things with globs too
+    sub:
+      - title: "EigenDA Client"
+        globs:
+          - "eigenda/**"
+
+
+      - title: "Fraud Proving"
+        sub:
+          - title: "EigenDA Preimage Opcode"
+            description: | 
+              Extended core interpreter logic to target EigenDA `READPREIMAGE` opcode when serializing machine state proofs.
+            globs:
+              - "arbitrator/arbutil/src/types.rs"
+              - "arbitrator/jit/src/wavmio.rs"
+              - "arbitrator/prover/src/host.rs"
+              - "arbutil/preimage_type.go"
+              - "arbitrator/wasm-libraries/host-io/src/lib.rs"
+              - "arbitrator/prover/Cargo.toml"
+
+          - title: "Opcode Proof Serialization"
+            description: | 
+              Extended core interpreter logic to target EigenDA `READPREIMAGE` opcode when serializing machine state proofs.
+            globs:
+              - "arbitrator/prover/src/kzgbn254.rs"
+              - "arbitrator/prover/src/lib.rs"
+              - "arbitrator/prover/src/mainnet-files/*"
+              - "arbitrator/prover/src/test-files/*"
+              - "arbitrator/prover/src/utils.rs"
+              - "arbitrator/prover/src/machine.rs"
+
+          - title: "Replay Script"
+            description: | 
+              Updated replay script logic to use EigenDA reader type when presented with an EigenDA batch header type.
+            globs:
+              - "cmd/replay/main.go"
+
+          - title: "Proof Serialization Tests"
+            description: | 
+              Tests necessary for asserting offchain proof serialization <-> onchain verification when one step proven.
+            globs:
+              - "arbitrator/prover/test-cases/go/main.go"
+              - "arbitrator/prover/src/test-files/*"
+              - "arbitrator/prover/test-cases/rust/src/bin/host-io.rs"
+              - "scripts/create-test-preimages.py"
+
+          - title: "E2E challenge tests"
+            description: |
+              Extended E2E challenge tests to ensure honest resolution of a `READINBOX` challenge for an
+              EigenDA certificate where each validator has alternative views of the canonical sequencer inbox state.
+            globs:
+              - "system_tests/full_challenge_test.go"
+              - "system_tests/full_challenge_mock_test.go"
+              - "system_tests/full_challenge_impl_test.go"
+
+      - title: "CI/CD"
+        
+        sub:
+          - title: "Github Workflows"
+            description: | 
+              Updated Github workflows to include EigenDA-specific build and test steps.
+            globs:
+              - ".github/workflows/arbitrator-ci.yml"
+              - ".github/workflows/arbitrator-skip-ci.yml"
+              - ".github/workflows/ci.yml"
+              - ".github/workflows/codeql-analysis.yml"
+              - ".github/workflows/docker.yml"
+              - ".github/workflows/release-ci.yml"
+              - "scripts/start-eigenda-proxy.sh"
+
+          - title: "Docker Builds"
+            description: | 
+              Updated Dockerfile to use EigenDA consensus replay artifact and disregard historical 
+              vanilla Arbitrum ones. Also added github action for building and publishing images to GHCR.
+            globs:
+              - "Dockerfile"
+              - ".github/workflows/docker-eigenda.yml"
+
+      - title: "Batch posting & derivation from EigenDA"
+        description: |
+          Added the ability to post batches to EigenDA and trustlessly derive them using the respective
+          certificate posted via the parent chain `SequencerInbox` contract.
+        sub:
+          - title: "Config Ingestion"
+            description: |
+              Extended config processing logic to create and propagate EigenDA specific client reader/writer instances. Also added key invariants
+              to ensure proper expression of EigenDA specific parameters.
+            globs:
+              - "arbnode/node.go"
+              - "cmd/nitro/nitro.go"
+
+          - title: "Batch Posting"
+            description: |
+              Added EigenDA-specific batch posting logic to the Arbitrum Nitro batch poster. This includes utilizing the 
+              new `addSequencerL2BatchFromEigenDA` entrypoint in the `SequencerInbox` contract for submitting certificate txs
+              as well as an optional `failover` mechanism for automatic fallback to native Arbitrum DA (i.e, AnyTrust, 4844, calldata) 
+              in the event of EigenDA service unavailability.
+            globs:
+              - "arbnode/batch_poster.go"
+
+          - title: "Inbox Reading (Batch Derivation)"
+            description: |
+              Added EigenDA-specific batch posting logic to the Arbitrum Nitro batch poster. This includes utilizing the 
+              new `addSequencerL2BatchFromEigenDA` entrypoint in the `SequencerInbox` contract for submitting certificate txs
+              as well as an optional `failover` mechanism for automatic fallback to native Arbitrum DA (i.e, AnyTrust, 4844, calldata) 
+              in the event of EigenDA service unavailability.
+            globs:
+              - "arbnode/sequencer_inbox.go"
+              - 
+
+          - title: "Integration Tests"
+            description:
+            globs:
+              - "system_tests/eigenda_test.go"
+      # - title: ""  # titles are optional
+      #   description: "This fork tests the modifications to `greeter.go` and utils."
+      #   globs:
+      #     - "hello/world/greeter.go"
+      #     - "hello/util/*_test.go"
+      # - title: "modifications to hello/printer"
+      #   description: "The `printer` package prints greetings"
+      #   globs:
+      #     - "hello/printer/*"
+      #     - "hello/printer/display/**"  # double start glob patterns work too, for recursive matching!
+      #   ignore:
+      #     - "hello/printer/testdata/**"  # to group test-data with the package, but ignore the lines, use "ignore"
+      # - title: "MOTD"
+      #   description: "New package that generates a message of the day (MOTD) to add to the greeting"
+      #   globs:
+      #     - "motd/*"
+# files can be ignored globally, these will be listed in a separate grayed-out section,
+# and do not count towards the total line count.
+ignore:
+  - "*.sum"
+  - "*.md"
+  - "arbitrator/Cargo.lock"
+  - "arbitrator/wasm-libraries/Cargo.lock" 
+  - "cmd/replay/db.go"
+  - "arbstate/inbox.go"
+  - "arbnode/inbox_tracker.go"
+  - "arbitrator/prover/src/main.rs"
+  - "arbitrator/jit/src/test.rs"
+  - "validator/server_jit/jit_machine.go"
