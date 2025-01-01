@@ -273,6 +273,7 @@ type Node struct {
 	Stack                    *node.Node
 	Execution                execution.FullExecutionClient
 	ExecutionClient          execution.ExecutionClient
+	ExecutionSequencer       execution.ExecutionSequencer
 	L1Reader                 *headerreader.HeaderReader
 	TxStreamer               *TransactionStreamer
 	DeployInfo               *chaininfo.RollupAddresses
@@ -629,7 +630,7 @@ func getInboxTrackerAndReader(
 	deployInfo *chaininfo.RollupAddresses,
 	delayedBridge *DelayedBridge,
 	sequencerInbox *SequencerInbox,
-	exec execution.FullExecutionClient,
+	exec execution.ExecutionSequencer,
 ) (*InboxTracker, *InboxReader, error) {
 	config := configFetcher.Get()
 
@@ -934,7 +935,8 @@ func getNodeParentChainReaderDisabled(
 	ctx context.Context,
 	arbDb ethdb.Database,
 	stack *node.Node,
-	exec execution.FullExecutionClient,
+	executionClient execution.ExecutionClient,
+	executionSequencer execution.ExecutionSequencer,
 	txStreamer *TransactionStreamer,
 	blobReader daprovider.BlobReader,
 	broadcastServer *broadcaster.Broadcaster,
@@ -948,7 +950,8 @@ func getNodeParentChainReaderDisabled(
 	return &Node{
 		ArbDB:                   arbDb,
 		Stack:                   stack,
-		Execution:               exec,
+		ExecutionClient:         executionClient,
+		ExecutionSequencer:      executionSequencer,
 		L1Reader:                nil,
 		TxStreamer:              txStreamer,
 		DeployInfo:              nil,
@@ -980,7 +983,6 @@ func createNodeImpl(
 	executionSequencer execution.ExecutionSequencer,
 	executionRecorder execution.ExecutionRecorder,
 	executionBatchPoster execution.ExecutionBatchPoster,
-	fullExecutionClient execution.FullExecutionClient,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -1040,13 +1042,13 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, fullExecutionClient)
+	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, executionClient)
 	if err != nil {
 		return nil, err
 	}
 
 	if !config.ParentChainReader.Enable {
-		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, fullExecutionClient, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
+		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
 	}
 
 	delayedBridge, sequencerInbox, err := getDelayedBridgeAndSequencerInbox(deployInfo, l1client)
@@ -1059,7 +1061,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, fullExecutionClient)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
 	if err != nil {
 		return nil, err
 	}
@@ -1106,7 +1108,8 @@ func createNodeImpl(
 	return &Node{
 		ArbDB:                    arbDb,
 		Stack:                    stack,
-		Execution:                fullExecutionClient,
+		ExecutionClient:          executionClient,
+		ExecutionSequencer:       executionSequencer,
 		L1Reader:                 l1Reader,
 		TxStreamer:               txStreamer,
 		DeployInfo:               deployInfo,
@@ -1220,7 +1223,10 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 func CreateNodeFullExecutionClient(
 	ctx context.Context,
 	stack *node.Node,
-	exec execution.FullExecutionClient,
+	executionClient execution.ExecutionClient,
+	executionSequencer execution.ExecutionSequencer,
+	executionRecorder execution.ExecutionRecorder,
+	executionBatchPoster execution.ExecutionBatchPoster,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -1233,7 +1239,7 @@ func CreateNodeFullExecutionClient(
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, exec, exec, exec, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
 	if err != nil {
 		return nil, err
 	}
@@ -1242,8 +1248,8 @@ func CreateNodeFullExecutionClient(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	executionNode, isExecutionNode := n.Execution.(*gethexec.ExecutionNode)
-	executionClientImpl, isExecutionClientImpl := n.Execution.(*gethexec.ExecutionClientImpl)
+	executionNode, isExecutionNode := n.ExecutionClient.(*gethexec.ExecutionNode)
+	executionClientImpl, isExecutionClientImpl := n.ExecutionClient.(*gethexec.ExecutionClientImpl)
 
 	var err error
 	if isExecutionNode {
@@ -1263,7 +1269,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if isExecutionNode {
 		executionNode.SetConsensusClient(n)
 	}
-	err = n.Execution.Start(ctx)
+	err = n.ExecutionClient.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting exec client: %w", err)
 	}
@@ -1313,7 +1319,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	} else {
-		n.Execution.Activate()
+		n.ExecutionSequencer.Activate()
 	}
 	if n.MaintenanceRunner != nil {
 		n.MaintenanceRunner.Start(ctx)
@@ -1439,8 +1445,8 @@ func (n *Node) StopAndWait() {
 	if n.DASLifecycleManager != nil {
 		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
 	}
-	if n.Execution != nil {
-		n.Execution.StopAndWait()
+	if n.ExecutionClient != nil {
+		n.ExecutionClient.StopAndWait()
 	}
 	if err := n.Stack.Close(); err != nil {
 		log.Error("error on stack close", "err", err)

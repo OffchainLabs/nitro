@@ -39,6 +39,9 @@ type ExecutionClient interface {
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 
 	Maintenance() containers.PromiseInterface[struct{}]
+
+	Start(ctx context.Context) error
+	StopAndWait()
 }
 
 // needed for validators / stakers
@@ -67,16 +70,6 @@ type ExecutionSequencer interface {
 // needed for batch poster
 type ExecutionBatchPoster interface {
 	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
-}
-
-type FullExecutionClient interface {
-	ExecutionClient
-	ExecutionRecorder
-	ExecutionSequencer
-	ExecutionBatchPoster
-
-	Start(ctx context.Context) error
-	StopAndWait()
 }
 
 // not implemented in execution, used as input
