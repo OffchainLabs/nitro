@@ -868,7 +868,7 @@ func getBatchPoster(
 	l1Reader *headerreader.HeaderReader,
 	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,
-	exec execution.FullExecutionClient,
+	exec execution.ExecutionBatchPoster,
 	arbDb ethdb.Database,
 	syncMonitor *SyncMonitor,
 	deployInfo *chaininfo.RollupAddresses,
@@ -979,6 +979,7 @@ func createNodeImpl(
 	executionClient execution.ExecutionClient,
 	executionSequencer execution.ExecutionSequencer,
 	executionRecorder execution.ExecutionRecorder,
+	executionBatchPoster execution.ExecutionBatchPoster,
 	fullExecutionClient execution.FullExecutionClient,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
@@ -1082,8 +1083,8 @@ func createNodeImpl(
 	}
 
 	var batchPoster *BatchPoster
-	if fullExecutionClient != nil {
-		batchPoster, err = getBatchPoster(ctx, configFetcher, txOptsBatchPoster, daWriter, l1Reader, inboxTracker, txStreamer, fullExecutionClient, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	if executionBatchPoster != nil {
+		batchPoster, err = getBatchPoster(ctx, configFetcher, txOptsBatchPoster, daWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
 		if err != nil {
 			return nil, err
 		}
@@ -1232,7 +1233,7 @@ func CreateNodeFullExecutionClient(
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, exec, exec, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, exec, exec, exec, exec, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
 	if err != nil {
 		return nil, err
 	}

@@ -64,15 +64,19 @@ type ExecutionSequencer interface {
 	FullSyncProgressMap() map[string]interface{}
 }
 
+// needed for batch poster
+type ExecutionBatchPoster interface {
+	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
+}
+
 type FullExecutionClient interface {
 	ExecutionClient
 	ExecutionRecorder
 	ExecutionSequencer
+	ExecutionBatchPoster
 
 	Start(ctx context.Context) error
 	StopAndWait()
-
-	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
 }
 
 // not implemented in execution, used as input
