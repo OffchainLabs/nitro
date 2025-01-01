@@ -6,7 +6,8 @@ permissions:
 on:
   push:
     branches:
-      - optimism
+      - epociask--feat-fork-diff
+
 jobs:
   deploy:
     concurrency: ci-${{ github.ref }}
