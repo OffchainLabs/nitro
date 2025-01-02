@@ -887,6 +887,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 
 	wasmRoots := v.GetModuleRootsToValidate()
 	pos := v.lastValidationSent()
+	initialLastValidationSent := pos
 	sendValidationUntil := v.validated() + arbutil.MessageIndex(v.config().ValidationSentLimit)
 	for pos <= sendValidationUntil {
 		if ctx.Err() != nil {
@@ -894,8 +895,12 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		}
 		v.reorgMutex.RUnlock()
 		v.reorgMutex.RLock()
+		if v.lastValidationSent() != initialLastValidationSent {
+			pos = v.lastValidationSent()
+			initialLastValidationSent = pos
+		}
 		if pos >= v.recordSent() {
-			log.Trace("advanceValidations: nothing to validate", "pos", pos)
+			log.Debug("advanceValidations: nothing to validate", "pos", pos)
 			return nil, nil
 		}
 		validationStatus, found := v.validations.Load(pos)
