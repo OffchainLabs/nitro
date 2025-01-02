@@ -431,9 +431,7 @@ func getSyncMonitor(configFetcher ConfigFetcher) *SyncMonitor {
 	return NewSyncMonitor(syncConfigFetcher)
 }
 
-func getL1Reader(ctx context.Context, configFetcher ConfigFetcher, l1client *ethclient.Client) (*headerreader.HeaderReader, error) {
-	config := configFetcher.Get()
-
+func getL1Reader(ctx context.Context, config *Config, configFetcher ConfigFetcher, l1client *ethclient.Client) (*headerreader.HeaderReader, error) {
 	var l1Reader *headerreader.HeaderReader
 	if config.ParentChainReader.Enable {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
@@ -446,9 +444,7 @@ func getL1Reader(ctx context.Context, configFetcher ConfigFetcher, l1client *eth
 	return l1Reader, nil
 }
 
-func getBroadcastServer(configFetcher ConfigFetcher, dataSigner signature.DataSignerFunc, l2ChainId uint64, fatalErrChan chan error) (*broadcaster.Broadcaster, error) {
-	config := configFetcher.Get()
-
+func getBroadcastServer(config *Config, configFetcher ConfigFetcher, dataSigner signature.DataSignerFunc, l2ChainId uint64, fatalErrChan chan error) (*broadcaster.Broadcaster, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		var maybeDataSigner signature.DataSignerFunc
@@ -492,14 +488,13 @@ func getMaintenanceRunner(
 }
 
 func getBroadcastClients(
+	config *Config,
 	configFetcher ConfigFetcher,
 	txStreamer *TransactionStreamer,
 	l2ChainId uint64,
 	bpVerifier *contracts.AddressVerifier,
 	fatalErrChan chan error,
 ) (*broadcastclients.BroadcastClients, error) {
-	config := configFetcher.Get()
-
 	var broadcastClients *broadcastclients.BroadcastClients
 	if config.Feed.Input.Enable() {
 		currentMessageCount, err := txStreamer.GetMessageCount()
@@ -563,7 +558,7 @@ func getDelayedBridgeAndSequencerInbox(
 
 func getDAS(
 	ctx context.Context,
-	configFetcher ConfigFetcher,
+	config *Config,
 	l2Config *params.ChainConfig,
 	txStreamer *TransactionStreamer,
 	blobReader daprovider.BlobReader,
@@ -572,8 +567,6 @@ func getDAS(
 	dataSigner signature.DataSignerFunc,
 	l1client *ethclient.Client,
 ) (das.DataAvailabilityServiceWriter, *das.LifecycleManager, []daprovider.Reader, error) {
-	config := configFetcher.Get()
-
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader
 	var dasLifecycleManager *das.LifecycleManager
@@ -624,6 +617,7 @@ func getInboxTrackerAndReader(
 	arbDb ethdb.Database,
 	txStreamer *TransactionStreamer,
 	dapReaders []daprovider.Reader,
+	config *Config,
 	configFetcher ConfigFetcher,
 	l1client *ethclient.Client,
 	l1Reader *headerreader.HeaderReader,
@@ -632,8 +626,6 @@ func getInboxTrackerAndReader(
 	sequencerInbox *SequencerInbox,
 	exec execution.ExecutionSequencer,
 ) (*InboxTracker, *InboxReader, error) {
-	config := configFetcher.Get()
-
 	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
 	if err != nil {
 		return nil, nil, err
@@ -670,14 +662,13 @@ func getInboxTrackerAndReader(
 }
 
 func getBlockValidator(
+	config *Config,
 	configFetcher ConfigFetcher,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,
 	fatalErrChan chan error,
 ) (*staker.BlockValidator, error) {
-	config := configFetcher.Get()
-
 	var err error
 	var blockValidator *staker.BlockValidator
 	if config.ValidatorRequired() {
@@ -697,6 +688,7 @@ func getBlockValidator(
 
 func getStaker(
 	ctx context.Context,
+	config *Config,
 	configFetcher ConfigFetcher,
 	arbDb ethdb.Database,
 	l1Reader *headerreader.HeaderReader,
@@ -712,8 +704,6 @@ func getStaker(
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	blockValidator *staker.BlockValidator,
 ) (*multiprotocolstaker.MultiProtocolStaker, *MessagePruner, common.Address, error) {
-	config := configFetcher.Get()
-
 	var stakerObj *multiprotocolstaker.MultiProtocolStaker
 	var messagePruner *MessagePruner
 	var stakerAddr common.Address
@@ -800,15 +790,13 @@ func getTransactionStreamer(
 }
 
 func getSeqCoordinator(
-	configFetcher ConfigFetcher,
+	config *Config,
 	dataSigner signature.DataSignerFunc,
 	bpVerifier *contracts.AddressVerifier,
 	txStreamer *TransactionStreamer,
 	syncMonitor *SyncMonitor,
 	exec execution.ExecutionSequencer,
 ) (*SeqCoordinator, error) {
-	config := configFetcher.Get()
-
 	var coordinator *SeqCoordinator
 	if config.SeqCoordinator.Enable {
 		if exec == nil {
@@ -827,6 +815,7 @@ func getSeqCoordinator(
 }
 
 func getStatelessBlockValidator(
+	config *Config,
 	configFetcher ConfigFetcher,
 	inboxReader *InboxReader,
 	inboxTracker *InboxTracker,
@@ -836,8 +825,6 @@ func getStatelessBlockValidator(
 	dapReaders []daprovider.Reader,
 	stack *node.Node,
 ) (*staker.StatelessBlockValidator, error) {
-	config := configFetcher.Get()
-
 	var err error
 	var statelessBlockValidator *staker.StatelessBlockValidator
 	if config.BlockValidator.RedisValidationClientConfig.Enabled() || config.BlockValidator.ValidationServerConfigs[0].URL != "" {
@@ -871,6 +858,7 @@ func getStatelessBlockValidator(
 
 func getBatchPoster(
 	ctx context.Context,
+	config *Config,
 	configFetcher ConfigFetcher,
 	txOptsBatchPoster *bind.TransactOpts,
 	daWriter das.DataAvailabilityServiceWriter,
@@ -885,8 +873,6 @@ func getBatchPoster(
 	dapReaders []daprovider.Reader,
 	stakerAddr common.Address,
 ) (*BatchPoster, error) {
-	config := configFetcher.Get()
-
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
 		if exec == nil {
@@ -1020,12 +1006,12 @@ func createNodeImpl(
 
 	syncMonitor := getSyncMonitor(configFetcher)
 
-	l1Reader, err := getL1Reader(ctx, configFetcher, l1client)
+	l1Reader, err := getL1Reader(ctx, config, configFetcher, l1client)
 	if err != nil {
 		return nil, err
 	}
 
-	broadcastServer, err := getBroadcastServer(configFetcher, dataSigner, l2Config.ChainID.Uint64(), fatalErrChan)
+	broadcastServer, err := getBroadcastServer(config, configFetcher, dataSigner, l2Config.ChainID.Uint64(), fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1040,7 +1026,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	coordinator, err := getSeqCoordinator(configFetcher, dataSigner, bpVerifier, txStreamer, syncMonitor, executionSequencer)
+	coordinator, err := getSeqCoordinator(config, dataSigner, bpVerifier, txStreamer, syncMonitor, executionSequencer)
 	if err != nil {
 		return nil, err
 	}
@@ -1050,7 +1036,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	broadcastClients, err := getBroadcastClients(configFetcher, txStreamer, l2Config.ChainID.Uint64(), bpVerifier, fatalErrChan)
+	broadcastClients, err := getBroadcastClients(config, configFetcher, txStreamer, l2Config.ChainID.Uint64(), bpVerifier, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1069,32 +1055,32 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	daWriter, dasLifecycleManager, dapReaders, err := getDAS(ctx, configFetcher, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client)
+	daWriter, dasLifecycleManager, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client)
 	if err != nil {
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
 	if err != nil {
 		return nil, err
 	}
 
-	statelessBlockValidator, err := getStatelessBlockValidator(configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack)
+	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack)
 	if err != nil {
 		return nil, err
 	}
 
-	blockValidator, err := getBlockValidator(configFetcher, statelessBlockValidator, inboxTracker, txStreamer, fatalErrChan)
+	blockValidator, err := getBlockValidator(config, configFetcher, statelessBlockValidator, inboxTracker, txStreamer, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, stack, fatalErrChan, statelessBlockValidator, blockValidator)
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, stack, fatalErrChan, statelessBlockValidator, blockValidator)
 	if err != nil {
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, configFetcher, txOptsBatchPoster, daWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, daWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
