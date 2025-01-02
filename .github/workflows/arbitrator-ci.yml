@@ -171,6 +171,9 @@ jobs:
       - name: Rustfmt - langs/rust
         run: cargo fmt --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
 
+      - name: Rustfmt - tools/stylus_benchmark
+        run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
+
       - name: Make proofs from test cases
         run: make -j test-gen-proofs
 
