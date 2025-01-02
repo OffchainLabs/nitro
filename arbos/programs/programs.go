@@ -274,6 +274,7 @@ func (p Programs) CallProgram(
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
 			contract.Gas = 0
+			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runModeToString(runmode)), nil).Inc(int64(startingGas - contract.Gas))
 			return nil, vm.ErrOutOfGas
 		}
 		maxGasToReturn := startingGas - evmCost
