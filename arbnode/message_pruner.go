@@ -201,19 +201,21 @@ func fetchLastPrunedKey(db ethdb.Database, lastPrunedKey []byte) uint64 {
 	hasKey, err := db.Has(lastPrunedKey)
 	if err != nil {
 		log.Warn("error checking for last pruned key: %w", err)
-	} else if hasKey {
-		lastPrunedValueByte, err := db.Get(lastPrunedKey)
-		if err != nil {
-			log.Warn("error fetching last pruned key: %w", err)
-		} else {
-			var lastPrunedValue uint64
-			err = rlp.DecodeBytes(lastPrunedValueByte, &lastPrunedValue)
-			if err != nil {
-				log.Warn("error decoding last pruned value: %w", err)
-			} else {
-				return lastPrunedValue
-			}
-		}
+		return 0
 	}
-	return 0
+	if !hasKey {
+		return 0
+	}
+	lastPrunedValueByte, err := db.Get(lastPrunedKey)
+	if err != nil {
+		log.Warn("error fetching last pruned key: %w", err)
+		return 0
+	}
+	var lastPrunedValue uint64
+	err = rlp.DecodeBytes(lastPrunedValueByte, &lastPrunedValue)
+	if err != nil {
+		log.Warn("error decoding last pruned value: %w", err)
+		return 0
+	}
+	return lastPrunedValue
 }
