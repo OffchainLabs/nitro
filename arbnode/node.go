@@ -811,6 +811,10 @@ func getSeqCoordinator(
 
 	var coordinator *SeqCoordinator
 	if config.SeqCoordinator.Enable {
+		if exec == nil {
+			return nil, errors.New("sequencer coordinator requires an execution sequencer")
+		}
+
 		var err error
 		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec, syncMonitor, config.SeqCoordinator)
 		if err != nil {
@@ -837,6 +841,10 @@ func getStatelessBlockValidator(
 	var err error
 	var statelessBlockValidator *staker.StatelessBlockValidator
 	if config.BlockValidator.RedisValidationClientConfig.Enabled() || config.BlockValidator.ValidationServerConfigs[0].URL != "" {
+		if exec == nil {
+			return nil, errors.New("stateless block validator requires an execution recorder")
+		}
+
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
@@ -881,6 +889,10 @@ func getBatchPoster(
 
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
+		if exec == nil {
+			return nil, errors.New("batch poster requires an execution batch poster")
+		}
+
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
@@ -923,7 +935,11 @@ func getDelayedSequencer(
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
-	// always create DelayedSequencer, it won't do anything if it is disabled
+	if exec == nil {
+		return nil, nil
+	}
+
+	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
 	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 	if err != nil {
 		return nil, err
@@ -1024,12 +1040,9 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	var coordinator *SeqCoordinator
-	if executionSequencer != nil {
-		coordinator, err = getSeqCoordinator(configFetcher, dataSigner, bpVerifier, txStreamer, syncMonitor, executionSequencer)
-		if err != nil {
-			return nil, err
-		}
+	coordinator, err := getSeqCoordinator(configFetcher, dataSigner, bpVerifier, txStreamer, syncMonitor, executionSequencer)
+	if err != nil {
+		return nil, err
 	}
 
 	maintenanceRunner, err := getMaintenanceRunner(arbDb, configFetcher, coordinator, executionClient)
@@ -1066,12 +1079,9 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	var statelessBlockValidator *staker.StatelessBlockValidator
-	if executionRecorder != nil {
-		statelessBlockValidator, err = getStatelessBlockValidator(configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack)
-		if err != nil {
-			return nil, err
-		}
+	statelessBlockValidator, err := getStatelessBlockValidator(configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack)
+	if err != nil {
+		return nil, err
 	}
 
 	blockValidator, err := getBlockValidator(configFetcher, statelessBlockValidator, inboxTracker, txStreamer, fatalErrChan)
@@ -1084,20 +1094,14 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	var batchPoster *BatchPoster
-	if executionBatchPoster != nil {
-		batchPoster, err = getBatchPoster(ctx, configFetcher, txOptsBatchPoster, daWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
-		if err != nil {
-			return nil, err
-		}
+	batchPoster, err := getBatchPoster(ctx, configFetcher, txOptsBatchPoster, daWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	if err != nil {
+		return nil, err
 	}
 
-	var delayedSequencer *DelayedSequencer
-	if executionSequencer != nil {
-		delayedSequencer, err = getDelayedSequencer(l1Reader, inboxReader, executionSequencer, configFetcher, coordinator)
-		if err != nil {
-			return nil, err
-		}
+	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, executionSequencer, configFetcher, coordinator)
+	if err != nil {
+		return nil, err
 	}
 
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
