@@ -1,7 +1,7 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::WasmEnv;
+use crate::machine::WasmEnv;
 use arbutil::{Bytes32, PreimageType};
 use eyre::Ok;
 use prover::parse_input::FileData;
