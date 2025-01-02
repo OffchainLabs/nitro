@@ -215,7 +215,7 @@ func (ps *L1PricingState) LastSurplus() (*big.Int, error) {
 }
 
 func (ps *L1PricingState) SetLastSurplus(val *big.Int, arbosVersion uint64) error {
-	if arbosVersion < 7 {
+	if arbosVersion < params.ArbosVersion_7 {
 		return ps.lastSurplus.Set_preVersion7(val)
 	}
 	return ps.lastSurplus.SetSaturatingWithWarning(val, "L1 pricer last surplus")
@@ -308,7 +308,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	l1Basefee *big.Int,
 	scenario util.TracingScenario,
 ) error {
-	if arbosVersion < 10 {
+	if arbosVersion < params.ArbosVersion_10 {
 		return ps._preversion10_UpdateForBatchPosterSpending(statedb, evm, arbosVersion, updateTime, currentTime, batchPoster, weiSpent, l1Basefee, scenario)
 	}
 
@@ -358,7 +358,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	}
 
 	// impose cap on amortized cost, if there is one
-	if arbosVersion >= 3 {
+	if arbosVersion >= params.ArbosVersion_3 {
 		amortizedCostCapBips, err := ps.AmortizedCostCapBips()
 		if err != nil {
 			return err
