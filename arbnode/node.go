@@ -431,7 +431,12 @@ func getSyncMonitor(configFetcher ConfigFetcher) *SyncMonitor {
 	return NewSyncMonitor(syncConfigFetcher)
 }
 
-func getL1Reader(ctx context.Context, config *Config, configFetcher ConfigFetcher, l1client *ethclient.Client) (*headerreader.HeaderReader, error) {
+func getL1Reader(
+	ctx context.Context,
+	config *Config,
+	configFetcher ConfigFetcher,
+	l1client *ethclient.Client,
+) (*headerreader.HeaderReader, error) {
 	var l1Reader *headerreader.HeaderReader
 	if config.ParentChainReader.Enable {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
@@ -444,7 +449,13 @@ func getL1Reader(ctx context.Context, config *Config, configFetcher ConfigFetche
 	return l1Reader, nil
 }
 
-func getBroadcastServer(config *Config, configFetcher ConfigFetcher, dataSigner signature.DataSignerFunc, l2ChainId uint64, fatalErrChan chan error) (*broadcaster.Broadcaster, error) {
+func getBroadcastServer(
+	config *Config,
+	configFetcher ConfigFetcher,
+	dataSigner signature.DataSignerFunc,
+	l2ChainId uint64,
+	fatalErrChan chan error,
+) (*broadcaster.Broadcaster, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		var maybeDataSigner signature.DataSignerFunc
@@ -459,7 +470,10 @@ func getBroadcastServer(config *Config, configFetcher ConfigFetcher, dataSigner 
 	return broadcastServer, nil
 }
 
-func getBPVerifier(deployInfo *chaininfo.RollupAddresses, l1client *ethclient.Client) (*contracts.AddressVerifier, error) {
+func getBPVerifier(
+	deployInfo *chaininfo.RollupAddresses,
+	l1client *ethclient.Client,
+) (*contracts.AddressVerifier, error) {
 	var bpVerifier *contracts.AddressVerifier
 	if deployInfo != nil && l1client != nil {
 		sequencerInboxAddr := deployInfo.SequencerInbox
