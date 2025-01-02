@@ -1224,6 +1224,33 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 	stack.RegisterAPIs(apis)
 }
 
+func CreateNodeExecutionClient(
+	ctx context.Context,
+	stack *node.Node,
+	executionClient execution.ExecutionClient,
+	arbDb ethdb.Database,
+	configFetcher ConfigFetcher,
+	l2Config *params.ChainConfig,
+	l1client *ethclient.Client,
+	deployInfo *chaininfo.RollupAddresses,
+	txOptsValidator *bind.TransactOpts,
+	txOptsBatchPoster *bind.TransactOpts,
+	dataSigner signature.DataSignerFunc,
+	fatalErrChan chan error,
+	parentChainID *big.Int,
+	blobReader daprovider.BlobReader,
+) (*Node, error) {
+	if executionClient == nil {
+		return nil, errors.New("execution client must be non-nil")
+	}
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	if err != nil {
+		return nil, err
+	}
+	registerAPIs(currentNode, stack)
+	return currentNode, nil
+}
+
 func CreateNodeFullExecutionClient(
 	ctx context.Context,
 	stack *node.Node,
@@ -1255,26 +1282,23 @@ func CreateNodeFullExecutionClient(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	executionNode, isExecutionNode := n.ExecutionClient.(*gethexec.ExecutionNode)
-	executionClientImpl, isExecutionClientImpl := n.ExecutionClient.(*gethexec.ExecutionClientImpl)
-
-	var err error
-	if isExecutionNode {
-		err = executionNode.Initialize(ctx)
-	} else if isExecutionClientImpl {
-		err = executionClientImpl.Initialize(ctx)
+	execClient, ok := n.ExecutionClient.(*gethexec.ExecutionNode)
+	if !ok {
+		execClient = nil
 	}
-	if err != nil {
-		return fmt.Errorf("error initializing exec client: %w", err)
+	if execClient != nil {
+		err := execClient.Initialize(ctx)
+		if err != nil {
+			return fmt.Errorf("error initializing exec client: %w", err)
+		}
 	}
-
 	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
-	err = n.Stack.Start()
+	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
 	}
-	if isExecutionNode {
-		executionNode.SetConsensusClient(n)
+	if execClient != nil {
+		execClient.SetConsensusClient(n)
 	}
 	err = n.ExecutionClient.Start(ctx)
 	if err != nil {

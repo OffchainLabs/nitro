@@ -92,14 +92,14 @@ import (
 type info = *BlockchainTestInfo
 
 type SecondNodeParams struct {
-	nodeConfig                                  *arbnode.Config
-	execConfig                                  *gethexec.Config
-	stackConfig                                 *node.Config
-	dasConfig                                   *das.DataAvailabilityConfig
-	initData                                    *statetransfer.ArbosInitializationInfo
-	addresses                                   *chaininfo.RollupAddresses
-	wasmCacheTag                                uint32
-	useExecutionClientImplAsFullExecutionClient bool
+	nodeConfig             *arbnode.Config
+	execConfig             *gethexec.Config
+	stackConfig            *node.Config
+	dasConfig              *das.DataAvailabilityConfig
+	initData               *statetransfer.ArbosInitializationInfo
+	addresses              *chaininfo.RollupAddresses
+	wasmCacheTag           uint32
+	useExecutionClientOnly bool
 }
 
 type TestClient struct {
@@ -754,10 +754,8 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.wasmCacheTag, params.useExecutionClientImplAsFullExecutionClient)
-	if !params.useExecutionClientImplAsFullExecutionClient {
-		testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
-	}
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.wasmCacheTag, params.useExecutionClientOnly)
+	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
 	return testClient, func() { testClient.cleanup() }
 }
@@ -1531,7 +1529,7 @@ func Create2ndNodeWithConfig(
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
 	wasmCacheTag uint32,
-	useExecutionClientImplAsFullExecutionClient bool,
+	useExecutionClientOnly bool,
 ) (*ethclient.Client, *arbnode.Node) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1580,8 +1578,8 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 
 	var currentNode *arbnode.Node
-	if useExecutionClientImplAsFullExecutionClient {
-		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, &gethexec.ExecutionClientImpl{ExecutionNode: currentExec}, &gethexec.ExecutionClientImpl{ExecutionNode: currentExec}, &gethexec.ExecutionClientImpl{ExecutionNode: currentExec}, &gethexec.ExecutionClientImpl{ExecutionNode: currentExec}, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
+	if useExecutionClientOnly {
+		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
 	} else {
 		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 )
 
-func TestExecutionClientImplAsFullExecutionClient(t *testing.T) {
+func TestExecutionClientOnly(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -23,9 +23,9 @@ func TestExecutionClientImplAsFullExecutionClient(t *testing.T) {
 	defer cleanup()
 	seqTestClient := builder.L2
 
-	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
-	replicaTestClient, replicaCleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: replicaConfig, useExecutionClientImplAsFullExecutionClient: true})
-	defer replicaCleanup()
+	replicaExecutionClientOnlyConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	replicaExecutionClientOnlyTestClient, replicaExecutionClientOnlyCleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: replicaExecutionClientOnlyConfig, useExecutionClientOnly: true})
+	defer replicaExecutionClientOnlyCleanup()
 
 	builder.L2Info.GenerateAccount("User2")
 	for i := 0; i < 3; i++ {
@@ -34,11 +34,11 @@ func TestExecutionClientImplAsFullExecutionClient(t *testing.T) {
 		Require(t, err)
 		_, err = seqTestClient.EnsureTxSucceeded(tx)
 		Require(t, err)
-		_, err = WaitForTx(ctx, replicaTestClient.Client, tx.Hash(), time.Second*15)
+		_, err = WaitForTx(ctx, replicaExecutionClientOnlyTestClient.Client, tx.Hash(), time.Second*15)
 		Require(t, err)
 	}
 
-	replicaBalance, err := replicaTestClient.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	replicaBalance, err := replicaExecutionClientOnlyTestClient.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 	if replicaBalance.Cmp(big.NewInt(3e12)) != 0 {
 		t.Fatal("Unexpected balance:", replicaBalance)
