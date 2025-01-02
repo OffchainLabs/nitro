@@ -120,7 +120,7 @@ func (e *SolError) Error() string {
 func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Precompile) {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
 	if err != nil {
-		log.Crit("Bad ABI")
+		panic("Bad ABI")
 	}
 
 	implementerType := reflect.TypeOf(implementer)
@@ -128,12 +128,12 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 
 	_, ok := implementerType.Elem().FieldByName("Address")
 	if !ok {
-		log.Crit("Implementer for precompile ", contract, " is missing an Address field")
+		panic("Implementer for precompile " + contract + " is missing an Address field")
 	}
 
 	address, ok := reflect.ValueOf(implementer).Elem().FieldByName("Address").Interface().(addr)
 	if !ok {
-		log.Crit("Implementer for precompile ", contract, "'s Address field has the wrong type")
+		panic("Implementer for precompile " + contract + "'s Address field has the wrong type")
 	}
 
 	gethAbiFuncTypeEquality := func(actual, geth reflect.Type) bool {
@@ -167,7 +167,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 		name = capitalize + name[1:]
 
 		if len(method.ID) != 4 {
-			log.Crit("Method ID isn't 4 bytes")
+			panic("Method ID isn't 4 bytes")
 		}
 		id := *(*[4]byte)(method.ID)
 
@@ -175,7 +175,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 
 		handler, ok := implementerType.MethodByName(name)
 		if !ok {
-			log.Crit("Precompile " + contract + " must implement " + name)
+			panic("Precompile " + contract + " must implement " + name)
 		}
 
 		var needs = []reflect.Type{
@@ -199,7 +199,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 			needs = append(needs, reflect.TypeOf(&big.Int{}))
 			purity = payable
 		default:
-			log.Crit("Unknown state mutability ", method.StateMutability)
+			panic("Unknown state mutability " + method.StateMutability)
 		}
 
 		for _, arg := range method.Inputs {
@@ -215,10 +215,9 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 		expectedHandlerType := reflect.FuncOf(needs, outputs, false)
 
 		if !gethAbiFuncTypeEquality(handler.Type, expectedHandlerType) {
-			log.Crit(
-				"Precompile "+contract+"'s "+name+"'s implementer has the wrong type\n",
-				"\texpected:\t", expectedHandlerType, "\n\tbut have:\t", handler.Type,
-			)
+			panic(
+				"Precompile " + contract + "'s " + name + "'s implementer has the wrong type\n" +
+					"\texpected:\t" + expectedHandlerType.String() + "\n\tbut have:\t" + handler.Type.String())
 		}
 
 		method := PrecompileMethod{
@@ -237,7 +236,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 		method := implementerType.Method(i)
 		name := method.Name
 		if method.IsExported() && methodsByName[name] == nil {
-			log.Crit(contract + " is missing a solidity interface for " + name)
+			panic(contract + " is missing a solidity interface for " + name)
 		}
 	}
 
@@ -269,11 +268,10 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 			if arg.Indexed {
 				_, ok := supportedIndices[arg.Type.String()]
 				if !ok {
-					log.Crit(
-						"Please change the solidity for precompile ", contract,
-						"'s event ", name, ":\n\tEvent indices of type ",
-						arg.Type.String(), " are not supported",
-					)
+					panic(
+						"Please change the solidity for precompile " + contract +
+							"'s event " + name + ":\n\tEvent indices of type " +
+							arg.Type.String() + " are not supported")
 				}
 			}
 		}
@@ -288,23 +286,21 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 
 		field, ok := implementerType.Elem().FieldByName(name)
 		if !ok {
-			log.Crit(missing, "event ", name, " of type\n\t", expectedFieldType)
+			panic(missing + "event " + name + " of type\n\t" + expectedFieldType.String())
 		}
 		costField, ok := implementerType.Elem().FieldByName(name + "GasCost")
 		if !ok {
-			log.Crit(missing, "event ", name, "'s GasCost of type\n\t", expectedCostType)
+			panic(missing + "event " + name + "'s GasCost of type\n\t" + expectedCostType.String())
 		}
 		if !gethAbiFuncTypeEquality(field.Type, expectedFieldType) {
-			log.Crit(
-				context, "'s field for event ", name, " has the wrong type\n",
-				"\texpected:\t", expectedFieldType, "\n\tbut have:\t", field.Type,
-			)
+			panic(
+				context + "'s field for event " + name + " has the wrong type\n" +
+					"\texpected:\t" + expectedFieldType.String() + "\n\tbut have:\t" + field.Type.String())
 		}
 		if !gethAbiFuncTypeEquality(costField.Type, expectedCostType) {
-			log.Crit(
-				context, "'s field for event ", name, "GasCost has the wrong type\n",
-				"\texpected:\t", expectedCostType, "\n\tbut have:\t", costField.Type,
-			)
+			panic(
+				context + "'s field for event " + name + "GasCost has the wrong type\n" +
+					"\texpected:\t" + expectedCostType.String() + "\n\tbut have:\t" + costField.Type.String())
 		}
 
 		structFields := reflect.ValueOf(implementer).Elem()
@@ -464,13 +460,12 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 
 		field, ok := implementerType.Elem().FieldByName(name + "Error")
 		if !ok {
-			log.Crit(missing, "custom error ", name, "Error of type\n\t", expectedFieldType)
+			panic(missing + "custom error " + name + "Error of type\n\t" + expectedFieldType.String())
 		}
 		if field.Type != expectedFieldType {
-			log.Crit(
-				context, "'s field for error ", name, "Error has the wrong type\n",
-				"\texpected:\t", expectedFieldType, "\n\tbut have:\t", field.Type,
-			)
+			panic(
+				context + "'s field for error " + name + "Error has the wrong type\n" +
+					"\texpected:\t" + expectedFieldType.String() + "\n\tbut have:\t" + field.Type.String())
 		}
 
 		structFields := reflect.ValueOf(implementer).Elem()
@@ -756,7 +751,7 @@ func (p *Precompile) Call(
 		reflectArgs = append(reflectArgs, reflect.ValueOf(evm))
 		reflectArgs = append(reflectArgs, reflect.ValueOf(value))
 	default:
-		log.Crit("Unknown state mutability ", method.purity)
+		panic("Unknown state mutability " + string(method.purity))
 	}
 
 	args, err := method.template.Inputs.Unpack(input[4:])
