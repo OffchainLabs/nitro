@@ -47,7 +47,7 @@ type MessagePrunerConfigFetcher func() *MessagePrunerConfig
 var DefaultMessagePrunerConfig = MessagePrunerConfig{
 	Enable:         true,
 	PruneInterval:  time.Minute,
-	MinBatchesLeft: 2,
+	MinBatchesLeft: 1000,
 }
 
 func MessagePrunerConfigAddOptions(prefix string, f *flag.FlagSet) {

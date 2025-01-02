@@ -361,7 +361,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 			args = args[2:]
 
 			version := arbosState.ArbOSVersion(state)
-			if callerCtx.readOnly && version >= 11 {
+			if callerCtx.readOnly && version >= params.ArbosVersion_11 {
 				return []reflect.Value{reflect.ValueOf(vm.ErrWriteProtection)}
 			}
 
@@ -531,14 +531,14 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(MakePrecompile(pgen.ArbFunctionTableMetaData, &ArbFunctionTable{Address: types.ArbFunctionTableAddress}))
 	insert(MakePrecompile(pgen.ArbosTestMetaData, &ArbosTest{Address: types.ArbosTestAddress}))
 	ArbGasInfo := insert(MakePrecompile(pgen.ArbGasInfoMetaData, &ArbGasInfo{Address: types.ArbGasInfoAddress}))
-	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = 10
-	ArbGasInfo.methodsByName["GetL1RewardRate"].arbosVersion = 11
-	ArbGasInfo.methodsByName["GetL1RewardRecipient"].arbosVersion = 11
-	ArbGasInfo.methodsByName["GetL1PricingEquilibrationUnits"].arbosVersion = 20
-	ArbGasInfo.methodsByName["GetLastL1PricingUpdateTime"].arbosVersion = 20
-	ArbGasInfo.methodsByName["GetL1PricingFundsDueForRewards"].arbosVersion = 20
-	ArbGasInfo.methodsByName["GetL1PricingUnitsSinceUpdate"].arbosVersion = 20
-	ArbGasInfo.methodsByName["GetLastL1PricingSurplus"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = params.ArbosVersion_10
+	ArbGasInfo.methodsByName["GetL1RewardRate"].arbosVersion = params.ArbosVersion_11
+	ArbGasInfo.methodsByName["GetL1RewardRecipient"].arbosVersion = params.ArbosVersion_11
+	ArbGasInfo.methodsByName["GetL1PricingEquilibrationUnits"].arbosVersion = params.ArbosVersion_20
+	ArbGasInfo.methodsByName["GetLastL1PricingUpdateTime"].arbosVersion = params.ArbosVersion_20
+	ArbGasInfo.methodsByName["GetL1PricingFundsDueForRewards"].arbosVersion = params.ArbosVersion_20
+	ArbGasInfo.methodsByName["GetL1PricingUnitsSinceUpdate"].arbosVersion = params.ArbosVersion_20
+	ArbGasInfo.methodsByName["GetLastL1PricingSurplus"].arbosVersion = params.ArbosVersion_20
 	insert(MakePrecompile(pgen.ArbAggregatorMetaData, &ArbAggregator{Address: types.ArbAggregatorAddress}))
 	insert(MakePrecompile(pgen.ArbStatisticsMetaData, &ArbStatistics{Address: types.ArbStatisticsAddress}))
 
@@ -554,10 +554,10 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbOwnerPublicImpl := &ArbOwnerPublic{Address: types.ArbOwnerPublicAddress}
 	ArbOwnerPublic := insert(MakePrecompile(pgen.ArbOwnerPublicMetaData, ArbOwnerPublicImpl))
-	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
-	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = 11
-	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = 20
-	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = 20
+	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = params.ArbosVersion_5
+	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = params.ArbosVersion_11
+	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = params.ArbosVersion_20
+	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = params.ArbosVersion_20
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(pgen.ArbWasmMetaData, ArbWasmImpl))
@@ -611,11 +611,11 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
 	}
 	_, ArbOwner := MakePrecompile(pgen.ArbOwnerMetaData, ArbOwnerImpl)
-	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
-	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
-	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
-	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
-	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = 20
+	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = params.ArbosVersion_5
+	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = params.ArbosVersion_5
+	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = params.ArbosVersion_10
+	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = params.ArbosVersion_11
+	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = params.ArbosVersion_20
 	stylusMethods := []string{
 		"SetInkPrice", "SetWasmMaxStackDepth", "SetWasmFreePages", "SetWasmPageGas",
 		"SetWasmPageLimit", "SetWasmMinInitGas", "SetWasmInitCostScalar",
@@ -798,7 +798,7 @@ func (p *Precompile) Call(
 			)
 		}
 		// nolint:errorlint
-		if arbosVersion >= 11 || errRet == vm.ErrExecutionReverted {
+		if arbosVersion >= params.ArbosVersion_11 || errRet == vm.ErrExecutionReverted {
 			return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
 		}
 		// Preserve behavior with old versions which would zero out gas on this type of error

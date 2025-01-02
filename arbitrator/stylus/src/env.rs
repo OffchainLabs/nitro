@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
+    benchmark::Benchmark,
     evm::{
         api::{DataReader, EvmApi, Ink},
         EvmData,
@@ -48,6 +49,8 @@ pub struct WasmEnv<D: DataReader, E: EvmApi<D>> {
     pub compile: CompileConfig,
     /// The runtime config
     pub config: Option<StylusConfig>,
+    // Used to benchmark execution blocks of code
+    pub benchmark: Benchmark,
     // Using the unused generic parameter D in a PhantomData field
     _data_reader_marker: PhantomData<D>,
 }
@@ -68,6 +71,7 @@ impl<D: DataReader, E: EvmApi<D>> WasmEnv<D, E> {
             outs: vec![],
             memory: None,
             meter: None,
+            benchmark: Benchmark::default(),
             _data_reader_marker: PhantomData,
         }
     }
