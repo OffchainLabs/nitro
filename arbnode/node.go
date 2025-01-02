@@ -601,6 +601,13 @@ func createNodeImpl(
 	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
 	if config.SnapSyncTest.Enabled {
 		batchCount := config.SnapSyncTest.BatchCount
+		delayedMessageNumber, err := exec.NextDelayedMessageNumber()
+		if err != nil {
+			return nil, err
+		}
+		if batchCount > delayedMessageNumber {
+			batchCount = delayedMessageNumber
+		}
 		// Find the first block containing the batch count.
 		// Subtract 1 to get the block before the needed batch count,
 		// this is done to fetch previous batch metadata needed for snap sync.
@@ -796,8 +803,9 @@ func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Add
 	}
 	high := parentChainAssertionBlock
 	low := uint64(0)
-	if high > 100 {
-		low = high - 100
+	reduceBy := uint64(100)
+	if high > reduceBy {
+		low = high - reduceBy
 	}
 	// Reduce high and low by 100 until lowNode.InboxMaxCount < batchCount
 	// This will give us a range (low to high) of blocks that contain the batch count.
@@ -808,8 +816,9 @@ func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Add
 		}
 		if lowCount.Uint64() > batchCount {
 			high = low
-			if low > 100 {
-				low = low - 100
+			reduceBy = reduceBy * 2
+			if low > reduceBy {
+				low = low - reduceBy
 			} else {
 				low = 0
 			}
