@@ -94,6 +94,14 @@ func (w *execClientWrapper) ResultAtPos(pos arbutil.MessageIndex) containers.Pro
 	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtPos(pos))
 }
 
+func (w *execClientWrapper) Start(ctx context.Context) error {
+	return nil
+}
+
+func (w *execClientWrapper) StopAndWait() {
+	return
+}
+
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 
