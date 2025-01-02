@@ -7,12 +7,13 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbos/util"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 // DebugPrecompile is a precompile wrapper for those not allowed in production
@@ -102,7 +103,7 @@ func (wrapper *OwnerPrecompile) Call(
 	}
 
 	version := arbosState.ArbOSVersion(evm.StateDB)
-	if !readOnly || version < 11 {
+	if !readOnly || version < params.ArbosVersion_11 {
 		// log that the owner operation succeeded
 		if err := wrapper.emitSuccess(evm, *(*[4]byte)(input[:4]), caller, input); err != nil {
 			log.Error("failed to emit OwnerActs event", "err", err)

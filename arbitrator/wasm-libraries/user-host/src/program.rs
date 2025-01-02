@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use arbutil::{
+    benchmark::Benchmark,
     evm::{
         api::{EvmApiMethod, Gas, Ink, VecReader, EVM_API_METHOD_REQ_OFFSET},
         req::{EvmApiRequestor, RequestHandler},
@@ -75,6 +76,8 @@ pub(crate) struct Program {
     pub evm_api: EvmApiRequestor<VecReader, UserHostRequester>,
     /// EVM Context info.
     pub evm_data: EvmData,
+    // Used to benchmark execution blocks of code
+    pub benchmark: Benchmark,
     /// WAVM module index.
     pub module: u32,
     /// Call configuration.
@@ -167,6 +170,7 @@ impl Program {
             outs: vec![],
             evm_api: EvmApiRequestor::new(UserHostRequester::default()),
             evm_data,
+            benchmark: Benchmark::default(),
             module,
             config,
             early_exit: None,
@@ -235,6 +239,10 @@ impl UserHost<VecReader> for Program {
 
     fn evm_data(&self) -> &EvmData {
         &self.evm_data
+    }
+
+    fn benchmark(&mut self) -> &mut Benchmark {
+        &mut self.benchmark
     }
 
     fn evm_return_data_len(&mut self) -> &mut u32 {

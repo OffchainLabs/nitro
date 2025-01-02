@@ -9,17 +9,20 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/holiman/uint256"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -114,7 +117,7 @@ func TestArbOwner(t *testing.T) {
 		Fail(t, avail)
 	}
 	deposited := big.NewInt(1000000)
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(deposited))
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(deposited), tracing.BalanceChangeUnspecified)
 	avail, err = gasInfo.GetL1FeesAvailable(callCtx, evm)
 	Require(t, err)
 	if avail.Sign() != 0 {
@@ -180,7 +183,7 @@ func TestArbOwnerSetChainConfig(t *testing.T) {
 	prec := &ArbOwner{}
 	callCtx := testContext(caller, evm)
 
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams.AllowDebugPrecompiles = false
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
@@ -216,7 +219,7 @@ func TestArbInfraFeeAccount(t *testing.T) {
 	err = prec.SetInfraFeeAccount(callCtx, evm, newAddr) // this should be a no-op (because ArbOS version 0)
 	Require(t, err)
 
-	version5 := uint64(5)
+	version5 := params.ArbosVersion_5
 	evm = newMockEVMForTestingWithVersion(&version5)
 	callCtx = testContext(caller, evm)
 	prec = &ArbOwner{}

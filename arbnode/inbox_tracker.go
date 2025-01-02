@@ -404,7 +404,7 @@ func (t *InboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64
 	return msg.Serialize()
 }
 
-func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardReorg bool) error {
+func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error {
 	var nextAcc common.Hash
 	firstDelayedMsgToKeep := uint64(0)
 	if len(messages) == 0 {
@@ -440,17 +440,15 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	if !hardReorg {
-		// This math is safe to do as we know len(messages) > 0
-		haveLastAcc, err := t.GetDelayedAcc(pos + uint64(len(messages)) - 1)
-		if err == nil {
-			if haveLastAcc == messages[len(messages)-1].AfterInboxAcc() {
-				// We already have these delayed messages
-				return nil
-			}
-		} else if !errors.Is(err, AccumulatorNotFoundErr) {
-			return err
+	// This math is safe to do as we know len(messages) > 0
+	haveLastAcc, err := t.GetDelayedAcc(pos + uint64(len(messages)) - 1)
+	if err == nil {
+		if haveLastAcc == messages[len(messages)-1].AfterInboxAcc() {
+			// We already have these delayed messages
+			return nil
 		}
+	} else if !errors.Is(err, AccumulatorNotFoundErr) {
+		return err
 	}
 
 	if pos > firstDelayedMsgToKeep {
@@ -464,6 +462,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		}
 	}
 
+	firstPos := pos
 	batch := t.db.NewBatch()
 	for _, message := range messages {
 		seqNum, err := message.Message.Header.SeqNum()
@@ -479,6 +478,22 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 			return fmt.Errorf("previous delayed accumulator mismatch for message %v", seqNum)
 		}
 		nextAcc = message.AfterInboxAcc()
+
+		if firstPos == pos {
+			// Check if this message is a duplicate
+			haveAcc, err := t.GetDelayedAcc(seqNum)
+			if err == nil {
+				if haveAcc == nextAcc {
+					// Skip this message, as we already have it in our database
+					pos++
+					firstPos++
+					messages = messages[1:]
+					continue
+				}
+			} else if !errors.Is(err, AccumulatorNotFoundErr) {
+				return err
+			}
+		}
 
 		delayedMsgKey := dbKey(rlpDelayedMessagePrefix, seqNum)
 
@@ -506,13 +521,16 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		pos++
 	}
 
-	return t.setDelayedCountReorgAndWriteBatch(batch, pos, true)
+	return t.setDelayedCountReorgAndWriteBatch(batch, firstPos, pos, true)
 }
 
 // All-in-one delayed message count adjuster. Can go forwards or backwards.
 // Requires the mutex is held. Sets the delayed count and performs any sequencer batch reorg necessary.
 // Also deletes any future delayed messages.
-func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newDelayedCount uint64, canReorgBatches bool) error {
+func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firstNewDelayedMessagePos uint64, newDelayedCount uint64, canReorgBatches bool) error {
+	if firstNewDelayedMessagePos > newDelayedCount {
+		return fmt.Errorf("firstNewDelayedMessagePos %v is after newDelayedCount %v", firstNewDelayedMessagePos, newDelayedCount)
+	}
 	err := deleteStartingAt(t.db, batch, rlpDelayedMessagePrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
 		return err
@@ -535,7 +553,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		return err
 	}
 
-	seqBatchIter := t.db.NewIterator(delayedSequencedPrefix, uint64ToKey(newDelayedCount+1))
+	seqBatchIter := t.db.NewIterator(delayedSequencedPrefix, uint64ToKey(firstNewDelayedMessagePos+1))
 	defer seqBatchIter.Release()
 	var reorgSeqBatchesToCount *uint64
 	for seqBatchIter.Next() {
@@ -697,22 +715,26 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 
 	for _, batch := range batches {
 		if batch.SequenceNumber != pos {
-			return errors.New("unexpected batch sequence number")
+			return fmt.Errorf("unexpected batch sequence number %v expected %v", batch.SequenceNumber, pos)
 		}
 		if nextAcc != batch.BeforeInboxAcc {
-			return errors.New("previous batch accumulator mismatch")
+			return fmt.Errorf("previous batch accumulator %v mismatch expected %v", batch.BeforeInboxAcc, nextAcc)
 		}
 
 		if batch.AfterDelayedCount > 0 {
 			haveDelayedAcc, err := t.GetDelayedAcc(batch.AfterDelayedCount - 1)
-			if errors.Is(err, AccumulatorNotFoundErr) {
-				// We somehow missed a referenced delayed message; go back and look for it
-				return delayedMessagesMismatch
-			}
-			if err != nil {
+			notFound := errors.Is(err, AccumulatorNotFoundErr)
+			if err != nil && !notFound {
 				return err
 			}
-			if haveDelayedAcc != batch.AfterDelayedAcc {
+			if notFound || haveDelayedAcc != batch.AfterDelayedAcc {
+				log.Debug(
+					"Delayed message accumulator doesn't match sequencer batch",
+					"batch", batch.SequenceNumber,
+					"delayedPosition", batch.AfterDelayedCount-1,
+					"haveDelayedAcc", haveDelayedAcc,
+					"batchDelayedAcc", batch.AfterDelayedAcc,
+				)
 				// We somehow missed a delayed message reorg; go back and look for it
 				return delayedMessagesMismatch
 			}
@@ -852,7 +874,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	return nil
 }
 
-func (t *InboxTracker) ReorgDelayedTo(count uint64, canReorgBatches bool) error {
+func (t *InboxTracker) ReorgDelayedTo(count uint64) error {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
@@ -867,7 +889,7 @@ func (t *InboxTracker) ReorgDelayedTo(count uint64, canReorgBatches bool) error 
 		return errors.New("attempted to reorg to future delayed count")
 	}
 
-	return t.setDelayedCountReorgAndWriteBatch(t.db.NewBatch(), count, canReorgBatches)
+	return t.setDelayedCountReorgAndWriteBatch(t.db.NewBatch(), count, count, false)
 }
 
 func (t *InboxTracker) ReorgBatchesTo(count uint64) error {

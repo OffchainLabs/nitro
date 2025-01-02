@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"time"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution"
@@ -29,16 +31,17 @@ type DelayedSequencer struct {
 	reader                   *InboxReader
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
-	waitingForFinalizedBlock uint64
+	waitingForFinalizedBlock *uint64
 	mutex                    sync.Mutex
 	config                   DelayedSequencerConfigFetcher
 }
 
 type DelayedSequencerConfig struct {
-	Enable              bool  `koanf:"enable" reload:"hot"`
-	FinalizeDistance    int64 `koanf:"finalize-distance" reload:"hot"`
-	RequireFullFinality bool  `koanf:"require-full-finality" reload:"hot"`
-	UseMergeFinality    bool  `koanf:"use-merge-finality" reload:"hot"`
+	Enable              bool          `koanf:"enable" reload:"hot"`
+	FinalizeDistance    int64         `koanf:"finalize-distance" reload:"hot"`
+	RequireFullFinality bool          `koanf:"require-full-finality" reload:"hot"`
+	UseMergeFinality    bool          `koanf:"use-merge-finality" reload:"hot"`
+	RescanInterval      time.Duration `koanf:"rescan-interval" reload:"hot"`
 }
 
 type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
@@ -48,6 +51,7 @@ func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final (ignored when using Merge finality)")
 	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
 	f.Bool(prefix+".use-merge-finality", DefaultDelayedSequencerConfig.UseMergeFinality, "whether to use The Merge's notion of finality before sequencing delayed messages")
+	f.Duration(prefix+".rescan-interval", DefaultDelayedSequencerConfig.RescanInterval, "frequency to rescan for new delayed messages (the parent chain reader's poll-interval config is more important than this)")
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
@@ -55,6 +59,7 @@ var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 	FinalizeDistance:    20,
 	RequireFullFinality: false,
 	UseMergeFinality:    true,
+	RescanInterval:      time.Second,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
@@ -62,6 +67,7 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	FinalizeDistance:    20,
 	RequireFullFinality: false,
 	UseMergeFinality:    false,
+	RescanInterval:      time.Millisecond * 100,
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
@@ -125,13 +131,12 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
-	if d.waitingForFinalizedBlock > finalized {
+	if d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized {
 		return nil
 	}
 
-	// Unless we find an unfinalized message (which sets waitingForBlock),
-	// we won't find a new finalized message until FinalizeDistance blocks in the future.
-	d.waitingForFinalizedBlock = lastBlockHeader.Number.Uint64() + 1
+	// Reset what block we're waiting for if we've caught up
+	d.waitingForFinalizedBlock = nil
 
 	dbDelayedCount, err := d.inbox.GetDelayedCount()
 	if err != nil {
@@ -152,8 +157,8 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			return err
 		}
 		if parentChainBlockNumber > finalized {
-			// Message isn't finalized yet; stop here
-			d.waitingForFinalizedBlock = parentChainBlockNumber
+			// Message isn't finalized yet; wait for it to be
+			d.waitingForFinalizedBlock = &parentChainBlockNumber
 			break
 		}
 		if lastDelayedAcc != (common.Hash{}) {
@@ -215,19 +220,39 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 	headerChan, cancel := d.l1Reader.Subscribe(false)
 	defer cancel()
 
+	latestHeader, err := d.l1Reader.LastHeader(ctx)
+	if err != nil {
+		log.Warn("delayed sequencer: failed to get latest header", "err", err)
+		latestHeader = nil
+	}
+	rescanTimer := time.NewTimer(d.config().RescanInterval)
 	for {
+		if !rescanTimer.Stop() {
+			select {
+			case <-rescanTimer.C:
+			default:
+			}
+		}
+		if latestHeader != nil {
+			rescanTimer.Reset(d.config().RescanInterval)
+		}
+		var ok bool
 		select {
-		case nextHeader, ok := <-headerChan:
+		case latestHeader, ok = <-headerChan:
 			if !ok {
-				log.Info("delayed sequencer: header channel close")
+				log.Debug("delayed sequencer: header channel close")
 				return
 			}
-			if err := d.trySequence(ctx, nextHeader); err != nil {
-				log.Error("Delayed sequencer error", "err", err)
+		case <-rescanTimer.C:
+			if latestHeader == nil {
+				continue
 			}
 		case <-ctx.Done():
-			log.Info("delayed sequencer: context done", "err", ctx.Err())
+			log.Debug("delayed sequencer: context done", "err", ctx.Err())
 			return
+		}
+		if err := d.trySequence(ctx, latestHeader); err != nil {
+			log.Error("Delayed sequencer error", "err", err)
 		}
 	}
 }

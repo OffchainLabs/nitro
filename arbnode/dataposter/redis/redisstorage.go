@@ -9,9 +9,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/signature"
-	"github.com/redis/go-redis/v9"
 )
 
 // Storage implements redis sorted set backed storage. It does not support

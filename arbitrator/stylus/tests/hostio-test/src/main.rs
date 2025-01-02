@@ -204,4 +204,37 @@ impl HostioTest {
     fn tx_origin() -> Result<Address> {
         Ok(tx::origin())
     }
+
+    fn storage_cache_bytes32() {
+        let key = B256::ZERO;
+        let val = B256::ZERO;
+        unsafe {
+            hostio::storage_cache_bytes32(key.as_ptr(), val.as_ptr());
+        }
+    }
+
+    fn pay_for_memory_grow(pages: U256) {
+        let pages: u16 = pages.try_into().unwrap();
+        unsafe {
+            hostio::pay_for_memory_grow(pages);
+        }
+    }
+
+    fn write_result_empty() {
+    }
+
+    fn write_result(size: U256) -> Result<Vec<u32>> {
+        let size: usize = size.try_into().unwrap();
+        let data = vec![0; size];
+        Ok(data)
+    }
+
+    fn read_args_no_args() {
+    }
+
+    fn read_args_one_arg(_arg1: U256) {
+    }
+
+    fn read_args_three_args(_arg1: U256, _arg2: U256, _arg3: U256) {
+    }
 }

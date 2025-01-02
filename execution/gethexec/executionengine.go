@@ -12,6 +12,7 @@ package gethexec
 #include "arbitrator.h"
 */
 import "C"
+
 import (
 	"bytes"
 	"context"
@@ -26,20 +27,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/google/uuid"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -786,7 +789,8 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 			gasUsedForL1 += receipts[i].GasUsedForL1
 		}
 		for _, tx := range block.Transactions() {
-			callDataUnits += tx.CalldataUnits
+			_, cachedUnits := tx.GetRawCachedCalldataUnits()
+			callDataUnits += cachedUnits
 		}
 	}
 	l1GasCharged := gasUsedForL1 * block.BaseFee().Uint64()
@@ -901,7 +905,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 			timestamp = time.Unix(int64(timestampInt), 0)
 			timeUntilUpgrade = time.Until(timestamp)
 		}
-		maxSupportedVersion := params.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
+		maxSupportedVersion := chaininfo.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
 		logLevel := log.Warn
 		if timeUntilUpgrade < time.Hour*24 {
 			logLevel = log.Error

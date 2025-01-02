@@ -10,12 +10,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/storage"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -190,13 +190,13 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 	log.SetDefault(log.NewLogger(glogger))
 
 	expectedNewMethodsPerArbosVersion := map[uint64]int{
-		0:  89,
-		5:  3,
-		10: 2,
-		11: 4,
-		20: 8,
-		30: 38,
-		31: 1,
+		0:                      89,
+		params.ArbosVersion_5:  3,
+		params.ArbosVersion_10: 2,
+		params.ArbosVersion_11: 4,
+		params.ArbosVersion_20: 8,
+		params.ArbosVersion_30: 38,
+		params.ArbosVersion_31: 1,
 	}
 
 	precompiles := Precompiles()
