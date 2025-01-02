@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/params"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -285,16 +286,16 @@ func stateAndHeader(blockchain *core.BlockChain, block uint64) (*arbosState.Arbo
 type ArbTraceForwarderAPI struct {
 	fallbackClientUrl     string
 	fallbackClientTimeout time.Duration
-	blockchain            *core.BlockChain
+	blockchainConfig      *params.ChainConfig
 
 	initialized    atomic.Bool
 	mutex          sync.Mutex
 	fallbackClient types.FallbackClient
 }
 
-func NewArbTraceForwarderAPI(blockchain *core.BlockChain, fallbackClientUrl string, fallbackClientTimeout time.Duration) *ArbTraceForwarderAPI {
+func NewArbTraceForwarderAPI(blockchainConfig *params.ChainConfig, fallbackClientUrl string, fallbackClientTimeout time.Duration) *ArbTraceForwarderAPI {
 	return &ArbTraceForwarderAPI{
-		blockchain:            blockchain,
+		blockchainConfig:      blockchainConfig,
 		fallbackClientUrl:     fallbackClientUrl,
 		fallbackClientTimeout: fallbackClientTimeout,
 	}
@@ -345,7 +346,7 @@ func (api *ArbTraceForwarderAPI) blockSupportedByClassicNode(blockNumOrHash json
 		return nil
 	}
 	// #nosec G115
-	if blockNum < 0 || blockNum > rpc.BlockNumber(api.blockchain.Config().ArbitrumChainParams.GenesisBlockNum) {
+	if blockNum < 0 || blockNum > rpc.BlockNumber(api.blockchainConfig.ArbitrumChainParams.GenesisBlockNum) {
 		return fmt.Errorf("block number %v is not supported by classic node", blockNum)
 	}
 	return nil
