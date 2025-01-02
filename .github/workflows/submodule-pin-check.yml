@@ -30,7 +30,7 @@ jobs:
 
             #TODO Rachel to check these are the intended branches.
             [arbitrator/langs/c]=origin/vm-storage-cache
-            [arbitrator/tools/wasmer]=origin/adopt-v4.2.8
+            [arbitrator/tools/wasmer]=origin/stylus
           )
           divergent=0
           for mod in `git submodule --quiet foreach 'echo $name'`; do
