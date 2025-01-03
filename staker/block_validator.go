@@ -107,22 +107,21 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable                          bool                          `koanf:"enable"`
-	RedisValidationClientConfig     redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
-	RedisBoldValidationClientConfig redis.ValidationClientConfig  `koanf:"redis-bold-validation-client-config"`
-	ValidationServer                rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
-	ValidationServerConfigs         []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
-	ValidationPoll                  time.Duration                 `koanf:"validation-poll" reload:"hot"`
-	PrerecordedBlocks               uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
-	RecordingIterLimit              uint64                        `koanf:"recording-iter-limit"`
-	ForwardBlocks                   uint64                        `koanf:"forward-blocks" reload:"hot"`
-	BatchCacheLimit                 uint32                        `koanf:"batch-cache-limit"`
-	CurrentModuleRoot               string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
-	PendingUpgradeModuleRoot        string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
-	FailureIsFatal                  bool                          `koanf:"failure-is-fatal" reload:"hot"`
-	Dangerous                       BlockValidatorDangerousConfig `koanf:"dangerous"`
-	MemoryFreeLimit                 string                        `koanf:"memory-free-limit" reload:"hot"`
-	ValidationServerConfigsList     string                        `koanf:"validation-server-configs-list"`
+	Enable                      bool                          `koanf:"enable"`
+	RedisValidationClientConfig redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
+	ValidationServer            rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
+	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
+	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
+	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
+	RecordingIterLimit          uint64                        `koanf:"recording-iter-limit"`
+	ForwardBlocks               uint64                        `koanf:"forward-blocks" reload:"hot"`
+	BatchCacheLimit             uint32                        `koanf:"batch-cache-limit"`
+	CurrentModuleRoot           string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
+	PendingUpgradeModuleRoot    string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
+	FailureIsFatal              bool                          `koanf:"failure-is-fatal" reload:"hot"`
+	Dangerous                   BlockValidatorDangerousConfig `koanf:"dangerous"`
+	MemoryFreeLimit             string                        `koanf:"memory-free-limit" reload:"hot"`
+	ValidationServerConfigsList string                        `koanf:"validation-server-configs-list"`
 	// The directory to which the BlockValidator will write the
 	// block_inputs_<id>.json files when WriteToFile() is called.
 	BlockInputsFilePath string `koanf:"block-inputs-file-path"`
@@ -182,7 +181,6 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
 	redis.ValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
-	redis.ValidationClientConfigAddOptions(prefix+".redis-bold-validation-client-config", f)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of execution rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (stores batch-copy per block)")
@@ -202,41 +200,39 @@ func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	Enable:                          false,
-	ValidationServerConfigsList:     "default",
-	ValidationServer:                rpcclient.DefaultClientConfig,
-	RedisValidationClientConfig:     redis.DefaultValidationClientConfig,
-	RedisBoldValidationClientConfig: redis.DefaultValidationClientConfig,
-	ValidationPoll:                  time.Second,
-	ForwardBlocks:                   128,
-	PrerecordedBlocks:               uint64(2 * runtime.NumCPU()),
-	BatchCacheLimit:                 20,
-	CurrentModuleRoot:               "current",
-	PendingUpgradeModuleRoot:        "latest",
-	FailureIsFatal:                  true,
-	Dangerous:                       DefaultBlockValidatorDangerousConfig,
-	BlockInputsFilePath:             "./target/validation_inputs",
-	MemoryFreeLimit:                 "default",
-	RecordingIterLimit:              20,
+	Enable:                      false,
+	ValidationServerConfigsList: "default",
+	ValidationServer:            rpcclient.DefaultClientConfig,
+	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
+	ValidationPoll:              time.Second,
+	ForwardBlocks:               128,
+	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	BatchCacheLimit:             20,
+	CurrentModuleRoot:           "current",
+	PendingUpgradeModuleRoot:    "latest",
+	FailureIsFatal:              true,
+	Dangerous:                   DefaultBlockValidatorDangerousConfig,
+	BlockInputsFilePath:         "./target/validation_inputs",
+	MemoryFreeLimit:             "default",
+	RecordingIterLimit:          20,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
-	Enable:                          false,
-	ValidationServer:                rpcclient.TestClientConfig,
-	ValidationServerConfigs:         []rpcclient.ClientConfig{rpcclient.TestClientConfig},
-	RedisValidationClientConfig:     redis.TestValidationClientConfig,
-	RedisBoldValidationClientConfig: redis.TestValidationClientConfig,
-	ValidationPoll:                  100 * time.Millisecond,
-	ForwardBlocks:                   128,
-	BatchCacheLimit:                 20,
-	PrerecordedBlocks:               uint64(2 * runtime.NumCPU()),
-	RecordingIterLimit:              20,
-	CurrentModuleRoot:               "latest",
-	PendingUpgradeModuleRoot:        "latest",
-	FailureIsFatal:                  true,
-	Dangerous:                       DefaultBlockValidatorDangerousConfig,
-	BlockInputsFilePath:             "./target/validation_inputs",
-	MemoryFreeLimit:                 "default",
+	Enable:                      false,
+	ValidationServer:            rpcclient.TestClientConfig,
+	ValidationServerConfigs:     []rpcclient.ClientConfig{rpcclient.TestClientConfig},
+	RedisValidationClientConfig: redis.TestValidationClientConfig,
+	ValidationPoll:              100 * time.Millisecond,
+	ForwardBlocks:               128,
+	BatchCacheLimit:             20,
+	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	RecordingIterLimit:          20,
+	CurrentModuleRoot:           "latest",
+	PendingUpgradeModuleRoot:    "latest",
+	FailureIsFatal:              true,
+	Dangerous:                   DefaultBlockValidatorDangerousConfig,
+	BlockInputsFilePath:         "./target/validation_inputs",
+	MemoryFreeLimit:             "default",
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
