@@ -107,10 +107,8 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	if err != nil {
 		return nil, err
 	}
-	var (
-		serverAPI  *ExecServerAPI
-		jitSpawner *server_jit.JitSpawner
-	)
+	var serverAPI *ExecServerAPI
+	var jitSpawner *server_jit.JitSpawner
 	if config.UseJit {
 		jitConfigFetcher := func() *server_jit.JitSpawnerConfig { return &configFetcher().Jit }
 		var err error
@@ -139,12 +137,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	}}
 	stack.RegisterAPIs(valAPIs)
 
-	return &ValidationNode{
-		config:        configFetcher,
-		arbSpawner:    arbSpawner,
-		jitSpawner:    jitSpawner,
-		redisConsumer: redisConsumer,
-	}, nil
+	return &ValidationNode{configFetcher, arbSpawner, jitSpawner, redisConsumer}, nil
 }
 
 func (v *ValidationNode) Start(ctx context.Context) error {

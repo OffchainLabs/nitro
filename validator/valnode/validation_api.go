@@ -70,10 +70,7 @@ type ExecServerAPI struct {
 	runs      map[uint64]*execRunEntry
 }
 
-func NewExecutionServerAPI(
-	valSpawner validator.ValidationSpawner,
-	execution validator.ExecutionSpawner,
-	config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
+func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
 	return &ExecServerAPI{
 		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
 		execSpawner:         execution,
