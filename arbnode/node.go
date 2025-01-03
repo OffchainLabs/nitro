@@ -646,6 +646,10 @@ func getInboxTrackerAndReader(
 	}
 	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
 	if config.SnapSyncTest.Enabled {
+		if exec == nil {
+			return nil, nil, errors.New("snap sync test requires an execution sequencer")
+		}
+
 		batchCount := config.SnapSyncTest.BatchCount
 		delayedMessageNumber, err := exec.NextDelayedMessageNumber()
 		if err != nil {
