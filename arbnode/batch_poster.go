@@ -1157,7 +1157,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			if err != nil {
 				return false, err
 			}
-			if arbOSVersion >= 20 {
+			if arbOSVersion >= params.ArbosVersion_20 {
 				if config.IgnoreBlobPrice {
 					use4844 = true
 				} else {
