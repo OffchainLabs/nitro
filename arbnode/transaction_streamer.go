@@ -44,7 +44,7 @@ type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
 	chainConfig      *params.ChainConfig
-	exec             execution.ExecutionSequencer
+	exec             execution.ExecutionClient
 	execLastMsgCount arbutil.MessageIndex
 	validator        *staker.BlockValidator
 
@@ -98,7 +98,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 func NewTransactionStreamer(
 	db ethdb.Database,
 	chainConfig *params.ChainConfig,
-	exec execution.ExecutionSequencer,
+	exec execution.ExecutionClient,
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
@@ -353,7 +353,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	messagesResults, err := s.exec.Reorg(count, newMessages, oldMessages)
+	messagesResults, err := s.exec.Reorg(count, newMessages, oldMessages).Await(s.GetContext())
 	if err != nil {
 		return err
 	}
@@ -497,7 +497,7 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 	if err != nil {
 		return 0, err
 	}
-	digestedHead, err := s.exec.HeadMessageNumber()
+	digestedHead, err := s.exec.HeadMessageNumber().Await(context.Background())
 	if err != nil {
 		return 0, err
 	}
@@ -674,7 +674,10 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, m
 
 	if messagesAreConfirmed {
 		// Trim confirmed messages from l1pricedataCache
-		s.exec.MarkFeedStart(pos + arbutil.MessageIndex(len(messages)))
+		_, err := s.exec.MarkFeedStart(pos + arbutil.MessageIndex(len(messages))).Await(s.GetContext())
+		if err != nil {
+			log.Warn("TransactionStreamer: failed to mark feed start", "pos", pos, "err", err)
+		}
 		s.reorgMutex.RLock()
 		dups, _, _, err := s.countDuplicateMessages(pos, messagesWithBlockHash, nil)
 		s.reorgMutex.RUnlock()
@@ -1090,7 +1093,7 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	}
 	log.Info(FailedToGetMsgResultFromDB, "count", count)
 
-	msgResult, err := s.exec.ResultAtPos(pos)
+	msgResult, err := s.exec.ResultAtPos(pos).Await(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -1154,7 +1157,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 	s.execLastMsgCount = msgCount
-	pos, err := s.exec.HeadMessageNumber()
+	pos, err := s.exec.HeadMessageNumber().Await(ctx)
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)
 		return false
@@ -1177,7 +1180,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		}
 		msgForPrefetch = msg
 	}
-	msgResult, err := s.exec.DigestMessage(pos, &msgAndBlockHash.MessageWithMeta, msgForPrefetch)
+	msgResult, err := s.exec.DigestMessage(pos, &msgAndBlockHash.MessageWithMeta, msgForPrefetch).Await(ctx)
 	if err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {

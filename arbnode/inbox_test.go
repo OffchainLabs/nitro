@@ -23,25 +23,79 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 type execClientWrapper struct {
-	*gethexec.ExecutionEngine
-	t *testing.T
+	ExecutionEngine *gethexec.ExecutionEngine
+	t               *testing.T
 }
 
-func (w *execClientWrapper) Pause()                     { w.t.Error("not supported") }
-func (w *execClientWrapper) Activate()                  { w.t.Error("not supported") }
+func (w *execClientWrapper) Pause() { w.t.Error("not supported") }
+
+func (w *execClientWrapper) Activate() { w.t.Error("not supported") }
+
 func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
-func (w *execClientWrapper) Synced() bool               { w.t.Error("not supported"); return false }
+
+func (w *execClientWrapper) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
+	return w.ExecutionEngine.SequenceDelayedMessage(message, delayedSeqNum)
+}
+
+func (w *execClientWrapper) NextDelayedMessageNumber() (uint64, error) {
+	return w.ExecutionEngine.NextDelayedMessageNumber()
+}
+
+func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	markFeedStartWithReturn := func(to arbutil.MessageIndex) (struct{}, error) {
+		w.ExecutionEngine.MarkFeedStart(to)
+		return struct{}{}, nil
+	}
+	return containers.NewReadyPromise(markFeedStartWithReturn(to))
+}
+
+func (w *execClientWrapper) Maintenance() containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
+func (w *execClientWrapper) Synced() bool { w.t.Error("not supported"); return false }
+
 func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
 	w.t.Error("not supported")
 	return nil
+}
+
+func (w *execClientWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.DigestMessage(num, msg, msgForPrefetch))
+}
+
+func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages, oldMessages))
+}
+
+func (w *execClientWrapper) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageNumber())
+}
+
+func (w *execClientWrapper) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageNumberSync(t))
+}
+
+func (w *execClientWrapper) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtPos(pos))
+}
+
+func (w *execClientWrapper) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
+func (w *execClientWrapper) StopAndWait() containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
