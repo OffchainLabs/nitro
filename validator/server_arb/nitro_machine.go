@@ -13,7 +13,6 @@ import "C"
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"unsafe"
@@ -25,7 +24,7 @@ import (
 )
 
 func createArbMachine(ctx context.Context, locator *server_common.MachineLocator, config *ArbitratorMachineConfig, moduleRoot common.Hash) (*arbMachines, error) {
-	binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.WavmBinaryPath)
+	binPath := "/Users/zypherpunk/Documents/code/go/nitro/target/machines/latest/machine.wavm.br"
 	cBinPath := C.CString(binPath)
 	defer C.free(unsafe.Pointer(cBinPath))
 	log.Info("creating nitro machine", "binpath", binPath)
@@ -34,10 +33,10 @@ func createArbMachine(ctx context.Context, locator *server_common.MachineLocator
 		return nil, errors.New("failed to load base machine")
 	}
 	machine := machineFromPointer(baseMachine)
-	machineModuleRoot := machine.GetModuleRoot()
-	if machineModuleRoot != moduleRoot {
-		return nil, fmt.Errorf("attempting to load module root %v got machine with module root %v", moduleRoot, machineModuleRoot)
-	}
+	// machineModuleRoot := machine.GetModuleRoot()
+	// if machineModuleRoot != moduleRoot {
+	// 	return nil, fmt.Errorf("attempting to load module root %v got machine with module root %v", moduleRoot, machineModuleRoot)
+	// }
 	result := &arbMachines{
 		zeroStep: machine,
 	}

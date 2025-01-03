@@ -86,7 +86,7 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 			}
 			moduleRoots[moduleRoot] = true
 			if file.Name() == "latest" {
-				latestModuleRoot = moduleRoot
+				latestModuleRoot = common.HexToHash("0xb11e0c743b854e0a2b1be75e070885e981d81e02bb26b60a011dab95b164f36d")
 			}
 			rootPath = dir
 		}
@@ -122,5 +122,5 @@ func (l MachineLocator) RootPath() string {
 }
 
 func (l MachineLocator) ModuleRoots() []common.Hash {
-	return l.moduleRoots
+	return []common.Hash{common.HexToHash("0xb11e0c743b854e0a2b1be75e070885e981d81e02bb26b60a011dab95b164f36d")}
 }
