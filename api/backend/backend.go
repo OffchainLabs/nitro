@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/ccoveille/go-safecast"
 
@@ -33,7 +32,6 @@ type BusinessLogicProvider interface {
 	GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.JsonEdge, error)
 	GetTrackedRoyalEdges(ctx context.Context) ([]*api.JsonEdgesByChallengedAssertion, error)
 	GetMiniStakes(ctx context.Context, assertionHash protocol.AssertionHash, opts ...db.EdgeOption) (*api.JsonMiniStakes, error)
-	LatestConfirmedAssertion(ctx context.Context) (*api.JsonAssertion, error)
 }
 
 type EdgeTrackerFetcher interface {
@@ -78,24 +76,25 @@ func (b *Backend) GetAssertions(ctx context.Context, opts ...db.AssertionOption)
 		return nil, err
 	}
 	if query.ShouldForceUpdate() {
+		opts := &bind.CallOpts{Context: ctx}
 		for _, a := range assertions {
-			fetchedAssertion, err := b.chainDataFetcher.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, protocol.AssertionHash{Hash: a.Hash})
+			fetchedAssertion, err := b.chainDataFetcher.GetAssertion(ctx, opts, protocol.AssertionHash{Hash: a.Hash})
 			if err != nil {
 				return nil, err
 			}
-			status, err := fetchedAssertion.Status(ctx)
+			status, err := fetchedAssertion.Status(ctx, opts)
 			if err != nil {
 				return nil, err
 			}
-			isFirstChild, err := fetchedAssertion.IsFirstChild()
+			isFirstChild, err := fetchedAssertion.IsFirstChild(ctx, opts)
 			if err != nil {
 				return nil, err
 			}
-			firstChildBlock, err := fetchedAssertion.FirstChildCreationBlock()
+			firstChildBlock, err := fetchedAssertion.FirstChildCreationBlock(ctx, opts)
 			if err != nil {
 				return nil, err
 			}
-			secondChildBlock, err := fetchedAssertion.SecondChildCreationBlock()
+			secondChildBlock, err := fetchedAssertion.SecondChildCreationBlock(ctx, opts)
 			if err != nil {
 				return nil, err
 			}
@@ -211,7 +210,7 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 			e.TimeUnrivaled = timeUnrivaled
 			isRoyal := b.chainWatcher.IsRoyal(assertionHash, edge.Id())
 			if isRoyal {
-				inheritedTimer, err := b.chainWatcher.SafeHeadInheritedTimer(ctx, edge.Id())
+				inheritedTimer, err := b.chainWatcher.InheritedTimerForEdge(ctx, edge.Id())
 				if err != nil {
 					return nil, err
 				}
@@ -286,65 +285,4 @@ func (b *Backend) GetTrackedRoyalEdges(ctx context.Context) ([]*api.JsonEdgesByC
 		})
 	}
 	return edgesByAssertion, nil
-}
-
-func (b *Backend) LatestConfirmedAssertion(ctx context.Context) (*api.JsonAssertion, error) {
-	latestConfirmedAssertion, err := b.chainDataFetcher.LatestConfirmed(ctx, &bind.CallOpts{Context: ctx})
-	if err != nil {
-		return nil, err
-	}
-	hash := latestConfirmedAssertion.Id()
-	creationInfo, err := b.chainDataFetcher.ReadAssertionCreationInfo(ctx, hash)
-	if err != nil {
-		return nil, err
-	}
-	status, err := b.chainDataFetcher.AssertionStatus(ctx, hash)
-	if err != nil {
-		return nil, err
-	}
-	fetchedAssertion, err := b.chainDataFetcher.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, hash)
-	if err != nil {
-		return nil, err
-	}
-	isFirstChild, err := fetchedAssertion.IsFirstChild()
-	if err != nil {
-		return nil, err
-	}
-	firstChildBlock, err := fetchedAssertion.FirstChildCreationBlock()
-	if err != nil {
-		return nil, err
-	}
-	secondChildBlock, err := fetchedAssertion.SecondChildCreationBlock()
-	if err != nil {
-		return nil, err
-	}
-	beforeState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
-	afterState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
-	return &api.JsonAssertion{
-		Hash:                     hash.Hash,
-		ConfirmPeriodBlocks:      creationInfo.ConfirmPeriodBlocks,
-		RequiredStake:            creationInfo.RequiredStake.String(),
-		ParentAssertionHash:      creationInfo.ParentAssertionHash.Hash,
-		InboxMaxCount:            creationInfo.InboxMaxCount.String(),
-		AfterInboxBatchAcc:       creationInfo.AfterInboxBatchAcc,
-		WasmModuleRoot:           creationInfo.WasmModuleRoot,
-		TransactionHash:          creationInfo.TransactionHash,
-		CreationBlock:            creationInfo.CreationBlock,
-		ChallengeManager:         creationInfo.ChallengeManager,
-		AfterStateBlockHash:      afterState.GlobalState.BlockHash,
-		AfterStateSendRoot:       afterState.GlobalState.SendRoot,
-		AfterStateBatch:          afterState.GlobalState.Batch,
-		AfterStatePosInBatch:     afterState.GlobalState.PosInBatch,
-		AfterStateMachineStatus:  afterState.MachineStatus,
-		BeforeStateBlockHash:     beforeState.GlobalState.BlockHash,
-		BeforeStateSendRoot:      beforeState.GlobalState.SendRoot,
-		BeforeStateBatch:         beforeState.GlobalState.Batch,
-		BeforeStatePosInBatch:    beforeState.GlobalState.PosInBatch,
-		BeforeStateMachineStatus: beforeState.MachineStatus,
-		IsFirstChild:             isFirstChild,
-		FirstChildBlock:          &firstChildBlock,
-		SecondChildBlock:         &secondChildBlock,
-		Status:                   status.String(),
-		LastUpdatedAt:            time.Now(),
-	}, nil
 }

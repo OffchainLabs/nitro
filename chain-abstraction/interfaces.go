@@ -106,13 +106,13 @@ const ChallengeGracePeriodNotPassedAssertionConfirmationError = "CHALLENGE_GRACE
 // Assertions can be challenged.
 type Assertion interface {
 	Id() AssertionHash
-	PrevId(ctx context.Context) (AssertionHash, error)
-	HasSecondChild() (bool, error)
-	FirstChildCreationBlock() (uint64, error)
-	SecondChildCreationBlock() (uint64, error)
-	IsFirstChild() (bool, error)
 	CreatedAtBlock() uint64
-	Status(ctx context.Context) (AssertionStatus, error)
+	PrevId(ctx context.Context) (AssertionHash, error)
+	HasSecondChild(ctx context.Context, opts *bind.CallOpts) (bool, error)
+	FirstChildCreationBlock(ctx context.Context, opts *bind.CallOpts) (uint64, error)
+	SecondChildCreationBlock(ctx context.Context, opts *bind.CallOpts) (uint64, error)
+	IsFirstChild(ctx context.Context, opts *bind.CallOpts) (bool, error)
+	Status(ctx context.Context, opts *bind.CallOpts) (AssertionStatus, error)
 }
 
 // AssertionCreatedInfo from an event creation.
@@ -157,6 +157,7 @@ type AssertionChain interface {
 		ctx context.Context, id AssertionHash,
 	) (*AssertionCreatedInfo, error)
 	GetCallOptsWithDesiredRpcHeadBlockNumber(opts *bind.CallOpts) *bind.CallOpts
+	GetDesiredRpcHeadBlockNumber() rpc.BlockNumber
 
 	MinAssertionPeriodBlocks() uint64
 	AssertionUnrivaledBlocks(ctx context.Context, assertionHash AssertionHash) (uint64, error)
@@ -412,11 +413,8 @@ type ReadOnlyEdge interface {
 	AssertionHash(ctx context.Context) (AssertionHash, error)
 	// The time in seconds an edge has been unrivaled.
 	TimeUnrivaled(ctx context.Context) (uint64, error)
-	// The inherited timer from the edge's children or claiming edges based on the latest block number.
-	// NOT reorg safe.
+	// The inherited timer from the edge's children or claiming edges based on the configured block number.
 	LatestInheritedTimer(ctx context.Context) (InheritedTimer, error)
-	// The inherited timer from the edge's children or claiming edges based on the safe block number.
-	SafeHeadInheritedTimer(ctx context.Context) (InheritedTimer, error)
 	// Whether or not an edge has rivals.
 	HasRival(ctx context.Context) (bool, error)
 	// The status of an edge.

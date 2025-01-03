@@ -71,16 +71,17 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			opts := m.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
 			parentAssertion, err := m.chain.GetAssertion(
 				ctx,
-				m.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}),
+				opts,
 				creationInfo.ParentAssertionHash,
 			)
 			if err != nil {
 				log.Error("Could not get parent assertion", "err", err)
 				continue
 			}
-			parentAssertionHasSecondChild, err := parentAssertion.HasSecondChild()
+			parentAssertionHasSecondChild, err := parentAssertion.HasSecondChild(ctx, opts)
 			if err != nil {
 				log.Error("Could not confirm if parent assertion has second child", "err", err)
 				continue

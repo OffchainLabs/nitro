@@ -488,23 +488,27 @@ func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.
 	beforeState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
 	afterState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
 	assertionHash := creationInfo.AssertionHash
-	status, err := m.chain.AssertionStatus(ctx, assertionHash)
+	// Because the BoLD database is for exploratory purposes, we don't care about using a reorg-safe
+	// RPC block number for reading data here. Latest block number will suffice to ensure we capture
+	// all assertions for data analysis if needed.
+	opts := &bind.CallOpts{Context: ctx}
+	assertion, err := m.chain.GetAssertion(ctx, opts, assertionHash)
 	if err != nil {
 		return err
 	}
-	assertion, err := m.chain.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, assertionHash)
+	status, err := assertion.Status(ctx, opts)
 	if err != nil {
 		return err
 	}
-	isFirstChild, err := assertion.IsFirstChild()
+	isFirstChild, err := assertion.IsFirstChild(ctx, opts)
 	if err != nil {
 		return err
 	}
-	firstChildBlock, err := assertion.SecondChildCreationBlock()
+	firstChildBlock, err := assertion.SecondChildCreationBlock(ctx, opts)
 	if err != nil {
 		return err
 	}
-	secondChildBlock, err := assertion.SecondChildCreationBlock()
+	secondChildBlock, err := assertion.SecondChildCreationBlock(ctx, opts)
 	if err != nil {
 		return err
 	}

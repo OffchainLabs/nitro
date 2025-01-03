@@ -166,7 +166,7 @@ func (w *Watcher) IsRoyal(assertionHash protocol.AssertionHash, edgeId protocol.
 	return chal.honestEdgeTree.HasRoyalEdge(edgeId)
 }
 
-func (w *Watcher) SafeHeadInheritedTimer(
+func (w *Watcher) InheritedTimerForEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
 ) (protocol.InheritedTimer, error) {
@@ -179,7 +179,7 @@ func (w *Watcher) SafeHeadInheritedTimer(
 		return 0, fmt.Errorf("no edge found with id %#x", edgeId.Hash)
 
 	}
-	return edgeOpt.Unwrap().SafeHeadInheritedTimer(ctx)
+	return edgeOpt.Unwrap().LatestInheritedTimer(ctx)
 }
 
 func (w *Watcher) IsSynced() bool {
@@ -981,7 +981,7 @@ func (w *Watcher) saveEdgeToDB(
 	if edge.ClaimId().IsSome() {
 		claimId = common.Hash(edge.ClaimId().Unwrap())
 	}
-	inheritedTimer, err := w.SafeHeadInheritedTimer(ctx, edge.Id())
+	inheritedTimer, err := w.InheritedTimerForEdge(ctx, edge.Id())
 	if err != nil {
 		return err
 	}

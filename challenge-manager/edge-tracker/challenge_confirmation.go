@@ -7,6 +7,7 @@ package edgetracker
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -167,7 +168,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 	}
 
 	onchainInheritedTimer, err := retry.UntilSucceeds(ctx, func() (protocol.InheritedTimer, error) {
-		timer, innerErr := royalRootEdge.SafeHeadInheritedTimer(ctx)
+		timer, innerErr := royalRootEdge.LatestInheritedTimer(ctx)
 		if innerErr != nil {
 			fields = append(fields, "err", innerErr)
 			log.Error("Could not get inherited timer for edge", fields)
@@ -303,10 +304,15 @@ func (cc *challengeConfirmer) waitForTxToBeSafe(
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		latestSafeHeaderNumber, err := backend.HeaderU64(ctx)
+		safeBlockNum := cc.chain.GetDesiredRpcHeadBlockNumber()
+		latestSafeHeader, err := backend.HeaderByNumber(ctx, big.NewInt(int64(safeBlockNum)))
 		if err != nil {
 			return err
 		}
+		if !latestSafeHeader.Number.IsUint64() {
+			return errors.New("block number is not uint64")
+		}
+		latestSafeHeaderNumber := latestSafeHeader.Number.Uint64()
 		txSafe := latestSafeHeaderNumber >= receipt.BlockNumber.Uint64()
 
 		// If the tx is not yet safe, we can simply wait.

@@ -140,7 +140,6 @@ func (s *Server) CollectMachineHashes(w http.ResponseWriter, r *http.Request) {
 //
 // identifier options:
 // - an assertion hash (0x-prefixed): gets the assertion by hash
-// - "latest-confirmed": gets the latest confirmed assertion
 //
 // query params
 //   - force_update: refetch the updatable fields of each item in the response
@@ -159,36 +158,26 @@ func (s *Server) AssertionByIdentifier(w http.ResponseWriter, r *http.Request) {
 	if _, ok := query["force_update"]; ok {
 		opts = append(opts, db.WithAssertionForceUpdate())
 	}
-	if identifier == "latest-confirmed" {
-		a, err := s.backend.LatestConfirmedAssertion(r.Context())
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not get latest confirmed assertion: %v", err), http.StatusInternalServerError)
-			return
-		}
-		assertion = a
-	} else {
-		// Otherwise, get the assertion by hash.
-		hash, err := hexutil.Decode(identifier)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not parse assertion hash: %v", err), http.StatusBadRequest)
-			return
-		}
-		opts = append(opts, db.WithAssertionHash(protocol.AssertionHash{Hash: common.BytesToHash(hash)}))
-		assertions, err := s.backend.GetAssertions(r.Context(), opts...)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Could not get assertions from backend: %v", err), http.StatusInternalServerError)
-			return
-		}
-		if len(assertions) != 1 {
-			http.Error(
-				w,
-				fmt.Sprintf("Got more than 1 matching assertion: got %d", len(assertions)),
-				http.StatusInternalServerError,
-			)
-			return
-		}
-		assertion = assertions[0]
+	hash, err := hexutil.Decode(identifier)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Could not parse assertion hash: %v", err), http.StatusBadRequest)
+		return
 	}
+	opts = append(opts, db.WithAssertionHash(protocol.AssertionHash{Hash: common.BytesToHash(hash)}))
+	assertions, err := s.backend.GetAssertions(r.Context(), opts...)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Could not get assertions from backend: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if len(assertions) != 1 {
+		http.Error(
+			w,
+			fmt.Sprintf("Got more than 1 matching assertion: got %d", len(assertions)),
+			http.StatusInternalServerError,
+		)
+		return
+	}
+	assertion = assertions[0]
 	writeJSONResponse(w, assertion)
 }
 

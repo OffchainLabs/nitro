@@ -1191,3 +1191,7 @@ func (a *AssertionChain) GetCallOptsWithSafeBlockNumber(opts *bind.CallOpts) *bi
 	opts.BlockNumber = big.NewInt(int64(rpc.SafeBlockNumber))
 	return opts
 }
+
+func (a *AssertionChain) GetDesiredRpcHeadBlockNumber() rpc.BlockNumber {
+	return a.rpcHeadBlockNumber
+}

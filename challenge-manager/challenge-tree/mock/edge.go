@@ -133,11 +133,6 @@ func (*Edge) TimeUnrivaled(_ context.Context) (uint64, error) {
 	return 0, nil
 }
 
-// SafeHeadInheritedTimer in seconds an edge has been unrivaled.
-func (e *Edge) SafeHeadInheritedTimer(_ context.Context) (protocol.InheritedTimer, error) {
-	return e.InnerInheritedTimer, nil
-}
-
 // LatestInheritedTimer in seconds an edge has been unrivaled.
 func (e *Edge) LatestInheritedTimer(_ context.Context) (protocol.InheritedTimer, error) {
 	return e.InnerInheritedTimer, nil

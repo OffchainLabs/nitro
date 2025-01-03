@@ -53,21 +53,21 @@ func (a *Assertion) PrevId(ctx context.Context) (protocol.AssertionHash, error) 
 	return a.prevId.Unwrap(), nil
 }
 
-func (a *Assertion) HasSecondChild() (bool, error) {
+func (a *Assertion) HasSecondChild(ctx context.Context, opts *bind.CallOpts) (bool, error) {
 	if a.secondChildBlock.IsSome() {
 		return a.secondChildBlock.Unwrap() > 0, nil
 	}
-	inner, err := a.inner()
+	inner, err := a.inner(ctx, opts)
 	if err != nil {
 		return false, err
 	}
 	return inner.SecondChildBlock > 0, nil
 }
 
-func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
+func (a *Assertion) inner(ctx context.Context, opts *bind.CallOpts) (*rollupgen.AssertionNode, error) {
 	var b [32]byte
 	copy(b[:], a.id.Bytes())
-	assertionNode, err := a.chain.userLogic.GetAssertion(a.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}), b)
+	assertionNode, err := a.chain.userLogic.GetAssertion(opts, b)
 	if err != nil {
 		return nil, err
 	}
@@ -94,31 +94,31 @@ func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
 	}
 	return &assertionNode, nil
 }
-func (a *Assertion) FirstChildCreationBlock() (uint64, error) {
+func (a *Assertion) FirstChildCreationBlock(ctx context.Context, opts *bind.CallOpts) (uint64, error) {
 	if a.firstChildBlock.IsSome() {
 		return a.firstChildBlock.Unwrap(), nil
 	}
-	inner, err := a.inner()
+	inner, err := a.inner(ctx, opts)
 	if err != nil {
 		return 0, err
 	}
 	return inner.FirstChildBlock, nil
 }
-func (a *Assertion) SecondChildCreationBlock() (uint64, error) {
+func (a *Assertion) SecondChildCreationBlock(ctx context.Context, opts *bind.CallOpts) (uint64, error) {
 	if a.secondChildBlock.IsSome() {
 		return a.secondChildBlock.Unwrap(), nil
 	}
-	inner, err := a.inner()
+	inner, err := a.inner(ctx, opts)
 	if err != nil {
 		return 0, err
 	}
 	return inner.SecondChildBlock, nil
 }
-func (a *Assertion) IsFirstChild() (bool, error) {
+func (a *Assertion) IsFirstChild(ctx context.Context, opts *bind.CallOpts) (bool, error) {
 	if a.isFirstChild {
 		return a.isFirstChild, nil
 	}
-	inner, err := a.inner()
+	inner, err := a.inner(ctx, opts)
 	if err != nil {
 		return false, err
 	}
@@ -127,11 +127,11 @@ func (a *Assertion) IsFirstChild() (bool, error) {
 func (a *Assertion) CreatedAtBlock() uint64 {
 	return a.createdAt
 }
-func (a *Assertion) Status(ctx context.Context) (protocol.AssertionStatus, error) {
+func (a *Assertion) Status(ctx context.Context, opts *bind.CallOpts) (protocol.AssertionStatus, error) {
 	if a.isConfirmed {
 		return protocol.AssertionConfirmed, nil
 	}
-	inner, err := a.inner()
+	inner, err := a.inner(ctx, opts)
 	if err != nil {
 		return 0, err
 	}

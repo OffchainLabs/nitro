@@ -584,21 +584,6 @@ func (cm *specChallengeManager) GetEdge(
 	})), nil
 }
 
-func (e *specEdge) SafeHeadInheritedTimer(ctx context.Context) (protocol.InheritedTimer, error) {
-	edge, err := e.manager.caller.GetEdge(e.manager.assertionChain.GetCallOptsWithSafeBlockNumber(&bind.CallOpts{Context: ctx}), e.id)
-	if err != nil {
-		return 0, err
-	}
-	if edgetracker.IsRootBlockChallengeEdge(e) {
-		assertionUnrivaledBlocks, err := e.manager.assertionChain.AssertionUnrivaledBlocks(ctx, protocol.AssertionHash{Hash: common.Hash(e.ClaimId().Unwrap())})
-		if err != nil {
-			return 0, err
-		}
-		return protocol.InheritedTimer(edge.TotalTimeUnrivaledCache + assertionUnrivaledBlocks), nil
-	}
-	return protocol.InheritedTimer(edge.TotalTimeUnrivaledCache), nil
-}
-
 func (e *specEdge) LatestInheritedTimer(ctx context.Context) (protocol.InheritedTimer, error) {
 	edge, err := e.manager.caller.GetEdge(e.manager.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {

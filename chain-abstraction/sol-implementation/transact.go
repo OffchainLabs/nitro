@@ -144,10 +144,14 @@ func (a *AssertionChain) waitForTxToBeSafe(
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		latestSafeHeaderNumber, err := backend.HeaderU64(ctx)
+		latestSafeHeader, err := backend.HeaderByNumber(ctx, big.NewInt(int64(a.rpcHeadBlockNumber)))
 		if err != nil {
 			return nil, err
 		}
+		if !latestSafeHeader.Number.IsUint64() {
+			return nil, errors.New("block number is not uint64")
+		}
+		latestSafeHeaderNumber := latestSafeHeader.Number.Uint64()
 		txSafe := latestSafeHeaderNumber >= receipt.BlockNumber.Uint64()
 
 		// If the tx is not yet safe, we can simply wait.
