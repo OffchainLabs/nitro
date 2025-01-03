@@ -316,7 +316,7 @@ func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
 	state, err := builder.L2.ExecNode.ArbInterface.BlockChain().State()
 	Require(t, err)
 	escrowExists := state.Exist(escrowAccount)
-	if escrowExists != (arbosVersion < 30) {
+	if escrowExists != (arbosVersion < params.ArbosVersion_30) {
 		Fatal(t, "Escrow account existance", escrowExists, "doesn't correspond to ArbOS version", arbosVersion)
 	}
 }
