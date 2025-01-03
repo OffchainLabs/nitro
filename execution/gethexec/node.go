@@ -369,9 +369,9 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 }
 
 // not thread safe
-func (n *ExecutionNode) Start(ctx context.Context) error {
+func (n *ExecutionNode) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
 	if n.started.Swap(true) {
-		return errors.New("already started")
+		return containers.NewReadyPromise(struct{}{}, errors.New("already started"))
 	}
 	// TODO after separation
 	// err := n.Stack.Start()
@@ -381,18 +381,18 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	n.ExecEngine.Start(ctx)
 	err := n.TxPublisher.Start(ctx)
 	if err != nil {
-		return fmt.Errorf("error starting transaction puiblisher: %w", err)
+		return containers.NewReadyPromise(struct{}{}, fmt.Errorf("error starting transaction puiblisher: %w", err))
 	}
 	if n.ParentChainReader != nil {
 		n.ParentChainReader.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
-	return nil
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (n *ExecutionNode) StopAndWait() {
+func (n *ExecutionNode) StopAndWait() containers.PromiseInterface[struct{}] {
 	if !n.started.Load() {
-		return
+		return containers.NewReadyPromise(struct{}{}, nil)
 	}
 	n.bulkBlockMetadataFetcher.StopAndWait()
 	// TODO after separation
@@ -415,6 +415,8 @@ func (n *ExecutionNode) StopAndWait() {
 	// if err := n.Stack.Close(); err != nil {
 	// 	log.Error("error on stak close", "err", err)
 	// }
+
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
