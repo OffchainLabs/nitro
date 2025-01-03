@@ -37,35 +37,32 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 type Config struct {
-	UseJit          bool                               `koanf:"use-jit"`
-	ApiAuth         bool                               `koanf:"api-auth"`
-	ApiPublic       bool                               `koanf:"api-public"`
-	Arbitrator      server_arb.ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
-	RedisExecRunner redis.ValidationServerConfig       `koanf:"redis-exec-runner"`
-	Jit             server_jit.JitSpawnerConfig        `koanf:"jit" reload:"hot"`
-	Wasm            WasmConfig                         `koanf:"wasm"`
+	UseJit     bool                               `koanf:"use-jit"`
+	ApiAuth    bool                               `koanf:"api-auth"`
+	ApiPublic  bool                               `koanf:"api-public"`
+	Arbitrator server_arb.ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
+	Jit        server_jit.JitSpawnerConfig        `koanf:"jit" reload:"hot"`
+	Wasm       WasmConfig                         `koanf:"wasm"`
 }
 
 type ValidationConfigFetcher func() *Config
 
 var DefaultValidationConfig = Config{
-	UseJit:          true,
-	Jit:             server_jit.DefaultJitSpawnerConfig,
-	ApiAuth:         true,
-	ApiPublic:       false,
-	Arbitrator:      server_arb.DefaultArbitratorSpawnerConfig,
-	RedisExecRunner: redis.DefaultValidationServerConfig,
-	Wasm:            DefaultWasmConfig,
+	UseJit:     true,
+	Jit:        server_jit.DefaultJitSpawnerConfig,
+	ApiAuth:    true,
+	ApiPublic:  false,
+	Arbitrator: server_arb.DefaultArbitratorSpawnerConfig,
+	Wasm:       DefaultWasmConfig,
 }
 
 var TestValidationConfig = Config{
-	UseJit:          true,
-	Jit:             server_jit.DefaultJitSpawnerConfig,
-	ApiAuth:         false,
-	ApiPublic:       true,
-	Arbitrator:      server_arb.DefaultArbitratorSpawnerConfig,
-	RedisExecRunner: redis.DefaultValidationServerConfig,
-	Wasm:            DefaultWasmConfig,
+	UseJit:     true,
+	Jit:        server_jit.DefaultJitSpawnerConfig,
+	ApiAuth:    false,
+	ApiPublic:  true,
+	Arbitrator: server_arb.DefaultArbitratorSpawnerConfig,
+	Wasm:       DefaultWasmConfig,
 }
 
 func ValidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -75,7 +72,6 @@ func ValidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	server_arb.ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
 	server_jit.JitSpawnerConfigAddOptions(prefix+".jit", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
-	redis.ValidationServerConfigAddOptions(prefix+".redis-exec-runner", f)
 }
 
 type ValidationNode struct {
@@ -118,8 +114,8 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		jitSpawner   *server_jit.JitSpawner
 		redisSpawner *arbredis.ExecutionSpawner
 	)
-	if config.RedisExecRunner.Enabled() {
-		es, err := arbredis.NewExecutionSpawner(&config.RedisExecRunner, arbSpawner)
+	if config.Arbitrator.RedisValidationServerConfig.Enabled() {
+		es, err := arbredis.NewExecutionSpawner(&config.Arbitrator.RedisValidationServerConfig, arbSpawner)
 		if err != nil {
 			log.Error("creating redis execution spawner", "error", err)
 		}
