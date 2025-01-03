@@ -797,7 +797,8 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 			gasUsedForL1 += receipts[i].GasUsedForL1
 		}
 		for _, tx := range block.Transactions() {
-			callDataUnits += tx.CalldataUnits
+			_, cachedUnits := tx.GetRawCachedCalldataUnits()
+			callDataUnits += cachedUnits
 		}
 	}
 	l1GasCharged := gasUsedForL1 * block.BaseFee().Uint64()
