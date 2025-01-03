@@ -7,8 +7,10 @@ package assertions
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"time"
 
+	"github.com/ccoveille/go-safecast"
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -37,36 +39,33 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
 
 	log.Info("Ready to post")
-	if _, err := m.PostAssertion(ctx); err != nil {
-		if !errors.Is(err, solimpl.ErrAlreadyExists) {
-			logLevel := log.Error
-			logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
-
-			logLevel("Could not submit latest assertion to L1", "err", err)
-			errorPostingAssertionCounter.Inc(1)
-		}
-	}
 	ticker := time.NewTicker(m.times.postInterval)
 	defer ticker.Stop()
 	for {
+		_, err := m.PostAssertion(ctx)
+		if err != nil {
+			switch {
+			case errors.Is(err, solimpl.ErrAlreadyExists):
+			case errors.Is(err, solimpl.ErrBatchNotYetFound):
+				log.Info("Waiting for more batches to post assertions about them onchain")
+			default:
+				logLevel := log.Error
+				logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+
+				logLevel("Could not submit latest assertion", "err", err, "validatorName", m.validatorName)
+				errorPostingAssertionCounter.Inc(1)
+
+				if ctx.Err() != nil {
+					return
+				}
+				continue // We retry again in case of a non ctx error
+			}
+		} else {
+			exceedsMaxMempoolSizeEphemeralErrorHandler.Reset()
+		}
+
 		select {
 		case <-ticker.C:
-			_, err := m.PostAssertion(ctx)
-			if err != nil {
-				switch {
-				case errors.Is(err, solimpl.ErrAlreadyExists):
-				case errors.Is(err, solimpl.ErrBatchNotYetFound):
-					log.Info("Waiting for more batches to post assertions about them onchain")
-				default:
-					logLevel := log.Error
-					logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
-
-					logLevel("Could not submit latest assertion", "err", err, "validatorName", m.validatorName)
-					errorPostingAssertionCounter.Inc(1)
-				}
-			} else {
-				exceedsMaxMempoolSizeEphemeralErrorHandler.Reset()
-			}
 		case <-ctx.Done():
 			return
 		}
@@ -161,10 +160,12 @@ func (m *Manager) PostAssertionBasedOnParent(
 		return none, errors.Wrapf(err, "could not get execution state at batch count %d with parent block hash %v", batchCount, parentBlockHash)
 	}
 
-	// If the assertion is not an overflow assertion (has a 0 position in batch),
-	// then should check if we need to wait for the minimum number of blocks in between
-	// assertions. Overflow ones are not subject to this check onchain.
-	if newState.GlobalState.PosInBatch == 0 {
+	// If the assertion is not an overflow assertion i.e !(newState.GlobalState.Batch < batchCount) derived from
+	// contracts check for overflow assertion => assertion.afterState.globalState.u64Vals[0] < assertion.beforeStateData.configData.nextInboxPosition)
+	// then should check if we need to wait for the minimum number of blocks between assertions and a minimum time since parent assertion creation.
+	// Overflow ones are not subject to this check onchain.
+	isOverflowAssertion := newState.MachineStatus != protocol.MachineStatusErrored && newState.GlobalState.Batch < batchCount
+	if !isOverflowAssertion {
 		if err = m.waitToPostIfNeeded(ctx, parentCreationInfo); err != nil {
 			return none, err
 		}
@@ -203,6 +204,18 @@ func (m *Manager) waitToPostIfNeeded(
 	ctx context.Context,
 	parentCreationInfo *protocol.AssertionCreatedInfo,
 ) error {
+	if m.times.minGapToParent != 0 {
+		parentCreationBlock, err := m.backend.HeaderByNumber(ctx, new(big.Int).SetUint64(parentCreationInfo.CreationBlock))
+		if err != nil {
+			return fmt.Errorf("error getting parent assertion creation block header: %w", err)
+		}
+		parentCreationTime, err := safecast.ToInt64(parentCreationBlock.Time)
+		if err != nil {
+			return fmt.Errorf("error casting parent assertion creation time to int64: %w", err)
+		}
+		targetTime := time.Unix(parentCreationTime, 0).Add(m.times.minGapToParent)
+		time.Sleep(time.Until(targetTime))
+	}
 	minPeriodBlocks := m.chain.MinAssertionPeriodBlocks()
 	for {
 		latestBlockNumber, err := m.backend.HeaderU64(ctx)

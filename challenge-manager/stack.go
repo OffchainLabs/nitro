@@ -28,6 +28,7 @@ type stackParams struct {
 	postInterval                        time.Duration
 	confInterval                        time.Duration
 	avgBlockTime                        time.Duration
+	minGapToParent                      time.Duration
 	trackChallengeParentAssertionHashes []protocol.AssertionHash
 	apiAddr                             string
 	apiDBPath                           string
@@ -47,6 +48,7 @@ var defaultStackParams = stackParams{
 	postInterval:                        time.Hour,
 	confInterval:                        time.Second * 10,
 	avgBlockTime:                        time.Second * 12,
+	minGapToParent:                      time.Minute * 10,
 	trackChallengeParentAssertionHashes: nil,
 	apiAddr:                             "",
 	apiDBPath:                           "",
@@ -103,6 +105,14 @@ func StackWithConfirmationInterval(interval time.Duration) StackOpt {
 func StackWithAverageBlockCreationTime(interval time.Duration) StackOpt {
 	return func(p *stackParams) {
 		p.avgBlockTime = interval
+	}
+}
+
+// StackWithMinimumGapToParentAssertion sets the minimum gap to parent assertion creation time
+// of the challenge manager.
+func StackWithMinimumGapToParentAssertion(interval time.Duration) StackOpt {
+	return func(p *stackParams) {
+		p.minGapToParent = interval
 	}
 }
 
@@ -243,6 +253,7 @@ func NewChallengeStack(
 			assertions.WithConfirmationInterval(params.confInterval),
 			assertions.WithPollingInterval(params.pollInterval),
 			assertions.WithPostingInterval(params.postInterval),
+			assertions.WithMinimumGapToParentAssertion(params.minGapToParent),
 		}
 		if apiDB != nil {
 			amOpts = append(amOpts, assertions.WithAPIDB(apiDB))

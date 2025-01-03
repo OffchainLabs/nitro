@@ -55,6 +55,9 @@ func TestPostAssertion(t *testing.T) {
 	stateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
+	// Set MinimumGapToBlockCreationTime as 1 second to verify that a new assertion is only posted after 1 sec has passed
+	// from parent assertion creation. This will make the test run for ~19 seconds as the parent assertion time is
+	// ~18 seconds in the future
 	assertionManager, err := assertions.NewManager(
 		aliceChain,
 		stateManager,
@@ -62,6 +65,7 @@ func TestPostAssertion(t *testing.T) {
 		types.DefensiveMode,
 		assertions.WithPollingInterval(time.Millisecond*200),
 		assertions.WithAverageBlockCreationTime(time.Second),
+		assertions.WithMinimumGapToParentAssertion(time.Second),
 	)
 	require.NoError(t, err)
 

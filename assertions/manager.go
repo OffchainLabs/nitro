@@ -41,17 +41,19 @@ var (
 )
 
 type timings struct {
-	pollInterval time.Duration
-	confInterval time.Duration
-	postInterval time.Duration
-	avgBlockTime time.Duration
+	pollInterval   time.Duration
+	confInterval   time.Duration
+	postInterval   time.Duration
+	avgBlockTime   time.Duration
+	minGapToParent time.Duration
 }
 
 var defaultTimings = timings{
-	pollInterval: time.Minute,
-	confInterval: time.Second * 10,
-	postInterval: time.Hour,
-	avgBlockTime: time.Second * 12,
+	pollInterval:   time.Minute,
+	confInterval:   time.Second * 10,
+	postInterval:   time.Hour,
+	avgBlockTime:   time.Second * 12,
+	minGapToParent: time.Minute * 15,
 }
 
 // The Manager struct is responsible for several tasks related to the assertion
@@ -187,6 +189,18 @@ func WithConfirmationInterval(t time.Duration) Opt {
 func WithAverageBlockCreationTime(t time.Duration) Opt {
 	return func(m *Manager) {
 		m.times.avgBlockTime = t
+	}
+}
+
+// WithMinimumGapToParentAssertion overrides the default minimum gap (in duration)
+// to parent assertion creation time.
+//
+// The minimum gap to parent assertion is used by the assertion manager to wait
+// until this much amount of duration is passed since the parent assertion was created
+// before posting a new assertion.
+func WithMinimumGapToParentAssertion(t time.Duration) Opt {
+	return func(m *Manager) {
+		m.times.minGapToParent = t
 	}
 }
 

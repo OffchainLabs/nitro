@@ -99,6 +99,7 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 		cm.StackWithPostingInterval(timeCfg.assertionPostingInterval),
 		cm.StackWithAverageBlockCreationTime(timeCfg.blockTime),
 		cm.StackWithConfirmationInterval(timeCfg.assertionConfirmationAttemptInterval),
+		cm.StackWithMinimumGapToParentAssertion(0),
 		cm.StackWithHeaderProvider(shp),
 	}
 

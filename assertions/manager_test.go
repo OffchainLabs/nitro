@@ -124,6 +124,7 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 		types.DefensiveMode,
 		assertions.WithPollingInterval(time.Millisecond*200),
 		assertions.WithAverageBlockCreationTime(time.Second),
+		assertions.WithMinimumGapToParentAssertion(0),
 		assertions.WithPostingDisabled(),
 	)
 	require.NoError(t, err)
@@ -306,6 +307,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 		types.DefensiveMode,
 		assertions.WithPollingInterval(time.Millisecond*200),
 		assertions.WithAverageBlockCreationTime(time.Second),
+		assertions.WithMinimumGapToParentAssertion(0),
 		assertions.WithPostingDisabled(),
 	)
 	require.NoError(t, err)
@@ -377,6 +379,7 @@ func TestFastConfirmation(t *testing.T) {
 		types.ResolveMode,
 		assertions.WithPollingInterval(time.Millisecond*200),
 		assertions.WithAverageBlockCreationTime(time.Second),
+		assertions.WithMinimumGapToParentAssertion(0),
 		assertions.WithFastConfirmation(),
 	)
 	require.NoError(t, err)
@@ -449,6 +452,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		types.ResolveMode,
 		assertions.WithPollingInterval(time.Millisecond*200),
 		assertions.WithAverageBlockCreationTime(time.Second),
+		assertions.WithMinimumGapToParentAssertion(0),
 		assertions.WithDangerousReadyToPost(),
 		assertions.WithPostingDisabled(),
 		assertions.WithFastConfirmation(),
@@ -490,6 +494,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		types.ResolveMode,
 		assertions.WithPollingInterval(time.Millisecond*200),
 		assertions.WithAverageBlockCreationTime(time.Second),
+		assertions.WithMinimumGapToParentAssertion(0),
 		assertions.WithDangerousReadyToPost(),
 		assertions.WithPostingDisabled(),
 		assertions.WithFastConfirmation(),

@@ -266,6 +266,7 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 		cm.StackWithPostingInterval(cfg.timings.assertionPostingInterval),
 		cm.StackWithAverageBlockCreationTime(cfg.timings.blockTime),
 		cm.StackWithConfirmationInterval(cfg.timings.assertionConfirmationAttemptInterval),
+		cm.StackWithMinimumGapToParentAssertion(0),
 		cm.StackWithHeaderProvider(shp),
 	}
 
