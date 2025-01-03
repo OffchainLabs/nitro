@@ -210,3 +210,7 @@ func (r *JsonInitDataReader) GetAccountDataReader() (AccountDataReader, error) {
 		JsonListReader: listreader,
 	}, nil
 }
+
+func (r *JsonInitDataReader) GetChainOwner() (common.Address, error) {
+	return common.Address{}, nil
+}

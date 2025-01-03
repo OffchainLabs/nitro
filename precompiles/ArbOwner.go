@@ -10,13 +10,13 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 // ArbOwner precompile provides owners with tools for managing the rollup.
@@ -120,38 +120,48 @@ func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, tim
 	return c.State.ScheduleArbOSUpgrade(newVersion, timestamp)
 }
 
+// Sets equilibration units parameter for L1 price adjustment algorithm
 func (con ArbOwner) SetL1PricingEquilibrationUnits(c ctx, evm mech, equilibrationUnits huge) error {
 	return c.State.L1PricingState().SetEquilibrationUnits(equilibrationUnits)
 }
 
+// Sets inertia parameter for L1 price adjustment algorithm
 func (con ArbOwner) SetL1PricingInertia(c ctx, evm mech, inertia uint64) error {
 	return c.State.L1PricingState().SetInertia(inertia)
 }
 
+// Sets reward recipient address for L1 price adjustment algorithm
 func (con ArbOwner) SetL1PricingRewardRecipient(c ctx, evm mech, recipient addr) error {
 	return c.State.L1PricingState().SetPayRewardsTo(recipient)
 }
 
+// Sets reward amount for L1 price adjustment algorithm, in wei per unit
 func (con ArbOwner) SetL1PricingRewardRate(c ctx, evm mech, weiPerUnit uint64) error {
 	return c.State.L1PricingState().SetPerUnitReward(weiPerUnit)
 }
 
+// Set how much ArbOS charges per L1 gas spent on transaction data.
 func (con ArbOwner) SetL1PricePerUnit(c ctx, evm mech, pricePerUnit *big.Int) error {
 	return c.State.L1PricingState().SetPricePerUnit(pricePerUnit)
 }
 
+// Sets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
 func (con ArbOwner) SetPerBatchGasCharge(c ctx, evm mech, cost int64) error {
 	return c.State.L1PricingState().SetPerBatchGasCost(cost)
 }
 
+// Sets the cost amortization cap in basis points
 func (con ArbOwner) SetAmortizedCostCapBips(c ctx, evm mech, cap uint64) error {
 	return c.State.L1PricingState().SetAmortizedCostCapBips(cap)
 }
 
+// Sets the Brotli compression level used for fast compression
+// Available in ArbOS version 12 with default level as 1
 func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) error {
 	return c.State.SetBrotliCompressionLevel(level)
 }
 
+// Releases surplus funds from L1PricerFundsPoolAddress for use
 func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease huge) (huge, error) {
 	balance := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
 	l1p := c.State.L1PricingState()
@@ -295,6 +305,7 @@ func (con ArbOwner) RemoveWasmCacheManager(c ctx, _ mech, manager addr) error {
 	return managers.Remove(manager, c.State.ArbOSVersion())
 }
 
+// Sets serialized chain config in ArbOS state
 func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte) error {
 	if c == nil {
 		return errors.New("nil context")

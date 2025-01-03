@@ -8,22 +8,20 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sync/atomic"
-
-	"github.com/ethereum/go-ethereum/crypto"
-
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/params"
-
-	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/util/arbmath"
-	am "github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type L1PricingState struct {
@@ -217,7 +215,7 @@ func (ps *L1PricingState) LastSurplus() (*big.Int, error) {
 }
 
 func (ps *L1PricingState) SetLastSurplus(val *big.Int, arbosVersion uint64) error {
-	if arbosVersion < 7 {
+	if arbosVersion < params.ArbosVersion_7 {
 		return ps.lastSurplus.Set_preVersion7(val)
 	}
 	return ps.lastSurplus.SetSaturatingWithWarning(val, "L1 pricer last surplus")
@@ -310,7 +308,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	l1Basefee *big.Int,
 	scenario util.TracingScenario,
 ) error {
-	if arbosVersion < 10 {
+	if arbosVersion < params.ArbosVersion_10 {
 		return ps._preversion10_UpdateForBatchPosterSpending(statedb, evm, arbosVersion, updateTime, currentTime, batchPoster, weiSpent, l1Basefee, scenario)
 	}
 
@@ -360,7 +358,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	}
 
 	// impose cap on amortized cost, if there is one
-	if arbosVersion >= 3 {
+	if arbosVersion >= params.ArbosVersion_3 {
 		amortizedCostCapBips, err := ps.AmortizedCostCapBips()
 		if err != nil {
 			return err
@@ -521,10 +519,13 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 	if poster != BatchPosterAddress {
 		return common.Big0, 0
 	}
-	units := atomic.LoadUint64(&tx.CalldataUnits)
-	if units == 0 {
+	var units uint64
+	if cachedUnits := tx.GetCachedCalldataUnits(brotliCompressionLevel); cachedUnits != nil {
+		units = *cachedUnits
+	} else {
+		// The cache is empty or invalid, so we need to compute the calldata units
 		units = ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
-		atomic.StoreUint64(&tx.CalldataUnits, units)
+		tx.SetCachedCalldataUnits(brotliCompressionLevel, units)
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
@@ -540,7 +541,7 @@ var randomNonce = binary.BigEndian.Uint64(crypto.Keccak256([]byte("Nonce"))[:8])
 var randomGasTipCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasTipCap"))[:4])
 var randomGasFeeCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasFeeCap"))[:4])
 var RandomGas = uint64(binary.BigEndian.Uint32(crypto.Keccak256([]byte("Gas"))[:4]))
-var randV = arbmath.BigMulByUint(params.ArbitrumOneChainConfig().ChainID, 3)
+var randV = arbmath.BigMulByUint(chaininfo.ArbitrumOneChainConfig().ChainID, 3)
 var randR = crypto.Keccak256Hash([]byte("R")).Big()
 var randS = crypto.Keccak256Hash([]byte("S")).Big()
 
