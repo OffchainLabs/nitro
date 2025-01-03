@@ -4,6 +4,8 @@
 package programs
 
 import (
+	"strconv"
+
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -265,7 +267,7 @@ func newApiClosures(
 		original := input
 
 		crash := func(reason string) {
-			panic("bad API call reason: " + reason + " request: " + string(req) + " len: " + string(len(original)) + " remaining: " + string(len(input)))
+			panic("bad API call reason: " + reason + " request: " + strconv.Itoa(int(req)) + " len: " + strconv.Itoa(len(original)) + " remaining: " + strconv.Itoa(len(input)))
 		}
 		takeInput := func(needed int, reason string) []byte {
 			if len(input) < needed {
@@ -413,7 +415,7 @@ func newApiClosures(
 			captureHostio(name, args, outs, startInk, endInk)
 			return []byte{}, nil, 0
 		default:
-			panic("unsupported call type: " + string(req))
+			panic("unsupported call type: " + strconv.Itoa(int(req)))
 		}
 	}
 }

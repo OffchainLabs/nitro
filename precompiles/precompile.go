@@ -751,7 +751,7 @@ func (p *Precompile) Call(
 		reflectArgs = append(reflectArgs, reflect.ValueOf(evm))
 		reflectArgs = append(reflectArgs, reflect.ValueOf(value))
 	default:
-		panic("Unknown state mutability " + string(method.purity))
+		panic("Unknown state mutability " + strconv.Itoa(int(method.purity)))
 	}
 
 	args, err := method.template.Inputs.Unpack(input[4:])

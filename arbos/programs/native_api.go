@@ -25,6 +25,7 @@ import "C"
 
 import (
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -68,11 +69,11 @@ func newApi(
 func getApi(id usize) NativeApi {
 	any, ok := apiObjects.Load(uintptr(id))
 	if !ok {
-		panic("failed to load stylus Go API id: " + string(id))
+		panic("failed to load stylus Go API id: " + strconv.Itoa(int(id)))
 	}
 	api, ok := any.(NativeApi)
 	if !ok {
-		panic("wrong type for stylus Go API id: " + string(id))
+		panic("wrong type for stylus Go API id: " + strconv.Itoa(int(id)))
 	}
 	return api
 }
