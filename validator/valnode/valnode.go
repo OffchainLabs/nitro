@@ -132,9 +132,9 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		if err != nil {
 			return nil, err
 		}
-		serverAPI = NewExecutionServerAPI(jitSpawner, arbSpawner, redisSpawner, arbConfigFetcher)
+		serverAPI = NewExecutionServerAPI(jitSpawner, arbSpawner, arbConfigFetcher)
 	} else {
-		serverAPI = NewExecutionServerAPI(arbSpawner, arbSpawner, redisSpawner, arbConfigFetcher)
+		serverAPI = NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
 	}
 	var redisConsumer *redis.ValidationServer
 	redisValidationConfig := arbConfigFetcher().RedisValidationServerConfig
@@ -173,6 +173,9 @@ func (v *ValidationNode) Start(ctx context.Context) error {
 	}
 	if v.redisConsumer != nil {
 		v.redisConsumer.Start(ctx)
+	}
+	if v.redisExecSpawner != nil {
+		v.redisExecSpawner.Start(ctx)
 	}
 	return nil
 }

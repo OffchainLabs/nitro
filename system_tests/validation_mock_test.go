@@ -27,9 +27,7 @@ import (
 	clientredis "github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
-	arbredis "github.com/offchainlabs/nitro/validator/server_arb/redis"
 	"github.com/offchainlabs/nitro/validator/valnode"
-	"github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
 type mockSpawner struct {
@@ -165,7 +163,7 @@ func (r *mockExecRun) CheckAlive(ctx context.Context) error {
 
 func (r *mockExecRun) Close() {}
 
-func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig, redisURL string) (*mockSpawner, *node.Node) {
+func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig) (*mockSpawner, *node.Node) {
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.DataDir = ""
@@ -183,18 +181,7 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	}
 	configFetcher := func() *server_arb.ArbitratorSpawnerConfig { return config }
 	spawner := &mockSpawner{}
-	var redisExecSpawner *arbredis.ExecutionSpawner
-	if redisURL != "" {
-		redisValidationServerConfig := redis.TestValidationServerConfig
-		redisValidationServerConfig.RedisURL = redisURL
-		redisValidationServerConfig.ModuleRoots = make([]string, len(mockWasmModuleRoots))
-		for i := range redisValidationServerConfig.ModuleRoots {
-			redisValidationServerConfig.ModuleRoots[i] = mockWasmModuleRoots[i].Hex()
-		}
-		redisExecSpawner, err = arbredis.NewExecutionSpawner(&redisValidationServerConfig, spawner)
-		Require(t, err)
-	}
-	serverAPI := valnode.NewExecutionServerAPI(spawner, spawner, redisExecSpawner, configFetcher)
+	serverAPI := valnode.NewExecutionServerAPI(spawner, spawner, configFetcher)
 
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
@@ -232,16 +219,14 @@ func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bo
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var redisURL string
 	var redisBoldValidationClientConfig *clientredis.ValidationClientConfig
 	if withBoldValidationConsumerProducer {
-		redisURL = redisutil.CreateTestRedis(ctx, t)
 		redisBoldValidationClientConfig = &clientredis.TestValidationClientConfig
-		redisBoldValidationClientConfig.RedisURL = redisURL
+		redisBoldValidationClientConfig.RedisURL = redisutil.CreateTestRedis(ctx, t)
 		redisBoldValidationClientConfig.CreateStreams = true
 	}
 
-	_, validationDefault := createMockValidationNode(t, ctx, nil, redisURL)
+	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisBoldValidationClientConfig, validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
@@ -325,7 +310,7 @@ func TestValidationClientRoom(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil, "")
+	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
 	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), nil, spawnerStack)
 	err := client.Start(ctx)
 	Require(t, err)
@@ -407,10 +392,10 @@ func TestExecutionKeepAlive(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, validationDefault := createMockValidationNode(t, ctx, nil, "")
+	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	shortTimeoutConfig := server_arb.DefaultArbitratorSpawnerConfig
 	shortTimeoutConfig.ExecutionRunTimeout = time.Second
-	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig, "")
+	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
 	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
 
 	clientDefault := validatorclient.NewExecutionClient(configFetcher, nil, validationDefault)

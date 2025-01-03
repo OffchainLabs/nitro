@@ -18,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
-	arbredis "github.com/offchainlabs/nitro/validator/server_arb/redis"
 )
 
 type ValidationServerAPI struct {
@@ -62,8 +61,7 @@ type execRunEntry struct {
 type ExecServerAPI struct {
 	stopwaiter.StopWaiter
 	ValidationServerAPI
-	execSpawner      validator.ExecutionSpawner
-	redisExecSpawner *arbredis.ExecutionSpawner
+	execSpawner validator.ExecutionSpawner
 
 	config server_arb.ArbitratorSpawnerConfigFecher
 
@@ -75,12 +73,10 @@ type ExecServerAPI struct {
 func NewExecutionServerAPI(
 	valSpawner validator.ValidationSpawner,
 	execution validator.ExecutionSpawner,
-	redisExecSpawner *arbredis.ExecutionSpawner,
 	config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
 	return &ExecServerAPI{
 		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
 		execSpawner:         execution,
-		redisExecSpawner:    redisExecSpawner,
 		nextId:              rand.Uint64(), // good-enough to aver reusing ids after reboot
 		runs:                make(map[uint64]*execRunEntry),
 		config:              config,
@@ -127,9 +123,6 @@ func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	a.CallIteratively(a.removeOldRuns)
-	if a.redisExecSpawner != nil {
-		a.redisExecSpawner.Start(ctx_in)
-	}
 }
 
 var errRunNotFound error = errors.New("run not found")
