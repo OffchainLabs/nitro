@@ -220,7 +220,6 @@ func (p Programs) CallProgram(
 	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.PageLimit, evm.Context.Time, debugMode, program)
 	if err != nil {
 		panic("failed to get local wasm for activated program: " + contract.Address().Hex())
-		return nil, err
 	}
 
 	evmData := &EvmData{
