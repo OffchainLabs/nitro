@@ -12,7 +12,6 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
-	arbredis "github.com/offchainlabs/nitro/validator/server_arb/redis"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/server_jit"
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
@@ -79,8 +78,7 @@ type ValidationNode struct {
 	arbSpawner *server_arb.ArbitratorSpawner
 	jitSpawner *server_jit.JitSpawner
 
-	redisConsumer    *redis.ValidationServer
-	redisExecSpawner *arbredis.ExecutionSpawner
+	redisConsumer *redis.ValidationServer
 }
 
 func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
@@ -110,17 +108,9 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		return nil, err
 	}
 	var (
-		serverAPI    *ExecServerAPI
-		jitSpawner   *server_jit.JitSpawner
-		redisSpawner *arbredis.ExecutionSpawner
+		serverAPI  *ExecServerAPI
+		jitSpawner *server_jit.JitSpawner
 	)
-	if config.Arbitrator.RedisValidationServerConfig.Enabled() {
-		es, err := arbredis.NewExecutionSpawner(&config.Arbitrator.RedisValidationServerConfig, arbSpawner)
-		if err != nil {
-			log.Error("creating redis execution spawner", "error", err)
-		}
-		redisSpawner = es
-	}
 	if config.UseJit {
 		jitConfigFetcher := func() *server_jit.JitSpawnerConfig { return &configFetcher().Jit }
 		var err error
@@ -150,11 +140,10 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	stack.RegisterAPIs(valAPIs)
 
 	return &ValidationNode{
-		config:           configFetcher,
-		arbSpawner:       arbSpawner,
-		jitSpawner:       jitSpawner,
-		redisConsumer:    redisConsumer,
-		redisExecSpawner: redisSpawner,
+		config:        configFetcher,
+		arbSpawner:    arbSpawner,
+		jitSpawner:    jitSpawner,
+		redisConsumer: redisConsumer,
 	}, nil
 }
 
@@ -169,9 +158,6 @@ func (v *ValidationNode) Start(ctx context.Context) error {
 	}
 	if v.redisConsumer != nil {
 		v.redisConsumer.Start(ctx)
-	}
-	if v.redisExecSpawner != nil {
-		v.redisExecSpawner.Start(ctx)
 	}
 	return nil
 }
