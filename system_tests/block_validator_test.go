@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -58,7 +59,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, opts.dasModeString)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	if opts.workload == upgradeArbOs {
-		chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+		chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_10
 	}
 
 	var delayEvery int
@@ -202,8 +203,6 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 			WrapL2ForDelayed(t, delayedTx, builder.L1Info, "User", 100000),
 		})
-		// give the inbox reader a bit of time to pick up the delayed message
-		time.Sleep(time.Millisecond * 500)
 
 		// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 		for i := 0; i < 30; i++ {
