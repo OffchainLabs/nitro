@@ -4,13 +4,13 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use strum_macros::{Display, EnumIter, EnumString};
+use clap::ValueEnum;
+use std::fmt;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, EnumString, Display, EnumIter)]
+#[derive(ValueEnum, Copy, Clone, PartialEq, Eq, Debug)]
+#[clap(rename_all = "PascalCase")]
 pub enum Scenario {
-    #[strum(serialize = "add_i32")]
     AddI32,
-    #[strum(serialize = "xor_i32")]
     XorI32,
 }
 
@@ -119,7 +119,7 @@ pub fn generate_wat(scenario: Scenario, output_wat_dir_path: Option<PathBuf>) ->
     // print wat to file if needed
     if let Some(output_wat_dir_path) = output_wat_dir_path {
         let mut output_wat_path = output_wat_dir_path;
-        output_wat_path.push(format!("{}.wat", scenario));
+        output_wat_path.push(format!("{:?}.wat", scenario));
         let mut file = File::create(output_wat_path).unwrap();
         file.write_all(&wat).unwrap();
     }
