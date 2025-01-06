@@ -58,7 +58,7 @@ func TestEspressoEscapeHatch(t *testing.T) {
 	if builder.L2.ConsensusNode.TxStreamer.UseEscapeHatch {
 		t.Fatal("testing not using escape hatch first")
 	}
-	log.Info("Checking turning off the escape hatch")
+	log.Info("Checking turning on the escape hatch")
 
 	// Start to check the escape hatch
 
@@ -68,7 +68,11 @@ func TestEspressoEscapeHatch(t *testing.T) {
 	log.Info("waiting for light client to report hotshot is down")
 	err = waitForWith(ctx, 10*time.Minute, 10*time.Second, func() bool {
 		log.Info("waiting for hotshot down")
-		return builder.L2.ConsensusNode.TxStreamer.HotshotDown
+		live, err := lightclientmock.IsHotShotLive(t, builder.L1.Client, address, 1)
+		if err != nil {
+			log.Error("error checking hotshot live", "err", err)
+		}
+		return !live
 	})
 	Require(t, err)
 
@@ -122,7 +126,7 @@ func TestEspressoEscapeHatch(t *testing.T) {
 
 	err = waitForWith(ctx, 10*time.Minute, 10*time.Second, func() bool {
 		log.Info("waiting for hotshot down")
-		return builder.L2.ConsensusNode.TxStreamer.HotshotDown
+		return builder.L2.ConsensusNode.TxStreamer.EscapeHatchEnabled
 	})
 	Require(t, err)
 

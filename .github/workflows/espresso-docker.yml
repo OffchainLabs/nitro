@@ -20,8 +20,7 @@ on:
       - integration
       - celestia-integration
     tags:
-      # YYYYMMDD
-      - "20[0-9][0-9][0-1][0-9][0-3][0-9]*"
+      - "v[0-9]+.[0-9]+.[0-9]+-.*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -128,7 +127,7 @@ jobs:
   # https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
   # Only building for AMD64
   merge_into_multiplatform_images:
-  # We only build the ARM images for non-PR builds, so skip this job if we're on PRs.
+    # We only build the ARM images for non-PR builds, so skip this job if we're on PRs.
     if: github.event_name != 'pull_request'
     needs:
       - docker_build

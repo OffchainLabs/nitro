@@ -87,9 +87,8 @@ type TransactionStreamer struct {
 	espressoSwitchDelayThreshold uint64
 	espressoMaxTransactionSize   uint64
 	// Public these fields for testing
-	HotshotDown                bool
-	UseEscapeHatch             bool
-	espressoTEEVerifierAddress common.Address
+	EscapeHatchEnabled bool
+	UseEscapeHatch     bool
 }
 
 type TransactionStreamerConfig struct {
@@ -142,6 +141,7 @@ func NewTransactionStreamer(
 		fatalErrChan:       fatalErrChan,
 		config:             config,
 		snapSyncConfig:     snapSyncConfig,
+		EscapeHatchEnabled: false,
 	}
 
 	err := streamer.cleanupInconsistentState()
@@ -1271,7 +1271,6 @@ func (s *TransactionStreamer) pollSubmittedTransactionForFinality(ctx context.Co
 	if err != nil {
 		return fmt.Errorf("failed to fetch the submitted transaction hash (hash: %s): %w", submittedTxHash.String(), err)
 	}
-
 	height := data.BlockHeight
 
 	jsonHeader, err := s.espressoClient.FetchRawHeaderByHeight(ctx, height)
@@ -1285,10 +1284,11 @@ func (s *TransactionStreamer) pollSubmittedTransactionForFinality(ctx context.Co
 		return fmt.Errorf("could not unmarshal header from bytes (height: %d): %w", height, err)
 	}
 
+	log.Info("Fetching Merkle Root at hotshot height: ", height)
 	// Verify the merkle proof
 	snapshot, err := s.lightClientReader.FetchMerkleRoot(height, nil)
 	if err != nil {
-		return fmt.Errorf("%w (height: %d): %w", EspressoFetchMerkleRootErr, height, err)
+		return fmt.Errorf("%w (height: %d): %w", EspressoValidationErr, height, err)
 	}
 
 	if snapshot.Height <= height {
@@ -1347,7 +1347,7 @@ func (s *TransactionStreamer) pollSubmittedTransactionForFinality(ctx context.Co
 
 	batch := s.db.NewBatch()
 	if err := s.cleanEspressoSubmittedData(batch); err != nil {
-		return nil
+		return err
 	}
 	lastConfirmedPos := submittedTxnPos[len(submittedTxnPos)-1]
 	if err := s.setEspressoLastConfirmedPos(batch, &lastConfirmedPos); err != nil {
@@ -1709,67 +1709,37 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) ti
 	return s.espressoTxnsPollingInterval
 }
 
-func (s *TransactionStreamer) checkEspressoLiveness(ctx context.Context) error {
+// Make sure useEscapeHatch is true
+func (s *TransactionStreamer) checkEspressoLiveness() error {
 	live, err := s.lightClientReader.IsHotShotLive(s.espressoSwitchDelayThreshold)
 	if err != nil {
 		return err
 	}
-	// If hotshot is down, escape hatch is activated, the only thing is to check if hotshot is live again
-	if s.HotshotDown {
+	// If escape hatch is activated, the only thing is to check if hotshot is live again
+	if s.EscapeHatchEnabled {
 		if live {
 			log.Info("HotShot is up, disabling the escape hatch")
-			s.HotshotDown = false
+			s.EscapeHatchEnabled = false
 		}
 		return nil
 	}
 
-	// If hotshot was previously up, now it is down
-	if !live {
-		log.Warn("enabling the escape hatch, hotshot is down")
-		s.HotshotDown = true
-	}
-
-	if !s.UseEscapeHatch {
+	// If escape hatch is disabled, hotshot is live, everything is fine
+	if live {
 		return nil
 	}
 
-	submittedHash, err := s.getEspressoSubmittedHash()
-	if err != nil {
-		return err
-	}
+	// If escape hatch is on, and hotshot is down
+	log.Warn("enabling the escape hatch, hotshot is down")
+	s.EscapeHatchEnabled = true
 
-	// No transaction is waiting for espresso finalization
-	if submittedHash == nil {
-		return nil
-	}
-
-	// If a submitted transaction is waiting for being finalized, check if hotshot is live at
-	// the corresponding L1 height.
-	data, err := s.espressoClient.FetchTransactionByHash(ctx, submittedHash)
-	if err != nil {
-		return err
-	}
-
-	header, err := s.espressoClient.FetchHeaderByHeight(ctx, data.BlockHeight)
-	if err != nil {
-		return err
-	}
-
-	l1Height := header.Header.GetL1Head()
-	hotshotLive, err := s.lightClientReader.IsHotShotLiveAtHeight(l1Height, s.espressoSwitchDelayThreshold)
-	if err != nil {
-		return err
-	}
-	if hotshotLive {
-		// This transaction will be still finalized
-		return nil
-	}
+	// Skip the espresso verification for the submitted messages
 	submitted, err := s.getEspressoSubmittedPos()
 	if err != nil {
 		return err
 	}
 	if len(submitted) == 0 {
-		return fmt.Errorf("submitted messages should not have the length of 0")
+		return nil
 	}
 
 	last := submitted[len(submitted)-1]
@@ -1798,7 +1768,7 @@ func (s *TransactionStreamer) checkEspressoLiveness(ctx context.Context) error {
 	return nil
 }
 
-var espressoMerkleProofEphemeralErrorHandler = util.NewEphemeralErrorHandler(80*time.Minute, EspressoFetchMerkleRootErr.Error(), time.Hour)
+var espressoMerkleProofEphemeralErrorHandler = util.NewEphemeralErrorHandler(80*time.Minute, EspressoValidationErr.Error(), time.Hour)
 var espressoTransactionEphemeralErrorHandler = util.NewEphemeralErrorHandler(3*time.Minute, EspressoFetchTransactionErr.Error(), time.Minute)
 
 func getLogLevel(err error) func(string, ...interface{}) {
@@ -1810,9 +1780,9 @@ func getLogLevel(err error) func(string, ...interface{}) {
 
 func (s *TransactionStreamer) espressoSwitch(ctx context.Context, ignored struct{}) time.Duration {
 	retryRate := s.espressoTxnsPollingInterval * 50
-	enabledEspresso := s.espressoTEEVerifierAddress != common.Address{}
-	if enabledEspresso {
-		err := s.checkEspressoLiveness(ctx)
+	var err error
+	if s.UseEscapeHatch {
+		err = s.checkEspressoLiveness()
 		if err != nil {
 			if ctx.Err() != nil {
 				return 0
@@ -1821,31 +1791,29 @@ func (s *TransactionStreamer) espressoSwitch(ctx context.Context, ignored struct
 			logLevel("error checking escape hatch, will retry", "err", err)
 			return retryRate
 		}
-		err = s.pollSubmittedTransactionForFinality(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return 0
-			}
-			logLevel := getLogLevel(err)
-			logLevel("error polling finality, will retry", "err", err)
-			return retryRate
-		} else {
-			espressoMerkleProofEphemeralErrorHandler.Reset()
+		espressoTransactionEphemeralErrorHandler.Reset()
+	}
+	err = s.pollSubmittedTransactionForFinality(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return 0
 		}
-
-		shouldSubmit := s.shouldSubmitEspressoTransaction()
-		if shouldSubmit {
-			return s.submitEspressoTransactions(ctx)
-		}
-
-		return s.espressoTxnsPollingInterval
-	} else {
+		logLevel := getLogLevel(err)
+		logLevel("error polling finality, will retry", "err", err)
 		return retryRate
 	}
+	espressoMerkleProofEphemeralErrorHandler.Reset()
+
+	shouldSubmit := s.shouldSubmitEspressoTransaction()
+	if shouldSubmit {
+		return s.submitEspressoTransactions(ctx)
+	}
+
+	return s.espressoTxnsPollingInterval
 }
 
 func (s *TransactionStreamer) shouldSubmitEspressoTransaction() bool {
-	return !s.HotshotDown
+	return !s.EscapeHatchEnabled
 }
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {

@@ -185,7 +185,6 @@ type BatchPosterConfig struct {
 	EspressoTxnsPollingInterval  time.Duration `koanf:"espresso-txns-polling-interval"`
 	EspressoSwitchDelayThreshold uint64        `koanf:"espresso-switch-delay-threshold"`
 	EspressoMaxTransactionSize   uint64        `koanf:"espresso-max-transaction-size"`
-	EspressoTEEVerifierAddress   string        `koanf:"espresso-tee-verifier-address"`
 }
 
 func (c *BatchPosterConfig) Validate() error {
@@ -242,10 +241,9 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
 	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from layer 1 minimum bounds. Requires l1-block-bound option not be set to \"ignore\"")
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
-	f.Bool(prefix+".use-escape-hatch", DefaultBatchPosterConfig.UseEscapeHatch, "if true, batches will be posted without doing the espresso verification when hotshot is down. If false, wait for hotshot being up")
+	f.Bool(prefix+".use-escape-hatch", DefaultBatchPosterConfig.UseEscapeHatch, "if true, Escape Hatch functionality will be used")
 	f.Duration(prefix+".espresso-txns-polling-interval", DefaultBatchPosterConfig.EspressoTxnsPollingInterval, "interval between polling for transactions to be included in the block")
 	f.Uint64(prefix+".espresso-switch-delay-threshold", DefaultBatchPosterConfig.EspressoSwitchDelayThreshold, "specifies the switch delay threshold used to determine hotshot liveness")
-	f.String(prefix+".espresso-tee-verifier-address", DefaultBatchPosterConfig.EspressoTEEVerifierAddress, "")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -284,7 +282,6 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	LightClientAddress:             "",
 	HotShotUrl:                     "",
 	EspressoMaxTransactionSize:     900 * 1024,
-	EspressoTEEVerifierAddress:     "",
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -387,7 +384,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		opts.Streamer.espressoTxnsPollingInterval = opts.Config().EspressoTxnsPollingInterval
 		opts.Streamer.espressoSwitchDelayThreshold = opts.Config().EspressoSwitchDelayThreshold
 		opts.Streamer.espressoMaxTransactionSize = opts.Config().EspressoMaxTransactionSize
-		opts.Streamer.espressoTEEVerifierAddress = common.HexToAddress(opts.Config().EspressoTEEVerifierAddress)
 	}
 
 	b := &BatchPoster{
@@ -558,7 +554,7 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 	return l
 }
 
-var EspressoFetchMerkleRootErr = errors.New("failed to fetch the espresso merkle roof")
+var EspressoValidationErr = errors.New("failed to check espresso validation")
 var EspressoFetchTransactionErr = errors.New("failed to fetch the espresso transaction")
 
 // Adds a block merkle proof to an Espresso justification, providing a proof that a set of transactions
@@ -596,12 +592,12 @@ func (b *BatchPoster) checkEspressoValidation() error {
 		}
 	}
 
-	if b.streamer.HotshotDown && b.streamer.UseEscapeHatch {
+	if b.streamer.EscapeHatchEnabled {
 		log.Warn("skipped espresso verification due to hotshot failure", "pos", b.building.msgCount)
 		return nil
 	}
 
-	return fmt.Errorf("%w (height: %d)", EspressoFetchMerkleRootErr, b.building.msgCount)
+	return fmt.Errorf("%w (height: %d)", EspressoValidationErr, b.building.msgCount)
 }
 
 func (b *BatchPoster) submitEspressoTransactionPos(pos arbutil.MessageIndex) error {
@@ -1420,7 +1416,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 
 	// Submit message positions to pending queue
 	shouldSubmit := b.streamer.shouldSubmitEspressoTransaction()
-	if !b.streamer.UseEscapeHatch || shouldSubmit {
+	if shouldSubmit {
 		for p := b.building.msgCount; p < msgCount; p += 1 {
 			err = b.submitEspressoTransactionPos(p)
 			if err != nil {
@@ -1747,7 +1743,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	storageRaceEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, storage.ErrStorageRace.Error(), time.Minute)
 	normalGasEstimationFailedEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, ErrNormalGasEstimationFailed.Error(), time.Minute)
 	accumulatorNotFoundEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, AccumulatorNotFoundErr.Error(), time.Minute)
-	espressoEphemeralErrorHandler := util.NewEphemeralErrorHandler(80*time.Minute, EspressoFetchMerkleRootErr.Error(), time.Hour)
+	espressoEphemeralErrorHandler := util.NewEphemeralErrorHandler(80*time.Minute, EspressoValidationErr.Error(), time.Hour)
 	resetAllEphemeralErrs := func() {
 		commonEphemeralErrorHandler.Reset()
 		exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
