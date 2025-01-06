@@ -11,25 +11,97 @@ fork:
   url: https://github.com/Layr-Labs/nitro
   ref: refs/tags/v3.2.1
 def:
-    title: "EigenDA x Arbitrum Nitro Fork diff"
+    title: "EigenDA x Arbitrum Nitro fork diff"
     description: | # description in markdown
       The original nitro codebase can be found at [`github.com/OffchainLabs/nitro`](https://github.com/OffchainLabs/nitro).
       And the fork at [`github.com/Layr-Labs/nitro`](https://github.com/Layr-Labs/nitro).
-    globs:
-      # - "arbitrator/*"  # list files of which the patches should be included
-      # - "hello/util/*"  # use file globs to include multiple files
-      # - "hello/util/*[!_test].go"  # you can ignore things with globs too
+  
     sub:
-      - title: "EigenDA Client"
-        globs:
-          - "eigenda/**"
+      - title: "CI/CD"
+        description: | 
+          "Updated container orchestration and github actions workflows to best support EigenDA-specific build and test steps."
+        sub:
+          - title: "Github workflows"
+            description: | 
+              Updated Github workflows to include EigenDA-specific build and test steps.
+            globs:
+              - ".github/workflows/arbitrator-ci.yml"
+              - ".github/workflows/arbitrator-skip-ci.yml"
+              - ".github/workflows/ci.yml"
+              - ".github/workflows/codeql-analysis.yml"
+              - ".github/workflows/docker.yml"
+              - ".github/workflows/release-ci.yml"
+              - "scripts/start-eigenda-proxy.sh"
+
+          - title: "Docker builds"
+            description: | 
+              Updated Dockerfile to use EigenDA consensus replay artifact and disregard historical 
+              vanilla Arbitrum ones. Also added github action for building and publishing images to GHCR.
+            globs:
+              - "Dockerfile"
+              - ".github/workflows/docker-upload.yml"
+              - "scripts/download-machine-eigenda.sh"
+
+      - title: "EigenDA package"
+        description: |
+          The EigenDA package includes a lot of compatibility constructions (i.e, interface implementations, proxy communication, serialization) necessary for 
+          securely wiring EigenDA as a feature into the overarching codebase. This package provides a set of lower level constructions which are referenced during
+          fraud proving and batch posting/derivation.
+        sub:
+          - title: "Proxy client"
+            description: |
+              Added a wrapper over the eigenda proxy [client](https://github.com/Layr-Labs/eigenda-proxy/releases/tag/client%2Fv0.1.0) which
+              RLP encodes and decodes the batch contents when communicating with the proxy service.
+            globs:
+              - "eigenda/proxy.go"
+              - "eigenda/proxy_mock.go"
+
+          - title: "DA writer/reader interface"
+            description: |
+              * Implements the Arbiturm native Data Availability `Reader` [interface](https://github.com/Layr-Labs/nitro/blob/070313b901ea55e131534850bfc791ec4e588668/arbstate/daprovider/reader.go#L16-L29) for EigenDA. 
+                When recording a batch payload to the preimage oracle for stateless validation, the blob is generic encoded to a BN254 compatible format as a precursor for injection. 
+                Sequencer messages are decoded from their ABI encoded format to a `BlobInfo` type for compatible communication with the proxy service.
+
+              * Implements the Arbitrum native Data Availability `Writer` [interface](https://github.com/Layr-Labs/nitro/blob/070313b901ea55e131534850bfc791ec4e588668/arbstate/daprovider/writer.go#L13-L22) for EigenDA.
+
+            globs:
+              - "eigenda/reader.go"
+              - "eigenda/init.go"
+              - "eigenda/eigenda.go"
+          
+          - title: "Blob serialization"
+            description: |
+              EigenDA blobs are serialized and deserialized for fraud proving:
+
+                - Serialization (`GenericEncodeBlob`) occurs when recording a batch payload to the preimage oracle for stateless validation.
+              
+                - Deserialization (`GenericDecodeBlob`) occurs when referencing the blob in the replay script being ran by the Arbitrator.
+
+              These domain morphisms are necessary so that the off-chain proof generation done for an EigenDA `READPREIMAGE` opcode is using the 
+              same data format as used by the EigenDA encoder for generating kzg commitments and evaluation proofs.
+            
+            globs:
+              - "eigenda/serialize.go"
+              - "eigenda/serialize_test.go"
+
+          - title: Bl
 
 
+          - title: "Certificate translations"
+            description: |
+              Certificates read from the `SequencerInbox` don't include all necessary metadata for properly referencing the batch via proxy since 
+              some fields are left out during inbox submission (i.e, `batchHeaderHash`) to reduce calldata sizes. These functions provide translation 
+              to convert a certificate read from the inbox into one understood by the proxy service.
+
+            globs:
+              - "eigenda/types.go"
+  
       - title: "Fraud Proving"
         sub:
-          - title: "EigenDA Preimage Opcode"
+          - title: "EigenDA preimage opcode"
             description: | 
               Extended core interpreter logic to target EigenDA `READPREIMAGE` opcode when serializing machine state proofs.
+              Also extended go -> wavm compilation logic to support routing for the new opcode type.
             globs:
               - "arbitrator/arbutil/src/types.rs"
               - "arbitrator/jit/src/wavmio.rs"
@@ -38,7 +110,7 @@ def:
               - "arbitrator/wasm-libraries/host-io/src/lib.rs"
               - "arbitrator/prover/Cargo.toml"
 
-          - title: "Opcode Proof Serialization"
+          - title: "Opcode proof serialization"
             description: | 
               Extended core interpreter logic to target EigenDA `READPREIMAGE` opcode when serializing machine state proofs.
             globs:
@@ -66,35 +138,12 @@ def:
 
           - title: "E2E challenge tests"
             description: |
-              Extended E2E challenge tests to ensure honest resolution of a `READINBOX` challenge for an
+              Extended E2E challenge tests to ensure honest resolution of a `READINBOXMESSAGE` challenge for an
               EigenDA certificate where each validator has alternative views of the canonical sequencer inbox state.
             globs:
               - "system_tests/full_challenge_test.go"
               - "system_tests/full_challenge_mock_test.go"
               - "system_tests/full_challenge_impl_test.go"
-
-      - title: "CI/CD"
-        
-        sub:
-          - title: "Github Workflows"
-            description: | 
-              Updated Github workflows to include EigenDA-specific build and test steps.
-            globs:
-              - ".github/workflows/arbitrator-ci.yml"
-              - ".github/workflows/arbitrator-skip-ci.yml"
-              - ".github/workflows/ci.yml"
-              - ".github/workflows/codeql-analysis.yml"
-              - ".github/workflows/docker.yml"
-              - ".github/workflows/release-ci.yml"
-              - "scripts/start-eigenda-proxy.sh"
-
-          - title: "Docker Builds"
-            description: | 
-              Updated Dockerfile to use EigenDA consensus replay artifact and disregard historical 
-              vanilla Arbitrum ones. Also added github action for building and publishing images to GHCR.
-            globs:
-              - "Dockerfile"
-              - ".github/workflows/docker-eigenda.yml"
 
       - title: "Batch posting & derivation from EigenDA"
         description: |
@@ -132,24 +181,14 @@ def:
             description:
             globs:
               - "system_tests/eigenda_test.go"
-      # - title: ""  # titles are optional
-      #   description: "This fork tests the modifications to `greeter.go` and utils."
-      #   globs:
-      #     - "hello/world/greeter.go"
-      #     - "hello/util/*_test.go"
-      # - title: "modifications to hello/printer"
-      #   description: "The `printer` package prints greetings"
-      #   globs:
-      #     - "hello/printer/*"
-      #     - "hello/printer/display/**"  # double start glob patterns work too, for recursive matching!
-      #   ignore:
-      #     - "hello/printer/testdata/**"  # to group test-data with the package, but ignore the lines, use "ignore"
-      # - title: "MOTD"
-      #   description: "New package that generates a message of the day (MOTD) to add to the greeting"
-      #   globs:
-      #     - "motd/*"
-# files can be ignored globally, these will be listed in a separate grayed-out section,
-# and do not count towards the total line count.
+
+      - title: "Docs"
+        description: |
+          Updated documentation to reflect EigenDA-specific changes and additions.
+        globs:
+          - "docs/Sigma_Prime_EigenLayer_EigenDA_Arbitrum_Security_Assessment_Report_December_2024.pdf"
+          - "docs/Sigma_Prime_EigenLayer_EigenDA_Arbitrum_Security_Assessment_Report_November_2024.pdf"
+
 ignore:
   - "*.sum"
   - "*.md"
