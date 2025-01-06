@@ -212,6 +212,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.Staker = legacystaker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
+	config.Bold.MinimumGapToParentAssertion = 0
 
 	return &config
 }
@@ -230,6 +231,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
+	config.Bold.MinimumGapToParentAssertion = 0
 
 	return &config
 }
