@@ -237,7 +237,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 					log.Crit("Could not get latest header", "err", err)
 				}
 				toBlock := latestBlock.Number.Uint64()
-				if fromBlock == toBlock {
+				if fromBlock > toBlock {
 					continue
 				}
 				filterOpts := &bind.FilterOpts{
@@ -313,7 +313,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 					es.msgAndResultBySequenceNumber = make(map[uint64]*msgAndResult)
 					es.Unlock()
 				}
-				fromBlock = toBlock
+				fromBlock = toBlock + 1
 			}
 		}
 	})
