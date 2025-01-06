@@ -193,7 +193,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 				continue
 			}
 			toBlock := latestBlock.Number.Uint64()
-			if fromBlock == toBlock {
+			if fromBlock > toBlock {
 				continue
 			}
 			filterOpts := &bind.FilterOpts{
@@ -267,7 +267,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 					es.roundInfo.reset()
 				}
 			}
-			fromBlock = toBlock
+			fromBlock = toBlock + 1
 		}
 	})
 }
