@@ -8,3 +8,4 @@ pub mod call_indirect;
 pub mod global_get;
 pub mod global_set;
 pub mod if_op;
+pub mod select;
