@@ -1,7 +1,7 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::scenarios::{add_i32, call_indirect, xor_i32};
+use crate::scenarios::{add_i32, call_indirect, if_op, xor_i32};
 use clap::ValueEnum;
 use std::fs::File;
 use std::io::Write;
@@ -13,6 +13,7 @@ pub enum Scenario {
     AddI32,
     XorI32,
     CallIndirect,
+    If,
 }
 
 trait ScenarioWatGenerator {
@@ -26,20 +27,18 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::AddI32 => add_i32::write_specific_wat_beginning(wat),
             Scenario::XorI32 => xor_i32::write_specific_wat_beginning(wat),
             Scenario::CallIndirect => call_indirect::write_specific_wat_beginning(wat),
+            Scenario::If => if_op::write_specific_wat_beginning(wat),
         }
     }
 
     fn write_wat_ops(&self, wat: &mut Vec<u8>, number_of_ops_per_loop_iteration: usize) {
         match self {
-            Scenario::AddI32 => {
-                add_i32::write_wat_ops(wat, number_of_ops_per_loop_iteration);
-            }
-            Scenario::XorI32 => {
-                xor_i32::write_wat_ops(wat, number_of_ops_per_loop_iteration);
-            }
+            Scenario::AddI32 => add_i32::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::XorI32 => xor_i32::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::CallIndirect => {
-                call_indirect::write_wat_ops(wat, number_of_ops_per_loop_iteration);
+                call_indirect::write_wat_ops(wat, number_of_ops_per_loop_iteration)
             }
+            Scenario::If => if_op::write_wat_ops(wat, number_of_ops_per_loop_iteration),
         }
     }
 }

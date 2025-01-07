@@ -4,3 +4,4 @@
 pub mod add_i32;
 pub mod xor_i32;
 pub mod call_indirect;
+pub mod if_op;
