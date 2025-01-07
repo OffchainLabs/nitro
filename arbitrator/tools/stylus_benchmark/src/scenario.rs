@@ -1,7 +1,7 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::scenarios::{add_i32, call_indirect, global_get, if_op, xor_i32};
+use crate::scenarios::{call_indirect, global_get, i32_add, i32_xor, if_op};
 use clap::ValueEnum;
 use std::fs::File;
 use std::io::Write;
@@ -10,8 +10,8 @@ use std::path::PathBuf;
 #[derive(ValueEnum, Copy, Clone, PartialEq, Eq, Debug)]
 #[clap(rename_all = "PascalCase")]
 pub enum Scenario {
-    AddI32,
-    XorI32,
+    I32Add,
+    I32Xor,
     CallIndirect,
     GlobalGet,
     If,
@@ -25,8 +25,8 @@ trait ScenarioWatGenerator {
 impl ScenarioWatGenerator for Scenario {
     fn write_specific_wat_beginning(&self, wat: &mut Vec<u8>) {
         match self {
-            Scenario::AddI32 => add_i32::write_specific_wat_beginning(wat),
-            Scenario::XorI32 => xor_i32::write_specific_wat_beginning(wat),
+            Scenario::I32Add => i32_add::write_specific_wat_beginning(wat),
+            Scenario::I32Xor => i32_xor::write_specific_wat_beginning(wat),
             Scenario::CallIndirect => call_indirect::write_specific_wat_beginning(wat),
             Scenario::GlobalGet => global_get::write_specific_wat_beginning(wat),
             Scenario::If => if_op::write_specific_wat_beginning(wat),
@@ -35,8 +35,8 @@ impl ScenarioWatGenerator for Scenario {
 
     fn write_wat_ops(&self, wat: &mut Vec<u8>, number_of_ops_per_loop_iteration: usize) {
         match self {
-            Scenario::AddI32 => add_i32::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::XorI32 => xor_i32::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32Add => i32_add::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32Xor => i32_xor::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::CallIndirect => {
                 call_indirect::write_wat_ops(wat, number_of_ops_per_loop_iteration)
             }
