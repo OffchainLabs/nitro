@@ -67,8 +67,6 @@ fn write_exported_func_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"        call $start_benchmark\n").unwrap();
 
     wat.write_all(b"        (loop $loop\n").unwrap();
-    wat.write_all(b"            call $start_benchmark\n")
-        .unwrap();
 }
 
 fn write_wat_end(
