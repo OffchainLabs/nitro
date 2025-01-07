@@ -1,7 +1,7 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::scenarios::{call_indirect, global_get, i32_add, i32_xor, if_op};
+use crate::scenarios::{call_indirect, global_get, global_set, i32_add, i32_xor, if_op};
 use clap::ValueEnum;
 use std::fs::File;
 use std::io::Write;
@@ -14,6 +14,7 @@ pub enum Scenario {
     I32Xor,
     CallIndirect,
     GlobalGet,
+    GlobalSet,
     If,
 }
 
@@ -29,6 +30,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Xor => i32_xor::write_specific_wat_beginning(wat),
             Scenario::CallIndirect => call_indirect::write_specific_wat_beginning(wat),
             Scenario::GlobalGet => global_get::write_specific_wat_beginning(wat),
+            Scenario::GlobalSet => global_set::write_specific_wat_beginning(wat),
             Scenario::If => if_op::write_specific_wat_beginning(wat),
         }
     }
@@ -41,6 +43,7 @@ impl ScenarioWatGenerator for Scenario {
                 call_indirect::write_wat_ops(wat, number_of_ops_per_loop_iteration)
             }
             Scenario::GlobalGet => global_get::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::GlobalSet => global_set::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::If => if_op::write_wat_ops(wat, number_of_ops_per_loop_iteration),
         }
     }
