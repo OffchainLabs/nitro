@@ -57,7 +57,9 @@ type BoldConfig struct {
 	// How often to scan for newly created assertions onchain.
 	AssertionScanningInterval time.Duration `koanf:"assertion-scanning-interval"`
 	// How often to confirm assertions onchain.
-	AssertionConfirmingInterval         time.Duration       `koanf:"assertion-confirming-interval"`
+	AssertionConfirmingInterval time.Duration `koanf:"assertion-confirming-interval"`
+	// How long to wait since parent assertion was created to post a new assertion
+	MinimumGapToParentAssertion         time.Duration       `koanf:"minimum-gap-to-parent-assertion"`
 	API                                 bool                `koanf:"api"`
 	APIHost                             string              `koanf:"api-host"`
 	APIPort                             uint16              `koanf:"api-port"`
@@ -98,6 +100,7 @@ var DefaultBoldConfig = BoldConfig{
 	AssertionPostingInterval:            time.Minute * 15,
 	AssertionScanningInterval:           time.Minute,
 	AssertionConfirmingInterval:         time.Minute,
+	MinimumGapToParentAssertion:         time.Minute, // Correct default?
 	API:                                 false,
 	APIHost:                             "127.0.0.1",
 	APIPort:                             9393,
@@ -121,6 +124,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "assertion posting interval")
 	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "scan assertion interval")
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
+	f.Duration(prefix+".minimum-gap-to-parent-assertion", DefaultBoldConfig.MinimumGapToParentAssertion, "minimum duration to wait since the parent assertion was created to post a new assertion")
 	f.Duration(prefix+".check-staker-switch-interval", DefaultBoldConfig.CheckStakerSwitchInterval, "how often to check if staker can switch to bold")
 	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
@@ -244,19 +248,26 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
 		}
+		confirmedMsgCount, confirmedGlobalState, err := b.getLatestState(ctx, true)
+		if err != nil {
+			log.Error("staker: error checking latest confirmed", "err", err)
+		}
+
 		agreedMsgCount, agreedGlobalState, err := b.getLatestState(ctx, false)
 		if err != nil {
 			log.Error("staker: error checking latest agreed", "err", err)
 		}
 
+		if agreedGlobalState == nil {
+			// If we don't have a latest agreed global state, we should fall back to
+			// using the latest confirmed global state.
+			agreedGlobalState = confirmedGlobalState
+			agreedMsgCount = confirmedMsgCount
+		}
 		if agreedGlobalState != nil {
 			for _, notifier := range b.stakedNotifiers {
 				notifier.UpdateLatestStaked(agreedMsgCount, *agreedGlobalState)
 			}
-		}
-		confirmedMsgCount, confirmedGlobalState, err := b.getLatestState(ctx, true)
-		if err != nil {
-			log.Error("staker: error checking latest confirmed", "err", err)
 		}
 
 		if confirmedGlobalState != nil {
@@ -448,6 +459,7 @@ func newBOLDChallengeManager(
 		challengemanager.StackWithPollingInterval(scanningInterval),
 		challengemanager.StackWithPostingInterval(postingInterval),
 		challengemanager.StackWithConfirmationInterval(confirmingInterval),
+		challengemanager.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
 		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 		challengemanager.StackWithHeaderProvider(l1Reader),
 	}

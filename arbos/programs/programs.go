@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	gethParams "github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -163,6 +164,21 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVers
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
 
+func runModeToString(runMode core.MessageRunMode) string {
+	switch runMode {
+	case core.MessageCommitMode:
+		return "commit_runmode"
+	case core.MessageGasEstimationMode:
+		return "gas_estimation_runmode"
+	case core.MessageEthcallMode:
+		return "eth_call_runmode"
+	case core.MessageReplayMode:
+		return "replay_runmode"
+	default:
+		return "unknown_runmode"
+	}
+}
+
 func (p Programs) CallProgram(
 	scope *vm.ScopeContext,
 	statedb vm.StateDB,
@@ -219,8 +235,7 @@ func (p Programs) CallProgram(
 
 	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.PageLimit, evm.Context.Time, debugMode, program)
 	if err != nil {
-		log.Crit("failed to get local wasm for activated program", "program", contract.Address())
-		return nil, err
+		panic("failed to get local wasm for activated program: " + contract.Address().Hex())
 	}
 
 	evmData := &EvmData{
@@ -250,17 +265,23 @@ func (p Programs) CallProgram(
 	if runMode == core.MessageCommitMode {
 		arbos_tag = statedb.Database().WasmCacheTag()
 	}
+
+	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runModeToString(runMode)), nil).Inc(1)
 	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
 	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
 			contract.Gas = 0
+			// #nosec G115
+			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runModeToString(runMode)), nil).Inc(int64(startingGas))
 			return nil, vm.ErrOutOfGas
 		}
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
 	}
+	// #nosec G115
+	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runModeToString(runMode)), nil).Inc(int64(startingGas - contract.Gas))
 	return ret, err
 }
 
