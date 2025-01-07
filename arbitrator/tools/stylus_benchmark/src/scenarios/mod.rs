@@ -3,6 +3,7 @@
 
 pub mod i32_add;
 pub mod i32_xor;
+pub mod call;
 pub mod call_indirect;
 pub mod global_get;
 pub mod global_set;
