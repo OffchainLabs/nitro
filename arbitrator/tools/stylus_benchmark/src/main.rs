@@ -3,6 +3,7 @@
 
 mod benchmark;
 mod scenario;
+mod scenarios;
 
 use clap::{Parser, ValueEnum};
 use scenario::Scenario;
