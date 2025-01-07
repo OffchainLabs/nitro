@@ -108,11 +108,11 @@ type protocolParams struct {
 func defaultProtocolParams() protocolParams {
 	return protocolParams{
 		numBigStepLevels:      1,
-		challengePeriodBlocks: 40,
+		challengePeriodBlocks: 15,
 		layerZeroHeights: protocol.LayerZeroHeights{
-			BlockChallengeHeight:     1 << 5,
-			BigStepChallengeHeight:   1 << 5,
-			SmallStepChallengeHeight: 1 << 5,
+			BlockChallengeHeight:     1 << 4,
+			BigStepChallengeHeight:   1 << 4,
+			SmallStepChallengeHeight: 1 << 4,
 		},
 	}
 }
@@ -143,6 +143,7 @@ func TestEndToEnd_MaxWavmOpcodes(t *testing.T) {
 		BigStepChallengeHeight:   1 << 14,
 		SmallStepChallengeHeight: 1 << 14,
 	}
+	protocolCfg.challengePeriodBlocks = 30
 	runEndToEndTest(t, &e2eConfig{
 		backend:  simulated,
 		protocol: protocolCfg,
@@ -176,10 +177,10 @@ func TestEndToEnd_TwoEvilValidators(t *testing.T) {
 }
 
 func TestEndToEnd_ManyEvilValidators(t *testing.T) {
-	t.Skip("This test is too slow to run in CI")
 	protocolCfg := defaultProtocolParams()
 	timeCfg := defaultTimeParams()
 	timeCfg.assertionPostingInterval = time.Hour
+	protocolCfg.challengePeriodBlocks = 50
 	runEndToEndTest(t, &e2eConfig{
 		backend:  simulated,
 		protocol: protocolCfg,

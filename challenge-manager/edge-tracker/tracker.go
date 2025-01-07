@@ -232,13 +232,13 @@ func (et *Tracker) Act(ctx context.Context) error {
 	case EdgeStarted:
 		canOsp, err := canOneStepProve(ctx, et.edge)
 		if err != nil {
-			log.Error("Could not check if edge can be one step proven", fields, "err", err)
+			log.Error("Could not check if edge can be one step proven", append(fields, "err", err)...)
 			et.fsm.MarkError(err)
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		wasConfirmed, err := et.tryToConfirmEdge(ctx)
 		if err != nil {
-			log.Error("Could not check if edge can be confirmed from start state", fields, "err", err)
+			log.Error("Could not check if edge can be confirmed from start state", append(fields, "err", err)...)
 			et.fsm.MarkError(err)
 		}
 		if wasConfirmed {
@@ -246,7 +246,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 		}
 		hasRival, err := et.edge.HasRival(ctx)
 		if err != nil {
-			log.Error("Could not check if edge has rival", fields, "err", err)
+			log.Error("Could not check if edge has rival", append(fields, "err", err)...)
 			et.fsm.MarkError(err)
 			return et.fsm.Do(edgeBackToStart{})
 		}
@@ -270,7 +270,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 	case EdgeAtOneStepProof:
 		ok, err := et.isEssentialAncestorConfirmable(ctx)
 		if err != nil {
-			log.Error("Could not check if closest essential ancestor is confirmable", fields, "err", err)
+			log.Error("Could not check if closest essential ancestor is confirmable", append(fields, "err", err)...)
 			et.fsm.MarkError(err)
 			return et.fsm.Do(edgeBackToStart{})
 		}
@@ -464,6 +464,12 @@ func (et *Tracker) tryToConfirmEdge(ctx context.Context) (bool, error) {
 		chalPeriod,
 	)
 	if err != nil {
+		// If the error is that the child edges have not yet been observed by our chain watcher,
+		// we can simply return false and nil as they will eventually seen. This may occur when the validator
+		// is relying on safe or finalized data from the chain watcher.
+		if errors.Is(err, challengetree.ErrChildrenNotYetSeen) {
+			return false, nil
+		}
 		return false, errors.Wrap(err, "not check if essential edge is confirmable")
 	}
 	end := time.Since(start)

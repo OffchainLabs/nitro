@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/big"
 	"sync/atomic"
 	"time"
 
@@ -245,7 +246,7 @@ func (w *Watcher) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			toBlock, err := w.backend.HeaderU64(ctx)
+			toBlock, err := w.chain.DesiredHeaderU64(ctx)
 			if err != nil {
 				log.Error("Could not get latest header", "err", err)
 				continue
@@ -290,7 +291,7 @@ func (w *Watcher) Start(ctx context.Context) {
 // GetRoyalEdges returns all royal, tracked edges in the watcher by assertion
 // hash.
 func (w *Watcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash][]*api.JsonTrackedRoyalEdge, error) {
-	blockNum, err := w.chain.Backend().HeaderU64(ctx)
+	blockNum, err := w.chain.DesiredHeaderU64(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +387,7 @@ func (w *Watcher) ComputeAncestors(
 			challengedAssertionHash,
 		)
 	}
-	blockHeaderNumber, err := w.chain.Backend().HeaderU64(ctx)
+	blockHeaderNumber, err := w.chain.DesiredHeaderU64(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +422,7 @@ func (w *Watcher) IsEssentialAncestorConfirmable(
 			challengedAssertionHash,
 		)
 	}
-	blockHeaderNumber, err := w.chain.Backend().HeaderU64(ctx)
+	blockHeaderNumber, err := w.chain.DesiredHeaderU64(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -453,7 +454,7 @@ func (w *Watcher) IsConfirmableEssentialEdge(
 	if !ok {
 		return false, nil, 0, fmt.Errorf("could not get challenge for top level assertion %#x", challengedAssertionHash)
 	}
-	blockHeaderNumber, err := w.chain.Backend().HeaderU64(ctx)
+	blockHeaderNumber, err := w.chain.DesiredHeaderU64(ctx)
 	if err != nil {
 		return false, nil, 0, err
 	}
@@ -935,23 +936,24 @@ type filterRange struct {
 // Gets the start and end block numbers for our filter queries, starting from
 // the latest confirmed assertion's block number up to the latest block number.
 func (w *Watcher) getStartEndBlockNum(ctx context.Context) (filterRange, error) {
-	latestBlock, err := w.chain.Backend().HeaderU64(ctx)
+	desiredRPCBlock := w.chain.GetDesiredRpcHeadBlockNumber()
+	latestDesiredBlockHeader, err := w.chain.Backend().HeaderByNumber(ctx, big.NewInt(int64(desiredRPCBlock)))
 	if err != nil {
 		return filterRange{}, err
 	}
-	startBlock := latestBlock
+	if !latestDesiredBlockHeader.Number.IsUint64() {
+		return filterRange{}, errors.New("latest desired block number is not a uint64")
+	}
+	latestDesiredBlockNum := latestDesiredBlockHeader.Number.Uint64()
+	startBlock := latestDesiredBlockNum
 	if w.maxLookbackBlocks < startBlock {
 		startBlock = startBlock - w.maxLookbackBlocks
 	} else {
 		startBlock = 0
 	}
-	headerNumber, err := w.backend.HeaderU64(ctx)
-	if err != nil {
-		return filterRange{}, err
-	}
 	return filterRange{
 		startBlockNum: startBlock,
-		endBlockNum:   headerNumber,
+		endBlockNum:   latestDesiredBlockNum,
 	}, nil
 }
 

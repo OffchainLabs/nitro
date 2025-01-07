@@ -434,6 +434,11 @@ func (m *MockProtocol) GetDesiredRpcHeadBlockNumber() rpc.BlockNumber {
 }
 
 // Read-only methods.
+func (m *MockProtocol) DesiredHeaderU64(ctx context.Context) (uint64, error) {
+	args := m.Called()
+	return args.Get(0).(uint64), args.Error(1)
+}
+
 func (m *MockProtocol) Backend() protocol.ChainBackend {
 	args := m.Called()
 	return args.Get(0).(protocol.ChainBackend)

@@ -218,7 +218,7 @@ func (m *Manager) waitToPostIfNeeded(
 	}
 	minPeriodBlocks := m.chain.MinAssertionPeriodBlocks()
 	for {
-		latestBlockNumber, err := m.backend.HeaderU64(ctx)
+		latestBlockNumber, err := m.chain.DesiredHeaderU64(ctx)
 		if err != nil {
 			return err
 		}

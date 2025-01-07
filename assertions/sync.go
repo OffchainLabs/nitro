@@ -57,7 +57,7 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 		return
 	}
 	toBlock, err := retry.UntilSucceeds(ctx, func() (uint64, error) {
-		return m.backend.HeaderU64(ctx)
+		return m.chain.DesiredHeaderU64(ctx)
 	})
 	if err != nil {
 		log.Error("Could not get header by number", "err", err)
@@ -89,7 +89,7 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			toBlock, err := m.backend.HeaderU64(ctx)
+			toBlock, err := m.chain.DesiredHeaderU64(ctx)
 			if err != nil {
 				log.Error("Could not get header by number", "err", err)
 				continue

@@ -32,7 +32,6 @@ import (
 // We cancel the honest validator's context after it opens the first subchallenge and prove that it
 // can restart and carry things out to confirm the honest, claimed assertion in the challenge.
 func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
-	t.Parallel()
 	neutralCtx, neutralCancel := context.WithCancel(context.Background())
 	defer neutralCancel()
 	evilCtx, evilCancel := context.WithCancel(context.Background())
@@ -41,6 +40,7 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 	defer honestCancel()
 
 	protocolCfg := defaultProtocolParams()
+	protocolCfg.challengePeriodBlocks = 40
 	timeCfg := defaultTimeParams()
 	timeCfg.blockTime = time.Second
 	inboxCfg := defaultInboxParams()
@@ -276,8 +276,8 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 				if sender != txOpts.From {
 					continue
 				}
-				// Skip edges that are not essential roots.
-				if it.Event.ClaimId == (common.Hash{}) {
+				// Skip edges that are not essential roots (skip the top-level edge).
+				if it.Event.ClaimId == (common.Hash{}) || it.Event.Level == 0 {
 					continue
 				}
 				honestEssentialRootIds[it.Event.EdgeId] = false

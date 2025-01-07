@@ -146,6 +146,7 @@ type AssertionChain interface {
 	GetAssertion(ctx context.Context, opts *bind.CallOpts, id AssertionHash) (Assertion, error)
 	IsChallengeComplete(ctx context.Context, challengeParentAssertionHash AssertionHash) (bool, error)
 	Backend() ChainBackend
+	DesiredHeaderU64(ctx context.Context) (uint64, error)
 	RollupAddress() common.Address
 	StakerAddress() common.Address
 	AssertionStatus(

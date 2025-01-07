@@ -24,6 +24,8 @@ type ComputePathWeightArgs struct {
 	BlockNum uint64
 }
 
+var ErrChildrenNotYetSeen = errors.New("child not yet tracked")
+
 // ComputePathWeight from a child edge to a specified ancestor edge. A weight is the sum of the local timers
 // of all edges along the path.
 //
@@ -187,11 +189,11 @@ func (ht *RoyalChallengeTree) findEssentialPaths(
 			lowerChildId, upperChildId := lowerChildIdOpt.Unwrap(), upperChildIdOpt.Unwrap()
 			lowerChild, ok := ht.edges.TryGet(lowerChildId)
 			if !ok {
-				return nil, nil, fmt.Errorf("lower child not yet tracked")
+				return nil, nil, errors.Wrap(ErrChildrenNotYetSeen, "lower child")
 			}
 			upperChild, ok := ht.edges.TryGet(upperChildId)
 			if !ok {
-				return nil, nil, fmt.Errorf("upper child not yet tracked")
+				return nil, nil, errors.Wrap(ErrChildrenNotYetSeen, "upper child")
 			}
 			lowerTimer, err := ht.LocalTimer(ctx, lowerChild, blockNum)
 			if err != nil {

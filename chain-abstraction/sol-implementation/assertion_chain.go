@@ -204,7 +204,7 @@ func NewAssertionChain(
 		confirmedChallengesByParentAssertionHash: threadsafe.NewLruSet(1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("confirmedChallengesByParentAssertionHash")),
 		averageTimeForBlockCreation:              time.Second * 12,
 		transactor:                               transactor,
-		rpcHeadBlockNumber:                       rpc.FinalizedBlockNumber,
+		rpcHeadBlockNumber:                       rpc.LatestBlockNumber,
 		withdrawalAddress:                        copiedOpts.From, // Default to the tx opts' sender.
 		autoDeposit:                              true,
 	}
@@ -301,6 +301,17 @@ func (a *AssertionChain) RollupCore() *rollupgen.RollupCore {
 
 func (a *AssertionChain) Backend() protocol.ChainBackend {
 	return a.backend
+}
+
+func (a *AssertionChain) DesiredHeaderU64(ctx context.Context) (uint64, error) {
+	header, err := a.backend.HeaderByNumber(ctx, big.NewInt(int64(a.rpcHeadBlockNumber)))
+	if err != nil {
+		return 0, err
+	}
+	if !header.Number.IsUint64() {
+		return 0, errors.New("block number is not uint64")
+	}
+	return header.Number.Uint64(), nil
 }
 
 func (a *AssertionChain) GetAssertion(ctx context.Context, opts *bind.CallOpts, assertionHash protocol.AssertionHash) (protocol.Assertion, error) {
@@ -685,7 +696,7 @@ func TryConfirmingAssertion(
 	}
 	for {
 		var latestHeaderNumber uint64
-		latestHeaderNumber, err = chain.Backend().HeaderU64(ctx)
+		latestHeaderNumber, err = chain.DesiredHeaderU64(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -1015,7 +1026,7 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 	// If there is no second child, we simply return the number of blocks
 	// since the assertion was created and its parent.
 	if prevNode.SecondChildBlock == 0 {
-		num, err := a.backend.HeaderU64(ctx)
+		num, err := a.DesiredHeaderU64(ctx)
 		if err != nil {
 			return 0, err
 		}
