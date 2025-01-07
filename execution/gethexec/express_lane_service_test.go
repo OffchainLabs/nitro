@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/timeboost"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 var testPriv, testPriv2 *ecdsa.PrivateKey
@@ -154,9 +155,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundInfo: &expressLaneRoundInfo{
-					msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
-				},
+				roundInfo: containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 			},
 			controller:  common.Address{'b'},
 			sub:         buildInvalidSignatureSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6")),
@@ -187,9 +186,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundInfo: &expressLaneRoundInfo{
-					msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
-				},
+				roundInfo: containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 			},
 			controller:  common.Address{'b'},
 			sub:         buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0),
@@ -213,6 +210,9 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	for _, _tt := range tests {
 		tt := _tt
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.es.roundInfo != nil {
+				tt.es.roundInfo.Add(0, &expressLaneRoundInfo{})
+			}
 			if tt.sub != nil && !errors.Is(tt.expectedErr, timeboost.ErrNoOnchainController) {
 				tt.es.roundControl.Store(tt.sub.Round, tt.controller)
 			}
@@ -295,19 +295,15 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		roundInfo: &expressLaneRoundInfo{
-			msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
-		},
+		roundInfo: containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 	}
+	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	els.roundInfo.Lock()
-	els.roundInfo.sequence = 1
-	els.roundInfo.Unlock()
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
-	msg := buildValidSubmissionWithSeqAndTx(t, 0, 0, emptyTx)
 
+	msg := buildValidSubmissionWithSeqAndTx(t, 0, 0, emptyTx)
 	err := els.sequenceExpressLaneSubmission(ctx, msg)
 	require.ErrorIs(t, err, timeboost.ErrSequenceNumberTooLow)
 }
@@ -316,16 +312,12 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		roundInfo: &expressLaneRoundInfo{
-			msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
-		},
+		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
 	}
+	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	els.roundInfo.Lock()
-	els.roundInfo.sequence = 1
-	els.roundInfo.Unlock()
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
@@ -359,16 +351,12 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		roundInfo: &expressLaneRoundInfo{
-			msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
-		},
+		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
 	}
+	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	els.roundInfo.Lock()
-	els.roundInfo.sequence = 1
-	els.roundInfo.Unlock()
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
@@ -398,9 +386,10 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	// We should have only published 2, as we are missing sequence number 3.
 	time.Sleep(2 * time.Second)
 	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
-	els.roundInfo.Lock()
-	require.Equal(t, 3, len(els.roundInfo.msgAndResultBySequenceNumber)) // Processed txs are deleted
-	els.roundInfo.Unlock()
+	els.roundInfoMutex.Lock()
+	roundInfo, _ := els.roundInfo.Get(0)
+	require.Equal(t, 3, len(roundInfo.msgAndResultBySequenceNumber)) // Processed txs are deleted
+	els.roundInfoMutex.Unlock()
 
 	wg.Add(2) // 4 & 5 should be able to get in after 3 so we add a delta of 2
 	err := els.sequenceExpressLaneSubmission(ctx, buildValidSubmissionWithSeqAndTx(t, 0, 3, emptyTx))
@@ -408,25 +397,22 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	wg.Wait()
 	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
 
-	els.roundInfo.Lock()
-	require.Equal(t, 1, len(els.roundInfo.msgAndResultBySequenceNumber)) // Tx with seq num 10 should still be present
-	els.roundInfo.Unlock()
+	els.roundInfoMutex.Lock()
+	roundInfo, _ = els.roundInfo.Get(0)
+	require.Equal(t, 1, len(roundInfo.msgAndResultBySequenceNumber)) // Tx with seq num 10 should still be present
+	els.roundInfoMutex.Unlock()
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		roundInfo: &expressLaneRoundInfo{
-			msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
-		},
+		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
 	}
+	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	els.roundInfo.Lock()
-	els.roundInfo.sequence = 1
-	els.roundInfo.Unlock()
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
@@ -503,15 +489,13 @@ func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 	es := &expressLaneService{
 		auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
 		roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
-		roundInfo:           &expressLaneRoundInfo{},
+		roundInfo:           containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		chainConfig: &params.ChainConfig{
 			ChainID: big.NewInt(1),
 		},
 	}
 	es.roundControl.Store(0, addr)
-	es.roundInfo.Lock()
-	es.roundInfo.sequence = 1
-	es.roundInfo.Unlock()
+	es.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 
 	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0)
 	b.StartTimer()

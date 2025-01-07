@@ -39,17 +39,8 @@ type msgAndResult struct {
 }
 
 type expressLaneRoundInfo struct {
-	sync.Mutex
 	sequence                     uint64
 	msgAndResultBySequenceNumber map[uint64]*msgAndResult
-}
-
-func (info *expressLaneRoundInfo) reset() {
-	info.Lock()
-	defer info.Unlock()
-
-	info.sequence = 0
-	info.msgAndResultBySequenceNumber = make(map[uint64]*msgAndResult)
 }
 
 type expressLaneService struct {
@@ -62,7 +53,9 @@ type expressLaneService struct {
 	chainConfig          *params.ChainConfig
 	auctionContract      *express_lane_auctiongen.ExpressLaneAuction
 	roundControl         containers.SyncMap[uint64, common.Address] // thread safe
-	roundInfo            *expressLaneRoundInfo
+
+	roundInfoMutex sync.Mutex
+	roundInfo      *containers.LruCache[uint64, *expressLaneRoundInfo]
 }
 
 func newExpressLaneService(
@@ -110,9 +103,7 @@ pending:
 		roundTimingInfo:      *roundTimingInfo,
 		earlySubmissionGrace: earlySubmissionGrace,
 		auctionContractAddr:  auctionContractAddr,
-		roundInfo: &expressLaneRoundInfo{
-			msgAndResultBySequenceNumber: make(map[uint64]*msgAndResult),
-		},
+		roundInfo:            containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 	}, nil
 }
 
@@ -151,10 +142,8 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 				"timestamp", t,
 			)
 
-			// Cleanup previous round data. Better to do this before roundInfo reset as it prevents stale messages from being accepted
+			// Cleanup previous round controller data
 			es.roundControl.Delete(round - 1)
-			// Reset the sequence numbers map and sequence count for the new round
-			es.roundInfo.reset()
 		}
 	})
 
@@ -259,12 +248,15 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 					continue
 				}
 				es.roundControl.Store(round, setExpressLaneIterator.Event.NewExpressLaneController)
-				if round == currentRound &&
-					// We dont want reset to be called when a control transfer event is right at the end of a round
-					// because roundInfo is primarily reset at the beginning of new round by the maintenance thread above.
-					// And resetting roundInfo in succession may lead to loss of valid messages
-					es.roundTimingInfo.TimeTilNextRound() > maxBlockSpeed {
-					es.roundInfo.reset()
+				if round == currentRound {
+					es.roundInfoMutex.Lock()
+					if es.roundInfo.Contains(round) {
+						es.roundInfo.Add(round, &expressLaneRoundInfo{
+							0,
+							make(map[uint64]*msgAndResult),
+						})
+					}
+					es.roundInfoMutex.Unlock()
 				}
 			}
 			fromBlock = toBlock + 1
@@ -287,10 +279,10 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	msg *timeboost.ExpressLaneSubmission,
 ) error {
 	unlockByDefer := true
-	es.roundInfo.Lock()
+	es.roundInfoMutex.Lock()
 	defer func() {
 		if unlockByDefer {
-			es.roundInfo.Unlock()
+			es.roundInfoMutex.Unlock()
 		}
 	}()
 
@@ -307,44 +299,54 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		return timeboost.ErrNotExpressLaneController
 	}
 
+	// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
+	if !es.roundInfo.Contains(msg.Round) {
+		es.roundInfo.Add(msg.Round, &expressLaneRoundInfo{
+			0,
+			make(map[uint64]*msgAndResult),
+		})
+	}
+	roundInfo, _ := es.roundInfo.Get(msg.Round)
+
 	// Check if the submission nonce is too low.
-	if msg.SequenceNumber < es.roundInfo.sequence {
+	if msg.SequenceNumber < roundInfo.sequence {
 		return timeboost.ErrSequenceNumberTooLow
 	}
 
 	// Check if a duplicate submission exists already, and reject if so.
-	if _, exists := es.roundInfo.msgAndResultBySequenceNumber[msg.SequenceNumber]; exists {
+	if _, exists := roundInfo.msgAndResultBySequenceNumber[msg.SequenceNumber]; exists {
 		return timeboost.ErrDuplicateSequenceNumber
 	}
 
 	// Log an informational warning if the message's sequence number is in the future.
-	if msg.SequenceNumber > es.roundInfo.sequence {
+	if msg.SequenceNumber > roundInfo.sequence {
 		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
 
 	// Put into the sequence number map.
 	resultChan := make(chan error, 1)
-	es.roundInfo.msgAndResultBySequenceNumber[msg.SequenceNumber] = &msgAndResult{msg, resultChan}
+	roundInfo.msgAndResultBySequenceNumber[msg.SequenceNumber] = &msgAndResult{msg, resultChan}
 
 	now := time.Now()
 	for es.roundTimingInfo.RoundNumber() == msg.Round { // This check ensures that the controller for this round is not allowed to send transactions from msgAndResultBySequenceNumber map once the next round starts
 		// Get the next message in the sequence.
-		nextMsgAndResult, exists := es.roundInfo.msgAndResultBySequenceNumber[es.roundInfo.sequence]
+		nextMsgAndResult, exists := roundInfo.msgAndResultBySequenceNumber[roundInfo.sequence]
 		if !exists {
 			break
 		}
-		delete(es.roundInfo.msgAndResultBySequenceNumber, nextMsgAndResult.msg.SequenceNumber)
+		delete(roundInfo.msgAndResultBySequenceNumber, nextMsgAndResult.msg.SequenceNumber)
 		txIsQueued := make(chan struct{})
 		es.LaunchThread(func(ctx context.Context) {
 			nextMsgAndResult.resultChan <- es.transactionPublisher.PublishTimeboostedTransaction(ctx, nextMsgAndResult.msg.Transaction, nextMsgAndResult.msg.Options, txIsQueued)
 		})
 		<-txIsQueued
 		// Increase the global round sequence number.
-		es.roundInfo.sequence += 1
+		roundInfo.sequence += 1
 	}
 
+	es.roundInfo.Add(msg.Round, roundInfo)
 	unlockByDefer = false
-	es.roundInfo.Unlock() // Release lock so that other timeboost txs can be processed
+	es.roundInfoMutex.Unlock() // Release lock so that other timeboost txs can be processed
 
 	queueTimeout := es.transactionPublisher.Config().QueueTimeout
 	abortCtx, cancel := ctxWithTimeout(ctx, queueTimeout*2) // We use the same timeout value that sequencer imposes
@@ -364,7 +366,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	return nil
 }
 
-// validateExpressLaneTx checks for the correctness of all fields of msg except for sequence number and sender address, those are handled by sequenceExpressLaneSubmission to avoid race
+// validateExpressLaneTx checks for the correctness of all fields of msg
 func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
 	if msg == nil || msg.Transaction == nil || msg.Signature == nil {
 		return timeboost.ErrMalformedData
