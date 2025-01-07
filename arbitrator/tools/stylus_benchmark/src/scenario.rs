@@ -2,8 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::scenarios::{
-    call, call_indirect, global_get, global_set, i32_add, i32_eq, i32_eqz, i32_gt_s, i32_lt_s,
-    i32_lt_u, i32_ne, i32_xor, if_op, select,
+    call, call_indirect, global_get, global_set, i32_add, i32_eq, i32_eqz, i32_gt_s, i32_gt_u,
+    i32_lt_s, i32_lt_u, i32_ne, i32_xor, if_op, select,
 };
 use clap::ValueEnum;
 use std::fs::File;
@@ -16,6 +16,7 @@ pub enum Scenario {
     I32Add,
     I32Eq,
     I32Eqz,
+    I32GtU,
     I32GtS,
     I32LtU,
     I32LtS,
@@ -44,6 +45,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Add => i32_add::write_specific_wat_beginning(wat),
             Scenario::I32Eq => i32_eq::write_specific_wat_beginning(wat),
             Scenario::I32Eqz => i32_eqz::write_specific_wat_beginning(wat),
+            Scenario::I32GtU => i32_gt_u::write_specific_wat_beginning(wat),
             Scenario::I32GtS => i32_gt_s::write_specific_wat_beginning(wat),
             Scenario::I32LtU => i32_lt_u::write_specific_wat_beginning(wat),
             Scenario::I32LtS => i32_lt_s::write_specific_wat_beginning(wat),
@@ -65,6 +67,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Add => i32_add::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Eq => i32_eq::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Eqz => i32_eqz::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32GtU => i32_gt_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32GtS => i32_gt_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32LtU => i32_lt_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32LtS => i32_lt_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
