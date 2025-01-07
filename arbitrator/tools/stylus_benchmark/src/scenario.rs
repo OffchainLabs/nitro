@@ -1,7 +1,7 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::scenarios::{call, call_indirect, global_get, global_set, i32_add, i32_xor, if_op, select};
+use crate::scenarios::{call, call_indirect, global_get, global_set, i32_add, i32_eqz, i32_xor, if_op, select};
 use clap::ValueEnum;
 use std::fs::File;
 use std::io::Write;
@@ -11,6 +11,7 @@ use std::path::PathBuf;
 #[clap(rename_all = "PascalCase")]
 pub enum Scenario {
     I32Add,
+    I32Eqz,
     I32Xor,
     Call,
     CallIndirect,
@@ -33,6 +34,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::GlobalGet => global_get::write_specific_wat_beginning(wat),
             Scenario::GlobalSet => global_set::write_specific_wat_beginning(wat),
             Scenario::I32Add => i32_add::write_specific_wat_beginning(wat),
+            Scenario::I32Eqz => i32_eqz::write_specific_wat_beginning(wat),
             Scenario::I32Xor => i32_xor::write_specific_wat_beginning(wat),
             Scenario::If => if_op::write_specific_wat_beginning(wat),
             Scenario::Select => select::write_specific_wat_beginning(wat),
@@ -48,6 +50,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::GlobalGet => global_get::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::GlobalSet => global_set::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Add => i32_add::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32Eqz => i32_eqz::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Xor => i32_xor::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::If => if_op::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::Select => select::write_wat_ops(wat, number_of_ops_per_loop_iteration),
