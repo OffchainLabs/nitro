@@ -4,6 +4,7 @@
 pub mod i32_add;
 pub mod i32_eq;
 pub mod i32_eqz;
+pub mod i32_ge_u;
 pub mod i32_ge_s;
 pub mod i32_gt_u;
 pub mod i32_gt_s;
