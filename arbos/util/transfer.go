@@ -67,7 +67,7 @@ func TransferBalance(
 		if arbmath.BigLessThan(balance.ToBig(), amount) {
 			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
 		}
-		if evm.Context.ArbOSVersion < params.ArbosVersion_30 && amount.Sign() == 0 {
+		if evm.Context.ArbOSVersion < params.ArbosVersion_Stylus && amount.Sign() == 0 {
 			evm.StateDB.CreateZombieIfDeleted(*from)
 		}
 		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
