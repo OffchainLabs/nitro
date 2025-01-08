@@ -99,10 +99,10 @@ func main() {
 		panic("specified sequencer address is invalid")
 	}
 
-	esperssoTEEVerifierAddress := common.HexToAddress(*espressoTEEVerifierAddressString)
-	if !common.IsHexAddress(esperssoTEEVerifierAddress.String()) {
+	if !common.IsHexAddress(*espressoTEEVerifierAddressString) {
 		panic("specified espressoTEEVerifier address is invalid")
 	}
+	esperssoTEEVerifierAddress := common.HexToAddress(*espressoTEEVerifierAddressString)
 	sequencerAddress := common.HexToAddress(*sequencerAddressString)
 
 	if !common.IsHexAddress(*ownerAddressString) {
