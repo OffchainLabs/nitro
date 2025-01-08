@@ -2,8 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::scenarios::{
-    call, call_indirect, global_get, global_set, i32_eqz, i32_popcnt, i32_wrap_i64, if_op, i32_ctz, i32_clz,
-    instruction_with_2_args_1_return, select,
+    call, call_indirect, global_get, global_set, i32_wrap_i64, if_op,
+    instruction_with_1_arg_1_return, instruction_with_2_args_1_return, select,
 };
 use clap::ValueEnum;
 use std::fs::File;
@@ -65,12 +65,12 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::GlobalSet => global_set::write_specific_wat_beginning(wat),
             Scenario::I32Add => {}
             Scenario::I32And => {}
-            Scenario::I32Clz => i32_clz::write_specific_wat_beginning(wat),
-            Scenario::I32Ctz => i32_ctz::write_specific_wat_beginning(wat),
+            Scenario::I32Clz => {}
+            Scenario::I32Ctz => {}
             Scenario::I32DivS => {}
             Scenario::I32DivU => {}
             Scenario::I32Eq => {}
-            Scenario::I32Eqz => i32_eqz::write_specific_wat_beginning(wat),
+            Scenario::I32Eqz => {}
             Scenario::I32GeS => {}
             Scenario::I32GeU => {}
             Scenario::I32GtU => {}
@@ -82,7 +82,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Mul => {}
             Scenario::I32Ne => {}
             Scenario::I32Or => {}
-            Scenario::I32Popcnt => i32_popcnt::write_specific_wat_beginning(wat),
+            Scenario::I32Popcnt => {}
             Scenario::I32RemS => {}
             Scenario::I32RemU => {}
             Scenario::I32Rotl => {}
@@ -120,8 +120,18 @@ impl ScenarioWatGenerator for Scenario {
                 0,
                 1,
             ),
-            Scenario::I32Clz => i32_clz::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Ctz => i32_ctz::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32Clz => instruction_with_1_arg_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.clz",
+                1231,
+            ),
+            Scenario::I32Ctz => instruction_with_1_arg_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.ctz",
+                1231,
+            ),
             Scenario::I32DivS => instruction_with_2_args_1_return::write_wat_ops(
                 wat,
                 number_of_ops_per_loop_iteration,
@@ -143,7 +153,12 @@ impl ScenarioWatGenerator for Scenario {
                 0,
                 1,
             ),
-            Scenario::I32Eqz => i32_eqz::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32Eqz => instruction_with_1_arg_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.eqz",
+                1231,
+            ),
             Scenario::I32GeS => instruction_with_2_args_1_return::write_wat_ops(
                 wat,
                 number_of_ops_per_loop_iteration,
@@ -221,7 +236,12 @@ impl ScenarioWatGenerator for Scenario {
                 0,
                 1,
             ),
-            Scenario::I32Popcnt => i32_popcnt::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32Popcnt => instruction_with_1_arg_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.popcnt",
+                1231,
+            ),
             Scenario::I32RemS => instruction_with_2_args_1_return::write_wat_ops(
                 wat,
                 number_of_ops_per_loop_iteration,
