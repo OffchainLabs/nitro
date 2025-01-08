@@ -258,55 +258,57 @@ func (m *Manager) SetRivalHandler(handler types.RivalHandler) {
 
 func (m *Manager) Start(ctx context.Context) {
 	m.StopWaiter.Start(ctx, m)
-	if m.delegatedStaking {
-		// Attempt to become a new staker onchain until successful.
-		// This is only relevant for delegated stakers that will be funded
-		// by another party.
-		_, err := retry.UntilSucceeds(ctx, func() (bool, error) {
-			if err2 := m.chain.NewStake(ctx); err2 != nil {
-				return false, err2
+	if m.mode != types.WatchTowerMode {
+		if m.delegatedStaking {
+			// Attempt to become a new staker onchain until successful.
+			// This is only relevant for delegated stakers that will be funded
+			// by another party.
+			_, err := retry.UntilSucceeds(ctx, func() (bool, error) {
+				if err2 := m.chain.NewStake(ctx); err2 != nil {
+					return false, err2
+				}
+				return true, nil
+			})
+			if err != nil {
+				log.Error("Could not become a delegated staker onchain", "err", err)
+				return
 			}
-			return true, nil
-		})
-		if err != nil {
-			log.Error("Could not become a delegated staker onchain", "err", err)
-			return
 		}
-	}
-	if m.autoDeposit {
-		// Attempt to auto-deposit funds until successful into the stake token.
-		_, err := retry.UntilSucceeds(ctx, func() (bool, error) {
-			callOpts := m.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
-			latestConfirmed, err2 := m.chain.LatestConfirmed(ctx, callOpts)
-			if err2 != nil {
-				return false, err2
+		if m.autoDeposit {
+			// Attempt to auto-deposit funds until successful into the stake token.
+			_, err := retry.UntilSucceeds(ctx, func() (bool, error) {
+				callOpts := m.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
+				latestConfirmed, err2 := m.chain.LatestConfirmed(ctx, callOpts)
+				if err2 != nil {
+					return false, err2
+				}
+				latestConfirmedInfo, err2 := m.chain.ReadAssertionCreationInfo(ctx, latestConfirmed.Id())
+				if err2 != nil {
+					return false, err2
+				}
+				if err2 := m.chain.Deposit(ctx, latestConfirmedInfo.RequiredStake); err2 != nil {
+					return false, err2
+				}
+				return true, nil
+			})
+			if err != nil {
+				log.Error("Could not auto-deposit funds to become a staker", "err", err)
+				return
 			}
-			latestConfirmedInfo, err2 := m.chain.ReadAssertionCreationInfo(ctx, latestConfirmed.Id())
-			if err2 != nil {
-				return false, err2
-			}
-			if err2 := m.chain.Deposit(ctx, latestConfirmedInfo.RequiredStake); err2 != nil {
-				return false, err2
-			}
-			return true, nil
-		})
-		if err != nil {
-			log.Error("Could not auto-deposit funds to become a staker", "err", err)
-			return
 		}
-	}
-	if m.autoAllowanceApproval {
-		// Attempt to auto-approve the stake token spending by the challenge manager
-		// and rollup address until successful.
-		_, err := retry.UntilSucceeds(ctx, func() (bool, error) {
-			if err2 := m.chain.ApproveAllowances(ctx); err2 != nil {
-				return false, err2
+		if m.autoAllowanceApproval {
+			// Attempt to auto-approve the stake token spending by the challenge manager
+			// and rollup address until successful.
+			_, err := retry.UntilSucceeds(ctx, func() (bool, error) {
+				if err2 := m.chain.ApproveAllowances(ctx); err2 != nil {
+					return false, err2
+				}
+				return true, nil
+			})
+			if err != nil {
+				log.Error("Could not auto-approve allowances", "err", err)
+				return
 			}
-			return true, nil
-		})
-		if err != nil {
-			log.Error("Could not auto-approve allowances", "err", err)
-			return
 		}
 	}
 	if !m.disablePosting {

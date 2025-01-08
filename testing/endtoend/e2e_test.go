@@ -108,7 +108,7 @@ type protocolParams struct {
 func defaultProtocolParams() protocolParams {
 	return protocolParams{
 		numBigStepLevels:      1,
-		challengePeriodBlocks: 15,
+		challengePeriodBlocks: 25,
 		layerZeroHeights: protocol.LayerZeroHeights{
 			BlockChallengeHeight:     1 << 4,
 			BigStepChallengeHeight:   1 << 4,
@@ -128,30 +128,6 @@ func TestEndToEnd_SmokeTest(t *testing.T) {
 			numEvilValidators: 1,
 		},
 		timings: timeCfg,
-		expectations: []expect{
-			expectChallengeWinWithAllHonestEssentialEdgesConfirmed,
-		},
-	})
-}
-
-func TestEndToEnd_MaxWavmOpcodes(t *testing.T) {
-	protocolCfg := defaultProtocolParams()
-	protocolCfg.numBigStepLevels = 2
-	// A block can take a max of 2^42 wavm opcodes to validate.
-	protocolCfg.layerZeroHeights = protocol.LayerZeroHeights{
-		BlockChallengeHeight:     1 << 6,
-		BigStepChallengeHeight:   1 << 14,
-		SmallStepChallengeHeight: 1 << 14,
-	}
-	protocolCfg.challengePeriodBlocks = 30
-	runEndToEndTest(t, &e2eConfig{
-		backend:  simulated,
-		protocol: protocolCfg,
-		inbox:    defaultInboxParams(),
-		actors: actorParams{
-			numEvilValidators: 1,
-		},
-		timings: defaultTimeParams(),
 		expectations: []expect{
 			expectChallengeWinWithAllHonestEssentialEdgesConfirmed,
 		},

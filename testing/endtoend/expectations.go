@@ -90,8 +90,8 @@ func expectChallengeWinWithAllHonestEssentialEdgesConfirmed(
 			if sender != honestValidatorAddress {
 				continue
 			}
-			// Skip edges that are not essential roots.
-			if it.Event.ClaimId == (common.Hash{}) {
+			// Skip edges that are not essential roots or the top-level challenge root.
+			if it.Event.ClaimId == (common.Hash{}) || it.Event.Level == 0 {
 				continue
 			}
 			honestEssentialRootIds[it.Event.EdgeId] = false

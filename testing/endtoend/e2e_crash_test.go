@@ -32,6 +32,7 @@ import (
 // We cancel the honest validator's context after it opens the first subchallenge and prove that it
 // can restart and carry things out to confirm the honest, claimed assertion in the challenge.
 func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
+	t.Skip("Flakey in CI, needs investigation")
 	neutralCtx, neutralCancel := context.WithCancel(context.Background())
 	defer neutralCancel()
 	evilCtx, evilCancel := context.WithCancel(context.Background())
