@@ -69,7 +69,7 @@ jobs:
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 'stable'
+          toolchain: '1.80.1'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Install rust nightly
