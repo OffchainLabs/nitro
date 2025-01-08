@@ -20,6 +20,7 @@ pub mod i32_mul;
 pub mod i32_ne;
 pub mod i32_popcnt;
 pub mod i32_rem_s;
+pub mod i32_rem_u;
 pub mod i32_sub;
 pub mod i32_xor;
 pub mod call;
