@@ -122,7 +122,7 @@ pub struct FuncMeter<'a, F: OpcodePricer> {
     sigs: Arc<SigMap>,
 }
 
-impl<'a, F: OpcodePricer> FuncMeter<'a, F> {
+impl<F: OpcodePricer> FuncMeter<'_, F> {
     fn new(
         ink_global: GlobalIndex,
         status_global: GlobalIndex,
