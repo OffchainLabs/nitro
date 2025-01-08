@@ -27,6 +27,7 @@ pub mod i32_or;
 pub mod i32_popcnt;
 pub mod i32_rem_s;
 pub mod i32_rem_u;
+pub mod i32_shl;
 pub mod i32_sub;
 pub mod i32_xor;
 pub mod if_op;
