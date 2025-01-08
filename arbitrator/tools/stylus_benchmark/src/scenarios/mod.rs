@@ -16,6 +16,7 @@ pub mod i32_lt_u;
 pub mod i32_lt_s;
 pub mod i32_ne;
 pub mod i32_popcnt;
+pub mod i32_sub;
 pub mod i32_xor;
 pub mod call;
 pub mod call_indirect;

@@ -4,7 +4,7 @@
 use crate::scenarios::{
     call, call_indirect, global_get, global_set, i32_add, i32_clz, i32_ctz, i32_eq, i32_eqz,
     i32_ge_s, i32_ge_u, i32_gt_s, i32_gt_u, i32_le_s, i32_le_u, i32_lt_s, i32_lt_u, i32_ne,
-    i32_popcnt, i32_xor, if_op, select,
+    i32_popcnt, i32_sub, i32_xor, if_op, select,
 };
 use clap::ValueEnum;
 use std::fs::File;
@@ -29,6 +29,7 @@ pub enum Scenario {
     I32LtS,
     I32Ne,
     I32Popcnt,
+    I32Sub,
     I32Xor,
     Call,
     CallIndirect,
@@ -65,6 +66,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32LtS => i32_lt_s::write_specific_wat_beginning(wat),
             Scenario::I32Ne => i32_ne::write_specific_wat_beginning(wat),
             Scenario::I32Popcnt => i32_popcnt::write_specific_wat_beginning(wat),
+            Scenario::I32Sub => i32_sub::write_specific_wat_beginning(wat),
             Scenario::I32Xor => i32_xor::write_specific_wat_beginning(wat),
             Scenario::If => if_op::write_specific_wat_beginning(wat),
             Scenario::Select => select::write_specific_wat_beginning(wat),
@@ -94,6 +96,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32LtS => i32_lt_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Ne => i32_ne::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Popcnt => i32_popcnt::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32Sub => i32_sub::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Xor => i32_xor::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::If => if_op::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::Select => select::write_wat_ops(wat, number_of_ops_per_loop_iteration),
