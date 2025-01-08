@@ -1,4 +1,4 @@
-name: Build and publish forkdiff github-pages
+name: Build, publish, & host forkdiff github-pages
 permissions:
     contents: read
     pages: write
