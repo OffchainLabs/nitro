@@ -287,10 +287,6 @@ func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context,
 
 }
 
-func (s *stubPublisher) Config() *SequencerConfig {
-	return &SequencerConfig{}
-}
-
 func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -314,6 +310,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
+		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
 	}
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
@@ -353,6 +350,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
+		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
 	}
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
@@ -409,6 +407,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
+		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
 	}
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)

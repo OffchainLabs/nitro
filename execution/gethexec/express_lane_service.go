@@ -30,7 +30,6 @@ import (
 
 type transactionPublisher interface {
 	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions, chan struct{}) error
-	Config() *SequencerConfig
 }
 
 type msgAndResult struct {
@@ -46,6 +45,7 @@ type expressLaneRoundInfo struct {
 type expressLaneService struct {
 	stopwaiter.StopWaiter
 	transactionPublisher transactionPublisher
+	seqConfig            SequencerConfigFetcher
 	auctionContractAddr  common.Address
 	apiBackend           *arbitrum.APIBackend
 	roundTimingInfo      timeboost.RoundTimingInfo
@@ -60,6 +60,7 @@ type expressLaneService struct {
 
 func newExpressLaneService(
 	transactionPublisher transactionPublisher,
+	seqConfig SequencerConfigFetcher,
 	apiBackend *arbitrum.APIBackend,
 	filterSystem *filters.FilterSystem,
 	auctionContractAddr common.Address,
@@ -97,6 +98,7 @@ pending:
 
 	return &expressLaneService{
 		transactionPublisher: transactionPublisher,
+		seqConfig:            seqConfig,
 		auctionContract:      auctionContract,
 		apiBackend:           apiBackend,
 		chainConfig:          chainConfig,
@@ -153,7 +155,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 		log.Info("Monitoring express lane auction contract")
 
 		var fromBlock uint64
-		maxBlockSpeed := es.transactionPublisher.Config().MaxBlockSpeed
+		maxBlockSpeed := es.seqConfig().MaxBlockSpeed
 		latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
 		if err != nil {
 			log.Error("ExpressLaneService could not get the latest header", "err", err)
@@ -174,6 +176,11 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				newMaxBlockSpeed := es.seqConfig().MaxBlockSpeed
+				if newMaxBlockSpeed != maxBlockSpeed {
+					maxBlockSpeed = newMaxBlockSpeed
+					ticker.Reset(maxBlockSpeed)
+				}
 			}
 
 			latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
@@ -318,8 +325,14 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		return timeboost.ErrDuplicateSequenceNumber
 	}
 
+	seqConfig := es.seqConfig()
+
 	// Log an informational warning if the message's sequence number is in the future.
 	if msg.SequenceNumber > roundInfo.sequence {
+		if seqConfig.Timeboost.MaxQueuedTxCount != 0 &&
+			len(roundInfo.msgAndResultBySequenceNumber) >= seqConfig.Timeboost.MaxQueuedTxCount {
+			return fmt.Errorf("reached limit for queuing of future sequence number transactions, please try again with the correct sequence number. Limit: %d, Current sequence number: %d", seqConfig.Timeboost.MaxQueuedTxCount, roundInfo.sequence)
+		}
 		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
 
@@ -348,7 +361,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	unlockByDefer = false
 	es.roundInfoMutex.Unlock() // Release lock so that other timeboost txs can be processed
 
-	queueTimeout := es.transactionPublisher.Config().QueueTimeout
+	queueTimeout := seqConfig.QueueTimeout
 	abortCtx, cancel := ctxWithTimeout(ctx, queueTimeout*2) // We use the same timeout value that sequencer imposes
 	defer cancel()
 	select {
