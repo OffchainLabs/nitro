@@ -9,7 +9,7 @@ base:
 fork:
   name: Layr-Labs/nitro
   url: https://github.com/Layr-Labs/nitro
-  ref: refs/tags/v3.2.1
+  ref: refs/heads/eigenda
 def:
     title: "EigenDA x Arbitrum Nitro fork diff"
     description: | # description in markdown
@@ -58,7 +58,7 @@ def:
 
           - title: "DA writer/reader interface"
             description: |
-              * Implements the Arbiturm native Data Availability `Reader` [interface](https://github.com/Layr-Labs/nitro/blob/070313b901ea55e131534850bfc791ec4e588668/arbstate/daprovider/reader.go#L16-L29) for EigenDA. 
+              * Implements the Arbitrum native Data Availability `Reader` [interface](https://github.com/Layr-Labs/nitro/blob/070313b901ea55e131534850bfc791ec4e588668/arbstate/daprovider/reader.go#L16-L29) for EigenDA. 
                 When recording a batch payload to the preimage oracle for stateless validation, the blob is generic encoded to a BN254 compatible format as a precursor for injection. 
                 Sequencer messages are decoded from their ABI encoded format to a `BlobInfo` type for compatible communication with the proxy service.
 
@@ -83,8 +83,6 @@ def:
             globs:
               - "eigenda/serialize.go"
               - "eigenda/serialize_test.go"
-
-          - title: Bl
 
 
           - title: "Certificate translations"
