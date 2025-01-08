@@ -2,10 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::scenarios::{
-    call, call_indirect, global_get, global_set, i32_add, i32_and, i32_clz, i32_ctz, i32_div_s,
-    i32_div_u, i32_eq, i32_eqz, i32_ge_s, i32_ge_u, i32_gt_s, i32_gt_u, i32_le_s, i32_le_u,
-    i32_lt_s, i32_lt_u, i32_mul, i32_ne, i32_or, i32_popcnt, i32_rem_s, i32_rem_u, i32_rotl,
-    i32_rotr, i32_shl, i32_shr_s, i32_shr_u, i32_sub, i32_wrap_i64, i32_xor, if_op, select,
+    call, call_indirect, global_get, global_set, i32_eqz, i32_popcnt, i32_wrap_i64, if_op, i32_ctz, i32_clz,
+    instruction_with_2_args_1_return, select,
 };
 use clap::ValueEnum;
 use std::fs::File;
@@ -65,36 +63,36 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::CallIndirect => call_indirect::write_specific_wat_beginning(wat),
             Scenario::GlobalGet => global_get::write_specific_wat_beginning(wat),
             Scenario::GlobalSet => global_set::write_specific_wat_beginning(wat),
-            Scenario::I32Add => i32_add::write_specific_wat_beginning(wat),
-            Scenario::I32And => i32_and::write_specific_wat_beginning(wat),
+            Scenario::I32Add => {}
+            Scenario::I32And => {}
             Scenario::I32Clz => i32_clz::write_specific_wat_beginning(wat),
             Scenario::I32Ctz => i32_ctz::write_specific_wat_beginning(wat),
-            Scenario::I32DivS => i32_div_s::write_specific_wat_beginning(wat),
-            Scenario::I32DivU => i32_div_u::write_specific_wat_beginning(wat),
-            Scenario::I32Eq => i32_eq::write_specific_wat_beginning(wat),
+            Scenario::I32DivS => {}
+            Scenario::I32DivU => {}
+            Scenario::I32Eq => {}
             Scenario::I32Eqz => i32_eqz::write_specific_wat_beginning(wat),
-            Scenario::I32GeS => i32_ge_s::write_specific_wat_beginning(wat),
-            Scenario::I32GeU => i32_ge_u::write_specific_wat_beginning(wat),
-            Scenario::I32GtU => i32_gt_u::write_specific_wat_beginning(wat),
-            Scenario::I32GtS => i32_gt_s::write_specific_wat_beginning(wat),
-            Scenario::I32LeU => i32_le_u::write_specific_wat_beginning(wat),
-            Scenario::I32LeS => i32_le_s::write_specific_wat_beginning(wat),
-            Scenario::I32LtU => i32_lt_u::write_specific_wat_beginning(wat),
-            Scenario::I32LtS => i32_lt_s::write_specific_wat_beginning(wat),
-            Scenario::I32Mul => i32_mul::write_specific_wat_beginning(wat),
-            Scenario::I32Ne => i32_ne::write_specific_wat_beginning(wat),
-            Scenario::I32Or => i32_or::write_specific_wat_beginning(wat),
+            Scenario::I32GeS => {}
+            Scenario::I32GeU => {}
+            Scenario::I32GtU => {}
+            Scenario::I32GtS => {}
+            Scenario::I32LeU => {}
+            Scenario::I32LeS => {}
+            Scenario::I32LtU => {}
+            Scenario::I32LtS => {}
+            Scenario::I32Mul => {}
+            Scenario::I32Ne => {}
+            Scenario::I32Or => {}
             Scenario::I32Popcnt => i32_popcnt::write_specific_wat_beginning(wat),
-            Scenario::I32RemS => i32_rem_s::write_specific_wat_beginning(wat),
-            Scenario::I32RemU => i32_rem_u::write_specific_wat_beginning(wat),
-            Scenario::I32Rotl => i32_rotl::write_specific_wat_beginning(wat),
-            Scenario::I32Rotr => i32_rotr::write_specific_wat_beginning(wat),
-            Scenario::I32Shl => i32_shl::write_specific_wat_beginning(wat),
-            Scenario::I32ShrS => i32_shr_s::write_specific_wat_beginning(wat),
-            Scenario::I32ShrU => i32_shr_u::write_specific_wat_beginning(wat),
-            Scenario::I32Sub => i32_sub::write_specific_wat_beginning(wat),
+            Scenario::I32RemS => {}
+            Scenario::I32RemU => {}
+            Scenario::I32Rotl => {}
+            Scenario::I32Rotr => {}
+            Scenario::I32Shl => {}
+            Scenario::I32ShrS => {}
+            Scenario::I32ShrU => {}
+            Scenario::I32Sub => {}
             Scenario::I32WrapI64 => i32_wrap_i64::write_specific_wat_beginning(wat),
-            Scenario::I32Xor => i32_xor::write_specific_wat_beginning(wat),
+            Scenario::I32Xor => {}
             Scenario::If => if_op::write_specific_wat_beginning(wat),
             Scenario::Select => select::write_specific_wat_beginning(wat),
         }
@@ -108,36 +106,188 @@ impl ScenarioWatGenerator for Scenario {
             }
             Scenario::GlobalGet => global_get::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::GlobalSet => global_set::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Add => i32_add::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32And => i32_and::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32Add => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.add",
+                0,
+                1,
+            ),
+            Scenario::I32And => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.and",
+                0,
+                1,
+            ),
             Scenario::I32Clz => i32_clz::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Ctz => i32_ctz::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32DivS => i32_div_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32DivU => i32_div_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Eq => i32_eq::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32DivS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.div_s",
+                1,
+                1,
+            ),
+            Scenario::I32DivU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.div_u",
+                1,
+                1,
+            ),
+            Scenario::I32Eq => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.eq",
+                0,
+                1,
+            ),
             Scenario::I32Eqz => i32_eqz::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32GeS => i32_ge_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32GeU => i32_ge_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32GtU => i32_gt_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32GtS => i32_gt_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32LeU => i32_le_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32LeS => i32_le_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32LtU => i32_lt_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32LtS => i32_lt_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Mul => i32_mul::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Ne => i32_ne::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Or => i32_or::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32GeS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.ge_s",
+                0,
+                1,
+            ),
+            Scenario::I32GeU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.ge_u",
+                0,
+                1,
+            ),
+            Scenario::I32GtU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.gt_u",
+                0,
+                1,
+            ),
+            Scenario::I32GtS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.gt_s",
+                0,
+                1,
+            ),
+            Scenario::I32LeU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.le_u",
+                0,
+                1,
+            ),
+            Scenario::I32LeS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.le_s",
+                0,
+                1,
+            ),
+            Scenario::I32LtU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.lt_u",
+                0,
+                1,
+            ),
+            Scenario::I32LtS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.lt_s",
+                0,
+                1,
+            ),
+            Scenario::I32Mul => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.mul",
+                0,
+                1,
+            ),
+            Scenario::I32Ne => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.ne",
+                0,
+                1,
+            ),
+            Scenario::I32Or => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.or",
+                0,
+                1,
+            ),
             Scenario::I32Popcnt => i32_popcnt::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32RemS => i32_rem_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32RemU => i32_rem_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Rotl => i32_rotl::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Rotr => i32_rotr::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Shl => i32_shl::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32ShrS => i32_shr_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32ShrU => i32_shr_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Sub => i32_sub::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32WrapI64 => i32_wrap_i64::write_wat_ops(wat, number_of_ops_per_loop_iteration),
-            Scenario::I32Xor => i32_xor::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32RemS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.rem_s",
+                1,
+                1,
+            ),
+            Scenario::I32RemU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.rem_u",
+                1,
+                1,
+            ),
+            Scenario::I32Rotl => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.rotl",
+                11231,
+                1,
+            ),
+            Scenario::I32Rotr => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.rotr",
+                11231,
+                1,
+            ),
+            Scenario::I32Shl => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.shl",
+                11231,
+                1,
+            ),
+            Scenario::I32ShrS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.shr_s",
+                11231,
+                1,
+            ),
+            Scenario::I32ShrU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.shr_u",
+                11231,
+                1,
+            ),
+            Scenario::I32Sub => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.sub",
+                11231,
+                1,
+            ),
+            Scenario::I32WrapI64 => {
+                i32_wrap_i64::write_wat_ops(wat, number_of_ops_per_loop_iteration)
+            }
+            Scenario::I32Xor => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                "i32.xor",
+                11231,
+                13242,
+            ),
             Scenario::If => if_op::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::Select => select::write_wat_ops(wat, number_of_ops_per_loop_iteration),
         }
