@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::scenarios::{
-    call, call_indirect, global_get, global_set, i32_wrap_i64, if_op,
+    call, call_indirect, data_type::DataType, global_get, global_set, i32_wrap_i64, if_op,
     instruction_with_1_arg_1_return, instruction_with_2_args_1_return, select,
 };
 use clap::ValueEnum;
@@ -123,13 +123,15 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Clz => instruction_with_1_arg_1_return::write_wat_ops(
                 wat,
                 number_of_ops_per_loop_iteration,
-                "i32.clz",
+                DataType::I32,
+                "clz",
                 1231,
             ),
             Scenario::I32Ctz => instruction_with_1_arg_1_return::write_wat_ops(
                 wat,
                 number_of_ops_per_loop_iteration,
-                "i32.ctz",
+                DataType::I32,
+                "ctz",
                 1231,
             ),
             Scenario::I32DivS => instruction_with_2_args_1_return::write_wat_ops(
@@ -156,7 +158,8 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Eqz => instruction_with_1_arg_1_return::write_wat_ops(
                 wat,
                 number_of_ops_per_loop_iteration,
-                "i32.eqz",
+                DataType::I32,
+                "eqz",
                 1231,
             ),
             Scenario::I32GeS => instruction_with_2_args_1_return::write_wat_ops(
@@ -239,7 +242,8 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Popcnt => instruction_with_1_arg_1_return::write_wat_ops(
                 wat,
                 number_of_ops_per_loop_iteration,
-                "i32.popcnt",
+                DataType::I32,
+                "popcnt",
                 1231,
             ),
             Scenario::I32RemS => instruction_with_2_args_1_return::write_wat_ops(
