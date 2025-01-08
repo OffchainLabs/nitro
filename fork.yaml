@@ -1,0 +1,200 @@
+title: "layr-labs/nitro"  # Define the HTML page title
+logo: "logo.png"
+footer: |  # define the footer with markdown
+  [Nitro](https://github.com/Layr-Labs/nitro) fork overview &middot created with [Forkdiff](https://github.com/protolambda/forkdiff)
+base:
+  name: OffchainLabs/nitro
+  url: https://github.com/OffchainLabs/nitro
+  hash: d81324daee7340281ee61c0f5db5231ec1d88eea
+fork:
+  name: Layr-Labs/nitro
+  url: https://github.com/Layr-Labs/nitro
+  ref: refs/heads/eigenda
+def:
+    title: "EigenDA x Arbitrum Nitro fork diff"
+    description: | # description in markdown
+      The original nitro codebase can be found at [`github.com/OffchainLabs/nitro`](https://github.com/OffchainLabs/nitro).
+      And the fork at [`github.com/Layr-Labs/nitro`](https://github.com/Layr-Labs/nitro).
+  
+    sub:
+      - title: "CI/CD"
+        description: | 
+          "Updated container orchestration and github actions workflows to best support EigenDA-specific build and test steps."
+        sub:
+          - title: "Github workflows"
+            description: | 
+              Updated Github workflows to include EigenDA-specific build and test steps.
+            globs:
+              - ".github/workflows/arbitrator-ci.yml"
+              - ".github/workflows/arbitrator-skip-ci.yml"
+              - ".github/workflows/ci.yml"
+              - ".github/workflows/codeql-analysis.yml"
+              - ".github/workflows/docker.yml"
+              - ".github/workflows/release-ci.yml"
+              - "scripts/start-eigenda-proxy.sh"
+
+          - title: "Docker builds"
+            description: | 
+              Updated Dockerfile to use EigenDA consensus replay artifact and disregard historical 
+              vanilla Arbitrum ones. Also added github action for building and publishing images to GHCR.
+            globs:
+              - "Dockerfile"
+              - ".github/workflows/docker-upload.yml"
+              - "scripts/download-machine-eigenda.sh"
+
+      - title: "EigenDA package"
+        description: |
+          The EigenDA package includes a lot of compatibility constructions (i.e, interface implementations, proxy communication, serialization) necessary for 
+          securely wiring EigenDA as a feature into the overarching codebase. This package provides a set of lower level constructions which are referenced during
+          fraud proving and batch posting/derivation.
+        sub:
+          - title: "Proxy client"
+            description: |
+              Added a wrapper over the eigenda proxy [client](https://github.com/Layr-Labs/eigenda-proxy/releases/tag/client%2Fv0.1.0) which
+              RLP encodes and decodes the batch contents when communicating with the proxy service.
+            globs:
+              - "eigenda/proxy.go"
+              - "eigenda/proxy_mock.go"
+
+          - title: "DA writer/reader interface"
+            description: |
+              * Implements the Arbitrum native Data Availability `Reader` [interface](https://github.com/Layr-Labs/nitro/blob/070313b901ea55e131534850bfc791ec4e588668/arbstate/daprovider/reader.go#L16-L29) for EigenDA. 
+                When recording a batch payload to the preimage oracle for stateless validation, the blob is generic encoded to a BN254 compatible format as a precursor for injection. 
+                Sequencer messages are decoded from their ABI encoded format to a `BlobInfo` type for compatible communication with the proxy service.
+
+              * Implements the Arbitrum native Data Availability `Writer` [interface](https://github.com/Layr-Labs/nitro/blob/070313b901ea55e131534850bfc791ec4e588668/arbstate/daprovider/writer.go#L13-L22) for EigenDA.
+
+            globs:
+              - "eigenda/reader.go"
+              - "eigenda/init.go"
+              - "eigenda/eigenda.go"
+          
+          - title: "Blob serialization"
+            description: |
+              EigenDA blobs are serialized and deserialized for fraud proving:
+
+                - Serialization (`GenericEncodeBlob`) occurs when recording a batch payload to the preimage oracle for stateless validation.
+              
+                - Deserialization (`GenericDecodeBlob`) occurs when referencing the blob in the replay script being ran by the Arbitrator.
+
+              These domain morphisms are necessary so that the off-chain proof generation done for an EigenDA `READPREIMAGE` opcode is using the 
+              same data format as used by the EigenDA encoder for generating kzg commitments and evaluation proofs.
+            
+            globs:
+              - "eigenda/serialize.go"
+              - "eigenda/serialize_test.go"
+
+
+          - title: "Certificate translations"
+            description: |
+              Certificates read from the `SequencerInbox` don't include all necessary metadata for properly referencing the batch via proxy since 
+              some fields are left out during inbox submission (i.e, `batchHeaderHash`) to reduce calldata sizes. These functions provide translation 
+              to convert a certificate read from the inbox into one understood by the proxy service.
+
+            globs:
+              - "eigenda/types.go"
+  
+      - title: "Fraud Proving"
+        sub:
+          - title: "EigenDA preimage opcode"
+            description: | 
+              Extended core interpreter logic to target EigenDA `READPREIMAGE` opcode when serializing machine state proofs.
+              Also extended go -> wavm compilation logic to support routing for the new opcode type.
+            globs:
+              - "arbitrator/arbutil/src/types.rs"
+              - "arbitrator/jit/src/wavmio.rs"
+              - "arbitrator/prover/src/host.rs"
+              - "arbutil/preimage_type.go"
+              - "arbitrator/wasm-libraries/host-io/src/lib.rs"
+              - "arbitrator/prover/Cargo.toml"
+
+          - title: "Opcode proof serialization"
+            description: | 
+              Extended core interpreter logic to target EigenDA `READPREIMAGE` opcode when serializing machine state proofs.
+            globs:
+              - "arbitrator/prover/src/kzgbn254.rs"
+              - "arbitrator/prover/src/lib.rs"
+              - "arbitrator/prover/src/mainnet-files/*"
+              - "arbitrator/prover/src/test-files/*"
+              - "arbitrator/prover/src/utils.rs"
+              - "arbitrator/prover/src/machine.rs"
+
+          - title: "Replay Script"
+            description: | 
+              Updated replay script logic to use EigenDA reader type when presented with an EigenDA batch header type.
+            globs:
+              - "cmd/replay/main.go"
+
+          - title: "Proof Serialization Tests"
+            description: | 
+              Tests necessary for asserting offchain proof serialization <-> onchain verification when one step proven.
+            globs:
+              - "arbitrator/prover/test-cases/go/main.go"
+              - "arbitrator/prover/src/test-files/*"
+              - "arbitrator/prover/test-cases/rust/src/bin/host-io.rs"
+              - "scripts/create-test-preimages.py"
+
+          - title: "E2E challenge tests"
+            description: |
+              Extended E2E challenge tests to ensure honest resolution of a `READINBOXMESSAGE` challenge for an
+              EigenDA certificate where each validator has alternative views of the canonical sequencer inbox state.
+            globs:
+              - "system_tests/full_challenge_test.go"
+              - "system_tests/full_challenge_mock_test.go"
+              - "system_tests/full_challenge_impl_test.go"
+
+      - title: "Batch posting & derivation from EigenDA"
+        description: |
+          Added the ability to post batches to EigenDA and trustlessly derive them using the respective
+          certificate posted via the parent chain `SequencerInbox` contract.
+        sub:
+          - title: "Config Ingestion"
+            description: |
+              Extended config processing logic to create and propagate EigenDA specific client reader/writer instances. Also added key invariants
+              to ensure proper expression of EigenDA specific parameters.
+            globs:
+              - "arbnode/node.go"
+              - "cmd/nitro/nitro.go"
+
+          - title: "Batch Posting"
+            description: |
+              Added EigenDA-specific batch posting logic to the Arbitrum Nitro batch poster. This includes utilizing the 
+              new `addSequencerL2BatchFromEigenDA` entrypoint in the `SequencerInbox` contract for submitting certificate txs
+              as well as an optional `failover` mechanism for automatic fallback to native Arbitrum DA (i.e, AnyTrust, 4844, calldata) 
+              in the event of EigenDA service unavailability.
+            globs:
+              - "arbnode/batch_poster.go"
+
+          - title: "Inbox Reading (Batch Derivation)"
+            description: |
+              Added EigenDA-specific batch posting logic to the Arbitrum Nitro batch poster. This includes utilizing the 
+              new `addSequencerL2BatchFromEigenDA` entrypoint in the `SequencerInbox` contract for submitting certificate txs
+              as well as an optional `failover` mechanism for automatic fallback to native Arbitrum DA (i.e, AnyTrust, 4844, calldata) 
+              in the event of EigenDA service unavailability.
+            globs:
+              - "arbnode/sequencer_inbox.go"
+              - 
+
+          - title: "Integration Tests"
+            description:
+            globs:
+              - "system_tests/eigenda_test.go"
+
+      - title: "Docs"
+        description: |
+          Updated documentation to reflect EigenDA-specific changes and additions.
+        globs:
+          - "docs/Sigma_Prime_EigenLayer_EigenDA_Arbitrum_Security_Assessment_Report_December_2024.pdf"
+          - "docs/Sigma_Prime_EigenLayer_EigenDA_Arbitrum_Security_Assessment_Report_November_2024.pdf"
+
+ignore:
+  - "*.sum"
+  - "*.md"
+  - "arbitrator/Cargo.lock"
+  - "arbitrator/wasm-libraries/Cargo.lock" 
+  - "cmd/replay/db.go"
+  - "arbstate/inbox.go"
+  - "arbnode/inbox_tracker.go"
+  - "arbitrator/prover/src/main.rs"
+  - "arbitrator/jit/src/test.rs"
+  - "validator/server_jit/jit_machine.go"
