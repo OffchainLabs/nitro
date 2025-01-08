@@ -2,9 +2,10 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::scenarios::{
-    call, call_indirect, global_get, global_set, i32_add, i32_clz, i32_ctz, i32_div_s, i32_div_u,
-    i32_eq, i32_eqz, i32_ge_s, i32_ge_u, i32_gt_s, i32_gt_u, i32_le_s, i32_le_u, i32_lt_s,
-    i32_lt_u, i32_mul, i32_ne, i32_popcnt, i32_rem_s, i32_rem_u, i32_sub, i32_xor, if_op, select,
+    call, call_indirect, global_get, global_set, i32_add, i32_and, i32_clz, i32_ctz, i32_div_s,
+    i32_div_u, i32_eq, i32_eqz, i32_ge_s, i32_ge_u, i32_gt_s, i32_gt_u, i32_le_s, i32_le_u,
+    i32_lt_s, i32_lt_u, i32_mul, i32_ne, i32_popcnt, i32_rem_s, i32_rem_u, i32_sub, i32_xor, if_op,
+    select,
 };
 use clap::ValueEnum;
 use std::fs::File;
@@ -15,6 +16,7 @@ use std::path::PathBuf;
 #[clap(rename_all = "PascalCase")]
 pub enum Scenario {
     I32Add,
+    I32And,
     I32Clz,
     I32Ctz,
     I32DivS,
@@ -57,6 +59,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::GlobalGet => global_get::write_specific_wat_beginning(wat),
             Scenario::GlobalSet => global_set::write_specific_wat_beginning(wat),
             Scenario::I32Add => i32_add::write_specific_wat_beginning(wat),
+            Scenario::I32And => i32_and::write_specific_wat_beginning(wat),
             Scenario::I32Clz => i32_clz::write_specific_wat_beginning(wat),
             Scenario::I32Ctz => i32_ctz::write_specific_wat_beginning(wat),
             Scenario::I32DivS => i32_div_s::write_specific_wat_beginning(wat),
@@ -92,6 +95,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::GlobalGet => global_get::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::GlobalSet => global_set::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Add => i32_add::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32And => i32_and::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Clz => i32_clz::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Ctz => i32_ctz::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32DivS => i32_div_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),

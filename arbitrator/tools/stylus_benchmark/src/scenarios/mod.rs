@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 pub mod i32_add;
+pub mod i32_and;
 pub mod i32_clz;
 pub mod i32_ctz;
 pub mod i32_div_s;
