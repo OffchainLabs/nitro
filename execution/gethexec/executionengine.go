@@ -666,7 +666,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult, nil)
+	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil))
 	if err != nil {
 		return nil, err
 	}
