@@ -1,5 +1,6 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
+#![allow(clippy::needless_lifetimes)]
 
 use crate::{
     programs::{
