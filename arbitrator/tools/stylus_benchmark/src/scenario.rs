@@ -5,7 +5,7 @@ use crate::scenarios::{
     call, call_indirect, global_get, global_set, i32_add, i32_and, i32_clz, i32_ctz, i32_div_s,
     i32_div_u, i32_eq, i32_eqz, i32_ge_s, i32_ge_u, i32_gt_s, i32_gt_u, i32_le_s, i32_le_u,
     i32_lt_s, i32_lt_u, i32_mul, i32_ne, i32_or, i32_popcnt, i32_rem_s, i32_rem_u, i32_rotl,
-    i32_shl, i32_shr_s, i32_shr_u, i32_sub, i32_xor, if_op, select,
+    i32_rotr, i32_shl, i32_shr_s, i32_shr_u, i32_sub, i32_xor, if_op, select,
 };
 use clap::ValueEnum;
 use std::fs::File;
@@ -38,6 +38,7 @@ pub enum Scenario {
     I32RemS,
     I32RemU,
     I32Rotl,
+    I32Rotr,
     I32Shl,
     I32ShrS,
     I32ShrU,
@@ -86,6 +87,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32RemS => i32_rem_s::write_specific_wat_beginning(wat),
             Scenario::I32RemU => i32_rem_u::write_specific_wat_beginning(wat),
             Scenario::I32Rotl => i32_rotl::write_specific_wat_beginning(wat),
+            Scenario::I32Rotr => i32_rotr::write_specific_wat_beginning(wat),
             Scenario::I32Shl => i32_shl::write_specific_wat_beginning(wat),
             Scenario::I32ShrS => i32_shr_s::write_specific_wat_beginning(wat),
             Scenario::I32ShrU => i32_shr_u::write_specific_wat_beginning(wat),
@@ -127,6 +129,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32RemS => i32_rem_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32RemU => i32_rem_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Rotl => i32_rotl::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::I32Rotr => i32_rotr::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32Shl => i32_shl::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32ShrS => i32_shr_s::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::I32ShrU => i32_shr_u::write_wat_ops(wat, number_of_ops_per_loop_iteration),
