@@ -55,6 +55,7 @@ jobs:
 
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
+        id: install-rust
         with:
           toolchain: '1.80.1'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
@@ -66,7 +67,7 @@ jobs:
         with:
           toolchain: 'nightly-2024-10-06'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
+          components: 'rust-src, rustfmt'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"

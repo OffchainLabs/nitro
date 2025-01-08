@@ -67,6 +67,7 @@ jobs:
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install rust stable
+        id: install-rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.80.1'
@@ -78,7 +79,7 @@ jobs:
         with:
           toolchain: 'nightly-2024-10-06'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
+          components: 'rust-src, rustfmt'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
