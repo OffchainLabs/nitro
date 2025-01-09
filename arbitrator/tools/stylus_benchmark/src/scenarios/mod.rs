@@ -12,4 +12,5 @@ pub mod instruction_with_1_arg_1_return;
 pub mod instruction_with_2_args_1_return;
 pub mod local_get;
 pub mod local_set;
+pub mod local_tee;
 pub mod select;
