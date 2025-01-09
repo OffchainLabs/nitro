@@ -36,7 +36,7 @@ jobs:
         exclude:
           - platform: ${{ github.event_name == 'pull_request' && 'linux/arm64' }}
 
-    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'buildjet-4vcpu-ubuntu-2204-arm' }}
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'buildjet-8vcpu-ubuntu-2204-arm' }}
 
     steps:
       - uses: cargo-bins/cargo-binstall@main
