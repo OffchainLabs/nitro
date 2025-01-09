@@ -19,8 +19,8 @@ impl Rand for DataType {
     fn gen(&self) -> usize {
         let mut rng = rand::thread_rng();
         match self {
-            DataType::I32 => rng.gen::<u32>().try_into().unwrap(),
-            DataType::I64 => rng.gen::<u64>().try_into().unwrap(),
+            DataType::I32 => (rng.gen::<u32>() >> 1).try_into().unwrap(),
+            DataType::I64 => (rng.gen::<u64>() >> 1).try_into().unwrap(),
         }
     }
 }
