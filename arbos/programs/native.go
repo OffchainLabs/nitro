@@ -198,7 +198,6 @@ func activateProgramInternal(
 			asmMap[res.target] = res.asm
 		}
 	}
-
 	for _, target := range nativeTargets {
 		target := target
 		go func() {
@@ -206,13 +205,11 @@ func activateProgramInternal(
 			results <- result{target, asm, err}
 		}()
 	}
-
 	expectedResults := len(nativeTargets)
 	if !moduleActivationMandatory && wavmFound {
 		// we didn't wait for module activation result, so wait for it too
 		expectedResults++
 	}
-
 	var err error
 	for i := 0; i < expectedResults; i++ {
 		res := <-results
@@ -222,29 +219,17 @@ func activateProgramInternal(
 			asmMap[res.target] = res.asm
 		}
 	}
-
-	if err != nil && (moduleActivationMandatory || len(asmMap[rawdb.TargetWavm]) > 0) {
-		if info != nil {
-			log.Error(
-				"Compilation failed for one or more targets despite activation succeeding",
-				"address", addressForLogging,
-				"codehash", codehash,
-				"moduleHash", info.moduleHash,
-				"targets", targets,
-				"err", err,
-			)
-		} else {
-			log.Error(
-				"Compilation failed for one or more targets despite activation succeeding",
-				"address", addressForLogging,
-				"codehash", codehash,
-				"targets", targets,
-				"err", err,
-			)
-		}
+	if err != nil && moduleActivationMandatory {
+		log.Error(
+			"Compilation failed for one or more targets despite activation succeeding",
+			"address", addressForLogging,
+			"codehash", codehash,
+			"moduleHash", info.moduleHash,
+			"targets", targets,
+			"err", err,
+		)
 		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding: %v", addressForLogging, err))
 	}
-
 	return info, asmMap, err
 }
 
