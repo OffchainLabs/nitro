@@ -272,14 +272,14 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 
 	targets := statedb.Database().WasmTargets()
 	// we know program is activated, so it must be in correct version and not use too much memory
-	moduleActivationMandatory := true // TODO: refactor the parameter, always set to true
+	moduleActivationMandatory := false
 	info, asmMap, err := activateProgramInternal(addressForLogging, codehash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas, targets, moduleActivationMandatory)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
 	}
 
-	if info.moduleHash != moduleHash {
+	if info != nil && info.moduleHash != moduleHash {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "got", info.moduleHash)
 		return nil, fmt.Errorf("failed to reactivate program. address: %v, expected ModuleHash: %v", addressForLogging, moduleHash)
 	}
@@ -296,7 +296,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 	} else {
 		// program activated recently, possibly in this eth_call
 		// store it to statedb. It will be stored to database if statedb is commited
-		statedb.ActivateWasm(info.moduleHash, asmMap)
+		statedb.ActivateWasm(moduleHash, asmMap)
 	}
 	asm, exists := asmMap[localTarget]
 	if !exists {
