@@ -164,10 +164,12 @@ func activateProgramInternal(
 	moduleActivationMandatory bool,
 ) (*activationInfo, map[ethdb.WasmTarget][]byte, error) {
 	var wavmFound bool
+	var nativeTargets []ethdb.WasmTarget
 	for _, target := range targets {
 		if target == rawdb.TargetWavm {
 			wavmFound = true
-			break
+		} else {
+			nativeTargets = append(nativeTargets, target)
 		}
 	}
 	type result struct {
@@ -175,59 +177,53 @@ func activateProgramInternal(
 		asm    []byte
 		err    error
 	}
-	asmMap := make(map[ethdb.WasmTarget][]byte, len(targets))
-
-	// info can be set in separate thread, make sure to wait before reading
+	results := make(chan result)
+	// info will be set in separate thread, make sure to wait before reading
 	var info *activationInfo
-	var moduleActivationStarted bool
+	asmMap := make(map[ethdb.WasmTarget][]byte, len(nativeTargets)+1)
+	if moduleActivationMandatory || wavmFound {
+		go func() {
+			var err error
+			var module []byte
+			info, module, err = activateModule(addressForLogging, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, gasLeft)
+			results <- result{rawdb.TargetWavm, module, err}
+		}()
+	}
 	if moduleActivationMandatory {
-		moduleActivationStarted = true
-		var err error
-		var module []byte
-		info, module, err = activateModule(addressForLogging, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, gasLeft)
-		if err != nil {
-			return nil, nil, err
-		}
-		if wavmFound {
-			asmMap[rawdb.TargetWavm] = module
+		// wait for the module activation before starting compilation for other targets
+		res := <-results
+		if res.err != nil {
+			return info, nil, res.err
+		} else if wavmFound {
+			asmMap[res.target] = res.asm
 		}
 	}
 
-	results := make(chan result, len(targets))
-	for _, target := range targets {
+	for _, target := range nativeTargets {
 		target := target
-		if target == rawdb.TargetWavm {
-			if moduleActivationStarted {
-				// skip if already started or activated because of moduleActivationMandatory
-				results <- result{target, nil, nil}
-				continue
-			}
-			go func() {
-				var err error
-				var module []byte
-				info, module, err = activateModule(addressForLogging, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, gasLeft)
-				results <- result{target, module, err}
-			}()
-			moduleActivationStarted = true
-		} else {
-			go func() {
-				asm, err := compileNative(wasm, stylusVersion, debug, target)
-				results <- result{target, asm, err}
-			}()
-		}
+		go func() {
+			asm, err := compileNative(wasm, stylusVersion, debug, target)
+			results <- result{target, asm, err}
+		}()
 	}
+
+	expectedResults := len(nativeTargets)
+	if !moduleActivationMandatory && wavmFound {
+		// we didn't wait for module activation result, so wait for it too
+		expectedResults++
+	}
+
 	var err error
-	for range targets {
+	for i := 0; i < expectedResults; i++ {
 		res := <-results
-		if res.asm == nil {
-			continue
-		} else if res.err != nil {
+		if res.err != nil {
 			err = errors.Join(res.err, fmt.Errorf("%s:%w", res.target, err))
 		} else {
 			asmMap[res.target] = res.asm
 		}
 	}
-	if err != nil && moduleActivationMandatory {
+
+	if err != nil && (moduleActivationMandatory || len(asmMap[rawdb.TargetWavm]) > 0) {
 		if info != nil {
 			log.Error(
 				"Compilation failed for one or more targets despite activation succeeding",
