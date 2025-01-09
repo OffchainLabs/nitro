@@ -4,7 +4,7 @@
 use crate::scenarios::{
     call, call_indirect, convert, data_type::DataType, global_get, global_set, if_op,
     instruction_with_1_arg_1_return, instruction_with_2_args_1_return, load, local_get, local_set,
-    local_tee, select,
+    local_tee, select, store,
 };
 use clap::ValueEnum;
 use std::fs::File;
@@ -42,6 +42,7 @@ pub enum Scenario {
     I32Shl,
     I32ShrS,
     I32ShrU,
+    I32Store,
     I32Sub,
     I32WrapI64,
     I32Xor,
@@ -99,6 +100,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Shl => {}
             Scenario::I32ShrS => {}
             Scenario::I32ShrU => {}
+            Scenario::I32Store => {}
             Scenario::I32Sub => {}
             Scenario::I32WrapI64 => {}
             Scenario::I32Xor => {}
@@ -146,6 +148,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Shl => {}
             Scenario::I32ShrS => {}
             Scenario::I32ShrU => {}
+            Scenario::I32Store => {}
             Scenario::I32Sub => {}
             Scenario::I32WrapI64 => {}
             Scenario::I32Xor => {}
@@ -251,12 +254,9 @@ impl ScenarioWatGenerator for Scenario {
                 DataType::I32,
                 "le_s",
             ),
-            Scenario::I32Load => load::write_wat_ops(
-                wat,
-                number_of_ops_per_loop_iteration,
-                DataType::I32,
-                "load",
-            ),
+            Scenario::I32Load => {
+                load::write_wat_ops(wat, number_of_ops_per_loop_iteration, DataType::I32)
+            }
             Scenario::I32LtU => instruction_with_2_args_1_return::write_wat_ops(
                 wat,
                 number_of_ops_per_loop_iteration,
@@ -335,6 +335,9 @@ impl ScenarioWatGenerator for Scenario {
                 DataType::I32,
                 "shr_u",
             ),
+            Scenario::I32Store => {
+                store::write_wat_ops(wat, number_of_ops_per_loop_iteration, DataType::I32)
+            }
             Scenario::I32Sub => instruction_with_2_args_1_return::write_wat_ops(
                 wat,
                 number_of_ops_per_loop_iteration,
