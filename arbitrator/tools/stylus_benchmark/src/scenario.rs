@@ -96,13 +96,13 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32ShrS => {}
             Scenario::I32ShrU => {}
             Scenario::I32Sub => {}
-            Scenario::I32WrapI64 => i32_wrap_i64::write_specific_wat_beginning(wat),
+            Scenario::I32WrapI64 => {},
             Scenario::I32Xor => {}
-            Scenario::If => if_op::write_specific_wat_beginning(wat),
+            Scenario::If => {},
             Scenario::LocalGet => {}
             Scenario::LocalSet => {}
             Scenario::LocalTee => {}
-            Scenario::Select => select::write_specific_wat_beginning(wat),
+            Scenario::Select => {},
         }
     }
 
