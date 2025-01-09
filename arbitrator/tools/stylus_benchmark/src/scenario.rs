@@ -44,6 +44,7 @@ pub enum Scenario {
     I32Sub,
     I32WrapI64,
     I32Xor,
+    I64ExtendI32U,
     I64ExtendI32S,
     Call,
     CallIndirect,
@@ -99,6 +100,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Sub => {}
             Scenario::I32WrapI64 => {}
             Scenario::I32Xor => {}
+            Scenario::I64ExtendI32U => {}
             Scenario::I64ExtendI32S => {}
             Scenario::If => {}
             Scenario::LocalGet => {}
@@ -144,6 +146,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Sub => {}
             Scenario::I32WrapI64 => {}
             Scenario::I32Xor => {}
+            Scenario::I64ExtendI32U => {}
             Scenario::I64ExtendI32S => {}
             Scenario::If => {}
             Scenario::LocalGet => local_get::write_specific_exported_func_beginning(wat),
@@ -341,6 +344,13 @@ impl ScenarioWatGenerator for Scenario {
                 number_of_ops_per_loop_iteration,
                 DataType::I32,
                 "xor",
+            ),
+            Scenario::I64ExtendI32U => convert::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I32,
+                DataType::I64,
+                "extend_i32_u",
             ),
             Scenario::I64ExtendI32S => convert::write_wat_ops(
                 wat,
