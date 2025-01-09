@@ -91,6 +91,7 @@ type TimeboostConfig struct {
 	ExpressLaneAdvantage   time.Duration `koanf:"express-lane-advantage"`
 	SequencerHTTPEndpoint  string        `koanf:"sequencer-http-endpoint"`
 	EarlySubmissionGrace   time.Duration `koanf:"early-submission-grace"`
+	MaxQueuedTxCount       int           `koanf:"max-queued-tx-count"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
@@ -100,6 +101,7 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	ExpressLaneAdvantage:   time.Millisecond * 200,
 	SequencerHTTPEndpoint:  "http://localhost:8547",
 	EarlySubmissionGrace:   time.Second * 2,
+	MaxQueuedTxCount:       10,
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -194,6 +196,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
 	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 	f.Duration(prefix+".early-submission-grace", DefaultTimeboostConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
+	f.Int(prefix+".max-queued-tx-count", DefaultTimeboostConfig.MaxQueuedTxCount, "maximum allowed number of express lane txs with future sequence number to be queued. Set 0 to disable this check and a negative value to prevent queuing of any future sequence number transactions")
 }
 
 type txQueueItem struct {
@@ -1190,6 +1193,30 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 	return nil
 }
 
+func (s *Sequencer) InitializeExpressLaneService(
+	apiBackend *arbitrum.APIBackend,
+	filterSystem *filters.FilterSystem,
+	auctionContractAddr common.Address,
+	auctioneerAddr common.Address,
+	earlySubmissionGrace time.Duration,
+) error {
+	els, err := newExpressLaneService(
+		s,
+		s.config,
+		apiBackend,
+		filterSystem,
+		auctionContractAddr,
+		s.execEngine.bc,
+		earlySubmissionGrace,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create express lane service. auctionContractAddr: %v err: %w", auctionContractAddr, err)
+	}
+	s.auctioneerAddr = auctioneerAddr
+	s.expressLaneService = els
+	return nil
+}
+
 var (
 	usableBytesInBlob    = big.NewInt(int64(len(kzg4844.Blob{}) * 31 / 32))
 	blobTxBlobGasPerBlob = big.NewInt(params.BlobTxBlobGasPerBlob)
@@ -1233,6 +1260,12 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 		log.Warn("expected surplus is below soft threshold", "value", expectedSurplus, "threshold", config.expectedSurplusSoftThreshold)
 	}
 	return expectedSurplus, nil
+}
+
+func (s *Sequencer) StartExpressLaneService(ctx context.Context) {
+	if s.expressLaneService != nil {
+		s.expressLaneService.Start(ctx)
+	}
 }
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
@@ -1300,36 +1333,9 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		return 0
 	})
 
+	s.StartExpressLaneService(ctxIn)
+
 	return nil
-}
-
-func (s *Sequencer) StartExpressLane(
-	ctx context.Context,
-	apiBackend *arbitrum.APIBackend,
-	filterSystem *filters.FilterSystem,
-	auctionContractAddr common.Address,
-	auctioneerAddr common.Address,
-	earlySubmissionGrace time.Duration,
-) {
-	if !s.config().Timeboost.Enable {
-		log.Crit("Timeboost is not enabled, but StartExpressLane was called")
-	}
-
-	els, err := newExpressLaneService(
-		s,
-		apiBackend,
-		filterSystem,
-		auctionContractAddr,
-		s.execEngine.bc,
-		earlySubmissionGrace,
-		s.config().QueueTimeout,
-	)
-	if err != nil {
-		log.Crit("Failed to create express lane service", "err", err, "auctionContractAddr", auctionContractAddr)
-	}
-	s.auctioneerAddr = auctioneerAddr
-	s.expressLaneService = els
-	s.expressLaneService.Start(ctx)
 }
 
 func (s *Sequencer) StopAndWait() {

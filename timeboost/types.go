@@ -3,7 +3,10 @@ package timeboost
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math/big"
+
+	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
@@ -176,6 +179,8 @@ type ExpressLaneSubmission struct {
 	Options                *arbitrum_types.ConditionalOptions `json:"options"`
 	SequenceNumber         uint64
 	Signature              []byte
+
+	sender common.Address
 }
 
 func JsonSubmissionToGo(submission *JsonExpressLaneSubmission) (*ExpressLaneSubmission, error) {
@@ -227,6 +232,36 @@ func (els *ExpressLaneSubmission) ToMessageBytes() ([]byte, error) {
 	}
 	buf.Write(rlpTx)
 	return buf.Bytes(), nil
+}
+
+func (els *ExpressLaneSubmission) Sender() (common.Address, error) {
+	if (els.sender != common.Address{}) {
+		return els.sender, nil
+	}
+	// Reconstruct the message being signed over and recover the sender address.
+	signingMessage, err := els.ToMessageBytes()
+	if err != nil {
+		return common.Address{}, ErrMalformedData
+	}
+	if len(els.Signature) != 65 {
+		return common.Address{}, errors.Wrap(ErrMalformedData, "signature length is not 65")
+	}
+	// Recover the public key.
+	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(signingMessage))), signingMessage...))
+	sigItem := make([]byte, len(els.Signature))
+	copy(sigItem, els.Signature)
+	// Signature verification expects the last byte of the signature to have 27 subtracted,
+	// as it represents the recovery ID. If the last byte is greater than or equal to 27, it indicates a recovery ID that hasn't been adjusted yet,
+	// it's needed for internal signature verification logic.
+	if sigItem[len(sigItem)-1] >= 27 {
+		sigItem[len(sigItem)-1] -= 27
+	}
+	pubkey, err := crypto.SigToPub(prefixed, sigItem)
+	if err != nil {
+		return common.Address{}, ErrMalformedData
+	}
+	els.sender = crypto.PubkeyToAddress(*pubkey)
+	return els.sender, nil
 }
 
 // Helper function to pad a big integer to 32 bytes

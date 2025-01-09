@@ -361,6 +361,19 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
+	if config.Sequencer.Enable && config.Sequencer.Timeboost.Enable {
+		err := n.Sequencer.InitializeExpressLaneService(
+			n.Backend.APIBackend(),
+			n.FilterSystem,
+			common.HexToAddress(config.Sequencer.Timeboost.AuctionContractAddress),
+			common.HexToAddress(config.Sequencer.Timeboost.AuctioneerAddress),
+			config.Sequencer.Timeboost.EarlySubmissionGrace,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create express lane service. err: %w", err)
+		}
+	}
+
 	return nil
 }
 
