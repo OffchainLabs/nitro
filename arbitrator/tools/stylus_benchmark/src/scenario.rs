@@ -46,6 +46,37 @@ pub enum Scenario {
     I32Sub,
     I32WrapI64,
     I32Xor,
+    I64Add,
+    I64And,
+    I64Clz,
+    I64Ctz,
+    I64DivS,
+    I64DivU,
+    I64Eq,
+    I64Eqz,
+    I64GeS,
+    I64GeU,
+    I64GtU,
+    I64GtS,
+    I64LeU,
+    I64LeS,
+    I64Load,
+    I64LtU,
+    I64LtS,
+    I64Mul,
+    I64Ne,
+    I64Or,
+    I64Popcnt,
+    I64RemS,
+    I64RemU,
+    I64Rotl,
+    I64Rotr,
+    I64Shl,
+    I64ShrS,
+    I64ShrU,
+    I64Store,
+    I64Sub,
+    I64Xor,
     I64ExtendI32U,
     I64ExtendI32S,
     Call,
@@ -104,6 +135,37 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Sub => {}
             Scenario::I32WrapI64 => {}
             Scenario::I32Xor => {}
+            Scenario::I64Add => {}
+            Scenario::I64And => {}
+            Scenario::I64Clz => {}
+            Scenario::I64Ctz => {}
+            Scenario::I64DivS => {}
+            Scenario::I64DivU => {}
+            Scenario::I64Eq => {}
+            Scenario::I64Eqz => {}
+            Scenario::I64GeS => {}
+            Scenario::I64GeU => {}
+            Scenario::I64GtU => {}
+            Scenario::I64GtS => {}
+            Scenario::I64LeU => {}
+            Scenario::I64LeS => {}
+            Scenario::I64Load => {}
+            Scenario::I64LtU => {}
+            Scenario::I64LtS => {}
+            Scenario::I64Mul => {}
+            Scenario::I64Ne => {}
+            Scenario::I64Or => {}
+            Scenario::I64Popcnt => {}
+            Scenario::I64RemS => {}
+            Scenario::I64RemU => {}
+            Scenario::I64Rotl => {}
+            Scenario::I64Rotr => {}
+            Scenario::I64Shl => {}
+            Scenario::I64ShrS => {}
+            Scenario::I64ShrU => {}
+            Scenario::I64Store => {}
+            Scenario::I64Sub => {}
+            Scenario::I64Xor => {}
             Scenario::I64ExtendI32U => {}
             Scenario::I64ExtendI32S => {}
             Scenario::If => {}
@@ -152,6 +214,37 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Sub => {}
             Scenario::I32WrapI64 => {}
             Scenario::I32Xor => {}
+            Scenario::I64Add => {}
+            Scenario::I64And => {}
+            Scenario::I64Clz => {}
+            Scenario::I64Ctz => {}
+            Scenario::I64DivS => {}
+            Scenario::I64DivU => {}
+            Scenario::I64Eq => {}
+            Scenario::I64Eqz => {}
+            Scenario::I64GeS => {}
+            Scenario::I64GeU => {}
+            Scenario::I64GtU => {}
+            Scenario::I64GtS => {}
+            Scenario::I64LeU => {}
+            Scenario::I64LeS => {}
+            Scenario::I64Load => {}
+            Scenario::I64LtU => {}
+            Scenario::I64LtS => {}
+            Scenario::I64Mul => {}
+            Scenario::I64Ne => {}
+            Scenario::I64Or => {}
+            Scenario::I64Popcnt => {}
+            Scenario::I64RemS => {}
+            Scenario::I64RemU => {}
+            Scenario::I64Rotl => {}
+            Scenario::I64Rotr => {}
+            Scenario::I64Shl => {}
+            Scenario::I64ShrS => {}
+            Scenario::I64ShrU => {}
+            Scenario::I64Store => {}
+            Scenario::I64Sub => {}
+            Scenario::I64Xor => {}
             Scenario::I64ExtendI32U => {}
             Scenario::I64ExtendI32S => {}
             Scenario::If => {}
@@ -355,6 +448,186 @@ impl ScenarioWatGenerator for Scenario {
                 wat,
                 number_of_ops_per_loop_iteration,
                 DataType::I32,
+                "xor",
+            ),
+            Scenario::I64Add => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "add",
+            ),
+            Scenario::I64And => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "and",
+            ),
+            Scenario::I64Clz => instruction_with_1_arg_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "clz",
+            ),
+            Scenario::I64Ctz => instruction_with_1_arg_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "ctz",
+            ),
+            Scenario::I64DivS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "div_s",
+            ),
+            Scenario::I64DivU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "div_u",
+            ),
+            Scenario::I64Eq => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "eq",
+            ),
+            Scenario::I64Eqz => instruction_with_1_arg_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "eqz",
+            ),
+            Scenario::I64GeS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "ge_s",
+            ),
+            Scenario::I64GeU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "ge_u",
+            ),
+            Scenario::I64GtU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "gt_u",
+            ),
+            Scenario::I64GtS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "gt_s",
+            ),
+            Scenario::I64LeU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "le_u",
+            ),
+            Scenario::I64LeS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "le_s",
+            ),
+            Scenario::I64Load => {
+                load::write_wat_ops(wat, number_of_ops_per_loop_iteration, DataType::I64)
+            }
+            Scenario::I64LtU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "lt_u",
+            ),
+            Scenario::I64LtS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "lt_s",
+            ),
+            Scenario::I64Mul => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "mul",
+            ),
+            Scenario::I64Ne => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "ne",
+            ),
+            Scenario::I64Or => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "or",
+            ),
+            Scenario::I64Popcnt => instruction_with_1_arg_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "popcnt",
+            ),
+            Scenario::I64RemS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "rem_s",
+            ),
+            Scenario::I64RemU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "rem_u",
+            ),
+            Scenario::I64Rotl => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "rotl",
+            ),
+            Scenario::I64Rotr => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "rotr",
+            ),
+            Scenario::I64Shl => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "shl",
+            ),
+            Scenario::I64ShrS => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "shr_s",
+            ),
+            Scenario::I64ShrU => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "shr_u",
+            ),
+            Scenario::I64Store => {
+                store::write_wat_ops(wat, number_of_ops_per_loop_iteration, DataType::I64)
+            }
+            Scenario::I64Sub => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                "sub",
+            ),
+            Scenario::I64Xor => instruction_with_2_args_1_return::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
                 "xor",
             ),
             Scenario::I64ExtendI32U => convert::write_wat_ops(
