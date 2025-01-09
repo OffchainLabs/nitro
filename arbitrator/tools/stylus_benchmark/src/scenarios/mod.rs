@@ -10,4 +10,5 @@ pub mod i32_wrap_i64;
 pub mod if_op;
 pub mod instruction_with_1_arg_1_return;
 pub mod instruction_with_2_args_1_return;
+pub mod local_get;
 pub mod select;

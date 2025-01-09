@@ -3,7 +3,7 @@
 
 use crate::scenarios::{
     call, call_indirect, data_type::DataType, global_get, global_set, i32_wrap_i64, if_op,
-    instruction_with_1_arg_1_return, instruction_with_2_args_1_return, select,
+    instruction_with_1_arg_1_return, instruction_with_2_args_1_return, local_get, select,
 };
 use clap::ValueEnum;
 use std::fs::File;
@@ -48,11 +48,13 @@ pub enum Scenario {
     GlobalGet,
     GlobalSet,
     If,
+    LocalGet,
     Select,
 }
 
 trait ScenarioWatGenerator {
     fn write_specific_wat_beginning(&self, wat: &mut Vec<u8>);
+    fn write_specific_exported_func_beginning(&self, wat: &mut Vec<u8>);
     fn write_wat_ops(&self, wat: &mut Vec<u8>, number_of_ops_per_loop_iteration: usize);
 }
 
@@ -94,7 +96,50 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32WrapI64 => i32_wrap_i64::write_specific_wat_beginning(wat),
             Scenario::I32Xor => {}
             Scenario::If => if_op::write_specific_wat_beginning(wat),
+            Scenario::LocalGet => {},
             Scenario::Select => select::write_specific_wat_beginning(wat),
+        }
+    }
+
+    fn write_specific_exported_func_beginning(&self, wat: &mut Vec<u8>) {
+        match self {
+            Scenario::Call => {}
+            Scenario::CallIndirect => {}
+            Scenario::GlobalGet => {}
+            Scenario::GlobalSet => {}
+            Scenario::I32Add => {}
+            Scenario::I32And => {}
+            Scenario::I32Clz => {}
+            Scenario::I32Ctz => {}
+            Scenario::I32DivS => {}
+            Scenario::I32DivU => {}
+            Scenario::I32Eq => {}
+            Scenario::I32Eqz => {}
+            Scenario::I32GeS => {}
+            Scenario::I32GeU => {}
+            Scenario::I32GtU => {}
+            Scenario::I32GtS => {}
+            Scenario::I32LeU => {}
+            Scenario::I32LeS => {}
+            Scenario::I32LtU => {}
+            Scenario::I32LtS => {}
+            Scenario::I32Mul => {}
+            Scenario::I32Ne => {}
+            Scenario::I32Or => {}
+            Scenario::I32Popcnt => {}
+            Scenario::I32RemS => {}
+            Scenario::I32RemU => {}
+            Scenario::I32Rotl => {}
+            Scenario::I32Rotr => {}
+            Scenario::I32Shl => {}
+            Scenario::I32ShrS => {}
+            Scenario::I32ShrU => {}
+            Scenario::I32Sub => {}
+            Scenario::I32WrapI64 => {}
+            Scenario::I32Xor => {}
+            Scenario::If => {}
+            Scenario::LocalGet => local_get::write_specific_exported_func_beginning(wat),
+            Scenario::Select => {}
         }
     }
 
@@ -284,6 +329,7 @@ impl ScenarioWatGenerator for Scenario {
                 "xor",
             ),
             Scenario::If => if_op::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::LocalGet => local_get::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::Select => select::write_wat_ops(wat, number_of_ops_per_loop_iteration),
         }
     }
@@ -309,9 +355,10 @@ fn write_common_wat_beginning(wat: &mut Vec<u8>) {
 fn write_exported_func_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"    (func (export \"user_entrypoint\") (param i32) (result i32)\n")
         .unwrap();
+}
 
+fn write_loop_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"        call $start_benchmark\n").unwrap();
-
     wat.write_all(b"        (loop $loop\n").unwrap();
 }
 
@@ -361,6 +408,8 @@ pub fn generate_wat(scenario: Scenario, output_wat_dir_path: Option<PathBuf>) ->
     scenario.write_specific_wat_beginning(&mut wat);
 
     write_exported_func_beginning(&mut wat);
+    scenario.write_specific_exported_func_beginning(&mut wat);
+    write_loop_beginning(&mut wat);
 
     scenario.write_wat_ops(&mut wat, number_of_ops_per_loop_iteration);
 
