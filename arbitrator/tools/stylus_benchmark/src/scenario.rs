@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::scenarios::{
-    call, call_indirect, data_type::DataType, global_get, global_set, i32_wrap_i64, if_op,
+    call, call_indirect, convert, data_type::DataType, global_get, global_set, if_op,
     instruction_with_1_arg_1_return, instruction_with_2_args_1_return, local_get, local_set,
     local_tee, select,
 };
@@ -96,13 +96,13 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32ShrS => {}
             Scenario::I32ShrU => {}
             Scenario::I32Sub => {}
-            Scenario::I32WrapI64 => {},
+            Scenario::I32WrapI64 => {}
             Scenario::I32Xor => {}
-            Scenario::If => {},
+            Scenario::If => {}
             Scenario::LocalGet => {}
             Scenario::LocalSet => {}
             Scenario::LocalTee => {}
-            Scenario::Select => {},
+            Scenario::Select => {}
         }
     }
 
@@ -326,9 +326,13 @@ impl ScenarioWatGenerator for Scenario {
                 DataType::I32,
                 "sub",
             ),
-            Scenario::I32WrapI64 => {
-                i32_wrap_i64::write_wat_ops(wat, number_of_ops_per_loop_iteration)
-            }
+            Scenario::I32WrapI64 => convert::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I64,
+                DataType::I32,
+                "wrap_i64",
+            ),
             Scenario::I32Xor => instruction_with_2_args_1_return::write_wat_ops(
                 wat,
                 number_of_ops_per_loop_iteration,
