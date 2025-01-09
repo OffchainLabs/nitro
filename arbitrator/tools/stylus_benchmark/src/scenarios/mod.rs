@@ -14,3 +14,4 @@ pub mod local_get;
 pub mod local_set;
 pub mod local_tee;
 pub mod select;
+pub mod load;

@@ -3,7 +3,7 @@
 
 use crate::scenarios::{
     call, call_indirect, convert, data_type::DataType, global_get, global_set, if_op,
-    instruction_with_1_arg_1_return, instruction_with_2_args_1_return, local_get, local_set,
+    instruction_with_1_arg_1_return, instruction_with_2_args_1_return, load, local_get, local_set,
     local_tee, select,
 };
 use clap::ValueEnum;
@@ -28,6 +28,7 @@ pub enum Scenario {
     I32GtS,
     I32LeU,
     I32LeS,
+    I32Load,
     I32LtU,
     I32LtS,
     I32Mul,
@@ -84,6 +85,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32GtS => {}
             Scenario::I32LeU => {}
             Scenario::I32LeS => {}
+            Scenario::I32Load => {}
             Scenario::I32LtU => {}
             Scenario::I32LtS => {}
             Scenario::I32Mul => {}
@@ -130,6 +132,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32GtS => {}
             Scenario::I32LeU => {}
             Scenario::I32LeS => {}
+            Scenario::I32Load => {}
             Scenario::I32LtU => {}
             Scenario::I32LtS => {}
             Scenario::I32Mul => {}
@@ -247,6 +250,12 @@ impl ScenarioWatGenerator for Scenario {
                 number_of_ops_per_loop_iteration,
                 DataType::I32,
                 "le_s",
+            ),
+            Scenario::I32Load => load::write_wat_ops(
+                wat,
+                number_of_ops_per_loop_iteration,
+                DataType::I32,
+                "load",
             ),
             Scenario::I32LtU => instruction_with_2_args_1_return::write_wat_ops(
                 wat,
@@ -379,7 +388,10 @@ fn write_common_wat_beginning(wat: &mut Vec<u8>) {
         .unwrap();
     wat.write_all(b"    (import \"debug\" \"end_benchmark\" (func $end_benchmark))\n")
         .unwrap();
-    wat.write_all(b"    (memory (export \"memory\") 0 0)\n")
+    wat.write_all(b"    (import \"vm_hooks\" \"pay_for_memory_grow\" (func (param i32)))\n")
+        .unwrap();
+    wat.write_all(b"    (memory $memory 1)\n").unwrap();
+    wat.write_all(b"    (export \"memory\" (memory $memory))\n")
         .unwrap();
     wat.write_all(b"    (global $ops_counter (mut i32) (i32.const 0))\n")
         .unwrap();
