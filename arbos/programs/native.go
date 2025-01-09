@@ -193,7 +193,7 @@ func activateProgramInternal(
 		// wait for the module activation before starting compilation for other targets
 		res := <-results
 		if res.err != nil {
-			return info, nil, res.err
+			return nil, nil, res.err
 		} else if wavmFound {
 			asmMap[res.target] = res.asm
 		}
