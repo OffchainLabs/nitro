@@ -1964,6 +1964,7 @@ dependencies = [
  "eyre",
  "jit",
  "prover",
+ "rand",
  "strum",
  "strum_macros",
  "stylus",
