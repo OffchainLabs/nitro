@@ -29,7 +29,7 @@ import (
 )
 
 type transactionPublisher interface {
-	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions, chan struct{}) error
+	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions, chan error) error
 }
 
 type msgAndResult struct {
@@ -348,11 +348,15 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 			break
 		}
 		delete(roundInfo.msgAndResultBySequenceNumber, nextMsgAndResult.msg.SequenceNumber)
-		txIsQueued := make(chan struct{})
-		es.LaunchThread(func(ctx context.Context) {
-			nextMsgAndResult.resultChan <- es.transactionPublisher.PublishTimeboostedTransaction(ctx, nextMsgAndResult.msg.Transaction, nextMsgAndResult.msg.Options, txIsQueued)
-		})
-		<-txIsQueued
+		// Queued txs cannot use this message's context as it would lead to context canceled error once the result for this message is available and returned
+		// Hence using context.Background() allows unblocking of queued up txs even if current tx's context has errored out
+		txCtx := context.Background()
+		if nextMsgAndResult.msg.SequenceNumber == msg.SequenceNumber {
+			txCtx = ctx
+		}
+		if err := es.transactionPublisher.PublishTimeboostedTransaction(txCtx, nextMsgAndResult.msg.Transaction, nextMsgAndResult.msg.Options, nextMsgAndResult.resultChan); err != nil {
+			nextMsgAndResult.resultChan <- err
+		}
 		// Increase the global round sequence number.
 		roundInfo.sequence += 1
 	}

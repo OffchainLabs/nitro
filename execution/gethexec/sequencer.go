@@ -465,32 +465,49 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	return s.publishTransactionImpl(parentCtx, tx, options, nil, false /* delay tx if express lane is active */)
-}
-
-func (s *Sequencer) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, txIsQueuedNotifier chan struct{}) error {
-	return s.publishTransactionImpl(parentCtx, tx, options, txIsQueuedNotifier, true)
-}
-
-func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, txIsQueuedNotifier chan struct{}, isExpressLaneController bool) error {
-	closeNotifier := func() {
-		if txIsQueuedNotifier != nil {
-			close(txIsQueuedNotifier) // Notifies express lane service to continue with next tx
-		}
+	now := time.Now()
+	resultChan := make(chan error, 1)
+	queueCtxCancel, err := s.publishTransactionImpl(parentCtx, tx, options, resultChan, false /* delay tx if express lane is active */)
+	if queueCtxCancel != nil {
+		defer queueCtxCancel()
 	}
-	closeByDefer := true
-	defer func() {
-		if closeByDefer {
-			closeNotifier()
+	if err != nil {
+		return err
+	}
+
+	// Just to be safe, make sure we don't run over twice the queue timeout
+	queueTimeout := s.config().QueueTimeout
+	abortCtx, cancel := ctxWithTimeout(parentCtx, queueTimeout*2)
+	defer cancel()
+
+	select {
+	case res := <-resultChan:
+		return res
+	case <-abortCtx.Done():
+		// We use abortCtx here and not queueCtx, because the QueueTimeout only applies to the background queue.
+		// We want to give the background queue as much time as possible to make a response.
+		err := abortCtx.Err()
+		if parentCtx.Err() == nil {
+			// If we've hit the abort deadline (as opposed to parentCtx being canceled), something went wrong.
+			log.Warn("Transaction sequencing hit abort deadline", "err", err, "submittedAt", now, "queueTimeout", queueTimeout, "txHash", tx.Hash())
 		}
-	}()
+		return err
+	}
+}
+
+func (s *Sequencer) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) error {
+	_, err := s.publishTransactionImpl(parentCtx, tx, options, resultChan, true) // Is it safe to ignore queueCtx's CancelFunc here?
+	return err
+}
+
+func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error, isExpressLaneController bool) (context.CancelFunc, error) {
 	config := s.config()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
 	// And hard threshold was enabled, this prevents spamming of read locks when not needed
 	if s.l1Reader != nil && config.ExpectedSurplusHardThreshold != "default" {
 		s.expectedSurplusMutex.RLock()
 		if s.expectedSurplusUpdated && s.expectedSurplus < int64(config.expectedSurplusHardThreshold) {
-			return errors.New("currently not accepting transactions due to expected surplus being below threshold")
+			return nil, errors.New("currently not accepting transactions due to expected surplus being below threshold")
 		}
 		s.expectedSurplusMutex.RUnlock()
 	}
@@ -502,7 +519,9 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 	if forwarder != nil {
 		err := forwarder.PublishTransaction(parentCtx, tx, options)
 		if !errors.Is(err, ErrNoSequencer) {
-			return err
+			// We should return the result from forwarder directly to resultChan and let the caller functions read from there
+			resultChan <- err
+			return nil, nil
 		}
 	}
 
@@ -510,22 +529,22 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 		signer := types.LatestSigner(s.execEngine.bc.Config())
 		sender, err := types.Sender(signer, tx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		_, authorized := s.senderWhitelist[sender]
 		if !authorized {
-			return errors.New("transaction sender is not on the whitelist")
+			return nil, errors.New("transaction sender is not on the whitelist")
 		}
 	}
 	if tx.Type() >= types.ArbitrumDepositTxType || tx.Type() == types.BlobTxType {
 		// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
 		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
-		return types.ErrTxTypeNotSupported
+		return nil, types.ErrTxTypeNotSupported
 	}
 
 	txBytes, err := tx.MarshalBinary()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
@@ -536,13 +555,7 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 
 	queueTimeout := config.QueueTimeout
 	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
-	defer cancelFunc()
 
-	// Just to be safe, make sure we don't run over twice the queue timeout
-	abortCtx, cancel := ctxWithTimeout(parentCtx, queueTimeout*2)
-	defer cancel()
-
-	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
 		tx,
 		len(txBytes),
@@ -555,25 +568,11 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 	}
 	select {
 	case s.txQueue <- queueItem:
-		closeByDefer = false
-		closeNotifier()
 	case <-queueCtx.Done():
-		return queueCtx.Err()
+		return cancelFunc, queueCtx.Err()
 	}
 
-	select {
-	case res := <-resultChan:
-		return res
-	case <-abortCtx.Done():
-		// We use abortCtx here and not queueCtx, because the QueueTimeout only applies to the background queue.
-		// We want to give the background queue as much time as possible to make a response.
-		err := abortCtx.Err()
-		if parentCtx.Err() == nil {
-			// If we've hit the abort deadline (as opposed to parentCtx being canceled), something went wrong.
-			log.Warn("Transaction sequencing hit abort deadline", "err", err, "submittedAt", queueItem.firstAppearance, "queueTimeout", queueTimeout, "txHash", tx.Hash())
-		}
-		return err
-	}
+	return cancelFunc, nil
 }
 
 func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
@@ -975,7 +974,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			select {
 			case queueItem = <-s.txQueue:
 			case queueItem = <-s.timeboostAuctionResolutionTxQueue:
-				log.Info("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
+				log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
 			case <-nextNonceExpiryChan:
 				// No need to stop the previous timer since it already elapsed
 				nextNonceExpiryTimer = s.expireNonceFailures()
@@ -995,7 +994,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			select {
 			case queueItem = <-s.txQueue:
 			case queueItem = <-s.timeboostAuctionResolutionTxQueue:
-				log.Info("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
+				log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
 			default:
 				done = true
 			}
