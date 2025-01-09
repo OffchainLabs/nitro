@@ -3,7 +3,8 @@
 
 use crate::scenarios::{
     call, call_indirect, data_type::DataType, global_get, global_set, i32_wrap_i64, if_op,
-    instruction_with_1_arg_1_return, instruction_with_2_args_1_return, local_get, select,
+    instruction_with_1_arg_1_return, instruction_with_2_args_1_return, local_get, local_set,
+    select,
 };
 use clap::ValueEnum;
 use std::fs::File;
@@ -49,6 +50,7 @@ pub enum Scenario {
     GlobalSet,
     If,
     LocalGet,
+    LocalSet,
     Select,
 }
 
@@ -96,7 +98,8 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32WrapI64 => i32_wrap_i64::write_specific_wat_beginning(wat),
             Scenario::I32Xor => {}
             Scenario::If => if_op::write_specific_wat_beginning(wat),
-            Scenario::LocalGet => {},
+            Scenario::LocalGet => {}
+            Scenario::LocalSet => {}
             Scenario::Select => select::write_specific_wat_beginning(wat),
         }
     }
@@ -139,6 +142,7 @@ impl ScenarioWatGenerator for Scenario {
             Scenario::I32Xor => {}
             Scenario::If => {}
             Scenario::LocalGet => local_get::write_specific_exported_func_beginning(wat),
+            Scenario::LocalSet => local_set::write_specific_exported_func_beginning(wat),
             Scenario::Select => {}
         }
     }
@@ -330,6 +334,7 @@ impl ScenarioWatGenerator for Scenario {
             ),
             Scenario::If => if_op::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::LocalGet => local_get::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::LocalSet => local_set::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::Select => select::write_wat_ops(wat, number_of_ops_per_loop_iteration),
         }
     }
