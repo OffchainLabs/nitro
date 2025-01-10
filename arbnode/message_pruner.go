@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-
-	flag "github.com/spf13/pflag"
 )
 
 type MessagePruner struct {
@@ -112,6 +112,10 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 	}
 	msgCount := endBatchMetadata.MessageCount
 	delayedCount := endBatchMetadata.DelayedMessageCount
+	if delayedCount > 0 {
+		// keep an extra delayed message for the inbox reader to use
+		delayedCount--
+	}
 
 	return m.deleteOldMessagesFromDB(ctx, msgCount, delayedCount)
 }

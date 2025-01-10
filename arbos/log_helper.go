@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	log_helper "github.com/EspressoSystems/espresso-sequencer-go/log-helper"
+
 	"github.com/ethereum/go-ethereum/log"
 )
 

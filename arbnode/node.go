@@ -18,11 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
@@ -40,6 +42,9 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
+	boldstaker "github.com/offchainlabs/nitro/staker/bold"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -78,22 +83,23 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 }
 
 type Config struct {
-	Sequencer           bool                        `koanf:"sequencer"`
-	ParentChainReader   headerreader.Config         `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader         InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer    DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster         BatchPosterConfig           `koanf:"batch-poster" reload:"hot"`
-	MessagePruner       MessagePrunerConfig         `koanf:"message-pruner" reload:"hot"`
-	BlockValidator      staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
-	Feed                broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
-	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
-	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
-	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
-	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
-	Dangerous           DangerousConfig             `koanf:"dangerous"`
-	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
-	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
+	Sequencer           bool                           `koanf:"sequencer"`
+	ParentChainReader   headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader         InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer    DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster         BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
+	MessagePruner       MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
+	BlockValidator      staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
+	Feed                broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
+	Staker              legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
+	Bold                boldstaker.BoldConfig          `koanf:"bold"`
+	SeqCoordinator      SeqCoordinatorConfig           `koanf:"seq-coordinator"`
+	DataAvailability    das.DataAvailabilityConfig     `koanf:"data-availability"`
+	SyncMonitor         SyncMonitorConfig              `koanf:"sync-monitor"`
+	Dangerous           DangerousConfig                `koanf:"dangerous"`
+	TransactionStreamer TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance         MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
+	ResourceMgmt        resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -152,7 +158,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
-	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
+	legacystaker.L1ValidatorConfigAddOptions(prefix+".staker", f)
+	boldstaker.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
@@ -170,7 +177,8 @@ var ConfigDefault = Config{
 	MessagePruner:       DefaultMessagePrunerConfig,
 	BlockValidator:      staker.DefaultBlockValidatorConfig,
 	Feed:                broadcastclient.FeedConfigDefault,
-	Staker:              staker.DefaultL1ValidatorConfig,
+	Staker:              legacystaker.DefaultL1ValidatorConfig,
+	Bold:                boldstaker.DefaultBoldConfig,
 	SeqCoordinator:      DefaultSeqCoordinatorConfig,
 	DataAvailability:    das.DefaultDataAvailabilityConfig,
 	SyncMonitor:         DefaultSyncMonitorConfig,
@@ -202,7 +210,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
-	config.Staker = staker.TestL1ValidatorConfig
+	config.Staker = legacystaker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 
@@ -218,7 +226,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Feed.Output.Signed = false
 	config.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
-	config.Staker = staker.TestL1ValidatorConfig
+	config.Staker = legacystaker.TestL1ValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
@@ -266,7 +274,7 @@ type Node struct {
 	MessagePruner           *MessagePruner
 	BlockValidator          *staker.BlockValidator
 	StatelessBlockValidator *staker.StatelessBlockValidator
-	Staker                  *staker.Staker
+	Staker                  *multiprotocolstaker.MultiProtocolStaker
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
@@ -408,7 +416,7 @@ func createNodeImpl(
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	txOptsValidator *bind.TransactOpts,
 	txOptsBatchPoster *bind.TransactOpts,
@@ -632,7 +640,7 @@ func createNodeImpl(
 		}
 	}
 
-	var stakerObj *staker.Staker
+	var stakerObj *multiprotocolstaker.MultiProtocolStaker
 	var messagePruner *MessagePruner
 	var stakerAddr common.Address
 
@@ -652,7 +660,7 @@ func createNodeImpl(
 		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
 		// TODO: factor this out into separate helper, and split rest of node
 		// creation into multiple helpers.
-		var wallet staker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client, deployInfo.Rollup)
+		var wallet legacystaker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client, deployInfo.Rollup)
 		if !strings.EqualFold(config.Staker.Strategy, "watchtower") {
 			if config.Staker.UseSmartContractWallet || (txOptsValidator == nil && config.Staker.DataPoster.ExternalSigner.URL == "") {
 				var existingWalletAddress *common.Address
@@ -680,13 +688,13 @@ func createNodeImpl(
 			}
 		}
 
-		var confirmedNotifiers []staker.LatestConfirmedNotifier
+		var confirmedNotifiers []legacystaker.LatestConfirmedNotifier
 		if config.MessagePruner.Enable {
 			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, func() *staker.L1ValidatorConfig { return &configFetcher.Get().Staker }, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}
@@ -696,11 +704,6 @@ func createNodeImpl(
 		if dp != nil {
 			stakerAddr = dp.Sender()
 		}
-		whitelisted, err := stakerObj.IsWhitelisted(ctx)
-		if err != nil {
-			return nil, err
-		}
-		log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster
@@ -782,7 +785,7 @@ func CreateNode(
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	txOptsValidator *bind.TransactOpts,
 	txOptsBatchPoster *bind.TransactOpts,

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 

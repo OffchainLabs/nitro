@@ -9,22 +9,22 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/client/redis"
-
 	validatorclient "github.com/offchainlabs/nitro/validator/client"
+	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
 type StatelessBlockValidator struct {
@@ -40,6 +40,7 @@ type StatelessBlockValidator struct {
 	streamer     TransactionStreamerInterface
 	db           ethdb.Database
 	dapReaders   []daprovider.Reader
+	stack        *node.Node
 }
 
 type BlockValidatorRegistrer interface {
@@ -67,6 +68,7 @@ type TransactionStreamerInterface interface {
 
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error)
+	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
 }
 
 type GlobalStatePosition struct {
@@ -264,6 +266,7 @@ func NewStatelessBlockValidator(
 		db:             arbdb,
 		dapReaders:     dapReaders,
 		execSpawners:   executionSpawners,
+		stack:          stack,
 	}, nil
 }
 
@@ -277,6 +280,22 @@ func (v *StatelessBlockValidator) readPostedBatch(ctx context.Context, batchNum 
 	}
 	postedData, _, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 	return postedData, err
+}
+
+func (v *StatelessBlockValidator) InboxTracker() InboxTrackerInterface {
+	return v.inboxTracker
+}
+
+func (v *StatelessBlockValidator) InboxReader() InboxReaderInterface {
+	return v.inboxReader
+}
+
+func (v *StatelessBlockValidator) InboxStreamer() TransactionStreamerInterface {
+	return v.streamer
+}
+
+func (v *StatelessBlockValidator) ExecutionSpawners() []validator.ExecutionSpawner {
+	return v.execSpawners
 }
 
 func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum uint64) (bool, *FullBatchInfo, error) {
@@ -377,7 +396,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	return nil
 }
 
-func buildGlobalState(res execution.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
+func BuildGlobalState(res execution.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
 		SendRoot:   res.SendRoot,
@@ -429,8 +448,8 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, fmt.Errorf("failed calculating position for validation: %w", err)
 	}
-	start := buildGlobalState(*prevResult, startPos)
-	end := buildGlobalState(*result, endPos)
+	start := BuildGlobalState(*prevResult, startPos)
+	end := BuildGlobalState(*result, endPos)
 	found, fullBatchInfo, err := v.readFullBatch(ctx, start.Batch)
 	if err != nil {
 		return nil, err
@@ -506,6 +525,18 @@ func (v *StatelessBlockValidator) ValidateResult(
 		return false, &gsEnd, err
 	}
 	return true, &entry.End, nil
+}
+
+func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, targets ...ethdb.WasmTarget) (server_api.InputJSON, error) {
+	entry, err := v.CreateReadyValidationEntry(ctx, pos)
+	if err != nil {
+		return server_api.InputJSON{}, err
+	}
+	input, err := entry.ToInput(targets)
+	if err != nil {
+		return server_api.InputJSON{}, err
+	}
+	return *server_api.ValidationInputToJson(input), nil
 }
 
 func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execution.ExecutionRecorder) {

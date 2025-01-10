@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -16,11 +18,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/filters"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -28,7 +31,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	flag "github.com/spf13/pflag"
 )
 
 type StylusTargetConfig struct {
@@ -180,13 +182,16 @@ func CreateExecutionNode(
 	stack *node.Node,
 	chainDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
 	execEngine, err := NewExecutionEngine(l2BlockChain)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
+	}
+	if config.Caching.DisableStylusCacheMetricsCollection {
+		execEngine.DisableStylusCacheMetricsCollection()
 	}
 	if err != nil {
 		return nil, err
@@ -315,37 +320,13 @@ func CreateExecutionNode(
 
 }
 
-// GetArbOSConfigAtHeight is a data retrieval function on the execution engine.
-// Params:
-//
-//	height: An optional unsinged 64 bit integer that represents the block height at which we wish to view the
-//	ArbOS config. This must be less than or equal to the current block height.
-//
-// Returns:
-//
-//	A reference to a params.ChainConfig struct that contains the cannonical ArbOS chain config at the given block
-//	height,	the current block height if height was 0, or an error if the execution engine was unable to obtain the
-//	chain config.
-//
-// Safety:
-//
-//	This function should be thread safe as the functions it calls in the execution engine are thread safe.
-func (n *ExecutionNode) GetArbOSConfigAtHeight(height uint64) (*params.ChainConfig, error) {
-	config, err := n.ExecEngine.GetArbOSConfigAtHeight(height)
-	if err != nil {
-		log.Error("GetArbOSConfigAtHeight", "height", height, "err", err)
-		return nil, err
-	}
-	return config, nil
-}
-
 func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
 	n.ExecEngine.MarkFeedStart(to)
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	config := n.ConfigFetcher()
-	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCache, &config.StylusTarget)
+	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCacheCapacity, &config.StylusTarget)
 	if err != nil {
 		return fmt.Errorf("error initializing execution engine: %w", err)
 	}

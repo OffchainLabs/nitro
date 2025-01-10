@@ -5,10 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/params"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -59,7 +58,6 @@ type ExecutionSequencer interface {
 	MarkFeedStart(to arbutil.MessageIndex)
 	Synced() bool
 	FullSyncProgressMap() map[string]interface{}
-	GetArbOSConfigAtHeight(height uint64) (*params.ChainConfig, error)
 }
 
 type FullExecutionClient interface {
