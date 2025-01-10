@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 pub mod br;
+pub mod br_if;
 pub mod call;
 pub mod call_indirect;
 pub mod convert;
