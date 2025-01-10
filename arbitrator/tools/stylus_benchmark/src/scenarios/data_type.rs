@@ -19,9 +19,8 @@ impl Rand for DataType {
     fn gen(&self) -> usize {
         let mut rng = rand::thread_rng();
         match self {
-            // makes sure that the generated number fits a signed integer
-            DataType::I32 => (rng.gen::<u32>() / 2 - 1).try_into().unwrap(),
-            DataType::I64 => (rng.gen::<u64>() / 2 - 1).try_into().unwrap(),
+            DataType::I32 => rng.gen_range(0..i32::MAX).try_into().unwrap(),
+            DataType::I64 => rng.gen_range(0..i64::MAX).try_into().unwrap(),
         }
     }
 }
