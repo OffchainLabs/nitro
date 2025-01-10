@@ -21,8 +21,9 @@ pub fn write_wat_ops(
                 .unwrap();
             identation.push_str("    ");
         }
+        // it will jump to the end of the first block
         wat.write_all(format!("{}i32.const {}\n", identation, table_size).as_bytes())
-            .unwrap(); // it will jump to the end of the last block
+            .unwrap();
 
         let mut br_table = String::from("br_table");
         for i in 0..table_size {
