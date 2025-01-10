@@ -1429,6 +1429,7 @@ func createNonL1BlockChainWithStackConfig(
 	if execConfig == nil {
 		execConfig = ExecConfigDefaultTest(t)
 	}
+	Require(t, execConfig.Validate())
 
 	stack, err := node.New(stackConfig)
 	Require(t, err)
@@ -1516,6 +1517,8 @@ func Create2ndNodeWithConfig(
 	if execConfig == nil {
 		execConfig = ExecConfigDefaultNonSequencerTest(t)
 	}
+	Require(t, execConfig.Validate())
+
 	feedErrChan := make(chan error, 10)
 	parentChainRpcClient := parentChainStack.Attach()
 	parentChainClient := ethclient.NewClient(parentChainRpcClient)
@@ -1549,7 +1552,6 @@ func Create2ndNodeWithConfig(
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
-	Require(t, execConfig.Validate())
 	Require(t, nodeConfig.Validate())
 	configFetcher := func() *gethexec.Config { return execConfig }
 	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher)
