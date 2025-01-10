@@ -22,7 +22,7 @@ pub fn write_wat_ops(
             identation.push_str("    ");
         }
         // it will jump to the end of the first block
-        wat.write_all(format!("{}i32.const {}\n", identation, table_size).as_bytes())
+        wat.write_all(format!("{}i32.const {}\n", identation, table_size - 1).as_bytes())
             .unwrap();
 
         let mut br_table = String::from("br_table");
