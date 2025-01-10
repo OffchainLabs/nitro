@@ -26,7 +26,7 @@ type ValidationRun interface {
 
 type ExecutionSpawner interface {
 	ValidationSpawner
-	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) containers.PromiseInterface[ExecutionRun]
+	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput, useBoldMachine bool) containers.PromiseInterface[ExecutionRun]
 	LatestWasmModuleRoot() containers.PromiseInterface[common.Hash]
 }
 
@@ -37,4 +37,5 @@ type ExecutionRun interface {
 	GetProofAt(uint64) containers.PromiseInterface[[]byte]
 	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]
 	Close()
+	CheckAlive(ctx context.Context) error
 }

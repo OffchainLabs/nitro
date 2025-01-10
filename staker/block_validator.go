@@ -1117,7 +1117,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		}
 		v.validations.Delete(iPos)
 	}
-	v.nextCreateStartGS = buildGlobalState(*res, endPosition)
+	v.nextCreateStartGS = BuildGlobalState(*res, endPosition)
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	v.nextCreateBatchReread = true
 	v.prevBatchCache = make(map[uint64][]byte)

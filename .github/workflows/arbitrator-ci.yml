@@ -66,19 +66,28 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
-      - name: Install rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 'stable'
-          components: 'llvm-tools-preview, rustfmt, clippy'
-
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-08-06'
+          toolchain: 'nightly-2024-10-06'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
+
+      - name: Install rust stable
+        id: install-rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.80.1'
+          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          components: 'llvm-tools-preview, rustfmt, clippy'
+
+      - name: Install rust stable
+        id: install-rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.80.1'
+          components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
@@ -170,6 +179,9 @@ jobs:
 
       - name: Rustfmt - langs/rust
         run: cargo fmt --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
+
+      - name: Rustfmt - tools/stylus_benchmark
+        run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
 
       - name: Make proofs from test cases
         run: make -j test-gen-proofs
