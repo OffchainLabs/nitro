@@ -681,14 +681,12 @@ fn write_common_wat_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"    (memory $memory 1)\n").unwrap();
     wat.write_all(b"    (export \"memory\" (memory $memory))\n")
         .unwrap();
+    wat.write_all(b"    (global $ops_counter (mut i32) (i32.const 0))\n")
+        .unwrap();
 }
 
 fn write_exported_func_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"    (func (export \"user_entrypoint\") (param i32) (result i32)\n")
-        .unwrap();
-    wat.write_all(b"        (local $ops_counter i32)\n")
-        .unwrap();
-    wat.write_all(b"        (local.set $ops_counter (i32.const 0))\n")
         .unwrap();
 }
 
@@ -705,7 +703,7 @@ fn write_wat_end(
     let number_of_ops = number_of_loop_iterations * number_of_ops_per_loop_iteration;
 
     // update ops_counter
-    wat.write_all(b"            local.get $ops_counter\n")
+    wat.write_all(b"            global.get $ops_counter\n")
         .unwrap();
     wat.write_all(
         format!(
@@ -716,10 +714,12 @@ fn write_wat_end(
     )
     .unwrap();
     wat.write_all(b"            i32.add\n").unwrap();
-    wat.write_all(b"            local.tee $ops_counter\n")
+    wat.write_all(b"            global.set $ops_counter\n")
         .unwrap();
 
     // check if we need to continue looping
+    wat.write_all(b"            global.get $ops_counter\n")
+        .unwrap();
     wat.write_all(format!("            i32.const {}\n", number_of_ops).as_bytes())
         .unwrap();
     wat.write_all(b"            i32.lt_s\n").unwrap();
