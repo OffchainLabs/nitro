@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::scenarios::{
-    call, call_indirect, convert, data_type::DataType, global_get, global_set, if_op,
+    br, call, call_indirect, convert, data_type::DataType, global_get, global_set, if_op,
     instruction_with_1_arg_1_return, instruction_with_2_args_1_return, load, local_get, local_set,
     local_tee, select, store,
 };
@@ -79,6 +79,7 @@ pub enum Scenario {
     I64Xor,
     I64ExtendI32U,
     I64ExtendI32S,
+    Br,
     Call,
     CallIndirect,
     GlobalGet,
@@ -99,6 +100,7 @@ trait ScenarioWatGenerator {
 impl ScenarioWatGenerator for Scenario {
     fn write_specific_wat_beginning(&self, wat: &mut Vec<u8>) {
         match self {
+            Scenario::Br => {},
             Scenario::Call => call::write_specific_wat_beginning(wat),
             Scenario::CallIndirect => call_indirect::write_specific_wat_beginning(wat),
             Scenario::GlobalGet => global_get::write_specific_wat_beginning(wat),
@@ -178,6 +180,7 @@ impl ScenarioWatGenerator for Scenario {
 
     fn write_specific_exported_func_beginning(&self, wat: &mut Vec<u8>) {
         match self {
+            Scenario::Br => {},
             Scenario::Call => {}
             Scenario::CallIndirect => {}
             Scenario::GlobalGet => {}
@@ -257,6 +260,7 @@ impl ScenarioWatGenerator for Scenario {
 
     fn write_wat_ops(&self, wat: &mut Vec<u8>, number_of_ops_per_loop_iteration: usize) {
         match self {
+            Scenario::Br => br::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::Call => call::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::CallIndirect => {
                 call_indirect::write_wat_ops(wat, number_of_ops_per_loop_iteration)
@@ -676,7 +680,8 @@ fn write_exported_func_beginning(wat: &mut Vec<u8>) {
         .unwrap();
     wat.write_all(b"        (local $ops_counter i32)\n")
         .unwrap();
-    wat.write_all(b"        (local.set $ops_counter (i32.const 0))\n").unwrap();
+    wat.write_all(b"        (local.set $ops_counter (i32.const 0))\n")
+        .unwrap();
 }
 
 fn write_loop_beginning(wat: &mut Vec<u8>) {
