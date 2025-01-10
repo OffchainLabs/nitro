@@ -8,7 +8,7 @@ use strum_macros::{Display, EnumString};
 #[strum(serialize_all = "lowercase")]
 pub enum DataType {
     I32,
-    I64
+    I64,
 }
 
 pub trait Rand {

@@ -9,7 +9,6 @@ pub fn write_specific_wat_beginning(wat: &mut Vec<u8>) {
 
 pub fn write_wat_ops(wat: &mut Vec<u8>, number_of_loop_iterations: usize) {
     for _ in 0..number_of_loop_iterations {
-        wat.write_all(b"            call $nop\n")
-            .unwrap();
+        wat.write_all(b"            call $nop\n").unwrap();
     }
 }

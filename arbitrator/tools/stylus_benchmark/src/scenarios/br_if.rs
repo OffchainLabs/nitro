@@ -8,7 +8,8 @@ pub fn write_wat_ops(wat: &mut Vec<u8>, number_of_ops_per_loop_iteration: usize)
         wat.write_all(b"            (block\n").unwrap();
         wat.write_all(b"                (block \n").unwrap();
         wat.write_all(b"                    (block \n").unwrap();
-        wat.write_all(b"                        i32.const 1\n").unwrap();
+        wat.write_all(b"                        i32.const 1\n")
+            .unwrap();
         wat.write_all(b"                        br_if 2\n").unwrap(); // it will jump to the end of the last block
         wat.write_all(b"                    )\n").unwrap();
         wat.write_all(b"                )\n").unwrap();
