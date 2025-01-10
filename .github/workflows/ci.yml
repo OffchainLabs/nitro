@@ -94,7 +94,6 @@ jobs:
           gotestsum_version: v1.12.0
 
       - name: Setup nodejs
-        if: false # fails to find yarn.lock when running in symlinked directory, doesn't seem to be needed
         uses: actions/setup-node@v3
         with:
           node-version: '18'
@@ -123,9 +122,9 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-08-06'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
+          toolchain: "nightly-2024-10-06"
+          targets: "wasm32-wasi, wasm32-unknown-unknown"
+          components: "rust-src, rustfmt, clippy"
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
@@ -135,8 +134,6 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
 
       - name: Cache Build Products
         uses: actions/cache@v3

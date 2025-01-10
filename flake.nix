@@ -33,7 +33,7 @@
           extensions = [ "rustfmt" "clippy" "llvm-tools-preview" "rust-src" ];
           targets = [ "wasm32-unknown-unknown" "wasm32-wasi" ];
         };
-        nightlyToolchain = pkgs.rust-bin.nightly."2024-08-06".minimal.override {
+        nightlyToolchain = pkgs.rust-bin.nightly."2024-10-06".minimal.override {
           extensions = [ "rust-src" ];
           targets = [ "wasm32-unknown-unknown" "wasm32-wasi" ];
         };

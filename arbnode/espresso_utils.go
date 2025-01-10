@@ -17,7 +17,7 @@ const INDEX_SIZE int = 8
 func buildRawHotShotPayload(
 	msgPositions []arbutil.MessageIndex,
 	msgFetcher func(arbutil.MessageIndex) ([]byte, error),
-	maxSize uint64,
+	maxSize int64,
 ) ([]byte, int) {
 
 	payload := []byte{}

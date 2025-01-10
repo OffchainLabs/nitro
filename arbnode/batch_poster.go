@@ -82,10 +82,12 @@ var (
 
 const (
 	batchPosterSimpleRedisLockKey = "node.batch-poster.redis-lock.simple-lock-key"
-
+	// oldSequencerBatchPostMethodName uses automatically generated solidity function
+	// binding with selector 8f111f3c for "addSequencerL2BatchFromOrigin1"
 	oldSequencerBatchPostMethodName       = "addSequencerL2BatchFromOrigin1"
 	newSequencerBatchPostMethodName       = "addSequencerL2BatchFromOrigin"
 	sequencerBatchPostWithBlobsMethodName = "addSequencerL2BatchFromBlobs"
+	espressoTransactionSizeLimit          = 900 * 1024
 )
 
 type batchPosterPosition struct {
@@ -179,12 +181,16 @@ type BatchPosterConfig struct {
 	gasRefunder                    common.Address
 	l1BlockBound                   l1BlockBound
 	// Espresso specific flags
-	LightClientAddress           string        `koanf:"light-client-address"`
-	HotShotUrl                   string        `koanf:"hotshot-url"`
-	UseEscapeHatch               bool          `koanf:"use-escape-hatch"`
-	EspressoTxnsPollingInterval  time.Duration `koanf:"espresso-txns-polling-interval"`
-	EspressoSwitchDelayThreshold uint64        `koanf:"espresso-switch-delay-threshold"`
-	EspressoMaxTransactionSize   uint64        `koanf:"espresso-max-transaction-size"`
+	LightClientAddress          string        `koanf:"light-client-address"`
+	HotShotUrl                  string        `koanf:"hotshot-url"`
+	UseEscapeHatch              bool          `koanf:"use-escape-hatch"`
+	EspressoTxnsPollingInterval time.Duration `koanf:"espresso-txns-polling-interval"`
+	// MaxBlockLagBeforeEscapeHatch specifies the maximum number of L1 blocks that HotShot
+	// state updates can lag behind before triggering the escape hatch. If the difference
+	// between the current L1 block number and the latest state update's block number
+	// exceeds this value, the escape hatch will be activated.
+	// Default: 350 blocks (~1 hour at 12s block time)
+	MaxBlockLagBeforeEscapeHatch uint64 `koanf:"max-block-lag-before-escape-hatch"`
 }
 
 func (c *BatchPosterConfig) Validate() error {
@@ -243,11 +249,10 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
 	f.Bool(prefix+".use-escape-hatch", DefaultBatchPosterConfig.UseEscapeHatch, "if true, Escape Hatch functionality will be used")
 	f.Duration(prefix+".espresso-txns-polling-interval", DefaultBatchPosterConfig.EspressoTxnsPollingInterval, "interval between polling for transactions to be included in the block")
-	f.Uint64(prefix+".espresso-switch-delay-threshold", DefaultBatchPosterConfig.EspressoSwitchDelayThreshold, "specifies the switch delay threshold used to determine hotshot liveness")
+	f.Uint64(prefix+".max-block-lag-before-escape-hatch", DefaultBatchPosterConfig.MaxBlockLagBeforeEscapeHatch, "specifies the switch delay threshold used to determine hotshot liveness")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
-	f.Uint64(prefix+".espresso-max-transaction-size", DefaultBatchPosterConfig.EspressoMaxTransactionSize, "specifies the max size of a espresso transasction")
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -278,10 +283,9 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	CheckBatchCorrectness:          true,
 	UseEscapeHatch:                 false,
 	EspressoTxnsPollingInterval:    time.Millisecond * 500,
-	EspressoSwitchDelayThreshold:   350,
+	MaxBlockLagBeforeEscapeHatch:   350,
 	LightClientAddress:             "",
 	HotShotUrl:                     "",
-	EspressoMaxTransactionSize:     900 * 1024,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -315,10 +319,9 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	CheckBatchCorrectness:          true,
 	UseEscapeHatch:                 false,
 	EspressoTxnsPollingInterval:    time.Millisecond * 500,
-	EspressoSwitchDelayThreshold:   10,
+	MaxBlockLagBeforeEscapeHatch:   10,
 	LightClientAddress:             "",
 	HotShotUrl:                     "",
-	EspressoMaxTransactionSize:     900 * 1024,
 }
 
 type BatchPosterOpts struct {
@@ -382,8 +385,8 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		opts.Streamer.lightClientReader = lightClientReader
 		opts.Streamer.UseEscapeHatch = opts.Config().UseEscapeHatch
 		opts.Streamer.espressoTxnsPollingInterval = opts.Config().EspressoTxnsPollingInterval
-		opts.Streamer.espressoSwitchDelayThreshold = opts.Config().EspressoSwitchDelayThreshold
-		opts.Streamer.espressoMaxTransactionSize = opts.Config().EspressoMaxTransactionSize
+		opts.Streamer.maxBlockLagBeforeEscapeHatch = opts.Config().MaxBlockLagBeforeEscapeHatch
+		opts.Streamer.espressoMaxTransactionSize = espressoTransactionSizeLimit
 	}
 
 	b := &BatchPoster{
@@ -576,22 +579,6 @@ func (b *BatchPoster) checkEspressoValidation() error {
 		return nil
 	}
 
-	if b.streamer.UseEscapeHatch {
-		skip, err := b.streamer.getSkipVerificationPos()
-		if err != nil {
-			log.Error("failed call to get skip verification pos", "err", err)
-			return err
-		}
-
-		// Skip checking espresso validation due to hotshot failure
-		if skip != nil {
-			if b.building.msgCount <= *skip {
-				log.Warn("skipped espresso verification due to hotshot failure", "pos", b.building.msgCount)
-				return nil
-			}
-		}
-	}
-
 	if b.streamer.EscapeHatchEnabled {
 		log.Warn("skipped espresso verification due to hotshot failure", "pos", b.building.msgCount)
 		return nil
@@ -600,7 +587,7 @@ func (b *BatchPoster) checkEspressoValidation() error {
 	return fmt.Errorf("%w (height: %d)", EspressoValidationErr, b.building.msgCount)
 }
 
-func (b *BatchPoster) submitEspressoTransactionPos(pos arbutil.MessageIndex) error {
+func (b *BatchPoster) enqueuePendingTransaction(pos arbutil.MessageIndex) error {
 	hasNotSubmitted, err := b.streamer.HasNotSubmitted(pos)
 	if err != nil {
 		return err
@@ -611,7 +598,7 @@ func (b *BatchPoster) submitEspressoTransactionPos(pos arbutil.MessageIndex) err
 
 	// Store the pos in the database to be used later to submit the message
 	// to hotshot for finalization.
-	err = b.streamer.SubmitEspressoTransactionPos(pos, b.streamer.db.NewBatch())
+	err = b.streamer.SubmitEspressoTransactionPos(pos)
 	if err != nil {
 		log.Error("failed to submit espresso transaction pos", "pos", pos, "err", err)
 		return err
@@ -1418,7 +1405,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	shouldSubmit := b.streamer.shouldSubmitEspressoTransaction()
 	if shouldSubmit {
 		for p := b.building.msgCount; p < msgCount; p += 1 {
-			err = b.submitEspressoTransactionPos(p)
+			err = b.enqueuePendingTransaction(p)
 			if err != nil {
 				log.Error("error submitting position", "error", err, "pos", p)
 				break
@@ -1430,10 +1417,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
 			log.Error("error getting message from streamer", "error", err)
-			break
+			return false, fmt.Errorf("error getting message from streamer: %w", err)
 		}
 		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumberWithBypass || msg.Message.Header.Timestamp < l1BoundMinTimestampWithBypass {
-			log.Error(
+			log.Warn(
 				"disabling L1 bound as batch posting message is close to the maximum delay",
 				"blockNumber", msg.Message.Header.BlockNumber,
 				"l1BoundMinBlockNumberWithBypass", l1BoundMinBlockNumberWithBypass,
