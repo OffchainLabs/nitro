@@ -56,6 +56,7 @@ var (
 	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
 	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
 	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
+	blockExecutionTimer        = metrics.NewRegisteredTimer("arb/block/execution", nil)
 )
 
 type L1PriceDataOfMsg struct {
@@ -522,10 +523,11 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		false,
 		core.MessageCommitMode,
 	)
+	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 	if err != nil {
 		return nil, err
 	}
-	blockCalcTime := time.Since(startTime)
 	if len(hooks.TxErrors) != len(txes) {
 		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
@@ -611,10 +613,11 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 
 	startTime := time.Now()
 	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false)
+	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 	if err != nil {
 		return nil, err
 	}
-	blockCalcTime := time.Since(startTime)
 
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
@@ -875,11 +878,13 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	}
 
 	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false)
+	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
+	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
 		return nil, err
 	}
