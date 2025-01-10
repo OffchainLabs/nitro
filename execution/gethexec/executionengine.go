@@ -713,8 +713,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
-	blockCalcTime := time.Since(startTime)
-	blockWriteToDbTimer.Update(blockCalcTime)
+	blockWriteToDbTimer.Update(time.Since(startTime))
 	baseFeeGauge.Update(block.BaseFee().Int64())
 	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
 	var blockGasused uint64
