@@ -3,6 +3,7 @@
 
 pub mod br;
 pub mod br_if;
+pub mod br_table;
 pub mod call;
 pub mod call_indirect;
 pub mod convert;

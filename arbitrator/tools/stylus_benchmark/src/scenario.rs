@@ -2,9 +2,9 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::scenarios::{
-    br, br_if, call, call_indirect, convert, data_type::DataType, global_get, global_set, if_op,
-    instruction_with_1_arg_1_return, instruction_with_2_args_1_return, load, local_get, local_set,
-    local_tee, select, store,
+    br, br_if, br_table, call, call_indirect, convert, data_type::DataType, global_get, global_set,
+    if_op, instruction_with_1_arg_1_return, instruction_with_2_args_1_return, load, local_get,
+    local_set, local_tee, select, store,
 };
 use clap::ValueEnum;
 use std::fs::File;
@@ -81,6 +81,7 @@ pub enum Scenario {
     I64ExtendI32S,
     Br,
     BrIf,
+    BrTable,
     Call,
     CallIndirect,
     GlobalGet,
@@ -103,6 +104,7 @@ impl ScenarioWatGenerator for Scenario {
         match self {
             Scenario::Br => {}
             Scenario::BrIf => {}
+            Scenario::BrTable => {}
             Scenario::Call => call::write_specific_wat_beginning(wat),
             Scenario::CallIndirect => call_indirect::write_specific_wat_beginning(wat),
             Scenario::GlobalGet => global_get::write_specific_wat_beginning(wat),
@@ -184,6 +186,7 @@ impl ScenarioWatGenerator for Scenario {
         match self {
             Scenario::Br => {}
             Scenario::BrIf => {}
+            Scenario::BrTable => {}
             Scenario::Call => {}
             Scenario::CallIndirect => {}
             Scenario::GlobalGet => {}
@@ -265,6 +268,7 @@ impl ScenarioWatGenerator for Scenario {
         match self {
             Scenario::Br => br::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::BrIf => br_if::write_wat_ops(wat, number_of_ops_per_loop_iteration),
+            Scenario::BrTable => br_table::write_wat_ops(wat, number_of_ops_per_loop_iteration, 5),
             Scenario::Call => call::write_wat_ops(wat, number_of_ops_per_loop_iteration),
             Scenario::CallIndirect => {
                 call_indirect::write_wat_ops(wat, number_of_ops_per_loop_iteration)
