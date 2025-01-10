@@ -341,6 +341,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	roundInfo.msgAndResultBySequenceNumber[msg.SequenceNumber] = &msgAndResult{msg, resultChan}
 
 	now := time.Now()
+	queueTimeout := seqConfig.QueueTimeout
 	for es.roundTimingInfo.RoundNumber() == msg.Round { // This check ensures that the controller for this round is not allowed to send transactions from msgAndResultBySequenceNumber map once the next round starts
 		// Get the next message in the sequence.
 		nextMsgAndResult, exists := roundInfo.msgAndResultBySequenceNumber[roundInfo.sequence]
@@ -350,11 +351,14 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		delete(roundInfo.msgAndResultBySequenceNumber, nextMsgAndResult.msg.SequenceNumber)
 		// Queued txs cannot use this message's context as it would lead to context canceled error once the result for this message is available and returned
 		// Hence using context.Background() allows unblocking of queued up txs even if current tx's context has errored out
-		txCtx := context.Background()
+		var queueCtx context.Context
+		var cancel context.CancelFunc
+		queueCtx, _ = ctxWithTimeout(context.Background(), queueTimeout)
 		if nextMsgAndResult.msg.SequenceNumber == msg.SequenceNumber {
-			txCtx = ctx
+			queueCtx, cancel = ctxWithTimeout(ctx, queueTimeout)
+			defer cancel()
 		}
-		if err := es.transactionPublisher.PublishTimeboostedTransaction(txCtx, nextMsgAndResult.msg.Transaction, nextMsgAndResult.msg.Options, nextMsgAndResult.resultChan); err != nil {
+		if err := es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, nextMsgAndResult.msg.Transaction, nextMsgAndResult.msg.Options, nextMsgAndResult.resultChan); err != nil {
 			nextMsgAndResult.resultChan <- err
 		}
 		// Increase the global round sequence number.
@@ -365,7 +369,6 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	unlockByDefer = false
 	es.roundInfoMutex.Unlock() // Release lock so that other timeboost txs can be processed
 
-	queueTimeout := seqConfig.QueueTimeout
 	abortCtx, cancel := ctxWithTimeout(ctx, queueTimeout*2) // We use the same timeout value that sequencer imposes
 	defer cancel()
 	select {

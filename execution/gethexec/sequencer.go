@@ -465,18 +465,27 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	now := time.Now()
-	resultChan := make(chan error, 1)
-	queueCtxCancel, err := s.publishTransactionImpl(parentCtx, tx, options, resultChan, false /* delay tx if express lane is active */)
-	if queueCtxCancel != nil {
-		defer queueCtxCancel()
+	_, forwarder := s.GetPauseAndForwarder()
+	if forwarder != nil {
+		err := forwarder.PublishTransaction(parentCtx, tx, options)
+		if !errors.Is(err, ErrNoSequencer) {
+			return err
+		}
 	}
+
+	config := s.config()
+	queueTimeout := config.QueueTimeout
+	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout+config.Timeboost.ExpressLaneAdvantage) // Include timeboost delay in ctx timeout
+	defer cancelFunc()
+
+	resultChan := make(chan error, 1)
+	err := s.publishTransactionToQueue(queueCtx, tx, options, resultChan, false /* delay tx if express lane is active */)
 	if err != nil {
 		return err
 	}
 
+	now := time.Now()
 	// Just to be safe, make sure we don't run over twice the queue timeout
-	queueTimeout := s.config().QueueTimeout
 	abortCtx, cancel := ctxWithTimeout(parentCtx, queueTimeout*2)
 	defer cancel()
 
@@ -489,25 +498,24 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		err := abortCtx.Err()
 		if parentCtx.Err() == nil {
 			// If we've hit the abort deadline (as opposed to parentCtx being canceled), something went wrong.
-			log.Warn("Transaction sequencing hit abort deadline", "err", err, "submittedAt", now, "queueTimeout", queueTimeout, "txHash", tx.Hash())
+			log.Warn("Transaction sequencing hit abort deadline", "err", err, "submittedAt", now, "queueTimeout", queueTimeout*2, "txHash", tx.Hash())
 		}
 		return err
 	}
 }
 
-func (s *Sequencer) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) error {
-	_, err := s.publishTransactionImpl(parentCtx, tx, options, resultChan, true) // Is it safe to ignore queueCtx's CancelFunc here?
-	return err
+func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) error {
+	return s.publishTransactionToQueue(queueCtx, tx, options, resultChan, true) // Is it safe to ignore queueCtx's CancelFunc here?
 }
 
-func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error, isExpressLaneController bool) (context.CancelFunc, error) {
+func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error, isExpressLaneController bool) error {
 	config := s.config()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
 	// And hard threshold was enabled, this prevents spamming of read locks when not needed
 	if s.l1Reader != nil && config.ExpectedSurplusHardThreshold != "default" {
 		s.expectedSurplusMutex.RLock()
 		if s.expectedSurplusUpdated && s.expectedSurplus < int64(config.expectedSurplusHardThreshold) {
-			return nil, errors.New("currently not accepting transactions due to expected surplus being below threshold")
+			return errors.New("currently not accepting transactions due to expected surplus being below threshold")
 		}
 		s.expectedSurplusMutex.RUnlock()
 	}
@@ -515,36 +523,26 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 	sequencerBacklogGauge.Inc(1)
 	defer sequencerBacklogGauge.Dec(1)
 
-	_, forwarder := s.GetPauseAndForwarder()
-	if forwarder != nil {
-		err := forwarder.PublishTransaction(parentCtx, tx, options)
-		if !errors.Is(err, ErrNoSequencer) {
-			// We should return the result from forwarder directly to resultChan and let the caller functions read from there
-			resultChan <- err
-			return nil, nil
-		}
-	}
-
 	if len(s.senderWhitelist) > 0 {
 		signer := types.LatestSigner(s.execEngine.bc.Config())
 		sender, err := types.Sender(signer, tx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		_, authorized := s.senderWhitelist[sender]
 		if !authorized {
-			return nil, errors.New("transaction sender is not on the whitelist")
+			return errors.New("transaction sender is not on the whitelist")
 		}
 	}
 	if tx.Type() >= types.ArbitrumDepositTxType || tx.Type() == types.BlobTxType {
 		// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
 		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
-		return nil, types.ErrTxTypeNotSupported
+		return types.ErrTxTypeNotSupported
 	}
 
 	txBytes, err := tx.MarshalBinary()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
@@ -552,9 +550,6 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
 		}
 	}
-
-	queueTimeout := config.QueueTimeout
-	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
 
 	queueItem := txQueueItem{
 		tx,
@@ -569,10 +564,10 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 	select {
 	case s.txQueue <- queueItem:
 	case <-queueCtx.Done():
-		return cancelFunc, queueCtx.Err()
+		return queueCtx.Err()
 	}
 
-	return cancelFunc, nil
+	return nil
 }
 
 func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
