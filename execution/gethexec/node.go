@@ -55,9 +55,6 @@ func (c *StylusTargetConfig) Validate() error {
 		}
 		targetsSet[target] = true
 	}
-	if !targetsSet[rawdb.TargetWavm] {
-		return fmt.Errorf("%s target not found in archs list, archs: %v", rawdb.TargetWavm, c.ExtraArchs)
-	}
 	targetsSet[rawdb.LocalTarget()] = true
 	targets := make([]ethdb.WasmTarget, 0, len(c.ExtraArchs)+1)
 	for target := range targetsSet {
@@ -284,6 +281,7 @@ func CreateExecutionNode(
 		Namespace: "arbtrace",
 		Version:   "1.0",
 		Service: NewArbTraceForwarderAPI(
+			l2BlockChain.Config(),
 			config.RPC.ClassicRedirect,
 			config.RPC.ClassicRedirectTimeout,
 		),
