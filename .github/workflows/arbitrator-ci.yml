@@ -79,14 +79,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.80.1'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
-          components: 'llvm-tools-preview, rustfmt, clippy'
-
-      - name: Install rust stable
-        id: install-rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: '1.80.1'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
