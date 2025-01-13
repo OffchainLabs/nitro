@@ -509,7 +509,10 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		return errors.New("timeboost not enabled")
 	}
 
-	_, forwarder := s.GetPauseAndForwarder()
+	forwarder, err := s.getForwarder(ctx)
+	if err != nil {
+		return err
+	}
 	if forwarder != nil {
 		return fmt.Errorf("sequencer is currently not the chosen one, cannot accept auction resolution tx")
 	}
@@ -559,7 +562,10 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return errors.New("timeboost not enabled")
 	}
 
-	_, forwarder := s.GetPauseAndForwarder()
+	forwarder, err := s.getForwarder(ctx)
+	if err != nil {
+		return err
+	}
 	if forwarder != nil {
 		err := forwarder.PublishExpressLaneTransaction(ctx, msg)
 		if !errors.Is(err, ErrNoSequencer) {
@@ -771,25 +777,31 @@ func (s *Sequencer) GetPauseAndForwarder() (chan struct{}, *TxForwarder) {
 	return s.pauseChan, s.forwarder
 }
 
-// only called from createBlock, may be paused
-func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem) bool {
-	var forwarder *TxForwarder
+// getForwarder returns accurate forwarder and pauses if needed
+// required for processing timeboost txs, as just checking forwarder==nil doesn't imply the sequencer to be chosen
+func (s *Sequencer) getForwarder(ctx context.Context) (*TxForwarder, error) {
 	for {
-		var pause chan struct{}
-		pause, forwarder = s.GetPauseAndForwarder()
+		pause, forwarder := s.GetPauseAndForwarder()
 		if pause == nil {
-			if forwarder == nil {
-				return false
-			}
-			// if forwarding: jump to next loop
-			break
+			return forwarder, nil
 		}
 		// if paused: wait till unpaused
 		select {
 		case <-ctx.Done():
-			return true
+			return nil, ctx.Err()
 		case <-pause:
 		}
+	}
+}
+
+// only called from createBlock, may be paused
+func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem) bool {
+	forwarder, err := s.getForwarder(ctx)
+	if err != nil {
+		return true
+	}
+	if forwarder == nil {
+		return false
 	}
 	publishResults := make(chan *txQueueItem, len(queueItems))
 	for _, item := range queueItems {
