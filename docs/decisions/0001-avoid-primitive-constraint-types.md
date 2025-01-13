@@ -4,7 +4,7 @@ date: 2024-11-29
 decision-makers: eljobe@ plasmapower@
 ---
 
-# Avoid primative constraint types
+# Avoid primitive constraint types
 
 ## Context and Problem Statement
 
