@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
@@ -32,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
@@ -61,9 +61,6 @@ type ArbosState struct {
 	backingStorage         *storage.Storage
 	Burner                 burn.Burner
 }
-
-const MaxArbosVersionSupported uint64 = params.ArbosVersion_StylusChargingFixes
-const MaxDebugArbosVersionSupported uint64 = params.ArbosVersion_StylusChargingFixes
 
 var ErrUninitializedArbOS = errors.New("ArbOS uninitialized")
 var ErrAlreadyInitialized = errors.New("ArbOS is already initialized")
@@ -125,13 +122,13 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	db := state.NewDatabaseWithConfig(raw, trieConfig)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
-		log.Crit("failed to init empty statedb", "error", err)
+		panic("failed to init empty statedb: " + err.Error())
 	}
 	burner := burn.NewSystemBurner(nil, false)
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	newState, err := InitializeArbosState(statedb, burner, chainConfig, arbostypes.TestInitMessage)
 	if err != nil {
-		log.Crit("failed to open the ArbOS state", "error", err)
+		panic("failed to open the ArbOS state: " + err.Error())
 	}
 	return newState, statedb
 }
@@ -141,7 +138,7 @@ func ArbOSVersion(stateDB vm.StateDB) uint64 {
 	backingStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(nil, false))
 	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
-		log.Crit("failed to get the ArbOS version", "error", err)
+		panic("failed to get the ArbOS version: " + err.Error())
 	}
 	return arbosVersion
 }
@@ -204,7 +201,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1) // initialize to version 1; upgrade at end of this func if needed
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
-	if desiredArbosVersion >= 2 {
+	if desiredArbosVersion >= params.ArbosVersion_2 {
 		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), util.AddressToHash(initialChainOwner))
 	} else {
 		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
@@ -216,7 +213,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetUint64ByUint64(uint64(brotliCompressionLevelOffset), 0) // default brotliCompressionLevel for fast compression is 0
 
 	initialRewardsRecipient := l1pricing.BatchPosterAddress
-	if desiredArbosVersion >= 2 {
+	if desiredArbosVersion >= params.ArbosVersion_2 {
 		initialRewardsRecipient = initialChainOwner
 	}
 	_ = l1pricing.InitializeL1PricingState(sto.OpenCachedSubStorage(l1PricingSubspace), initialRewardsRecipient, initMessage.InitialL1BaseFee)
@@ -273,29 +270,29 @@ func (state *ArbosState) UpgradeArbosVersion(
 
 		nextArbosVersion := state.arbosVersion + 1
 		switch nextArbosVersion {
-		case 2:
+		case params.ArbosVersion_2:
 			ensure(state.l1PricingState.SetLastSurplus(common.Big0, 1))
-		case 3:
+		case params.ArbosVersion_3:
 			ensure(state.l1PricingState.SetPerBatchGasCost(0))
 			ensure(state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64))
-		case 4:
+		case params.ArbosVersion_4:
 			// no state changes needed
-		case 5:
+		case params.ArbosVersion_5:
 			// no state changes needed
-		case 6:
+		case params.ArbosVersion_6:
 			// no state changes needed
-		case 7:
+		case params.ArbosVersion_7:
 			// no state changes needed
-		case 8:
+		case params.ArbosVersion_8:
 			// no state changes needed
-		case 9:
+		case params.ArbosVersion_9:
 			// no state changes needed
-		case 10:
+		case params.ArbosVersion_10:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
 				l1pricing.L1PricerFundsPoolAddress,
 			).ToBig()))
 
-		case 11:
+		case params.ArbosVersion_11:
 			// Update the PerBatchGasCost to a more accurate value compared to the old v6 default.
 			ensure(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV12))
 
@@ -315,23 +312,23 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 12, 13, 14, 15, 16, 17, 18, 19:
 			// these versions are left to Orbit chains for custom upgrades.
 
-		case 20:
+		case params.ArbosVersion_20:
 			// Update Brotli compression level for fast compression from 0 to 1
 			ensure(state.SetBrotliCompressionLevel(1))
 
 		case 21, 22, 23, 24, 25, 26, 27, 28, 29:
 			// these versions are left to Orbit chains for custom upgrades.
 
-		case 30:
+		case params.ArbosVersion_30:
 			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
 
-		case 31:
+		case params.ArbosVersion_31:
 			params, err := state.Programs().Params()
 			ensure(err)
 			ensure(params.UpgradeToVersion(2))
 			ensure(params.Save())
 
-		case 32:
+		case params.ArbosVersion_32:
 			// no change state needed
 
 		default:
@@ -352,8 +349,8 @@ func (state *ArbosState) UpgradeArbosVersion(
 		state.arbosVersion = nextArbosVersion
 	}
 
-	if firstTime && upgradeTo >= 6 {
-		if upgradeTo < 11 {
+	if firstTime && upgradeTo >= params.ArbosVersion_6 {
+		if upgradeTo < params.ArbosVersion_11 {
 			state.Restrict(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV6))
 		}
 		state.Restrict(state.l1PricingState.SetEquilibrationUnits(l1pricing.InitialEquilibrationUnitsV6))

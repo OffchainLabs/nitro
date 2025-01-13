@@ -35,7 +35,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -43,6 +42,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -56,6 +56,8 @@ var (
 	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
 	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
 	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
+	blockExecutionTimer        = metrics.NewRegisteredTimer("arb/block/execution", nil)
+	blockWriteToDbTimer        = metrics.NewRegisteredTimer("arb/block/writetodb", nil)
 )
 
 type L1PriceDataOfMsg struct {
@@ -526,6 +528,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 	if len(hooks.TxErrors) != len(txes) {
 		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
@@ -615,6 +618,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
@@ -701,6 +705,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	for _, receipt := range receipts {
 		logs = append(logs, receipt.Logs...)
 	}
+	startTime := time.Now()
 	status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, duration)
 	if err != nil {
 		return err
@@ -708,6 +713,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
+	blockWriteToDbTimer.Update(time.Since(startTime))
 	baseFeeGauge.Update(block.BaseFee().Int64())
 	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
 	var blockGasused uint64
@@ -789,7 +795,8 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 			gasUsedForL1 += receipts[i].GasUsedForL1
 		}
 		for _, tx := range block.Transactions() {
-			callDataUnits += tx.CalldataUnits
+			_, cachedUnits := tx.GetRawCachedCalldataUnits()
+			callDataUnits += cachedUnits
 		}
 	}
 	l1GasCharged := gasUsedForL1 * block.BaseFee().Uint64()
@@ -877,8 +884,10 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return nil, err
 	}
+	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 
-	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
+	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
 		return nil, err
 	}
@@ -904,7 +913,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 			timestamp = time.Unix(int64(timestampInt), 0)
 			timeUntilUpgrade = time.Until(timestamp)
 		}
-		maxSupportedVersion := params.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
+		maxSupportedVersion := chaininfo.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
 		logLevel := log.Warn
 		if timeUntilUpgrade < time.Hour*24 {
 			logLevel = log.Error

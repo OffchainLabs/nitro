@@ -137,7 +137,7 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, time
 		var data []byte
 		if msg.IsCompressed() {
 			if !compression {
-				return nil, 0, errors.New("Received compressed frame even though compression is disabled")
+				return nil, 0, errors.New("Received compressed frame even though compression extension wasn't negotiated")
 			}
 			flateReader.Reset(&reader)
 			data, err = io.ReadAll(flateReader)
