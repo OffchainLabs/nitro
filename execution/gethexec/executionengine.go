@@ -97,6 +97,8 @@ type ExecutionEngine struct {
 	prefetchBlock bool
 
 	cachedL1PriceData *L1PriceData
+
+	wasmTargets []rawdb.WasmTarget
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -196,6 +198,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
+	s.wasmTargets = targetConfig.WasmTargets()
 	return nil
 }
 
@@ -274,7 +277,7 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		return nil, nil
 	}
 
-	tag := s.bc.StateCache().WasmCacheTag()
+	tag := core.NewMessageCommitContext(nil).WasmCacheTag() // we don't pass any targets, we just want the tag
 	// reorg Rust-side VM state
 	C.stylus_reorg_vm(C.uint64_t(blockNum), C.uint32_t(tag))
 
@@ -522,7 +525,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc.Config(),
 		hooks,
 		false,
-		core.MessageCommitMode,
+		core.NewMessageCommitContext(s.wasmTargets),
 	)
 	if err != nil {
 		return nil, err
@@ -681,9 +684,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
-	runMode := core.MessageCommitMode
+	var runCtx *core.MessageRunContext
 	if isMsgForPrefetch {
-		runMode = core.MessageReplayMode
+		runCtx = core.NewMessagePrefetchContext(s.wasmTargets)
+	} else {
+		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
@@ -693,7 +698,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		s.bc.Config(),
 		isMsgForPrefetch,
-		runMode,
+		runCtx,
 	)
 
 	return block, statedb, receipts, err
