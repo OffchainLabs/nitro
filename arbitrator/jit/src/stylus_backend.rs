@@ -4,7 +4,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::machine::{Escape, MaybeEscape};
-use arbutil::evm::api::VecReader;
+use arbutil::evm::api::{Gas, Ink, VecReader};
 use arbutil::evm::{
     api::{EvmApiMethod, EVM_API_METHOD_REQ_OFFSET},
     req::EvmApiRequestor,
@@ -28,7 +28,7 @@ use stylus::{native::NativeInstance, run::RunProgram};
 struct MessageToCothread {
     result: Vec<u8>,
     raw_data: Vec<u8>,
-    cost: u64,
+    cost: Gas,
 }
 
 #[derive(Clone)]
@@ -47,7 +47,7 @@ impl RequestHandler<VecReader> for CothreadRequestor {
         &mut self,
         req_type: EvmApiMethod,
         req_data: impl AsRef<[u8]>,
-    ) -> (Vec<u8>, VecReader, u64) {
+    ) -> (Vec<u8>, VecReader, Gas) {
         let msg = MessageFromCothread {
             req_type: req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
             req_data: req_data.as_ref().to_vec(),
@@ -104,7 +104,7 @@ impl CothreadHandler {
         id: u32,
         result: Vec<u8>,
         raw_data: Vec<u8>,
-        cost: u64,
+        cost: Gas,
     ) -> MaybeEscape {
         let Some(msg) = self.last_request.clone() else {
             return Escape::hostio("trying to set response but no message pending");
@@ -131,7 +131,7 @@ pub fn exec_wasm(
     compile: CompileConfig,
     config: StylusConfig,
     evm_data: EvmData,
-    ink: u64,
+    ink: Ink,
 ) -> Result<CothreadHandler> {
     let (tothread_tx, tothread_rx) = mpsc::sync_channel::<MessageToCothread>(0);
     let (fromthread_tx, fromthread_rx) = mpsc::sync_channel::<MessageFromCothread>(0);
@@ -150,7 +150,7 @@ pub fn exec_wasm(
         let outcome = instance.run_main(&calldata, config, ink);
 
         let ink_left = match outcome.as_ref() {
-            Ok(UserOutcome::OutOfStack) => 0, // take all ink when out of stack
+            Ok(UserOutcome::OutOfStack) => Ink(0), // take all ink when out of stack
             _ => instance.ink_left().into(),
         };
 

@@ -81,6 +81,7 @@ func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConf
 	if err != nil {
 		return nil, err
 	}
+	log.Info("DAS public key used for signing", "key", hexutil.Encode(blsSignatures.PublicKeyToBytes(publicKey)))
 
 	keyset := &daprovider.DataAvailabilityKeyset{
 		AssumedHonest: 1,

@@ -14,13 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/r3labs/diff/v3"
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-	"github.com/r3labs/diff/v3"
-	flag "github.com/spf13/pflag"
 )
 
 func TestEmptyCliConfig(t *testing.T) {

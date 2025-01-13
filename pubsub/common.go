@@ -2,11 +2,15 @@ package pubsub
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/go-redis/redis/v8"
 )
+
+func ResultKeyFor(streamName, id string) string { return fmt.Sprintf("%s.%s", streamName, id) }
 
 // CreateStream tries to create stream with given name, if it already exists
 // does not return an error.

@@ -59,7 +59,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/dbutil"
@@ -249,7 +249,7 @@ func mainImpl() int {
 	// If sequencer and signing is enabled or batchposter is enabled without
 	// external signing sequencer will need a key.
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
-		(nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "")
+		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DataAvailability.Enable))
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
@@ -257,7 +257,7 @@ func mainImpl() int {
 	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
 	nodeConfig.Node.Staker.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
-	defaultValidatorL1WalletConfig := staker.DefaultValidatorL1WalletConfig
+	defaultValidatorL1WalletConfig := legacystaker.DefaultValidatorL1WalletConfig
 	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
 	nodeConfig.Node.BatchPoster.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
@@ -285,18 +285,16 @@ func mainImpl() int {
 		}
 	}
 
-	combinedL2ChainInfoFile := aggregateL2ChainInfoFiles(ctx, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)
-
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.ParentChainReader.Enable {
 			flag.Usage()
 			log.Crit("validator must have the parent chain reader enabled")
 		}
-		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
+		strategy, err := legacystaker.ParseStrategy(nodeConfig.Node.Staker.Strategy)
 		if err != nil {
 			log.Crit("couldn't parse staker strategy", "err", err)
 		}
-		if strategy != staker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
+		if strategy != legacystaker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
@@ -335,7 +333,7 @@ func mainImpl() int {
 
 		log.Info("connected to l1 chain", "l1url", nodeConfig.ParentChain.Connection.URL, "l1chainid", nodeConfig.ParentChain.ID)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
@@ -367,7 +365,7 @@ func mainImpl() int {
 			log.Crit("--node.validator.only-create-wallet-contract conflicts with --node.dangerous.no-l1-listener")
 		}
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -468,24 +466,29 @@ func mainImpl() int {
 
 	fatalErrChan := make(chan error, 10)
 
-	var blocksReExecutor *blocksreexecutor.BlocksReExecutor
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
-		blocksReExecutor = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
-		if nodeConfig.Init.ThenQuit {
-			if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
-				log.Error("error populating stylus target cache", "err", err)
-				return 1
-			}
-			success := make(chan struct{})
-			blocksReExecutor.Start(ctx, success)
-			deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
-			select {
-			case err := <-fatalErrChan:
-				log.Error("shutting down due to fatal error", "err", err)
-				defer log.Error("shut down due to fatal error", "err", err)
-				return 1
-			case <-success:
-			}
+		if !nodeConfig.Init.ThenQuit {
+			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
+			return 1
+		}
+		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
+		if err != nil {
+			log.Error("error initializing blocksReExecutor", "err", err)
+			return 1
+		}
+		if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+			log.Error("error populating stylus target cache", "err", err)
+			return 1
+		}
+		success := make(chan struct{})
+		blocksReExecutor.Start(ctx, success)
+		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
+		select {
+		case err := <-fatalErrChan:
+			log.Error("shutting down due to fatal error", "err", err)
+			defer log.Error("shut down due to fatal error", "err", err)
+			return 1
+		case <-success:
 		}
 	}
 
@@ -493,7 +496,7 @@ func mainImpl() int {
 		return 0
 	}
 
-	chainInfo, err := chaininfo.ProcessChainInfo(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+	chainInfo, err := chaininfo.ProcessChainInfo(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 	if err != nil {
 		log.Error("error processing l2 chain info", "err", err)
 		return 1
@@ -636,10 +639,6 @@ func mainImpl() int {
 		}
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
-	}
-	if blocksReExecutor != nil && !nodeConfig.Init.ThenQuit {
-		blocksReExecutor.Start(ctx, nil)
-		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -840,12 +839,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	l2ChainId := k.Int64("chain.id")
 	l2ChainName := k.String("chain.name")
-	l2ChainInfoIpfsUrl := k.String("chain.info-ipfs-url")
-	l2ChainInfoIpfsDownloadPath := k.String("chain.info-ipfs-download-path")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
 	// #nosec G115
-	err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -908,20 +905,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l2DevWallet, nil
 }
 
-func aggregateL2ChainInfoFiles(ctx context.Context, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) []string {
-	if l2ChainInfoIpfsUrl != "" {
-		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
-		if err != nil {
-			log.Error("error getting l2 chain info file from ipfs", "err", err)
-		}
-		l2ChainInfoFiles = append(l2ChainInfoFiles, l2ChainInfoIpfsFile)
-	}
-	return l2ChainInfoFiles
-}
-
-func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) error {
-	combinedL2ChainInfoFiles := aggregateL2ChainInfoFiles(ctx, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
-	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
+func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) error {
+	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err
 	}
@@ -930,7 +915,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
 	} else {
 		log.Warn("Chain info field parent-chain-is-arbitrum is missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
-		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", combinedL2ChainInfoFiles, "")
+		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", l2ChainInfoFiles, "")
 		if err == nil {
 			parentChainIsArbitrum = true
 		}
@@ -1010,14 +995,15 @@ func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 			return nil
 		}
 		// Reorg out the batch containing the next message
-		var missing bool
+		var found bool
 		var err error
-		batchCount, missing, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
 		if err != nil {
 			return err
 		}
-		if missing {
-			return fmt.Errorf("cannot reorg to unknown message index %v", messageIndex)
+		if !found {
+			log.Warn("init-reorg: no need to reorg, because message ahead of chain", "messageIndex", messageIndex)
+			return nil
 		}
 	}
 	return inboxTracker.ReorgBatchesTo(batchCount)

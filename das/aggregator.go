@@ -15,11 +15,11 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -114,7 +114,7 @@ func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services 
 func NewAggregatorWithL1Info(
 	config DataAvailabilityConfig,
 	services []ServiceDetails,
-	l1client arbutil.L1Interface,
+	l1client *ethclient.Client,
 	seqInboxAddress common.Address,
 ) (*Aggregator, error) {
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)

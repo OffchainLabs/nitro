@@ -11,9 +11,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -26,7 +25,8 @@ type executionRun struct {
 }
 
 // NewExecutionRun creates a backend with the given arguments.
-// Note: machineCache may be nil, but if present, it must not have a restricted range.
+// Note: machineCache may be nil, but if present, it must not have a restricted
+// range.
 func NewExecutionRun(
 	ctxIn context.Context,
 	initialMachineGetter func(context.Context) (MachineInterface, error),
@@ -106,21 +106,9 @@ func (e *executionRun) machineHashesWithStepSize(
 	if err != nil {
 		return nil, err
 	}
-	log.Debug(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
+	log.Info("Advanced WASM machine index, beginning challenge hash computation", "machineStartIndex", machineStartIndex)
 
-	// In BOLD, the hash of a machine at index 0 is a special hash that is computed as the
-	// `machineFinishedHash(gs)` where `gs` is the global state of the machine at index 0.
-	// This is so that the hash aligns with the start state of the claimed challenge edge
-	// at the level above, as required by the BOLD protocol.
-	var machineHashes []common.Hash
-	if machineStartIndex == 0 {
-		gs := machine.GetGlobalState()
-		log.Debug(fmt.Sprintf("Start global state for machine index 0: %+v", gs))
-		machineHashes = append(machineHashes, machineFinishedHash(gs))
-	} else {
-		// Otherwise, we simply append the machine hash at the specified start index.
-		machineHashes = append(machineHashes, machine.Hash())
-	}
+	machineHashes := []common.Hash{machine.Hash()}
 	startHash := machineHashes[0]
 
 	// If we only want 1 hash, we can return early.
@@ -210,6 +198,6 @@ func (e *executionRun) GetLastStep() containers.PromiseInterface[*validator.Mach
 	return e.GetStepAt(^uint64(0))
 }
 
-func machineFinishedHash(gs validator.GoGlobalState) common.Hash {
-	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+func (e *executionRun) CheckAlive(ctx context.Context) error {
+	return nil
 }

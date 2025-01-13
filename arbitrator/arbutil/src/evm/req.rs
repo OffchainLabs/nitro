@@ -12,8 +12,10 @@ use crate::{
 use eyre::{bail, eyre, Result};
 use std::collections::hash_map::Entry;
 
+use super::api::{Gas, Ink};
+
 pub trait RequestHandler<D: DataReader>: Send + 'static {
-    fn request(&mut self, req_type: EvmApiMethod, req_data: impl AsRef<[u8]>) -> (Vec<u8>, D, u64);
+    fn request(&mut self, req_type: EvmApiMethod, req_data: impl AsRef<[u8]>) -> (Vec<u8>, D, Gas);
 }
 
 pub struct EvmApiRequestor<D: DataReader, H: RequestHandler<D>> {
@@ -33,7 +35,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         }
     }
 
-    fn request(&mut self, req_type: EvmApiMethod, req_data: impl AsRef<[u8]>) -> (Vec<u8>, D, u64) {
+    fn request(&mut self, req_type: EvmApiMethod, req_data: impl AsRef<[u8]>) -> (Vec<u8>, D, Gas) {
         self.handler.request(req_type, req_data)
     }
 
@@ -43,10 +45,10 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         call_type: EvmApiMethod,
         contract: Bytes20,
         input: &[u8],
-        gas_left: u64,
-        gas_req: u64,
+        gas_left: Gas,
+        gas_req: Gas,
         value: Bytes32,
-    ) -> (u32, u64, UserOutcomeKind) {
+    ) -> (u32, Gas, UserOutcomeKind) {
         let mut request = Vec::with_capacity(20 + 32 + 8 + 8 + input.len());
         request.extend(contract);
         request.extend(value);
@@ -71,8 +73,8 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         code: Vec<u8>,
         endowment: Bytes32,
         salt: Option<Bytes32>,
-        gas: u64,
-    ) -> (Result<Bytes20>, u32, u64) {
+        gas: Gas,
+    ) -> (Result<Bytes20>, u32, Gas) {
         let mut request = Vec::with_capacity(8 + 2 * 32 + code.len());
         request.extend(gas.to_be_bytes());
         request.extend(endowment);
@@ -98,7 +100,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
 }
 
 impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
-    fn get_bytes32(&mut self, key: Bytes32, evm_api_gas_to_use: u64) -> (Bytes32, u64) {
+    fn get_bytes32(&mut self, key: Bytes32, evm_api_gas_to_use: Gas) -> (Bytes32, Gas) {
         let cache = &mut self.storage_cache;
         let mut cost = cache.read_gas();
 
@@ -110,7 +112,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         (value.value, cost)
     }
 
-    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> u64 {
+    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Gas {
         let cost = self.storage_cache.write_gas();
         match self.storage_cache.entry(key) {
             Entry::Occupied(mut key) => key.get_mut().value = value,
@@ -119,7 +121,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         cost
     }
 
-    fn flush_storage_cache(&mut self, clear: bool, gas_left: u64) -> Result<u64> {
+    fn flush_storage_cache(&mut self, clear: bool, gas_left: Gas) -> Result<Gas> {
         let mut data = Vec::with_capacity(64 * self.storage_cache.len() + 8);
         data.extend(gas_left.to_be_bytes());
 
@@ -134,7 +136,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
             self.storage_cache.clear();
         }
         if data.len() == 8 {
-            return Ok(0); // no need to make request
+            return Ok(Gas(0)); // no need to make request
         }
 
         let (res, _, cost) = self.request(EvmApiMethod::SetTrieSlots, data);
@@ -174,10 +176,10 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         &mut self,
         contract: Bytes20,
         input: &[u8],
-        gas_left: u64,
-        gas_req: u64,
+        gas_left: Gas,
+        gas_req: Gas,
         value: Bytes32,
-    ) -> (u32, u64, UserOutcomeKind) {
+    ) -> (u32, Gas, UserOutcomeKind) {
         self.call_request(
             EvmApiMethod::ContractCall,
             contract,
@@ -192,9 +194,9 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         &mut self,
         contract: Bytes20,
         input: &[u8],
-        gas_left: u64,
-        gas_req: u64,
-    ) -> (u32, u64, UserOutcomeKind) {
+        gas_left: Gas,
+        gas_req: Gas,
+    ) -> (u32, Gas, UserOutcomeKind) {
         self.call_request(
             EvmApiMethod::DelegateCall,
             contract,
@@ -209,9 +211,9 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         &mut self,
         contract: Bytes20,
         input: &[u8],
-        gas_left: u64,
-        gas_req: u64,
-    ) -> (u32, u64, UserOutcomeKind) {
+        gas_left: Gas,
+        gas_req: Gas,
+    ) -> (u32, Gas, UserOutcomeKind) {
         self.call_request(
             EvmApiMethod::StaticCall,
             contract,
@@ -226,8 +228,8 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         &mut self,
         code: Vec<u8>,
         endowment: Bytes32,
-        gas: u64,
-    ) -> (Result<Bytes20>, u32, u64) {
+        gas: Gas,
+    ) -> (Result<Bytes20>, u32, Gas) {
         self.create_request(EvmApiMethod::Create1, code, endowment, None, gas)
     }
 
@@ -236,8 +238,8 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         code: Vec<u8>,
         endowment: Bytes32,
         salt: Bytes32,
-        gas: u64,
-    ) -> (Result<Bytes20>, u32, u64) {
+        gas: Gas,
+    ) -> (Result<Bytes20>, u32, Gas) {
         self.create_request(EvmApiMethod::Create2, code, endowment, Some(salt), gas)
     }
 
@@ -258,15 +260,15 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         Ok(())
     }
 
-    fn account_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
+    fn account_balance(&mut self, address: Bytes20) -> (Bytes32, Gas) {
         let (res, _, cost) = self.request(EvmApiMethod::AccountBalance, address);
         (res.try_into().unwrap(), cost)
     }
 
-    fn account_code(&mut self, address: Bytes20, gas_left: u64) -> (D, u64) {
+    fn account_code(&mut self, address: Bytes20, gas_left: Gas) -> (D, Gas) {
         if let Some((stored_address, data)) = self.last_code.as_ref() {
             if address == *stored_address {
-                return (data.clone(), 0);
+                return (data.clone(), Gas(0));
             }
         }
         let mut req = Vec::with_capacity(20 + 8);
@@ -278,12 +280,12 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         (data, cost)
     }
 
-    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, Gas) {
         let (res, _, cost) = self.request(EvmApiMethod::AccountCodeHash, address);
         (res.try_into().unwrap(), cost)
     }
 
-    fn add_pages(&mut self, pages: u16) -> u64 {
+    fn add_pages(&mut self, pages: u16) -> Gas {
         self.request(EvmApiMethod::AddPages, pages.to_be_bytes()).2
     }
 
@@ -292,18 +294,20 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         name: &str,
         args: &[u8],
         outs: &[u8],
-        start_ink: u64,
-        end_ink: u64,
+        start_ink: Ink,
+        end_ink: Ink,
     ) {
         let mut request = Vec::with_capacity(2 * 8 + 3 * 2 + name.len() + args.len() + outs.len());
         request.extend(start_ink.to_be_bytes());
         request.extend(end_ink.to_be_bytes());
-        request.extend((name.len() as u16).to_be_bytes());
-        request.extend((args.len() as u16).to_be_bytes());
-        request.extend((outs.len() as u16).to_be_bytes());
+        // u32 is enough to represent the slices lengths because the WASM environment runs in 32 bits.
+        request.extend((name.len() as u32).to_be_bytes());
+        request.extend((args.len() as u32).to_be_bytes());
+        request.extend((outs.len() as u32).to_be_bytes());
         request.extend(name.as_bytes());
         request.extend(args);
         request.extend(outs);
-        self.request(EvmApiMethod::CaptureHostIO, request);
+        // ignore response (including gas) as we're just tracing
+        _ = self.request(EvmApiMethod::CaptureHostIO, request);
     }
 }

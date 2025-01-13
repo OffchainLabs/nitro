@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	gethParams "github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -127,6 +128,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVers
 		if err != nil {
 			return 0, codeHash, common.Hash{}, nil, true, err
 		}
+
 		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runMode, expired)
 	}
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {

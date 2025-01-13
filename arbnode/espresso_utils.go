@@ -6,6 +6,8 @@ import (
 	"errors"
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
+	"github.com/ccoveille/go-safecast"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -84,16 +86,20 @@ func ParseHotShotPayload(payload []byte) (signature []byte, indices []uint64, me
 	}
 
 	// Extract the signature size
-	signatureSize := binary.BigEndian.Uint64(payload[:LEN_SIZE])
+	signatureSize, err := safecast.ToInt(binary.BigEndian.Uint64(payload[:LEN_SIZE]))
+	if err != nil {
+		return nil, nil, nil, errors.New("could not convert signature size to int")
+	}
+
 	currentPos := LEN_SIZE
 
-	if len(payload[currentPos:]) < int(signatureSize) {
+	if len(payload[currentPos:]) < signatureSize {
 		return nil, nil, nil, errors.New("payload too short for signature")
 	}
 
 	// Extract the signature
-	signature = payload[currentPos : currentPos+int(signatureSize)]
-	currentPos += int(signatureSize)
+	signature = payload[currentPos : currentPos+signatureSize]
+	currentPos += signatureSize
 
 	indices = []uint64{}
 	messages = [][]byte{}
@@ -112,16 +118,19 @@ func ParseHotShotPayload(payload []byte) (signature []byte, indices []uint64, me
 		currentPos += INDEX_SIZE
 
 		// Extract the message size
-		messageSize := binary.BigEndian.Uint64(payload[currentPos : currentPos+LEN_SIZE])
+		messageSize, err := safecast.ToInt(binary.BigEndian.Uint64(payload[currentPos : currentPos+LEN_SIZE]))
+		if err != nil {
+			return nil, nil, nil, errors.New("could not convert message size to int")
+		}
 		currentPos += LEN_SIZE
 
-		if len(payload[currentPos:]) < int(messageSize) {
+		if len(payload[currentPos:]) < messageSize {
 			return nil, nil, nil, errors.New("message size mismatch")
 		}
 
 		// Extract the message
-		message := payload[currentPos : currentPos+int(messageSize)]
-		currentPos += int(messageSize)
+		message := payload[currentPos : currentPos+messageSize]
+		currentPos += messageSize
 
 		indices = append(indices, index)
 		messages = append(messages, message)

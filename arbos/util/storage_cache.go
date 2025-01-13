@@ -4,6 +4,8 @@
 package util
 
 import (
+	"slices"
+
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -67,6 +69,10 @@ func (s *storageCache) Flush() []storageCacheStores {
 			})
 		}
 	}
+	sortFunc := func(a, b storageCacheStores) int {
+		return a.Key.Cmp(b.Key)
+	}
+	slices.SortFunc(stores, sortFunc)
 	return stores
 }
 

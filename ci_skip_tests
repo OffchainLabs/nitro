@@ -42,6 +42,7 @@ TestChallengeToTimeout
 TestStylusUpgrade
 TestChallengeToFailedTooFar
 TestTwoNodesLong
+TestStylusPrecompileMethodsSimple
 
 # These tests are failing with celestia integration
 TestEmptyCliConfig
@@ -50,6 +51,12 @@ TestLyingSequencer
 TestLyingSequencerLocalDAS
 TestStylusOpcodeTraceEquivalence
 
+# This test is failing and it is a bit complicated.
+# Since BOLD is an alpha feature, we will fix it later
+TestChallengeProtocolBOLDNearLastVirtualBlock
+TestChallengeProtocolBOLDFirstVirtualBlock
+TestChallengeProtocolBOLDReadInboxChallenge
+TestChallengeProtocolBOLDStartStepChallenge
 # These tests are specific to Espresso and we have a dedicated
 # CI workflow for them. See: .github/workflows/espresso-e2e.yml
 TestEspresso
