@@ -98,6 +98,9 @@ jobs:
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
 
+      - name: Install cbindgen
+        run: cargo install cbindgen
+
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
