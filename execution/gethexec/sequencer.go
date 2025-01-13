@@ -504,6 +504,78 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 }
 
+func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	if !s.config().Timeboost.Enable {
+		return errors.New("timeboost not enabled")
+	}
+
+	_, forwarder := s.GetPauseAndForwarder()
+	if forwarder != nil {
+		return fmt.Errorf("sequencer is currently not the chosen one, cannot accept auction resolution tx")
+	}
+
+	arrivalTime := time.Now()
+	auctioneerAddr := s.auctioneerAddr
+	if auctioneerAddr == (common.Address{}) {
+		return errors.New("invalid auctioneer address")
+	}
+	if tx.To() == nil {
+		return errors.New("transaction has no recipient")
+	}
+	if *tx.To() != s.expressLaneService.auctionContractAddr {
+		return errors.New("transaction recipient is not the auction contract")
+	}
+	signer := types.LatestSigner(s.execEngine.bc.Config())
+	sender, err := types.Sender(signer, tx)
+	if err != nil {
+		return err
+	}
+	if sender != auctioneerAddr {
+		return fmt.Errorf("sender %#x is not the auctioneer address %#x", sender, auctioneerAddr)
+	}
+	if !s.expressLaneService.roundTimingInfo.IsWithinAuctionCloseWindow(arrivalTime) {
+		return fmt.Errorf("transaction arrival time not within auction closure window: %v", arrivalTime)
+	}
+	txBytes, err := tx.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
+	s.timeboostAuctionResolutionTxQueue <- txQueueItem{
+		tx:              tx,
+		txSize:          len(txBytes),
+		options:         nil,
+		resultChan:      make(chan error, 1),
+		returnedResult:  &atomic.Bool{},
+		ctx:             context.TODO(),
+		firstAppearance: time.Now(),
+		isTimeboosted:   true,
+	}
+	return nil
+}
+
+func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	if !s.config().Timeboost.Enable {
+		return errors.New("timeboost not enabled")
+	}
+
+	_, forwarder := s.GetPauseAndForwarder()
+	if forwarder != nil {
+		err := forwarder.PublishExpressLaneTransaction(ctx, msg)
+		if !errors.Is(err, ErrNoSequencer) {
+			return err
+		}
+	}
+
+	if s.expressLaneService == nil {
+		return errors.New("express lane service not enabled")
+	}
+	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
+		return err
+	}
+	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg)
+}
+
 func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) error {
 	return s.publishTransactionToQueue(queueCtx, tx, options, resultChan, true) // Is it safe to ignore queueCtx's CancelFunc here?
 }
@@ -567,63 +639,6 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		return queueCtx.Err()
 	}
 
-	return nil
-}
-
-func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
-	if !s.config().Timeboost.Enable {
-		return errors.New("timeboost not enabled")
-	}
-	if s.expressLaneService == nil {
-		return errors.New("express lane service not enabled")
-	}
-	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
-		return err
-	}
-	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg)
-}
-
-func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
-	if !s.config().Timeboost.Enable {
-		return errors.New("timeboost not enabled")
-	}
-	arrivalTime := time.Now()
-	auctioneerAddr := s.auctioneerAddr
-	if auctioneerAddr == (common.Address{}) {
-		return errors.New("invalid auctioneer address")
-	}
-	if tx.To() == nil {
-		return errors.New("transaction has no recipient")
-	}
-	if *tx.To() != s.expressLaneService.auctionContractAddr {
-		return errors.New("transaction recipient is not the auction contract")
-	}
-	signer := types.LatestSigner(s.execEngine.bc.Config())
-	sender, err := types.Sender(signer, tx)
-	if err != nil {
-		return err
-	}
-	if sender != auctioneerAddr {
-		return fmt.Errorf("sender %#x is not the auctioneer address %#x", sender, auctioneerAddr)
-	}
-	if !s.expressLaneService.roundTimingInfo.IsWithinAuctionCloseWindow(arrivalTime) {
-		return fmt.Errorf("transaction arrival time not within auction closure window: %v", arrivalTime)
-	}
-	txBytes, err := tx.MarshalBinary()
-	if err != nil {
-		return err
-	}
-	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
-	s.timeboostAuctionResolutionTxQueue <- txQueueItem{
-		tx:              tx,
-		txSize:          len(txBytes),
-		options:         nil,
-		resultChan:      make(chan error, 1),
-		returnedResult:  &atomic.Bool{},
-		ctx:             context.TODO(),
-		firstAppearance: time.Now(),
-		isTimeboosted:   true,
-	}
 	return nil
 }
 
