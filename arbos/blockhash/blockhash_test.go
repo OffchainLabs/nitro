@@ -8,13 +8,15 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestBlockhash(t *testing.T) {
-	arbosVersion := uint64(8)
+	arbosVersion := params.ArbosVersion_8
 
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	InitializeBlockhashes(sto)

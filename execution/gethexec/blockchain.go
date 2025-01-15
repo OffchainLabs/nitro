@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -26,20 +27,21 @@ import (
 )
 
 type CachingConfig struct {
-	Archive                            bool          `koanf:"archive"`
-	BlockCount                         uint64        `koanf:"block-count"`
-	BlockAge                           time.Duration `koanf:"block-age"`
-	TrieTimeLimit                      time.Duration `koanf:"trie-time-limit"`
-	TrieDirtyCache                     int           `koanf:"trie-dirty-cache"`
-	TrieCleanCache                     int           `koanf:"trie-clean-cache"`
-	SnapshotCache                      int           `koanf:"snapshot-cache"`
-	DatabaseCache                      int           `koanf:"database-cache"`
-	SnapshotRestoreGasLimit            uint64        `koanf:"snapshot-restore-gas-limit"`
-	MaxNumberOfBlocksToSkipStateSaving uint32        `koanf:"max-number-of-blocks-to-skip-state-saving"`
-	MaxAmountOfGasToSkipStateSaving    uint64        `koanf:"max-amount-of-gas-to-skip-state-saving"`
-	StylusLRUCache                     uint32        `koanf:"stylus-lru-cache"`
-	StateScheme                        string        `koanf:"state-scheme"`
-	StateHistory                       uint64        `koanf:"state-history"`
+	Archive                             bool          `koanf:"archive"`
+	BlockCount                          uint64        `koanf:"block-count"`
+	BlockAge                            time.Duration `koanf:"block-age"`
+	TrieTimeLimit                       time.Duration `koanf:"trie-time-limit"`
+	TrieDirtyCache                      int           `koanf:"trie-dirty-cache"`
+	TrieCleanCache                      int           `koanf:"trie-clean-cache"`
+	SnapshotCache                       int           `koanf:"snapshot-cache"`
+	DatabaseCache                       int           `koanf:"database-cache"`
+	SnapshotRestoreGasLimit             uint64        `koanf:"snapshot-restore-gas-limit"`
+	MaxNumberOfBlocksToSkipStateSaving  uint32        `koanf:"max-number-of-blocks-to-skip-state-saving"`
+	MaxAmountOfGasToSkipStateSaving     uint64        `koanf:"max-amount-of-gas-to-skip-state-saving"`
+	StylusLRUCacheCapacity              uint32        `koanf:"stylus-lru-cache-capacity"`
+	DisableStylusCacheMetricsCollection bool          `koanf:"disable-stylus-cache-metrics-collection"`
+	StateScheme                         string        `koanf:"state-scheme"`
+	StateHistory                        uint64        `koanf:"state-history"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -54,7 +56,8 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".snapshot-restore-gas-limit", DefaultCachingConfig.SnapshotRestoreGasLimit, "maximum gas rolled back to recover snapshot")
 	f.Uint32(prefix+".max-number-of-blocks-to-skip-state-saving", DefaultCachingConfig.MaxNumberOfBlocksToSkipStateSaving, "maximum number of blocks to skip state saving to persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint64(prefix+".max-amount-of-gas-to-skip-state-saving", DefaultCachingConfig.MaxAmountOfGasToSkipStateSaving, "maximum amount of gas in blocks to skip saving state to Persistent storage (archive node only) -- warning: this option seems to cause issues")
-	f.Uint32(prefix+".stylus-lru-cache", DefaultCachingConfig.StylusLRUCache, "initialized stylus programs to keep in LRU cache")
+	f.Uint32(prefix+".stylus-lru-cache-capacity", DefaultCachingConfig.StylusLRUCacheCapacity, "capacity, in megabytes, of the LRU cache that keeps initialized stylus programs")
+	f.Bool(prefix+".disable-stylus-cache-metrics-collection", DefaultCachingConfig.DisableStylusCacheMetricsCollection, "disable metrics collection for the stylus cache")
 	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hash, path)")
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
 }
@@ -76,7 +79,7 @@ var DefaultCachingConfig = CachingConfig{
 	SnapshotRestoreGasLimit:            300_000_000_000,
 	MaxNumberOfBlocksToSkipStateSaving: 0,
 	MaxAmountOfGasToSkipStateSaving:    0,
-	StylusLRUCache:                     256,
+	StylusLRUCacheCapacity:             256,
 	StateScheme:                        rawdb.HashScheme,
 	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 }
