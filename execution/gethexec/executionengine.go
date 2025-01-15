@@ -534,6 +534,8 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
+	statedb.StartPrefetcher("Sequencer")
+	defer statedb.StopPrefetcher()
 
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
