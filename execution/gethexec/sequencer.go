@@ -567,10 +567,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return err
 	}
 	if forwarder != nil {
-		err := forwarder.PublishExpressLaneTransaction(ctx, msg)
-		if !errors.Is(err, ErrNoSequencer) {
-			return err
-		}
+		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
 
 	if s.expressLaneService == nil {
