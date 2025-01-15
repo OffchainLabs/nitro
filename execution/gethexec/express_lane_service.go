@@ -29,7 +29,7 @@ import (
 )
 
 type transactionPublisher interface {
-	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions, chan error) error
+	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions, chan error)
 }
 
 type msgAndResult struct {
@@ -358,9 +358,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 			queueCtx, cancel = ctxWithTimeout(ctx, queueTimeout)
 			defer cancel()
 		}
-		if err := es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, nextMsgAndResult.msg.Transaction, nextMsgAndResult.msg.Options, nextMsgAndResult.resultChan); err != nil {
-			nextMsgAndResult.resultChan <- err
-		}
+		es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, nextMsgAndResult.msg.Transaction, nextMsgAndResult.msg.Options, nextMsgAndResult.resultChan)
 		// Increase the global round sequence number.
 		roundInfo.sequence += 1
 	}

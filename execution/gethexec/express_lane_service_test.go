@@ -277,13 +277,13 @@ func makeStubPublisher(els *expressLaneService) *stubPublisher {
 
 var emptyTx = types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), nil)
 
-func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) error {
+func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) {
 	if tx.Hash() != emptyTx.Hash() {
-		return errors.New("oops, bad tx")
+		resultChan <- errors.New("oops, bad tx")
+		return
 	}
-	resultChan <- nil
 	s.publishedTxOrder = append(s.publishedTxOrder, 0)
-	return nil
+	resultChan <- nil
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testing.T) {

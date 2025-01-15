@@ -550,7 +550,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		options:         nil,
 		resultChan:      make(chan error, 1),
 		returnedResult:  &atomic.Bool{},
-		ctx:             context.TODO(),
+		ctx:             s.GetContext(),
 		firstAppearance: time.Now(),
 		isTimeboosted:   true,
 	}
@@ -579,8 +579,10 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg)
 }
 
-func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) error {
-	return s.publishTransactionToQueue(queueCtx, tx, options, resultChan, true) // Is it safe to ignore queueCtx's CancelFunc here?
+func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) {
+	if err := s.publishTransactionToQueue(queueCtx, tx, options, resultChan, true); err != nil {
+		resultChan <- err
+	}
 }
 
 func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error, isExpressLaneController bool) error {
