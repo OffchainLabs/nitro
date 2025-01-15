@@ -42,6 +42,9 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
+	boldstaker "github.com/offchainlabs/nitro/staker/bold"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -79,22 +82,23 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 }
 
 type Config struct {
-	Sequencer           bool                        `koanf:"sequencer"`
-	ParentChainReader   headerreader.Config         `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader         InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer    DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster         BatchPosterConfig           `koanf:"batch-poster" reload:"hot"`
-	MessagePruner       MessagePrunerConfig         `koanf:"message-pruner" reload:"hot"`
-	BlockValidator      staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
-	Feed                broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
-	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
-	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
-	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
-	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
-	Dangerous           DangerousConfig             `koanf:"dangerous"`
-	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
-	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
+	Sequencer           bool                           `koanf:"sequencer"`
+	ParentChainReader   headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader         InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer    DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster         BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
+	MessagePruner       MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
+	BlockValidator      staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
+	Feed                broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
+	Staker              legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
+	Bold                boldstaker.BoldConfig          `koanf:"bold"`
+	SeqCoordinator      SeqCoordinatorConfig           `koanf:"seq-coordinator"`
+	DataAvailability    das.DataAvailabilityConfig     `koanf:"data-availability"`
+	SyncMonitor         SyncMonitorConfig              `koanf:"sync-monitor"`
+	Dangerous           DangerousConfig                `koanf:"dangerous"`
+	TransactionStreamer TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance         MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
+	ResourceMgmt        resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -153,7 +157,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
-	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
+	legacystaker.L1ValidatorConfigAddOptions(prefix+".staker", f)
+	boldstaker.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
@@ -171,7 +176,8 @@ var ConfigDefault = Config{
 	MessagePruner:       DefaultMessagePrunerConfig,
 	BlockValidator:      staker.DefaultBlockValidatorConfig,
 	Feed:                broadcastclient.FeedConfigDefault,
-	Staker:              staker.DefaultL1ValidatorConfig,
+	Staker:              legacystaker.DefaultL1ValidatorConfig,
+	Bold:                boldstaker.DefaultBoldConfig,
 	SeqCoordinator:      DefaultSeqCoordinatorConfig,
 	DataAvailability:    das.DefaultDataAvailabilityConfig,
 	SyncMonitor:         DefaultSyncMonitorConfig,
@@ -203,9 +209,10 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
-	config.Staker = staker.TestL1ValidatorConfig
+	config.Staker = legacystaker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
+	config.Bold.MinimumGapToParentAssertion = 0
 
 	return &config
 }
@@ -219,11 +226,12 @@ func ConfigDefaultL2Test() *Config {
 	config.Feed.Output.Signed = false
 	config.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
-	config.Staker = staker.TestL1ValidatorConfig
+	config.Staker = legacystaker.TestL1ValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
+	config.Bold.MinimumGapToParentAssertion = 0
 
 	return &config
 }
@@ -267,7 +275,7 @@ type Node struct {
 	MessagePruner           *MessagePruner
 	BlockValidator          *staker.BlockValidator
 	StatelessBlockValidator *staker.StatelessBlockValidator
-	Staker                  *staker.Staker
+	Staker                  *multiprotocolstaker.MultiProtocolStaker
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
@@ -279,19 +287,21 @@ type Node struct {
 }
 
 type SnapSyncConfig struct {
-	Enabled               bool
-	PrevBatchMessageCount uint64
-	PrevDelayedRead       uint64
-	BatchCount            uint64
-	DelayedCount          uint64
+	Enabled                   bool
+	PrevBatchMessageCount     uint64
+	PrevDelayedRead           uint64
+	BatchCount                uint64
+	DelayedCount              uint64
+	ParentChainAssertionBlock uint64
 }
 
 var DefaultSnapSyncConfig = SnapSyncConfig{
-	Enabled:               false,
-	PrevBatchMessageCount: 0,
-	BatchCount:            0,
-	DelayedCount:          0,
-	PrevDelayedRead:       0,
+	Enabled:                   false,
+	PrevBatchMessageCount:     0,
+	PrevDelayedRead:           0,
+	BatchCount:                0,
+	DelayedCount:              0,
+	ParentChainAssertionBlock: 0,
 }
 
 type ConfigFetcher interface {
@@ -590,7 +600,29 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
+	if config.SnapSyncTest.Enabled {
+		batchCount := config.SnapSyncTest.BatchCount
+		delayedMessageNumber, err := exec.NextDelayedMessageNumber()
+		if err != nil {
+			return nil, err
+		}
+		if batchCount > delayedMessageNumber {
+			batchCount = delayedMessageNumber
+		}
+		// Find the first block containing the batch count.
+		// Subtract 1 to get the block before the needed batch count,
+		// this is done to fetch previous batch metadata needed for snap sync.
+		if batchCount > 0 {
+			batchCount--
+		}
+		block, err := FindBlockContainingBatchCount(ctx, deployInfo.Bridge, l1client, config.SnapSyncTest.ParentChainAssertionBlock, batchCount)
+		if err != nil {
+			return nil, err
+		}
+		firstMessageBlock.SetUint64(block)
+	}
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, err
 	}
@@ -633,7 +665,7 @@ func createNodeImpl(
 		}
 	}
 
-	var stakerObj *staker.Staker
+	var stakerObj *multiprotocolstaker.MultiProtocolStaker
 	var messagePruner *MessagePruner
 	var stakerAddr common.Address
 
@@ -653,7 +685,7 @@ func createNodeImpl(
 		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
 		// TODO: factor this out into separate helper, and split rest of node
 		// creation into multiple helpers.
-		var wallet staker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client, deployInfo.Rollup)
+		var wallet legacystaker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client, deployInfo.Rollup)
 		if !strings.EqualFold(config.Staker.Strategy, "watchtower") {
 			if config.Staker.UseSmartContractWallet || (txOptsValidator == nil && config.Staker.DataPoster.ExternalSigner.URL == "") {
 				var existingWalletAddress *common.Address
@@ -681,13 +713,13 @@ func createNodeImpl(
 			}
 		}
 
-		var confirmedNotifiers []staker.LatestConfirmedNotifier
+		var confirmedNotifiers []legacystaker.LatestConfirmedNotifier
 		if config.MessagePruner.Enable {
 			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, func() *staker.L1ValidatorConfig { return &configFetcher.Get().Staker }, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}
@@ -697,11 +729,6 @@ func createNodeImpl(
 		if dp != nil {
 			stakerAddr = dp.Sender()
 		}
-		whitelisted, err := stakerObj.IsWhitelisted(ctx)
-		if err != nil {
-			return nil, err
-		}
-		log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster
@@ -769,6 +796,53 @@ func createNodeImpl(
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
 	}, nil
+}
+
+func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Address, l1Client *ethclient.Client, parentChainAssertionBlock uint64, batchCount uint64) (uint64, error) {
+	bridge, err := bridgegen.NewIBridge(bridgeAddress, l1Client)
+	if err != nil {
+		return 0, err
+	}
+	high := parentChainAssertionBlock
+	low := uint64(0)
+	reduceBy := uint64(100)
+	if high > reduceBy {
+		low = high - reduceBy
+	}
+	// Reduce high and low by 100 until lowNode.InboxMaxCount < batchCount
+	// This will give us a range (low to high) of blocks that contain the batch count.
+	for low > 0 {
+		lowCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(low)})
+		if err != nil {
+			return 0, err
+		}
+		if lowCount.Uint64() > batchCount {
+			high = low
+			reduceBy = reduceBy * 2
+			if low > reduceBy {
+				low = low - reduceBy
+			} else {
+				low = 0
+			}
+		} else {
+			break
+		}
+	}
+	// Then binary search between low and high to find the block containing the batch count.
+	for low < high {
+		mid := low + (high-low)/2
+
+		midCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(mid)})
+		if err != nil {
+			return 0, err
+		}
+		if midCount.Uint64() < batchCount {
+			low = mid + 1
+		} else {
+			high = mid
+		}
+	}
+	return low, nil
 }
 
 func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
