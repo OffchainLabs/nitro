@@ -982,42 +982,57 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		var queueItem txQueueItem
 
 		if s.txRetryQueue.Len() > 0 {
-			// The txRetryQueue is not modeled as a channel because it is only added to from
-			// this function (Sequencer.createBlock). So it is sufficient to check its
-			// len at the start of this loop, since items can't be added to it asynchronously,
-			// which is not true for the main txQueue or timeboostAuctionResolutionQueue.
-			queueItem = s.txRetryQueue.Pop()
+			select {
+			case queueItem = <-s.timeboostAuctionResolutionTxQueue:
+				log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
+			default:
+				// The txRetryQueue is not modeled as a channel because it is only added to from
+				// this function (Sequencer.createBlock). So it is sufficient to check its
+				// len at the start of this loop, since items can't be added to it asynchronously,
+				// which is not true for the main txQueue or timeboostAuctionResolutionQueue.
+				queueItem = s.txRetryQueue.Pop()
+			}
 		} else if len(queueItems) == 0 {
 			var nextNonceExpiryChan <-chan time.Time
 			if nextNonceExpiryTimer != nil {
 				nextNonceExpiryChan = nextNonceExpiryTimer.C
 			}
 			select {
-			case queueItem = <-s.txQueue:
 			case queueItem = <-s.timeboostAuctionResolutionTxQueue:
 				log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
-			case <-nextNonceExpiryChan:
-				// No need to stop the previous timer since it already elapsed
-				nextNonceExpiryTimer = s.expireNonceFailures()
-				continue
-			case <-s.onForwarderSet:
-				// Make sure this notification isn't outdated
-				_, forwarder := s.GetPauseAndForwarder()
-				if forwarder != nil {
-					s.nonceFailures.Clear()
+			default:
+				select {
+				case queueItem = <-s.txQueue:
+				case queueItem = <-s.timeboostAuctionResolutionTxQueue:
+					log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
+				case <-nextNonceExpiryChan:
+					// No need to stop the previous timer since it already elapsed
+					nextNonceExpiryTimer = s.expireNonceFailures()
+					continue
+				case <-s.onForwarderSet:
+					// Make sure this notification isn't outdated
+					_, forwarder := s.GetPauseAndForwarder()
+					if forwarder != nil {
+						s.nonceFailures.Clear()
+					}
+					continue
+				case <-ctx.Done():
+					return false
 				}
-				continue
-			case <-ctx.Done():
-				return false
 			}
 		} else {
 			done := false
 			select {
-			case queueItem = <-s.txQueue:
 			case queueItem = <-s.timeboostAuctionResolutionTxQueue:
 				log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
 			default:
-				done = true
+				select {
+				case queueItem = <-s.txQueue:
+				case queueItem = <-s.timeboostAuctionResolutionTxQueue:
+					log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
+				default:
+					done = true
+				}
 			}
 			if done {
 				break
