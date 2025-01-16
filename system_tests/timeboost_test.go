@@ -1135,9 +1135,11 @@ func setupExpressLaneAuction(
 	builderSeq.l2StackConfig.JWTSecret = jwtSecretPath
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builderSeq.execConfig.Sequencer.Enable = true
+	expressLaneRedisURL := redisutil.CreateTestRedis(ctx, t)
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
 		Enable:               false, // We need to start without timeboost initially to create the auction contract
 		ExpressLaneAdvantage: time.Second * 5,
+		RedisUrl:             expressLaneRedisURL,
 	}
 	builderSeq.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	cleanupSeq := builderSeq.Build(t)
