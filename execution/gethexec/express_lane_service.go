@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -26,6 +27,10 @@ import (
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	auctionResolutionLatency = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/auctionresolution", nil, metrics.NewBoundedHistogramSample())
 )
 
 type transactionPublisher interface {
@@ -204,10 +209,13 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 				continue
 			}
 			for it.Next() {
+				timeSinceAuctionClose := es.roundTimingInfo.AuctionClosing - es.roundTimingInfo.TimeTilNextRound()
+				auctionResolutionLatency.Update(timeSinceAuctionClose.Nanoseconds())
 				log.Info(
 					"AuctionResolved: New express lane controller assigned",
 					"round", it.Event.Round,
 					"controller", it.Event.FirstPriceExpressLaneController,
+					"timeSinceAuctionClose", timeSinceAuctionClose,
 				)
 				es.roundControl.Store(it.Event.Round, it.Event.FirstPriceExpressLaneController)
 			}
