@@ -580,12 +580,16 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
-	// And since batchposter's MaxSize is to be at least 10kB below the sequencer inbox’s maxDataSize, this leads to another condition of atlest 15kB below the sequencer inbox’s maxDataSize.
+
 	if nodeConfig.Execution.Sequencer.Enable {
-		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 ||
-			nodeConfig.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 {
-			log.Error("sequencer's MaxTxDataSize too large")
+		// Validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
+		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 {
+			log.Error("sequencer's MaxTxDataSize too large compared to the batchPoster's MaxSize")
+			return 1
+		}
+		// Since the batchposter's MaxSize must be at least 10kB below the sequencer inbox’s maxDataSize, then MaxTxDataSize must also be 15kB below the sequencer inbox’s maxDataSize.
+		if nodeConfig.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 && !nodeConfig.Execution.Sequencer.Dangerous.DisableSeqInboxMaxDataSizeCheck {
+			log.Error("sequencer's MaxTxDataSize too large compared to the sequencer inbox's MaxDataSize")
 			return 1
 		}
 	}
