@@ -234,6 +234,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
+COPY bold/go.mod bold/go.sum bold/
 RUN go mod download
 COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
@@ -332,6 +333,7 @@ RUN rm -f /home/user/target/machines/latest
 COPY --from=prover-export /bin/jit                                         /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/mockexternalsigner        /usr/local/bin/
 COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/

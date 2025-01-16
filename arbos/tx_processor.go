@@ -308,7 +308,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// pay for the retryable's gas and update the pools
 		gascost := arbmath.BigMulByUint(effectiveBaseFee, usergas)
 		networkCost := gascost
-		if p.state.ArbOSVersion() >= 11 {
+		if p.state.ArbOSVersion() >= params.ArbosVersion_11 {
 			infraFeeAccount, err := p.state.InfraFeeAccount()
 			p.state.Restrict(err)
 			if infraFeeAccount != (common.Address{}) {
@@ -577,7 +577,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		takeFunds(maxRefund, arbmath.BigMulByUint(effectiveBaseFee, gasUsed))
 		// Refund any unused gas, without overdrafting the L1 deposit.
 		networkRefund := gasRefund
-		if p.state.ArbOSVersion() >= 11 {
+		if p.state.ArbOSVersion() >= params.ArbosVersion_11 {
 			infraFeeAccount, err := p.state.InfraFeeAccount()
 			p.state.Restrict(err)
 			if infraFeeAccount != (common.Address{}) {
@@ -629,7 +629,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		computeCost = totalCost
 	}
 
-	if p.state.ArbOSVersion() > 4 {
+	if p.state.ArbOSVersion() > params.ArbosVersion_4 {
 		infraFeeAccount, err := p.state.InfraFeeAccount()
 		p.state.Restrict(err)
 		if infraFeeAccount != (common.Address{}) {
@@ -646,11 +646,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, tracing.BalanceIncreaseNetworkFee)
 	}
 	posterFeeDestination := l1pricing.L1PricerFundsPoolAddress
-	if p.state.ArbOSVersion() < 2 {
+	if p.state.ArbOSVersion() < params.ArbosVersion_2 {
 		posterFeeDestination = p.evm.Context.Coinbase
 	}
 	util.MintBalance(&posterFeeDestination, p.PosterFee, p.evm, scenario, tracing.BalanceIncreaseL1PosterFee)
-	if p.state.ArbOSVersion() >= 10 {
+	if p.state.ArbOSVersion() >= params.ArbosVersion_10 {
 		if _, err := p.state.L1PricingState().AddToL1FeesAvailable(p.PosterFee); err != nil {
 			log.Error("failed to update L1FeesAvailable: ", "err", err)
 		}
@@ -748,13 +748,13 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 
 func (p *TxProcessor) DropTip() bool {
 	version := p.state.ArbOSVersion()
-	return version != 9 || p.delayedInbox
+	return version != params.ArbosVersion_9 || p.delayedInbox
 }
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 	gasPrice := p.evm.GasPrice
 	version := p.state.ArbOSVersion()
-	if version != 9 {
+	if version != params.ArbosVersion_9 {
 		// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
 		gasPrice = p.evm.Context.BaseFee
 	}
@@ -762,7 +762,7 @@ func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 }
 
 func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
-	if p.state.ArbOSVersion() >= 3 {
+	if p.state.ArbOSVersion() >= params.ArbosVersion_3 {
 		return p.GetPaidGasPrice()
 	}
 	return evm.GasPrice

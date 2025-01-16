@@ -20,7 +20,7 @@ jobs:
       redis:
         image: redis
         ports:
-            - 6379:6379
+          - 6379:6379
 
     strategy:
       fail-fast: false
@@ -55,8 +55,9 @@ jobs:
 
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
+        id: install-rust
         with:
-          toolchain: 'stable'
+          toolchain: '1.80.1'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
@@ -64,7 +65,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-08-06'
+          toolchain: 'nightly-2024-10-06'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
 
@@ -192,7 +193,7 @@ jobs:
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --cover
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --timeout 60m --cover
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
@@ -203,7 +204,7 @@ jobs:
         run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log

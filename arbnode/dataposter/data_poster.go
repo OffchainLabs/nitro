@@ -41,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
@@ -712,13 +713,23 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
 }
 
-func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
-	return p.PostTransaction(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
+func (p *DataPoster) PostSimpleTransaction(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	nonce, _, _, _, err := p.getNextNonceAndMaybeMeta(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
+	return p.postTransactionWithMutex(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
 }
 
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+	return p.postTransactionWithMutex(ctx, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
+}
+
+func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 
 	if p.config().DisableNewTx {
 		return nil, fmt.Errorf("posting new transaction is disabled")
@@ -1285,6 +1296,21 @@ type ExternalSignerCfg struct {
 	ClientPrivateKey string `koanf:"client-private-key"`
 	// TLS config option, when enabled skips certificate verification of external signer.
 	InsecureSkipVerify bool `koanf:"insecure-skip-verify"`
+}
+
+func ExternalSignerTestCfg(addr common.Address, url string) (*ExternalSignerCfg, error) {
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		return nil, fmt.Errorf("getting certificates path: %w", err)
+	}
+	return &ExternalSignerCfg{
+		Address:          common.Bytes2Hex(addr.Bytes()),
+		URL:              url,
+		Method:           externalsignertest.SignerMethod,
+		RootCA:           cp.ServerCert,
+		ClientCert:       cp.ClientCert,
+		ClientPrivateKey: cp.ClientKey,
+	}, nil
 }
 
 type DangerousConfig struct {
