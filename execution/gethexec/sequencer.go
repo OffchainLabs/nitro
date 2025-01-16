@@ -68,6 +68,7 @@ type SequencerConfig struct {
 	MaxAcceptableTimestampDelta  time.Duration   `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
 	SenderWhitelist              []string        `koanf:"sender-whitelist"`
 	Forwarder                    ForwarderConfig `koanf:"forwarder"`
+	Dangerous                    DangerousConfig `koanf:"dangerous"`
 	QueueSize                    int             `koanf:"queue-size"`
 	QueueTimeout                 time.Duration   `koanf:"queue-timeout" reload:"hot"`
 	NonceCacheSize               int             `koanf:"nonce-cache-size" reload:"hot"`
@@ -119,6 +120,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxAcceptableTimestampDelta: time.Hour,
 	SenderWhitelist:             []string{},
 	Forwarder:                   DefaultSequencerForwarderConfig,
+	Dangerous:                   DefaultDangerousConfig,
 	QueueSize:                   1024,
 	QueueTimeout:                time.Second * 12,
 	NonceCacheSize:              1024,
@@ -139,6 +141,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
+	AddOptionsForDangerousConfig(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
@@ -148,6 +151,18 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
+}
+
+type DangerousConfig struct {
+	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	DisableSeqInboxMaxDataSizeCheck: false,
+}
+
+func AddOptionsForDangerousConfig(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 }
 
 type txQueueItem struct {
