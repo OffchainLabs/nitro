@@ -54,7 +54,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	}
 	genesisHeaderInfo.UpdateHeaderWithInfo(head)
 
-	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
+	return types.NewBlock(head, nil, nil, trie.NewStackTrie(nil))
 }
 
 func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
@@ -66,7 +66,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	}()
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
-		log.Crit("failed to init empty statedb", "error", err)
+		panic("failed to init empty statedb :" + err.Error())
 	}
 
 	noStateTrieChangesToCommitError := regexp.MustCompile("^triedb layer .+ is disk layer$")
@@ -96,7 +96,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	burner := burn.NewSystemBurner(nil, false)
 	arbosState, err := InitializeArbosState(statedb, burner, chainConfig, initMessage)
 	if err != nil {
-		log.Crit("failed to open the ArbOS state", "error", err)
+		panic("failed to open the ArbOS state :" + err.Error())
 	}
 
 	chainOwner, err := initData.GetChainOwner()
