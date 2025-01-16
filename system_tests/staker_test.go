@@ -505,7 +505,7 @@ func TestGetValidatorWalletContractWithDataposterOnlyUsedToCreateValidatorWallet
 		parentChainID,
 	)
 	if err != nil {
-		log.Crit("error creating data poster to create validator wallet contract", "err", err)
+		Fatal(t, "error creating data poster to create validator wallet contract", "err", err)
 	}
 	getExtraGas := func() uint64 { return builder.nodeConfig.Staker.ExtraGas }
 

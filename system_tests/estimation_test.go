@@ -162,7 +162,7 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_10
 	cleanup := builder.Build(t)
 	defer cleanup()
 
