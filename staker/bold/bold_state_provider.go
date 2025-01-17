@@ -166,7 +166,7 @@ func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
 		// So we assume it is validated and return true.
 		return true, nil
 	}
-	lastValidatedGs, err := s.validator.ReadLastValidatedInfo()
+	lastValidatedGs, err := s.validator.ReadLastValidatedInfo(ctx)
 	if err != nil {
 		return false, err
 	}
