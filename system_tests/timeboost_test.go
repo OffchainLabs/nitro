@@ -126,8 +126,12 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	txs = append(txs, seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)) // currNonce + 3
 
 	// We send three txs- 0,2 and 3 to the current active sequencer=B
-	go expressLaneClientB.SendTransactionWithSequence(ctx, txs[3], 4)
-	go expressLaneClientB.SendTransactionWithSequence(ctx, txs[2], 3)
+	go func() {
+		_ = expressLaneClientB.SendTransactionWithSequence(ctx, txs[3], 4)
+	}()
+	go func() {
+		_ = expressLaneClientB.SendTransactionWithSequence(ctx, txs[2], 3)
+	}()
 	time.Sleep(time.Second) // Wait for txs to be submitted
 	err = expressLaneClientB.SendTransactionWithSequence(ctx, txs[0], 1)
 	Require(t, err)
@@ -151,7 +155,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	} else {
 		// Change priorities to make sequencer=A the chosen and verify that the update went through
 		t.Log("Change coordinator priorities to switch active sequencer")
-		redisCoordinatorSetter.UpdatePriorities(ctx, []string{seqA.Stack.HTTPEndpoint(), seqB.Stack.HTTPEndpoint()})
+		Require(t, redisCoordinatorSetter.UpdatePriorities(ctx, []string{seqA.Stack.HTTPEndpoint(), seqB.Stack.HTTPEndpoint()}))
 	}
 
 	// Wait for chosen sequencer to change on redis
