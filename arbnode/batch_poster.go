@@ -539,7 +539,7 @@ func (b *BatchPoster) getTxsInfoByBlock(ctx context.Context, number int64) ([]tx
 	return blk.Transactions, nil
 }
 
-// checkRevert checks blocks with number in range [from, to] whether they
+// checkReverts checks blocks with number in range [from, to] whether they
 // contain reverted batch_poster transaction.
 // It returns true if it finds batch posting needs to halt, which is true if a batch reverts
 // unless the data poster is configured with noop storage which can tolerate reverts.
