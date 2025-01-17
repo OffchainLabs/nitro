@@ -38,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/seq-coordinator-manager/rediscoordinator"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
@@ -53,6 +54,144 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+func TestExpressLaneTxsHandlingDuringSequencerSwapDueToPriorities(t *testing.T) {
+	testTxsHandlingDuringSequencerSwap(t, false)
+}
+
+func TestExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerCrashing(t *testing.T) {
+	testTxsHandlingDuringSequencerSwap(t, true)
+}
+
+func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tmpDir, err := os.MkdirTemp("", "*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	})
+	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
+
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, withForwardingSeq)
+	seqB, seqClientB, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
+	seqA := forwarder.ConsensusNode
+	if !dueToCrash {
+		defer cleanupSeq()
+	}
+	defer cleanupForwarder()
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClientB)
+	Require(t, err)
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
+	Require(t, err)
+
+	placeBidsAndDecideWinner(t, ctx, seqClientB, seqInfo, auctionContract, "Bob", "Alice", bobBidderClient, aliceBidderClient, roundDuration)
+	time.Sleep(roundTimingInfo.TimeTilNextRound())
+
+	// Prepare a client that can submit txs to the sequencer via the express lane.
+	chainId, err := seqClientB.ChainID(ctx)
+	Require(t, err)
+	bobPriv := seqInfo.Accounts["Bob"].PrivateKey
+	createExpressLaneClientFor := func(url string) *expressLaneClient {
+		forwardingSeqDial, err := rpc.Dial(url)
+		Require(t, err)
+		expressLaneClient := newExpressLaneClient(
+			bobPriv,
+			chainId,
+			*roundTimingInfo,
+			auctionContractAddr,
+			forwardingSeqDial,
+		)
+		expressLaneClient.Start(ctx)
+		return expressLaneClient
+	}
+	expressLaneClientB := createExpressLaneClientFor(seqB.Stack.HTTPEndpoint())
+	expressLaneClientA := createExpressLaneClientFor(seqA.Stack.HTTPEndpoint())
+
+	verifyControllerAdvantage(t, ctx, seqClientB, expressLaneClientB, seqInfo, "Bob", "Alice")
+
+	currNonce, err := seqClientB.PendingNonceAt(ctx, seqInfo.GetAddress("Alice"))
+	Require(t, err)
+	seqInfo.GetInfoWithPrivKey("Alice").Nonce.Store(currNonce)
+
+	// Send txs out of order
+	var txs types.Transactions
+	txs = append(txs, seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)) // currNonce
+	txs = append(txs, seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)) // currNonce + 1
+	txs = append(txs, seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)) // currNonce + 2
+	txs = append(txs, seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)) // currNonce + 3
+
+	// We send three txs- 0,2 and 3 to the current active sequencer=B
+	go expressLaneClientB.SendTransactionWithSequence(ctx, txs[3], 4)
+	go expressLaneClientB.SendTransactionWithSequence(ctx, txs[2], 3)
+	time.Sleep(time.Second) // Wait for txs to be submitted
+	err = expressLaneClientB.SendTransactionWithSequence(ctx, txs[0], 1)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, seqClientB, txs[0])
+	Require(t, err)
+
+	// Set reader and writer coordinators for redis
+	redisCoordinatorGetter, err := redisutil.NewRedisCoordinator(builderSeq.nodeConfig.SeqCoordinator.RedisUrl)
+	Require(t, err)
+	currentChosen, err := redisCoordinatorGetter.CurrentChosenSequencer(ctx)
+	Require(t, err)
+	if currentChosen != seqB.Stack.HTTPEndpoint() {
+		t.Fatalf("unexepcted current chosen sequencer. Want: %s, Got: %s", seqB.Stack.HTTPEndpoint(), currentChosen)
+	}
+	redisCoordinatorSetter := &rediscoordinator.RedisCoordinator{RedisCoordinator: redisCoordinatorGetter}
+
+	if dueToCrash {
+		// Shutdown the current active sequencer
+		t.Log("Attempting to stop current chosen sequencer")
+		seqB.StopAndWait()
+	} else {
+		// Change priorities to make sequencer=A the chosen and verify that the update went through
+		t.Log("Change coordinator priorities to switch active sequencer")
+		redisCoordinatorSetter.UpdatePriorities(ctx, []string{seqA.Stack.HTTPEndpoint(), seqB.Stack.HTTPEndpoint()})
+	}
+
+	// Wait for chosen sequencer to change on redis
+	for {
+		currentChosen, err := redisCoordinatorGetter.CurrentChosenSequencer(ctx)
+		Require(t, err)
+		if currentChosen == seqA.Stack.HTTPEndpoint() {
+			break
+		}
+		t.Logf("waiting for chosen sequencer to change to: %s, currently: %s", seqA.Stack.HTTPEndpoint(), currentChosen)
+		time.Sleep(time.Second)
+	}
+
+	// Send the tx=1 that should be sequenced by the new active sequencer along with the future seq num txs=2,3 synced from redis
+	err = expressLaneClientA.SendTransactionWithSequence(ctx, txs[1], 2)
+	Require(t, err)
+
+	var txReceipts types.Receipts
+	for _, tx := range txs[1:] {
+		receipt, err := EnsureTxSucceeded(ctx, forwarder.Client, tx)
+		Require(t, err)
+		txReceipts = append(txReceipts, receipt)
+	}
+
+	if !(txReceipts[0].BlockNumber.Cmp(txReceipts[1].BlockNumber) <= 0 &&
+		txReceipts[1].BlockNumber.Cmp(txReceipts[2].BlockNumber) <= 0) {
+		t.Fatal("incorrect ordering of txs acceptance, lower sequence number txs should appear in earlier block")
+	}
+
+	if txReceipts[0].BlockNumber.Cmp(txReceipts[1].BlockNumber) == 0 &&
+		txReceipts[0].TransactionIndex > txReceipts[1].TransactionIndex {
+		t.Fatal("incorrect ordering of txs in a block, lower sequence number txs should appear earlier")
+	}
+
+	if txReceipts[1].BlockNumber.Cmp(txReceipts[2].BlockNumber) == 0 &&
+		txReceipts[1].TransactionIndex > txReceipts[2].TransactionIndex {
+		t.Fatal("incorrect ordering of txs in a block, lower sequence number txs should appear earlier")
+	}
+}
+
 func TestForwardingExpressLaneTxs(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -65,7 +204,8 @@ func TestForwardingExpressLaneTxs(t *testing.T) {
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	_, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, withForwardingSeq)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, withForwardingSeq)
+	seqClient, seqInfo := builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 	defer cleanupForwarder()
 
@@ -110,7 +250,8 @@ func TestExpressLaneTransactionHandlingComplex(t *testing.T) {
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	seq, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
@@ -207,7 +348,8 @@ func TestExpressLaneTransactionHandling(t *testing.T) {
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	seq, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
@@ -273,7 +415,7 @@ func TestExpressLaneTransactionHandling(t *testing.T) {
 
 	if !(txReceipts[0].BlockNumber.Cmp(txReceipts[1].BlockNumber) <= 0 &&
 		txReceipts[1].BlockNumber.Cmp(txReceipts[2].BlockNumber) <= 0) {
-		t.Fatal("incorrect ordering of txs acceptance, lower sequence number txs should appear earlier block")
+		t.Fatal("incorrect ordering of txs acceptance, lower sequence number txs should appear in earlier block")
 	}
 
 	if txReceipts[0].BlockNumber.Cmp(txReceipts[1].BlockNumber) == 0 &&
@@ -699,7 +841,8 @@ func TestExpressLaneControlTransfer(t *testing.T) {
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	seq, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
@@ -799,7 +942,8 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	seq, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
@@ -844,7 +988,8 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_Timeboo
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
-	seq, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, cleanupSeq, feedListener, cleanupFeedListener := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, withFeedListener)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, feedListener, cleanupFeedListener := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, withFeedListener)
+	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 	defer cleanupFeedListener()
 
@@ -1121,12 +1266,16 @@ func setupExpressLaneAuction(
 	ctx context.Context,
 	jwtSecretPath string,
 	extraNodeTy extraNodeType,
-) (*arbnode.Node, *ethclient.Client, *BlockchainTestInfo, common.Address, *timeboost.BidderClient, *timeboost.BidderClient, time.Duration, func(), *TestClient, func()) {
-
-	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
-
+) (common.Address, *timeboost.BidderClient, *timeboost.BidderClient, time.Duration, *NodeBuilder, func(), *TestClient, func()) {
 	seqPort := getRandomPort(t)
 	seqAuthPort := getRandomPort(t)
+	forwarderPort := getRandomPort(t)
+
+	nodeNames := []string{fmt.Sprintf("http://127.0.0.1:%d", seqPort), fmt.Sprintf("http://127.0.0.1:%d", forwarderPort)}
+	expressLaneRedisURL := redisutil.CreateTestRedis(ctx, t)
+	initRedisForTest(t, ctx, expressLaneRedisURL, nodeNames)
+
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builderSeq.l2StackConfig.HTTPHost = "localhost"
 	builderSeq.l2StackConfig.HTTPPort = seqPort
 	builderSeq.l2StackConfig.HTTPModules = []string{"eth", "arb", "debug", "timeboost"}
@@ -1134,8 +1283,12 @@ func setupExpressLaneAuction(
 	builderSeq.l2StackConfig.AuthModules = []string{"eth", "arb", "debug", "timeboost", "auctioneer"}
 	builderSeq.l2StackConfig.JWTSecret = jwtSecretPath
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
+	builderSeq.nodeConfig.Dangerous.NoSequencerCoordinator = false
+	builderSeq.nodeConfig.SeqCoordinator.Enable = true
+	builderSeq.nodeConfig.SeqCoordinator.RedisUrl = expressLaneRedisURL
+	builderSeq.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
+	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
-	expressLaneRedisURL := redisutil.CreateTestRedis(ctx, t)
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
 		Enable:               false, // We need to start without timeboost initially to create the auction contract
 		ExpressLaneAdvantage: time.Second * 5,
@@ -1151,11 +1304,15 @@ func setupExpressLaneAuction(
 	case withForwardingSeq:
 		forwarderNodeCfg := arbnode.ConfigDefaultL1Test()
 		forwarderNodeCfg.BatchPoster.Enable = false
-		builderSeq.l2StackConfig.HTTPPort = getRandomPort(t)
+		forwarderNodeCfg.Dangerous.NoSequencerCoordinator = false
+		forwarderNodeCfg.SeqCoordinator.Enable = true
+		forwarderNodeCfg.SeqCoordinator.RedisUrl = expressLaneRedisURL
+		forwarderNodeCfg.SeqCoordinator.MyUrl = nodeNames[1]
+		forwarderNodeCfg.SeqCoordinator.DeleteFinalizedMsgs = false
+		builderSeq.l2StackConfig.HTTPPort = forwarderPort
 		builderSeq.l2StackConfig.AuthPort = getRandomPort(t)
 		builderSeq.l2StackConfig.JWTSecret = jwtSecretPath
 		extraNode, cleanupExtraNode = builderSeq.Build2ndNode(t, &SecondNodeParams{nodeConfig: forwarderNodeCfg})
-		Require(t, extraNode.ExecNode.ForwardTo(seqNode.Stack.HTTPEndpoint()))
 	case withFeedListener:
 		tcpAddr, ok := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr)
 		if !ok {
@@ -1322,6 +1479,13 @@ func setupExpressLaneAuction(
 	builderSeq.L2.ExecNode.Sequencer.StartExpressLaneService(ctx)
 	t.Log("Started express lane service in sequencer")
 
+	if extraNodeTy == withForwardingSeq {
+		err = extraNode.ExecNode.Sequencer.InitializeExpressLaneService(extraNode.ExecNode.Backend.APIBackend(), extraNode.ExecNode.FilterSystem, proxyAddr, seqInfo.GetAddress("AuctionContract"), gethexec.DefaultTimeboostConfig.EarlySubmissionGrace)
+		Require(t, err)
+		extraNode.ExecNode.Sequencer.StartExpressLaneService(ctx)
+		t.Log("Started express lane service in forwarder sequencer")
+	}
+
 	// Set up an autonomous auction contract service that runs in the background in this test.
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 
@@ -1441,7 +1605,7 @@ func setupExpressLaneAuction(
 	time.Sleep(roundTimingInfo.TimeTilNextRound())
 	t.Logf("Reached the bidding round at %v", time.Now())
 	time.Sleep(time.Second * 5)
-	return seqNode, seqClient, seqInfo, proxyAddr, alice, bob, roundDuration, cleanupSeq, extraNode, cleanupExtraNode
+	return proxyAddr, alice, bob, roundDuration, builderSeq, cleanupSeq, extraNode, cleanupExtraNode
 }
 
 func awaitAuctionResolved(
