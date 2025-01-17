@@ -28,6 +28,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
@@ -73,6 +74,7 @@ type TransactionStreamerConfig struct {
 	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
 	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
 	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
+	SyncTillBlock           uint64        `koanf:"sync-till-block"`
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
@@ -81,18 +83,21 @@ var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 50_000,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
+	SyncTillBlock:           0,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
 	ExecuteMessageLoopDelay: time.Millisecond,
+	SyncTillBlock:           0,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
+	f.Uint64(prefix+".sync-till-block", DefaultTransactionStreamerConfig.SyncTillBlock, "node will not sync past this block")
 }
 
 func NewTransactionStreamer(
@@ -1043,6 +1048,10 @@ func (s *TransactionStreamer) broadcastMessages(
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockHash, batch ethdb.Batch) error {
+	if s.config().SyncTillBlock > 0 && uint64(pos) > s.config().SyncTillBlock {
+		return broadcastclient.TransactionStreamerBlockCreationStopped
+	}
+
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}
@@ -1211,6 +1220,10 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 }
 
 func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struct{}) time.Duration {
+	if s.config().SyncTillBlock > 0 && uint64(s.execLastMsgCount) >= s.config().SyncTillBlock {
+		log.Info("stopping block creation in transaction streamer", "syncTillBlock", s.config().SyncTillBlock)
+		return s.config().ExecuteMessageLoopDelay
+	}
 	if s.ExecuteNextMsg(ctx) {
 		return 0
 	}
