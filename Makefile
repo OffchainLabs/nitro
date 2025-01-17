@@ -207,6 +207,15 @@ build-wasm-bin: $(replay_wasm)
 .PHONY: build-solidity
 build-solidity: .make/solidity
 
+.PHONY: ensure-cbindgen
+ensure-cbindgen:
+	@if ! command -v cbindgen >/dev/null 2>&1; then \
+		echo "cbindgen not found. Installing..."; \
+		cargo install --force cbindgen; \
+	else \
+		echo "cbindgen already installed."; \
+	fi
+
 .PHONY: contracts
 contracts: .make/solgen
 	@printf $(done)
@@ -355,7 +364,7 @@ $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin
 $(arbitrator_cases)/go/testcase.wasm: $(arbitrator_cases)/go/*.go .make/solgen
 	cd $(arbitrator_cases)/go && GOOS=wasip1 GOARCH=wasm go build -o testcase.wasm
 
-$(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
+$(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files) ensure-cbindgen
 	@echo creating ${PWD}/$(arbitrator_generated_header)
 	mkdir -p `dirname $(arbitrator_generated_header)`
 	cd arbitrator/stylus && cbindgen --config cbindgen.toml --crate stylus --output ../../$(arbitrator_generated_header)
