@@ -183,6 +183,7 @@ type BatchPosterConfig struct {
 	HotShotUrl                  string        `koanf:"hotshot-url"`
 	UseEscapeHatch              bool          `koanf:"use-escape-hatch"`
 	EspressoTxnsPollingInterval time.Duration `koanf:"espresso-txns-polling-interval"`
+	ResubmitEspressoTxDeadline  time.Duration `koanf:"resubmit-espresso-tx-deadline"`
 	// MaxBlockLagBeforeEscapeHatch specifies the maximum number of L1 blocks that HotShot
 	// state updates can lag behind before triggering the escape hatch. If the difference
 	// between the current L1 block number and the latest state update's block number
@@ -251,6 +252,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
 	f.Bool(prefix+".use-escape-hatch", DefaultBatchPosterConfig.UseEscapeHatch, "if true, Escape Hatch functionality will be used")
 	f.Duration(prefix+".espresso-txns-polling-interval", DefaultBatchPosterConfig.EspressoTxnsPollingInterval, "interval between polling for transactions to be included in the block")
+	f.Duration(prefix+".resubmit-espresso-tx-deadline", DefaultBatchPosterConfig.ResubmitEspressoTxDeadline, "time threshold after which a transaction will be automatically resubmitted if no response is received")
 	f.Uint64(prefix+".max-block-lag-before-escape-hatch", DefaultBatchPosterConfig.MaxBlockLagBeforeEscapeHatch, "specifies the switch delay threshold used to determine hotshot liveness")
 	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
@@ -287,6 +289,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	CheckBatchCorrectness:          true,
 	UseEscapeHatch:                 false,
 	EspressoTxnsPollingInterval:    time.Second,
+	ResubmitEspressoTxDeadline:     10 * time.Minute,
 	MaxBlockLagBeforeEscapeHatch:   350,
 	LightClientAddress:             "",
 	HotShotUrl:                     "",
@@ -327,6 +330,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	MaxBlockLagBeforeEscapeHatch:   10,
 	LightClientAddress:             "",
 	HotShotUrl:                     "",
+	ResubmitEspressoTxDeadline:     10 * time.Second,
 }
 
 type BatchPosterOpts struct {
@@ -389,6 +393,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		opts.Streamer.espressoTxnsPollingInterval = opts.Config().EspressoTxnsPollingInterval
 		opts.Streamer.maxBlockLagBeforeEscapeHatch = opts.Config().MaxBlockLagBeforeEscapeHatch
 		opts.Streamer.espressoMaxTransactionSize = espressoTransactionSizeLimit
+		opts.Streamer.resubmitEspressoTxDeadline = opts.Config().ResubmitEspressoTxDeadline
 	}
 
 	b := &BatchPoster{

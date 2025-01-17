@@ -87,6 +87,8 @@ type TransactionStreamer struct {
 	espressoTxnsPollingInterval  time.Duration
 	maxBlockLagBeforeEscapeHatch uint64
 	espressoMaxTransactionSize   int64
+	resubmitEspressoTxDeadline   time.Duration
+	lastSubmitFailureAt          *time.Time
 	// Public these fields for testing
 	EscapeHatchEnabled bool
 	UseEscapeHatch     bool
@@ -1307,7 +1309,10 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 
 	data, err := s.espressoClient.FetchTransactionByHash(ctx, submittedTxHash)
 	if err != nil {
-		return fmt.Errorf("failed to fetch the submitted transaction hash (hash: %s): %w", submittedTxHash.String(), err)
+		if err := s.tryResubmittingEspressoTransactions(ctx, firstSubmitted, submittedTxHash, err); err != nil {
+			return fmt.Errorf("transaction is not finalized and failed to resubmit %w", err)
+		}
+		return fmt.Errorf("transaction resubmitted but not finalized; will retry polling")
 	}
 	height := data.BlockHeight
 
@@ -1323,7 +1328,6 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 	}
 
 	log.Info("Fetching Merkle Root at hotshot", "height", height)
-
 	// Verify the merkle proof
 	snapshot, err := s.lightClientReader.FetchMerkleRoot(height, nil)
 	if err != nil {
@@ -1375,6 +1379,9 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 	if !validated {
 		return fmt.Errorf("transactions fetched from HotShot doesn't contain the submitted payload")
 	}
+
+	// Reset the last submit failure time if we successfully fetch the transaction and verify its inclusion/namespace proof
+	s.lastSubmitFailureAt = nil
 
 	// Validation completed. Update the database
 	s.espressoTxnsStateInsertionMutex.Lock()
@@ -1477,13 +1484,6 @@ func (s *TransactionStreamer) setEspressoLastConfirmedPos(batch ethdb.KeyValueWr
 	return nil
 }
 
-func (s *TransactionStreamer) cleanEspressoSubmittedData(batch ethdb.Batch) error {
-	if err := s.setEspressoSubmittedTxns(batch, nil); err != nil {
-		return fmt.Errorf("failed to set the submitted pos to nil: %w", err)
-	}
-	return nil
-}
-
 func (s *TransactionStreamer) setEspressoPendingTxnsPos(batch ethdb.KeyValueWriter, pos []arbutil.MessageIndex) error {
 	if pos == nil {
 		err := batch.Delete(espressoPendingTxnsPositions)
@@ -1541,6 +1541,30 @@ func (s *TransactionStreamer) HasNotSubmitted(pos arbutil.MessageIndex) (bool, e
 	return true, nil
 }
 
+/**
+* If the transaction fails to fetch, we will retry for a while before resubmitting
+* the transaction to the Espresso node.
+ */
+func (s *TransactionStreamer) tryResubmittingEspressoTransactions(ctx context.Context, firstSubmitted SubmittedEspressoTx, submittedTxHash *tagged_base64.TaggedBase64, err error) error {
+	if s.lastSubmitFailureAt == nil {
+		now := time.Now()
+		s.lastSubmitFailureAt = &now
+		return fmt.Errorf("not enough time to attempt resubmission of transaction (hash: %s): %w, will retry again", submittedTxHash.String(), err)
+	}
+
+	duration := time.Since(*s.lastSubmitFailureAt)
+	if duration < s.resubmitEspressoTxDeadline {
+		return fmt.Errorf("not enough time to attempt resubmission of transaction (hash: %s): %w, will retry again", submittedTxHash.String(), err)
+	}
+	txHash, err := s.resubmitEspressoTransactions(ctx, firstSubmitted)
+	if err != nil {
+		return fmt.Errorf("failed to resubmit transaction (hash: %s): %w", submittedTxHash.String(), err)
+	}
+
+	log.Info(fmt.Sprintf("trying to resubmit transaction succeeded: (hash: %s)", txHash.String()))
+	return nil
+}
+
 // Append a position to the pending queue. Please ensure this position is valid beforehand.
 func (s *TransactionStreamer) SubmitEspressoTransactionPos(pos arbutil.MessageIndex) error {
 	s.espressoTxnsStateInsertionMutex.Lock()
@@ -1570,6 +1594,19 @@ func (s *TransactionStreamer) SubmitEspressoTransactionPos(pos arbutil.MessageIn
 	}
 
 	return nil
+}
+
+func (s *TransactionStreamer) resubmitEspressoTransactions(ctx context.Context, tx SubmittedEspressoTx) (*tagged_base64.TaggedBase64, error) {
+	log.Info("Resubmitting tx to Espresso", "tx", tx.Hash)
+	txHash, err := s.espressoClient.SubmitTransaction(ctx, espressoTypes.Transaction{
+		Payload:   tx.Payload,
+		Namespace: s.chainConfig.ChainID.Uint64(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return txHash, nil
 }
 
 func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) error {
@@ -1676,28 +1713,6 @@ func (s *TransactionStreamer) checkEspressoLiveness() error {
 	// If escape hatch is on, and hotshot is down
 	log.Warn("enabling the escape hatch, hotshot is down")
 	s.EscapeHatchEnabled = true
-
-	// Skip the espresso verification for the submitted messages
-	submitted, err := s.getEspressoSubmittedTxns()
-	if err != nil {
-		return err
-	}
-	if len(submitted) == 0 {
-		return nil
-	}
-
-	s.espressoTxnsStateInsertionMutex.Lock()
-	defer s.espressoTxnsStateInsertionMutex.Unlock()
-
-	batch := s.db.NewBatch()
-	err = s.cleanEspressoSubmittedData(batch)
-	if err != nil {
-		return err
-	}
-	err = batch.Write()
-	if err != nil {
-		return err
-	}
 
 	return nil
 }
