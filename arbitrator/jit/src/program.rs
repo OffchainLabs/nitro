@@ -139,10 +139,10 @@ pub fn new_program(
         )));
     };
 
-    exec_program(exec, module, calldata, config, evm_data, gas)
+    launch_program_thread(exec, module, calldata, config, evm_data, gas)
 }
 
-pub fn exec_program(
+pub fn launch_program_thread(
     exec: &mut WasmEnv,
     module: Arc<[u8]>,
     calldata: Vec<u8>,

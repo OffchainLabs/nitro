@@ -167,6 +167,9 @@ jobs:
       - name: Run rust tests
         run: cargo test -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml
 
+      - name: Check stylus_bechmark
+        run: cargo check --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml
+
       - name: Rustfmt
         run: cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
 
