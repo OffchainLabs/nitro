@@ -45,8 +45,10 @@ FROM wasm-base AS wasm-libs-builder
 	# clang / lld used by soft-float wasm
 RUN apt-get update && \
     apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
-    # pinned rust 1.80.1
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.80.1 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
+# pinned rust 1.80.1
+RUN curl --proto '=https' --tlsv1.2 -sSf \
+		https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.80.1 \
+		--target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
@@ -231,6 +233,10 @@ ENV NITRO_MODIFIED=$modified
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
+# pinned rust 1.80.1
+RUN curl --proto '=https' --tlsv1.2 -sSf \
+		https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.80.1 \
+		--target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
@@ -247,7 +253,7 @@ COPY --from=brotli-library-export / target/
 COPY --from=prover-export / target/
 RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
+RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM node-builder AS fuzz-builder
 RUN mkdir fuzzers/
