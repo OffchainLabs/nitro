@@ -8,6 +8,7 @@ import (
 	"time"
 
 	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
+
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -28,8 +29,9 @@ func createL1AndL2Node(
 
 	// poster config
 	builder.nodeConfig.BatchPoster.Enable = true
+	builder.nodeConfig.BatchPoster.EspressoTxnsPollingInterval = 2 * time.Second
 	builder.nodeConfig.BatchPoster.ErrorDelay = 5 * time.Second
-	builder.nodeConfig.BatchPoster.MaxSize = 41
+	builder.nodeConfig.BatchPoster.MaxSize = 1000
 	builder.nodeConfig.BatchPoster.PollInterval = 10 * time.Second
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	builder.nodeConfig.BatchPoster.LightClientAddress = lightClientAddress

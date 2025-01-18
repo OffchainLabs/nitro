@@ -19,14 +19,10 @@ import (
 	"testing"
 	"time"
 
+	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
 	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
 	tagged_base64 "github.com/EspressoSystems/espresso-sequencer-go/tagged-base64"
-	"github.com/offchainlabs/nitro/espressocrypto"
-	"github.com/offchainlabs/nitro/util"
-
-	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
-
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -40,8 +36,10 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/espressocrypto"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"

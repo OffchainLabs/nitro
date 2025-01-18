@@ -568,29 +568,29 @@ var EspressoFetchTransactionErr = errors.New("failed to fetch the espresso trans
 
 // Adds a block merkle proof to an Espresso justification, providing a proof that a set of transactions
 // hashes to some light client state root.
-func (b *BatchPoster) checkEspressoValidation() error {
+func (b *BatchPoster) checkEspressoValidation() bool {
+	b.building.segments.SetWaitingForValidation()
 	if b.streamer.espressoClient == nil && b.streamer.lightClientReader == nil {
-		// We are not using espresso mode since these haven't been set
-		return nil
+		// We are not using espresso mode since these haven't been set, return true to advance batch posting
+		return true
 	}
-
+	if b.streamer.EscapeHatchEnabled {
+		log.Warn("skipped espresso verification due to hotshot failure", "pos", b.building.msgCount)
+		return true // return true to skip verification of batch
+	}
 	lastConfirmed, err := b.streamer.getLastConfirmedPos()
 	if err != nil {
 		log.Error("failed call to get last confirmed pos", "err", err)
-		return err
+		return false // if we get an error we can't validate
 	}
 
 	// This message has passed the espresso verification
-	if lastConfirmed != nil && b.building.msgCount <= *lastConfirmed {
-		return nil
-	}
 
-	if b.streamer.EscapeHatchEnabled {
-		log.Warn("skipped espresso verification due to hotshot failure", "pos", b.building.msgCount)
-		return nil
+	if lastConfirmed != nil && b.building.msgCount-1 <= *lastConfirmed {
+		return true
 	}
-
-	return fmt.Errorf("%w (height: %d)", EspressoValidationErr, b.building.msgCount)
+  // If we aren't skipping validation for this batch, or we can't validate the proofs, we need to retry. 
+	return false
 }
 
 type txInfo struct {
@@ -792,19 +792,20 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 var errBatchAlreadyClosed = errors.New("batch segments already closed")
 
 type batchSegments struct {
-	compressedBuffer      *bytes.Buffer
-	compressedWriter      *brotli.Writer
-	rawSegments           [][]byte
-	timestamp             uint64
-	blockNum              uint64
-	delayedMsg            uint64
-	sizeLimit             int
-	recompressionLevel    int
-	newUncompressedSize   int
-	totalUncompressedSize int
-	lastCompressedSize    int
-	trailingHeaders       int // how many trailing segments are headers
-	isDone                bool
+	compressedBuffer               *bytes.Buffer
+	compressedWriter               *brotli.Writer
+	rawSegments                    [][]byte
+	timestamp                      uint64
+	blockNum                       uint64
+	delayedMsg                     uint64
+	sizeLimit                      int
+	recompressionLevel             int
+	newUncompressedSize            int
+	totalUncompressedSize          int
+	lastCompressedSize             int
+	trailingHeaders                int // how many trailing segments are headers
+	isDone                         bool
+	isWaitingForEspressoValidation bool // We are waiting for the entirety of the batch to be validated by espresso. Should be false by default
 }
 
 type buildingBatch struct {
@@ -1002,6 +1003,11 @@ func (s *batchSegments) AddMessage(msg *arbostypes.MessageWithMetadata) (bool, e
 	if s.isDone {
 		return false, errBatchAlreadyClosed
 	}
+	if s.isWaitingForEspressoValidation {
+    log.Info("Current batch is waiting for espresso validation, we won't add more messages")
+		//if we are waiting for espresso validation return that the batch is full with no error
+		return false, nil
+	}
 	if msg.DelayedMessagesRead > s.delayedMsg {
 		if msg.DelayedMessagesRead != s.delayedMsg+1 {
 			return false, fmt.Errorf("attempted to add delayed msg %d after %d", msg.DelayedMessagesRead, s.delayedMsg)
@@ -1045,6 +1051,13 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
+// Make the batch wait for validation Add this so we don't need to export the structs state to set it as we shouldn't need to set it to false again.
+func (s *batchSegments) SetWaitingForValidation() {
+	if !s.isWaitingForEspressoValidation {
+    log.Info("Set current batch segments to waiting for validation")
+		s.isWaitingForEspressoValidation = true
+	}
+}
 func (b *BatchPoster) encodeAddBatch(
 	seqNum *big.Int,
 	prevMsgNum arbutil.MessageIndex,
@@ -1308,7 +1321,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// There's nothing after the newest batch, therefore batch posting was not required
 		return false, nil
 	}
-
 	lastPotentialMsg, err := b.streamer.GetMessage(msgCount - 1)
 	if err != nil {
 
@@ -1391,6 +1403,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		if err != nil {
 			return false, fmt.Errorf("error getting message from streamer: %w", err)
 		}
+
 		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumberWithBypass || msg.Message.Header.Timestamp < l1BoundMinTimestampWithBypass {
 			log.Warn(
 				"disabling L1 bound as batch posting message is close to the maximum delay",
@@ -1415,10 +1428,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			break
 		}
 
-		err = b.checkEspressoValidation()
-		if err != nil {
-			return false, fmt.Errorf("error checking espresso valdiation: %w", err)
-		}
 		isDelayed := msg.DelayedMessagesRead > b.building.segments.delayedMsg
 		success, err := b.building.segments.AddMessage(msg)
 		if err != nil {
@@ -1491,7 +1500,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// don't post anything for now
 		return false, nil
 	}
-
+	// If we are checking the validation, set isWaitingForEspressoValidation in the batch segments and re-poll the function until we are ready to post.
+  hasBatchBeenValidated:= b.checkEspressoValidation()
+  log.Info("Batch validation status:", "hasBatchBeenValidated", hasBatchBeenValidated)
+	if !hasBatchBeenValidated {
+		return false, nil // We want to return false nil because we if we propegate an error we clear the batch cache when we don't want to
+	}
 	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
 	if err != nil {
 		return false, err
