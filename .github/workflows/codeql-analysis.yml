@@ -81,12 +81,14 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
 
+    - name: Install cbindgen
+      run: cargo install --force cbindgen
+
     - name: Cache Rust Build Products
       uses: actions/cache@v3
       with:
         path: |
-          ~/.cargo/registry/
-          ~/.cargo/git/
+          ~/.cargo/
           arbitrator/target/
           arbitrator/wasm-libraries/target/
           arbitrator/wasm-libraries/soft-float/SoftFloat/build
@@ -128,7 +130,7 @@ jobs:
         restore-keys: ${{ runner.os }}-go-
 
     - name: Build all lint dependencies
-      run: cargo install --force cbindgen && make -j build-node-deps
+      run: make -j build-node-deps
 
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
