@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
@@ -123,13 +122,13 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	db := state.NewDatabaseWithConfig(raw, trieConfig)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
-		log.Crit("failed to init empty statedb", "error", err)
+		panic("failed to init empty statedb: " + err.Error())
 	}
 	burner := burn.NewSystemBurner(nil, false)
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	newState, err := InitializeArbosState(statedb, burner, chainConfig, arbostypes.TestInitMessage)
 	if err != nil {
-		log.Crit("failed to open the ArbOS state", "error", err)
+		panic("failed to open the ArbOS state: " + err.Error())
 	}
 	return newState, statedb
 }
@@ -139,7 +138,7 @@ func ArbOSVersion(stateDB vm.StateDB) uint64 {
 	backingStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(nil, false))
 	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
-		log.Crit("failed to get the ArbOS version", "error", err)
+		panic("failed to get the ArbOS version: " + err.Error())
 	}
 	return arbosVersion
 }
