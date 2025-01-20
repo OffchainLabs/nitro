@@ -36,8 +36,9 @@ type MaintenanceRunner struct {
 }
 
 type MaintenanceConfig struct {
-	TimeOfDay string              `koanf:"time-of-day" reload:"hot"`
-	Lock      redislock.SimpleCfg `koanf:"lock" reload:"hot"`
+	TimeOfDay      string              `koanf:"time-of-day" reload:"hot"`
+	Lock           redislock.SimpleCfg `koanf:"lock" reload:"hot"`
+	TrieDBCapLimit int64               `koanf:"triedb-cap-limit" reload:"hot"`
 
 	// Generated: the minutes since start of UTC day to compact at
 	minutesAfterMidnight int
@@ -75,12 +76,14 @@ func (c *MaintenanceConfig) Validate() error {
 
 func MaintenanceConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".time-of-day", DefaultMaintenanceConfig.TimeOfDay, "UTC 24-hour time of day to run maintenance (currently only db compaction) at (e.g. 15:00)")
+	f.Int(prefix+".triedb-cap-limit", int(DefaultMaintenanceConfig.TrieDBCapLimit), "amount of memory in bytes to be used in the TrieDB Cap operation")
 	redislock.AddConfigOptions(prefix+".lock", f)
 }
 
 var DefaultMaintenanceConfig = MaintenanceConfig{
-	TimeOfDay: "",
-	Lock:      redislock.DefaultCfg,
+	TimeOfDay:      "",
+	TrieDBCapLimit: 100 * 1024 * 1024,
+	Lock:           redislock.DefaultCfg,
 
 	minutesAfterMidnight: 0,
 }
@@ -171,7 +174,7 @@ func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durat
 }
 
 func (mr *MaintenanceRunner) runMaintenance() {
-	log.Info("Compacting databases (this may take a while...)")
+	log.Info("Compacting databases and flushing triedb to disk (this may take a while...)")
 	results := make(chan error, len(mr.dbs))
 	expected := 0
 	for _, db := range mr.dbs {
@@ -183,7 +186,7 @@ func (mr *MaintenanceRunner) runMaintenance() {
 	}
 	expected++
 	go func() {
-		results <- mr.exec.Maintenance()
+		results <- mr.exec.Maintenance(mr.config().TrieDBCapLimit)
 	}()
 	for i := 0; i < expected; i++ {
 		err := <-results
@@ -191,5 +194,5 @@ func (mr *MaintenanceRunner) runMaintenance() {
 			log.Warn("maintenance error", "err", err)
 		}
 	}
-	log.Info("Done compacting databases")
+	log.Info("Done compacting databases and flushing triedb to disk")
 }

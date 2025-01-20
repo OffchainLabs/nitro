@@ -453,7 +453,11 @@ func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageInde
 	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
 }
 
-func (n *ExecutionNode) Maintenance() error {
+func (n *ExecutionNode) Maintenance(capLimit int64) error {
+	err := n.ExecEngine.Maintenance(capLimit)
+	if err != nil {
+		return err
+	}
 	return n.ChainDB.Compact(nil, nil)
 }
 

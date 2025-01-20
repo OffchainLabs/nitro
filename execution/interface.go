@@ -68,7 +68,7 @@ type FullExecutionClient interface {
 	Start(ctx context.Context) error
 	StopAndWait()
 
-	Maintenance() error
+	Maintenance(capLimit int64) error
 
 	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
 }

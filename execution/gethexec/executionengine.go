@@ -29,6 +29,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -1008,4 +1009,8 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			}
 		})
 	}
+}
+
+func (s *ExecutionEngine) Maintenance(capLimit int64) error {
+	return s.bc.FlushTrieDB(&s.createBlocksMutex, common.StorageSize(capLimit))
 }
