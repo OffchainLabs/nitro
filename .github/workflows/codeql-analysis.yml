@@ -128,7 +128,7 @@ jobs:
         restore-keys: ${{ runner.os }}-go-
 
     - name: Build all lint dependencies
-      run: make -j build-node-deps
+      run: cargo install --force cbindgen && make -j build-node-deps
 
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
