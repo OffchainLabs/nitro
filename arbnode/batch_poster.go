@@ -1471,6 +1471,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// #nosec G115
 		firstUsefulMsgTime = time.Unix(int64(b.building.firstUsefulMsg.Message.Header.Timestamp), 0)
 		if time.Since(firstUsefulMsgTime) >= config.MaxDelay {
+      log.Info("attempting to post batch due to max delay", "firstUsefulMsgTime", firstUsefulMsgTime, "first useful msg timestamp", b.building.firstUsefulMsg.Message.Header.Timestamp)
 			forcePostBatch = true
 		}
 	}
@@ -1502,7 +1503,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 	// If we are checking the validation, set isWaitingForEspressoValidation in the batch segments and re-poll the function until we are ready to post.
   hasBatchBeenValidated:= b.checkEspressoValidation()
-  log.Info("Batch validation status:", "hasBatchBeenValidated", hasBatchBeenValidated)
+  log.Info("Batch validation status:", "hasBatchBeenValidated", hasBatchBeenValidated, "b.building.msgCount", b.building.msgCount, "b.building.startMsgCount", b.building.startMsgCount)
 	if !hasBatchBeenValidated {
 		return false, nil // We want to return false nil because we if we propegate an error we clear the batch cache when we don't want to
 	}
