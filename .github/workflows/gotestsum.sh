@@ -79,7 +79,7 @@ for package in $packages; do
   fi
 
   if [ "$test_state_scheme" != "" ]; then
-      cmd="$cmd -- -TEST_STATE_SCHEME=$test_state_scheme"
+      cmd="$cmd -- -test_state_scheme=$test_state_scheme"
     fi
 
   cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"

@@ -24,9 +24,9 @@ import (
 )
 
 var (
-	seedFlag    = flag.String("SEED", "", "Seed for random number generator")
-	runsFlag    = flag.String("RUNS", "", "Number of runs for test")
-	loggingFlag = flag.String("LOGGING", "", "Enable logging")
+	seedFlag    = flag.String("seed", "", "Seed for random number generator")
+	runsFlag    = flag.String("runs", "", "Number of runs for test")
+	loggingFlag = flag.String("logging", "", "Enable logging")
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {

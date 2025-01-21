@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	stateSchemeFlag = flag.String("TEST_STATE_SCHEME", "", "State scheme to use for tests")
+	stateSchemeFlag = flag.String("test_state_scheme", "", "State scheme to use for tests")
 )
 
 // There are two CI steps, one to run tests using the path state scheme, and one to run tests using the hash state scheme.

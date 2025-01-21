@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	compileFlag = flag.String("TEST_COMPILE", "", "[STORE|LOAD] to allow store/load in compile test")
+	compileFlag = flag.String("test_compile", "", "[STORE|LOAD] to allow store/load in compile test")
 )
 
 func TestConstants(t *testing.T) {
@@ -26,13 +26,13 @@ func TestConstants(t *testing.T) {
 
 // normal test will not write anything to disk
 // to test cross-compilation:
-// * run test with -TEST_COMPILE=STORE on one machine
+// * run test with -test_compile=STORE on one machine
 // * copy target/testdata to the other machine
-// * run test with -TEST_COMPILE=LOAD on the other machine
+// * run test with -test_compile=LOAD on the other machine
 func TestCompileArch(t *testing.T) {
 	flag.Parse()
 	if *compileFlag == "" {
-		fmt.Print("use -TEST_COMPILE=[STORE|LOAD] to allow store/load in compile test")
+		fmt.Print("use -test_compile=[STORE|LOAD] to allow store/load in compile test")
 	}
 	store := strings.Contains(*compileFlag, "STORE")
 	err := testCompileArch(store)

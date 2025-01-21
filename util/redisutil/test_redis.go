@@ -15,10 +15,10 @@ import (
 )
 
 var (
-	redisFlag = flag.String("TEST_REDIS", "", "Redis URL for testing")
+	redisFlag = flag.String("test_redis", "", "Redis URL for testing")
 )
 
-// CreateTestRedis Provides external redis url, this is only done with -TEST_REDIS flag,
+// CreateTestRedis Provides external redis url, this is only done with -test_redis flag,
 // else creates a new miniredis and returns its url.
 func CreateTestRedis(ctx context.Context, t *testing.T) string {
 	flag.Parse()

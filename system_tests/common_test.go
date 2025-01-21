@@ -1795,7 +1795,7 @@ func TestMain(m *testing.M) {
 	if *logLevelFlag != "" {
 		logLevel, err := strconv.ParseInt(*logLevelFlag, 10, 32)
 		if err != nil || logLevel > int64(log.LevelCrit) {
-			log.Warn("-TEST_LOGLEVEL exists but out of bound, ignoring", "logLevel", *logLevelFlag, "max", log.LvlTrace)
+			log.Warn("-test_loglevel exists but out of bound, ignoring", "logLevel", *logLevelFlag, "max", log.LvlTrace)
 		}
 		glogger := log.NewGlogHandler(
 			log.NewTerminalHandler(io.Writer(os.Stderr), false))
@@ -1831,7 +1831,7 @@ var (
 	recordBlockInputsWithBaseDir                  = flag.String("recordBlockInputs.WithBaseDir", "", "Base directory for validationInputsWriter")
 	recordBlockInputsWithTimestampDirEnabled      = flag.Bool("recordBlockInputs.WithTimestampDirEnabled", true, "Whether to add timestamp directory while recording block inputs")
 	recordBlockInputsWithBlockIdInFileNameEnabled = flag.Bool("recordBlockInputs.WithBlockIdInFileNameEnabled", true, "Whether to record block inputs using test specific block_id")
-	logLevelFlag                                  = flag.String("TEST_LOGLEVEL", "", "Log level for tests")
+	logLevelFlag                                  = flag.String("test_loglevel", "", "Log level for tests")
 )
 
 // recordBlock writes a json file with all of the data needed to validate a block.
