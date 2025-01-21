@@ -6,8 +6,11 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
+	"os"
+	"runtime/debug"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -41,11 +44,22 @@ func (a *contractAdapter) FilterLogs(ctx context.Context, q ethereum.FilterQuery
 }
 
 func (a *contractAdapter) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
+	fmt.Fprintf(os.Stderr, "contractAdapter doesn't implement SubscribeFilterLogs: Stack trace:\n%s\n", debug.Stack())
 	return nil, errors.New("contractAdapter doesn't implement SubscribeFilterLogs - shouldn't be needed")
 }
 
 func (a *contractAdapter) CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error) {
-	return nil, errors.New("contractAdapter doesn't implement CodeAt - shouldn't be needed")
+	number := rpc.LatestBlockNumber
+	if blockNumber != nil {
+		number = rpc.BlockNumber(blockNumber.Int64())
+	}
+
+	statedb, _, err := a.apiBackend.StateAndHeaderByNumber(ctx, number)
+	if err != nil {
+		return nil, fmt.Errorf("contractAdapter error: %w", err)
+	}
+	code := statedb.GetCode(contract)
+	return code, nil
 }
 
 func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
