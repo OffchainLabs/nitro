@@ -421,6 +421,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		challengemanager.StackWithMode(modes.MakeMode),
 		challengemanager.StackWithPostingInterval(time.Second * 3),
 		challengemanager.StackWithPollingInterval(time.Second),
+		challengemanager.StackWithMinimumGapToParentAssertion(0),
 		challengemanager.StackWithAverageBlockCreationTime(time.Second),
 	}
 

@@ -55,8 +55,9 @@ jobs:
 
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
+        id: install-rust
         with:
-          toolchain: 'stable'
+          toolchain: '1.80.1'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
@@ -64,7 +65,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-08-06'
+          toolchain: 'nightly-2024-10-06'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
 
@@ -73,6 +74,9 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        
+      - name: Install cbindgen
+        run: cargo install --force cbindgen
 
       - name: Cache Build Products
         uses: actions/cache@v3
@@ -203,7 +207,7 @@ jobs:
         run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log

@@ -100,7 +100,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("url", "", "URL of DAS server to connect to")
 	f.String("message", "", "message to send")
 	f.Int("random-message-size", 0, "send a message of a specified number of random bytes")
-	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherise treated as a file; if not specified the message is not signed")
+	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherwise treated as a file; if not specified the message is not signed")
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
