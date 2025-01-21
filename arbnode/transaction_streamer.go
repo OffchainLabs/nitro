@@ -1096,10 +1096,6 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	if err != nil {
 		return err
 	}
-	err = batch.Write()
-	if err != nil {
-		return err
-	}
 
 	//  If light client reader and espresso client are set, then we need to store the pos in the database
 	//  to be used later to submit the message to hotshot for finalization.
@@ -1108,9 +1104,19 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 		if s.shouldSubmitEspressoTransaction() {
 			for i := range messages {
 				log.Info("Enqueuing pending transaction to Espresso", "pos", pos+arbutil.MessageIndex(i))
-				return s.enqueuePendingTransaction(pos + arbutil.MessageIndex(i))
+				err := s.enqueuePendingTransaction(pos + arbutil.MessageIndex(i))
+				if err != nil {
+					log.Error("Failed to enqueue pending transaction to Espresso", "pos", pos+arbutil.MessageIndex(i), "err", err)
+					return err
+				}
+				log.Info("Enqueued pending transaction to Espresso was successful", "pos", pos+arbutil.MessageIndex(i))
 			}
 		}
+	}
+
+	err = batch.Write()
+	if err != nil {
+		return err
 	}
 
 	select {
@@ -1122,17 +1128,9 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 }
 
 func (s *TransactionStreamer) enqueuePendingTransaction(pos arbutil.MessageIndex) error {
-	hasNotSubmitted, err := s.HasNotSubmitted(pos)
-	if err != nil {
-		return err
-	}
-	if !hasNotSubmitted {
-		return nil
-	}
-
 	// Store the pos in the database to be used later to submit the message
 	// to hotshot for finalization.
-	err = s.SubmitEspressoTransactionPos(pos)
+	err := s.SubmitEspressoTransactionPos(pos)
 	if err != nil {
 		log.Error("failed to submit espresso transaction pos", "pos", pos, "err", err)
 		return err
@@ -1495,45 +1493,6 @@ func (s *TransactionStreamer) setEspressoPendingTxnsPos(batch ethdb.KeyValueWrit
 
 	}
 	return nil
-}
-
-func (s *TransactionStreamer) HasNotSubmitted(pos arbutil.MessageIndex) (bool, error) {
-	submitted, err := s.getEspressoSubmittedTxns()
-	if err != nil {
-		return false, err
-	}
-
-	if len(submitted) > 0 {
-		// Already submitted
-		lastSubmittedTx := submitted[len(submitted)-1]
-		lastPos := lastSubmittedTx.Pos[len(lastSubmittedTx.Pos)-1]
-
-		if pos < lastPos {
-			return false, nil
-		}
-	}
-
-	// Finalized transactions
-	lastConfirmed, err := s.getLastConfirmedPos()
-	if err != nil {
-		return false, err
-	}
-
-	if lastConfirmed != nil && pos <= *lastConfirmed {
-		return false, nil
-	}
-
-	// Has not submitted to espresso but pending submission to hotshot
-	pendingTxnsPos, err := s.getEspressoPendingTxnsPos()
-	if err != nil && !dbutil.IsErrNotFound(err) {
-		return false, err
-	}
-
-	if len(pendingTxnsPos) > 0 && pos <= pendingTxnsPos[len(pendingTxnsPos)-1] {
-		return false, nil
-	}
-
-	return true, nil
 }
 
 // Append a position to the pending queue. Please ensure this position is valid beforehand.
