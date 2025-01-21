@@ -22,7 +22,7 @@ use std::{
 use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
 
-impl<'a, DR, A> UserHost<DR> for HostioInfo<'a, DR, A>
+impl<DR, A> UserHost<DR> for HostioInfo<'_, DR, A>
 where
     DR: DataReader,
     A: EvmApi<DR>,
