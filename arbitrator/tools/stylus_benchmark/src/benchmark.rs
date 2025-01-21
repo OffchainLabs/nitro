@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use arbutil::evm::{api::Ink, EvmData};
@@ -45,7 +45,7 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
 
     let exec = &mut WasmEnv::default();
 
-    let module = jit::program::exec_program(
+    let module = jit::program::launch_program_thread(
         exec,
         compiled_module.into(),
         calldata,
@@ -94,11 +94,11 @@ pub fn benchmark(wat: Vec<u8>) -> eyre::Result<()> {
     durations = durations[l..r].to_vec();
 
     let avg_duration = durations.iter().sum::<Duration>() / (r - l) as u32;
-    let avg_ink_spent_per_micro_second = ink_spent.0 / avg_duration.as_micros() as u64;
+    let avg_ink_spent_per_nano_second = ink_spent.0 / avg_duration.as_nanos() as u64;
     println!("After discarding top and bottom runs: ");
     println!(
-        "avg_duration: {:?}, avg_ink_spent_per_micro_second: {:?}",
-        avg_duration, avg_ink_spent_per_micro_second
+        "avg_duration: {:?}, avg_ink_spent_per_nano_second: {:?}",
+        avg_duration, avg_ink_spent_per_nano_second
     );
 
     Ok(())
