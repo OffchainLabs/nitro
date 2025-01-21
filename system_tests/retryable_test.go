@@ -5,10 +5,13 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ccoveille/go-safecast"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -428,6 +431,127 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
 	}
 	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
+}
+
+// insertRetriables inserts n retryables into the L2 chain
+// and returns the receipts for the retryables.
+func insertRetriables(
+	t *testing.T,
+	n uint64,
+	inbox *bridgegen.Inbox,
+	userOpts bind.TransactOpts,
+	ownAddr common.Address,
+	bld *NodeBuilder,
+	anABI *abi.ABI,
+	benny common.Address,
+) []*types.Receipt {
+	t.Helper()
+	receipts := make([]*types.Receipt, n)
+	for i := uint64(0); i < n; i++ {
+		tx, err := inbox.CreateRetryableTicket(
+			&userOpts,
+			ownAddr,
+			common.Big0,
+			big.NewInt(1e16),
+			benny,
+			benny,
+			// send enough L2 gas for intrinsic but not compute
+			big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
+			big.NewInt(l2pricing.InitialBaseFeeWei*2),
+			anABI.Methods["incrementRedeem"].ID,
+		)
+		Require(t, err)
+
+		l1Receipt, err := bld.L1.EnsureTxSucceeded(tx)
+		Require(t, err)
+		if l1Receipt.Status != types.ReceiptStatusSuccessful {
+			Fatal(t, fmt.Sprintf("l1Receipt %d indicated failure", i))
+		}
+		receipts[i] = l1Receipt
+	}
+	return receipts
+}
+
+func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
+	t.Parallel()
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	defer teardown()
+
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	usertxopts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+
+	simpleAddr, simple := builder.L2.DeploySimple(t, ownerTxOpts)
+	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	Require(t, err)
+
+	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
+	rCnt := uint64(500)
+	reciepts := insertRetriables(t, rCnt, delayedInbox, usertxopts, simpleAddr, builder, simpleABI, beneficiaryAddress)
+
+	waitForL1DelayBlocks(t, builder)
+
+	for idx, l1Receipt := range reciepts {
+		receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
+		Require(t, err)
+		if len(receipt.Logs) != 2 {
+			Fatal(t, len(receipt.Logs))
+		}
+		ticketId := receipt.Logs[0].Topics[1]
+		firstRetryTxId := receipt.Logs[1].Topics[2]
+
+		// get receipt for the auto redeem, make sure it failed
+		receipt, err = WaitForTx(ctx, builder.L2.Client, firstRetryTxId, time.Second*5)
+		Require(t, err)
+		if receipt.Status != types.ReceiptStatusFailed {
+			Fatal(t, receipt.GasUsed)
+		}
+		arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+		Require(t, err)
+		tx, err := arbRetryableTx.Redeem(&ownerTxOpts, ticketId)
+		Require(t, err)
+		receipt, err = builder.L2.EnsureTxSucceeded(tx)
+		Require(t, err)
+
+		redemptionL2Gas := receipt.GasUsed - receipt.GasUsedForL1
+		var maxRedemptionL2Gas uint64 = 1_000_000
+		if redemptionL2Gas > maxRedemptionL2Gas {
+			t.Errorf("manual retryable redemption used %v gas, more than expected max %v gas", redemptionL2Gas, maxRedemptionL2Gas)
+		}
+
+		retryTxId := receipt.Logs[0].Topics[2]
+
+		// check the receipt for the retry
+		receipt, err = WaitForTx(ctx, builder.L2.Client, retryTxId, time.Second*1)
+		Require(t, err)
+		if receipt.Status != types.ReceiptStatusSuccessful {
+			Fatal(t, receipt.Status)
+		}
+
+		// verify that the increment happened, so we know the retry succeeded
+		counter, err := simple.Counter(&bind.CallOpts{})
+		Require(t, err)
+
+		c, err := safecast.ToInt(counter)
+		Require(t, err)
+
+		if c != idx+1 {
+			Fatal(t, "Unexpected counter:", counter)
+		}
+
+		if len(receipt.Logs) != 1 {
+			Fatal(t, "Unexpected log count:", len(receipt.Logs))
+		}
+		parsed, err := simple.ParseRedeemedEvent(*receipt.Logs[0])
+		Require(t, err)
+		aliasedSender := util.RemapL1Address(usertxopts.From)
+		if parsed.Caller != aliasedSender {
+			Fatal(t, "Unexpected caller", parsed.Caller, "expected", aliasedSender)
+		}
+		if parsed.Redeemer != ownerTxOpts.From {
+			Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
+		}
+	}
 }
 
 func TestGetLifetime(t *testing.T) {
