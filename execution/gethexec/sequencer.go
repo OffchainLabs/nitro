@@ -758,7 +758,7 @@ func (s *Sequencer) Activate() {
 		s.pauseChan = nil
 	}
 	if s.expressLaneService != nil {
-		s.expressLaneService.syncFromRedis() // We want sync to complete (which is best effort) before activating the sequencer
+		s.LaunchThread(s.expressLaneService.syncFromRedis) // We launch redis sync (which is best effort) in parallel to avoid blocking sequencer activation
 	}
 }
 

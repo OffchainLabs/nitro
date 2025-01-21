@@ -365,10 +365,10 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		}
 		delete(roundInfo.msgAndResultBySequenceNumber, nextMsgAndResult.msg.SequenceNumber)
 		// Queued txs cannot use this message's context as it would lead to context canceled error once the result for this message is available and returned
-		// Hence using context.Background() allows unblocking of queued up txs even if current tx's context has errored out
+		// Hence using es.GetContext() allows unblocking of queued up txs even if current tx's context has errored out
 		var queueCtx context.Context
 		var cancel context.CancelFunc
-		queueCtx, _ = ctxWithTimeout(context.Background(), queueTimeout)
+		queueCtx, _ = ctxWithTimeout(es.GetContext(), queueTimeout)
 		if nextMsgAndResult.msg.SequenceNumber == msg.SequenceNumber {
 			queueCtx, cancel = ctxWithTimeout(ctx, queueTimeout)
 			defer cancel()
@@ -383,10 +383,12 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	unlockByDefer = false
 	es.roundInfoMutex.Unlock() // Release lock so that other timeboost txs can be processed
 
-	// Persist accepted expressLane txs to redis
-	if err = es.redisCoordinator.AddAcceptedTx(ctx, msg); err != nil {
-		log.Error("Error adding accepted ExpressLaneSubmission to redis. Loss of msg possible if sequencer switch happens", "seqNum", msg.SequenceNumber, "txHash", msg.Transaction.Hash(), "err", err)
-	}
+	es.LaunchThread(func(threadCtx context.Context) {
+		// Persist accepted expressLane txs to redis
+		if err := es.redisCoordinator.AddAcceptedTx(threadCtx, msg); err != nil {
+			log.Error("Error adding accepted ExpressLaneSubmission to redis. Loss of msg possible if sequencer switch happens", "seqNum", msg.SequenceNumber, "txHash", msg.Transaction.Hash(), "err", err)
+		}
+	})
 
 	abortCtx, cancel := ctxWithTimeout(ctx, queueTimeout*2) // We use the same timeout value that sequencer imposes
 	defer cancel()
@@ -399,12 +401,14 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		err = fmt.Errorf("Transaction sequencing hit timeout, result for the submitted transaction is not yet available: %w", abortCtx.Err())
 	}
 
-	// We update the sequence count in redis only after receiving a result for sequencing this message, instead of updating while holding roundInfoMutex,
-	// because this prevents any loss of transactions when the prev chosen sequencer updates the count but some how fails to forward txs to the current chosen.
-	// If the prev chosen ends up forwarding the tx, it is ok as the duplicate txs will be discarded
-	if redisErr := es.redisCoordinator.UpdateSequenceCount(context.Background(), msg.Round, seqCount); redisErr != nil {
-		log.Error("Error updating round's sequence count in redis", "err", redisErr) // this shouldn't be a problem if future msgs succeed in updating the count
-	}
+	es.LaunchThread(func(threadCtx context.Context) {
+		// We update the sequence count in redis only after receiving a result for sequencing this message, instead of updating while holding roundInfoMutex,
+		// because this prevents any loss of transactions when the prev chosen sequencer updates the count but some how fails to forward txs to the current chosen.
+		// If the prev chosen ends up forwarding the tx, it is ok as the duplicate txs will be discarded
+		if redisErr := es.redisCoordinator.UpdateSequenceCount(threadCtx, msg.Round, seqCount); redisErr != nil {
+			log.Error("Error updating round's sequence count in redis", "err", redisErr) // this shouldn't be a problem if future msgs succeed in updating the count
+		}
+	})
 
 	if err != nil {
 		// If the tx fails we return an error with all the necessary info for the controller
@@ -452,13 +456,8 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 	return nil
 }
 
-func (es *expressLaneService) syncFromRedis() {
+func (es *expressLaneService) syncFromRedis(ctx context.Context) {
 	es.roundInfoMutex.Lock()
-	defer es.roundInfoMutex.Unlock()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	currentRound := es.roundTimingInfo.RoundNumber()
 
 	// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
@@ -493,12 +492,11 @@ func (es *expressLaneService) syncFromRedis() {
 	}
 
 	es.roundInfo.Add(currentRound, roundInfo)
+	es.roundInfoMutex.Unlock()
 
 	if msgReadyForSequencing != nil {
-		es.LaunchUntrackedThread(func() {
-			if err := es.sequenceExpressLaneSubmission(context.Background(), msgReadyForSequencing); err != nil {
-				log.Error("Untracked expressLaneSubmission returned an error", "round", msgReadyForSequencing.Round, "seqNum", msgReadyForSequencing.SequenceNumber, "txHash", msgReadyForSequencing.Transaction.Hash(), "err", err)
-			}
-		})
+		if err := es.sequenceExpressLaneSubmission(ctx, msgReadyForSequencing); err != nil {
+			log.Error("Untracked expressLaneSubmission returned an error", "round", msgReadyForSequencing.Round, "seqNum", msgReadyForSequencing.SequenceNumber, "txHash", msgReadyForSequencing.Transaction.Hash(), "err", err)
+		}
 	}
 }
