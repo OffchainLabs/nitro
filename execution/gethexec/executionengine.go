@@ -56,6 +56,8 @@ var (
 	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
 	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
 	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
+	blockExecutionTimer        = metrics.NewRegisteredTimer("arb/block/execution", nil)
+	blockWriteToDbTimer        = metrics.NewRegisteredTimer("arb/block/writetodb", nil)
 )
 
 type L1PriceDataOfMsg struct {
@@ -509,6 +511,8 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
+	statedb.StartPrefetcher("Sequencer")
+	defer statedb.StopPrefetcher()
 
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
@@ -529,6 +533,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 	if len(hooks.TxErrors) != len(txes) {
 		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
@@ -618,6 +623,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
@@ -706,6 +712,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	for _, receipt := range receipts {
 		logs = append(logs, receipt.Logs...)
 	}
+	startTime := time.Now()
 	status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, duration)
 	if err != nil {
 		return err
@@ -713,6 +720,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
+	blockWriteToDbTimer.Update(time.Since(startTime))
 	baseFeeGauge.Update(block.BaseFee().Int64())
 	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
 	var blockGasused uint64
@@ -883,8 +891,10 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return nil, err
 	}
+	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 
-	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
+	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
 		return nil, err
 	}
