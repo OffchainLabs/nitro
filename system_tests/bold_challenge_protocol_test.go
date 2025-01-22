@@ -138,9 +138,8 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	)
 	defer l2nodeB.StopAndWait()
 
-	genesisA, err := l2nodeA.ExecutionClient.ResultAtPos(0).Await(ctx)
-	Require(t, err)
-	genesisB, err := l2nodeB.ExecutionClient.ResultAtPos(0).Await(ctx)
+	genesisA, err := l2nodeA.Execution.ResultAtMessageIndex(0).Await(ctx)
+	genesisB, err := l2nodeB.Execution.ResultAtMessageIndex(0).Await(ctx)
 	Require(t, err)
 	if genesisA.BlockHash != genesisB.BlockHash {
 		Fatal(t, "genesis blocks mismatch between nodes")
