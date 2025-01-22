@@ -22,11 +22,12 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error initializing redis coordinator: %v", err)
 	}
+	redisCoordinator.Start(ctx)
 
 	// Verify adding and retrieving global sequence count of a round
 	var round uint64
 	checkSeqCountInRedis := func(expected uint64) {
-		globalSeq, err := redisCoordinator.GetSequenceCount(ctx, round)
+		globalSeq, err := redisCoordinator.GetSequenceCount(round)
 		if err != nil {
 			t.Fatalf("error getting sequence count of a round: %v", err)
 		}
@@ -34,12 +35,12 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 			t.Fatal("round's seq count mismatch")
 		}
 	}
-	err = redisCoordinator.UpdateSequenceCount(ctx, round, 3) // should succeed
+	err = redisCoordinator.UpdateSequenceCount(round, 3) // should succeed
 	if err != nil {
 		t.Fatalf("error setting round number and sequence count: %v", err)
 	}
 	checkSeqCountInRedis(3)
-	err = redisCoordinator.UpdateSequenceCount(ctx, round, 1) // shouldn't succeed as the sequence count is a lower value
+	err = redisCoordinator.UpdateSequenceCount(round, 1) // shouldn't succeed as the sequence count is a lower value
 	if err != nil {
 		t.Fatalf("error setting round number and sequence count: %v", err)
 	}
@@ -50,14 +51,14 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	emptyTx := types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), nil)
 	for i := uint64(0); i < 5; i++ {
 		msg := &ExpressLaneSubmission{ChainId: common.Big0, Round: round, SequenceNumber: i, Transaction: emptyTx}
-		if err := redisCoordinator.AddAcceptedTx(ctx, msg); err != nil {
+		if err := redisCoordinator.AddAcceptedTx(msg); err != nil {
 			t.Fatalf("error adding expressLane msg to redis: %v", err)
 		}
 		addedMsgs = append(addedMsgs, msg)
 	}
 
 	checkCorrectness := func(startSeqNum uint64) {
-		fetchedMsgs := redisCoordinator.GetAcceptedTxs(ctx, round, startSeqNum)
+		fetchedMsgs := redisCoordinator.GetAcceptedTxs(round, startSeqNum)
 		if len(fetchedMsgs) != len(addedMsgs[startSeqNum:]) {
 			t.Fatal("mismatch in number of fetched msgs")
 		}

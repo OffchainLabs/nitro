@@ -316,6 +316,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	var err error
 	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els.roundTimingInfo.Round)
 	require.NoError(t, err)
+	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
@@ -360,6 +361,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	var err error
 	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els.roundTimingInfo.Round)
 	require.NoError(t, err)
+	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
@@ -421,6 +423,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	var err error
 	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els.roundTimingInfo.Round)
 	require.NoError(t, err)
+	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
@@ -460,6 +463,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	var err error
 	els1.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els1.roundTimingInfo.Round)
 	require.NoError(t, err)
+	els1.redisCoordinator.Start(ctx)
 
 	els1.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els1.StopWaiter.Start(ctx, els1)
@@ -500,6 +504,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	}
 	els2.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els2.roundTimingInfo.Round)
 	require.NoError(t, err)
+	els2.redisCoordinator.Start(ctx)
 
 	els2.StopWaiter.Start(ctx, els1)
 	els2.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
@@ -507,7 +512,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	els2.transactionPublisher = stubPublisher2
 
 	// As els2 becomes an active sequencer, syncFromRedis would be called when Activate() function of sequencer is invoked
-	els2.syncFromRedis(ctx)
+	els2.syncFromRedis()
 
 	els2.roundInfoMutex.Lock()
 	roundInfo, exists := els2.roundInfo.Get(0)

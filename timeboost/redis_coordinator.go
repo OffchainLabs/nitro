@@ -17,14 +17,16 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 const EXPRESS_LANE_ROUND_SEQUENCE_KEY_PREFIX string = "expressLane.roundSequence." // Only written by sequencer holding CHOSEN (seqCoordinator) key
 const EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX string = "expressLane.acceptedTx."       // Only written by sequencer holding CHOSEN (seqCoordinator) key
 
 type RedisCoordinator struct {
+	stopwaiter.StopWaiter
 	roundDuration time.Duration
-	Client        redis.UniversalClient
+	client        redis.UniversalClient
 
 	roundSeqMapMutex sync.Mutex
 	roundSeqMap      *containers.LruCache[uint64, uint64]
@@ -38,18 +40,23 @@ func NewRedisCoordinator(redisUrl string, roundDuration time.Duration) (*RedisCo
 
 	return &RedisCoordinator{
 		roundDuration: roundDuration,
-		Client:        redisClient,
+		client:        redisClient,
 		roundSeqMap:   containers.NewLruCache[uint64, uint64](4),
 	}, nil
+}
+
+func (rc *RedisCoordinator) Start(ctxIn context.Context) {
+	rc.StopWaiter.Start(ctxIn, rc)
 }
 
 func roundSequenceKeyFor(round uint64) string {
 	return fmt.Sprintf("%s%d", EXPRESS_LANE_ROUND_SEQUENCE_KEY_PREFIX, round)
 }
 
-func (rc *RedisCoordinator) GetSequenceCount(ctx context.Context, round uint64) (uint64, error) {
+func (rc *RedisCoordinator) GetSequenceCount(round uint64) (uint64, error) {
+	ctx := rc.GetContext()
 	key := roundSequenceKeyFor(round)
-	seqCountBytes, err := rc.Client.Get(ctx, key).Bytes()
+	seqCountBytes, err := rc.client.Get(ctx, key).Bytes()
 	if errors.Is(err, redis.Nil) {
 		return 0, nil
 	}
@@ -60,7 +67,8 @@ func (rc *RedisCoordinator) GetSequenceCount(ctx context.Context, round uint64) 
 }
 
 // Thread safe
-func (rc *RedisCoordinator) UpdateSequenceCount(ctx context.Context, round, seqCount uint64) error {
+func (rc *RedisCoordinator) UpdateSequenceCount(round, seqCount uint64) error {
+	ctx := rc.GetContext()
 	rc.roundSeqMapMutex.Lock()
 	defer rc.roundSeqMapMutex.Unlock()
 
@@ -71,7 +79,7 @@ func (rc *RedisCoordinator) UpdateSequenceCount(ctx context.Context, round, seqC
 	rc.roundSeqMap.Add(round, seqCount)
 
 	key := roundSequenceKeyFor(round)
-	if err := rc.Client.Set(ctx, key, arbmath.UintToBytes(seqCount), rc.roundDuration*2).Err(); err != nil {
+	if err := rc.client.Set(ctx, key, arbmath.UintToBytes(seqCount), rc.roundDuration*2).Err(); err != nil {
 		return fmt.Errorf("couldn't set %s key for current round's global sequence count in redis: %w", key, err)
 	}
 	return nil
@@ -81,9 +89,10 @@ func acceptedTxKeyFor(round, seqNum uint64) string {
 	return fmt.Sprintf("%s%d.%d", EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX, round, seqNum)
 }
 
-func (rc *RedisCoordinator) GetAcceptedTxs(ctx context.Context, round, startSeqNum uint64) []*ExpressLaneSubmission {
+func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum uint64) []*ExpressLaneSubmission {
+	ctx := rc.GetContext()
 	fetchMsg := func(key string) *ExpressLaneSubmission {
-		msgBytes, err := rc.Client.Get(ctx, key).Bytes()
+		msgBytes, err := rc.client.Get(ctx, key).Bytes()
 		if err != nil {
 			log.Error("Error fetching accepted expressLane tx", "err", err)
 			return nil
@@ -105,7 +114,7 @@ func (rc *RedisCoordinator) GetAcceptedTxs(ctx context.Context, round, startSeqN
 	prefix := fmt.Sprintf("%s%d.", EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX, round)
 	cursor := uint64(0)
 	for {
-		keys, cursor, err := rc.Client.Scan(ctx, cursor, prefix+"*", 0).Result()
+		keys, cursor, err := rc.client.Scan(ctx, cursor, prefix+"*", 0).Result()
 		if err != nil {
 			break // Best effort
 		}
@@ -129,7 +138,8 @@ func (rc *RedisCoordinator) GetAcceptedTxs(ctx context.Context, round, startSeqN
 	return msgs
 }
 
-func (rc *RedisCoordinator) AddAcceptedTx(ctx context.Context, msg *ExpressLaneSubmission) error {
+func (rc *RedisCoordinator) AddAcceptedTx(msg *ExpressLaneSubmission) error {
+	ctx := rc.GetContext()
 	msgJson, err := msg.ToJson()
 	if err != nil {
 		return fmt.Errorf("failed to convert ExpressLaneSubmission to JsonExpressLaneSubmission: %w", err)
@@ -139,7 +149,7 @@ func (rc *RedisCoordinator) AddAcceptedTx(ctx context.Context, msg *ExpressLaneS
 		return fmt.Errorf("failed to marshal JsonExpressLaneSubmission: %w", err)
 	}
 	key := acceptedTxKeyFor(msg.Round, msg.SequenceNumber)
-	if err := rc.Client.Set(ctx, key, msgBytes, rc.roundDuration*2).Err(); err != nil {
+	if err := rc.client.Set(ctx, key, msgBytes, rc.roundDuration*2).Err(); err != nil {
 		return fmt.Errorf("couldn't set %s key for accepted expressLane transaction in redis: %w", key, err)
 	}
 	return nil

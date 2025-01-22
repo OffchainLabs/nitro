@@ -103,7 +103,7 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	SequencerHTTPEndpoint:  "http://localhost:8547",
 	EarlySubmissionGrace:   time.Second * 2,
 	MaxQueuedTxCount:       10,
-	RedisUrl:               "",
+	RedisUrl:               "unset",
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -138,6 +138,9 @@ func (c *SequencerConfig) Validate() error {
 func (c *TimeboostConfig) Validate() error {
 	if !c.Enable {
 		return nil
+	}
+	if c.RedisUrl == DefaultTimeboostConfig.RedisUrl {
+		return errors.New("timeboost is enabled but no redis-url was set")
 	}
 	if len(c.AuctionContractAddress) > 0 && !common.IsHexAddress(c.AuctionContractAddress) {
 		return fmt.Errorf("invalid timeboost.auction-contract-address \"%v\"", c.AuctionContractAddress)
@@ -579,6 +582,15 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
 		return err
 	}
+
+	forwarder, err = s.getForwarder(ctx)
+	if err != nil {
+		return err
+	}
+	if forwarder != nil {
+		return forwarder.PublishExpressLaneTransaction(ctx, msg)
+	}
+
 	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg)
 }
 
@@ -758,7 +770,9 @@ func (s *Sequencer) Activate() {
 		s.pauseChan = nil
 	}
 	if s.expressLaneService != nil {
-		s.LaunchThread(s.expressLaneService.syncFromRedis) // We launch redis sync (which is best effort) in parallel to avoid blocking sequencer activation
+		s.LaunchThread(func(context.Context) {
+			s.expressLaneService.syncFromRedis() // We launch redis sync (which is best effort) in parallel to avoid blocking sequencer activation
+		})
 	}
 }
 
@@ -782,8 +796,8 @@ func (s *Sequencer) GetPauseAndForwarder() (chan struct{}, *TxForwarder) {
 	return s.pauseChan, s.forwarder
 }
 
-// getForwarder returns accurate forwarder and pauses if needed
-// required for processing timeboost txs, as just checking forwarder==nil doesn't imply the sequencer to be chosen
+// getForwarder returns accurate forwarder and pauses if needed.
+// Required for processing timeboost txs, as just checking forwarder==nil doesn't imply the sequencer to be chosen
 func (s *Sequencer) getForwarder(ctx context.Context) (*TxForwarder, error) {
 	for {
 		pause, forwarder := s.GetPauseAndForwarder()
