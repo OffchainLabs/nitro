@@ -23,6 +23,7 @@ import (
 	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
 	tagged_base64 "github.com/EspressoSystems/espresso-sequencer-go/tagged-base64"
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
+	"github.com/ccoveille/go-safecast"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -1103,13 +1104,17 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 		//  Only submit the transaction if escape hatch is not enabled
 		if s.shouldSubmitEspressoTransaction() {
 			for i := range messages {
-				log.Info("Enqueuing pending transaction to Espresso", "pos", pos+arbutil.MessageIndex(i))
-				err := s.enqueuePendingTransaction(pos + arbutil.MessageIndex(i))
+				idx, err := safecast.ToUint64(i)
 				if err != nil {
-					log.Error("Failed to enqueue pending transaction to Espresso", "pos", pos+arbutil.MessageIndex(i), "err", err)
 					return err
 				}
-				log.Info("Enqueued pending transaction to Espresso was successful", "pos", pos+arbutil.MessageIndex(i))
+				log.Info("Enqueuing pending transaction to Espresso", "pos", pos+arbutil.MessageIndex(idx))
+				err = s.enqueuePendingTransaction(pos + arbutil.MessageIndex(idx))
+				if err != nil {
+					log.Error("Failed to enqueue pending transaction to Espresso", "pos", pos+arbutil.MessageIndex(idx), "err", err)
+					return err
+				}
+				log.Info("Enqueued pending transaction to Espresso was successful", "pos", pos+arbutil.MessageIndex(idx))
 			}
 		}
 	}
@@ -1566,7 +1571,7 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) er
 
 		payload, err = signHotShotPayload(payload, s.getAttestationQuote)
 		if err != nil {
-			return fmt.Errorf("failed to sign the hotshot payload %v", err)
+			return fmt.Errorf("failed to sign the hotshot payload %w", err)
 		}
 
 		log.Info("submitting transaction to hotshot for finalization")
@@ -1578,7 +1583,7 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) er
 		})
 
 		if err != nil {
-			return fmt.Errorf("failed to submit transaction to espresso: %v", err)
+			return fmt.Errorf("failed to submit transaction to espresso: %w", err)
 		}
 
 		s.espressoTxnsStateInsertionMutex.Lock()
@@ -1589,7 +1594,7 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) er
 
 		submittedTxns, err := s.getEspressoSubmittedTxns()
 		if err != nil {
-			return fmt.Errorf("failed to get the submitted txns: %v", err)
+			return fmt.Errorf("failed to get the submitted txns: %w", err)
 		}
 		tx := SubmittedEspressoTx{
 			Hash:    hash.String(),
@@ -1603,18 +1608,18 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) er
 		}
 
 		if err = s.setEspressoSubmittedTxns(batch, submittedTxns); err != nil {
-			return fmt.Errorf("failed to set espresso submitted txns: %v", err)
+			return fmt.Errorf("failed to set espresso submitted txns: %w", err)
 		}
 
 		pendingTxnsPos = pendingTxnsPos[msgCnt:]
 		err = s.setEspressoPendingTxnsPos(batch, pendingTxnsPos)
 		if err != nil {
-			return fmt.Errorf("failed to set the pending txn: %v", err)
+			return fmt.Errorf("failed to set the pending txn: %w", err)
 		}
 
 		err = batch.Write()
 		if err != nil {
-			return fmt.Errorf("failed to write to db: %v", err)
+			return fmt.Errorf("failed to write to db: %w", err)
 		}
 	}
 	return nil

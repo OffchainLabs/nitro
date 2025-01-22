@@ -19,7 +19,6 @@ var (
 	espressoSubmittedTxns        []byte = []byte("_espressoSubmittedTxns")    // contains the hash and pos of the submitted transactions
 	espressoPendingTxnsPositions []byte = []byte("_espressoPendingTxnsPos")   // contains the index of the pending txns that need to be submitted to espresso
 	espressoLastConfirmedPos     []byte = []byte("_espressoLastConfirmedPos") // contains the position of the last confirmed message
-	lastPotentialMsgInBatch      []byte = []byte("_lastPotentialMsgInBatch")  // contains the last potential message
 )
 
 const currentDbSchemaVersion uint64 = 1

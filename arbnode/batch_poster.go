@@ -1003,7 +1003,7 @@ func (s *batchSegments) AddMessage(msg *arbostypes.MessageWithMetadata) (bool, e
 
 	if s.isWaitingForEspressoValidation {
 		log.Info("Current batch is waiting for espresso validation, we won't add more messages")
-		//if we are waiting for espresso validation return that the batch is full with no error
+		// if we are waiting for espresso validation return that the batch is full with no error
 		return false, nil
 	}
 	if s.isDone {
