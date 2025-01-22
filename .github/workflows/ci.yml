@@ -244,7 +244,7 @@ jobs:
           scripts/espresso-run-test-ci -tags=stylustest -run=TestProgramArbitrator
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log

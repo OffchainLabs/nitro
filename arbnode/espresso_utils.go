@@ -17,6 +17,12 @@ const MAX_ATTESTATION_QUOTE_SIZE int = 4 * 1024
 const LEN_SIZE int = 8
 const INDEX_SIZE int = 8
 
+type SubmittedEspressoTx struct {
+	Hash    string
+	Pos     []arbutil.MessageIndex
+	Payload []byte
+}
+
 func buildRawHotShotPayload(
 	msgPositions []arbutil.MessageIndex,
 	msgFetcher func(arbutil.MessageIndex) ([]byte, error),

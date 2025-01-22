@@ -8,6 +8,8 @@ import (
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 
+	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -121,5 +123,36 @@ func TestParsePayloadInvalidCases(t *testing.T) {
 				t.Errorf("expected error for case '%s', but got none", tc.description)
 			}
 		})
+	}
+}
+
+func TestSerdeSubmittedEspressoTx(t *testing.T) {
+	submiitedTx := SubmittedEspressoTx{
+		Hash:    "0x1234",
+		Pos:     []arbutil.MessageIndex{arbutil.MessageIndex(10)},
+		Payload: []byte{0, 1, 2, 3},
+	}
+
+	b, err := rlp.EncodeToBytes(&submiitedTx)
+	if err != nil {
+		t.Error("failed to encode")
+	}
+
+	var expected SubmittedEspressoTx
+	err = rlp.DecodeBytes(b, &expected)
+	if err != nil {
+		t.Error("failed to encode")
+	}
+
+	if submiitedTx.Hash != expected.Hash {
+		t.Error("failed to check hash")
+	}
+
+	if submiitedTx.Pos[0] != expected.Pos[0] {
+		t.Error("failed to check pos")
+	}
+
+	if !bytes.Equal(submiitedTx.Payload, expected.Payload) {
+		t.Error("failed to check payload")
 	}
 }

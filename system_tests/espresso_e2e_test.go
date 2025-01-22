@@ -189,8 +189,7 @@ func TestEspressoE2E(t *testing.T) {
 	err := waitForL1Node(ctx)
 	Require(t, err)
 
-	cleanEspresso := runEspresso()
-	defer cleanEspresso()
+	runEspresso()
 
 	// wait for the builder
 	err = waitForEspressoNode(ctx)
@@ -275,6 +274,64 @@ func TestEspressoE2E(t *testing.T) {
 		balance2 := l2Node.GetBalance(t, addr2)
 		log.Info("waiting for balance", "account", newAccount2, "addr", addr2, "balance", balance2)
 		return balance2.Cmp(transferAmount) >= 0
+	})
+	Require(t, err)
+
+	// Test that if espresso node is down, the transaction will be resubmitted once it is back online
+	newAccount3 := "User12"
+	l2Info.GenerateAccount(newAccount3)
+	addr3 := l2Info.GetAddress(newAccount3)
+	tx3 := l2Info.PrepareTx("Faucet", newAccount3, 3e7, transferAmount, nil)
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		WrapL2ForDelayed(t, tx3, builder.L1Info, "Faucet", 100000),
+	})
+
+	// Wait for 1 second to make sure txn is submitted to Espresso
+	// but shut down before it can be finalized
+	time.Sleep(1 * time.Second)
+
+	// Shutdown the espresso node
+	shutdownEspressoWithoutRemovingVolumes := func() {
+		p := exec.Command("docker", "compose", "down")
+		p.Dir = workingDir
+		err := p.Run()
+		if err != nil {
+			panic(err)
+		}
+	}
+	// Note: It's important not to remove the volumes because otherwise namespace proof validations will fail
+	shutdownEspressoWithoutRemovingVolumes()
+
+	// Wait for a 1 minute before restarting the espresso node
+	time.Sleep(1 * time.Minute)
+
+	// Restart the espresso node
+	cleanEspresso := runEspresso()
+	defer cleanEspresso()
+
+	err = waitForEspressoNode(ctx)
+	Require(t, err)
+
+	// Wait for the L2 chain to catch up.
+	err = waitForWith(ctx, 180*time.Second, 2*time.Second, func() bool {
+		balance3 := l2Node.GetBalance(t, addr3)
+		log.Info("waiting for balance in", "account", newAccount3, "addr", addr3, "balance", balance3)
+		return balance3.Cmp(transferAmount) >= 0
+	})
+	Require(t, err)
+
+	// Try submitting the another transaction to make sure the transaction is submitted
+	// after espresso processes the resubmitted transaction
+	tx4 := l2Info.PrepareTx("Faucet", newAccount3, 3e7, transferAmount, nil)
+
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		WrapL2ForDelayed(t, tx4, builder.L1Info, "Faucet", 100000),
+	})
+
+	err = waitForWith(ctx, 180*time.Second, 2*time.Second, func() bool {
+		balance4 := l2Node.GetBalance(t, addr3)
+		log.Info("waiting for balance", "account", newAccount3, "addr", addr3, "balance", balance4)
+		return balance4.Cmp((&big.Int{}).Add(transferAmount, transferAmount)) >= 0
 	})
 	Require(t, err)
 }
