@@ -299,6 +299,7 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 	config := s.config()
 
 	numberOfOldMsgsAfterLastMsgToKeep := currentHeadMsgIdx - msgIdxOfFirstMsgToAdd + 1
+	// #nosec G115
 	numberOfOldMsgsToResequence := min(
 		arbutil.MessageIndex(config.MaxReorgResequenceDepth),
 		numberOfOldMsgsAfterLastMsgToKeep,

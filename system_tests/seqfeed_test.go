@@ -165,7 +165,7 @@ func compareAllMsgResultsFromConsensusAndExecution(
 	}
 
 	var lastResult *execution.MessageResult
-	for msgIdx := 0; arbutil.MessageIndex(msgIdx) <= consensusHeadMsgIdx; msgIdx++ {
+	for msgIdx := arbutil.MessageIndex(0); msgIdx <= consensusHeadMsgIdx; msgIdx++ {
 		resultExec, err := testClient.ExecNode.ResultAtMessageIndex(arbutil.MessageIndex(msgIdx)).Await(ctx)
 		Require(t, err)
 
