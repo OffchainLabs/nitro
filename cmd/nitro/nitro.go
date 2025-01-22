@@ -701,6 +701,7 @@ func mainImpl() int {
 		if err != nil {
 			log.Error("failed to create express lane service", "err", err)
 		}
+		execNode.Sequencer.StartExpressLaneService(ctx)
 	}
 
 	err = nil

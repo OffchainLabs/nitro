@@ -1368,8 +1368,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		return 0
 	})
 
-	s.StartExpressLaneService(ctxIn)
-
 	return nil
 }
 
