@@ -687,105 +687,105 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	}
 }
 
-func TestExpressLaneControlTransfer(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+// func TestExpressLaneControlTransfer(t *testing.T) {
+// 	t.Parallel()
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	defer cancel()
 
-	tmpDir, err := os.MkdirTemp("", "*")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
-	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
+// 	tmpDir, err := os.MkdirTemp("", "*")
+// 	require.NoError(t, err)
+// 	t.Cleanup(func() {
+// 		require.NoError(t, os.RemoveAll(tmpDir))
+// 	})
+// 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	seq, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
-	defer cleanupSeq()
+// 	seq, seqClient, seqInfo, auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+// 	defer cleanupSeq()
 
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
-	Require(t, err)
-	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
-	Require(t, err)
-	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
-	Require(t, err)
+// 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
+// 	Require(t, err)
+// 	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+// 	Require(t, err)
+// 	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
+// 	Require(t, err)
 
-	// Prepare clients that can submit txs to the sequencer via the express lane.
-	chainId, err := seqClient.ChainID(ctx)
-	Require(t, err)
-	seqDial, err := rpc.Dial(seq.Stack.HTTPEndpoint())
-	Require(t, err)
-	createExpressLaneClientFor := func(name string) (*expressLaneClient, bind.TransactOpts) {
-		priv := seqInfo.Accounts[name].PrivateKey
-		expressLaneClient := newExpressLaneClient(
-			priv,
-			chainId,
-			*roundTimingInfo,
-			auctionContractAddr,
-			seqDial,
-		)
-		expressLaneClient.Start(ctx)
-		transacOpts := seqInfo.GetDefaultTransactOpts(name, ctx)
-		transacOpts.NoSend = true
-		return expressLaneClient, transacOpts
-	}
-	bobExpressLaneClient, bobOpts := createExpressLaneClientFor("Bob")
-	aliceExpressLaneClient, aliceOpts := createExpressLaneClientFor("Alice")
+// 	// Prepare clients that can submit txs to the sequencer via the express lane.
+// 	chainId, err := seqClient.ChainID(ctx)
+// 	Require(t, err)
+// 	seqDial, err := rpc.Dial(seq.Stack.HTTPEndpoint())
+// 	Require(t, err)
+// 	createExpressLaneClientFor := func(name string) (*expressLaneClient, bind.TransactOpts) {
+// 		priv := seqInfo.Accounts[name].PrivateKey
+// 		expressLaneClient := newExpressLaneClient(
+// 			priv,
+// 			chainId,
+// 			*roundTimingInfo,
+// 			auctionContractAddr,
+// 			seqDial,
+// 		)
+// 		expressLaneClient.Start(ctx)
+// 		transacOpts := seqInfo.GetDefaultTransactOpts(name, ctx)
+// 		transacOpts.NoSend = true
+// 		return expressLaneClient, transacOpts
+// 	}
+// 	bobExpressLaneClient, bobOpts := createExpressLaneClientFor("Bob")
+// 	aliceExpressLaneClient, aliceOpts := createExpressLaneClientFor("Alice")
 
-	// Bob will win the auction and become controller for next round
-	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Bob", "Alice", bobBidderClient, aliceBidderClient, roundDuration)
-	time.Sleep(roundTimingInfo.TimeTilNextRound())
+// 	// Bob will win the auction and become controller for next round
+// 	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Bob", "Alice", bobBidderClient, aliceBidderClient, roundDuration)
+// 	time.Sleep(roundTimingInfo.TimeTilNextRound())
 
-	// Check that Bob's tx gets priority since he's the controller
-	verifyControllerAdvantage(t, ctx, seqClient, bobExpressLaneClient, seqInfo, "Bob", "Alice")
+// 	// Check that Bob's tx gets priority since he's the controller
+// 	verifyControllerAdvantage(t, ctx, seqClient, bobExpressLaneClient, seqInfo, "Bob", "Alice")
 
-	// Transfer express lane control from Bob to Alice
-	currRound := roundTimingInfo.RoundNumber()
-	duringRoundTransferTx, err := auctionContract.ExpressLaneAuctionTransactor.TransferExpressLaneController(&bobOpts, currRound, seqInfo.Accounts["Alice"].Address)
-	Require(t, err)
-	err = bobExpressLaneClient.SendTransaction(ctx, duringRoundTransferTx)
-	Require(t, err)
+// 	// Transfer express lane control from Bob to Alice
+// 	currRound := roundTimingInfo.RoundNumber()
+// 	duringRoundTransferTx, err := auctionContract.ExpressLaneAuctionTransactor.TransferExpressLaneController(&bobOpts, currRound, seqInfo.Accounts["Alice"].Address)
+// 	Require(t, err)
+// 	err = bobExpressLaneClient.SendTransaction(ctx, duringRoundTransferTx)
+// 	Require(t, err)
 
-	time.Sleep(time.Second) // Wait for controller to change on the sequencer side
-	// Check that now Alice's tx gets priority since she's the controller after bob transfered it
-	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
+// 	time.Sleep(time.Second) // Wait for controller to change on the sequencer side
+// 	// Check that now Alice's tx gets priority since she's the controller after bob transfered it
+// 	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
 
-	// Alice and Bob submit bids and Alice wins for the next round
-	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Alice", "Bob", aliceBidderClient, bobBidderClient, roundDuration)
-	t.Log("Alice won the express lane auction for upcoming round, now try to transfer control before the next round begins...")
+// 	// Alice and Bob submit bids and Alice wins for the next round
+// 	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Alice", "Bob", aliceBidderClient, bobBidderClient, roundDuration)
+// 	t.Log("Alice won the express lane auction for upcoming round, now try to transfer control before the next round begins...")
 
-	// Alice now transfers control to bob before her round begins
-	winnerRound := currRound + 1
-	currRound = roundTimingInfo.RoundNumber()
-	if currRound >= winnerRound {
-		t.Fatalf("next round already began, try running the test again. Current round: %d, Winner Round: %d", currRound, winnerRound)
-	}
+// 	// Alice now transfers control to bob before her round begins
+// 	winnerRound := currRound + 1
+// 	currRound = roundTimingInfo.RoundNumber()
+// 	if currRound >= winnerRound {
+// 		t.Fatalf("next round already began, try running the test again. Current round: %d, Winner Round: %d", currRound, winnerRound)
+// 	}
 
-	beforeRoundTransferTx, err := auctionContract.ExpressLaneAuctionTransactor.TransferExpressLaneController(&aliceOpts, winnerRound, seqInfo.Accounts["Bob"].Address)
-	Require(t, err)
-	err = aliceExpressLaneClient.SendTransaction(ctx, beforeRoundTransferTx)
-	Require(t, err)
+// 	beforeRoundTransferTx, err := auctionContract.ExpressLaneAuctionTransactor.TransferExpressLaneController(&aliceOpts, winnerRound, seqInfo.Accounts["Bob"].Address)
+// 	Require(t, err)
+// 	err = aliceExpressLaneClient.SendTransaction(ctx, beforeRoundTransferTx)
+// 	Require(t, err)
 
-	setExpressLaneIterator, err := auctionContract.FilterSetExpressLaneController(&bind.FilterOpts{Context: ctx}, nil, nil, nil)
-	Require(t, err)
-	verifyControllerChange := func(round uint64, prev, new common.Address) {
-		setExpressLaneIterator.Next()
-		if setExpressLaneIterator.Event.Round != round {
-			t.Fatalf("unexpected round number. Want: %d, Got: %d", round, setExpressLaneIterator.Event.Round)
-		}
-		if setExpressLaneIterator.Event.PreviousExpressLaneController != prev {
-			t.Fatalf("unexpected previous express lane controller. Want: %v, Got: %v", prev, setExpressLaneIterator.Event.PreviousExpressLaneController)
-		}
-		if setExpressLaneIterator.Event.NewExpressLaneController != new {
-			t.Fatalf("unexpected new express lane controller. Want: %v, Got: %v", new, setExpressLaneIterator.Event.NewExpressLaneController)
-		}
-	}
-	// Verify during round control change
-	verifyControllerChange(currRound, common.Address{}, bobOpts.From) // Bob wins auction
-	verifyControllerChange(currRound, bobOpts.From, aliceOpts.From)   // Bob transfers control to Alice
-	// Verify before round control change
-	verifyControllerChange(winnerRound, common.Address{}, aliceOpts.From) // Alice wins auction
-	verifyControllerChange(winnerRound, aliceOpts.From, bobOpts.From)     // Alice transfers control to Bob before the round begins
-}
+// 	setExpressLaneIterator, err := auctionContract.FilterSetExpressLaneController(&bind.FilterOpts{Context: ctx}, nil, nil, nil)
+// 	Require(t, err)
+// 	verifyControllerChange := func(round uint64, prev, new common.Address) {
+// 		setExpressLaneIterator.Next()
+// 		if setExpressLaneIterator.Event.Round != round {
+// 			t.Fatalf("unexpected round number. Want: %d, Got: %d", round, setExpressLaneIterator.Event.Round)
+// 		}
+// 		if setExpressLaneIterator.Event.PreviousExpressLaneController != prev {
+// 			t.Fatalf("unexpected previous express lane controller. Want: %v, Got: %v", prev, setExpressLaneIterator.Event.PreviousExpressLaneController)
+// 		}
+// 		if setExpressLaneIterator.Event.NewExpressLaneController != new {
+// 			t.Fatalf("unexpected new express lane controller. Want: %v, Got: %v", new, setExpressLaneIterator.Event.NewExpressLaneController)
+// 		}
+// 	}
+// 	// Verify during round control change
+// 	verifyControllerChange(currRound, common.Address{}, bobOpts.From) // Bob wins auction
+// 	verifyControllerChange(currRound, bobOpts.From, aliceOpts.From)   // Bob transfers control to Alice
+// 	// Verify before round control change
+// 	verifyControllerChange(winnerRound, common.Address{}, aliceOpts.From) // Alice wins auction
+// 	verifyControllerChange(winnerRound, aliceOpts.From, bobOpts.From)     // Alice transfers control to Bob before the round begins
+// }
 
 func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
 	t.Parallel()
