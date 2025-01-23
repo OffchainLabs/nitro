@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ccoveille/go-safecast"
-
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -433,32 +431,38 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
 }
 
-// insertRetriables inserts n retryables into the L2 chain
-// and returns the receipts for the retryables.
+// insertRetriables inserts n retryable transactions into the delayed
+// inbox and returns the receipts for the retryables.
+//
+// Each retryable transaction sends 10 wei to the benificiary.
 func insertRetriables(
 	t *testing.T,
 	n uint64,
 	inbox *bridgegen.Inbox,
-	userOpts bind.TransactOpts,
-	ownAddr common.Address,
 	bld *NodeBuilder,
-	anABI *abi.ABI,
-	benny common.Address,
+	userTxOpts bind.TransactOpts,
+	receiveAddress common.Address,
+	retryableL2CallValue *big.Int,
+	maxSubmissionFee *big.Int,
+	feeRefundAddress common.Address,
+	beneficiaryAddress common.Address,
+	retryableGas *big.Int,
+	gasFeeCap *big.Int,
+	retryableCallData []byte,
 ) []*types.Receipt {
 	t.Helper()
 	receipts := make([]*types.Receipt, n)
 	for i := uint64(0); i < n; i++ {
 		tx, err := inbox.CreateRetryableTicket(
-			&userOpts,
-			ownAddr,
-			common.Big0,
-			big.NewInt(1e16),
-			benny,
-			benny,
-			// send enough L2 gas for intrinsic but not compute
-			big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
-			big.NewInt(l2pricing.InitialBaseFeeWei*2),
-			anABI.Methods["incrementRedeem"].ID,
+			&userTxOpts,
+			receiveAddress,
+			retryableL2CallValue,
+			maxSubmissionFee,
+			feeRefundAddress,
+			beneficiaryAddress,
+			retryableGas,
+			gasFeeCap,
+			retryableCallData,
 		)
 		Require(t, err)
 
@@ -467,6 +471,9 @@ func insertRetriables(
 		if l1Receipt.Status != types.ReceiptStatusSuccessful {
 			Fatal(t, fmt.Sprintf("l1Receipt %d indicated failure", i))
 		}
+
+		waitForL1DelayBlocks(t, bld)
+
 		receipts[i] = l1Receipt
 	}
 	return receipts
@@ -476,24 +483,67 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
+	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
+	elevateL2Basefee(t, ctx, builder)
 
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	usertxopts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
-	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	userTxOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	userTxOpts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
-	simpleAddr, simple := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	builder.L2Info.GenerateAccount("Refund")
+	builder.L2Info.GenerateAccount("Receive")
+	faucetAddress := util.RemapL1Address(builder.L1Info.GetAddress("Faucet"))
+	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
+	feeRefundAddress := builder.L2Info.GetAddress("Refund")
+	receiveAddress := builder.L2Info.GetAddress("Receive")
+
+	colors.PrintBlue("Faucet      ", faucetAddress)
+	colors.PrintBlue("Receive     ", receiveAddress)
+	colors.PrintBlue("Beneficiary ", beneficiaryAddress)
+	colors.PrintBlue("Fee Refund  ", feeRefundAddress)
+
+	fundsBeforeSubmit, err := builder.L2.Client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
 
-	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
-	rCnt := uint64(500)
-	reciepts := insertRetriables(t, rCnt, delayedInbox, usertxopts, simpleAddr, builder, simpleABI, beneficiaryAddress)
+	infraBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, infraFeeAddr, nil)
+	Require(t, err)
+	networkBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, networkFeeAddr, nil)
+	Require(t, err)
 
-	waitForL1DelayBlocks(t, builder)
+	usefulGas := params.TxGas
+	excessGasLimit := uint64(808)
 
+	maxSubmissionFee := big.NewInt(1e14)
+	retryableGas := arbmath.UintToBig(100) // Don't send enough gas
+	retryableL2CallValue := big.NewInt(1e4)
+	retryableCallData := []byte{}
+	gasFeeCap := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
+
+	_, simple := builder.L2.DeploySimple(t, ownerTxOpts)
+
+	rCnt := uint64(2)
+	reciepts := insertRetriables(
+		t,
+		rCnt,
+		delayedInbox,
+		builder,
+		userTxOpts,
+		receiveAddress,
+		retryableL2CallValue,
+		maxSubmissionFee,
+		feeRefundAddress,
+		beneficiaryAddress,
+		retryableGas,
+		gasFeeCap,
+		retryableCallData)
+
+	ticketIds := make([][32]byte, rCnt)
 	for idx, l1Receipt := range reciepts {
 		receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
 		Require(t, err)
+		for _, log := range receipt.Logs {
+			colors.PrintBlue("Log", log)
+		}
 		if len(receipt.Logs) != 2 {
 			Fatal(t, len(receipt.Logs))
 		}
@@ -506,51 +556,128 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 		if receipt.Status != types.ReceiptStatusFailed {
 			Fatal(t, receipt.GasUsed)
 		}
-		arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
-		Require(t, err)
-		tx, err := arbRetryableTx.Redeem(&ownerTxOpts, ticketId)
-		Require(t, err)
-		receipt, err = builder.L2.EnsureTxSucceeded(tx)
-		Require(t, err)
+		ticketIds[idx] = ticketId
+	}
 
-		redemptionL2Gas := receipt.GasUsed - receipt.GasUsedForL1
-		var maxRedemptionL2Gas uint64 = 1_000_000
-		if redemptionL2Gas > maxRedemptionL2Gas {
-			t.Errorf("manual retryable redemption used %v gas, more than expected max %v gas", redemptionL2Gas, maxRedemptionL2Gas)
-		}
+	tx, err := simple.RedeemAll(&userTxOpts, ticketIds)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 
-		retryTxId := receipt.Logs[0].Topics[2]
+	redemptionL2Gas := receipt.GasUsed - receipt.GasUsedForL1
+	var maxRedemptionL2Gas uint64 = 1_000_000
+	if redemptionL2Gas > maxRedemptionL2Gas {
+		t.Errorf("manual retryable redemption used %v gas, more than expected max %v gas", redemptionL2Gas, maxRedemptionL2Gas)
+	}
 
-		// check the receipt for the retry
-		receipt, err = WaitForTx(ctx, builder.L2.Client, retryTxId, time.Second*1)
-		Require(t, err)
-		if receipt.Status != types.ReceiptStatusSuccessful {
-			Fatal(t, receipt.Status)
-		}
+	// verify that the increment happened, so we know the retry succeeded
+	counter, err := simple.Counter(&bind.CallOpts{})
+	Require(t, err)
 
-		// verify that the increment happened, so we know the retry succeeded
-		counter, err := simple.Counter(&bind.CallOpts{})
-		Require(t, err)
+	if counter != rCnt {
+		Fatal(t, "Unexpected counter:", counter)
+	}
 
-		c, err := safecast.ToInt(counter)
-		Require(t, err)
+	if len(receipt.Logs) != 1 {
+		Fatal(t, "Unexpected log count:", len(receipt.Logs))
+	}
+	parsed, err := simple.ParseRedeemedEvent(*receipt.Logs[0])
+	Require(t, err)
+	aliasedSender := util.RemapL1Address(userTxOpts.From)
+	if parsed.Caller != aliasedSender {
+		Fatal(t, "Unexpected caller", parsed.Caller, "expected", aliasedSender)
+	}
+	if parsed.Redeemer != ownerTxOpts.From {
+		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
+	}
+	redeemBlock, err := builder.L2.Client.HeaderByNumber(ctx, receipt.BlockNumber)
+	Require(t, err)
 
-		if c != idx+1 {
-			Fatal(t, "Unexpected counter:", counter)
-		}
+	l2BaseFee := redeemBlock.BaseFee
+	excessGasPrice := arbmath.BigSub(gasFeeCap, l2BaseFee)
+	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGasLimit)
+	excessWei.Add(excessWei, arbmath.BigMul(excessGasPrice, retryableGas))
 
-		if len(receipt.Logs) != 1 {
-			Fatal(t, "Unexpected log count:", len(receipt.Logs))
-		}
-		parsed, err := simple.ParseRedeemedEvent(*receipt.Logs[0])
-		Require(t, err)
-		aliasedSender := util.RemapL1Address(usertxopts.From)
-		if parsed.Caller != aliasedSender {
-			Fatal(t, "Unexpected caller", parsed.Caller, "expected", aliasedSender)
-		}
-		if parsed.Redeemer != ownerTxOpts.From {
-			Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
-		}
+	fundsAfterSubmit, err := builder.L2.Client.BalanceAt(ctx, faucetAddress, nil)
+	Require(t, err)
+	beneficiaryFunds, err := builder.L2.Client.BalanceAt(ctx, beneficiaryAddress, nil)
+	Require(t, err)
+	refundFunds, err := builder.L2.Client.BalanceAt(ctx, feeRefundAddress, nil)
+	Require(t, err)
+	receiveFunds, err := builder.L2.Client.BalanceAt(ctx, receiveAddress, nil)
+	Require(t, err)
+
+	infraBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, infraFeeAddr, nil)
+	Require(t, err)
+	networkBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, networkFeeAddr, nil)
+	Require(t, err)
+
+	colors.PrintBlue("CallGas    ", retryableGas)
+	colors.PrintMint("Gas cost   ", arbmath.BigMul(retryableGas, l2BaseFee))
+	colors.PrintBlue("Payment    ", userTxOpts.Value)
+
+	colors.PrintMint("Faucet before ", fundsBeforeSubmit)
+	colors.PrintMint("Faucet after  ", fundsAfterSubmit)
+
+	// the retryable should pay the receiver the supplied callvalue
+	colors.PrintMint("Receive       ", receiveFunds)
+	colors.PrintBlue("L2 Call Value ", retryableL2CallValue)
+	if !arbmath.BigEquals(receiveFunds, retryableL2CallValue) {
+		Fatal(t, "Recipient didn't receive the right funds")
+	}
+
+	// the beneficiary should receive nothing
+	colors.PrintMint("Beneficiary   ", beneficiaryFunds)
+	if beneficiaryFunds.Sign() != 0 {
+		Fatal(t, "The beneficiary shouldn't have received funds")
+	}
+
+	// the fee refund address should recieve the excess gas
+	colors.PrintBlue("Base Fee         ", l2BaseFee)
+	colors.PrintBlue("Excess Gas Price ", excessGasPrice)
+	colors.PrintBlue("Excess Gas       ", excessGasLimit)
+	colors.PrintBlue("Excess Wei       ", excessWei)
+	colors.PrintMint("Fee Refund       ", refundFunds)
+	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(excessWei, maxSubmissionFee)) {
+		Fatal(t, "The Fee Refund Address didn't receive the right funds")
+	}
+
+	// the faucet must pay for both the gas used and the call value supplied
+	expectedGasChange := arbmath.BigMul(gasFeeCap, retryableGas)
+	expectedGasChange = arbmath.BigSub(expectedGasChange, userTxOpts.Value) // the user is credited this
+	expectedGasChange = arbmath.BigAdd(expectedGasChange, maxSubmissionFee)
+	expectedGasChange = arbmath.BigAdd(expectedGasChange, retryableL2CallValue)
+
+	if !arbmath.BigEquals(fundsBeforeSubmit, arbmath.BigAdd(fundsAfterSubmit, expectedGasChange)) {
+		diff := arbmath.BigSub(fundsBeforeSubmit, fundsAfterSubmit)
+		colors.PrintRed("Expected ", expectedGasChange)
+		colors.PrintRed("Observed ", diff)
+		colors.PrintRed("Off by   ", arbmath.BigSub(expectedGasChange, diff))
+		Fatal(t, "Supplied gas was improperly deducted\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
+	}
+
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
+	Require(t, err)
+	minimumBaseFee, err := arbGasInfo.GetMinimumGasPrice(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+
+	expectedFee := arbmath.BigMulByUint(l2BaseFee, usefulGas)
+	expectedInfraFee := arbmath.BigMulByUint(minimumBaseFee, usefulGas)
+	expectedNetworkFee := arbmath.BigSub(expectedFee, expectedInfraFee)
+
+	infraFee := arbmath.BigSub(infraBalanceAfter, infraBalanceBefore)
+	networkFee := arbmath.BigSub(networkBalanceAfter, networkBalanceBefore)
+	fee := arbmath.BigAdd(infraFee, networkFee)
+
+	colors.PrintMint("paid infra fee:      ", infraFee)
+	colors.PrintMint("paid network fee:    ", networkFee)
+	colors.PrintMint("paid fee:            ", fee)
+
+	if !arbmath.BigEquals(infraFee, expectedInfraFee) {
+		Fatal(t, "Unexpected infra fee paid, want:", expectedInfraFee, "have:", infraFee)
+	}
+	if !arbmath.BigEquals(networkFee, expectedNetworkFee) {
+		Fatal(t, "Unexpected network fee paid, want:", expectedNetworkFee, "have:", networkFee)
 	}
 }
 
@@ -943,7 +1070,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	colors.PrintMint("Gas cost   ", arbmath.BigMul(retryableGas, l2BaseFee))
 	colors.PrintBlue("Payment    ", usertxopts.Value)
 
-	colors.PrintMint("Faucet before ", fundsAfterSubmit)
+	colors.PrintMint("Faucet before ", fundsBeforeSubmit)
 	colors.PrintMint("Faucet after  ", fundsAfterSubmit)
 
 	// the retryable should pay the receiver the supplied callvalue
