@@ -95,7 +95,7 @@ func TestPrestateTracingSimple(t *testing.T) {
 	value := big.NewInt(1e6)
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, value, nil)
 	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
-	_, err = builder.L2.EnsureTxSucceeded(tx)
+	txReceipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	l2rpc := builder.L2.Stack.Attach()
@@ -116,7 +116,7 @@ func TestPrestateTracingSimple(t *testing.T) {
 	if !arbmath.BigEquals(result.Pre[receiver].Balance.ToInt(), user2OldBalance) {
 		Fatal(t, "Unexpected initial balance of receiver")
 	}
-	if !arbmath.BigEquals(result.Post[sender].Balance.ToInt(), arbmath.BigSub(ownerOldBalance, value)) {
+	if !arbmath.BigEquals(result.Post[sender].Balance.ToInt(), arbmath.BigSub(arbmath.BigSub(ownerOldBalance, value), arbmath.BigMulByUint(txReceipt.EffectiveGasPrice, txReceipt.GasUsed))) {
 		Fatal(t, "Unexpected final balance of sender")
 	}
 	if !arbmath.BigEquals(result.Post[receiver].Balance.ToInt(), value) {
