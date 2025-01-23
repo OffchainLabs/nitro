@@ -771,7 +771,10 @@ func (s *Sequencer) Activate() {
 	}
 	if s.expressLaneService != nil {
 		s.LaunchThread(func(context.Context) {
-			s.expressLaneService.syncFromRedis() // We launch redis sync (which is best effort) in parallel to avoid blocking sequencer activation
+			// We launch redis sync (which is best effort) in parallel to avoid blocking sequencer activation
+			s.expressLaneService.syncFromRedis()
+			time.Sleep(time.Second)
+			s.expressLaneService.syncFromRedis()
 		})
 	}
 }
