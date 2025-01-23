@@ -203,10 +203,11 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
+	RevalidationConfigAddOptions(prefix+".re-validation", f)
 }
 
 func RevalidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBlockValidatorDangerousConfig.Revalidation.Enable, "enable re-validation")
+	f.Bool(prefix+".enable", DefaultRevalidationConfig.Enable, "enable re-validation")
 	f.Uint64(prefix+".start-block", DefaultBlockValidatorDangerousConfig.Revalidation.StartBlock, "start re-validation from this block")
 }
 
@@ -248,6 +249,12 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
 	ResetBlockValidation: false,
+	Revalidation:         DefaultRevalidationConfig,
+}
+
+var DefaultRevalidationConfig = RevalidationConfig{
+	Enable:     false,
+	StartBlock: 0,
 }
 
 type valStatusField uint32
