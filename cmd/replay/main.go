@@ -179,8 +179,7 @@ func main() {
 	wavmio.StubInit()
 	gethhook.RequireHookedGeth()
 
-	glogger := log.NewGlogHandler(
-		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger := log.NewGlogHandler(log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LevelError)
 	log.SetDefault(log.NewLogger(glogger))
 
@@ -292,7 +291,17 @@ func main() {
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
 		chainContext := WavmChainContext{}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, core.MessageReplayMode)
+		newBlock, _, err = arbos.ProduceBlock(
+			message.Message,
+			message.DelayedMessagesRead,
+			lastBlockHeader,
+			statedb,
+			chainContext,
+			chainConfig,
+			false,
+			core.MessageReplayMode,
+			nil, // todo: tenderly
+		)
 		if err != nil {
 			panic(err)
 		}

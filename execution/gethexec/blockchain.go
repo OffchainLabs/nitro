@@ -1,8 +1,10 @@
 package gethexec
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/eth/tracers/live"
 	"math/big"
 	"time"
 
@@ -207,9 +209,25 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 		IsSequencer: true,
 	}
 
+	data := struct {
+		NetworkID string `json:"network_id"`
+	}{
+		NetworkID: "42161",
+	}
+
+	// Marshal the struct to a JSON string
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		fmt.Println("Error marshalling JSON:", err)
+	}
+	tenderlyTracerHooks, err := live.NewTenderlyTracerHooks(jsonData)
+
 	vmConfig := vm.Config{
 		EnablePreimageRecording: false,
+		Tracer:                  tenderlyTracerHooks,
 	}
+
+	log.Info("tenderly: creating blockchain", "tracer", tenderlyTracerHooks != nil)
 
 	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
 }

@@ -525,6 +525,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.MessageCommitMode,
+		nil,
 	)
 	if err != nil {
 		return nil, err
@@ -696,6 +697,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc.Config(),
 		isMsgForPrefetch,
 		runMode,
+		s.bc,
 	)
 
 	return block, statedb, receipts, err

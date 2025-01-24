@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"math"
 	"math/big"
 
@@ -142,11 +143,12 @@ func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
-	statedb *state.StateDB,
+	stateDB *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
+	blockChain *core.BlockChain,
 ) (*types.Block, types.Receipts, error) {
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
 	if err != nil {
@@ -156,11 +158,21 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch, runMode,
+		message.Header,
+		txes,
+		delayedMessagesRead,
+		lastBlockHeader,
+		stateDB,
+		chainContext,
+		chainConfig,
+		hooks,
+		isMsgForPrefetch,
+		runMode,
+		blockChain,
 	)
 }
 
-// A bit more flexible than ProduceBlock for use in the sequencer.
+// ProduceBlockAdvanced a bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
 	l1Header *arbostypes.L1IncomingMessageHeader,
 	txes types.Transactions,
@@ -172,7 +184,21 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
-) (*types.Block, types.Receipts, error) {
+	blockChain *core.BlockChain,
+) (outBlock *types.Block, outReceipt types.Receipts, outError error) {
+	log.Info("tenderly: ProduceBlockAdvanced", "blockNum", l1Header.BlockNumber, "timestamp", l1Header.Timestamp, "txCount", len(txes))
+
+	// tenderly tracer or default tracer
+	getVMConfig := func() vm.Config {
+		if blockChain != nil && blockChain.GetVMConfig() != nil {
+			return *blockChain.GetVMConfig()
+		}
+		return vm.Config{}
+	}
+
+	defer func() {
+		getVMConfig().Tracer.OnBlockEnd(outError)
+	}()
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
@@ -192,6 +218,16 @@ func ProduceBlockAdvanced(
 	}
 
 	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
+
+	getVMConfig().Tracer.OnBlockStart(
+		tracing.BlockEvent{
+			Block:     types.NewBlock(header, &types.Body{Transactions: nil}, nil, trie.NewStackTrie(nil)),
+			TD:        nil,
+			Finalized: nil,
+			Safe:      nil,
+		},
+	)
+
 	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
@@ -312,6 +348,9 @@ func ProduceBlockAdvanced(
 			statedb.SetTxContext(tx.Hash(), len(receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
+
+			statedb.SetLogger(getVMConfig().Tracer)
+
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				chainConfig,
 				chainContext,
@@ -321,7 +360,7 @@ func ProduceBlockAdvanced(
 				header,
 				tx,
 				&header.GasUsed,
-				vm.Config{},
+				getVMConfig(),
 				runMode,
 				func(result *core.ExecutionResult) error {
 					return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)

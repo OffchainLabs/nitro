@@ -166,6 +166,7 @@ func startMetrics(cfg *NodeConfig) error {
 
 // Returns the exit code
 func mainImpl() int {
+	log.Warn("tenderly: starting main implementation")
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
@@ -437,7 +438,25 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	log.Info("tenderly: openInitializeChainDb", "nodeConfig", nodeConfig)
+	chainDb, l2BlockChain, err := openInitializeChainDb(
+		ctx,
+		stack,
+		nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		&nodeConfig.Execution.StylusTarget,
+		&nodeConfig.Persistent,
+		l1Client,
+		rollupAddrs,
+	)
+
+	if l2BlockChain == nil {
+		log.Crit("tenderly: failed to open or initialize l2BlockChain")
+	} else {
+		log.Info("tenderly: opened or initialized l2BlockChain", "tracer", l2BlockChain.GetVMConfig().Tracer != nil)
+	}
+
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
