@@ -24,7 +24,7 @@ import (
 type MaintenanceRunner struct {
 	stopwaiter.StopWaiter
 
-	exec            execution.FullExecutionClient
+	exec            execution.ExecutionClient
 	config          MaintenanceConfigFetcher
 	seqCoordinator  *SeqCoordinator
 	dbs             []ethdb.Database
@@ -87,7 +87,7 @@ var DefaultMaintenanceConfig = MaintenanceConfig{
 
 type MaintenanceConfigFetcher func() *MaintenanceConfig
 
-func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, dbs []ethdb.Database, exec execution.FullExecutionClient) (*MaintenanceRunner, error) {
+func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, dbs []ethdb.Database, exec execution.ExecutionClient) (*MaintenanceRunner, error) {
 	cfg := config()
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
@@ -183,7 +183,8 @@ func (mr *MaintenanceRunner) runMaintenance() {
 	}
 	expected++
 	go func() {
-		results <- mr.exec.Maintenance()
+		_, res := mr.exec.Maintenance().Await(mr.GetContext())
+		results <- res
 	}()
 	for i := 0; i < expected; i++ {
 		err := <-results

@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -312,8 +313,12 @@ func CreateExecutionNode(
 
 }
 
-func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
-	n.ExecEngine.MarkFeedStart(to)
+func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	markFeedStartWithReturn := func(to arbutil.MessageIndex) (struct{}, error) {
+		n.ExecEngine.MarkFeedStart(to)
+		return struct{}{}, nil
+	}
+	return containers.NewReadyPromise(markFeedStartWithReturn(to))
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
@@ -339,9 +344,9 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 }
 
 // not thread safe
-func (n *ExecutionNode) Start(ctx context.Context) error {
+func (n *ExecutionNode) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
 	if n.started.Swap(true) {
-		return errors.New("already started")
+		return containers.NewReadyPromise(struct{}{}, errors.New("already started"))
 	}
 	// TODO after separation
 	// err := n.Stack.Start()
@@ -351,17 +356,17 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	n.ExecEngine.Start(ctx)
 	err := n.TxPublisher.Start(ctx)
 	if err != nil {
-		return fmt.Errorf("error starting transaction puiblisher: %w", err)
+		return containers.NewReadyPromise(struct{}{}, fmt.Errorf("error starting transaction puiblisher: %w", err))
 	}
 	if n.ParentChainReader != nil {
 		n.ParentChainReader.Start(ctx)
 	}
-	return nil
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (n *ExecutionNode) StopAndWait() {
+func (n *ExecutionNode) StopAndWait() containers.PromiseInterface[struct{}] {
 	if !n.started.Load() {
-		return
+		return containers.NewReadyPromise(struct{}{}, nil)
 	}
 	// TODO after separation
 	// n.Stack.StopRPC() // does nothing if not running
@@ -383,19 +388,21 @@ func (n *ExecutionNode) StopAndWait() {
 	// if err := n.Stack.Close(); err != nil {
 	// 	log.Error("error on stak close", "err", err)
 	// }
+
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
-	return n.ExecEngine.DigestMessage(num, msg, msgForPrefetch)
+func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.DigestMessage(num, msg, msgForPrefetch))
 }
-func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
-	return n.ExecEngine.Reorg(count, newMessages, oldMessages)
+func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.Reorg(count, newMessages, oldMessages))
 }
-func (n *ExecutionNode) HeadMessageNumber() (arbutil.MessageIndex, error) {
-	return n.ExecEngine.HeadMessageNumber()
+func (n *ExecutionNode) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(n.ExecEngine.HeadMessageNumber())
 }
-func (n *ExecutionNode) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
-	return n.ExecEngine.HeadMessageNumberSync(t)
+func (n *ExecutionNode) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(n.ExecEngine.HeadMessageNumberSync(t))
 }
 func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 	return n.ExecEngine.NextDelayedMessageNumber()
@@ -403,8 +410,8 @@ func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)
 }
-func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
-	return n.ExecEngine.ResultAtPos(pos)
+func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.ResultAtPos(pos))
 }
 func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
 	return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
@@ -453,8 +460,12 @@ func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageInde
 	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
 }
 
-func (n *ExecutionNode) Maintenance() error {
-	return n.ChainDB.Compact(nil, nil)
+func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
+	compactWithReturn := func() (struct{}, error) {
+		err := n.ChainDB.Compact(nil, nil)
+		return struct{}{}, err
+	}
+	return containers.NewReadyPromise(compactWithReturn())
 }
 
 func (n *ExecutionNode) Synced() bool {

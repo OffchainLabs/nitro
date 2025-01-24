@@ -3,13 +3,13 @@ package execution
 import (
 	"context"
 	"errors"
-	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type MessageResult struct {
@@ -29,11 +29,16 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
-	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*MessageResult, error)
-	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*MessageResult, error)
-	HeadMessageNumber() (arbutil.MessageIndex, error)
-	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
-	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
+	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
+	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*MessageResult]
+	HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex]
+	ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
+	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
+
+	Maintenance() containers.PromiseInterface[struct{}]
+
+	Start(ctx context.Context) containers.PromiseInterface[struct{}]
+	StopAndWait() containers.PromiseInterface[struct{}]
 }
 
 // needed for validators / stakers
@@ -55,21 +60,12 @@ type ExecutionSequencer interface {
 	ForwardTo(url string) error
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
-	MarkFeedStart(to arbutil.MessageIndex)
 	Synced() bool
 	FullSyncProgressMap() map[string]interface{}
 }
 
-type FullExecutionClient interface {
-	ExecutionClient
-	ExecutionRecorder
-	ExecutionSequencer
-
-	Start(ctx context.Context) error
-	StopAndWait()
-
-	Maintenance() error
-
+// needed for batch poster
+type ExecutionBatchPoster interface {
 	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
 }
 
