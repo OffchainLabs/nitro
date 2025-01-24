@@ -62,3 +62,19 @@ func (a *BlockValidatorDebugAPI) ValidationInputsAt(ctx context.Context, msgNum 
 ) (server_api.InputJSON, error) {
 	return a.val.ValidationInputsAt(ctx, arbutil.MessageIndex(msgNum), target)
 }
+
+type MaintenanceAPI struct {
+	runner *MaintenanceRunner
+}
+
+func (a *MaintenanceAPI) GetLastMaintenanceTime(ctx context.Context) (string, error) {
+	lastRun, err := a.runner.GetLastMaintenanceTime()
+	if err != nil {
+		return "", err
+	}
+	return lastRun.GoString(), err
+}
+
+func (a *MaintenanceAPI) Trigger(ctx context.Context) error {
+	return a.runner.Trigger()
+}

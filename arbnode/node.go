@@ -889,7 +889,16 @@ func CreateNode(
 			Public: false,
 		})
 	}
-
+	if currentNode.MaintenanceRunner != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "maintenance",
+			Version:   "1.0",
+			Service: &MaintenanceAPI{
+				runner: currentNode.MaintenanceRunner,
+			},
+			Public: false,
+		})
+	}
 	stack.RegisterAPIs(apis)
 
 	return currentNode, nil
