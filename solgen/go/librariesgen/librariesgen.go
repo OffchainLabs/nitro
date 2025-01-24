@@ -987,7 +987,7 @@ func (_AdminFallbackProxy *AdminFallbackProxyFilterer) ParseUpgradedSecondary(lo
 // ArbitrumCheckerMetaData contains all meta data concerning the ArbitrumChecker contract.
 var ArbitrumCheckerMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122050149d2d63507b1a3127de95e1488f248b040be9ce1e05baacb198e1fd3374fb64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212209571fb4c71beca0851ed01eef30c68bd2e9b91fc6904d204d6be5aca90ce590164736f6c63430008110033",
 }
 
 // ArbitrumCheckerABI is the input ABI used to generate the binding from.
@@ -1155,6 +1155,179 @@ func (_ArbitrumChecker *ArbitrumCheckerTransactorRaw) Transfer(opts *bind.Transa
 // Transact invokes the (paid) contract method with params as input values.
 func (_ArbitrumChecker *ArbitrumCheckerTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
 	return _ArbitrumChecker.Contract.contract.Transact(opts, method, params...)
+}
+
+// CallerCheckerMetaData contains all meta data concerning the CallerChecker contract.
+var CallerCheckerMetaData = &bind.MetaData{
+	ABI: "[]",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220575a4d8f611060b57972afe8bc8ee34f72cc8cc9b123ccfcbb44a9817d87912b64736f6c63430008110033",
+}
+
+// CallerCheckerABI is the input ABI used to generate the binding from.
+// Deprecated: Use CallerCheckerMetaData.ABI instead.
+var CallerCheckerABI = CallerCheckerMetaData.ABI
+
+// CallerCheckerBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use CallerCheckerMetaData.Bin instead.
+var CallerCheckerBin = CallerCheckerMetaData.Bin
+
+// DeployCallerChecker deploys a new Ethereum contract, binding an instance of CallerChecker to it.
+func DeployCallerChecker(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *CallerChecker, error) {
+	parsed, err := CallerCheckerMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(CallerCheckerBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &CallerChecker{CallerCheckerCaller: CallerCheckerCaller{contract: contract}, CallerCheckerTransactor: CallerCheckerTransactor{contract: contract}, CallerCheckerFilterer: CallerCheckerFilterer{contract: contract}}, nil
+}
+
+// CallerChecker is an auto generated Go binding around an Ethereum contract.
+type CallerChecker struct {
+	CallerCheckerCaller     // Read-only binding to the contract
+	CallerCheckerTransactor // Write-only binding to the contract
+	CallerCheckerFilterer   // Log filterer for contract events
+}
+
+// CallerCheckerCaller is an auto generated read-only Go binding around an Ethereum contract.
+type CallerCheckerCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// CallerCheckerTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type CallerCheckerTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// CallerCheckerFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type CallerCheckerFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// CallerCheckerSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type CallerCheckerSession struct {
+	Contract     *CallerChecker    // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// CallerCheckerCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type CallerCheckerCallerSession struct {
+	Contract *CallerCheckerCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts        // Call options to use throughout this session
+}
+
+// CallerCheckerTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type CallerCheckerTransactorSession struct {
+	Contract     *CallerCheckerTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts        // Transaction auth options to use throughout this session
+}
+
+// CallerCheckerRaw is an auto generated low-level Go binding around an Ethereum contract.
+type CallerCheckerRaw struct {
+	Contract *CallerChecker // Generic contract binding to access the raw methods on
+}
+
+// CallerCheckerCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type CallerCheckerCallerRaw struct {
+	Contract *CallerCheckerCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// CallerCheckerTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type CallerCheckerTransactorRaw struct {
+	Contract *CallerCheckerTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewCallerChecker creates a new instance of CallerChecker, bound to a specific deployed contract.
+func NewCallerChecker(address common.Address, backend bind.ContractBackend) (*CallerChecker, error) {
+	contract, err := bindCallerChecker(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &CallerChecker{CallerCheckerCaller: CallerCheckerCaller{contract: contract}, CallerCheckerTransactor: CallerCheckerTransactor{contract: contract}, CallerCheckerFilterer: CallerCheckerFilterer{contract: contract}}, nil
+}
+
+// NewCallerCheckerCaller creates a new read-only instance of CallerChecker, bound to a specific deployed contract.
+func NewCallerCheckerCaller(address common.Address, caller bind.ContractCaller) (*CallerCheckerCaller, error) {
+	contract, err := bindCallerChecker(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &CallerCheckerCaller{contract: contract}, nil
+}
+
+// NewCallerCheckerTransactor creates a new write-only instance of CallerChecker, bound to a specific deployed contract.
+func NewCallerCheckerTransactor(address common.Address, transactor bind.ContractTransactor) (*CallerCheckerTransactor, error) {
+	contract, err := bindCallerChecker(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &CallerCheckerTransactor{contract: contract}, nil
+}
+
+// NewCallerCheckerFilterer creates a new log filterer instance of CallerChecker, bound to a specific deployed contract.
+func NewCallerCheckerFilterer(address common.Address, filterer bind.ContractFilterer) (*CallerCheckerFilterer, error) {
+	contract, err := bindCallerChecker(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &CallerCheckerFilterer{contract: contract}, nil
+}
+
+// bindCallerChecker binds a generic wrapper to an already deployed contract.
+func bindCallerChecker(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := CallerCheckerMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_CallerChecker *CallerCheckerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _CallerChecker.Contract.CallerCheckerCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_CallerChecker *CallerCheckerRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _CallerChecker.Contract.CallerCheckerTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_CallerChecker *CallerCheckerRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _CallerChecker.Contract.CallerCheckerTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_CallerChecker *CallerCheckerCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _CallerChecker.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_CallerChecker *CallerCheckerTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _CallerChecker.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_CallerChecker *CallerCheckerTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _CallerChecker.Contract.contract.Transact(opts, method, params...)
 }
 
 // CryptographyPrimitivesMetaData contains all meta data concerning the CryptographyPrimitives contract.
@@ -3744,7 +3917,7 @@ func (_IReader4844 *IReader4844CallerSession) GetDataHashes() ([][32]byte, error
 // MerkleLibMetaData contains all meta data concerning the MerkleLib contract.
 var MerkleLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220968bac2cb01d87cc5232ec5d4048c071c015a63900278a2410d04ba87453684664736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220541ea6462f259b3d2d3059880681a8bf0762a5493c8cf4c6abe2d33a4c86baaa64736f6c63430008110033",
 }
 
 // MerkleLibABI is the input ABI used to generate the binding from.
