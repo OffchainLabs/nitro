@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -170,6 +171,13 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
+
+	//var tracingConfig json.RawMessage
+	// TODO: We need a better way to pass this config to the tracer
+	//  this is just a temporary solution and
+	// 	it is a demonstration of how to pass a config to live tracer as a json.RawMessage via tracingConfig
+	tracingConfig := json.RawMessage(`{"local_store": "/livetracing/output", "ttl": 14, "network_id": "42161", "enable_code_tracing":false }`)
+
 	nodeConfig, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -437,7 +445,18 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(
+		ctx,
+		stack,
+		nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		&nodeConfig.Execution.StylusTarget,
+		&nodeConfig.Persistent,
+		l1Client,
+		rollupAddrs,
+		tracingConfig,
+	)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}

@@ -1,6 +1,3 @@
-[submodule "go-ethereum"]
-	path = go-ethereum
-	url = https://github.com/OffchainLabs/go-ethereum.git
 [submodule "fastcache"]
 	path = fastcache
 	url = https://github.com/OffchainLabs/fastcache.git
@@ -38,3 +35,7 @@
 [submodule "safe-smart-account"]
 	path = safe-smart-account
 	url = https://github.com/safe-global/safe-smart-account.git
+[submodule "go-ethereum"]
+	path = go-ethereum
+	url = https://github.com/Tenderly/arb-go-ethereum.git
+	branch = live-tracing
