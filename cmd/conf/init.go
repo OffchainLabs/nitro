@@ -31,6 +31,7 @@ type InitConfig struct {
 	GenesisJsonFile          string        `koanf:"genesis-json-file"`
 	ThenQuit                 bool          `koanf:"then-quit"`
 	Prune                    string        `koanf:"prune"`
+	PruneParallel            bool          `koanf:"prune-parallel"`
 	PruneBloomSize           uint64        `koanf:"prune-bloom-size"`
 	PruneThreads             int           `koanf:"prune-threads"`
 	PruneTrieCleanCache      int           `koanf:"prune-trie-clean-cache"`
@@ -60,6 +61,7 @@ var InitConfigDefault = InitConfig{
 	AccountsPerSync:          100000,
 	ThenQuit:                 false,
 	Prune:                    "",
+	PruneParallel:            false,
 	PruneBloomSize:           2048,
 	PruneThreads:             runtime.NumCPU(),
 	PruneTrieCleanCache:      600,
@@ -89,6 +91,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".genesis-json-file", InitConfigDefault.GenesisJsonFile, "path for genesis json file")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
+	f.Bool(prefix+".prune-parallel", InitConfigDefault.PruneParallel, "if true: use parallel pruning per account")
 	f.Uint64(prefix+".prune-bloom-size", InitConfigDefault.PruneBloomSize, "the amount of memory in megabytes to use for the pruning bloom filter (higher values prune better)")
 	f.Int(prefix+".prune-threads", InitConfigDefault.PruneThreads, "the number of threads to use when pruning")
 	f.Int(prefix+".prune-trie-clean-cache", InitConfigDefault.PruneTrieCleanCache, "amount of memory in megabytes to cache unchanged state trie nodes with when traversing state database during pruning")
