@@ -27,7 +27,6 @@ outputs:
 runs:
   using: composite
   steps:
-
     - name: Generate docker metadata
       uses: docker/metadata-action@v5
       id: metadata
@@ -51,9 +50,6 @@ runs:
         cache-to: type=inline
         outputs: type=image,name=${{ inputs.images }},push-by-digest=true,name-canonical=true,push=${{ inputs.push }}
 
-    # This will upload the digest for each architecture to the same artifact,
-    # Note: upload-artifact@v4 will no longer support this.
-    # https://github.com/actions/upload-artifact?tab=readme-ov-file#not-uploading-to-the-same-artifact
     - name: Export digest
       shell: bash
       run: |
@@ -62,10 +58,20 @@ runs:
         digest="${{ steps.build.outputs.digest }}"
         touch "${digest_dir}/${digest#sha256:}"
 
-    - name: Upload digest
-      uses: actions/upload-artifact@v3
+    - name: Upload digest to arm64
+      if: ${{ matrix.platform == 'linux/arm64' }}
+      uses: actions/upload-artifact@v4
       with:
-        name: "${{ inputs.target }}-digests"
+        name: "${{ inputs.target }}-digests-${{ github.run_number }}-arm64"
+        path: "${{ runner.temp }}/${{ inputs.target }}-${{ github.run_number }}-digests/*"
+        if-no-files-found: error
+        retention-days: 1
+
+    - name: Upload digest to amd64
+      if: ${{ matrix.platform == 'linux/amd64' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: "${{ inputs.target }}-digests-${{ github.run_number }}-amd64"
         path: "${{ runner.temp }}/${{ inputs.target }}-${{ github.run_number }}-digests/*"
         if-no-files-found: error
         retention-days: 1
