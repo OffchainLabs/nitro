@@ -104,6 +104,7 @@ func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCo
 		dbs:            dbs,
 	}
 
+	// node restart is considered "maintenance"
 	res.lastMaintenance.Store(time.Now().UnixMilli())
 	if seqCoordinator != nil {
 		c := func() *redislock.SimpleCfg { return &cfg.Lock }
@@ -141,12 +142,22 @@ func wentPastTimeOfDay(before time.Time, after time.Time, timeOfDay int) bool {
 	return prevMinutes < dbCompactionMinutes && newMinutes >= dbCompactionMinutes
 }
 
-func (mr *MaintenanceRunner) GetLastMaintenanceTime() (time.Time, error) {
+// bool if running currently, if false - time of last time it was running
+func (mr *MaintenanceRunner) getPrevMaintenance() (bool, time.Time) {
 	milli := mr.lastMaintenance.Load()
 	if milli == 0 {
-		return time.Time{}, errors.New("maintenance running")
+		return true, time.Time{}
 	}
-	return time.UnixMilli(milli), nil
+	return false, time.UnixMilli(milli)
+}
+
+// bool if running currently, if false - time of last time it was running
+func (mr *MaintenanceRunner) TimeSinceLastMaintenance() (bool, time.Duration) {
+	running, maintTime := mr.getPrevMaintenance()
+	if running {
+		return true, 0
+	}
+	return false, time.Since(maintTime)
 }
 
 func (mr *MaintenanceRunner) setMaintenanceDone() {
@@ -173,8 +184,8 @@ func (mr *MaintenanceRunner) maybeRunScheduledMaintenance(ctx context.Context) t
 
 	now := time.Now().UTC()
 
-	lastMaintenance, err := mr.GetLastMaintenanceTime()
-	if err != nil {
+	inMaintenance, lastMaintenance := mr.getPrevMaintenance()
+	if inMaintenance {
 		return time.Minute
 	}
 
@@ -182,7 +193,7 @@ func (mr *MaintenanceRunner) maybeRunScheduledMaintenance(ctx context.Context) t
 		return time.Minute
 	}
 
-	err = mr.attemptMaintenance(ctx)
+	err := mr.attemptMaintenance(ctx)
 	if err != nil {
 		log.Warn("scheduled maintenance error", "err", err)
 	}
@@ -195,9 +206,8 @@ func (mr *MaintenanceRunner) Trigger() error {
 		return errors.New("maintenance not configured to be triggerable")
 	}
 	// error if already running
-	_, err := mr.GetLastMaintenanceTime()
-	if err != nil {
-		return err
+	if running, _ := mr.getPrevMaintenance(); running {
+		return nil
 	}
 	// maintenance takes a long time, run on a separate thread
 	mr.LaunchThread(func(ctx context.Context) {

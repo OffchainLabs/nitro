@@ -2,6 +2,7 @@ package arbnode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -67,12 +68,12 @@ type MaintenanceAPI struct {
 	runner *MaintenanceRunner
 }
 
-func (a *MaintenanceAPI) GetLastMaintenanceTime(ctx context.Context) (string, error) {
-	lastRun, err := a.runner.GetLastMaintenanceTime()
-	if err != nil {
-		return "", err
+func (a *MaintenanceAPI) SecondsSinceLastMaintenance(ctx context.Context) (int64, error) {
+	running, since := a.runner.TimeSinceLastMaintenance()
+	if running {
+		return 0, errors.New("maintenance currently running")
 	}
-	return lastRun.GoString(), err
+	return int64(since.Seconds()), nil
 }
 
 func (a *MaintenanceAPI) Trigger(ctx context.Context) error {
