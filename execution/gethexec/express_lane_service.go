@@ -4,6 +4,7 @@
 package gethexec
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -329,7 +330,10 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	}
 
 	// Check if a duplicate submission exists already, and reject if so.
-	if _, exists := roundInfo.msgAndResultBySequenceNumber[msg.SequenceNumber]; exists {
+	if prev, exists := roundInfo.msgAndResultBySequenceNumber[msg.SequenceNumber]; exists {
+		if bytes.Equal(prev.msg.Signature, msg.Signature) {
+			return nil
+		}
 		return timeboost.ErrDuplicateSequenceNumber
 	}
 

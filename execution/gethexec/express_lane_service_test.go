@@ -317,18 +317,19 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
-	msg := buildValidSubmissionWithSeqAndTx(t, 0, 2, types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}))
+	msg1 := buildValidSubmissionWithSeqAndTx(t, 0, 2, types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}))
+	msg2 := buildValidSubmissionWithSeqAndTx(t, 0, 2, types.NewTx(&types.DynamicFeeTx{Data: []byte{2}}))
 	var wg sync.WaitGroup
 	wg.Add(3) // We expect only of the below two to return with an error here
 	var err1, err2 error
 	go func(w *sync.WaitGroup) {
 		w.Done()
-		err1 = els.sequenceExpressLaneSubmission(ctx, msg)
+		err1 = els.sequenceExpressLaneSubmission(ctx, msg1)
 		wg.Done()
 	}(&wg)
 	go func(w *sync.WaitGroup) {
 		w.Done()
-		err2 = els.sequenceExpressLaneSubmission(ctx, msg)
+		err2 = els.sequenceExpressLaneSubmission(ctx, msg2)
 		wg.Done()
 	}(&wg)
 	wg.Wait()
