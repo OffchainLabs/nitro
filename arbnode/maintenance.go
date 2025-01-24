@@ -215,11 +215,11 @@ func (mr *MaintenanceRunner) attemptMaintenance(ctx context.Context) error {
 	}
 
 	if !mr.lock.AttemptLock(ctx) {
-		return errors.New("did not catch redis lock")
+		return errors.New("did not catch maintenance lock")
 	}
 	defer mr.lock.Release(ctx)
 
-	res := errors.New("failed to hand-off chosen one")
+	res := errors.New("maintenance failed to hand-off chosen one")
 
 	log.Info("Attempting avoiding lockout and handing off", "targetTime", mr.config().TimeOfDay)
 	// Avoid lockout for the sequencer and try to handoff.
