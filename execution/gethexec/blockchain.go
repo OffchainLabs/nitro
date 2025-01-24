@@ -76,7 +76,7 @@ var DefaultCachingConfig = CachingConfig{
 	TrieTimeLimit:                      time.Hour,
 	TrieDirtyCache:                     1024,
 	TrieCleanCache:                     600,
-	TrieCapLimit:                       100 * 1024 * 1024,
+	TrieCapLimit:                       100,
 	SnapshotCache:                      400,
 	DatabaseCache:                      2048,
 	SnapshotRestoreGasLimit:            300_000_000_000,
