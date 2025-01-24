@@ -1011,6 +1011,6 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	}
 }
 
-func (s *ExecutionEngine) Maintenance(capLimit int64) error {
+func (s *ExecutionEngine) Maintenance(capLimit uint64) error {
 	return s.bc.FlushTrieDB(&s.createBlocksMutex, common.StorageSize(capLimit))
 }

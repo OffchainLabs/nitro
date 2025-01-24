@@ -36,9 +36,8 @@ type MaintenanceRunner struct {
 }
 
 type MaintenanceConfig struct {
-	TimeOfDay      string              `koanf:"time-of-day" reload:"hot"`
-	Lock           redislock.SimpleCfg `koanf:"lock" reload:"hot"`
-	TrieDBCapLimit int64               `koanf:"triedb-cap-limit" reload:"hot"`
+	TimeOfDay string              `koanf:"time-of-day" reload:"hot"`
+	Lock      redislock.SimpleCfg `koanf:"lock" reload:"hot"`
 
 	// Generated: the minutes since start of UTC day to compact at
 	minutesAfterMidnight int
@@ -76,14 +75,12 @@ func (c *MaintenanceConfig) Validate() error {
 
 func MaintenanceConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".time-of-day", DefaultMaintenanceConfig.TimeOfDay, "UTC 24-hour time of day to run maintenance (currently only db compaction) at (e.g. 15:00)")
-	f.Int(prefix+".triedb-cap-limit", int(DefaultMaintenanceConfig.TrieDBCapLimit), "amount of memory in bytes to be used in the TrieDB Cap operation")
 	redislock.AddConfigOptions(prefix+".lock", f)
 }
 
 var DefaultMaintenanceConfig = MaintenanceConfig{
-	TimeOfDay:      "",
-	TrieDBCapLimit: 100 * 1024 * 1024,
-	Lock:           redislock.DefaultCfg,
+	TimeOfDay: "",
+	Lock:      redislock.DefaultCfg,
 
 	minutesAfterMidnight: 0,
 }
@@ -186,7 +183,7 @@ func (mr *MaintenanceRunner) runMaintenance() {
 	}
 	expected++
 	go func() {
-		results <- mr.exec.Maintenance(mr.config().TrieDBCapLimit)
+		results <- mr.exec.Maintenance()
 	}()
 	for i := 0; i < expected; i++ {
 		err := <-results

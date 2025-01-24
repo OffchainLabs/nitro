@@ -32,7 +32,7 @@ func TestMaintenance(t *testing.T) {
 		Require(t, err)
 	}
 
-	err := builder.L2.ExecNode.Maintenance(100 * 1024 * 1024)
+	err := builder.L2.ExecNode.Maintenance()
 	Require(t, err)
 
 	for i := 2; i < 3+numberOfTransfers; i++ {

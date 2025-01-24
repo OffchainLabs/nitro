@@ -453,8 +453,9 @@ func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageInde
 	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
 }
 
-func (n *ExecutionNode) Maintenance(capLimit int64) error {
-	err := n.ExecEngine.Maintenance(capLimit)
+func (n *ExecutionNode) Maintenance() error {
+	trieCapLimitBytes := 1024 * uint64(n.ConfigFetcher().Caching.TrieCapLimit)
+	err := n.ExecEngine.Maintenance(trieCapLimitBytes)
 	if err != nil {
 		return err
 	}
