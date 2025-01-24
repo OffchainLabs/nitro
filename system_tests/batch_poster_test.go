@@ -64,21 +64,6 @@ func addNewBatchPoster(ctx context.Context, t *testing.T, builder *NodeBuilder, 
 	}
 }
 
-func externalSignerTestCfg(addr common.Address, url string) (*dataposter.ExternalSignerCfg, error) {
-	cp, err := externalsignertest.CertPaths()
-	if err != nil {
-		return nil, fmt.Errorf("getting certificates path: %w", err)
-	}
-	return &dataposter.ExternalSignerCfg{
-		Address:          common.Bytes2Hex(addr.Bytes()),
-		URL:              url,
-		Method:           externalsignertest.SignerMethod,
-		RootCA:           cp.ServerCert,
-		ClientCert:       cp.ClientCert,
-		ClientPrivateKey: cp.ClientKey,
-	}, nil
-}
-
 func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -105,7 +90,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
-	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
