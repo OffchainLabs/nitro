@@ -491,27 +491,15 @@ func (es *expressLaneService) syncFromRedis() {
 		roundInfo.sequence = redisSeqCount
 	}
 
-	var msgReadyForSequencing *timeboost.ExpressLaneSubmission
-	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, roundInfo.sequence)
-	for _, msg := range pendingMsgs {
-		// If we get a msg that can be readily sequenced, don't add it to the map
-		// instead sequence it right after we finish updating the map with rest of the msgs
-		if msg.SequenceNumber == roundInfo.sequence {
-			msgReadyForSequencing = msg
-		} else {
-			roundInfo.msgAndResultBySequenceNumber[msg.SequenceNumber] = &msgAndResult{
-				msg:        msg,
-				resultChan: make(chan error, 1), // will never be read from, but required for sequencing of this msg
-			}
-		}
-	}
-
 	es.roundInfo.Add(currentRound, roundInfo)
 	es.roundInfoMutex.Unlock()
 
-	if msgReadyForSequencing != nil {
-		if err := es.sequenceExpressLaneSubmission(es.GetContext(), msgReadyForSequencing); err != nil {
-			log.Error("Untracked expressLaneSubmission returned an error", "round", msgReadyForSequencing.Round, "seqNum", msgReadyForSequencing.SequenceNumber, "txHash", msgReadyForSequencing.Transaction.Hash(), "err", err)
-		}
+	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, roundInfo.sequence)
+	for _, msg := range pendingMsgs {
+		es.LaunchThread(func(ctx context.Context) {
+			if err := es.sequenceExpressLaneSubmission(ctx, msg); err != nil {
+				log.Error("Untracked expressLaneSubmission returned an error", "round", msg.Round, "seqNum", msg.SequenceNumber, "txHash", msg.Transaction.Hash(), "err", err)
+			}
+		})
 	}
 }

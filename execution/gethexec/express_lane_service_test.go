@@ -495,7 +495,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	// Only one tx out of the three should have been processed
 	require.Equal(t, 1, len(stubPublisher1.publishedTxOrder))
 
-	time.Sleep(time.Second) // wait for untracked redis update threads to complete
+	time.Sleep(time.Second) // wait for parallel redis update threads to complete
 
 	els2 := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
@@ -513,6 +513,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 
 	// As els2 becomes an active sequencer, syncFromRedis would be called when Activate() function of sequencer is invoked
 	els2.syncFromRedis()
+	time.Sleep(time.Second) // wait for parallel sequencing of redis txs to complete
 
 	els2.roundInfoMutex.Lock()
 	roundInfo, exists := els2.roundInfo.Get(0)
