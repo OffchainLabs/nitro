@@ -228,14 +228,20 @@ ARG modified=""
 ENV NITRO_VERSION=$version
 ENV NITRO_DATETIME=$datetime
 ENV NITRO_MODIFIED=$modified
+
+# Installing wabt (WebAssembly Binary Toolkit)
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
+
+# Copy Go modules
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 COPY bold/go.mod bold/go.sum bold/
 RUN go mod download
+
+# Copy source code and other necessary files
 COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
 COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
@@ -245,8 +251,25 @@ COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
 COPY --from=prover-export / target/
+
+# Prepare target directory and copy Nitro tag file
 RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libsnappy-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libgflags-dev \
+    liblz4-dev \
+    libzstd-dev \
+    librocksdb-dev \
+    git \
+    wget
+
+# Build Nitro with make, ignoring timestamps
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM node-builder AS fuzz-builder
