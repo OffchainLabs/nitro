@@ -234,6 +234,12 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
 
+# Instrall RocksDB
+RUN git clone --depth 1 --branch v9.10.0 https://github.com/facebook/rocksdb.git && \
+    cd rocksdb && \
+    CXXFLAGS="-mno-avx512f -O2 -march=x86-64 -mtune=generic" make static_lib
+
+
 # Copy Go modules
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
