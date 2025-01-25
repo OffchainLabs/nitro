@@ -182,10 +182,7 @@ func CreateExecutionNode(
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
 ) (*ExecutionNode, error) {
-	log.Info("tenderly: creating execution node", "tracer", l2BlockChain.GetVMConfig().Tracer != nil)
 	config := configFetcher()
-	log.Info("tenderly: execution node config", "config", config)
-
 	execEngine, err := NewExecutionEngine(l2BlockChain)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()

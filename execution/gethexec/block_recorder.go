@@ -102,8 +102,6 @@ func (r *BlockRecorder) RecordBlockCreation(
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
 ) (*execution.RecordResult, error) {
-	log.Warn("tenderly::RecordBlockCreation")
-
 	blockNum := r.execEngine.MessageIndexToBlockNumber(pos)
 
 	var prevHeader *types.Header

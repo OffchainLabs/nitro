@@ -227,8 +227,6 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 		Tracer:                  tenderlyTracerHooks,
 	}
 
-	log.Info("tenderly: creating blockchain", "tracer", tenderlyTracerHooks != nil)
-
 	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
 }
 

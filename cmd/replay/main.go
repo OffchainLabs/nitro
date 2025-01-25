@@ -179,7 +179,8 @@ func main() {
 	wavmio.StubInit()
 	gethhook.RequireHookedGeth()
 
-	glogger := log.NewGlogHandler(log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LevelError)
 	log.SetDefault(log.NewLogger(glogger))
 
