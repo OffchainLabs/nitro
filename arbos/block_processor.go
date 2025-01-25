@@ -143,7 +143,7 @@ func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
-	stateDB *state.StateDB,
+	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	isMsgForPrefetch bool,
@@ -162,7 +162,7 @@ func ProduceBlock(
 		txes,
 		delayedMessagesRead,
 		lastBlockHeader,
-		stateDB,
+		statedb,
 		chainContext,
 		chainConfig,
 		hooks,
@@ -172,7 +172,7 @@ func ProduceBlock(
 	)
 }
 
-// ProduceBlockAdvanced a bit more flexible than ProduceBlock for use in the sequencer.
+// A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
 	l1Header *arbostypes.L1IncomingMessageHeader,
 	txes types.Transactions,
@@ -186,8 +186,6 @@ func ProduceBlockAdvanced(
 	runMode core.MessageRunMode,
 	blockChain *core.BlockChain,
 ) (outBlock *types.Block, outReceipt types.Receipts, outError error) {
-	log.Info("tenderly: ProduceBlockAdvanced", "blockNum", l1Header.BlockNumber, "timestamp", l1Header.Timestamp, "txCount", len(txes))
-
 	// tenderly tracer or default tracer
 	getVMConfig := func() vm.Config {
 		if blockChain != nil && blockChain.GetVMConfig() != nil {
