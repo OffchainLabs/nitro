@@ -234,6 +234,19 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
 
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libsnappy-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libgflags-dev \
+    liblz4-dev \
+    libzstd-dev \
+    librocksdb-dev \
+    git \
+    wget \
+
 # Instrall RocksDB
 RUN git clone --depth 1 --branch v9.10.0 https://github.com/facebook/rocksdb.git && \
     cd rocksdb && \
@@ -261,19 +274,6 @@ COPY --from=prover-export / target/
 # Prepare target directory and copy Nitro tag file
 RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libsnappy-dev \
-    zlib1g-dev \
-    libbz2-dev \
-    libgflags-dev \
-    liblz4-dev \
-    libzstd-dev \
-    librocksdb-dev \
-    git \
-    wget
 
 # Build Nitro with make, ignoring timestamps
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
