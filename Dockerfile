@@ -245,7 +245,7 @@ RUN apt-get update && apt-get install -y \
     libzstd-dev \
     librocksdb-dev \
     git \
-    wget \
+    wget
 
 # Instrall RocksDB
 RUN git clone --depth 1 --branch v9.10.0 https://github.com/facebook/rocksdb.git && \
