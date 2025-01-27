@@ -151,7 +151,7 @@ func (mr *MaintenanceRunner) getPrevMaintenance() (bool, time.Time) {
 	return false, time.UnixMilli(milli)
 }
 
-// bool if running currently, if false - time of last time it was running
+// bool if running currently, if false - duration since last time it was running
 func (mr *MaintenanceRunner) TimeSinceLastMaintenance() (bool, time.Duration) {
 	running, maintTime := mr.getPrevMaintenance()
 	if running {
@@ -205,7 +205,6 @@ func (mr *MaintenanceRunner) Trigger() error {
 	if !mr.config().Triggerable {
 		return errors.New("maintenance not configured to be triggerable")
 	}
-	// error if already running
 	if running, _ := mr.getPrevMaintenance(); running {
 		return nil
 	}
