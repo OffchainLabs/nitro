@@ -259,7 +259,7 @@ COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 COPY bold/go.mod bold/go.sum bold/
 RUN go mod download
-RUN go get github.com/linxGnu/grocksdb@v1.9.8
+RUN #go get github.com/linxGnu/grocksdb@v1.9.8
 
 # Copy source code and other necessary files
 COPY . ./
@@ -277,7 +277,10 @@ RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
 
 # Build Nitro with make, ignoring timestamps
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
+RUN export CGO_CFLAGS=-I/rocksdb/include && \
+    export CGO_LDFLAGS="-w -L/rocksdb/ -lrocksdb -lbz2" && \
+    NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
+RUN #NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM node-builder AS fuzz-builder
 RUN mkdir fuzzers/
