@@ -71,6 +71,7 @@ type BoldConfig struct {
 	AutoIncreaseAllowance               bool                   `koanf:"auto-increase-allowance"`
 	DelegatedStaking                    DelegatedStakingConfig `koanf:"delegated-staking"`
 	RPCBlockNumber                      string                 `koanf:"rpc-block-number"`
+	EnableFastConfirmation              bool                   `koanf:"enable-fast-confirmation"`
 	// How long to wait since parent assertion was created to post a new assertion
 	MinimumGapToParentAssertion time.Duration `koanf:"minimum-gap-to-parent-assertion"`
 	strategy                    legacystaker.StakerStrategy
@@ -141,6 +142,7 @@ var DefaultBoldConfig = BoldConfig{
 	AutoIncreaseAllowance:               true,
 	DelegatedStaking:                    DefaultDelegatedStakingConfig,
 	RPCBlockNumber:                      "finalized",
+	EnableFastConfirmation:              false,
 }
 
 var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
@@ -169,6 +171,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".auto-deposit", DefaultBoldConfig.AutoDeposit, "auto-deposit stake token whenever making a move in BoLD that does not have enough stake token balance")
 	f.Bool(prefix+".auto-increase-allowance", DefaultBoldConfig.AutoIncreaseAllowance, "auto-increase spending allowance of the stake token by the rollup and challenge manager contracts")
 	DelegatedStakingConfigAddOptions(prefix+".delegated-staking", f)
+	f.Bool(prefix+".enable-fast-confirmation", DefaultBoldConfig.EnableFastConfirmation, "enable fast confirmation")
 }
 
 func StateProviderConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -427,6 +430,10 @@ func newBOLDChallengeManager(
 	if !config.AutoDeposit {
 		assertionChainOpts = append(assertionChainOpts, solimpl.WithoutAutoDeposit())
 	}
+
+	if config.EnableFastConfirmation {
+		assertionChainOpts = append(assertionChainOpts, solimpl.WithFastConfirmation())
+	}
 	assertionChain, err := solimpl.NewAssertionChain(
 		ctx,
 		rollupAddress,
@@ -534,6 +541,9 @@ func newBOLDChallengeManager(
 	}
 	if config.DelegatedStaking.Enable {
 		stackOpts = append(stackOpts, challengemanager.StackWithDelegatedStaking())
+	}
+	if config.EnableFastConfirmation {
+		stackOpts = append(stackOpts, challengemanager.StackWithFastConfirmationEnabled())
 	}
 
 	manager, err := challengemanager.NewChallengeStack(
