@@ -258,7 +258,8 @@ COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 COPY bold/go.mod bold/go.sum bold/
-RUN cd go-ethereum && go mod download && cd -
+RUN cd go-ethereum && go mod tidy && go mod vendor && cd -
+RUN go mod tidy
 RUN go mod download
 
 # Copy source code and other necessary files
