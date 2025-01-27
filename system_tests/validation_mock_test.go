@@ -415,7 +415,7 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 	if err != nil {
 		return nil, err
 	}
-	res, err := m.streamer.ResultAtCount(pos + 1)
+	res, err := m.streamer.ResultAtMessageIndex(pos)
 	if err != nil {
 		return nil, err
 	}

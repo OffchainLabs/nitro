@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
@@ -119,9 +120,12 @@ func (b *BlockChallengeBackend) FindGlobalStateFromMessageCount(count arbutil.Me
 			return validator.GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
-	res, err := b.streamer.ResultAtCount(count)
-	if err != nil {
-		return validator.GoGlobalState{}, err
+	res := &execution.MessageResult{}
+	if count > 0 {
+		res, err = b.streamer.ResultAtMessageIndex(count - 1)
+		if err != nil {
+			return validator.GoGlobalState{}, err
+		}
 	}
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,

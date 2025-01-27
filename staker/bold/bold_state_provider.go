@@ -23,6 +23,7 @@ import (
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/state-commitments/history"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
@@ -215,9 +216,12 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 		if ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
-		executionResult, err := s.statelessValidator.InboxStreamer().ResultAtCount(arbutil.MessageIndex(pos))
-		if err != nil {
-			return nil, nil, err
+		executionResult := &execution.MessageResult{}
+		if pos > 0 {
+			executionResult, err = s.statelessValidator.InboxStreamer().ResultAtMessageIndex(pos - 1)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 		state := validator.GoGlobalState{
 			BlockHash:  executionResult.BlockHash,
@@ -275,9 +279,12 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 			return validator.GoGlobalState{}, fmt.Errorf("message count %v is past end of batch %v message count %v", count, batchIndex, batchMsgCount)
 		}
 	}
-	res, err := s.statelessValidator.InboxStreamer().ResultAtCount(count)
-	if err != nil {
-		return validator.GoGlobalState{}, fmt.Errorf("%s: could not check if we have result at count %d: %w", s.stateProviderConfig.ValidatorName, count, err)
+	res := &execution.MessageResult{}
+	if count > 0 {
+		res, err = s.statelessValidator.InboxStreamer().ResultAtMessageIndex(count - 1)
+		if err != nil {
+			return validator.GoGlobalState{}, fmt.Errorf("%s: could not check if we have result at count %d: %w", s.stateProviderConfig.ValidatorName, count, err)
+		}
 	}
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
@@ -336,7 +343,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	for i, h := range cfg.StepHeights {
 		stepHeights[i] = uint64(h)
 	}
-	messageResult, err := s.statelessValidator.InboxStreamer().ResultAtCount(arbutil.MessageIndex(messageNum + 1))
+	messageResult, err := s.statelessValidator.InboxStreamer().ResultAtMessageIndex(messageNum)
 	if err != nil {
 		return nil, err
 	}
@@ -435,9 +442,12 @@ func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit l2st
 		return gs, fmt.Errorf("could not get limitMsgCount at %d: %w", limit, err)
 	}
 	if msgNum >= limitMsgCount {
-		result, err := s.statelessValidator.InboxStreamer().ResultAtCount(arbutil.MessageIndex(limitMsgCount))
-		if err != nil {
-			return gs, fmt.Errorf("could not get global state at limitMsgCount %d: %w", limitMsgCount, err)
+		result := &execution.MessageResult{}
+		if limitMsgCount > 0 {
+			result, err = s.statelessValidator.InboxStreamer().ResultAtMessageIndex(limitMsgCount - 1)
+			if err != nil {
+				return gs, fmt.Errorf("could not get global state at limitMsgCount %d: %w", limitMsgCount, err)
+			}
 		}
 		gs = option.Some(validator.GoGlobalState{
 			BlockHash:  result.BlockHash,
