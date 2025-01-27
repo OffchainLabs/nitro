@@ -167,8 +167,8 @@ type JsonExpressLaneSubmission struct {
 	AuctionContractAddress common.Address                     `json:"auctionContractAddress"`
 	Transaction            hexutil.Bytes                      `json:"transaction"`
 	Options                *arbitrum_types.ConditionalOptions `json:"options"`
-	SequenceNumber         hexutil.Uint64
-	Signature              hexutil.Bytes `json:"signature"`
+	SequenceNumber         hexutil.Uint64                     `json:"sequenceNumber"`
+	Signature              hexutil.Bytes                      `json:"signature"`
 }
 
 type ExpressLaneSubmission struct {

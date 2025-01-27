@@ -92,6 +92,7 @@ type TimeboostConfig struct {
 	SequencerHTTPEndpoint  string        `koanf:"sequencer-http-endpoint"`
 	EarlySubmissionGrace   time.Duration `koanf:"early-submission-grace"`
 	MaxQueuedTxCount       int           `koanf:"max-queued-tx-count"`
+	RedisUrl               string        `koanf:"redis-url"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
@@ -102,6 +103,7 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	SequencerHTTPEndpoint:  "http://localhost:8547",
 	EarlySubmissionGrace:   time.Second * 2,
 	MaxQueuedTxCount:       10,
+	RedisUrl:               "unset",
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -136,6 +138,9 @@ func (c *SequencerConfig) Validate() error {
 func (c *TimeboostConfig) Validate() error {
 	if !c.Enable {
 		return nil
+	}
+	if c.RedisUrl == DefaultTimeboostConfig.RedisUrl {
+		return errors.New("timeboost is enabled but no redis-url was set")
 	}
 	if len(c.AuctionContractAddress) > 0 && !common.IsHexAddress(c.AuctionContractAddress) {
 		return fmt.Errorf("invalid timeboost.auction-contract-address \"%v\"", c.AuctionContractAddress)
@@ -197,6 +202,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 	f.Duration(prefix+".early-submission-grace", DefaultTimeboostConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
 	f.Int(prefix+".max-queued-tx-count", DefaultTimeboostConfig.MaxQueuedTxCount, "maximum allowed number of express lane txs with future sequence number to be queued. Set 0 to disable this check and a negative value to prevent queuing of any future sequence number transactions")
+	f.String(prefix+".redis-url", DefaultTimeboostConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
 }
 
 type txQueueItem struct {
@@ -576,6 +582,15 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
 		return err
 	}
+
+	forwarder, err = s.getForwarder(ctx)
+	if err != nil {
+		return err
+	}
+	if forwarder != nil {
+		return forwarder.PublishExpressLaneTransaction(ctx, msg)
+	}
+
 	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg)
 }
 
@@ -754,6 +769,14 @@ func (s *Sequencer) Activate() {
 		close(s.pauseChan)
 		s.pauseChan = nil
 	}
+	if s.expressLaneService != nil {
+		s.LaunchThread(func(context.Context) {
+			// We launch redis sync (which is best effort) in parallel to avoid blocking sequencer activation
+			s.expressLaneService.syncFromRedis()
+			time.Sleep(time.Second)
+			s.expressLaneService.syncFromRedis()
+		})
+	}
 }
 
 func (s *Sequencer) Pause() {
@@ -776,8 +799,8 @@ func (s *Sequencer) GetPauseAndForwarder() (chan struct{}, *TxForwarder) {
 	return s.pauseChan, s.forwarder
 }
 
-// getForwarder returns accurate forwarder and pauses if needed
-// required for processing timeboost txs, as just checking forwarder==nil doesn't imply the sequencer to be chosen
+// getForwarder returns accurate forwarder and pauses if needed.
+// Required for processing timeboost txs, as just checking forwarder==nil doesn't imply the sequencer to be chosen
 func (s *Sequencer) getForwarder(ctx context.Context) (*TxForwarder, error) {
 	for {
 		pause, forwarder := s.GetPauseAndForwarder()
