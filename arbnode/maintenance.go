@@ -164,7 +164,7 @@ func (mr *MaintenanceRunner) setMaintenanceDone() {
 	milli := time.Now().UnixMilli()
 	prev := mr.lastMaintenance.Swap(milli)
 	if prev != 0 {
-		log.Warn("warning: maintenance ran in parallel", "current", time.UnixMilli(milli), "prev", time.UnixMilli(prev))
+		log.Error("maintenance executed in parallel", "current", time.UnixMilli(milli), "prev", time.UnixMilli(prev))
 	}
 }
 
@@ -247,7 +247,7 @@ func (mr *MaintenanceRunner) runMaintenance() error {
 	}
 	defer mr.setMaintenanceDone()
 
-	log.Info("Compacting databases (this may take a while...)")
+	log.Info("Compacting databases and flushing triedb to disk (this may take a while...)")
 	results := make(chan error, len(mr.dbs))
 	expected := 0
 	for _, db := range mr.dbs {
@@ -268,6 +268,6 @@ func (mr *MaintenanceRunner) runMaintenance() error {
 			log.Warn("maintenance error", "err", subErr)
 		}
 	}
-	log.Info("Done compacting databases")
+	log.Info("Done compacting databases and flushing triedb to disk")
 	return err
 }
