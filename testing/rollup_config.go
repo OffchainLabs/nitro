@@ -88,15 +88,17 @@ func GenerateRollupConfig(
 	}
 
 	cfg := rollupgen.Config{
-		MiniStakeValues:     miniStakeValues,
-		ConfirmPeriodBlocks: confirmPeriod,
-		StakeToken:          stakeToken,
-		BaseStake:           big.NewInt(1),
-		WasmModuleRoot:      wasmModuleRoot,
-		Owner:               rollupOwner,
-		LoserStakeEscrow:    loserStakeEscrow,
-		ChainId:             chainId,
-		ChainConfig:         "{ 'config': 'Test config'}",
+		MiniStakeValues:        miniStakeValues,
+		ConfirmPeriodBlocks:    confirmPeriod,
+		StakeToken:             stakeToken,
+		BaseStake:              big.NewInt(1),
+		WasmModuleRoot:         wasmModuleRoot,
+		Owner:                  rollupOwner,
+		LoserStakeEscrow:       loserStakeEscrow,
+		ChainId:                chainId,
+		ChainConfig:            "{ 'config': 'Test config'}",
+		MinimumAssertionPeriod: big.NewInt(75),
+		ValidatorAfkBlocks:     201600,
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
 			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 			FutureBlocks:  big.NewInt(12),
