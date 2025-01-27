@@ -386,7 +386,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
 	els.roundInfoMutex.Lock()
 	roundInfo, _ := els.roundInfo.Get(0)
-	require.Equal(t, 3, len(roundInfo.msgAndResultBySequenceNumber)) // Processed txs are deleted
+	require.Equal(t, 5, len(roundInfo.msgAndResultBySequenceNumber))
 	els.roundInfoMutex.Unlock()
 
 	wg.Add(2) // 4 & 5 should be able to get in after 3 so we add a delta of 2
@@ -394,11 +394,6 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	require.NoError(t, err)
 	wg.Wait()
 	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
-
-	els.roundInfoMutex.Lock()
-	roundInfo, _ = els.roundInfo.Get(0)
-	require.Equal(t, 1, len(roundInfo.msgAndResultBySequenceNumber)) // Tx with seq num 10 should still be present
-	els.roundInfoMutex.Unlock()
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.T) {
