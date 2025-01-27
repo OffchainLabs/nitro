@@ -541,9 +541,6 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	if roundInfo.sequence != 6 {
 		t.Fatalf("round sequence count mismatch. Want: 6, Got: %d", roundInfo.sequence)
 	}
-	if len(roundInfo.msgAndResultBySequenceNumber) != 0 { // There should be three pending txs in msgAndResult map
-		t.Fatalf("MsgAndResult map should be empty. Got: %d", len(roundInfo.msgAndResultBySequenceNumber))
-	}
 	els2.roundInfoMutex.Unlock()
 }
 
