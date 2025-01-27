@@ -525,9 +525,67 @@ func Test_autoDepositFunds(t *testing.T) {
 
 	expectedNewBalance := new(big.Int).Add(balance, big.NewInt(20))
 	ctx := context.Background()
-	require.NoError(t, setupCfg.Chains[0].Deposit(ctx, expectedNewBalance))
+	require.NoError(t, setupCfg.Chains[0].AutoDepositTokenForStaking(ctx, expectedNewBalance))
 
 	newBalance, err := erc20.BalanceOf(&bind.CallOpts{}, account.AccountAddr)
 	require.NoError(t, err)
 	require.Equal(t, expectedNewBalance, newBalance)
+}
+
+func Test_autoDepositFunds_SkipsIfAlreadyStaked(t *testing.T) {
+	setupCfg, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
+	require.NoError(t, err)
+	rollupAddr := setupCfg.Addrs.Rollup
+	rollup, err := rollupgen.NewRollupUserLogic(rollupAddr, setupCfg.Backend)
+	require.NoError(t, err)
+	stakeTokenAddr, err := rollup.StakeToken(&bind.CallOpts{})
+	require.NoError(t, err)
+	erc20, err := mocksgen.NewTestWETH9(stakeTokenAddr, setupCfg.Backend)
+	require.NoError(t, err)
+	account := setupCfg.Accounts[1]
+	assertionChain := setupCfg.Chains[0]
+
+	balance, err := erc20.BalanceOf(&bind.CallOpts{}, account.AccountAddr)
+	require.NoError(t, err)
+
+	expectedNewBalance := new(big.Int).Add(balance, big.NewInt(20))
+	ctx := context.Background()
+	require.NoError(t, assertionChain.AutoDepositTokenForStaking(ctx, expectedNewBalance))
+
+	newBalance, err := erc20.BalanceOf(&bind.CallOpts{}, account.AccountAddr)
+	require.NoError(t, err)
+	require.Equal(t, expectedNewBalance, newBalance)
+
+	// Tries to stake on an assertion.
+	genesisHash, err := assertionChain.GenesisAssertionHash(ctx)
+	require.NoError(t, err)
+	genesisInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
+	require.NoError(t, err)
+	postState := &protocol.ExecutionState{
+		GlobalState: protocol.GoGlobalState{
+			BlockHash:  common.BytesToHash([]byte("foo")),
+			SendRoot:   common.Hash{},
+			Batch:      1,
+			PosInBatch: 0,
+		},
+		MachineStatus: protocol.MachineStatusFinished,
+	}
+	_, err = assertionChain.NewStakeOnNewAssertion(ctx, genesisInfo, postState)
+	require.NoError(t, err)
+
+	// Check we are staked.
+	staked, err := assertionChain.IsStaked(ctx)
+	require.NoError(t, err)
+	require.True(t, staked)
+
+	// Attempt to auto-deposit again.
+	oldBalance := newBalance
+	evenBiggerBalance := new(big.Int).Add(oldBalance, big.NewInt(100))
+	require.NoError(t, setupCfg.Chains[0].AutoDepositTokenForStaking(ctx, evenBiggerBalance))
+
+	// Check that we our balance does not increase if we try to auto-deposit again given we are
+	// already staked as a validator. In fact, expect it decreased.
+	newBalance, err = erc20.BalanceOf(&bind.CallOpts{}, account.AccountAddr)
+	require.NoError(t, err)
+	require.True(t, oldBalance.Cmp(newBalance) > 0)
 }

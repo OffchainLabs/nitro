@@ -166,7 +166,7 @@ type AssertionChain interface {
 	TopLevelClaimHeights(ctx context.Context, edgeId EdgeId) (OriginHeights, error)
 
 	// Mutating methods.
-	Deposit(
+	AutoDepositTokenForStaking(
 		ctx context.Context,
 		amount *big.Int,
 	) error

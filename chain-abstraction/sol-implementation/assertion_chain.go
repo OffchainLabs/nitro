@@ -353,7 +353,7 @@ func (a *AssertionChain) LatestConfirmed(ctx context.Context, opts *bind.CallOpt
 
 // Returns true if the staker's address is currently staked in the assertion chain.
 func (a *AssertionChain) IsStaked(ctx context.Context) (bool, error) {
-	return a.rollup.IsStaked(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), a.StakerAddress())
+	return a.rollup.IsStaked(&bind.CallOpts{Context: ctx}, a.StakerAddress())
 }
 
 // RollupAddress for the assertion chain.
@@ -397,25 +397,36 @@ func (a *AssertionChain) IsChallengeComplete(
 	return challengeConfirmed, nil
 }
 
-func (a *AssertionChain) Deposit(
+// AutoDepositTokenForStaking ensures that the validator has enough funds to stake
+// on assertions if not already staked, and then deposits the difference required to participate.
+func (a *AssertionChain) AutoDepositTokenForStaking(
 	ctx context.Context,
 	amount *big.Int,
 ) error {
+	staked, err := a.IsStaked(ctx)
+	if err != nil {
+		return err
+	}
+	if staked {
+		return nil
+	}
 	return a.autoDepositFunds(ctx, amount)
 }
 
+// Attempts to auto-wrap ETH to WETH with the required amount that is specified to the function.
+// This function uses `latest` onchain data to determine the current balance of the staker
+// and deposits the difference between the required amount and the current balance.
 func (a *AssertionChain) autoDepositFunds(ctx context.Context, amount *big.Int) error {
 	if !a.autoDeposit {
 		return nil
 	}
-	callOpts := a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
 	// The validity of the stake token address containing code is checked in the constructor
 	// of the assertion chain.
 	erc20, err := testgen.NewERC20Token(a.stakeTokenAddr, a.backend)
 	if err != nil {
 		return err
 	}
-	balance, err := erc20.BalanceOf(callOpts, a.txOpts.From)
+	balance, err := erc20.BalanceOf(&bind.CallOpts{Context: ctx}, a.txOpts.From)
 	if err != nil {
 		return err
 	}
@@ -444,18 +455,17 @@ func (a *AssertionChain) autoDepositFunds(ctx context.Context, amount *big.Int) 
 func (a *AssertionChain) ApproveAllowances(
 	ctx context.Context,
 ) error {
-	opts := a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
 	// The validity of the stake token address containing code is checked in the constructor
 	// of the assertion chain.
 	erc20, err := testgen.NewERC20Token(a.stakeTokenAddr, a.backend)
 	if err != nil {
 		return err
 	}
-	rollupAllowance, err := erc20.Allowance(opts, a.txOpts.From, a.rollupAddr)
+	rollupAllowance, err := erc20.Allowance(&bind.CallOpts{Context: ctx}, a.txOpts.From, a.rollupAddr)
 	if err != nil {
 		return err
 	}
-	chalManagerAllowance, err := erc20.Allowance(opts, a.txOpts.From, a.chalManagerAddr)
+	chalManagerAllowance, err := erc20.Allowance(&bind.CallOpts{Context: ctx}, a.txOpts.From, a.chalManagerAddr)
 	if err != nil {
 		return err
 	}

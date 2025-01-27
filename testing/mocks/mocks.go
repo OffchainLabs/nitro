@@ -557,7 +557,7 @@ func (m *MockProtocol) IsStaked(ctx context.Context) (bool, error) {
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockProtocol) Deposit(
+func (m *MockProtocol) AutoDepositTokenForStaking(
 	ctx context.Context,
 	amount *big.Int,
 ) error {

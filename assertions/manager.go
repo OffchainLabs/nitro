@@ -286,7 +286,7 @@ func (m *Manager) Start(ctx context.Context) {
 				if err2 != nil {
 					return false, err2
 				}
-				if err2 := m.chain.Deposit(ctx, latestConfirmedInfo.RequiredStake); err2 != nil {
+				if err2 := m.chain.AutoDepositTokenForStaking(ctx, latestConfirmedInfo.RequiredStake); err2 != nil {
 					return false, err2
 				}
 				return true, nil
