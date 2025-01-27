@@ -348,6 +348,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	if msg.SequenceNumber > roundInfo.sequence {
 		if seqConfig.Timeboost.MaxQueuedTxCount != 0 &&
 			// Pending msgs count=(total msgs present in the map)-(number of processed messages=roundInfo.Sequence)
+			// #nosec G115
 			len(roundInfo.msgAndResultBySequenceNumber)-int(roundInfo.sequence) >= seqConfig.Timeboost.MaxQueuedTxCount {
 			return fmt.Errorf("reached limit for queuing of future sequence number transactions, please try again with the correct sequence number. Limit: %d, Current sequence number: %d", seqConfig.Timeboost.MaxQueuedTxCount, roundInfo.sequence)
 		}
