@@ -177,7 +177,6 @@ type BlockValidatorDangerousConfig struct {
 }
 
 type RevalidationConfig struct {
-	Enable     bool   `koanf:"enable"`
 	StartBlock uint64 `koanf:"start-block"`
 }
 
@@ -207,7 +206,6 @@ func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func RevalidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultRevalidationConfig.Enable, "enable re-validation")
 	f.Uint64(prefix+".start-block", DefaultBlockValidatorDangerousConfig.Revalidation.StartBlock, "start re-validation from this block")
 }
 
@@ -253,7 +251,6 @@ var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
 }
 
 var DefaultRevalidationConfig = RevalidationConfig{
-	Enable:     false,
 	StartBlock: 0,
 }
 
@@ -343,7 +340,7 @@ func NewBlockValidator(
 			PosInBatch: 0,
 		}
 	}
-	if config().Dangerous.Revalidation.Enable && config().Dangerous.Revalidation.StartBlock > 0 {
+	if config().Dangerous.Revalidation.StartBlock > 0 {
 		startBlock := config().Dangerous.Revalidation.StartBlock
 		messageCount, err := inbox.GetBatchMessageCount(startBlock - 1)
 		if err != nil {
