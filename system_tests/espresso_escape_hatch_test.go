@@ -19,7 +19,7 @@ func TestEspressoEscapeHatch(t *testing.T) {
 
 	// Disabling the delayed sequencer helps up check the
 	// message count easily
-	builder, cleanup := createL1AndL2Node(ctx, t, false)
+	builder, cleanup := createL1AndL2Node(ctx, t, false, "")
 	defer cleanup()
 
 	err := waitForL1Node(ctx)

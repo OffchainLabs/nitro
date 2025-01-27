@@ -516,6 +516,11 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockHash(seqNum arbutil.
 	return &msgWithBlockHash, nil
 }
 
+// A public function used by testing
+func (s *TransactionStreamer) GetMessageWithMetadataAndBlockHash(t *testing.T, seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadataAndBlockHash, error) {
+	return s.getMessageWithMetadataAndBlockHash(seqNum)
+}
+
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
 func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 	posBytes, err := s.db.Get(messageCountKey)

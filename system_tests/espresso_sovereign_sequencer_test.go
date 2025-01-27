@@ -16,6 +16,7 @@ func createL1AndL2Node(
 	ctx context.Context,
 	t *testing.T,
 	delayedSequencer bool,
+	extraFeedInput string,
 ) (*NodeBuilder, func()) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.useL1StackConfig = true // Do not overwrite the L1 stack config when building
@@ -42,8 +43,6 @@ func createL1AndL2Node(
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
-	builder.nodeConfig.DelayedSequencer.Enable = delayedSequencer
-	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
 
 	// sequencer config
 	builder.nodeConfig.Sequencer = true
@@ -52,6 +51,12 @@ func createL1AndL2Node(
 	builder.execConfig.Sequencer.Enable = true
 	builder.execConfig.Caching.StateScheme = "hash"
 	builder.execConfig.Caching.Archive = true
+	builder.nodeConfig.DelayedSequencer.Enable = delayedSequencer
+	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+
+	if extraFeedInput != "" {
+		builder.nodeConfig.Feed.Input.URL = []string{extraFeedInput}
+	}
 
 	cleanup := builder.Build(t)
 
@@ -70,7 +75,7 @@ func TestEspressoSovereignSequencer(t *testing.T) {
 	valNodeCleanup := createValidationNode(ctx, t, true)
 	defer valNodeCleanup()
 
-	builder, cleanup := createL1AndL2Node(ctx, t, true)
+	builder, cleanup := createL1AndL2Node(ctx, t, true, "")
 	defer cleanup()
 
 	err := waitForL1Node(ctx)

@@ -182,7 +182,7 @@ func TestEspressoE2E(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup := createL1AndL2Node(ctx, t, true)
+	builder, cleanup := createL1AndL2Node(ctx, t, true, "")
 	defer cleanup()
 
 	err := waitForL1Node(ctx)
