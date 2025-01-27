@@ -4,6 +4,7 @@
 package gethexec
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -344,13 +345,21 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	}
 	roundInfo, _ := es.roundInfo.Get(msg.Round)
 
+	prev, exists := roundInfo.msgAndResultBySequenceNumber[msg.SequenceNumber]
+
 	// Check if the submission nonce is too low.
 	if msg.SequenceNumber < roundInfo.sequence {
+		if exists && bytes.Equal(prev.msg.Signature, msg.Signature) {
+			return nil
+		}
 		return timeboost.ErrSequenceNumberTooLow
 	}
 
 	// Check if a duplicate submission exists already, and reject if so.
-	if _, exists := roundInfo.msgAndResultBySequenceNumber[msg.SequenceNumber]; exists {
+	if exists {
+		if bytes.Equal(prev.msg.Signature, msg.Signature) {
+			return nil
+		}
 		return timeboost.ErrDuplicateSequenceNumber
 	}
 
@@ -359,7 +368,9 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	// Log an informational warning if the message's sequence number is in the future.
 	if msg.SequenceNumber > roundInfo.sequence {
 		if seqConfig.Timeboost.MaxQueuedTxCount != 0 &&
-			len(roundInfo.msgAndResultBySequenceNumber) >= seqConfig.Timeboost.MaxQueuedTxCount {
+			// Pending msgs count=(total msgs present in the map)-(number of processed messages=roundInfo.Sequence)
+			// #nosec G115
+			len(roundInfo.msgAndResultBySequenceNumber)-int(roundInfo.sequence) >= seqConfig.Timeboost.MaxQueuedTxCount {
 			return fmt.Errorf("reached limit for queuing of future sequence number transactions, please try again with the correct sequence number. Limit: %d, Current sequence number: %d", seqConfig.Timeboost.MaxQueuedTxCount, roundInfo.sequence)
 		}
 		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
@@ -386,7 +397,6 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		if !exists {
 			break
 		}
-		delete(roundInfo.msgAndResultBySequenceNumber, nextMsgAndResult.msg.SequenceNumber)
 		// Queued txs cannot use this message's context as it would lead to context canceled error once the result for this message is available and returned
 		// Hence using es.GetContext() allows unblocking of queued up txs even if current tx's context has errored out
 		var queueCtx context.Context

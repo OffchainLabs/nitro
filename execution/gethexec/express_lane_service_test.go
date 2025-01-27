@@ -323,18 +323,19 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
-	msg := buildValidSubmissionWithSeqAndTx(t, 0, 2, types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}))
+	msg1 := buildValidSubmissionWithSeqAndTx(t, 0, 2, types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}))
+	msg2 := buildValidSubmissionWithSeqAndTx(t, 0, 2, types.NewTx(&types.DynamicFeeTx{Data: []byte{2}}))
 	var wg sync.WaitGroup
 	wg.Add(3) // We expect only of the below two to return with an error here
 	var err1, err2 error
 	go func(w *sync.WaitGroup) {
 		w.Done()
-		err1 = els.sequenceExpressLaneSubmission(ctx, msg)
+		err1 = els.sequenceExpressLaneSubmission(ctx, msg1)
 		wg.Done()
 	}(&wg)
 	go func(w *sync.WaitGroup) {
 		w.Done()
-		err2 = els.sequenceExpressLaneSubmission(ctx, msg)
+		err2 = els.sequenceExpressLaneSubmission(ctx, msg2)
 		wg.Done()
 	}(&wg)
 	wg.Wait()
@@ -396,7 +397,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
 	els.roundInfoMutex.Lock()
 	roundInfo, _ := els.roundInfo.Get(0)
-	require.Equal(t, 3, len(roundInfo.msgAndResultBySequenceNumber)) // Processed txs are deleted
+	require.Equal(t, 5, len(roundInfo.msgAndResultBySequenceNumber))
 	els.roundInfoMutex.Unlock()
 
 	wg.Add(2) // 4 & 5 should be able to get in after 3 so we add a delta of 2
@@ -404,11 +405,6 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	require.NoError(t, err)
 	wg.Wait()
 	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
-
-	els.roundInfoMutex.Lock()
-	roundInfo, _ = els.roundInfo.Get(0)
-	require.Equal(t, 1, len(roundInfo.msgAndResultBySequenceNumber)) // Tx with seq num 10 should still be present
-	els.roundInfoMutex.Unlock()
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.T) {
