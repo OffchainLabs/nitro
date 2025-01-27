@@ -293,6 +293,13 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 	})
 }
 
+func (es *expressLaneService) StopAndWait() {
+	es.StopWaiter.StopAndWait()
+	if es.redisCoordinator != nil {
+		es.redisCoordinator.StopAndWait()
+	}
+}
+
 func (es *expressLaneService) currentRoundHasController() bool {
 	controller, ok := es.roundControl.Load(es.roundTimingInfo.RoundNumber())
 	if !ok {
@@ -472,25 +479,21 @@ func (es *expressLaneService) syncFromRedis() {
 		return
 	}
 
-	es.roundInfoMutex.Lock()
 	currentRound := es.roundTimingInfo.RoundNumber()
-
-	// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
-	if !es.roundInfo.Contains(currentRound) {
-		es.roundInfo.Add(currentRound, &expressLaneRoundInfo{
-			0,
-			make(map[uint64]*msgAndResult),
-		})
-	}
-	roundInfo, _ := es.roundInfo.Get(currentRound)
-
 	redisSeqCount, err := es.redisCoordinator.GetSequenceCount(currentRound)
 	if err != nil {
 		log.Error("error fetching current round's global sequence count from redis", "err", err)
-	} else if redisSeqCount > roundInfo.sequence {
-		roundInfo.sequence = redisSeqCount
 	}
 
+	es.roundInfoMutex.Lock()
+	roundInfo, exists := es.roundInfo.Get(currentRound)
+	if !exists {
+		// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
+		roundInfo = &expressLaneRoundInfo{0, make(map[uint64]*msgAndResult)}
+	}
+	if redisSeqCount > roundInfo.sequence {
+		roundInfo.sequence = redisSeqCount
+	}
 	es.roundInfo.Add(currentRound, roundInfo)
 	es.roundInfoMutex.Unlock()
 

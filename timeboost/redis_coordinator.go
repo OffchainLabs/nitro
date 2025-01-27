@@ -121,7 +121,7 @@ func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum uint64) []*Express
 		for _, key := range keys {
 			seq, err := strconv.Atoi(strings.TrimPrefix(key, prefix))
 			if err != nil {
-				log.Error("")
+				log.Error("Error getting sequence number from the redis key of accepted timeboost Tx", "key", key, "error", err)
 				continue
 			}
 			// #nosec G115

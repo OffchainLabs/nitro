@@ -45,6 +45,12 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		t.Fatalf("error setting round number and sequence count: %v", err)
 	}
 	checkSeqCountInRedis(3)
+	round = 1
+	err = redisCoordinator.UpdateSequenceCount(round, 4) // shouldn't succeed as the sequence count is a lower value
+	if err != nil {
+		t.Fatalf("error setting round number and sequence count: %v", err)
+	}
+	checkSeqCountInRedis(4)
 
 	// Test adding and retrieval of expressLane messages
 	var addedMsgs []*ExpressLaneSubmission
