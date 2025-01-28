@@ -289,6 +289,17 @@ type DBConfig struct {
 	Pebble    PebbleConfig `koanf:"pebble"`
 }
 
+// TODO we probably don't need this, adding if for now to make lint happy
+var DBConfigDefault = DBConfig{
+	Data:      "",
+	Ancient:   PersistentConfigDefault.Ancient,
+	DBEngine:  PersistentConfigDefault.DBEngine,
+	Cache:     2048,
+	Handles:   PersistentConfigDefault.Handles,
+	Namespace: "",
+	Pebble:    PersistentConfigDefault.Pebble,
+}
+
 func DBConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *DBConfig) {
 	f.String(prefix+".data", defaultConfig.Data, "directory of stored chain state")
 	f.String(prefix+".ancient", defaultConfig.Ancient, "directory of ancient where the chain freezer can be opened")
