@@ -881,7 +881,7 @@ func makeBoldBatch(
 		if i == divergeAtIndex {
 			value++
 		}
-		err := writeTxToBatchBold(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
+		err := writeTxToBatchBold(batchBuffer, l2Info.PrepareTx("Owner", "Faucet", 1000000, big.NewInt(value), []byte{}))
 		Require(t, err)
 	}
 	compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
