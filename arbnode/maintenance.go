@@ -171,7 +171,7 @@ func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durat
 }
 
 func (mr *MaintenanceRunner) runMaintenance() {
-	log.Info("Compacting databases (this may take a while...)")
+	log.Info("Compacting databases and flushing triedb to disk (this may take a while...)")
 	results := make(chan error, len(mr.dbs))
 	expected := 0
 	for _, db := range mr.dbs {
@@ -191,5 +191,5 @@ func (mr *MaintenanceRunner) runMaintenance() {
 			log.Warn("maintenance error", "err", err)
 		}
 	}
-	log.Info("Done compacting databases")
+	log.Info("Done compacting databases and flushing triedb to disk")
 }
