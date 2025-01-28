@@ -120,7 +120,12 @@ func TestPrestateTracingSimple(t *testing.T) {
 	gas := arbmath.BigMulByUint(receipt.EffectiveGasPrice, receipt.GasUsed)
 	expBalance = arbmath.BigSub(expBalance, gas)
 	if !arbmath.BigEquals(result.Post[sender].Balance.ToInt(), expBalance) {
-		Fatal(t, "Unexpected final balance of sender ", "expected: ", expBalance, " got: ", result.Post[sender].Balance.ToInt(), " diff: ", arbmath.BigSub(result.Post[sender].Balance.ToInt(), expBalance), " gas: ", receipt.GasUsed)
+		Fatal(t, "Unexpected final balance of sender")
+	}
+	onchain, err := builder.L2.Client.BalanceAt(ctx, sender, receipt.BlockNumber)
+	Require(t, err)
+	if !arbmath.BigEquals(result.Post[sender].Balance.ToInt(), onchain) {
+		Fatal(t, "Final balance of sender does not fit chain")
 	}
 	if !arbmath.BigEquals(result.Post[receiver].Balance.ToInt(), value) {
 		Fatal(t, "Unexpected final balance of receiver")
