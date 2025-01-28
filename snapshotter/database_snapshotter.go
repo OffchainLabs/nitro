@@ -70,6 +70,10 @@ func (s *DatabaseSnapshotter) findLastAvailableStateRoot(ctx context.Context, tr
 }
 
 func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, header *types.Header) error {
+	if err := s.exporter.Open(); err != nil {
+		return fmt.Errorf("failed to open blockchain exporter: %w", err)
+	}
+
 	threads := s.config.Threads
 	results := make(chan error, threads)
 	for i := 0; i < threads; i++ {

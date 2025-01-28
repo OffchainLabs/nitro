@@ -77,12 +77,36 @@ func NewGethDatabaseExporter(config *GethDatabaseExporterConfig) *GethDatabaseEx
 }
 
 func (e *GethDatabaseExporter) Open() error {
-	// TODO open e.db
+	if e.opened {
+		return errors.New("already opened")
+	}
+	db, err := rawdb.Open(rawdb.OpenOptions{
+		Type:               e.config.Output.DBEngine,
+		Directory:          e.config.Output.Data,
+		AncientsDirectory:  e.config.Output.Ancient,
+		Namespace:          e.config.Output.Namespace,
+		Cache:              e.config.Output.Cache,
+		Handles:            e.config.Output.Handles,
+		ReadOnly:           false,
+		PebbleExtraOptions: e.config.Output.Pebble.ExtraOptions(e.config.Output.Namespace),
+	})
+	if err != nil {
+		return err
+	}
+	if err := dbutil.UnfinishedConversionCheck(db); err != nil {
+		if closeErr := db.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+		return err
+	}
+	e.db = db
 	return nil
 }
 
 func (e *GethDatabaseExporter) Close() error {
-	// TODO close e.db
+	if err := e.db.Close(); err != nil {
+		return err
+	}
 	e.opened = false
 	return nil
 }
