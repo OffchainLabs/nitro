@@ -2,13 +2,16 @@ package snapshotter
 
 import (
 	"errors"
-	"flag"
 	"fmt"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+
 	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/util/dbutil"
 )
 
 type BlockChainExporter interface {
@@ -49,13 +52,13 @@ var OutputConfigDefault = conf.DBConfig{
 	Pebble:    conf.PebbleConfigDefault,
 }
 
-var GethDatabaseExporterConfigDefault = conf.GethDatabaseExporter{
+var GethDatabaseExporterConfigDefault = GethDatabaseExporterConfig{
 	Output:         OutputConfigDefault,
 	IdealBatchSize: 100 * 1024 * 1024, // 100 MB, TODO: figure out reasonable default, 100MB is used by dbconv, 100k is used by geth
 }
 
 func GethDatabaseExporterConfigAddOptions(f *flag.FlagSet) {
-	conf.DBConfigAddOptions("output", f, &DefaultGethDatabaseExporterConfig.Output)
+	conf.DBConfigAddOptions("output", f, &GethDatabaseExporterConfigDefault.Output)
 }
 
 // GethDatabaseExporter is not thread safe

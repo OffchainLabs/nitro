@@ -22,7 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-type DatababseSnapshotterConfig struct {
+type DatabaseSnapshotterConfig struct {
 	TrieCleanLimit int `koanf:"trie-clean-limit"`
 	Threads        int `koanf:"threads"`
 }
@@ -30,7 +30,7 @@ type DatababseSnapshotterConfig struct {
 type DatabaseSnapshotter struct {
 	stopwaiter.StopWaiter
 
-	config *DatababseSnapshotterConfig
+	config *DatabaseSnapshotterConfig
 
 	db       ethdb.Database
 	bc       *core.BlockChain
