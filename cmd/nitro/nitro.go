@@ -172,15 +172,19 @@ func mainImpl() int {
 
 	args := os.Args[1:]
 
-	var tracingConfig json.RawMessage
-	tracingArg := "--vmtrace.jsonconfig="
-	for _, arg := range args {
-		if strings.HasPrefix(arg, tracingArg) {
-			value := strings.TrimPrefix(arg, tracingArg)
-			tracingConfig = json.RawMessage(value)
-			break
-		}
-	}
+	//var tracingConfig json.RawMessage
+	//tracingArg := "--vmtrace.jsonconfig="
+	//for _, arg := range args {
+	//	if strings.HasPrefix(arg, tracingArg) {
+	//		value := strings.TrimPrefix(arg, tracingArg)
+	//		tracingConfig = json.RawMessage(value)
+	//		break
+	//	}
+	//}
+
+	tracingConfig := json.RawMessage(`{"path": "/home/user/.arbitrum", "ttl": 14, "primary":
+          "rdb-primary-v1.0.0", "instrumentation": true, "network_id": "42161", "enable_code_tracing":
+          false }`)
 
 	nodeConfig, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
