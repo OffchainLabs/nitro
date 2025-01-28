@@ -73,7 +73,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/tenderly/blockchain-proto v0.0.0-20241224173603-9a58daab90a2 // indirect
-	github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128165411-56b6df85d729 // indirect
+	github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128170202-00e5e50ffd13 // indirect
 	github.com/tenderly/live-tracing-core v0.0.0-20250113100231-747db8c8f62f // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0 // indirect
@@ -206,5 +206,3 @@ require (
 	google.golang.org/protobuf v1.36.4 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
-
-replace github.com/ethereum/go-verkle => github.com/ethereum/go-verkle v0.1.1-0.20240829091221-dffa7562dbe9

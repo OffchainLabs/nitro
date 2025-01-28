@@ -530,6 +530,8 @@ github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128155542-33801fcde5f7 h1:a
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128155542-33801fcde5f7/go.mod h1:LjT+91T2qG9n2TiVmVrNFs605Zudi1eXXNo9AvTkMdY=
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128165411-56b6df85d729 h1:0VVTqG80QexwoRJp1IrboDdhrvgsZ947XXZn/faZSuA=
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128165411-56b6df85d729/go.mod h1:OdN0wSk6ZZRAp8bFp6HWMaSbGeNXEgwLHrSZbKn0A+U=
+github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128170202-00e5e50ffd13 h1:Cfye4qVCen/Xxb5pFiQBxVxoKzP8MHlEhdL4EBh22Z8=
+github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128170202-00e5e50ffd13/go.mod h1:PyGMDIUDdYf7XuHz0Iw4HcczE28IcHgu9iTnzb9AUo8=
 github.com/tenderly/live-tracing-core v0.0.0-20250113100231-747db8c8f62f h1:+4IDRhAeG0fIJpWEMQZzFIwxgY+fIe3qlVaH4qe9zFU=
 github.com/tenderly/live-tracing-core v0.0.0-20250113100231-747db8c8f62f/go.mod h1:cmAJtb3Obtu3JVCKgEoO+GX2byn1kBn3+3f1Eg9UOJQ=
 github.com/tklauser/go-sysconf v0.3.12 h1:0QaGUFOdQaIVdPgfITYzaTegZvdCjmYO52cSFAEVmqU=
