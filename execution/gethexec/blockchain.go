@@ -25,6 +25,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/statetransfer"
+
+	"github.com/tenderly/live-tracer-arbitrum/live"
 )
 
 type CachingConfig struct {
@@ -214,14 +216,14 @@ func GetBlockChain(
 		IsSequencer: true,
 	}
 
-	//tenderlyTracerHooks, err := live.NewTenderlyTracerHooks(tracingConfig)
-	//if err != nil {
-	//	return nil, err
-	//}
+	tenderlyTracerHooks, err := live.NewTenderlyTracerHooks(tracingConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	vmConfig := vm.Config{
 		EnablePreimageRecording: false,
-		//Tracer:                  tenderlyTracerHooks,
+		Tracer:                  tenderlyTracerHooks,
 	}
 
 	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
