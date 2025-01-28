@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -483,6 +484,11 @@ func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) (arbutil.Mess
 }
 
 func (n *ExecutionNode) Maintenance() error {
+	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
+	err := n.ExecEngine.Maintenance(trieCapLimitBytes)
+	if err != nil {
+		return err
+	}
 	return n.ChainDB.Compact(nil, nil)
 }
 

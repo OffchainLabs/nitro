@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
 var testPriv, testPriv2 *ecdsa.PrivateKey
@@ -306,29 +307,35 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
 		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
 	}
+	var err error
+	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els.roundTimingInfo.Round)
+	require.NoError(t, err)
+	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
-	msg := buildValidSubmissionWithSeqAndTx(t, 0, 2, types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}))
+	msg1 := buildValidSubmissionWithSeqAndTx(t, 0, 2, types.NewTx(&types.DynamicFeeTx{Data: []byte{1}}))
+	msg2 := buildValidSubmissionWithSeqAndTx(t, 0, 2, types.NewTx(&types.DynamicFeeTx{Data: []byte{2}}))
 	var wg sync.WaitGroup
 	wg.Add(3) // We expect only of the below two to return with an error here
 	var err1, err2 error
 	go func(w *sync.WaitGroup) {
 		w.Done()
-		err1 = els.sequenceExpressLaneSubmission(ctx, msg)
+		err1 = els.sequenceExpressLaneSubmission(ctx, msg1)
 		wg.Done()
 	}(&wg)
 	go func(w *sync.WaitGroup) {
 		w.Done()
-		err2 = els.sequenceExpressLaneSubmission(ctx, msg)
+		err2 = els.sequenceExpressLaneSubmission(ctx, msg2)
 		wg.Done()
 	}(&wg)
 	wg.Wait()
@@ -346,11 +353,16 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
 		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
 	}
+	var err error
+	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els.roundTimingInfo.Round)
+	require.NoError(t, err)
+	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
@@ -385,29 +397,29 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	require.Equal(t, 2, len(stubPublisher.publishedTxOrder))
 	els.roundInfoMutex.Lock()
 	roundInfo, _ := els.roundInfo.Get(0)
-	require.Equal(t, 3, len(roundInfo.msgAndResultBySequenceNumber)) // Processed txs are deleted
+	require.Equal(t, 5, len(roundInfo.msgAndResultBySequenceNumber))
 	els.roundInfoMutex.Unlock()
 
 	wg.Add(2) // 4 & 5 should be able to get in after 3 so we add a delta of 2
-	err := els.sequenceExpressLaneSubmission(ctx, buildValidSubmissionWithSeqAndTx(t, 0, 3, emptyTx))
+	err = els.sequenceExpressLaneSubmission(ctx, buildValidSubmissionWithSeqAndTx(t, 0, 3, emptyTx))
 	require.NoError(t, err)
 	wg.Wait()
 	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
-
-	els.roundInfoMutex.Lock()
-	roundInfo, _ = els.roundInfo.Get(0)
-	require.Equal(t, 1, len(roundInfo.msgAndResultBySequenceNumber)) // Tx with seq num 10 should still be present
-	els.roundInfoMutex.Unlock()
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
 		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
 	}
+	var err error
+	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els.roundTimingInfo.Round)
+	require.NoError(t, err)
+	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
 	els.StopWaiter.Start(ctx, els)
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
@@ -433,6 +445,103 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	// One tx out of the four should have failed, so we should have only published 3.
 	// Since sequence number 2 failed after submission stage, that nonce is used up
 	require.Equal(t, 3, len(stubPublisher.publishedTxOrder))
+}
+
+func Test_expressLaneService_syncFromRedis(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
+	els1 := &expressLaneService{
+		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
+		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
+		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
+	}
+	var err error
+	els1.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els1.roundTimingInfo.Round)
+	require.NoError(t, err)
+	els1.redisCoordinator.Start(ctx)
+
+	els1.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*msgAndResult)})
+	els1.StopWaiter.Start(ctx, els1)
+	els1.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
+	stubPublisher1 := makeStubPublisher(els1)
+	els1.transactionPublisher = stubPublisher1
+
+	messages := []*timeboost.ExpressLaneSubmission{
+		buildValidSubmissionWithSeqAndTx(t, 0, 1, emptyTx),
+		buildValidSubmissionWithSeqAndTx(t, 0, 3, emptyTx),
+		buildValidSubmissionWithSeqAndTx(t, 0, 4, emptyTx),
+		buildValidSubmissionWithSeqAndTx(t, 0, 5, emptyTx),
+	}
+
+	// We launch 4 goroutines out of which 1 would return with a result hence we add a delta of 5
+	var wg sync.WaitGroup
+	wg.Add(5)
+	for _, msg := range messages {
+		go func(w *sync.WaitGroup) {
+			w.Done()
+			_ = els1.sequenceExpressLaneSubmission(ctx, msg)
+			if msg.SequenceNumber == 1 {
+				w.Done()
+			}
+		}(&wg)
+	}
+	wg.Wait()
+
+	// Only one tx out of the three should have been processed
+	require.Equal(t, 1, len(stubPublisher1.publishedTxOrder))
+
+	time.Sleep(time.Second) // wait for parallel redis update threads to complete
+
+	els2 := &expressLaneService{
+		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
+		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
+		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
+	}
+	els2.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els2.roundTimingInfo.Round)
+	require.NoError(t, err)
+	els2.redisCoordinator.Start(ctx)
+
+	els2.StopWaiter.Start(ctx, els1)
+	els2.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
+	stubPublisher2 := makeStubPublisher(els2)
+	els2.transactionPublisher = stubPublisher2
+
+	// As els2 becomes an active sequencer, syncFromRedis would be called when Activate() function of sequencer is invoked
+	els2.syncFromRedis()
+	time.Sleep(time.Second) // wait for parallel sequencing of redis txs to complete
+
+	els2.roundInfoMutex.Lock()
+	roundInfo, exists := els2.roundInfo.Get(0)
+	if !exists {
+		t.Fatal("missing roundInfo")
+	}
+	if roundInfo.sequence != 2 {
+		t.Fatalf("round sequence count mismatch. Want: 2, Got: %d", roundInfo.sequence)
+	}
+	if len(roundInfo.msgAndResultBySequenceNumber) != 3 { // There should be three pending txs in msgAndResult map
+		t.Fatalf("number of future sequence txs mismatch. Want: 3, Got: %d", len(roundInfo.msgAndResultBySequenceNumber))
+	}
+	els2.roundInfoMutex.Unlock()
+
+	err = els2.sequenceExpressLaneSubmission(ctx, buildValidSubmissionWithSeqAndTx(t, 0, 2, emptyTx)) // Send an unblocking tx
+	require.NoError(t, err)
+
+	time.Sleep(time.Second) // wait for future seq num txs to be processed
+
+	// Check that all pending txs are sequenced
+	require.Equal(t, 4, len(stubPublisher2.publishedTxOrder))
+
+	// Check final state of roundInfo
+	els2.roundInfoMutex.Lock()
+	roundInfo, exists = els2.roundInfo.Get(0)
+	if !exists {
+		t.Fatal("missing roundInfo")
+	}
+	if roundInfo.sequence != 6 {
+		t.Fatalf("round sequence count mismatch. Want: 6, Got: %d", roundInfo.sequence)
+	}
+	els2.roundInfoMutex.Unlock()
 }
 
 func TestIsWithinAuctionCloseWindow(t *testing.T) {
