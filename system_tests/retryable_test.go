@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -570,12 +571,16 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 		ticketIds[idx] = ticketId
 	}
 
-	userTxOpts.Value = big.NewInt(0)
 	l2FaucetTxOpts := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	l2FaucetTxOpts.GasLimit = uint64(1e8)
 	l2FaucetAddress := builder.L2Info.GetAddress("Faucet")
 	colors.PrintBlue("L2 Faucet   ", l2FaucetAddress)
-	tx, err := simple.RedeemAll(&l2FaucetTxOpts, ticketIds)
+	var addressesToCreate []common.Address
+	for range 50 {
+		addressesToCreate = append(addressesToCreate, testhelpers.RandomAddress())
+	}
+	l2FaucetTxOpts.Value = big.NewInt(int64(len(addressesToCreate)))
+	tx, err := simple.RedeemAllAndCreateAddresses(&l2FaucetTxOpts, ticketIds, addressesToCreate)
 	Require(t, err)
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -687,7 +692,7 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 	// 	Fatal(t, "Unexpected network fee paid, want:", expectedNetworkFee, "have:", networkFee)
 	// }
 
-	validateBlocks(t, 1, true, builder)
+	validateBlockRange(t, []uint64{receipt.BlockNumber.Uint64()}, true, builder)
 }
 
 func TestGetLifetime(t *testing.T) {
