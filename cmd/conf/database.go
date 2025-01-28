@@ -278,3 +278,23 @@ func (c *PebbleConfig) ExtraOptions(namespace string) *pebble.ExtraOptions {
 		Levels: levels,
 	}
 }
+
+type DBConfig struct {
+	Data      string       `koanf:"data"`
+	Ancient   string       `koanf:"ancient"`
+	DBEngine  string       `koanf:"db-engine"`
+	Handles   int          `koanf:"handles"`
+	Cache     int          `koanf:"cache"`
+	Namespace string       `koanf:"namespace"`
+	Pebble    PebbleConfig `koanf:"pebble"`
+}
+
+func DBConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *DBConfig) {
+	f.String(prefix+".data", defaultConfig.Data, "directory of stored chain state")
+	f.String(prefix+".ancient", defaultConfig.Ancient, "directory of ancient where the chain freezer can be opened")
+	f.String(prefix+".db-engine", defaultConfig.DBEngine, "backing database implementation to use ('leveldb' or 'pebble')")
+	f.Int(prefix+".handles", defaultConfig.Handles, "number of files to be open simultaneously")
+	f.Int(prefix+".cache", defaultConfig.Cache, "the capacity(in megabytes) of the data caching")
+	f.String(prefix+".namespace", defaultConfig.Namespace, "metrics namespace")
+	PebbleConfigAddOptions(prefix+".pebble", f, &defaultConfig.Pebble)
+}
