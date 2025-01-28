@@ -172,7 +172,12 @@ func (c *BlockValidatorConfig) Validate() error {
 }
 
 type BlockValidatorDangerousConfig struct {
-	ResetBlockValidation bool `koanf:"reset-block-validation"`
+	ResetBlockValidation bool               `koanf:"reset-block-validation"`
+	Revalidation         RevalidationConfig `koanf:"re-validation"`
+}
+
+type RevalidationConfig struct {
+	StartBlock uint64 `koanf:"start-block"`
 }
 
 type BlockValidatorConfigFetcher func() *BlockValidatorConfig
@@ -197,6 +202,11 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
+	RevalidationConfigAddOptions(prefix+".re-validation", f)
+}
+
+func RevalidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Uint64(prefix+".start-block", DefaultBlockValidatorDangerousConfig.Revalidation.StartBlock, "start re-validation from this block")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
@@ -237,6 +247,11 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
 	ResetBlockValidation: false,
+	Revalidation:         DefaultRevalidationConfig,
+}
+
+var DefaultRevalidationConfig = RevalidationConfig{
+	StartBlock: 0,
 }
 
 type valStatusField uint32
@@ -323,6 +338,27 @@ func NewBlockValidator(
 			SendRoot:   genesis.SendRoot,
 			Batch:      1,
 			PosInBatch: 0,
+		}
+	}
+	if config().Dangerous.Revalidation.StartBlock > 0 {
+		startBlock := config().Dangerous.Revalidation.StartBlock
+		messageCount, err := inbox.GetBatchMessageCount(startBlock - 1)
+		if err != nil {
+			return nil, err
+		}
+		res, err := streamer.ResultAtCount(messageCount)
+		if err != nil {
+			return nil, err
+		}
+		gs := validator.GoGlobalState{
+			BlockHash:  res.BlockHash,
+			SendRoot:   res.SendRoot,
+			Batch:      startBlock,
+			PosInBatch: 0,
+		}
+		err = ret.writeLastValidated(gs, nil)
+		if err != nil {
+			return nil, err
 		}
 	}
 	streamer.SetBlockValidator(ret)
