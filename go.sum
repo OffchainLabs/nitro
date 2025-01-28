@@ -493,10 +493,6 @@ github.com/supranational/blst v0.3.11 h1:LyU6FolezeWAhvQk0k6O/d49jqgO52MSDDfYgbe
 github.com/supranational/blst v0.3.11/go.mod h1:jZJtfjgudtNl4en1tzwPIV3KjUnQUvG3/j+w+fVonLw=
 github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 h1:epCh84lMvA70Z7CTTCmYQn2CKbY8j86K7/FAIr141uY=
 github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7/go.mod h1:q4W45IWZaF22tdD+VEXcAWRA037jwmWEB5VWYORlTpc=
-github.com/tenderly/blockchain-proto v0.0.0-20241224173603-9a58daab90a2 h1:VoazcbSD8A/3eepYLxpS4+Z2Ug7cSe9/sbI+z7Sh/Eg=
-github.com/tenderly/blockchain-proto v0.0.0-20241224173603-9a58daab90a2/go.mod h1:yp/IkDpq4o6eeWNYPIsSwRUEqNGNV8NIZG1Eot2fZ3s=
-github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128173004-206243db9213 h1:J+p9nTVwBRk3ZfjXLiQNVeLAg+CV9DEx8N0TeQjdXNo=
-github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128173004-206243db9213/go.mod h1:KxiL5AhoTvzjOLZUzvvIZzTS4OKEDuLSu+m/F6iFdog=
 github.com/tklauser/go-sysconf v0.3.12 h1:0QaGUFOdQaIVdPgfITYzaTegZvdCjmYO52cSFAEVmqU=
 github.com/tklauser/go-sysconf v0.3.12/go.mod h1:Ho14jnntGE1fpdOqQEEaiKRpvIavV0hSfmBq8nJbHYI=
 github.com/tklauser/numcpus v0.6.1 h1:ng9scYS7az0Bk4OZLvrNXNSAO2Pxr1XXRAPyjhIx+Fk=
