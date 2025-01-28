@@ -6,6 +6,9 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/execution"
 )
 
@@ -121,4 +124,16 @@ func (s *SyncMonitor) Synced() bool {
 
 func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
 	s.consensus = consensus
+}
+
+func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetadata, error) {
+	count, err := s.exec.BlockNumberToMessageIndex(blockNum)
+	if err != nil {
+		return nil, err
+	}
+	if s.consensus != nil {
+		return s.consensus.BlockMetadataAtCount(count + 1)
+	}
+	log.Debug("FullConsensusClient is not accessible to execution, BlockMetadataByNumber will return nil")
+	return nil, nil
 }
