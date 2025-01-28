@@ -141,10 +141,12 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 		} else {
 			err = arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 		}
+		if err != nil {
+			log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
+		}
 		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
 			return err
 		}
-		log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
 	}
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
@@ -157,10 +159,12 @@ func (f *TxForwarder) PublishExpressLaneTransaction(inctx context.Context, msg *
 	defer cancelFunc()
 	for pos, rpcClient := range f.rpcClients {
 		err := sendExpressLaneTransactionRPC(ctx, rpcClient, msg)
+		if err != nil {
+			log.Warn("error forwarding express lane transaction to a backup target", "target", f.targets[pos], "err", err)
+		}
 		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
 			return err
 		}
-		log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
 	}
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
@@ -181,10 +185,12 @@ func (f *TxForwarder) PublishAuctionResolutionTransaction(inctx context.Context,
 	defer cancelFunc()
 	for pos, rpcClient := range f.rpcClients {
 		err := sendAuctionResolutionTransactionRPC(ctx, rpcClient, tx)
+		if err != nil {
+			log.Warn("error forwarding auction resolution transaction to a backup target", "target", f.targets[pos], "err", err)
+		}
 		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
 			return err
 		}
-		log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
 	}
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
