@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/tenderly/live-tracer-arbitrum/live"
 	"math/big"
 	"time"
 
@@ -215,14 +214,14 @@ func GetBlockChain(
 		IsSequencer: true,
 	}
 
-	tenderlyTracerHooks, err := live.NewTenderlyTracerHooks(tracingConfig)
-	if err != nil {
-		return nil, err
-	}
+	//tenderlyTracerHooks, err := live.NewTenderlyTracerHooks(tracingConfig)
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	vmConfig := vm.Config{
 		EnablePreimageRecording: false,
-		Tracer:                  tenderlyTracerHooks,
+		//Tracer:                  tenderlyTracerHooks,
 	}
 
 	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
