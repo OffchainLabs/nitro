@@ -206,3 +206,5 @@ require (
 	google.golang.org/protobuf v1.36.4 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/ethereum/go-verkle => github.com/ethereum/go-verkle v0.1.1-0.20240829091221-dffa7562dbe9
