@@ -57,7 +57,7 @@ var GethDatabaseExporterConfigDefault = GethDatabaseExporterConfig{
 	IdealBatchSize: 100 * 1024 * 1024, // 100 MB, TODO: figure out reasonable default, 100MB is used by dbconv, 100k is used by geth
 }
 
-func GethDatabaseExporterConfigAddOptions(f *flag.FlagSet) {
+func GethDatabaseExporterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	conf.DBConfigAddOptions("output", f, &GethDatabaseExporterConfigDefault.Output)
 }
 

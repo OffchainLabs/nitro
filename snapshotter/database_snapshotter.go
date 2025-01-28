@@ -5,7 +5,13 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
+	"os/signal"
+	"runtime"
 	"sync/atomic"
+	"syscall"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -14,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/triedb"
@@ -23,8 +30,22 @@ import (
 )
 
 type DatabaseSnapshotterConfig struct {
-	TrieCleanLimit int `koanf:"trie-clean-limit"`
-	Threads        int `koanf:"threads"`
+	Enable         bool                       `koanf:"enable"`
+	TrieCleanLimit int                        `koanf:"trie-clean-limit"`
+	Threads        int                        `koanf:"threads"`
+	GethExporter   GethDatabaseExporterConfig `koanf:"geth-exporter"`
+}
+
+var DatabaseSnapshotterConfigDefault = DatabaseSnapshotterConfig{
+	Enable:       false,
+	Threads:      runtime.NumCPU(),
+	GethExporter: GethDatabaseExporterConfigDefault,
+}
+
+func DatabaseSnapshotterConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DatabaseSnapshotterConfigDefault.Enable, "enables database snapshotter")
+	f.Int(prefix+".threads", DatabaseSnapshotterConfigDefault.Threads, "the number of threads to use when traversing the tires")
+	GethDatabaseExporterConfigAddOptions(prefix+".geth-exporter", f)
 }
 
 type DatabaseSnapshotter struct {
@@ -36,23 +57,65 @@ type DatabaseSnapshotter struct {
 	bc       *core.BlockChain
 	exporter BlockChainExporter
 
-	snapshotTrigger chan struct{}
+	snapshotTrigger chan common.Hash
 }
 
-func CreateDatabaseSnapshotter(db ethdb.Database, bc *core.BlockChain, config *DatabaseSnapshotterConfig) *DatabaseSnapshotter {
+func CreateDatabaseSnapshotter(db ethdb.Database, bc *core.BlockChain, config *DatabaseSnapshotterConfig, snapshotTrigger chan common.Hash) *DatabaseSnapshotter {
 	return &DatabaseSnapshotter{
-		config: config,
-		db:     db,
-		bc:     bc,
+		config:          config,
+		db:              db,
+		bc:              bc,
+		exporter:        NewGethDatabaseExporter(&config.GethExporter),
+		snapshotTrigger: snapshotTrigger,
 	}
 }
 
 func (s *DatabaseSnapshotter) Start(ctx context.Context) {
 	s.StopWaiter.Start(ctx, s)
-	// TODO
+
+	sigusr2 := make(chan os.Signal, 1)
+	signal.Notify(sigusr2, syscall.SIGUSR2)
+
+	s.LaunchThread(func(ctx context.Context) {
+		for {
+			var blockHash common.Hash
+			select {
+			case <-ctx.Done():
+				return
+			case <-sigusr2:
+				if !s.config.Enable {
+					continue
+				}
+				log.Info("Database snapshot triggered by SIGUSR2")
+				blockHash = common.Hash{}
+			case blockHash = <-s.snapshotTrigger:
+				if !s.config.Enable {
+					log.Warn("Ignoring database snapshot trigger, snapshotter disabled", "blockHash", blockHash)
+					continue
+				}
+				log.Info("Database snapshot tiggered", "blockHash", blockHash)
+			}
+			if blockHash == (common.Hash{}) {
+				header := s.bc.CurrentHeader()
+				if header == nil {
+					log.Error("Aborting snapshot: failed to get current head header.")
+					continue
+				}
+				blockHash = header.Hash()
+			}
+			log.Info("Creating database snapshot", "blockHash", blockHash)
+			if err := s.CreateSnapshot(ctx, blockHash); err != nil {
+				log.Error("Database snapshot failed", "err", err)
+			}
+		}
+	})
 }
 
-func (s *DatabaseSnapshotter) findLastAvailableStateRoot(ctx context.Context, triedb *triedb.Database, header *types.Header) (common.Hash, error) {
+func (s *DatabaseSnapshotter) findLastAvailableState(ctx context.Context, triedb *triedb.Database, blockHash common.Hash) (*types.Header, error) {
+	header := s.bc.GetHeaderByHash(blockHash)
+	if header == nil {
+		return nil, fmt.Errorf("header not found for block hash: %v", blockHash)
+	}
 	stateDatabase := state.NewDatabaseWithNodeDB(s.db, triedb)
 	stateFor := func(header *types.Header) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
 		statedb, err := state.New(header.Root, stateDatabase, nil)
@@ -64,16 +127,20 @@ func (s *DatabaseSnapshotter) findLastAvailableStateRoot(ctx context.Context, tr
 	}
 	_, lastHeader, _, err := arbitrum.FindLastAvailableState(ctx, s.bc, stateFor, header, nil, 0)
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to find latest available state not newer then for block %v: %w", header.Number.Uint64(), err)
+		return nil, fmt.Errorf("failed to find latest available state not newer then for block %v (hash %v): %w", header.Number.Uint64(), header.Hash(), err)
 	}
-	return lastHeader.Root, nil
+	return lastHeader, nil
 }
 
-func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, header *types.Header) error {
+func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChainExporterBatch, header *types.Header) error {
+	// TODO
+	return nil
+}
+
+func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash common.Hash) error {
 	if err := s.exporter.Open(); err != nil {
 		return fmt.Errorf("failed to open blockchain exporter: %w", err)
 	}
-
 	threads := s.config.Threads
 	results := make(chan error, threads)
 	for i := 0; i < threads; i++ {
@@ -106,10 +173,19 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, header *types.
 		HashDB:    &hashConfig,
 	}
 	triedb := triedb.NewDatabase(s.db, trieConfig)
-	root, err := s.findLastAvailableStateRoot(ctx, triedb, header)
+	lastHeader, err := s.findLastAvailableState(ctx, triedb, blockHash)
 	if err != nil {
 		return err
 	}
+	err = <-results
+	if err != nil {
+		return err
+	}
+	header := lastHeader
+	startWorker(func(batch BlockChainExporterBatch) error {
+		return s.exportBlocks(ctx, batch, header)
+	})
+	root := lastHeader.Root
 	tr, err := trie.NewStateTrie(trie.StateTrieID(root), triedb)
 	if err != nil {
 		return fmt.Errorf("failed to open state trie, root: %v, err: %w", root, err)
