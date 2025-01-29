@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -72,9 +71,8 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
-	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, withForwardingSeq)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, withForwardingSeq)
 	seqB, seqClientB, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	seqA := forwarder.ConsensusNode
 	if !dueToCrash {
@@ -206,9 +204,8 @@ func TestForwardingExpressLaneTxs(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
-	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, withForwardingSeq)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, withForwardingSeq)
 	seqClient, seqInfo := builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 	defer cleanupForwarder()
@@ -252,9 +249,8 @@ func TestExpressLaneTransactionHandlingComplex(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
-	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0)
 	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
@@ -350,9 +346,8 @@ func TestExpressLaneTransactionHandling(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
-	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0)
 	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
@@ -944,9 +939,8 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
-	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0)
 	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
@@ -991,8 +985,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_Timeboo
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
-	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, feedListener, cleanupFeedListener := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath, withFeedListener)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, feedListener, cleanupFeedListener := setupExpressLaneAuction(t, tmpDir, ctx, withFeedListener)
 	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 	defer cleanupFeedListener()
@@ -1268,11 +1261,9 @@ func setupExpressLaneAuction(
 	t *testing.T,
 	dbDirPath string,
 	ctx context.Context,
-	jwtSecretPath string,
 	extraNodeTy extraNodeType,
 ) (common.Address, *timeboost.BidderClient, *timeboost.BidderClient, time.Duration, *NodeBuilder, func(), *TestClient, func()) {
 	seqPort := getRandomPort(t)
-	seqAuthPort := getRandomPort(t)
 	forwarderPort := getRandomPort(t)
 
 	nodeNames := []string{fmt.Sprintf("http://127.0.0.1:%d", seqPort), fmt.Sprintf("http://127.0.0.1:%d", forwarderPort)}
@@ -1282,10 +1273,7 @@ func setupExpressLaneAuction(
 	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builderSeq.l2StackConfig.HTTPHost = "localhost"
 	builderSeq.l2StackConfig.HTTPPort = seqPort
-	builderSeq.l2StackConfig.HTTPModules = []string{"eth", "arb", "debug", "timeboost"}
-	builderSeq.l2StackConfig.AuthPort = seqAuthPort
-	builderSeq.l2StackConfig.AuthModules = []string{"eth", "arb", "debug", "timeboost", "auctioneer"}
-	builderSeq.l2StackConfig.JWTSecret = jwtSecretPath
+	builderSeq.l2StackConfig.HTTPModules = []string{"eth", "arb", "debug", "timeboost", "auctioneer"}
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builderSeq.nodeConfig.Dangerous.NoSequencerCoordinator = false
 	builderSeq.nodeConfig.SeqCoordinator.Enable = true
@@ -1314,8 +1302,6 @@ func setupExpressLaneAuction(
 		forwarderNodeCfg.SeqCoordinator.MyUrl = nodeNames[1]
 		forwarderNodeCfg.SeqCoordinator.DeleteFinalizedMsgs = false
 		builderSeq.l2StackConfig.HTTPPort = forwarderPort
-		builderSeq.l2StackConfig.AuthPort = getRandomPort(t)
-		builderSeq.l2StackConfig.JWTSecret = jwtSecretPath
 		extraNode, cleanupExtraNode = builderSeq.Build2ndNode(t, &SecondNodeParams{nodeConfig: forwarderNodeCfg})
 	case withFeedListener:
 		tcpAddr, ok := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr)
@@ -1533,11 +1519,10 @@ func setupExpressLaneAuction(
 	bidValidator.Start(ctx)
 
 	auctioneerCfg := &timeboost.AuctioneerServerConfig{
-		SequencerEndpoint:      fmt.Sprintf("http://localhost:%d", seqAuthPort),
+		SequencerEndpoint:      fmt.Sprintf("http://localhost:%d", seqPort),
 		AuctionContractAddress: proxyAddr.Hex(),
 		RedisURL:               redisURL,
 		ConsumerConfig:         pubsub.TestConsumerConfig,
-		SequencerJWTPath:       jwtSecretPath,
 		DbDirectory:            dbDirPath,
 		Wallet: genericconf.WalletConfig{
 			PrivateKey: fmt.Sprintf("00%x", seqInfo.Accounts["AuctionContract"].PrivateKey.D.Bytes()),
