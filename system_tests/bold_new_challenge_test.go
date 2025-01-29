@@ -157,23 +157,6 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	builder.L1Info.GenerateAccount("EvilAsserter")
 	fundBoldStaker(t, ctx, builder, "EvilAsserter")
 
-	TransferBalance(t, "Faucet", "Faucet", common.Big0, builder.L2Info, builder.L2.Client, ctx)
-
-	// Wait for both nodes' chains to catch up to at least a batch that includes the self-transfer
-	// from above. This makes sure that nodes have at least caught up to the required rollup chain state
-	// by reading batches from the parent chain.
-	nodeAExec := builder.L2.ExecNode
-	nodeBExec := evilNode.ExecNode
-	for {
-		nodeALatest := nodeAExec.Backend.APIBackend().CurrentHeader()
-		nodeBLatest := nodeBExec.Backend.APIBackend().CurrentHeader()
-		isCaughtUp := nodeALatest.Number.Uint64() == 2
-		areEqual := nodeALatest.Number.Uint64() == nodeBLatest.Number.Uint64()
-		if isCaughtUp && areEqual {
-			break
-		}
-	}
-
 	assertionChain, cleanupHonestChallengeManager := startBoldChallengeManager(t, ctx, builder, builder.L2, "HonestAsserter", nil)
 	defer cleanupHonestChallengeManager()
 
@@ -189,6 +172,8 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 		return p
 	})
 	defer cleanupEvilChallengeManager()
+
+	TransferBalance(t, "Faucet", "Faucet", common.Big0, builder.L2Info, builder.L2.Client, ctx)
 
 	// Everything's setup, now just wait for the challenge to complete and ensure the honest party won
 
