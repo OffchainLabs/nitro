@@ -502,9 +502,11 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	httpConfig.Addr = "127.0.0.1"
 	httpConfig.Apply(builder.l2StackConfig)
 	builder.execConfig.BlockMetadataApiCacheSize = 0 // Caching is disabled
-	builder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	cleanupSeq := builder.Build(t)
 	defer cleanupSeq()
+
+	blockMetadataInputFeedPrefix := []byte("t")
+	missingBlockMetadataInputFeedPrefix := []byte("x")
 
 	// Generate blocks until current block is > 20
 	arbDb := builder.L2.ConsensusNode.ArbDB
@@ -517,8 +519,6 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 		lastTx, _ = builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
 		latestL2, err = builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
-		// Clean BlockMetadata from arbDB so that we can modify it at will
-		Require(t, arbDb.Delete(dbKey([]byte("t"), latestL2)))
 		if latestL2 > uint64(20) {
 			break
 		}
@@ -529,11 +529,11 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 		blockMetadata := []byte{0, uint8(i)}
 		sampleBulkData = append(sampleBulkData, blockMetadata)
 		// #nosec G115
-		Require(t, arbDb.Put(dbKey([]byte("t"), uint64(i)), blockMetadata))
+		Require(t, arbDb.Put(dbKey(blockMetadataInputFeedPrefix, uint64(i)), blockMetadata))
 	}
 
 	nodecfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	trackBlockMetadataFrom := uint64(5)
+	trackBlockMetadataFrom := uint64(3)
 	nodecfg.TransactionStreamer.TrackBlockMetadataFrom = trackBlockMetadataFrom
 	newNode, cleanupNewNode := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig:  nodecfg,
@@ -545,15 +545,13 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	_, err = WaitForTx(ctx, newNode.Client, lastTx.Hash(), time.Second*5)
 	Require(t, err)
 
-	blockMetadataInputFeedPrefix := []byte("t")
-	missingBlockMetadataInputFeedPrefix := []byte("x")
 	arbDb = newNode.ConsensusNode.ArbDB
 
 	// Introduce fragmentation
 	blocksWithBlockMetadata := []uint64{8, 9, 10, 14, 16}
 	for _, key := range blocksWithBlockMetadata {
-		Require(t, arbDb.Put(dbKey([]byte("t"), key), sampleBulkData[key-1]))
-		Require(t, arbDb.Delete(dbKey([]byte("x"), key)))
+		Require(t, arbDb.Put(dbKey(blockMetadataInputFeedPrefix, key), sampleBulkData[key-1]))
+		Require(t, arbDb.Delete(dbKey(missingBlockMetadataInputFeedPrefix, key)))
 	}
 
 	// Check if all block numbers with missingBlockMetadataInputFeedPrefix are present as keys in arbDB and that no keys with blockMetadataInputFeedPrefix
@@ -588,13 +586,16 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	iter.Release()
 
 	// Rebuild blockMetadata and cleanup trackers from ArbDB
-	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, newNode.ExecNode)
+	rebuildStartPos := uint64(5)
+	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, newNode.ExecNode, rebuildStartPos)
 	Require(t, err)
 	blockMetadataFetcher.Update(ctx)
 
-	// Check if all blockMetadata was synced from bulk BlockMetadata API via the blockMetadataFetcher and that trackers for missing blockMetadata were cleared
+	// Check if all blockMetadata starting from rebuildStartPos was synced from bulk BlockMetadata API via the blockMetadataFetcher and that trackers for missing blockMetadata were cleared
+	// Note that trackers for missing blockMetadata below rebuildStartPos won't be cleared and that is expected since we give user choice to only sync from a certain target instead of syncing
+	// all the missing blockMetadata. Currently this target is set by node to the same value as TrackBlockMetadataFrom flag
 	iter = arbDb.NewIterator(blockMetadataInputFeedPrefix, nil)
-	pos = trackBlockMetadataFrom
+	pos = rebuildStartPos
 	for iter.Next() {
 		keyBytes := bytes.TrimPrefix(iter.Key(), blockMetadataInputFeedPrefix)
 		if binary.BigEndian.Uint64(keyBytes) != pos {
@@ -610,9 +611,16 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	}
 	iter.Release()
 	iter = arbDb.NewIterator(missingBlockMetadataInputFeedPrefix, nil)
+	pos = trackBlockMetadataFrom
 	for iter.Next() {
 		keyBytes := bytes.TrimPrefix(iter.Key(), missingBlockMetadataInputFeedPrefix)
-		t.Fatalf("unexpected presence of msgSeqNum with missingBlockMetadataInputFeedPrefix, indicating missing of some blockMetadata after rebuilding. msgSeqNum: %d", binary.BigEndian.Uint64(keyBytes))
+		if binary.BigEndian.Uint64(keyBytes) != pos {
+			t.Fatalf("unexpected msgSeqNum with missingBlockMetadataInputFeedPrefix for blockMetadata. Want: %d, Got: %d", pos, binary.BigEndian.Uint64(keyBytes))
+		}
+		pos++
+	}
+	if pos != rebuildStartPos {
+		t.Fatalf("number of keys with missingBlockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", rebuildStartPos-trackBlockMetadataFrom, pos-trackBlockMetadataFrom)
 	}
 	iter.Release()
 }
