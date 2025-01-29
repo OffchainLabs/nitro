@@ -133,15 +133,62 @@ func (s *DatabaseSnapshotter) findLastAvailableState(ctx context.Context, triedb
 	return lastHeader, nil
 }
 
-func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChainExporterBatch, header *types.Header) error {
+func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChainExporterBatch, lastHeader *types.Header) error {
 	genesisNumber := s.bc.Config().ArbitrumChainParams.GenesisBlockNum
-	number := header.Number.Uint64()
-	if number < genesisNumber {
-		return fmt.Errorf("failed to export blocks: start block (number %v) older then genesis (number %v)", number, genesisNumber)
+	lastNumber := lastHeader.Number.Uint64()
+	if lastNumber < genesisNumber {
+		return fmt.Errorf("failed to export blocks: last block (number %v) older then genesis (number %v)", lastNumber, genesisNumber)
 	}
-	// for number >= genesisNumber {
-	//	// TODO
-	//}
+
+	number := genesisNumber
+	var hash common.Hash
+	for number <= lastNumber {
+		hash = rawdb.ReadCanonicalHash(s.db, number)
+		if hash == (common.Hash{}) {
+			return fmt.Errorf("canonical hash for block %v not found", number)
+		}
+		tdRlp := rawdb.ReadTdRLP(s.db, hash, number)
+		if len(tdRlp) == 0 {
+			return fmt.Errorf("total difficulty for block %v (hash %v) not found", number, hash)
+		}
+		err := batch.ExportTD(number, hash, tdRlp)
+		if err != nil {
+			return fmt.Errorf("failed to export block %v (hash %v) total difficulty: %w", number, hash, err)
+		}
+		err = batch.ExportCanonicalHash(number, hash)
+		if err != nil {
+			return fmt.Errorf("failed to export canonical hash: %w", err)
+		}
+		headerRlp := rawdb.ReadHeaderRLP(s.db, hash, number)
+		if len(headerRlp) == 0 {
+			return fmt.Errorf("header for block %v (hash %v) not found", number, hash)
+		}
+		err = batch.ExportBlockHeader(number, hash, headerRlp)
+		if err != nil {
+			return fmt.Errorf("failed to export block %v (hash %v) header: %w", number, hash, err)
+		}
+		bodyRlp := rawdb.ReadBodyRLP(s.db, hash, number)
+		if len(bodyRlp) == 0 {
+			return fmt.Errorf("body for block %v (hash %v) not found", number, hash)
+		}
+		err = batch.ExportBlockBody(number, hash, bodyRlp)
+		if err != nil {
+			return fmt.Errorf("failed to export block %v (hash %v) body: %w", number, hash, err)
+		}
+		receiptsRlp := rawdb.ReadReceiptsRLP(s.db, hash, number)
+		if len(receiptsRlp) == 0 {
+			return fmt.Errorf("receipts for block %v (hash %v) not found", number, hash)
+		}
+		err = batch.ExportBlockReceipts(number, hash, receiptsRlp)
+		if err != nil {
+			return fmt.Errorf("failed to export block %v (hash %v) receipts: %w", number, hash, err)
+		}
+		number++
+	}
+	err := batch.ExportHead(number, hash)
+	if err != nil {
+		return fmt.Errorf("failed to export head number %v (hash %v): %w", number, hash, err)
+	}
 	return nil
 }
 

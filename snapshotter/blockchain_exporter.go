@@ -27,6 +27,7 @@ type BlockChainExporterBatch interface {
 	ExportHead(number uint64, hash common.Hash) error
 	ExportCanonicalHash(number uint64, hash common.Hash) error
 
+	ExportTD(number uint64, hash common.Hash, tdRlp []byte) error
 	ExportBlockHeader(number uint64, hash common.Hash, headerRlp []byte) error
 	ExportBlockBody(number uint64, hash common.Hash, bodyRlp []byte) error
 	ExportBlockReceipts(number uint64, hash common.Hash, receiptsRlp []byte) error
@@ -133,13 +134,19 @@ type GethDatabaseExporterBatch struct {
 func (b *GethDatabaseExporterBatch) ExportHead(number uint64, hash common.Hash) error {
 	rawdb.WriteHeadHeaderHash(b.batch, hash)
 	rawdb.WriteHeadFastBlockHash(b.batch, hash)
-	rawdb.WriteCanonicalHash(b.batch, hash, number)
 	rawdb.WriteHeadBlockHash(b.batch, hash)
 	return b.maybeFlush()
 }
 
 func (b *GethDatabaseExporterBatch) ExportCanonicalHash(number uint64, hash common.Hash) error {
 	rawdb.WriteCanonicalHash(b.batch, hash, number)
+	return b.maybeFlush()
+}
+
+func (b *GethDatabaseExporterBatch) ExportTD(number uint64, hash common.Hash, tdRlp []byte) error {
+	if err := b.batch.Put(rawdb.HeaderTDKey(number, hash), tdRlp); err != nil {
+		return fmt.Errorf("failed to export block difficulty: %w", err)
+	}
 	return b.maybeFlush()
 }
 
