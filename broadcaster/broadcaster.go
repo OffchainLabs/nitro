@@ -66,7 +66,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 
 func (b *Broadcaster) BroadcastSingle(
 	msg arbostypes.MessageWithMetadata,
-	seq arbutil.MessageIndex,
+	msgIdx arbutil.MessageIndex,
 	blockHash *common.Hash,
 ) (err error) {
 	defer func() {
@@ -75,7 +75,7 @@ func (b *Broadcaster) BroadcastSingle(
 			err = errors.New("panic in BroadcastSingle")
 		}
 	}()
-	bfm, err := b.NewBroadcastFeedMessage(msg, seq, blockHash)
+	bfm, err := b.NewBroadcastFeedMessage(msg, msgIdx, blockHash)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
 
 func (b *Broadcaster) BroadcastMessages(
 	messagesWithBlockHash []arbostypes.MessageWithMetadataAndBlockHash,
-	seq arbutil.MessageIndex,
+	firstMsgIdx arbutil.MessageIndex,
 ) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -105,7 +105,7 @@ func (b *Broadcaster) BroadcastMessages(
 	var feedMessages []*m.BroadcastFeedMessage
 	for i, msg := range messagesWithBlockHash {
 		// #nosec G115
-		bfm, err := b.NewBroadcastFeedMessage(msg.MessageWithMeta, seq+arbutil.MessageIndex(i), msg.BlockHash)
+		bfm, err := b.NewBroadcastFeedMessage(msg.MessageWithMeta, firstMsgIdx+arbutil.MessageIndex(i), msg.BlockHash)
 		if err != nil {
 			return err
 		}
@@ -118,21 +118,19 @@ func (b *Broadcaster) BroadcastMessages(
 }
 
 func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
-
 	bm := &m.BroadcastMessage{
 		Version:  1,
 		Messages: messages,
 	}
-
 	b.server.Broadcast(bm)
 }
 
-func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
-	log.Debug("confirming sequence number", "sequenceNumber", seq)
+func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
+	log.Debug("confirming msgIdx", "msgIdx", msgIdx)
 	b.server.Broadcast(&m.BroadcastMessage{
 		Version: 1,
 		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
-			SequenceNumber: seq,
+			SequenceNumber: msgIdx,
 		},
 	})
 }

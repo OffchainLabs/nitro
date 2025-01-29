@@ -110,7 +110,7 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 
 func (s *SyncMonitor) Synced() bool {
 	if s.consensus.Synced() {
-		built, err := s.exec.HeadMessageNumber()
+		built, err := s.exec.HeadMessageIndex()
 		consensusSyncTarget := s.consensus.SyncTargetMessageCount()
 		if err == nil && built+1 >= consensusSyncTarget {
 			return true

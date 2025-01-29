@@ -389,14 +389,14 @@ func (n *ExecutionNode) StopAndWait() {
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	return n.ExecEngine.DigestMessage(num, msg, msgForPrefetch)
 }
-func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
-	return n.ExecEngine.Reorg(count, newMessages, oldMessages)
+func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+	return n.ExecEngine.Reorg(newHeadMsgIdx, newMessages, oldMessages)
 }
-func (n *ExecutionNode) HeadMessageNumber() (arbutil.MessageIndex, error) {
-	return n.ExecEngine.HeadMessageNumber()
+func (n *ExecutionNode) HeadMessageIndex() (arbutil.MessageIndex, error) {
+	return n.ExecEngine.HeadMessageIndex()
 }
-func (n *ExecutionNode) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
-	return n.ExecEngine.HeadMessageNumberSync(t)
+func (n *ExecutionNode) HeadMessageIndexSync(t *testing.T) (arbutil.MessageIndex, error) {
+	return n.ExecEngine.HeadMessageIndexSync(t)
 }
 func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 	return n.ExecEngine.NextDelayedMessageNumber()
@@ -404,11 +404,11 @@ func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)
 }
-func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
-	return n.ExecEngine.ResultAtPos(pos)
+func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error) {
+	return n.ExecEngine.ResultAtMessageIndex(msgIdx)
 }
-func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
-	return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
+func (n *ExecutionNode) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error) {
+	return n.ExecEngine.ArbOSVersionForMessageIndex(msgIdx)
 }
 
 func (n *ExecutionNode) RecordBlockCreation(
