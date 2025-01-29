@@ -238,6 +238,10 @@ func mainImpl() int {
 		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
 		return 1
 	}
+	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
+		log.Error("Sequencer node's track-block-metadata-from should not be set when timeboost is not enabled")
+		return 1
+	}
 
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts

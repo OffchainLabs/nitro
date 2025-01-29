@@ -201,7 +201,6 @@ func ConfigDefaultL1Test() *Config {
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Sequencer = true
 	config.Dangerous.NoSequencerCoordinator = true
-	config.TransactionStreamer.TrackBlockMetadataFrom = 1
 
 	return config
 }
