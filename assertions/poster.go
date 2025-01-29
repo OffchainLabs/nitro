@@ -155,6 +155,8 @@ func (m *Manager) PostAssertionBasedOnParent(
 				"latestStakedAssertionBatchCount", batchCount,
 				"latestStakedAssertionBlockHash", containers.Trunc(parentBlockHash[:]),
 			)
+			// If the chain is catching up, we wait for a bit and try again.
+			time.Sleep(m.times.avgBlockTime / 10)
 			return none, nil
 		}
 		return none, errors.Wrapf(err, "could not get execution state at batch count %d with parent block hash %v", batchCount, parentBlockHash)

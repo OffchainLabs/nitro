@@ -279,6 +279,8 @@ func (m *Manager) findCanonicalAssertionBranch(
 					chainCatchingUpCounter.Inc(1)
 					log.Info("Chain still syncing "+
 						"will reattempt processing when caught up", "err", err)
+					// If the chain is catching up, we wait for a bit and try again.
+					time.Sleep(m.times.avgBlockTime / 10)
 					return false, l2stateprovider.ErrChainCatchingUp
 				case err != nil:
 					return false, err
