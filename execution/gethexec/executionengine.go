@@ -875,14 +875,14 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	}
 
 	startTime := time.Now()
-	if s.prefetchBlock && msgForPrefetch != nil {
-		go func() {
-			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
-			if err != nil {
-				return
-			}
-		}()
-	}
+	//if s.prefetchBlock && msgForPrefetch != nil {
+	//	go func() {
+	//		_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
+	//		if err != nil {
+	//			return
+	//		}
+	//	}()
+	//}
 
 	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false)
 	if err != nil {
