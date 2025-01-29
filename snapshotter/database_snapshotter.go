@@ -3,6 +3,7 @@ package snapshotter
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -133,7 +134,14 @@ func (s *DatabaseSnapshotter) findLastAvailableState(ctx context.Context, triedb
 }
 
 func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChainExporterBatch, header *types.Header) error {
-	// TODO
+	genesisNumber := s.bc.Config().ArbitrumChainParams.GenesisBlockNum
+	number := header.Number.Uint64()
+	if number < genesisNumber {
+		return fmt.Errorf("failed to export blocks: start block (number %v) older then genesis (number %v)", number, genesisNumber)
+	}
+	// for number >= genesisNumber {
+	//	// TODO
+	//}
 	return nil
 }
 
@@ -155,7 +163,11 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 		batchPool <- batch
 	}
 	var workersRunning atomic.Int32
-	startWorker := func(work func(batch BlockChainExporterBatch) error) {
+	startWorker := func(work func(batch BlockChainExporterBatch) error) error {
+		err := <-results
+		if err != nil {
+			return err
+		}
 		batch := <-batchPool
 		workersRunning.Add(1)
 		go func() {
@@ -165,6 +177,7 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 			}()
 			results <- work(batch)
 		}()
+		return nil
 	}
 	hashConfig := *hashdb.Defaults
 	hashConfig.CleanCacheSize = s.config.TrieCleanLimit * 1024 * 1024
@@ -177,15 +190,49 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 	if err != nil {
 		return err
 	}
-	err = <-results
+	workersCtx, cancelWorkers := context.WithCancel(ctx)
+	defer cancelWorkers()
+	header := lastHeader
+	log.Info("Starting blocks export worker", "blockNumber", header.Number.Uint64(), "blockHash", header.Hash())
+	err = startWorker(func(batch BlockChainExporterBatch) error {
+		return s.exportBlocks(workersCtx, batch, header)
+	})
 	if err != nil {
 		return err
 	}
-	header := lastHeader
-	startWorker(func(batch BlockChainExporterBatch) error {
-		return s.exportBlocks(ctx, batch, header)
-	})
-	root := lastHeader.Root
+	genesisNumber := s.bc.Config().ArbitrumChainParams.GenesisBlockNum
+	genesisHeader := s.bc.GetHeaderByNumber(genesisNumber)
+	if genesisHeader == nil {
+		return errors.New("genesis header not found")
+	}
+	log.Info("Exporting genesis state", "genesisNumber", header.Number.Uint64(), "genesisHash", header.Hash())
+	if err = s.exportState(workersCtx, startWorker, triedb, genesisHeader.Root); err != nil {
+		return err
+	}
+	log.Info("Exporting last state", "blockNumber", header.Number.Uint64(), "blockHash", header.Hash())
+	if err = s.exportState(workersCtx, startWorker, triedb, lastHeader.Root); err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	for i := 0; i < threads; i++ {
+		err = <-results
+		if err != nil {
+			return err
+		}
+	}
+	// flush all batches from batchPool
+	for i := 0; i < threads; i++ {
+		batch := <-batchPool
+		if err = batch.Flush(); err != nil {
+			return err
+		}
+	}
+	return s.exporter.Close()
+}
+
+func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(work func(batch BlockChainExporterBatch) error) error, triedb *triedb.Database, root common.Hash) error {
 	tr, err := trie.NewStateTrie(trie.StateTrieID(root), triedb)
 	if err != nil {
 		return fmt.Errorf("failed to open state trie, root: %v, err: %w", root, err)
@@ -198,12 +245,8 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 		accountTrieHash := accountIt.Hash()
 		// If the iterator hash is the empty hash, this is an embedded node
 		if accountTrieHash != (common.Hash{}) {
-			err := <-results
-			if err != nil {
-				return err
-			}
 			hash := accountTrieHash
-			startWorker(func(batch BlockChainExporterBatch) error {
+			err := startWorker(func(batch BlockChainExporterBatch) error {
 				// get trie node directly from triedb
 				blob, err := triedb.Node(hash)
 				if err != nil {
@@ -211,6 +254,9 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 				}
 				return batch.ExportAccountTrieNode(hash, blob)
 			})
+			if err != nil {
+				return err
+			}
 		}
 		if accountIt.Leaf() {
 			keyBytes := accountIt.LeafKey()
@@ -226,18 +272,17 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 				if len(data.CodeHash) != len(common.Hash{}) {
 					return fmt.Errorf("unexpected code hash length: %v", len(keyBytes))
 				}
-				err = <-results
-				if err != nil {
-					return err
-				}
 				codeHash := common.BytesToHash(data.CodeHash)
-				startWorker(func(batch BlockChainExporterBatch) error {
+				err := startWorker(func(batch BlockChainExporterBatch) error {
 					code := rawdb.ReadCode(s.db, codeHash)
 					if len(code) == 0 {
 						return fmt.Errorf("code not found, hash: %v", codeHash)
 					}
 					return batch.ExportCode(codeHash, code)
 				})
+				if err != nil {
+					return err
+				}
 			}
 			if data.Root != (common.Hash{}) {
 				trieID := trie.StorageTrieID(data.Root, key, data.Root)
@@ -246,17 +291,13 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 					return err
 				}
 				for i := int64(0); i < int64(32) && ctx.Err() == nil; i++ {
-					err = <-results
-					if err != nil {
-						return err
-					}
 					storageIt, err := storageTr.NodeIterator(big.NewInt(i << 3).Bytes())
 					if err != nil {
 						return err
 					}
 					endKey := trie.KeybytesToHex(big.NewInt((i + 1) << 3).Bytes())
 					isLastKeyRange := i == 32
-					startWorker(func(batch BlockChainExporterBatch) error {
+					err = startWorker(func(batch BlockChainExporterBatch) error {
 						for storageIt.Next(true) && ctx.Err() == nil {
 							if !isLastKeyRange && bytes.Compare(storageIt.Path(), endKey) >= 0 {
 								return nil
@@ -275,6 +316,9 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 						}
 						return storageIt.Error()
 					})
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -282,22 +326,5 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 			return accountIt.Error()
 		}
 	}
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	for i := 0; i < threads; i++ {
-		err = <-results
-		if err != nil {
-			return err
-		}
-	}
-	// flush all batches from batchPool
-	for i := 0; i < threads; i++ {
-		batch := <-batchPool
-		if err = batch.Flush(); err != nil {
-			return err
-		}
-	}
-
-	return s.exporter.Close()
+	return ctx.Err()
 }

@@ -25,6 +25,7 @@ type BlockChainExporter interface {
 type BlockChainExporterBatch interface {
 	// exports head block number and hash
 	ExportHead(number uint64, hash common.Hash) error
+	ExportCanonicalHash(number uint64, hash common.Hash) error
 
 	ExportBlockHeader(number uint64, hash common.Hash, headerRlp []byte) error
 	ExportBlockBody(number uint64, hash common.Hash, bodyRlp []byte) error
@@ -100,6 +101,7 @@ func (e *GethDatabaseExporter) Open() error {
 		return err
 	}
 	e.db = db
+	e.opened = true // TODO: can we just check e.db == nil instead of !e.opended
 	return nil
 }
 
@@ -133,6 +135,11 @@ func (b *GethDatabaseExporterBatch) ExportHead(number uint64, hash common.Hash) 
 	rawdb.WriteHeadFastBlockHash(b.batch, hash)
 	rawdb.WriteCanonicalHash(b.batch, hash, number)
 	rawdb.WriteHeadBlockHash(b.batch, hash)
+	return b.maybeFlush()
+}
+
+func (b *GethDatabaseExporterBatch) ExportCanonicalHash(number uint64, hash common.Hash) error {
+	rawdb.WriteCanonicalHash(b.batch, hash, number)
 	return b.maybeFlush()
 }
 
