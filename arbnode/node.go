@@ -136,9 +136,6 @@ func (c *Config) Validate() error {
 	if err := c.Staker.Validate(); err != nil {
 		return err
 	}
-	if c.Sequencer && c.TransactionStreamer.TrackBlockMetadataFrom == 0 {
-		return errors.New("when sequencer is enabled track-block-metadata-from should be set as well")
-	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
