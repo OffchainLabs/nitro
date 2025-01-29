@@ -111,6 +111,7 @@ func TestPruning(t *testing.T) {
 		}
 	}()
 
+	// we pass original l2StackConfig to 2nd node to start from the same data dir
 	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
 	defer cleanup()
 

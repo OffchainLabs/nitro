@@ -58,16 +58,18 @@ type DatabaseSnapshotter struct {
 	bc       *core.BlockChain
 	exporter BlockChainExporter
 
-	snapshotTrigger chan common.Hash
+	triggerChan chan common.Hash
+	resultChan  chan error
 }
 
-func CreateDatabaseSnapshotter(db ethdb.Database, bc *core.BlockChain, config *DatabaseSnapshotterConfig, snapshotTrigger chan common.Hash) *DatabaseSnapshotter {
+func NewDatabaseSnapshotter(db ethdb.Database, bc *core.BlockChain, config *DatabaseSnapshotterConfig, triggerChan chan common.Hash, resultChan chan error) *DatabaseSnapshotter {
 	return &DatabaseSnapshotter{
-		config:          config,
-		db:              db,
-		bc:              bc,
-		exporter:        NewGethDatabaseExporter(&config.GethExporter),
-		snapshotTrigger: snapshotTrigger,
+		config:      config,
+		db:          db,
+		bc:          bc,
+		exporter:    NewGethDatabaseExporter(&config.GethExporter),
+		triggerChan: triggerChan,
+		resultChan:  resultChan,
 	}
 }
 
@@ -89,7 +91,7 @@ func (s *DatabaseSnapshotter) Start(ctx context.Context) {
 				}
 				log.Info("Database snapshot triggered by SIGUSR2")
 				blockHash = common.Hash{}
-			case blockHash = <-s.snapshotTrigger:
+			case blockHash = <-s.triggerChan:
 				if !s.config.Enable {
 					log.Warn("Ignoring database snapshot trigger, snapshotter disabled", "blockHash", blockHash)
 					continue
@@ -105,8 +107,12 @@ func (s *DatabaseSnapshotter) Start(ctx context.Context) {
 				blockHash = header.Hash()
 			}
 			log.Info("Creating database snapshot", "blockHash", blockHash)
-			if err := s.CreateSnapshot(ctx, blockHash); err != nil {
+			err := s.CreateSnapshot(ctx, blockHash)
+			if err != nil {
 				log.Error("Database snapshot failed", "err", err)
+			}
+			if s.resultChan != nil {
+				s.resultChan <- err
 			}
 		}
 	})

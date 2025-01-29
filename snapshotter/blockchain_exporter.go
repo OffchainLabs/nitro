@@ -46,8 +46,9 @@ type GethDatabaseExporterConfig struct {
 }
 
 var OutputConfigDefault = conf.DBConfig{
-	DBEngine:  "pebble",
-	Ancient:   "",
+	Data:      "snapshot", // TODO
+	DBEngine:  conf.PersistentConfigDefault.DBEngine,
+	Ancient:   "", // TODO
 	Handles:   conf.PersistentConfigDefault.Handles,
 	Cache:     2048, // 2048 MB
 	Namespace: "l2chaindata_export",
@@ -102,7 +103,7 @@ func (e *GethDatabaseExporter) Open() error {
 		return err
 	}
 	e.db = db
-	e.opened = true // TODO: can we just check e.db == nil instead of !e.opended
+	e.opened = true // TODO: can we just check e.db == nil instead of !e.opened
 	return nil
 }
 
