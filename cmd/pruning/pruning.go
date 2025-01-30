@@ -248,7 +248,7 @@ func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}
 
-	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: initConfig.PruneBloomSize, Threads: initConfig.PruneThreads, CleanCacheSize: initConfig.PruneTrieCleanCache, ParallelPrune: initConfig.PruneParallel})
+	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: initConfig.PruneBloomSize, Threads: initConfig.PruneThreads, CleanCacheSize: initConfig.PruneTrieCleanCache, ParallelStorageTraversal: initConfig.PruneParallelStorageTraversal})
 	if err != nil {
 		return err
 	}

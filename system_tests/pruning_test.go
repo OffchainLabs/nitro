@@ -35,11 +35,11 @@ func TestPruning(t *testing.T) {
 	testPruning(t, false)
 }
 
-func TestPruningParallel(t *testing.T) {
+func TestPruningPruneParallelStorageTraversal(t *testing.T) {
 	testPruning(t, true)
 }
 
-func testPruning(t *testing.T, parallelPruning bool) {
+func testPruning(t *testing.T, pruneParallelStorageTraversal bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -99,7 +99,7 @@ func testPruning(t *testing.T, parallelPruning bool) {
 
 		initConfig := conf.InitConfigDefault
 		initConfig.Prune = "full"
-		initConfig.PruneParallel = parallelPruning
+		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
 		err = pruning.PruneChainDb(ctx, chainDb, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false)
