@@ -1141,6 +1141,10 @@ func (s *TransactionStreamer) BlockMetadataAtCount(count arbutil.MessageIndex) (
 	}
 	pos := count - 1
 
+	if s.trackBlockMetadataFrom == 0 || pos < s.trackBlockMetadataFrom {
+		return nil, nil
+	}
+
 	key := dbKey(blockMetadataInputFeedPrefix, uint64(pos))
 	blockMetadata, err := s.db.Get(key)
 	if err != nil {
