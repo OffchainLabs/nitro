@@ -239,6 +239,7 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 		HashDB:    &hashConfig,
 	}
 	triedb := triedb.NewDatabase(s.db, trieConfig)
+	defer triedb.Close()
 	lastHeader, err := s.findLastAvailableState(ctx, triedb, blockHash)
 	if err != nil {
 		return err
@@ -349,10 +350,10 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 						return err
 					}
 					endKey := trie.KeybytesToHex(big.NewInt((i + 1) << 3).Bytes())
-					isLastKeyRange := i == 32
+					isLastKeyRange := i == 31
 					err = startWorker(func(batch BlockChainExporterBatch) error {
 						for storageIt.Next(true) && ctx.Err() == nil {
-							if !isLastKeyRange && bytes.Compare(storageIt.Path(), endKey) >= 0 {
+							if !isLastKeyRange && bytes.Compare(storageIt.Path(), endKey) > 0 {
 								return nil
 							}
 							storageTrieHash := storageIt.Hash()
