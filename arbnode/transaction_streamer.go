@@ -1338,7 +1338,7 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 	}
 
 	if snapshot.Height <= height {
-		return errors.New("snapshot height is less than or equal to transaction height")
+		return fmt.Errorf("snapshot height %w is less than or equal to the requested height %w", snapshot.Height, height)
 	}
 
 	nextHeader, err := s.espressoClient.FetchHeaderByHeight(ctx, snapshot.Height)
@@ -1724,7 +1724,6 @@ func (s *TransactionStreamer) pollToResubmitEspressoTransactions(ctx context.Con
 	}
 
 	shouldResubmit := s.shouldResubmitEspressoTransactions(ctx, submittedTxns)
-	log.Info("Attempting to resubmit transactions", "shouldResubmit", shouldResubmit)
 	if shouldResubmit {
 		for _, tx := range submittedTxns {
 			txHash, err := s.resubmitEspressoTransactions(ctx, tx)
