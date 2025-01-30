@@ -498,6 +498,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	httpConfig := genericconf.HTTPConfigDefault
 	httpConfig.Addr = "127.0.0.1"
 	httpConfig.Apply(builder.l2StackConfig)
@@ -630,6 +631,7 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	builder.execConfig.BlockMetadataApiCacheSize = 0 // Caching is disabled
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -738,6 +740,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	builder.execConfig.BlockMetadataApiCacheSize = 0 // Caching is disabled
 	cleanup := builder.Build(t)
 	defer cleanup()
