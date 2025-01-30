@@ -238,6 +238,10 @@ func mainImpl() int {
 		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
 		return 1
 	}
+	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
+		log.Error("Sequencer node's track-block-metadata-from should not be set when timeboost is not enabled")
+		return 1
+	}
 
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
@@ -687,6 +691,21 @@ func mainImpl() int {
 		} else if nodeConfig.Init.ThenQuit {
 			return 0
 		}
+	}
+
+	execNodeConfig := execNode.ConfigFetcher()
+	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Timeboost.Enable {
+		err := execNode.Sequencer.InitializeExpressLaneService(
+			execNode.Backend.APIBackend(),
+			execNode.FilterSystem,
+			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress),
+			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress),
+			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
+		)
+		if err != nil {
+			log.Error("failed to create express lane service", "err", err)
+		}
+		execNode.Sequencer.StartExpressLaneService(ctx)
 	}
 
 	err = nil

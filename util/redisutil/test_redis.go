@@ -16,7 +16,7 @@ import (
 
 // CreateTestRedis Provides external redis url, this is only done in TEST_REDIS env,
 // else creates a new miniredis and returns its url.
-func CreateTestRedis(ctx context.Context, t *testing.T) string {
+func CreateTestRedis(ctx context.Context, t testing.TB) string {
 	redisUrl := os.Getenv("TEST_REDIS")
 	if redisUrl != "" {
 		return redisUrl

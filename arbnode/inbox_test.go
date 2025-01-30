@@ -68,7 +68,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := gethexec.NewExecutionEngine(bc)
+	execEngine, err := gethexec.NewExecutionEngine(bc, false)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -184,7 +184,7 @@ func TestTransactionStreamer(t *testing.T) {
 				state.balances[dest].Add(state.balances[dest], value)
 			}
 
-			Require(t, inbox.AddMessages(state.numMessages, false, messages))
+			Require(t, inbox.AddMessages(state.numMessages, false, messages, nil))
 
 			state.numMessages += arbutil.MessageIndex(len(messages))
 			prevBlockNumber := state.blockNumber
