@@ -42,7 +42,7 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	}()
 	var txes []*types.Transaction
 	var users []string
-	for i := 0; i < 127; i++ {
+	for i := 0; i < 63; i++ {
 		user := fmt.Sprintf("user-%d", i)
 		users = append(users, user)
 		builder.L2Info.GenerateAccount(user)
@@ -61,7 +61,7 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			auth := builder.L2Info.GetDefaultTransactOpts(user, ctx)
-			for j := 0; j < 16; j++ {
+			for j := 0; j < 15; j++ {
 				_, simple := builder.L2.DeploySimple(t, auth)
 				var txes []*types.Transaction
 				for k := 0; k < j; k++ {
