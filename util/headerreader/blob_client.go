@@ -170,6 +170,12 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 	slot := (header.Time - b.genesisTime) / b.secondsPerSlot
 	blobs, err := b.blobSidecars(ctx, slot, versionedHashes)
 	if err != nil {
+		// Creates a new http client to avoid reusing the same transport layer connection in the next request.
+		// This strategy can be useful if there is a network load balancer in front of the beacon chain server.
+		// So supposing that the error is due to a malfunctioning beacon chain node, by creating a new http client
+		// we can potentially connect to a different, and healthy, beacon chain node in the next request.
+		b.httpClient = &http.Client{}
+
 		return nil, fmt.Errorf("error fetching blobs in %d l1 block: %w", header.Number, err)
 	}
 	return blobs, nil
