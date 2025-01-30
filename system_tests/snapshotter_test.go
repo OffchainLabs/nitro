@@ -42,6 +42,7 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	var txs []*types.Transaction
 	threadsRunning := 0
 	var wg sync.WaitGroup
+	// TODO: deploy smart contracts with storage
 	for i := 0; i < 127; i++ {
 		user := fmt.Sprintf("user-%d", i)
 		builder.L2Info.GenerateAccount(user)

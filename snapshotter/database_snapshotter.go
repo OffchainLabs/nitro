@@ -345,7 +345,11 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 					return err
 				}
 				for i := int64(0); i < int64(32) && ctx.Err() == nil; i++ {
-					storageIt, err := storageTr.NodeIterator(big.NewInt(i << 3).Bytes())
+					startKey := big.NewInt(i << 3).Bytes()
+					if i == 0 {
+						startKey = nil
+					}
+					storageIt, err := storageTr.NodeIterator(startKey)
 					if err != nil {
 						return err
 					}
