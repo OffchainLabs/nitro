@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -38,16 +40,28 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		builder.L1.cleanup()
 	}()
 	var txs []*types.Transaction
-	for i := 0; i < 10; i++ {
+	threadsRunning := 0
+	var wg sync.WaitGroup
+	for i := 0; i < 127; i++ {
 		user := fmt.Sprintf("user-%d", i)
 		builder.L2Info.GenerateAccount(user)
-		for j := 0; j < 20; j++ {
-			tx := builder.L2Info.PrepareTx("Owner", user, builder.L2Info.TransferGas, common.Big1, nil)
-			txs = append(txs, tx)
-			err := builder.L2.Client.SendTransaction(ctx, tx)
-			Require(t, err)
+		wg.Add(1)
+		threadsRunning++
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 3; j++ {
+				tx := builder.L2Info.PrepareTx("Owner", user, builder.L2Info.TransferGas, common.Big1, nil)
+				txs = append(txs, tx)
+				err := builder.L2.Client.SendTransaction(ctx, tx)
+				Require(t, err)
+			}
+		}()
+		if threadsRunning > 16 {
+			wg.Wait()
 		}
 	}
+	wg.Wait()
+
 	for _, tx := range txs {
 		_, err := builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
@@ -138,11 +152,38 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		Require(t, err)
 		tr, err := trie.New(trie.TrieID(header.Root), triedb)
 		Require(t, err)
-		it, err := tr.NodeIterator(nil)
+		accountIt, err := tr.NodeIterator(nil)
 		Require(t, err)
-		for it.Next(true) {
+		for accountIt.Next(true) {
+			if accountIt.Hash() != (common.Hash{}) {
+				blob := accountIt.NodeBlob()
+				if len(blob) == 0 {
+					Fatal(t, "missing trie node blob, path:", fmt.Sprintf("%x", accountIt.Path()), "key:", accountIt.Hash())
+				}
+			}
+			if accountIt.Leaf() {
+				keyBytes := accountIt.LeafKey()
+				if len(keyBytes) != len(common.Hash{}) {
+					Fatal(t, "invalid account leaf key length")
+				}
+				key := common.BytesToHash(keyBytes)
+				var data types.StateAccount
+				if err := rlp.DecodeBytes(accountIt.LeafBlob(), &data); err != nil {
+					Fatal(t, "failed to decode account data:", err)
+				}
+				if data.Root != (common.Hash{}) {
+					trieID := trie.StorageTrieID(data.Root, key, data.Root)
+					storageTr, err := trie.NewStateTrie(trieID, triedb)
+					Require(t, err)
+					storageIt, err := storageTr.NodeIterator(nil)
+					Require(t, err)
+					for storageIt.Next(true) {
+					}
+					Require(t, storageIt.Error())
+				}
+			}
 		}
-		Require(t, it.Error())
+		Require(t, accountIt.Error())
 	}
 	checkStateDoesNotExist := func(number uint64) {
 		header := bc.GetHeaderByNumber(number)
