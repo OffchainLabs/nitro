@@ -1337,6 +1337,7 @@ func setupExpressLaneAuction(
 		nodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 		nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 		nodeConfig.Feed.Input.Timeout = broadcastclient.DefaultConfig.Timeout
+		nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 		extraNode, cleanupExtraNode = builderSeq.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig, stackConfig: testhelpers.CreateStackConfigForTest(t.TempDir())})
 	}
 
