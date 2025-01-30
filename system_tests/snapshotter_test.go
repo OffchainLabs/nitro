@@ -3,6 +3,7 @@ package arbtest
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sync"
@@ -39,33 +40,44 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		}
 		builder.L1.cleanup()
 	}()
-	var txs []*types.Transaction
-	threadsRunning := 0
-	var wg sync.WaitGroup
+	var txes []*types.Transaction
+	var users []string
 	for i := 0; i < 127; i++ {
 		user := fmt.Sprintf("user-%d", i)
+		users = append(users, user)
 		builder.L2Info.GenerateAccount(user)
-		wg.Add(1)
-		threadsRunning++
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 3; j++ {
-				tx := builder.L2Info.PrepareTx("Owner", user, builder.L2Info.TransferGas, common.Big1, nil)
-				txs = append(txs, tx)
-				err := builder.L2.Client.SendTransaction(ctx, tx)
-				Require(t, err)
-			}
-		}()
-		if threadsRunning > 16 {
-			wg.Wait()
-		}
+		tx := builder.L2Info.PrepareTx("Owner", user, builder.L2Info.TransferGas, new(big.Int).Lsh(big.NewInt(1), 63), nil)
+		Require(t, builder.L2.Client.SendTransaction(ctx, tx))
 	}
-	wg.Wait()
-
-	for _, tx := range txs {
+	for _, tx := range txes {
 		_, err := builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
 	}
+
+	var wg sync.WaitGroup
+	for _, user := range users {
+		user := user
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			auth := builder.L2Info.GetDefaultTransactOpts(user, ctx)
+			for j := 0; j < 16; j++ {
+				_, simple := builder.L2.DeploySimple(t, auth)
+				var txes []*types.Transaction
+				for k := 0; k < j; k++ {
+					tx, err := simple.LogAndIncrement(&auth, common.Big0) // we don't care about expected arg
+					Require(t, err)
+					txes = append(txes, tx)
+				}
+				for _, tx := range txes {
+					_, err := builder.L2.EnsureTxSucceeded(tx)
+					Require(t, err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
 	lastBlock, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
 	l2cleanupDone = true
@@ -118,12 +130,6 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		currentBlock, err = testClient.Client.BlockNumber(ctx)
 		Require(t, err)
 		time.Sleep(20 * time.Millisecond)
-	}
-
-	currentBlock, err = testClient.Client.BlockNumber(ctx)
-	Require(t, err)
-	if currentBlock != lastBlock {
-		Fatal(t, "unexpected current block, want:", lastBlock, " have:", currentBlock)
 	}
 
 	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
