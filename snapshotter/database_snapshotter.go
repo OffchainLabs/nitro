@@ -259,7 +259,7 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 	if genesisHeader == nil {
 		return errors.New("genesis header not found")
 	}
-	log.Info("Exporting genesis state", "genesisNumber", header.Number.Uint64(), "genesisHash", header.Hash())
+	log.Info("Exporting genesis state", "genesisNumber", genesisHeader.Number.Uint64(), "genesisHash", genesisHeader.Hash())
 	if err = s.exportState(workersCtx, startWorker, triedb, genesisHeader.Root); err != nil {
 		return err
 	}
