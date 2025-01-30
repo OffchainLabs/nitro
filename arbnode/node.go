@@ -425,6 +425,7 @@ func createNodeImpl(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
+	quitNodeChan chan string,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 ) (*Node, error) {
@@ -659,6 +660,7 @@ func createNodeImpl(
 			txStreamer,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			fatalErrChan,
+			quitNodeChan,
 		)
 		if err != nil {
 			return nil, err
@@ -863,10 +865,11 @@ func CreateNode(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
+	quitNodeChan chan string,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, quitNodeChan, parentChainID, blobReader)
 	if err != nil {
 		return nil, err
 	}

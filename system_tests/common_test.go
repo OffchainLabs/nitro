@@ -502,9 +502,10 @@ func buildOnParentChain(
 	Require(t, err)
 
 	fatalErrChan := make(chan error, 10)
+	quitNodeChan := make(chan string, 10)
 	chainTestClient.ConsensusNode, err = arbnode.CreateNode(
 		ctx, chainTestClient.Stack, execNode, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainTestClient.Client,
-		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil)
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, quitNodeChan, parentChainId, nil)
 	Require(t, err)
 
 	err = chainTestClient.ConsensusNode.Start(ctx)
@@ -624,9 +625,10 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	Require(t, err)
 
 	fatalErrChan := make(chan error, 10)
+	quitNodeChan := make(chan string, 10)
 	b.L2.ConsensusNode, err = arbnode.CreateNode(
 		b.ctx, b.L2.Stack, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(),
-		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil)
+		nil, nil, nil, nil, nil, fatalErrChan, quitNodeChan, big.NewInt(1337), nil)
 	Require(t, err)
 
 	// Give the node an init message
@@ -673,7 +675,8 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	Require(t, err)
 
 	feedErrChan := make(chan error, 10)
-	currentNode, err := arbnode.CreateNode(b.ctx, stack, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, big.NewInt(1337), nil)
+	quitNodeChan := make(chan string, 10)
+	currentNode, err := arbnode.CreateNode(b.ctx, stack, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, quitNodeChan, big.NewInt(1337), nil)
 	Require(t, err)
 
 	Require(t, currentNode.Start(b.ctx))
@@ -1519,6 +1522,7 @@ func Create2ndNodeWithConfig(
 	Require(t, execConfig.Validate())
 
 	feedErrChan := make(chan error, 10)
+	quitNodeChan := make(chan string, 10)
 	parentChainRpcClient := parentChainStack.Attach()
 	parentChainClient := ethclient.NewClient(parentChainRpcClient)
 
@@ -1556,7 +1560,7 @@ func Create2ndNodeWithConfig(
 	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
+	currentNode, err := arbnode.CreateNode(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, quitNodeChan, big.NewInt(1337), nil)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)
