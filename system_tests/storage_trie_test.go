@@ -54,6 +54,7 @@ func TestStorageTrie(t *testing.T) {
 
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+	tx1BlockNum := receipt.BlockNumber.Uint64()
 
 	if receipt.GasUsed != 32_002_907 {
 		t.Errorf("Want GasUsed: 32002907: got: %d", receipt.GasUsed)
@@ -68,6 +69,13 @@ func TestStorageTrie(t *testing.T) {
 
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+	tx2BlockNum := receipt.BlockNumber.Uint64()
+
+	if tx2BlockNum <= tx1BlockNum {
+		t.Errorf("Expected tx2BlockNum > tx1BlockNum: %d <= %d", tx2BlockNum, tx1BlockNum)
+	} else {
+		t.Logf("tx2BlockNum > tx1BlockNum: %d > %d", tx2BlockNum, tx1BlockNum)
+	}
 
 	// Ensures that the validator gets the same results as the executor
 	validateBlockRange(t, []uint64{receipt.BlockNumber.Uint64()}, true, builder)
