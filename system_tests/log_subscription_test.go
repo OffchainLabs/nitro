@@ -56,4 +56,6 @@ func TestLogSubscription(t *testing.T) {
 	}
 	_, err = builder.L2.Client.BlockByHash(ctx, subscriptionLog.BlockHash)
 	Require(t, err)
+
+	AutomatedPrestateTracerTest(t, builder.L2)
 }
