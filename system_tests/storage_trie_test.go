@@ -25,8 +25,8 @@ func TestStorageTrie(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
 
-	// retryableSetup is being called by tests that validate blocks.
-	// For now validation only works with HashScheme set.
+	// This test tests validates blocks at the end.
+	// For now, validation only works with HashScheme set.
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
@@ -46,23 +46,26 @@ func TestStorageTrie(t *testing.T) {
 	_, bigMap := builder.L2.DeployBigMap(t, ownerTxOpts)
 
 	// Store enough values to use just over 32M gas
-	values := big.NewInt(1431)
+	toAdd := big.NewInt(1420)
+	// In the first transaction, don't clear any values.
+	toClear := big.NewInt(0)
 
 	userTxOpts := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
-	tx, err := bigMap.StoreValues(&userTxOpts, values)
+	tx, err := bigMap.ClearAndAddValues(&userTxOpts, toClear, toAdd)
 	Require(t, err)
 
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 	tx1BlockNum := receipt.BlockNumber.Uint64()
 
-	if receipt.GasUsed != 32_002_907 {
-		t.Errorf("Want GasUsed: 32002907: got: %d", receipt.GasUsed)
+	want := uint64(32_015_781)
+	if receipt.GasUsed != want {
+		t.Errorf("Want GasUsed: %d: got: %d", want, receipt.GasUsed)
 	}
 
 	// Clear about 75% of them, and add another 10%
-	toClear := arbmath.BigDiv(arbmath.BigMul(values, big.NewInt(75)), big.NewInt(100))
-	toAdd := arbmath.BigDiv(arbmath.BigMul(values, big.NewInt(10)), big.NewInt(100))
+	toClear = arbmath.BigDiv(arbmath.BigMul(toAdd, big.NewInt(75)), big.NewInt(100))
+	toAdd = arbmath.BigDiv(arbmath.BigMul(toAdd, big.NewInt(10)), big.NewInt(100))
 
 	tx, err = bigMap.ClearAndAddValues(&userTxOpts, toClear, toAdd)
 	Require(t, err)
