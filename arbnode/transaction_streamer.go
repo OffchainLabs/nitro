@@ -1338,7 +1338,7 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 	}
 
 	if snapshot.Height <= height {
-		return fmt.Errorf("snapshot height %w is less than or equal to the requested height %w", snapshot.Height, height)
+		return fmt.Errorf("snapshot height %v is less than or equal to the requested height %v", snapshot.Height, height)
 	}
 
 	nextHeader, err := s.espressoClient.FetchHeaderByHeight(ctx, snapshot.Height)
