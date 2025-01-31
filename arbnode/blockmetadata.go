@@ -44,22 +44,32 @@ func BlockMetadataFetcherConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type BlockMetadataFetcher struct {
 	stopwaiter.StopWaiter
-	config BlockMetadataFetcherConfig
-	db     ethdb.Database
-	client *rpcclient.RpcClient
-	exec   execution.ExecutionClient
+	config                 BlockMetadataFetcherConfig
+	db                     ethdb.Database
+	client                 *rpcclient.RpcClient
+	exec                   execution.ExecutionClient
+	trackBlockMetadataFrom arbutil.MessageIndex
 }
 
-func NewBlockMetadataFetcher(ctx context.Context, c BlockMetadataFetcherConfig, db ethdb.Database, exec execution.ExecutionClient) (*BlockMetadataFetcher, error) {
+func NewBlockMetadataFetcher(ctx context.Context, c BlockMetadataFetcherConfig, db ethdb.Database, exec execution.ExecutionClient, startPos uint64) (*BlockMetadataFetcher, error) {
+	var trackBlockMetadataFrom arbutil.MessageIndex
+	var err error
+	if startPos != 0 {
+		trackBlockMetadataFrom, err = exec.BlockNumberToMessageIndex(startPos)
+		if err != nil {
+			return nil, err
+		}
+	}
 	client := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &c.Source }, nil)
-	if err := client.Start(ctx); err != nil {
+	if err = client.Start(ctx); err != nil {
 		return nil, err
 	}
 	return &BlockMetadataFetcher{
-		config: c,
-		db:     db,
-		client: client,
-		exec:   exec,
+		config:                 c,
+		db:                     db,
+		client:                 client,
+		exec:                   exec,
+		trackBlockMetadataFrom: trackBlockMetadataFrom,
 	}, nil
 }
 
@@ -117,7 +127,11 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 		}
 		return true
 	}
-	iter := b.db.NewIterator(missingBlockMetadataInputFeedPrefix, nil)
+	var start []byte
+	if b.trackBlockMetadataFrom != 0 {
+		start = uint64ToKey(uint64(b.trackBlockMetadataFrom))
+	}
+	iter := b.db.NewIterator(missingBlockMetadataInputFeedPrefix, start)
 	defer iter.Release()
 	var query []uint64
 	for iter.Next() {

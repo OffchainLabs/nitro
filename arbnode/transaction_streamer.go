@@ -98,7 +98,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
-	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "this is the block number starting from which missing of blockmetadata is being tracked in the local disk. Setting to zero (default value) disables this")
+	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "this is the block number starting from which missing of blockmetadata is being tracked in the local disk. This is also the starting position for bulk syncing of missing blockmetadata. Setting to zero (default value) disables this")
 }
 
 func NewTransactionStreamer(
@@ -1140,6 +1140,10 @@ func (s *TransactionStreamer) BlockMetadataAtCount(count arbutil.MessageIndex) (
 		return nil, nil
 	}
 	pos := count - 1
+
+	if s.trackBlockMetadataFrom == 0 || pos < s.trackBlockMetadataFrom {
+		return nil, nil
+	}
 
 	key := dbKey(blockMetadataInputFeedPrefix, uint64(pos))
 	blockMetadata, err := s.db.Get(key)

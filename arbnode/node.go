@@ -136,9 +136,6 @@ func (c *Config) Validate() error {
 	if err := c.Staker.Validate(); err != nil {
 		return err
 	}
-	if c.Sequencer && c.TransactionStreamer.TrackBlockMetadataFrom == 0 {
-		return errors.New("when sequencer is enabled track-block-metadata-from should be set as well")
-	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
@@ -204,7 +201,6 @@ func ConfigDefaultL1Test() *Config {
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Sequencer = true
 	config.Dangerous.NoSequencerCoordinator = true
-	config.TransactionStreamer.TrackBlockMetadataFrom = 1
 
 	return config
 }
@@ -528,7 +524,7 @@ func createNodeImpl(
 
 	var blockMetadataFetcher *BlockMetadataFetcher
 	if config.BlockMetadataFetcher.Enable {
-		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec)
+		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec, config.TransactionStreamer.TrackBlockMetadataFrom)
 		if err != nil {
 			return nil, err
 		}
@@ -910,7 +906,16 @@ func CreateNode(
 			Public: false,
 		})
 	}
-
+	if currentNode.MaintenanceRunner != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "maintenance",
+			Version:   "1.0",
+			Service: &MaintenanceAPI{
+				runner: currentNode.MaintenanceRunner,
+			},
+			Public: false,
+		})
+	}
 	stack.RegisterAPIs(apis)
 
 	return currentNode, nil
