@@ -1472,7 +1472,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	var delayProof *bridgegen.DelayProof
-	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil {
+	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil && delayBuffer.isUpdatable(b.building.firstDelayedMsg.Message.Header.BlockNumber) {
 		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.inbox)
 		if err != nil {
 			return false, fmt.Errorf("failed to generate delay proof: %w", err)
