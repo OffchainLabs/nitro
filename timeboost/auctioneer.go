@@ -7,23 +7,18 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"net/http"
-	"os"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -66,6 +61,8 @@ type AuctioneerServerConfig struct {
 	Wallet                    genericconf.WalletConfig `koanf:"wallet"`
 	SequencerEndpoint         string                   `koanf:"sequencer-endpoint"`
 	SequencerJWTPath          string                   `koanf:"sequencer-jwt-path"`
+	UseRedisCoordinator       bool                     `koanf:"use-redis-coordinator"`
+	RedisCoordinatorURL       string                   `koanf:"redis-coordinator-url"`
 	AuctionContractAddress    string                   `koanf:"auction-contract-address"`
 	DbDirectory               string                   `koanf:"db-directory"`
 	AuctionResolutionWaitTime time.Duration            `koanf:"auction-resolution-wait-time"`
@@ -91,12 +88,14 @@ var TestAuctioneerServerConfig = AuctioneerServerConfig{
 
 func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAuctioneerServerConfig.Enable, "enable auctioneer server")
-	f.String(prefix+".redis-url", DefaultAuctioneerServerConfig.RedisURL, "url of redis server")
+	f.String(prefix+".redis-url", DefaultAuctioneerServerConfig.RedisURL, "url of redis server to receive bids from bid validators")
 	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
 	f.Duration(prefix+".stream-timeout", DefaultAuctioneerServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet for auctioneer server")
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
 	f.String(prefix+".sequencer-jwt-path", DefaultAuctioneerServerConfig.SequencerJWTPath, "sequencer jwt file path")
+	f.Bool(prefix+".use-redis-coordinator", DefaultAuctioneerServerConfig.UseRedisCoordinator, "use redis coordinator to find active sequencer")
+	f.String(prefix+".redis-coordinator-url", DefaultAuctioneerServerConfig.RedisCoordinatorURL, "redis coordinator url for finding active sequencer")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 	f.Duration(prefix+".auction-resolution-wait-time", DefaultAuctioneerServerConfig.AuctionResolutionWaitTime, "wait time after auction closing before resolving the auction")
@@ -110,8 +109,7 @@ type AuctioneerServer struct {
 	consumer                  *pubsub.Consumer[*JsonValidatedBid, error]
 	txOpts                    *bind.TransactOpts
 	chainId                   *big.Int
-	sequencerRpc              *rpc.Client
-	client                    *ethclient.Client
+	endpointManager           SequencerEndpointManager
 	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
 	auctionContractAddr       common.Address
 	bidsReceiver              chan *JsonValidatedBid
@@ -135,9 +133,6 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if cfg.DbDirectory == "" {
 		return nil, errors.New("database directory is empty")
 	}
-	if cfg.SequencerJWTPath == "" {
-		return nil, errors.New("no sequencer jwt path specified")
-	}
 	database, err := NewDatabase(cfg.DbDirectory)
 	if err != nil {
 		return nil, err
@@ -158,33 +153,24 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err != nil {
 		return nil, fmt.Errorf("creating consumer for validation: %w", err)
 	}
-	sequencerJwtStr, err := os.ReadFile(cfg.SequencerJWTPath)
-	if err != nil {
-		return nil, err
-	}
-	sequencerJwt, err := hexutil.Decode(string(sequencerJwtStr))
-	if err != nil {
-		return nil, err
-	}
-	client, err := rpc.DialOptions(ctx, cfg.SequencerEndpoint, rpc.WithHTTPAuth(func(h http.Header) error {
-		claims := jwt.MapClaims{
-			// Required claim for Ethereum RPC API auth. "iat" stands for issued at
-			// and it must be a unix timestamp that is +/- 5 seconds from the current
-			// timestamp at the moment the server verifies this value.
-			"iat": time.Now().Unix(),
-		}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenString, err := token.SignedString(sequencerJwt)
+
+	var endpointManager SequencerEndpointManager
+	if cfg.UseRedisCoordinator {
+		redisCoordinator, err := redisutil.NewRedisCoordinator(cfg.RedisCoordinatorURL)
 		if err != nil {
-			return errors.Wrap(err, "could not produce signed JWT token")
+			return nil, err
 		}
-		h.Set("Authorization", fmt.Sprintf("Bearer %s", tokenString))
-		return nil
-	}))
+		endpointManager = NewRedisEndpointManager(redisCoordinator, cfg.SequencerJWTPath)
+	} else {
+		endpointManager = NewStaticEndpointManager(cfg.SequencerEndpoint, cfg.SequencerJWTPath)
+	}
+
+	rpcClient, _, err := endpointManager.GetSequencerRPC(ctx)
 	if err != nil {
 		return nil, err
 	}
-	sequencerClient := ethclient.NewClient(client)
+	sequencerClient := ethclient.NewClient(rpcClient)
+
 	chainId, err := sequencerClient.ChainID(ctx)
 	if err != nil {
 		return nil, err
@@ -210,9 +196,8 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	}
 	return &AuctioneerServer{
 		txOpts:                    txOpts,
-		sequencerRpc:              client,
+		endpointManager:           endpointManager,
 		chainId:                   chainId,
-		client:                    sequencerClient,
 		database:                  database,
 		s3StorageService:          s3StorageService,
 		consumer:                  c,
@@ -347,6 +332,19 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	var err error
 	opts := copyTxOpts(a.txOpts)
 	opts.NoSend = true
+
+	sequencerRpc, newRpc, err := a.endpointManager.GetSequencerRPC(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get sequencer RPC: %w", err)
+	}
+
+	if newRpc {
+		a.auctionContract, err = express_lane_auctiongen.NewExpressLaneAuction(a.auctionContractAddr, ethclient.NewClient(sequencerRpc))
+		if err != nil {
+			return fmt.Errorf("failed to recreate ExpressLaneAuction conctract bindings with new sequencer endpoint: %w", err)
+		}
+	}
+
 	switch {
 	case first != nil && second != nil: // Both bids are present
 		tx, err = a.auctionContract.ResolveMultiBidAuction(
@@ -391,13 +389,13 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	retryInterval := 1 * time.Second
 
 	if err := retryUntil(ctx, func() error {
-		if err := a.sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx); err != nil {
-			log.Error("Error submitting auction resolution to privileged sequencer endpoint", "error", err)
+		if err := sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx); err != nil {
+			log.Error("Error submitting auction resolution to sequencer endpoint", "error", err)
 			return err
 		}
 
 		// Wait for the transaction to be mined
-		receipt, err := bind.WaitMined(ctx, a.client, tx)
+		receipt, err := bind.WaitMined(ctx, ethclient.NewClient(sequencerRpc), tx)
 		if err != nil {
 			log.Error("Error waiting for transaction to be mined", "error", err)
 			return err
