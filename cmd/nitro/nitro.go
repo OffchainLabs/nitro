@@ -1023,6 +1023,8 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
+	// 0 is default for any chain unless specified in the chain_defaults
+	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err
