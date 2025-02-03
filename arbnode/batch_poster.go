@@ -85,7 +85,7 @@ const (
 
 	sequencerBatchPostMethodName                    = "addSequencerL2BatchFromOrigin0"
 	sequencerBatchPostWithBlobsMethodName           = "addSequencerL2BatchFromBlobs"
-	sequencerBatchPostWithEigendaMethodName = "addSequencerL2BatchFromEigenDA"
+	sequencerBatchPostWithEigendaMethodName         = "addSequencerL2BatchFromEigenDA"
 	sequencerBatchPostDelayProofMethodName          = "addSequencerL2BatchFromOriginDelayProof"
 	sequencerBatchPostWithBlobsDelayProofMethodName = "addSequencerL2BatchFromBlobsDelayProof"
 )
@@ -781,7 +781,7 @@ type buildingBatch struct {
 	msgCount           arbutil.MessageIndex
 	haveUsefulMessage  bool
 	use4844            bool
-	useEigenDA        bool
+	useEigenDA         bool
 	muxBackend         *simulatedMuxBackend
 	firstDelayedMsg    *arbostypes.MessageWithMetadata
 	firstNonDelayedMsg *arbostypes.MessageWithMetadata
@@ -1037,7 +1037,7 @@ func (b *BatchPoster) encodeAddBatch(
 		}
 	} else if useEigenDA {
 		methodName = sequencerBatchPostWithEigendaMethodName
-	} else if delayProof != nil  {
+	} else if delayProof != nil {
 		methodName = sequencerBatchPostDelayProofMethodName
 	} else {
 		methodName = sequencerBatchPostMethodName
@@ -1086,11 +1086,15 @@ func (b *BatchPoster) encodeAddBatch(
 		values[4] = new(big.Int).SetUint64(uint64(prevMsgNum))
 		values[5] = new(big.Int).SetUint64(uint64(newMsgNum))
 
-		calldata, err = arguments.PackValues(values)
+		calldata, err := arguments.PackValues(values)
 
 		if err != nil {
 			return nil, nil, err
 		}
+
+		fullCalldata := append([]byte{}, method.ID...)
+		fullCalldata = append(fullCalldata, calldata...)
+		return fullCalldata, nil, nil
 
 	} else {
 		// EIP4844 transactions to the sequencer inbox will not use transaction calldata for L2 info.
@@ -1137,7 +1141,7 @@ func (b *BatchPoster) estimateGas(
 	realBlobs []kzg4844.Blob,
 	realNonce uint64,
 	realAccessList types.AccessList,
-	eigenDaBlobInfo *eigenda.EigenDABlobInfo
+	eigenDaBlobInfo *eigenda.EigenDABlobInfo,
 	delayProof *bridgegen.DelayProof,
 ) (uint64, error) {
 
@@ -1665,7 +1669,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	// In theory, this might reduce gas usage, but only by a factor that's already
 	// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
 	// posts a new delayed message that we didn't see while gas estimating.
-	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList, eigenDABlobInfo, delayProof)
+	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList, eigenDaBlobInfo, delayProof)
 	if err != nil {
 		return false, err
 	}

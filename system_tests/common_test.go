@@ -1398,6 +1398,7 @@ func deployOnParentChain(
 			arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 			nativeToken,
 			maxDataSize,
+			common.Address{0x0},
 			chainSupportsBlobs,
 		)
 	}
