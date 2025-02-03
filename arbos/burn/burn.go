@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	glog "github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 

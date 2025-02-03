@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
-
-	"github.com/ethereum/go-ethereum/log"
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
@@ -50,7 +50,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		backends = append(backends, *details)
 	}
 
-	aggregator, err := NewAggregator(ctx, DataAvailabilityConfig{RPCAggregator: AggregatorConfig{AssumedHonest: 1}, ParentChainNodeURL: "none"}, backends)
+	aggregator, err := NewAggregator(ctx, DataAvailabilityConfig{RPCAggregator: AggregatorConfig{AssumedHonest: 1, EnableChunkedStore: true}, ParentChainNodeURL: "none"}, backends)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -207,7 +207,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	aggregator, err := NewAggregator(
 		ctx,
 		DataAvailabilityConfig{
-			RPCAggregator:      AggregatorConfig{AssumedHonest: assumedHonest},
+			RPCAggregator:      AggregatorConfig{AssumedHonest: assumedHonest, EnableChunkedStore: true},
 			ParentChainNodeURL: "none",
 			RequestTimeout:     time.Millisecond * 2000,
 		}, backends)

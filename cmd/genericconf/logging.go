@@ -8,8 +8,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/log"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 var globalFileLoggerFactory = fileLoggerFactory{}

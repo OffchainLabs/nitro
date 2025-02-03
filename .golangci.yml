@@ -16,6 +16,7 @@ linters:
   enable:
     - asciicheck  # check for non-ascii characters
     - errorlint   # enure error wrapping is safely done
+    - gci         # keep imports sorted deterministically
     - gocritic    # check for certain simplifications
     - gofmt       # ensure code is formatted
     - gosec       # check for security concerns
@@ -29,6 +30,13 @@ linters-settings:
     #         a := b.(MyStruct)
     #
     check-type-assertions: true
+
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(github.com/ethereum/go-ethereum)
+      - prefix(github.com/offchainlabs)
 
   gocritic:
     disabled-tags:

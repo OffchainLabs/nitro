@@ -73,19 +73,103 @@ impl DataReader for VecReader {
     }
 }
 
+macro_rules! derive_math {
+    ($t:ident) => {
+        impl std::ops::Add for $t {
+            type Output = Self;
+
+            fn add(self, rhs: Self) -> Self {
+                Self(self.0 + rhs.0)
+            }
+        }
+
+        impl std::ops::AddAssign for $t {
+            fn add_assign(&mut self, rhs: Self) {
+                self.0 += rhs.0;
+            }
+        }
+
+        impl std::ops::Sub for $t {
+            type Output = Self;
+
+            fn sub(self, rhs: Self) -> Self {
+                Self(self.0 - rhs.0)
+            }
+        }
+
+        impl std::ops::SubAssign for $t {
+            fn sub_assign(&mut self, rhs: Self) {
+                self.0 -= rhs.0;
+            }
+        }
+
+        impl std::ops::Mul<u64> for $t {
+            type Output = Self;
+
+            fn mul(self, rhs: u64) -> Self {
+                Self(self.0 * rhs)
+            }
+        }
+
+        impl std::ops::Mul<$t> for u64 {
+            type Output = $t;
+
+            fn mul(self, rhs: $t) -> $t {
+                $t(self * rhs.0)
+            }
+        }
+
+        impl $t {
+            /// Equivalent to the Add trait, but const.
+            pub const fn add(self, rhs: Self) -> Self {
+                Self(self.0 + rhs.0)
+            }
+
+            /// Equivalent to the Sub trait, but const.
+            pub const fn sub(self, rhs: Self) -> Self {
+                Self(self.0 - rhs.0)
+            }
+
+            pub const fn saturating_add(self, rhs: Self) -> Self {
+                Self(self.0.saturating_add(rhs.0))
+            }
+
+            pub const fn saturating_sub(self, rhs: Self) -> Self {
+                Self(self.0.saturating_sub(rhs.0))
+            }
+
+            pub fn to_be_bytes(self) -> [u8; 8] {
+                self.0.to_be_bytes()
+            }
+        }
+    };
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
+#[must_use]
+pub struct Gas(pub u64);
+
+derive_math!(Gas);
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
+#[must_use]
+pub struct Ink(pub u64);
+
+derive_math!(Ink);
+
 pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Reads the 32-byte value in the EVM state trie at offset `key`.
     /// Returns the value and the access cost in gas.
     /// Analogous to `vm.SLOAD`.
-    fn get_bytes32(&mut self, key: Bytes32, evm_api_gas_to_use: u64) -> (Bytes32, u64);
+    fn get_bytes32(&mut self, key: Bytes32, evm_api_gas_to_use: Gas) -> (Bytes32, Gas);
 
     /// Stores the given value at the given key in Stylus VM's cache of the EVM state trie.
     /// Note that the actual values only get written after calls to `set_trie_slots`.
-    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> u64;
+    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Gas;
 
     /// Persists any dirty values in the storage cache to the EVM state trie, dropping the cache entirely if requested.
     /// Analogous to repeated invocations of `vm.SSTORE`.
-    fn flush_storage_cache(&mut self, clear: bool, gas_left: u64) -> Result<u64>;
+    fn flush_storage_cache(&mut self, clear: bool, gas_left: Gas) -> Result<Gas>;
 
     /// Reads the 32-byte value in the EVM's transient state trie at offset `key`.
     /// Analogous to `vm.TLOAD`.
@@ -102,10 +186,10 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         &mut self,
         contract: Bytes20,
         calldata: &[u8],
-        gas_left: u64,
-        gas_req: u64,
+        gas_left: Gas,
+        gas_req: Gas,
         value: Bytes32,
-    ) -> (u32, u64, UserOutcomeKind);
+    ) -> (u32, Gas, UserOutcomeKind);
 
     /// Delegate-calls the contract at the given address.
     /// Returns the EVM return data's length, the gas cost, and whether the call succeeded.
@@ -114,9 +198,9 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         &mut self,
         contract: Bytes20,
         calldata: &[u8],
-        gas_left: u64,
-        gas_req: u64,
-    ) -> (u32, u64, UserOutcomeKind);
+        gas_left: Gas,
+        gas_req: Gas,
+    ) -> (u32, Gas, UserOutcomeKind);
 
     /// Static-calls the contract at the given address.
     /// Returns the EVM return data's length, the gas cost, and whether the call succeeded.
@@ -125,9 +209,9 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         &mut self,
         contract: Bytes20,
         calldata: &[u8],
-        gas_left: u64,
-        gas_req: u64,
-    ) -> (u32, u64, UserOutcomeKind);
+        gas_left: Gas,
+        gas_req: Gas,
+    ) -> (u32, Gas, UserOutcomeKind);
 
     /// Deploys a new contract using the init code provided.
     /// Returns the new contract's address on success, or the error reason on failure.
@@ -137,8 +221,8 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         &mut self,
         code: Vec<u8>,
         endowment: Bytes32,
-        gas: u64,
-    ) -> (eyre::Result<Bytes20>, u32, u64);
+        gas: Gas,
+    ) -> (eyre::Result<Bytes20>, u32, Gas);
 
     /// Deploys a new contract using the init code provided, with an address determined in part by the `salt`.
     /// Returns the new contract's address on success, or the error reason on failure.
@@ -149,8 +233,8 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         code: Vec<u8>,
         endowment: Bytes32,
         salt: Bytes32,
-        gas: u64,
-    ) -> (eyre::Result<Bytes20>, u32, u64);
+        gas: Gas,
+    ) -> (eyre::Result<Bytes20>, u32, Gas);
 
     /// Returns the EVM return data.
     /// Analogous to `vm.RETURNDATACOPY`.
@@ -164,21 +248,21 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Gets the balance of the given account.
     /// Returns the balance and the access cost in gas.
     /// Analogous to `vm.BALANCE`.
-    fn account_balance(&mut self, address: Bytes20) -> (Bytes32, u64);
+    fn account_balance(&mut self, address: Bytes20) -> (Bytes32, Gas);
 
     /// Returns the code and the access cost in gas.
     /// Analogous to `vm.EXTCODECOPY`.
-    fn account_code(&mut self, address: Bytes20, gas_left: u64) -> (D, u64);
+    fn account_code(&mut self, address: Bytes20, gas_left: Gas) -> (D, Gas);
 
     /// Gets the hash of the given address's code.
     /// Returns the hash and the access cost in gas.
     /// Analogous to `vm.EXTCODEHASH`.
-    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64);
+    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, Gas);
 
     /// Determines the cost in gas of allocating additional wasm pages.
     /// Note: has the side effect of updating Geth's memory usage tracker.
     /// Not analogous to any EVM opcode.
-    fn add_pages(&mut self, pages: u16) -> u64;
+    fn add_pages(&mut self, pages: u16) -> Gas;
 
     /// Captures tracing information for hostio invocations during native execution.
     fn capture_hostio(
@@ -186,7 +270,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         name: &str,
         args: &[u8],
         outs: &[u8],
-        start_ink: u64,
-        end_ink: u64,
+        start_ink: Ink,
+        end_ink: Ink,
     );
 }

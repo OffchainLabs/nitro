@@ -11,27 +11,26 @@ import (
 	"sync"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-
-	flag "github.com/spf13/pflag"
 )
 
 type MessagePruner struct {
 	stopwaiter.StopWaiter
-	transactionStreamer              *TransactionStreamer
-	inboxTracker                     *InboxTracker
-	config                           MessagePrunerConfigFetcher
-	pruningLock                      sync.Mutex
-	lastPruneDone                    time.Time
-	cachedPrunedMessages             uint64
-	cachedPrunedBlockHashesInputFeed uint64
-	cachedPrunedMessageResult        uint64
-	cachedPrunedDelayedMessages      uint64
+	transactionStreamer         *TransactionStreamer
+	inboxTracker                *InboxTracker
+	config                      MessagePrunerConfigFetcher
+	pruningLock                 sync.Mutex
+	lastPruneDone               time.Time
+	cachedPrunedMessages        uint64
+	cachedPrunedDelayedMessages uint64
 }
 
 type MessagePrunerConfig struct {
@@ -46,7 +45,7 @@ type MessagePrunerConfigFetcher func() *MessagePrunerConfig
 var DefaultMessagePrunerConfig = MessagePrunerConfig{
 	Enable:         true,
 	PruneInterval:  time.Minute,
-	MinBatchesLeft: 2,
+	MinBatchesLeft: 1000,
 }
 
 func MessagePrunerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -112,12 +111,22 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 	}
 	msgCount := endBatchMetadata.MessageCount
 	delayedCount := endBatchMetadata.DelayedMessageCount
+	if delayedCount > 0 {
+		// keep an extra delayed message for the inbox reader to use
+		delayedCount--
+	}
 
 	return m.deleteOldMessagesFromDB(ctx, msgCount, delayedCount)
 }
 
 func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCount arbutil.MessageIndex, delayedMessageCount uint64) error {
-	prunedKeysRange, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messageResultPrefix, &m.cachedPrunedMessageResult, uint64(messageCount))
+	if m.cachedPrunedMessages == 0 {
+		m.cachedPrunedMessages = fetchLastPrunedKey(m.transactionStreamer.db, lastPrunedMessageKey)
+	}
+	if m.cachedPrunedDelayedMessages == 0 {
+		m.cachedPrunedDelayedMessages = fetchLastPrunedKey(m.inboxTracker.db, lastPrunedDelayedMessageKey)
+	}
+	prunedKeysRange, _, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messageResultPrefix, m.cachedPrunedMessages, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting message results: %w", err)
 	}
@@ -125,7 +134,7 @@ func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCoun
 		log.Info("Pruned message results:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 
-	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, blockHashInputFeedPrefix, &m.cachedPrunedBlockHashesInputFeed, uint64(messageCount))
+	prunedKeysRange, _, err = deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, blockHashInputFeedPrefix, m.cachedPrunedMessages, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting expected block hashes: %w", err)
 	}
@@ -133,43 +142,77 @@ func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCoun
 		log.Info("Pruned expected block hashes:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 
-	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messagePrefix, &m.cachedPrunedMessages, uint64(messageCount))
+	prunedKeysRange, lastPrunedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messagePrefix, m.cachedPrunedMessages, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting last batch messages: %w", err)
 	}
 	if len(prunedKeysRange) > 0 {
 		log.Info("Pruned last batch messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
+	insertLastPrunedKey(m.transactionStreamer.db, lastPrunedMessageKey, lastPrunedMessage)
+	m.cachedPrunedMessages = lastPrunedMessage
 
-	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(ctx, m.inboxTracker.db, rlpDelayedMessagePrefix, &m.cachedPrunedDelayedMessages, delayedMessageCount)
+	prunedKeysRange, lastPrunedDelayedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.inboxTracker.db, rlpDelayedMessagePrefix, m.cachedPrunedDelayedMessages, delayedMessageCount)
 	if err != nil {
 		return fmt.Errorf("error deleting last batch delayed messages: %w", err)
 	}
 	if len(prunedKeysRange) > 0 {
 		log.Info("Pruned last batch delayed messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
+	insertLastPrunedKey(m.inboxTracker.db, lastPrunedDelayedMessageKey, lastPrunedDelayedMessage)
+	m.cachedPrunedDelayedMessages = lastPrunedDelayedMessage
 	return nil
 }
 
-// deleteFromLastPrunedUptoEndKey is similar to deleteFromRange but automatically populates the start key
-// cachedStartMinKey must not be nil. It's set to the new start key at the end of this function if successful.
-func deleteFromLastPrunedUptoEndKey(ctx context.Context, db ethdb.Database, prefix []byte, cachedStartMinKey *uint64, endMinKey uint64) ([]uint64, error) {
-	startMinKey := *cachedStartMinKey
+// deleteFromLastPrunedUptoEndKey is similar to deleteFromRange but automatically populates the start key if it's not set.
+// It's returns the new start key (i.e. last pruned key) at the end of this function if successful.
+func deleteFromLastPrunedUptoEndKey(ctx context.Context, db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) ([]uint64, uint64, error) {
 	if startMinKey == 0 {
 		startIter := db.NewIterator(prefix, uint64ToKey(1))
 		if !startIter.Next() {
-			return nil, nil
+			return nil, 0, nil
 		}
 		startMinKey = binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
 		startIter.Release()
 	}
 	if endMinKey <= startMinKey {
-		*cachedStartMinKey = startMinKey
-		return nil, nil
+		return nil, startMinKey, nil
 	}
 	keys, err := deleteFromRange(ctx, db, prefix, startMinKey, endMinKey-1)
-	if err == nil {
-		*cachedStartMinKey = endMinKey - 1
+	return keys, endMinKey - 1, err
+}
+
+func insertLastPrunedKey(db ethdb.Database, lastPrunedKey []byte, lastPrunedValue uint64) {
+	lastPrunedValueByte, err := rlp.EncodeToBytes(lastPrunedValue)
+	if err != nil {
+		log.Error("error encoding last pruned value: %w", err)
+	} else {
+		err = db.Put(lastPrunedKey, lastPrunedValueByte)
+		if err != nil {
+			log.Error("error saving last pruned value: %w", err)
+		}
 	}
-	return keys, err
+}
+
+func fetchLastPrunedKey(db ethdb.Database, lastPrunedKey []byte) uint64 {
+	hasKey, err := db.Has(lastPrunedKey)
+	if err != nil {
+		log.Warn("error checking for last pruned key: %w", err)
+		return 0
+	}
+	if !hasKey {
+		return 0
+	}
+	lastPrunedValueByte, err := db.Get(lastPrunedKey)
+	if err != nil {
+		log.Warn("error fetching last pruned key: %w", err)
+		return 0
+	}
+	var lastPrunedValue uint64
+	err = rlp.DecodeBytes(lastPrunedValueByte, &lastPrunedValue)
+	if err != nil {
+		log.Warn("error decoding last pruned value: %w", err)
+		return 0
+	}
+	return lastPrunedValue
 }

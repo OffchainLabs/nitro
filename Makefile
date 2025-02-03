@@ -149,9 +149,13 @@ stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
 stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
 stylus_test_read-return-data_wasm = $(call get_stylus_test_wasm,read-return-data)
 stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data)
+stylus_test_hostio-test_wasm      = $(call get_stylus_test_wasm,hostio-test)
+stylus_test_hostio-test_src       = $(call get_stylus_test_rust,hostio-test)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_math_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_erc20_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_bfs:.b=.wasm)
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_math_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_erc20_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_hostio-test_wasm) $(stylus_test_bfs:.b=.wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
+
+CBROTLI_WASM_BUILD_ARGS ?=-d
 
 # user targets
 
@@ -283,6 +287,7 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
 	rm -f arbitrator/wasm-libraries/forward/*.wat
 	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
+	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*
 
@@ -435,50 +440,80 @@ $(stylus_test_dir)/%.wasm: $(stylus_test_dir)/%.b $(stylus_lang_bf)
 
 $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_storage_wasm): $(stylus_test_storage_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_multicall_wasm): $(stylus_test_multicall_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_log_wasm): $(stylus_test_log_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_create_wasm): $(stylus_test_create_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_math_wasm): $(stylus_test_math_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_evm-data_wasm): $(stylus_test_evm-data_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_read-return-data_wasm): $(stylus_test_read-return-data_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_sdk-storage_wasm): $(stylus_test_sdk-storage_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_erc20_wasm): $(stylus_test_erc20_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_hostio-test_wasm): $(stylus_test_hostio-test_src)
+	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(prover_bin) $(output_latest)/soft-float.wasm
@@ -572,9 +607,9 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	test -f target/lib-wasm/libbrotlicommon-static.a || ./scripts/build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlienc-static.a || ./scripts/build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlicommon-static.a || ./scripts/build-brotli.sh -w $(CBROTLI_WASM_BUILD_ARGS)
+	test -f target/lib-wasm/libbrotlienc-static.a || ./scripts/build-brotli.sh -w $(CBROTLI_WASM_BUILD_ARGS)
+	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh -w $(CBROTLI_WASM_BUILD_ARGS)
 	@touch $@
 
 .make/wasm-lib: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a  $(ORDER_ONLY_PREDICATE) .make

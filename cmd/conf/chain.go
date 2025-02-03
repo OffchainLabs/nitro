@@ -6,10 +6,11 @@ package conf
 import (
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
-	flag "github.com/spf13/pflag"
 )
 
 type ParentChainConfig struct {
@@ -52,23 +53,19 @@ func (c *ParentChainConfig) Validate() error {
 }
 
 type L2Config struct {
-	ID                   uint64                   `koanf:"id"`
-	Name                 string                   `koanf:"name"`
-	InfoFiles            []string                 `koanf:"info-files"`
-	InfoJson             string                   `koanf:"info-json"`
-	DevWallet            genericconf.WalletConfig `koanf:"dev-wallet"`
-	InfoIpfsUrl          string                   `koanf:"info-ipfs-url"`
-	InfoIpfsDownloadPath string                   `koanf:"info-ipfs-download-path"`
+	ID        uint64                   `koanf:"id"`
+	Name      string                   `koanf:"name"`
+	InfoFiles []string                 `koanf:"info-files"`
+	InfoJson  string                   `koanf:"info-json"`
+	DevWallet genericconf.WalletConfig `koanf:"dev-wallet"`
 }
 
 var L2ConfigDefault = L2Config{
-	ID:                   0,
-	Name:                 "",
-	InfoFiles:            []string{}, // Default file used is chaininfo/arbitrum_chain_info.json, stored in DefaultChainInfo in chain_info.go
-	InfoJson:             "",
-	DevWallet:            genericconf.WalletConfigDefault,
-	InfoIpfsUrl:          "",
-	InfoIpfsDownloadPath: "/tmp/",
+	ID:        0,
+	Name:      "",
+	InfoFiles: []string{}, // Default file used is chaininfo/arbitrum_chain_info.json, stored in DefaultChainInfo in chain_info.go
+	InfoJson:  "",
+	DevWallet: genericconf.WalletConfigDefault,
 }
 
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -79,9 +76,6 @@ func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 	// Dev wallet does not exist unless specified
 	genericconf.WalletConfigAddOptions(prefix+".dev-wallet", f, "")
-	f.String(prefix+".info-ipfs-url", L2ConfigDefault.InfoIpfsUrl, "url to download chain info file")
-	f.String(prefix+".info-ipfs-download-path", L2ConfigDefault.InfoIpfsDownloadPath, "path to save temp downloaded file")
-
 }
 
 func (c *L2Config) ResolveDirectoryNames(chain string) {

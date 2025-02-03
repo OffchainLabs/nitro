@@ -7,11 +7,36 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbos/storage"
-
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/vm"
+
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/storage"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
+
+func newMockEVMForTestingWithCurrentRefundTo(currentRefundTo *common.Address) *vm.EVM {
+	evm := newMockEVMForTesting()
+	txProcessor := arbos.NewTxProcessor(evm, &core.Message{})
+	txProcessor.CurrentRefundTo = currentRefundTo
+	evm.ProcessingHook = txProcessor
+	return evm
+}
+
+func TestGetCurrentRedeemer(t *testing.T) {
+	currentRefundTo := common.HexToAddress("0x030405")
+
+	evm := newMockEVMForTestingWithCurrentRefundTo(&currentRefundTo)
+	retryableTx := ArbRetryableTx{}
+	context := testContext(common.Address{}, evm)
+
+	currentRedeemer, err := retryableTx.GetCurrentRedeemer(context, evm)
+	Require(t, err)
+	if currentRefundTo.Cmp(currentRedeemer) != 0 {
+		t.Fatal("Expected to be ", currentRefundTo, " but got ", currentRedeemer)
+	}
+}
 
 func TestRetryableRedeem(t *testing.T) {
 	evm := newMockEVMForTesting()

@@ -16,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/eigenda"
@@ -57,10 +59,10 @@ type SequencerInbox struct {
 	con       *bridgegen.SequencerInbox
 	address   common.Address
 	fromBlock int64
-	client    arbutil.L1Interface
+	client    *ethclient.Client
 }
 
-func NewSequencerInbox(client arbutil.L1Interface, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
+func NewSequencerInbox(client *ethclient.Client, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
 	con, err := bridgegen.NewSequencerInbox(addr, client)
 	if err != nil {
 		return nil, err
@@ -116,7 +118,7 @@ type SequencerInboxBatch struct {
 	serialized             []byte // nil if serialization isn't cached yet
 }
 
-func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
+func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethclient.Client) ([]byte, error) {
 	switch m.dataLocation {
 	case batchDataTxInput:
 		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.rawLog)
@@ -129,7 +131,11 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 		if err != nil {
 			return nil, err
 		}
-		return args["data"].([]byte), nil
+		dataBytes, ok := args["data"].([]byte)
+		if !ok {
+			return nil, errors.New("args[\"data\"] not a byte array")
+		}
+		return dataBytes, nil
 	case batchDataSeparateEvent:
 		var numberAsHash common.Hash
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], m.SequenceNumber)
@@ -225,7 +231,7 @@ func interfaceToBytesJSON(data interface{}) ([]byte, error) {
 	return bytes, nil
 }
 
-func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
+func (m *SequencerInboxBatch) Serialize(ctx context.Context, client *ethclient.Client) ([]byte, error) {
 	if m.serialized != nil {
 		return m.serialized, nil
 	}

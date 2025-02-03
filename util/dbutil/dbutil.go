@@ -10,9 +10,10 @@ import (
 	"regexp"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/syndtr/goleveldb/leveldb"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
-	"github.com/syndtr/goleveldb/leveldb"
 )
 
 func IsErrNotFound(err error) bool {

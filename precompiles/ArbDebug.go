@@ -24,6 +24,7 @@ type ArbDebug struct {
 	UnusedError func() error
 }
 
+// Emits events with values based on the args provided
 func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value bytes32) (addr, huge, error) {
 	// Emits 2 events that cover each case
 	//   Basic tests an index'd value & a normal value
@@ -42,11 +43,13 @@ func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value bytes32)
 	return c.caller, paid, nil
 }
 
+// Tries (and fails) to emit logs in a view context
 func (con ArbDebug) EventsView(c ctx, evm mech) error {
 	_, _, err := con.Events(c, evm, common.Big0, true, bytes32{})
 	return err
 }
 
+// Throws a custom error
 func (con ArbDebug) CustomRevert(c ctx, number uint64) error {
 	return con.CustomError(number, "This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\", true)
 }
@@ -61,6 +64,7 @@ func (con ArbDebug) Panic(c ctx, evm mech) error {
 	panic("called ArbDebug's debug-only Panic method")
 }
 
+// Throws a hardcoded error
 func (con ArbDebug) LegacyError(c ctx) error {
 	return errors.New("example legacy error")
 }

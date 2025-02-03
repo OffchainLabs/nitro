@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
+
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 

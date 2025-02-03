@@ -2,6 +2,7 @@ package sharedmetrics
 
 import (
 	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 

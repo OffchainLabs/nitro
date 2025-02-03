@@ -6,14 +6,16 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/spf13/pflag"
 )
 
 // ValidationServer implements consumer for the requests originated from
@@ -161,9 +163,13 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				res, err := valRun.Await(ctx)
 				if err != nil {
 					log.Error("Error validating", "request value", work.req.Value, "error", err)
+					work.req.Ack()
 				} else {
 					log.Debug("done work", "thread", i, "workid", work.req.ID)
-					if err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res); err != nil {
+					err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res)
+					// Even in error we close ackNotifier as there's no retry mechanism here and closing it will alow other consumers to autoclaim
+					work.req.Ack()
+					if err != nil {
 						log.Error("Error setting result for request", "id", work.req.ID, "result", res, "error", err)
 					}
 					log.Debug("set result", "thread", i, "workid", work.req.ID)

@@ -16,7 +16,7 @@ use crate::{
 use arbutil::{
     crypto,
     evm::{
-        api::EvmApi,
+        api::{EvmApi, Gas, Ink},
         user::{UserOutcome, UserOutcomeKind},
     },
     format, Bytes20, Bytes32, Color,
@@ -48,8 +48,8 @@ fn test_ink() -> Result<()> {
 
     macro_rules! exhaust {
         ($ink:expr) => {
-            native.set_ink($ink);
-            assert_eq!(native.ink_left(), MachineMeter::Ready($ink));
+            native.set_ink(Ink($ink));
+            assert_eq!(native.ink_left(), MachineMeter::Ready(Ink($ink)));
             assert!(add_one.call(&mut native.store, 32).is_err());
             assert_eq!(native.ink_left(), MachineMeter::Exhausted);
         };
@@ -59,12 +59,12 @@ fn test_ink() -> Result<()> {
     exhaust!(50);
     exhaust!(99);
 
-    let mut ink_left = 500;
+    let mut ink_left = Ink(500);
     native.set_ink(ink_left);
-    while ink_left > 0 {
+    while ink_left > Ink(0) {
         assert_eq!(native.ink_left(), MachineMeter::Ready(ink_left));
         assert_eq!(add_one.call(&mut native.store, 64)?, 65);
-        ink_left -= 100;
+        ink_left -= Ink(100);
     }
     assert!(add_one.call(&mut native.store, 32).is_err());
     assert_eq!(native.ink_left(), MachineMeter::Exhausted);
@@ -198,7 +198,7 @@ fn test_import_export_safety() -> Result<()> {
         let mut bin = bin?;
         assert!(bin.clone().instrument(&compile, codehash).is_err());
         compile.debug.debug_info = false;
-        assert!(bin.instrument(&compile, &codehash).is_err());
+        assert!(bin.instrument(&compile, codehash).is_err());
 
         if both {
             assert!(TestInstance::new_test(file, compile).is_err());
@@ -268,7 +268,7 @@ fn test_heap() -> Result<()> {
         assert_eq!(pages, 128);
 
         let used = config.pricing.ink_to_gas(ink - native.ink_ready()?);
-        ensure!((used as i64 - 32_000_000).abs() < 3_000, "wrong ink");
+        ensure!((used.0 as i64 - 32_000_000).abs() < 3_000, "wrong ink");
         assert_eq!(native.memory_size(), Pages(128));
 
         if step == extra {
@@ -283,7 +283,7 @@ fn test_heap() -> Result<()> {
     //     the cost should exceed a maximum u32, consuming more gas than can ever be bought
 
     let (mut native, _) = TestInstance::new_with_evm("tests/memory2.wat", &compile, config)?;
-    let outcome = native.run_main(&[], config, config.pricing.ink_to_gas(u32::MAX.into()))?;
+    let outcome = native.run_main(&[], config, config.pricing.gas_to_ink(Gas(u32::MAX.into())))?;
     assert_eq!(outcome.kind(), UserOutcomeKind::OutOfInk);
 
     // ensure we reject programs with excessive footprints
@@ -381,7 +381,7 @@ fn test_storage() -> Result<()> {
 
     let (mut native, mut evm) = TestInstance::new_with_evm(filename, &compile, config)?;
     run_native(&mut native, &store_args, ink)?;
-    assert_eq!(evm.get_bytes32(key.into(), 0).0, Bytes32(value));
+    assert_eq!(evm.get_bytes32(key.into(), Gas(0)).0, Bytes32(value));
     assert_eq!(run_native(&mut native, &load_args, ink)?, value);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
@@ -465,7 +465,7 @@ fn test_calls() -> Result<()> {
     run_native(&mut native, &args, ink)?;
 
     for (key, value) in slots {
-        assert_eq!(evm.get_bytes32(key, 0).0, value);
+        assert_eq!(evm.get_bytes32(key, Gas(0)).0, value);
     }
     Ok(())
 }

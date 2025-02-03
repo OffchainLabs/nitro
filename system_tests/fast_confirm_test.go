@@ -10,6 +10,7 @@ package arbtest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -32,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -94,7 +96,7 @@ func TestFastConfirmation(t *testing.T) {
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	valConfig := staker.TestL1ValidatorConfig
+	valConfig := legacystaker.TestL1ValidatorConfig
 	valConfig.EnableFastConfirmation = true
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
@@ -156,11 +158,11 @@ func TestFastConfirmation(t *testing.T) {
 	Require(t, err)
 	err = valWallet.Initialize(ctx)
 	Require(t, err)
-	stakerA, err := staker.NewStaker(
+	stakerA, err := legacystaker.NewStaker(
 		l2node.L1Reader,
 		valWallet,
 		bind.CallOpts{},
-		func() *staker.L1ValidatorConfig { return &valConfig },
+		func() *legacystaker.L1ValidatorConfig { return &valConfig },
 		nil,
 		stateless,
 		nil,
@@ -211,7 +213,7 @@ func TestFastConfirmation(t *testing.T) {
 	latestConfirmAfterAct, err := rollup.LatestConfirmed(&bind.CallOpts{})
 	Require(t, err)
 	if latestConfirmAfterAct <= latestConfirmBeforeAct {
-		Fatal(t, "staker A didn't advance the latest confirmed node")
+		Fatal(t, fmt.Sprintf("staker A didn't advance the latest confirmed node: want > %d, got: %d", latestConfirmBeforeAct, latestConfirmAfterAct))
 	}
 }
 
@@ -293,7 +295,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	valConfigA := staker.TestL1ValidatorConfig
+	valConfigA := legacystaker.TestL1ValidatorConfig
 	valConfigA.EnableFastConfirmation = true
 
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
@@ -357,11 +359,11 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = valWalletA.Initialize(ctx)
 	Require(t, err)
-	stakerA, err := staker.NewStaker(
+	stakerA, err := legacystaker.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletA,
 		bind.CallOpts{},
-		func() *staker.L1ValidatorConfig { return &valConfigA },
+		func() *legacystaker.L1ValidatorConfig { return &valConfigA },
 		nil,
 		statelessA,
 		nil,
@@ -391,7 +393,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	}
 	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
-	valConfigB := staker.TestL1ValidatorConfig
+	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.EnableFastConfirmation = true
 	valConfigB.Strategy = "watchtower"
 	statelessB, err := staker.NewStatelessBlockValidator(
@@ -409,11 +411,11 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = valWalletB.Initialize(ctx)
 	Require(t, err)
-	stakerB, err := staker.NewStaker(
+	stakerB, err := legacystaker.NewStaker(
 		l2nodeB.L1Reader,
 		valWalletB,
 		bind.CallOpts{},
-		func() *staker.L1ValidatorConfig { return &valConfigB },
+		func() *legacystaker.L1ValidatorConfig { return &valConfigB },
 		nil,
 		statelessB,
 		nil,

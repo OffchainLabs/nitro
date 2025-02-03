@@ -2,10 +2,11 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
+    benchmark::Benchmark,
     crypto,
     evm::{
         self,
-        api::{DataReader, EvmApi},
+        api::{DataReader, EvmApi, Gas, Ink},
         storage::StorageCache,
         user::UserOutcomeKind,
         EvmData, ARBOS_VERSION_STYLUS_CHARGING_FIXES,
@@ -21,6 +22,7 @@ use prover::{
 };
 use ruint2::Uint;
 use std::fmt::Display;
+use std::time::Instant;
 
 macro_rules! be {
     ($int:expr) => {
@@ -68,6 +70,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
     fn evm_api(&mut self) -> &mut Self::A;
     fn evm_data(&self) -> &EvmData;
+    fn benchmark(&mut self) -> &mut Benchmark;
     fn evm_return_data_len(&mut self) -> &mut u32;
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, Self::MemoryErr>;
@@ -88,7 +91,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     }
 
     fn say<D: Display>(&self, text: D);
-    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], end_ink: u64);
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], end_ink: Ink);
 
     fn write_bytes20(&self, ptr: GuestPtr, src: Bytes20) -> Result<(), Self::MemoryErr> {
         self.write_slice(ptr, &src.0)
@@ -147,7 +150,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
         // require for cache-miss case, preserve wrong behavior for old arbos
         let evm_api_gas_to_use = if arbos_version < ARBOS_VERSION_STYLUS_CHARGING_FIXES {
-            EVM_API_INK
+            Gas(EVM_API_INK.0)
         } else {
             self.pricing().ink_to_gas(EVM_API_INK)
         };
@@ -253,7 +256,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         data: GuestPtr,
         data_len: u32,
         value: GuestPtr,
-        gas: u64,
+        gas: Gas,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
         let value = Some(value);
@@ -282,7 +285,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         contract: GuestPtr,
         data: GuestPtr,
         data_len: u32,
-        gas: u64,
+        gas: Gas,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
         let call = |api: &mut Self::A, contract, data: &_, left, req, _| {
@@ -312,7 +315,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         contract: GuestPtr,
         data: GuestPtr,
         data_len: u32,
-        gas: u64,
+        gas: Gas,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
         let call = |api: &mut Self::A, contract, data: &_, left, req, _| {
@@ -329,7 +332,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         calldata: GuestPtr,
         calldata_len: u32,
         value: Option<GuestPtr>,
-        gas: u64,
+        gas: Gas,
         return_data_len: GuestPtr,
         call: F,
         name: &str,
@@ -339,10 +342,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
             &mut Self::A,
             Address,
             &[u8],
-            u64,
-            u64,
+            Gas,
+            Gas,
             Option<Wei>,
-        ) -> (u32, u64, UserOutcomeKind),
+        ) -> (u32, Gas, UserOutcomeKind),
     {
         self.buy_ink(HOSTIO_INK + 3 * PTR_INK + EVM_API_INK)?;
         self.pay_for_read(calldata_len)?;
@@ -465,12 +468,12 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         salt: Option<GuestPtr>,
         contract: GuestPtr,
         revert_data_len: GuestPtr,
-        cost: u64,
+        cost: Ink,
         call: F,
         name: &str,
     ) -> Result<(), Self::Err>
     where
-        F: FnOnce(&mut Self::A, Vec<u8>, Bytes32, Option<Wei>, u64) -> (Result<Address>, u32, u64),
+        F: FnOnce(&mut Self::A, Vec<u8>, Bytes32, Option<Wei>, Gas) -> (Result<Address>, u32, Gas),
     {
         self.buy_ink(HOSTIO_INK + cost)?;
         self.pay_for_read(code_len)?;
@@ -745,7 +748,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// equivalent to that of the EVM's [`GAS`] opcode.
     ///
     /// [`GAS`]: https://www.evm.codes/#5a
-    fn evm_gas_left(&mut self) -> Result<u64, Self::Err> {
+    fn evm_gas_left(&mut self) -> Result<Gas, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let gas = self.gas_left()?;
         trace!("evm_gas_left", self, &[], be!(gas), gas)
@@ -757,7 +760,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`GAS`]: https://www.evm.codes/#5a
     /// [`Ink and Gas`]: https://developer.arbitrum.io/TODO
-    fn evm_ink_left(&mut self) -> Result<u64, Self::Err> {
+    fn evm_ink_left(&mut self) -> Result<Ink, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let ink = self.ink_ready()?;
         trace!("evm_ink_left", self, &[], be!(ink), ink)
@@ -936,7 +939,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn pay_for_memory_grow(&mut self, pages: u16) -> Result<(), Self::Err> {
         if pages == 0 {
             self.buy_ink(HOSTIO_INK)?;
-            return Ok(());
+            return trace!("pay_for_memory_grow", self, be!(pages), &[]);
         }
         let gas_cost = self.evm_api().add_pages(pages); // no sentry needed since the work happens after the hostio
         self.buy_gas(gas_cost)?;
@@ -961,5 +964,39 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn console_tee<T: Into<Value> + Copy>(&mut self, value: T) -> Result<T, Self::Err> {
         self.say(value.into());
         Ok(value)
+    }
+
+    // Initializes benchmark data related to a code block.
+    // A code block is defined by the instructions between start_benchmark and end_benchmark calls.
+    // If start_benchmark is called multiple times without end_benchmark being called,
+    // then only the last start_benchmark before end_benchmark will be used.
+    // It is possible to have multiple code blocks benchmarked in the same program.
+    fn start_benchmark(&mut self) -> Result<(), Self::Err> {
+        let ink_curr = self.ink_ready()?;
+
+        let benchmark = self.benchmark();
+        benchmark.timer = Some(Instant::now());
+        benchmark.ink_start = Some(ink_curr);
+
+        Ok(())
+    }
+
+    // Updates cumulative benchmark data related to a code block.
+    // If end_benchmark is called without a corresponding start_benchmark nothing will happen.
+    fn end_benchmark(&mut self) -> Result<(), Self::Err> {
+        let ink_curr = self.ink_ready()?;
+
+        let benchmark = self.benchmark();
+        if let Some(timer) = benchmark.timer {
+            benchmark.elapsed_total = benchmark.elapsed_total.saturating_add(timer.elapsed());
+
+            let code_block_ink = benchmark.ink_start.unwrap().saturating_sub(ink_curr);
+            benchmark.ink_total = benchmark.ink_total.saturating_add(code_block_ink);
+
+            benchmark.timer = None;
+            benchmark.ink_start = None;
+        };
+
+        Ok(())
     }
 }

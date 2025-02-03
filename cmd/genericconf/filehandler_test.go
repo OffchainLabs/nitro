@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -55,7 +56,11 @@ func readLogMessagesFromJSONFile(t *testing.T, path string) ([]string, error) {
 		if !ok {
 			testhelpers.FailImpl(t, "Incorrect record, msg key is missing", "record", record)
 		}
-		messages = append(messages, msg.(string))
+		msgString, ok := msg.(string)
+		if !ok {
+			testhelpers.FailImpl(t, "Incorrect record, msg is not a string", "record", record)
+		}
+		messages = append(messages, msgString)
 	}
 	if errors.Is(err, io.EOF) {
 		return messages, nil

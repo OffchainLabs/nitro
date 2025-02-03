@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
+
 	"github.com/offchainlabs/nitro/util/containers"
 )
 

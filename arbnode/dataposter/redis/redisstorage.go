@@ -9,7 +9,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -196,7 +197,7 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 		if err != nil {
 			return err
 		}
-		if err := pipe.ZAdd(ctx, s.key, &redis.Z{
+		if err := pipe.ZAdd(ctx, s.key, redis.Z{
 			Score:  float64(index),
 			Member: string(signedItem),
 		}).Err(); err != nil {

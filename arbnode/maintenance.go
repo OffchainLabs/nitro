@@ -10,12 +10,14 @@ import (
 	"strings"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	flag "github.com/spf13/pflag"
 )
 
 // Regularly runs db compaction if configured
@@ -101,7 +103,7 @@ func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCo
 	if seqCoordinator != nil {
 		c := func() *redislock.SimpleCfg { return &cfg.Lock }
 		r := func() bool { return true } // always ready to lock
-		rl, err := redislock.NewSimple(seqCoordinator.Client, c, r)
+		rl, err := redislock.NewSimple(seqCoordinator.RedisCoordinator().Client, c, r)
 		if err != nil {
 			return nil, fmt.Errorf("creating new simple redis lock: %w", err)
 		}

@@ -2,6 +2,7 @@ package server_common
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator"
 )

@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -58,11 +59,11 @@ type DelayedBridge struct {
 	con              *bridgegen.IBridge
 	address          common.Address
 	fromBlock        uint64
-	client           arbutil.L1Interface
+	client           *ethclient.Client
 	messageProviders map[common.Address]*bridgegen.IDelayedMessageProvider
 }
 
-func NewDelayedBridge(client arbutil.L1Interface, addr common.Address, fromBlock uint64) (*DelayedBridge, error) {
+func NewDelayedBridge(client *ethclient.Client, addr common.Address, fromBlock uint64) (*DelayedBridge, error) {
 	con, err := bridgegen.NewIBridge(addr, client)
 	if err != nil {
 		return nil, err
@@ -333,7 +334,11 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		if err != nil {
 			return nil, nil, err
 		}
-		return parsedLog.MessageNum, args["messageData"].([]byte), nil
+		dataBytes, ok := args["messageData"].([]byte)
+		if !ok {
+			return nil, nil, errors.New("messageData not a byte array")
+		}
+		return parsedLog.MessageNum, dataBytes, nil
 	default:
 		return nil, nil, errors.New("unexpected log type")
 	}

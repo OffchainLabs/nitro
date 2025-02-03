@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync/atomic"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -18,8 +19,9 @@ import (
 )
 
 type JitSpawnerConfig struct {
-	Workers   int  `koanf:"workers" reload:"hot"`
-	Cranelift bool `koanf:"cranelift"`
+	Workers          int           `koanf:"workers" reload:"hot"`
+	Cranelift        bool          `koanf:"cranelift"`
+	MaxExecutionTime time.Duration `koanf:"max-execution-time" reload:"hot"`
 
 	// TODO: change WasmMemoryUsageLimit to a string and use resourcemanager.ParseMemLimit
 	WasmMemoryUsageLimit int `koanf:"wasm-memory-usage-limit"`
@@ -30,6 +32,7 @@ type JitSpawnerConfigFecher func() *JitSpawnerConfig
 var DefaultJitSpawnerConfig = JitSpawnerConfig{
 	Workers:              0,
 	Cranelift:            true,
+	MaxExecutionTime:     time.Minute * 10,
 	WasmMemoryUsageLimit: 4294967296, // 2^32 WASM memeory limit
 }
 
@@ -37,6 +40,7 @@ func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".workers", DefaultJitSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 	f.Int(prefix+".wasm-memory-usage-limit", DefaultJitSpawnerConfig.WasmMemoryUsageLimit, "if memory used by a jit wasm exceeds this limit, a warning is logged")
+	f.Duration(prefix+".max-execution-time", DefaultJitSpawnerConfig.MaxExecutionTime, "if execution time used by a jit wasm exceeds this limit, a rpc error is returned")
 }
 
 type JitSpawner struct {
@@ -52,7 +56,8 @@ func NewJitSpawner(locator *server_common.MachineLocator, config JitSpawnerConfi
 	machineConfig := DefaultJitMachineConfig
 	machineConfig.JitCranelift = config().Cranelift
 	machineConfig.WasmMemoryUsageLimit = config().WasmMemoryUsageLimit
-	loader, err := NewJitMachineLoader(&machineConfig, locator, fatalErrChan)
+	maxExecutionTime := config().MaxExecutionTime
+	loader, err := NewJitMachineLoader(&machineConfig, locator, maxExecutionTime, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}

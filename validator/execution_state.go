@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
@@ -16,6 +17,13 @@ type GoGlobalState struct {
 	SendRoot   common.Hash
 	Batch      uint64
 	PosInBatch uint64
+}
+
+func (g GoGlobalState) String() string {
+	return fmt.Sprintf(
+		"BlockHash: %s, SendRoot: %s, Batch: %d, PosInBatch: %d",
+		g.BlockHash.Hex(), g.SendRoot.Hex(), g.Batch, g.PosInBatch,
+	)
 }
 
 type MachineStatus uint8

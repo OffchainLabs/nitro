@@ -9,6 +9,8 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
@@ -184,7 +186,7 @@ func (as *AddressSet) Remove(addr common.Address, arbosVersion uint64) error {
 		if err != nil {
 			return err
 		}
-		if arbosVersion >= 11 {
+		if arbosVersion >= params.ArbosVersion_11 {
 			err = as.byAddress.Set(atSize, util.UintToHash(slot))
 			if err != nil {
 				return err

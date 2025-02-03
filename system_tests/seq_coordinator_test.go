@@ -8,11 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"net"
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -153,7 +152,15 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	nodeForwardTarget := func(nodeNum int) int {
 		execNode := testNodes[nodeNum].ExecNode
-		fwTarget := execNode.TxPublisher.(*gethexec.TxPreChecker).TransactionPublisher.(*gethexec.Sequencer).ForwardTarget()
+		preChecker, ok := execNode.TxPublisher.(*gethexec.TxPreChecker)
+		if !ok {
+			return -1
+		}
+		sequencer, ok := preChecker.TransactionPublisher.(*gethexec.Sequencer)
+		if !ok {
+			return -1
+		}
+		fwTarget := sequencer.ForwardTarget()
 		if fwTarget == "" {
 			return -1
 		}
@@ -323,7 +330,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	// nodeB doesn't sequence transactions, but adds messages related to them to its output feed.
 	// nodeBOutputFeedReader reads those messages from this feed and processes them.
 	// nodeBOutputFeedReader doesn't read messages from L1 since none of the nodes posts to L1.
-	nodeBPort := testClientB.ConsensusNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	nodeBPort := testhelpers.AddrTCPPort(testClientB.ConsensusNode.BroadcastServer.ListenerAddr(), t)
 	nodeConfigNodeBOutputFeedReader := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigNodeBOutputFeedReader.Feed.Input = *newBroadcastClientConfigTest(nodeBPort)
 	testClientNodeBOutputFeedReader, cleanupNodeBOutputFeedReader := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigNodeBOutputFeedReader})
@@ -372,4 +379,78 @@ func TestRedisSeqCoordinatorMessageSync(t *testing.T) {
 
 func TestRedisSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	testCoordinatorMessageSync(t, false)
+}
+
+func TestRedisSwitchover(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.SeqCoordinator.Enable = true
+	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
+	builder.nodeConfig.SeqCoordinator.NewRedisUrl = redisutil.CreateTestRedis(ctx, t)
+	builder.nodeConfig.BatchPoster.Enable = false
+
+	nodeNames := []string{"stdio://A", "stdio://B"}
+	initRedisForTest(t, ctx, builder.nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
+	initRedisForTest(t, ctx, builder.nodeConfig.SeqCoordinator.NewRedisUrl, nodeNames)
+	builder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	redisClient, err := redisutil.RedisClientFromURL(builder.nodeConfig.SeqCoordinator.RedisUrl)
+	Require(t, err)
+
+	// wait for sequencerA to become master
+	for {
+		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
+		if errors.Is(err, redis.Nil) {
+			time.Sleep(builder.nodeConfig.SeqCoordinator.UpdateInterval)
+			continue
+		}
+		Require(t, err)
+		break
+	}
+
+	builder.L2Info.GenerateAccount("User2")
+
+	nodeConfigDup := *builder.nodeConfig
+	builder.nodeConfig = &nodeConfigDup
+	builder.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
+	builder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: builder.nodeConfig})
+	defer cleanupB()
+
+	verifyTxIsProcessed(t, ctx, builder, testClientB, 1e12)
+
+	redisClient.Set(ctx, redisutil.CHOSENSEQ_KEY, redisutil.SWITCHED_REDIS, time.Duration(-1))
+
+	verifyTxIsProcessed(t, ctx, builder, testClientB, 1e12*2)
+
+	// Wait for all messages to be processed, before closing old redisClient
+	time.Sleep(1 * time.Second)
+	err = redisClient.Close()
+	Require(t, err)
+
+	verifyTxIsProcessed(t, ctx, builder, testClientB, 1e12*3)
+
+}
+
+func verifyTxIsProcessed(t *testing.T, ctx context.Context, builder *NodeBuilder, testClientB *TestClient, balance int64) {
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), time.Second*5)
+	Require(t, err)
+	l2balance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if l2balance.Cmp(big.NewInt(balance)) != 0 {
+		t.Fatal("Unexpected balance:", l2balance)
+	}
 }

@@ -8,14 +8,14 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/offchainlabs/nitro/util/pretty"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbutil"
+
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type syncedKeysetCache struct {
@@ -42,7 +42,7 @@ type KeysetFetcher struct {
 	keysetCache      syncedKeysetCache
 }
 
-func NewKeysetFetcher(l1client arbutil.L1Interface, seqInboxAddr common.Address) (*KeysetFetcher, error) {
+func NewKeysetFetcher(l1client *ethclient.Client, seqInboxAddr common.Address) (*KeysetFetcher, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(seqInboxAddr, l1client)
 	if err != nil {
 		return nil, err

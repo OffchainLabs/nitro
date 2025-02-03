@@ -19,7 +19,11 @@ func ParentHeaderToL1BlockNumber(header *types.Header) uint64 {
 	return header.Number.Uint64()
 }
 
-func CorrespondingL1BlockNumber(ctx context.Context, client L1Interface, parentBlockNumber uint64) (uint64, error) {
+type ParentHeaderFetcher interface {
+	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
+}
+
+func CorrespondingL1BlockNumber(ctx context.Context, client ParentHeaderFetcher, parentBlockNumber uint64) (uint64, error) {
 	// #nosec G115
 	header, err := client.HeaderByNumber(ctx, big.NewInt(int64(parentBlockNumber)))
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/contracts"
 )

@@ -5,6 +5,8 @@ use crate::Bytes32;
 use fnv::FnvHashMap as HashMap;
 use std::ops::{Deref, DerefMut};
 
+use super::api::Gas;
+
 /// Represents the EVM word at a given key.
 #[derive(Debug)]
 pub struct StorageWord {
@@ -37,23 +39,23 @@ pub struct StorageCache {
 }
 
 impl StorageCache {
-    pub const REQUIRED_ACCESS_GAS: u64 = 10;
+    pub const REQUIRED_ACCESS_GAS: Gas = Gas(10);
 
-    pub fn read_gas(&mut self) -> u64 {
+    pub fn read_gas(&mut self) -> Gas {
         self.reads += 1;
         match self.reads {
-            0..=32 => 0,
-            33..=128 => 2,
-            _ => 10,
+            0..=32 => Gas(0),
+            33..=128 => Gas(2),
+            _ => Gas(10),
         }
     }
 
-    pub fn write_gas(&mut self) -> u64 {
+    pub fn write_gas(&mut self) -> Gas {
         self.writes += 1;
         match self.writes {
-            0..=8 => 0,
-            9..=64 => 7,
-            _ => 10,
+            0..=8 => Gas(0),
+            9..=64 => Gas(7),
+            _ => Gas(10),
         }
     }
 }

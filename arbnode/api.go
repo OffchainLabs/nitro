@@ -7,9 +7,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/ethdb"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
 type BlockValidatorAPI struct {
@@ -53,4 +56,9 @@ func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
 	}
 	result.Valid = valid
 	return result, err
+}
+
+func (a *BlockValidatorDebugAPI) ValidationInputsAt(ctx context.Context, msgNum hexutil.Uint64, target ethdb.WasmTarget,
+) (server_api.InputJSON, error) {
+	return a.val.ValidationInputsAt(ctx, arbutil.MessageIndex(msgNum), target)
 }

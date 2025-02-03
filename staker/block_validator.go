@@ -16,12 +16,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -29,7 +32,8 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client/redis"
-	"github.com/spf13/pflag"
+	"github.com/offchainlabs/nitro/validator/inputs"
+	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
 var (
@@ -94,6 +98,9 @@ type BlockValidator struct {
 	// for testing only
 	testingProgressMadeChan chan struct{}
 
+	// For troubleshooting failed validations
+	validationInputsWriter *inputs.Writer
+
 	fatalErr chan<- error
 
 	MemoryFreeLimitChecker resourcemanager.LimitChecker
@@ -115,6 +122,9 @@ type BlockValidatorConfig struct {
 	Dangerous                   BlockValidatorDangerousConfig `koanf:"dangerous"`
 	MemoryFreeLimit             string                        `koanf:"memory-free-limit" reload:"hot"`
 	ValidationServerConfigsList string                        `koanf:"validation-server-configs-list"`
+	// The directory to which the BlockValidator will write the
+	// block_inputs_<id>.json files when WriteToFile() is called.
+	BlockInputsFilePath string `koanf:"block-inputs-file-path"`
 
 	memoryFreeLimit int
 }
@@ -182,6 +192,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
+	f.String(prefix+".block-inputs-file-path", DefaultBlockValidatorConfig.BlockInputsFilePath, "directory to write block validation inputs files")
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -201,6 +212,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot:    "latest",
 	FailureIsFatal:              true,
 	Dangerous:                   DefaultBlockValidatorDangerousConfig,
+	BlockInputsFilePath:         "./target/validation_inputs",
 	MemoryFreeLimit:             "default",
 	RecordingIterLimit:          20,
 }
@@ -219,6 +231,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot:    "latest",
 	FailureIsFatal:              true,
 	Dangerous:                   DefaultBlockValidatorDangerousConfig,
+	BlockInputsFilePath:         "./target/validation_inputs",
 	MemoryFreeLimit:             "default",
 }
 
@@ -277,6 +290,13 @@ func NewBlockValidator(
 		fatalErr:                fatalErr,
 		prevBatchCache:          make(map[uint64][]byte),
 	}
+	valInputsWriter, err := inputs.NewWriter(
+		inputs.WithBaseDir(ret.stack.InstanceDir()),
+		inputs.WithSlug("BlockValidator"))
+	if err != nil {
+		return nil, err
+	}
+	ret.validationInputsWriter = valInputsWriter
 	if !config().Dangerous.ResetBlockValidation {
 		validated, err := ret.ReadLastValidatedInfo()
 		if err != nil {
@@ -508,18 +528,16 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 }
 
 //nolint:gosec
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry) error {
 	input, err := validationEntry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
 	if err != nil {
 		return err
 	}
-	for _, spawner := range v.execSpawners {
-		if validator.SpawnerSupportsModule(spawner, moduleRoot) {
-			_, err = spawner.WriteToFile(input, validationEntry.End, moduleRoot).Await(v.GetContext())
-			return err
-		}
+	inputJson := server_api.ValidationInputToJson(input)
+	if err := v.validationInputsWriter.Write(inputJson); err != nil {
+		return err
 	}
-	return errors.New("did not find exec spawner for wasmModuleRoot")
+	return nil
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -823,7 +841,7 @@ validationsLoop:
 				runEnd, err := run.Current()
 				if err == nil && runEnd != validationStatus.Entry.End {
 					err = fmt.Errorf("validation failed: expected %v got %v", validationStatus.Entry.End, runEnd)
-					writeErr := v.writeToFile(validationStatus.Entry, run.WasmModuleRoot())
+					writeErr := v.writeToFile(validationStatus.Entry)
 					if writeErr != nil {
 						log.Warn("failed to write debug results file", "err", writeErr)
 					}
@@ -1099,7 +1117,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		}
 		v.validations.Delete(iPos)
 	}
-	v.nextCreateStartGS = buildGlobalState(*res, endPosition)
+	v.nextCreateStartGS = BuildGlobalState(*res, endPosition)
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	v.nextCreateBatchReread = true
 	v.prevBatchCache = make(map[uint64][]byte)
