@@ -146,6 +146,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
+	snapshotter.DatabaseSnapshotterConfigAddOptions(prefix+".database-snapshotter", f)
 }
 
 var ConfigDefault = Config{
