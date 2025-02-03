@@ -16,6 +16,7 @@ import (
 
 type BlockChainExporter interface {
 	Open() error
+	IsOpened() bool
 	NewBatch() (BlockChainExporterBatch, error)
 	Close() error
 }
@@ -61,7 +62,7 @@ var GethDatabaseExporterConfigDefault = GethDatabaseExporterConfig{
 }
 
 func GethDatabaseExporterConfigAddOptions(prefix string, f *flag.FlagSet) {
-	conf.DBConfigAddOptions("output", f, &GethDatabaseExporterConfigDefault.Output)
+	conf.DBConfigAddOptions(prefix+".output", f, &GethDatabaseExporterConfigDefault.Output)
 }
 
 // GethDatabaseExporter is not thread safe
@@ -77,6 +78,10 @@ func NewGethDatabaseExporter(config *GethDatabaseExporterConfig) *GethDatabaseEx
 	return &GethDatabaseExporter{
 		config: config,
 	}
+}
+
+func (e *GethDatabaseExporter) IsOpened() bool {
+	return e.opened
 }
 
 func (e *GethDatabaseExporter) Open() error {
@@ -108,6 +113,9 @@ func (e *GethDatabaseExporter) Open() error {
 }
 
 func (e *GethDatabaseExporter) Close() error {
+	if !e.opened {
+		return errors.New("not opened")
+	}
 	if err := e.db.Close(); err != nil {
 		return err
 	}

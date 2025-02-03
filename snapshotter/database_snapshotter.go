@@ -204,6 +204,14 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 	if err := s.exporter.Open(); err != nil {
 		return fmt.Errorf("failed to open blockchain exporter: %w", err)
 	}
+	defer func() {
+		if s.exporter.IsOpened() {
+			if err := s.exporter.Close(); err != nil {
+				log.Error("Failed to close blockchain exporter", "err", err)
+			}
+		}
+	}()
+
 	threads := s.config.Threads
 	results := make(chan error, threads)
 	for i := 0; i < threads; i++ {
