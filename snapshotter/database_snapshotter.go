@@ -147,8 +147,10 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 	if lastNumber < genesisNumber {
 		return fmt.Errorf("failed to export blocks: last block (number %v) older then genesis (number %v)", lastNumber, genesisNumber)
 	}
-
 	number := genesisNumber
+	log.Info("Exporting blocks", "blockFrom", number, "blockTo", lastNumber)
+	startedAt := time.Now()
+	lastLog := time.Now()
 	var hash common.Hash
 	for number <= lastNumber {
 		hash = rawdb.ReadCanonicalHash(s.db, number)
@@ -191,12 +193,18 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 		if err != nil {
 			return fmt.Errorf("failed to export block %v (hash %v) receipts: %w", number, hash, err)
 		}
+		if time.Since(lastLog) > time.Minute && number != genesisNumber {
+			elapsed := time.Since(startedAt)
+			log.Info("Exporting blocks", "currentBlock", number, "blockTo", lastNumber, "elapsed", elapsed, "eta", time.Duration(float32(elapsed)*float32(lastNumber-number)/float32(number-genesisNumber)))
+			lastLog = time.Now()
+		}
 		number++
 	}
 	err := batch.ExportHead(number, hash)
 	if err != nil {
 		return fmt.Errorf("failed to export head number %v (hash %v): %w", number, hash, err)
 	}
+	log.Info("Exported blocks", "blocks", lastNumber-genesisNumber+1, "elapsed", time.Since(startedAt))
 	return nil
 }
 
@@ -417,5 +425,10 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 			return accountIt.Error()
 		}
 	}
-	return ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// TODO: calculate and log exported size / number of nodes
+	log.Info("Exported state", "root", root, "elapsed", time.Since(startedAt))
+	return nil
 }
