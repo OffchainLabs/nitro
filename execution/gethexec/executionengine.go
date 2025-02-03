@@ -78,9 +78,10 @@ type L1PriceData struct {
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
-	bc        *core.BlockChain
-	consensus execution.FullConsensusClient
-	recorder  *BlockRecorder
+	bc          *core.BlockChain
+	consensus   execution.FullConsensusClient
+	recorder    *BlockRecorder
+	syncMonitor *SyncMonitor
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
@@ -259,6 +260,16 @@ func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) 
 		panic("trying to set transaction consensus when already set")
 	}
 	s.consensus = consensus
+}
+
+func (s *ExecutionEngine) SetSyncMonitor(syncMonitor *SyncMonitor) {
+	if s.Started() {
+		panic("trying to set sync monitor after start")
+	}
+	if s.syncMonitor != nil {
+		panic("trying to set sync monitor when already set")
+	}
+	s.syncMonitor = syncMonitor
 }
 
 func (s *ExecutionEngine) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
@@ -1001,6 +1012,34 @@ func (s *ExecutionEngine) ArbOSVersionForMessageNumber(messageNum arbutil.Messag
 	return extra.ArbOSFormatVersion, nil
 }
 
+func (s *ExecutionEngine) SetFinalized(finalizedBlockNumber uint64) error {
+	block := s.bc.GetBlockByNumber(finalizedBlockNumber)
+	if block == nil {
+		return errors.New("unable to get block by number")
+	}
+
+	s.bc.SetFinalized(block.Header())
+	return nil
+}
+
+func (s *ExecutionEngine) getAndSetFinalized() {
+	if s.syncMonitor != nil {
+		finalizedBlockNumber, err := s.syncMonitor.FinalizedBlockNumber(s.GetContext())
+		if err != nil {
+			log.Warn("getAndSetFinalized: Unable to get finalized block number", "err", err)
+			return
+		}
+
+		err = s.SetFinalized(finalizedBlockNumber)
+		if err != nil {
+			log.Warn("getAndSetFinalized", "err", err)
+			return
+		}
+
+		log.Info("Finalized set", "number", finalizedBlockNumber)
+	}
+}
+
 func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 	s.LaunchThread(func(ctx context.Context) {
@@ -1053,6 +1092,16 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			}
 		})
 	}
+	s.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Minute):
+				s.getAndSetFinalized()
+			}
+		}
+	})
 }
 
 func (s *ExecutionEngine) Maintenance(capLimit uint64) error {
