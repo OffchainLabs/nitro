@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/snapshotter"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/dbutil"
@@ -85,21 +86,22 @@ func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader           headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig     `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                   ForwarderConfig     `koanf:"forwarder"`
-	ForwardingTarget            string              `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string            `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig       `koanf:"caching"`
-	RPC                         arbitrum.Config     `koanf:"rpc"`
-	TxLookupLimit               uint64              `koanf:"tx-lookup-limit"`
-	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
-	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
+	ParentChainReader           headerreader.Config                   `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig                       `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig                   `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig                    `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                   ForwarderConfig                       `koanf:"forwarder"`
+	ForwardingTarget            string                                `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string                              `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig                         `koanf:"caching"`
+	RPC                         arbitrum.Config                       `koanf:"rpc"`
+	TxLookupLimit               uint64                                `koanf:"tx-lookup-limit"`
+	EnablePrefetchBlock         bool                                  `koanf:"enable-prefetch-block"`
+	SyncMonitor                 SyncMonitorConfig                     `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig                    `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64                                `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64                                `koanf:"block-metadata-api-blocks-limit"`
+	DatabaseSnapshotter         snapshotter.DatabaseSnapshotterConfig `koanf:"database-snapshotter"`
 
 	forwardingTarget string
 }
@@ -161,6 +163,7 @@ var ConfigDefault = Config{
 	StylusTarget:                DefaultStylusTargetConfig,
 	BlockMetadataApiCacheSize:   100 * 1024 * 1024,
 	BlockMetadataApiBlocksLimit: 100,
+	DatabaseSnapshotter:         snapshotter.DatabaseSnapshotterConfigDefault,
 }
 
 type ConfigFetcher func() *Config
@@ -178,8 +181,10 @@ type ExecutionNode struct {
 	SyncMonitor              *SyncMonitor
 	ParentChainReader        *headerreader.HeaderReader
 	ClassicOutbox            *ClassicOutboxRetriever
-	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
+	DatabaseSnapshotter      *snapshotter.DatabaseSnapshotter
+
+	started atomic.Bool
 }
 
 func CreateExecutionNode(
@@ -269,6 +274,11 @@ func CreateExecutionNode(
 		}
 	}
 
+	var databaseSnapshotter *snapshotter.DatabaseSnapshotter
+	if config.DatabaseSnapshotter.Enable {
+		databaseSnapshotter = snapshotter.NewDatabaseSnapshotter(chainDB, l2BlockChain, &config.DatabaseSnapshotter, nil, nil)
+	}
+
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
 	apis := []rpc.API{{
@@ -332,6 +342,7 @@ func CreateExecutionNode(
 		ParentChainReader:        parentChainReader,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+		DatabaseSnapshotter:      databaseSnapshotter,
 	}, nil
 
 }
@@ -382,12 +393,18 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 		n.ParentChainReader.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
+	if n.DatabaseSnapshotter != nil {
+		n.DatabaseSnapshotter.Start(ctx)
+	}
 	return nil
 }
 
 func (n *ExecutionNode) StopAndWait() {
 	if !n.started.Load() {
 		return
+	}
+	if n.DatabaseSnapshotter != nil {
+		n.DatabaseSnapshotter.StopAndWait()
 	}
 	n.bulkBlockMetadataFetcher.StopAndWait()
 	// TODO after separation
