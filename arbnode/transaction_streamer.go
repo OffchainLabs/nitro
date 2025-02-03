@@ -98,7 +98,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
-	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "this is the block number starting from which missing of blockmetadata is being tracked in the local disk. This is also the starting position for bulk syncing of missing blockmetadata. Setting to zero (default value) disables this")
+	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "this is the block number starting from which blockmetadata is being tracked in the local disk and is being published to the feed. This is also the starting position for bulk syncing of missing blockmetadata. Setting to zero (default value) disables this")
 }
 
 func NewTransactionStreamer(
@@ -492,13 +492,9 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(seqNum arbutil.
 		return nil, err
 	}
 
-	key = dbKey(blockMetadataInputFeedPrefix, uint64(seqNum))
-	blockMetadata, err := s.db.Get(key)
+	blockMetadata, err := s.BlockMetadataAtCount(seqNum + 1)
 	if err != nil {
-		if !dbutil.IsErrNotFound(err) {
-			return nil, err
-		}
-		blockMetadata = nil
+		return nil, err
 	}
 
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
@@ -1026,6 +1022,9 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, nil); err != nil {
 		return err
 	}
+	if s.trackBlockMetadataFrom == 0 || pos < s.trackBlockMetadataFrom {
+		msgWithBlockInfo.BlockMetadata = nil
+	}
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, pos)
 
 	return nil
@@ -1071,22 +1070,24 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 		return err
 	}
 
-	if msg.BlockMetadata != nil {
-		// Only store non-nil BlockMetadata to db. In case of a reorg, we dont have to explicitly
-		// clear out BlockMetadata of the reorged message, since those messages will be handled by s.reorg()
-		// This also allows update of BatchGasCost in message without mistakenly erasing BlockMetadata
-		key = dbKey(blockMetadataInputFeedPrefix, uint64(pos))
-		return batch.Put(key, msg.BlockMetadata)
-	} else if s.trackBlockMetadataFrom != 0 && pos >= s.trackBlockMetadataFrom {
-		// Mark that blockMetadata is missing only if it isn't already present. This check prevents unnecessary marking
-		// when updating BatchGasCost or when adding messages from seq-coordinator redis that doesn't have block metadata
-		prevBlockMetadata, err := s.BlockMetadataAtCount(pos + 1)
-		if err != nil {
-			return err
-		}
-		if prevBlockMetadata == nil {
-			key = dbKey(missingBlockMetadataInputFeedPrefix, uint64(pos))
-			return batch.Put(key, nil)
+	if s.trackBlockMetadataFrom != 0 && pos >= s.trackBlockMetadataFrom {
+		if msg.BlockMetadata != nil {
+			// Only store non-nil BlockMetadata to db. In case of a reorg, we dont have to explicitly
+			// clear out BlockMetadata of the reorged message, since those messages will be handled by s.reorg()
+			// This also allows update of BatchGasCost in message without mistakenly erasing BlockMetadata
+			key = dbKey(blockMetadataInputFeedPrefix, uint64(pos))
+			return batch.Put(key, msg.BlockMetadata)
+		} else {
+			// Mark that blockMetadata is missing only if it isn't already present. This check prevents unnecessary marking
+			// when updating BatchGasCost or when adding messages from seq-coordinator redis that doesn't have block metadata
+			prevBlockMetadata, err := s.BlockMetadataAtCount(pos + 1)
+			if err != nil {
+				return err
+			}
+			if prevBlockMetadata == nil {
+				key = dbKey(missingBlockMetadataInputFeedPrefix, uint64(pos))
+				return batch.Put(key, nil)
+			}
 		}
 	}
 	return nil
@@ -1140,6 +1141,10 @@ func (s *TransactionStreamer) BlockMetadataAtCount(count arbutil.MessageIndex) (
 		return nil, nil
 	}
 	pos := count - 1
+
+	if s.trackBlockMetadataFrom == 0 || pos < s.trackBlockMetadataFrom {
+		return nil, nil
+	}
 
 	key := dbKey(blockMetadataInputFeedPrefix, uint64(pos))
 	blockMetadata, err := s.db.Get(key)

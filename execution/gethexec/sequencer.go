@@ -520,7 +520,10 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		return err
 	}
 	if forwarder != nil {
-		return fmt.Errorf("sequencer is currently not the chosen one, cannot accept auction resolution tx")
+		err := forwarder.PublishAuctionResolutionTransaction(ctx, tx)
+		if !errors.Is(err, ErrNoSequencer) {
+			return err
+		}
 	}
 
 	arrivalTime := time.Now()
