@@ -68,6 +68,9 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 					tx, err := simple.LogAndIncrement(&auth, common.Big0) // we don't care about expected arg
 					Require(t, err)
 					txes = append(txes, tx)
+					tx, err = simple.StoreDifficulty(&auth)
+					Require(t, err)
+					txes = append(txes, tx)
 				}
 				for _, tx := range txes {
 					_, err := builder.L2.EnsureTxSucceeded(tx)

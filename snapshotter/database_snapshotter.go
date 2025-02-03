@@ -3,6 +3,7 @@ package snapshotter
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -215,18 +217,15 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 		}
 		batchPool <- batch
 	}
-	var workersRunning atomic.Int32
 	startWorker := func(work func(batch BlockChainExporterBatch) error) error {
 		err := <-results
 		if err != nil {
 			return err
 		}
 		batch := <-batchPool
-		workersRunning.Add(1)
 		go func() {
 			defer func() {
 				batchPool <- batch
-				workersRunning.Add(-1)
 			}()
 			results <- work(batch)
 		}()
@@ -287,6 +286,9 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 }
 
 func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(work func(batch BlockChainExporterBatch) error) error, triedb *triedb.Database, root common.Hash) error {
+	var threadsRunning atomic.Int32
+	startedAt := time.Now()
+	lastLog := time.Now()
 	tr, err := trie.NewStateTrie(trie.StateTrieID(root), triedb)
 	if err != nil {
 		return fmt.Errorf("failed to open state trie, root: %v, err: %w", root, err)
@@ -300,7 +302,9 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 		// If the iterator hash is the empty hash, this is an embedded node
 		if accountTrieHash != (common.Hash{}) {
 			hash := accountTrieHash
+			threadsRunning.Add(1)
 			err := startWorker(func(batch BlockChainExporterBatch) error {
+				defer threadsRunning.Add(-1)
 				// get trie node directly from triedb
 				blob, err := triedb.Node(hash)
 				if err != nil {
@@ -318,6 +322,12 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 				return fmt.Errorf("unexpected account trie leaf key length: %v", len(keyBytes))
 			}
 			key := common.BytesToHash(keyBytes)
+			if time.Since(lastLog) >= time.Second*30 {
+				lastLog = time.Now()
+				progress := 256 * 256 / float32(binary.BigEndian.Uint16(key.Bytes()[:2]))
+				elapsed := time.Since(startedAt)
+				log.Info("exporting trie database", "accountKey", key, "elapsed", elapsed, "eta", time.Duration(float32(elapsed)*progress)-elapsed)
+			}
 			var data types.StateAccount
 			if err := rlp.DecodeBytes(accountIt.LeafBlob(), &data); err != nil {
 				return fmt.Errorf("failed to decode account data: %w", err)
@@ -327,7 +337,10 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 					return fmt.Errorf("unexpected code hash length: %v", len(keyBytes))
 				}
 				codeHash := common.BytesToHash(data.CodeHash)
+
+				threadsRunning.Add(1)
 				err := startWorker(func(batch BlockChainExporterBatch) error {
+					defer threadsRunning.Add(-1)
 					code := rawdb.ReadCode(s.db, codeHash)
 					if len(code) == 0 {
 						return fmt.Errorf("code not found, hash: %v", codeHash)
@@ -340,6 +353,7 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 			}
 			if data.Root != (common.Hash{}) {
 				trieID := trie.StorageTrieID(data.Root, key, data.Root)
+				//TODO: verify that we can share same instance of storage trie between workers
 				storageTr, err := trie.NewStateTrie(trieID, triedb)
 				if err != nil {
 					return err
@@ -349,11 +363,16 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 					if err != nil {
 						return err
 					}
-					endKey := trie.KeybytesToHex(big.NewInt((i + 1) << 3).Bytes())
+					endPath := trie.KeybytesToHex(big.NewInt((i + 1) << 3).Bytes())
 					isLastKeyRange := i == 31
+					threadsRunning.Add(1)
 					err = startWorker(func(batch BlockChainExporterBatch) error {
+						defer threadsRunning.Add(-1)
+						threadStartedAt := time.Now()
+						threadLastLog := time.Now()
+						var threadProcessedNodes uint64
 						for storageIt.Next(true) && ctx.Err() == nil {
-							if !isLastKeyRange && bytes.Compare(storageIt.Path(), endKey) > 0 {
+							if !isLastKeyRange && bytes.Compare(storageIt.Path(), endPath) > 0 {
 								return nil
 							}
 							storageTrieHash := storageIt.Hash()
@@ -365,6 +384,16 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 								}
 								if err := batch.ExportStorageTrieNode(storageTrieHash, blob); err != nil {
 									return err
+								}
+							}
+							threadProcessedNodes++
+							if storageIt.Leaf() {
+								if time.Since(threadLastLog) > 5*time.Minute {
+									elapsedTotal := time.Since(startedAt)
+									elapsedThread := time.Since(threadStartedAt)
+									// TODO: calculate progress
+									log.Info("exporting trie database - exporting storage trie taking long", "key", key, "elapsedTotal", elapsedTotal, "elapsedThread", elapsedThread, "threadProcessedNodes", threadProcessedNodes, "threads", threadsRunning.Load())
+									threadLastLog = time.Now()
 								}
 							}
 						}
