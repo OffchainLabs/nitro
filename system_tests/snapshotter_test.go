@@ -48,6 +48,7 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		builder.L2Info.GenerateAccount(user)
 		tx := builder.L2Info.PrepareTx("Owner", user, builder.L2Info.TransferGas, new(big.Int).Lsh(big.NewInt(1), 63), nil)
 		Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+		txes = append(txes, tx)
 	}
 	for _, tx := range txes {
 		_, err := builder.L2.EnsureTxSucceeded(tx)
