@@ -472,8 +472,10 @@ func (n *ExecutionNode) ForwardTo(url string) error {
 }
 
 func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {
-	n.ExecEngine.SetConsensus(consensus)
 	n.SyncMonitor.SetConsensusInfo(consensus)
+	n.ExecEngine.SetConsensus(consensus)
+
+	n.ExecEngine.SetSyncMonitor(n.SyncMonitor)
 }
 
 func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
