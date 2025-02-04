@@ -125,6 +125,8 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
+	l1RewardsDistributionCounter.Inc(1)
+	l1RewardsDistribution.Inc(paymentForRewards.Int64())
 	availableFunds = statedb.GetBalance(L1PricerFundsPoolAddress)
 
 	// settle up payments owed to the batch poster, as much as possible
@@ -147,6 +149,8 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
+		l1BaseFeeDueDistributionCounter.Inc(1)
+		l1BaseFeeDueDistribution.Inc(balanceToTransfer.Int64())
 		balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
 		err = posterState.SetFundsDue(balanceDueToPoster)
 		if err != nil {
@@ -304,6 +308,8 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
+	l1RewardsDistributionCounter.Inc(1)
+	l1RewardsDistribution.Inc(paymentForRewards.Int64())
 	availableFunds = am.BigSub(availableFunds, paymentForRewards)
 
 	// settle up our batch poster payments owed, as much as possible
@@ -335,6 +341,8 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 			if err != nil {
 				return err
 			}
+			l1BaseFeeDueDistributionCounter.Inc(1)
+			l1BaseFeeDueDistribution.Inc(balanceToTransfer.Int64())
 			availableFunds = am.BigSub(availableFunds, balanceToTransfer)
 			balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
 			err = poster.SetFundsDue(balanceDueToPoster)
