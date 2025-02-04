@@ -110,7 +110,7 @@ func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum uint64) []*Express
 		return msg
 	}
 
-	var msgs []*ExpressLaneSubmission
+	var pendingKeys []string
 	prefix := fmt.Sprintf("%s%d.", EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX, round)
 	cursor := uint64(0)
 	for {
@@ -126,13 +126,18 @@ func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum uint64) []*Express
 			}
 			// #nosec G115
 			if uint64(seq) >= startSeqNum {
-				if msg := fetchMsg(key); msg != nil {
-					msgs = append(msgs, msg)
-				}
+				pendingKeys = append(pendingKeys, key)
 			}
 		}
 		if cursor == 0 {
 			break
+		}
+	}
+
+	var msgs []*ExpressLaneSubmission
+	for _, key := range pendingKeys {
+		if msg := fetchMsg(key); msg != nil {
+			msgs = append(msgs, msg)
 		}
 	}
 	return msgs
