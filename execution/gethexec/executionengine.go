@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -46,6 +47,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -78,9 +80,10 @@ type L1PriceData struct {
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
-	bc        *core.BlockChain
-	consensus execution.FullConsensusClient
-	recorder  *BlockRecorder
+	bc          *core.BlockChain
+	consensus   execution.FullConsensusClient
+	recorder    *BlockRecorder
+	syncMonitor *SyncMonitor
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
@@ -101,6 +104,8 @@ type ExecutionEngine struct {
 	cachedL1PriceData *L1PriceData
 
 	isTimeboostEnabled bool
+
+	fullImmutabilityThreshold uint64
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -111,11 +116,12 @@ func NewL1PriceData() *L1PriceData {
 
 func NewExecutionEngine(bc *core.BlockChain, isTimeboostEnabled bool) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
-		bc:                 bc,
-		resequenceChan:     make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:   make(chan struct{}, 1),
-		cachedL1PriceData:  NewL1PriceData(),
-		isTimeboostEnabled: isTimeboostEnabled,
+		bc:                        bc,
+		resequenceChan:            make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:          make(chan struct{}, 1),
+		cachedL1PriceData:         NewL1PriceData(),
+		isTimeboostEnabled:        isTimeboostEnabled,
+		fullImmutabilityThreshold: params.FullImmutabilityThreshold,
 	}, nil
 }
 
@@ -262,6 +268,16 @@ func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) 
 		panic("trying to set transaction consensus when already set")
 	}
 	s.consensus = consensus
+}
+
+func (s *ExecutionEngine) SetSyncMonitor(syncMonitor *SyncMonitor) {
+	if s.Started() {
+		panic("trying to set sync monitor after start")
+	}
+	if s.syncMonitor != nil {
+		panic("trying to set sync monitor when already set")
+	}
+	s.syncMonitor = syncMonitor
 }
 
 func (s *ExecutionEngine) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
@@ -1011,6 +1027,53 @@ func (s *ExecutionEngine) ArbOSVersionForMessageNumber(messageNum arbutil.Messag
 	return extra.ArbOSFormatVersion, nil
 }
 
+// Used for testing
+func (s *ExecutionEngine) SetFullImmutabilityThreshold(immutabilityThreshold uint64) {
+	s.fullImmutabilityThreshold = immutabilityThreshold
+}
+
+func (s *ExecutionEngine) SetFinalized(finalizedBlockNumber uint64) error {
+	block := s.bc.GetBlockByNumber(finalizedBlockNumber)
+	if block == nil {
+		return errors.New("unable to get block by number")
+	}
+
+	s.bc.SetFinalized(block.Header())
+	return nil
+}
+
+func (s *ExecutionEngine) getAndSetFinalized() {
+	if s.syncMonitor != nil {
+		finalizedBlockNumber, err := s.syncMonitor.FinalizedBlockNumber(s.GetContext())
+		// parent chain doesn't support finalized block number
+		if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
+			currentBlock, err := s.getCurrentHeader()
+			if err != nil {
+				log.Warn("getAndSetFinalized: Unable to get current block number", "err", err)
+				return
+			}
+
+			if currentBlock.Number.Uint64() > s.fullImmutabilityThreshold {
+				finalizedBlockNumber = currentBlock.Number.Uint64() - s.fullImmutabilityThreshold
+			} else {
+				log.Info("getAndSetFinalized: Current block number is less than fullImmutabilityThreshold", "currentBlockNumber", currentBlock.Number.Uint64(), "fullImmutabilityThreshold", s.fullImmutabilityThreshold)
+				return
+			}
+		} else if err != nil {
+			log.Warn("getAndSetFinalized: Unable to get finalized block number", "err", err)
+			return
+		}
+
+		err = s.SetFinalized(finalizedBlockNumber)
+		if err != nil {
+			log.Warn("getAndSetFinalized", "err", err)
+			return
+		}
+
+		log.Info("Finalized set", "number", finalizedBlockNumber)
+	}
+}
+
 func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 	s.LaunchThread(func(ctx context.Context) {
@@ -1063,6 +1126,16 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			}
 		})
 	}
+	s.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Minute):
+				s.getAndSetFinalized()
+			}
+		}
+	})
 }
 
 func (s *ExecutionEngine) Maintenance(capLimit uint64) error {
