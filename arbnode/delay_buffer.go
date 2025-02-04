@@ -34,7 +34,7 @@ func GetDelayBufferConfig(ctx context.Context, sequencerInbox *bridgegen.Sequenc
 	callOpts := bind.CallOpts{Context: ctx}
 	enabled, err := sequencerInbox.IsDelayBufferable(&callOpts)
 	if err != nil {
-		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		if headerreader.IsExecutionReverted(err) {
 			return &DelayBufferConfig{Enabled: false}, nil
 		}
 		return nil, fmt.Errorf("retrieve SequencerInbox.isDelayBufferable: %w", err)

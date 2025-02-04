@@ -179,7 +179,7 @@ func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Ad
 		return false, addr, err
 	}
 	_, err = userLogic.ChallengeGracePeriodBlocks(callOpts)
-	if err != nil && !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+	if err != nil && !headerreader.IsExecutionReverted(err) {
 		// Unexpected error, perhaps an L1 issue?
 		return false, addr, err
 	}
