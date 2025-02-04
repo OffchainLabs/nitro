@@ -149,6 +149,10 @@ func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transa
 	return SendWaitTestTransactions(t, tc.ctx, tc.Client, txs)
 }
 
+func (tc *TestClient) DeployBigMap(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.BigMap) {
+	return deployBigMap(t, tc.ctx, auth, tc.Client)
+}
+
 func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
 	return deploySimple(t, tc.ctx, auth, tc.Client)
 }
@@ -1711,6 +1715,15 @@ func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duratio
 	}
 
 	return timeout
+}
+
+func deployBigMap(t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client,
+) (common.Address, *mocksgen.BigMap) {
+	addr, tx, bigMap, err := mocksgen.DeployBigMap(&auth, client)
+	Require(t, err, "could not deploy BigMap.sol contract")
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+	return addr, bigMap
 }
 
 func deploySimple(
