@@ -239,8 +239,7 @@ func mainImpl() int {
 		return 1
 	}
 	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
-		log.Error("Sequencer node's track-block-metadata-from should not be set when timeboost is not enabled")
-		return 1
+		log.Warn("Sequencer node's track-block-metadata-from is set but timeboost is not enabled")
 	}
 
 	var dataSigner signature.DataSignerFunc
