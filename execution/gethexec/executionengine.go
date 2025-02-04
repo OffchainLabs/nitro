@@ -104,6 +104,8 @@ type ExecutionEngine struct {
 	cachedL1PriceData *L1PriceData
 
 	isTimeboostEnabled bool
+
+	fullImmutabilityThreshold uint64
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -114,11 +116,12 @@ func NewL1PriceData() *L1PriceData {
 
 func NewExecutionEngine(bc *core.BlockChain, isTimeboostEnabled bool) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
-		bc:                 bc,
-		resequenceChan:     make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:   make(chan struct{}, 1),
-		cachedL1PriceData:  NewL1PriceData(),
-		isTimeboostEnabled: isTimeboostEnabled,
+		bc:                        bc,
+		resequenceChan:            make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:          make(chan struct{}, 1),
+		cachedL1PriceData:         NewL1PriceData(),
+		isTimeboostEnabled:        isTimeboostEnabled,
+		fullImmutabilityThreshold: params.FullImmutabilityThreshold,
 	}, nil
 }
 
@@ -1024,6 +1027,11 @@ func (s *ExecutionEngine) ArbOSVersionForMessageNumber(messageNum arbutil.Messag
 	return extra.ArbOSFormatVersion, nil
 }
 
+// Used for testing
+func (s *ExecutionEngine) SetFullImmutabilityThreshold(immutabilityThreshold uint64) {
+	s.fullImmutabilityThreshold = immutabilityThreshold
+}
+
 func (s *ExecutionEngine) SetFinalized(finalizedBlockNumber uint64) error {
 	block := s.bc.GetBlockByNumber(finalizedBlockNumber)
 	if block == nil {
@@ -1045,10 +1053,10 @@ func (s *ExecutionEngine) getAndSetFinalized() {
 				return
 			}
 
-			if currentBlock.Number.Uint64() >= params.FullImmutabilityThreshold {
-				finalizedBlockNumber = currentBlock.Number.Uint64() - params.FullImmutabilityThreshold
+			if currentBlock.Number.Uint64() > s.fullImmutabilityThreshold {
+				finalizedBlockNumber = currentBlock.Number.Uint64() - s.fullImmutabilityThreshold
 			} else {
-				log.Info("getAndSetFinalized: Current block number is less than FullImmutabilityThreshold", "currentBlockNumber", currentBlock.Number.Uint64(), "FullImmutabilityThreshold", params.FullImmutabilityThreshold)
+				log.Info("getAndSetFinalized: Current block number is less than fullImmutabilityThreshold", "currentBlockNumber", currentBlock.Number.Uint64(), "fullImmutabilityThreshold", s.fullImmutabilityThreshold)
 				return
 			}
 		} else if err != nil {
