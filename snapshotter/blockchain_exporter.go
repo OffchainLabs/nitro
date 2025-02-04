@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/util/dbutil"
@@ -19,7 +20,7 @@ type BlockChainExporter interface {
 	Open() error
 	IsOpened() bool
 	NewBatch() (BlockChainExporterBatch, error)
-	Close() error
+	Close(compact bool) error
 }
 
 // the batch automatically writes internal batches
@@ -120,9 +121,16 @@ func (e *GethDatabaseExporter) Open() error {
 	return nil
 }
 
-func (e *GethDatabaseExporter) Close() error {
+func (e *GethDatabaseExporter) Close(compact bool) error {
 	if !e.opened {
 		return errors.New("not opened")
+	}
+	if compact {
+		log.Info("compacting exporter database", "data", e.config.Output.Data)
+		if err := e.db.Compact(nil, nil); err != nil {
+			return err
+		}
+		log.Info("exporter database successfully compacted", "data", e.config.Output.Data)
 	}
 	if err := e.db.Close(); err != nil {
 		return err

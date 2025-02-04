@@ -148,7 +148,7 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 		return fmt.Errorf("failed to export blocks: last block (number %v) older then genesis (number %v)", lastNumber, genesisNumber)
 	}
 	number := genesisNumber
-	log.Info("Exporting blocks", "blockFrom", number, "blockTo", lastNumber)
+	log.Info("exporting blocks", "blockFrom", number, "blockTo", lastNumber)
 	startedAt := time.Now()
 	lastLog := time.Now()
 	var hash common.Hash
@@ -195,7 +195,7 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 		}
 		if time.Since(lastLog) > time.Minute && number != genesisNumber {
 			elapsed := time.Since(startedAt)
-			log.Info("Exporting blocks", "currentBlock", number, "blockTo", lastNumber, "elapsed", elapsed, "eta", time.Duration(float32(elapsed)*float32(lastNumber-number)/float32(number-genesisNumber)))
+			log.Info("exporting blocks", "currentBlock", number, "blockTo", lastNumber, "elapsed", elapsed, "eta", time.Duration(float32(elapsed)*float32(lastNumber-number)/float32(number-genesisNumber)))
 			lastLog = time.Now()
 		}
 		number++
@@ -220,7 +220,7 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 	if err := batch.ExportChainConfig(block0Hash, chainConfigJson); err != nil {
 		return fmt.Errorf("failed to export chain config: %w", err)
 	}
-	log.Info("Exported blocks", "blocks", lastNumber-genesisNumber+1, "elapsed", time.Since(startedAt))
+	log.Info("exported blocks", "blocks", lastNumber-genesisNumber+1, "elapsed", time.Since(startedAt))
 	return nil
 }
 
@@ -230,8 +230,8 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 	}
 	defer func() {
 		if s.exporter.IsOpened() {
-			if err := s.exporter.Close(); err != nil {
-				log.Error("Failed to close blockchain exporter", "err", err)
+			if err := s.exporter.Close(false); err != nil {
+				log.Error("failed to close blockchain exporter", "err", err)
 			}
 		}
 	}()
@@ -245,7 +245,7 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 	for i := 0; i < threads; i++ {
 		batch, err := s.exporter.NewBatch()
 		if err != nil {
-			return fmt.Errorf("Failed to create new blockchain exporter batch: %w", err)
+			return fmt.Errorf("failed to create new blockchain exporter batch: %w", err)
 		}
 		batchPool <- batch
 	}
@@ -278,7 +278,7 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 	workersCtx, cancelWorkers := context.WithCancel(ctx)
 	defer cancelWorkers()
 	header := lastHeader
-	log.Info("Starting blocks export worker", "blockNumber", header.Number.Uint64(), "blockHash", header.Hash())
+	log.Info("starting blocks export worker", "blockNumber", header.Number.Uint64(), "blockHash", header.Hash())
 	err = startWorker(func(batch BlockChainExporterBatch) error {
 		return s.exportBlocks(workersCtx, batch, header)
 	})
@@ -290,11 +290,11 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 	if genesisHeader == nil {
 		return errors.New("genesis header not found")
 	}
-	log.Info("Exporting genesis state", "genesisNumber", genesisHeader.Number.Uint64(), "genesisHash", genesisHeader.Hash())
+	log.Info("exporting genesis state", "genesisNumber", genesisHeader.Number.Uint64(), "genesisHash", genesisHeader.Hash())
 	if err = s.exportState(workersCtx, startWorker, triedb, genesisHeader.Root); err != nil {
 		return err
 	}
-	log.Info("Exporting last state", "blockNumber", header.Number.Uint64(), "blockHash", header.Hash())
+	log.Info("exporting last state", "blockNumber", header.Number.Uint64(), "blockHash", header.Hash())
 	if err = s.exportState(workersCtx, startWorker, triedb, lastHeader.Root); err != nil {
 		return err
 	}
@@ -314,7 +314,7 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 			return err
 		}
 	}
-	return s.exporter.Close()
+	return s.exporter.Close(true)
 }
 
 func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(work func(batch BlockChainExporterBatch) error) error, triedb *triedb.Database, root common.Hash) error {
@@ -453,6 +453,6 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 		return err
 	}
 	// TODO: calculate and log exported size / number of nodes
-	log.Info("Exported state", "root", root, "elapsed", time.Since(startedAt))
+	log.Info("exported state", "root", root, "elapsed", time.Since(startedAt))
 	return nil
 }
