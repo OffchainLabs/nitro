@@ -200,9 +200,25 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 		}
 		number++
 	}
-	err := batch.ExportHead(number, hash)
-	if err != nil {
+	if err := batch.ExportHead(number, hash); err != nil {
 		return fmt.Errorf("failed to export head number %v (hash %v): %w", number, hash, err)
+	}
+	block0Hash := rawdb.ReadCanonicalHash(s.db, 0)
+	if block0Hash == (common.Hash{}) {
+		return fmt.Errorf("block 0 canonical hash not found")
+	}
+	if err := batch.ExportCanonicalHash(0, block0Hash); err != nil {
+		return fmt.Errorf("failed to export canonical hash for block 0: %w", err)
+	}
+	chainConfigJson, err := s.db.Get(rawdb.ConfigKey(block0Hash))
+	if err != nil {
+		return fmt.Errorf("failed to read stored chain config, block 0 hash %v, err: %w", block0Hash, err)
+	}
+	if len(chainConfigJson) == 0 {
+		return fmt.Errorf("failed to read stored chain config, block 0 hash: %v", block0Hash)
+	}
+	if err := batch.ExportChainConfig(block0Hash, chainConfigJson); err != nil {
+		return fmt.Errorf("failed to export chain config: %w", err)
 	}
 	log.Info("Exported blocks", "blocks", lastNumber-genesisNumber+1, "elapsed", time.Since(startedAt))
 	return nil
@@ -326,7 +342,10 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 				if err != nil {
 					return err
 				}
-				return batch.ExportAccountTrieNode(hash, blob)
+				if err := batch.ExportAccountTrieNode(hash, blob); err != nil {
+					return err
+				}
+				return nil
 			})
 			if err != nil {
 				return err
@@ -388,7 +407,8 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 						defer threadsRunning.Add(-1)
 						threadStartedAt := time.Now()
 						threadLastLog := time.Now()
-						var threadProcessedNodes uint64
+						var threadExportedNodes uint64
+						var threadExportedNodeBlobBytes uint64
 						for storageIt.Next(true) && ctx.Err() == nil {
 							if !isLastKeyRange && bytes.Compare(storageIt.Path(), endPath) > 0 {
 								return nil
@@ -403,18 +423,20 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 								if err := batch.ExportStorageTrieNode(storageTrieHash, blob); err != nil {
 									return err
 								}
+								threadExportedNodeBlobBytes += uint64(len(blob))
+								threadExportedNodes++
 							}
-							threadProcessedNodes++
 							if storageIt.Leaf() {
 								if time.Since(threadLastLog) > 5*time.Minute {
 									elapsedTotal := time.Since(startedAt)
 									elapsedThread := time.Since(threadStartedAt)
 									// TODO: calculate progress
-									log.Info("exporting trie database - exporting storage trie taking long", "key", key, "elapsedTotal", elapsedTotal, "elapsedThread", elapsedThread, "threadProcessedNodes", threadProcessedNodes, "threads", threadsRunning.Load())
+									log.Info("exporting trie database - exporting storage trie taking long", "key", key, "elapsedTotal", elapsedTotal, "elapsedThread", elapsedThread, "threadExportedNodes", threadExportedNodes, "threadExportedNodeBlobBytes", threadExportedNodeBlobBytes, "threads", threadsRunning.Load())
 									threadLastLog = time.Now()
 								}
 							}
 						}
+
 						return storageIt.Error()
 					})
 					if err != nil {

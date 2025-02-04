@@ -3,6 +3,7 @@ package snapshotter
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	flag "github.com/spf13/pflag"
 
@@ -24,6 +25,7 @@ type BlockChainExporter interface {
 // the batch automatically writes internal batches
 // remember to call Flush before discarding the batch
 type BlockChainExporterBatch interface {
+	ExportChainConfig(block0Hash common.Hash, chainConfigJson []byte) error
 	// exports head block number and hash
 	ExportHead(number uint64, hash common.Hash) error
 	ExportCanonicalHash(number uint64, hash common.Hash) error
@@ -47,9 +49,9 @@ type GethDatabaseExporterConfig struct {
 }
 
 var OutputConfigDefault = conf.DBConfig{
-	Data:      "snapshot", // TODO
+	Data:      "snapshot",
 	DBEngine:  conf.PersistentConfigDefault.DBEngine,
-	Ancient:   "", // TODO
+	Ancient:   "ancient",
 	Handles:   conf.PersistentConfigDefault.Handles,
 	Cache:     2048, // 2048 MB
 	Namespace: "l2chaindata_export",
@@ -88,10 +90,16 @@ func (e *GethDatabaseExporter) Open() error {
 	if e.opened {
 		return errors.New("already opened")
 	}
+	ancient := e.config.Output.Ancient
+	if ancient == "" {
+		ancient = filepath.Join(e.config.Output.Data, "ancient")
+	} else if !filepath.IsAbs(ancient) {
+		ancient = filepath.Join(e.config.Output.Data, ancient)
+	}
 	db, err := rawdb.Open(rawdb.OpenOptions{
 		Type:               e.config.Output.DBEngine,
 		Directory:          e.config.Output.Data,
-		AncientsDirectory:  e.config.Output.Ancient,
+		AncientsDirectory:  ancient,
 		Namespace:          e.config.Output.Namespace,
 		Cache:              e.config.Output.Cache,
 		Handles:            e.config.Output.Handles,
@@ -138,6 +146,14 @@ func (e *GethDatabaseExporter) NewBatch() (BlockChainExporterBatch, error) {
 type GethDatabaseExporterBatch struct {
 	batch          ethdb.Batch
 	idealBatchSize int
+}
+
+func (b *GethDatabaseExporterBatch) ExportChainConfig(block0Hash common.Hash, chainConfigJson []byte) error {
+	rawdb.WriteCanonicalHash(b.batch, block0Hash, 0)
+	if err := b.batch.Put(rawdb.ConfigKey(block0Hash), chainConfigJson); err != nil {
+		return fmt.Errorf("failed to export chain config: %w", err)
+	}
+	return b.maybeFlush()
 }
 
 func (b *GethDatabaseExporterBatch) ExportHead(number uint64, hash common.Hash) error {
