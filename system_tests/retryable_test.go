@@ -240,6 +240,8 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	if !arbmath.BigEquals(l2balance, callValue) {
 		Fatal(t, "Unexpected balance:", l2balance)
 	}
+
+	AutomatedPrestateTracerTest(t, builder.L2)
 }
 
 func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
