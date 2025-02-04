@@ -108,7 +108,7 @@ func (e *GethDatabaseExporter) Open() error {
 		return err
 	}
 	e.db = db
-	e.opened = true // TODO: can we just check e.db == nil instead of !e.opened
+	e.opened = true
 	return nil
 }
 

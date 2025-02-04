@@ -368,13 +368,15 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 				}
 			}
 			if data.Root != (common.Hash{}) {
-				trieID := trie.StorageTrieID(data.Root, key, data.Root)
-				//TODO: verify that we can share same instance of storage trie between workers
-				storageTr, err := trie.NewStateTrie(trieID, triedb)
-				if err != nil {
-					return err
-				}
 				for i := int64(0); i < int64(32) && ctx.Err() == nil; i++ {
+					// note: we are passing data.Root as stateRoot here, to skip the check for stateRoot existence in trie.newTrieReader,
+					// we already check that when opening state trie and reading the account node
+					trieID := trie.StorageTrieID(data.Root, key, data.Root)
+					// StateTrie is not safe for concurrent use, so we open new one for each thread
+					storageTr, err := trie.NewStateTrie(trieID, triedb)
+					if err != nil {
+						return err
+					}
 					storageIt, err := storageTr.NodeIterator(big.NewInt(i << 3).Bytes())
 					if err != nil {
 						return err
