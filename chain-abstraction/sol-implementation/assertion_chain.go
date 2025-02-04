@@ -501,19 +501,11 @@ func (a *AssertionChain) NewStake(
 	if err != nil {
 		return err
 	}
-	if !staked {
+	if staked {
 		return nil
 	}
-	latestConfirmed, err := a.LatestConfirmed(ctx, a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
-	if err != nil {
-		return err
-	}
-	info, err := a.ReadAssertionCreationInfo(ctx, latestConfirmed.Id())
-	if err != nil {
-		return err
-	}
 	_, err = a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
-		return a.userLogic.RollupUserLogicTransactor.NewStake(opts, info.RequiredStake, a.withdrawalAddress)
+		return a.userLogic.RollupUserLogicTransactor.NewStake(opts, new(big.Int), a.withdrawalAddress)
 	})
 	return err
 }

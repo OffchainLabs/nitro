@@ -27,6 +27,17 @@ import (
 	"github.com/offchainlabs/bold/testing/setup"
 )
 
+func TestNewEmptyStake(t *testing.T) {
+	ctx := context.Background()
+	cfg, err := setup.ChainsWithEdgeChallengeManager()
+	require.NoError(t, err)
+	chain := cfg.Chains[0]
+	require.NoError(t, chain.NewStake(ctx))
+	isStaked, err := chain.IsStaked(ctx)
+	require.NoError(t, err)
+	require.True(t, isStaked)
+}
+
 func TestNewStakeOnNewAssertion(t *testing.T) {
 	ctx := context.Background()
 	cfg, err := setup.ChainsWithEdgeChallengeManager()
