@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -46,6 +47,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -1025,7 +1027,21 @@ func (s *ExecutionEngine) SetFinalized(finalizedBlockNumber uint64) error {
 func (s *ExecutionEngine) getAndSetFinalized() {
 	if s.syncMonitor != nil {
 		finalizedBlockNumber, err := s.syncMonitor.FinalizedBlockNumber(s.GetContext())
-		if err != nil {
+		// parent chain doesn't support finalized block number
+		if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
+			currentBlock, err := s.getCurrentHeader()
+			if err != nil {
+				log.Warn("getAndSetFinalized: Unable to get current block number", "err", err)
+				return
+			}
+
+			if currentBlock.Number.Uint64() >= params.FullImmutabilityThreshold {
+				finalizedBlockNumber = currentBlock.Number.Uint64() - params.FullImmutabilityThreshold
+			} else {
+				log.Info("getAndSetFinalized: Current block number is less than FullImmutabilityThreshold", "currentBlockNumber", currentBlock.Number.Uint64(), "FullImmutabilityThreshold", params.FullImmutabilityThreshold)
+				return
+			}
+		} else if err != nil {
 			log.Warn("getAndSetFinalized: Unable to get finalized block number", "err", err)
 			return
 		}

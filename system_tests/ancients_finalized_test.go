@@ -66,7 +66,8 @@ func TestAncientsFinalized(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	// The procedure that periodically sets the finalized block in ExecutionNode
 	// will not be able to get the finalized block number from Consensus since UseFinalityData is false.
-	// So setting UseFinalityData to false disables the periodic procedure that moves data to ancients.
+	// With UseFinalityData set to false, ExecutionEngine will not be able to move data to ancients,
+	// at least for blocks with numbers smaller than go-ethereum FullImmutabilityThreshold param.
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
 
 	cleanup := builder.Build(t)
@@ -99,7 +100,7 @@ func TestAncientsFinalized(t *testing.T) {
 	Require(t, err)
 
 	// Wait for freeze operation to be executed
-	time.Sleep(90 * time.Second)
+	time.Sleep(75 * time.Second)
 
 	ancients, err = builder.L2.ExecNode.ChainDB.Ancients()
 	Require(t, err)
@@ -114,6 +115,27 @@ func TestAncientsFinalized(t *testing.T) {
 		t.Fatalf("Ancient should exist")
 	}
 	hasAncient, err = builder.L2.ExecNode.ChainDB.HasAncient(rawdb.ChainFreezerHeaderTable, 15)
+	Require(t, err)
+	if hasAncient {
+		t.Fatalf("Ancient should not exist")
+	}
+
+	// set finalized block to head of the chain
+	headOfTheChain := builder.L2.ExecNode.Backend.BlockChain().CurrentBlock().Number.Uint64()
+	err = builder.L2.ExecNode.ExecEngine.SetFinalized(headOfTheChain)
+	Require(t, err)
+
+	// Wait for freeze operation to be executed
+	time.Sleep(75 * time.Second)
+
+	// checks that head of the chain is not included in ancients
+	ancients, err = builder.L2.ExecNode.ChainDB.Ancients()
+	Require(t, err)
+	// ancients must be headOfTheChain since blocks [0, headOfTheChain) must be included in ancients.
+	if ancients != headOfTheChain {
+		t.Fatalf("Ancients should be %d, but got %d", headOfTheChain, ancients)
+	}
+	hasAncient, err = builder.L2.ExecNode.ChainDB.HasAncient(rawdb.ChainFreezerHeaderTable, headOfTheChain)
 	Require(t, err)
 	if hasAncient {
 		t.Fatalf("Ancient should not exist")
