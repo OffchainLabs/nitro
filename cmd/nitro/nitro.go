@@ -239,8 +239,7 @@ func mainImpl() int {
 		return 1
 	}
 	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
-		log.Error("Sequencer node's track-block-metadata-from should not be set when timeboost is not enabled")
-		return 1
+		log.Warn("Sequencer node's track-block-metadata-from is set but timeboost is not enabled")
 	}
 
 	var dataSigner signature.DataSignerFunc
@@ -1023,6 +1022,8 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
+	// 0 is default for any chain unless specified in the chain_defaults
+	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err
