@@ -94,23 +94,23 @@ func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum uint64) []*Express
 	fetchMsg := func(key string) *ExpressLaneSubmission {
 		msgBytes, err := rc.client.Get(ctx, key).Bytes()
 		if err != nil {
-			log.Error("Error fetching accepted expressLane tx", "err", err)
+			log.Error("Error fetching accepted expressLane tx", "key", key, "err", err)
 			return nil
 		}
 		msgJson := JsonExpressLaneSubmission{}
 		if err := json.Unmarshal(msgBytes, &msgJson); err != nil {
-			log.Error("Error unmarshalling", "err", err)
+			log.Error("Error unmarshalling", "key", key, "err", err)
 			return nil
 		}
 		msg, err := JsonSubmissionToGo(&msgJson)
 		if err != nil {
-			log.Error("Error converting JsonExpressLaneSubmission to ExpressLaneSubmission", "err", err)
+			log.Error("Error converting JsonExpressLaneSubmission to ExpressLaneSubmission", "key", key, "err", err)
 			return nil
 		}
 		return msg
 	}
 
-	var msgs []*ExpressLaneSubmission
+	var pendingKeys []string
 	prefix := fmt.Sprintf("%s%d.", EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX, round)
 	cursor := uint64(0)
 	for {
@@ -126,13 +126,18 @@ func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum uint64) []*Express
 			}
 			// #nosec G115
 			if uint64(seq) >= startSeqNum {
-				if msg := fetchMsg(key); msg != nil {
-					msgs = append(msgs, msg)
-				}
+				pendingKeys = append(pendingKeys, key)
 			}
 		}
 		if cursor == 0 {
 			break
+		}
+	}
+
+	var msgs []*ExpressLaneSubmission
+	for _, key := range pendingKeys {
+		if msg := fetchMsg(key); msg != nil {
+			msgs = append(msgs, msg)
 		}
 	}
 	return msgs

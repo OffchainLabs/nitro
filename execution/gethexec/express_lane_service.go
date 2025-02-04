@@ -505,9 +505,11 @@ func (es *expressLaneService) syncFromRedis() {
 		roundInfo.sequence = redisSeqCount
 	}
 	es.roundInfo.Add(currentRound, roundInfo)
+	sequenceCount := roundInfo.sequence
 	es.roundInfoMutex.Unlock()
 
-	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, roundInfo.sequence)
+	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, sequenceCount)
+	log.Info("Attempting to sequence pending expressLane transactions from redis", "count", len(pendingMsgs))
 	for _, msg := range pendingMsgs {
 		es.LaunchThread(func(ctx context.Context) {
 			if err := es.sequenceExpressLaneSubmission(ctx, msg); err != nil {
