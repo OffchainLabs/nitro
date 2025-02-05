@@ -1,7 +1,6 @@
 [submodule "go-ethereum"]
 	path = go-ethereum
-	url = git@github.com:Layr-Labs/nitro-go-ethereum-private.git
-	branch = eigenda-v3.1.3
+	url = https://github.com/OffchainLabs/go-ethereum.git
 [submodule "fastcache"]
 	path = fastcache
 	url = https://github.com/OffchainLabs/fastcache.git
