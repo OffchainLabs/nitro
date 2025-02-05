@@ -31,7 +31,7 @@
 	url = https://github.com/OffchainLabs/wasmer.git
 [submodule "bold"]
 	path = bold
-	url = https://github.com/OffchainLabs/bold.git
+	url = https://github.com/Layr-Labs/bold.git
 [submodule "arbitrator/langs/rust"]
 	path = arbitrator/langs/rust
 	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
