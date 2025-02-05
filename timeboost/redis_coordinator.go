@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -89,7 +87,7 @@ func acceptedTxKeyFor(round, seqNum uint64) string {
 	return fmt.Sprintf("%s%d.%d", EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX, round, seqNum)
 }
 
-func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum uint64) []*ExpressLaneSubmission {
+func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum, endSeqNum uint64) []*ExpressLaneSubmission {
 	ctx := rc.GetContext()
 	fetchMsg := func(key string) *ExpressLaneSubmission {
 		msgBytes, err := rc.client.Get(ctx, key).Bytes()
@@ -110,33 +108,9 @@ func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum uint64) []*Express
 		return msg
 	}
 
-	var pendingKeys []string
-	prefix := fmt.Sprintf("%s%d.", EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX, round)
-	cursor := uint64(0)
-	for {
-		keys, cursor, err := rc.client.Scan(ctx, cursor, prefix+"*", 0).Result()
-		if err != nil {
-			break // Best effort
-		}
-		for _, key := range keys {
-			seq, err := strconv.Atoi(strings.TrimPrefix(key, prefix))
-			if err != nil {
-				log.Error("Error getting sequence number from the redis key of accepted timeboost Tx", "key", key, "error", err)
-				continue
-			}
-			// #nosec G115
-			if uint64(seq) >= startSeqNum {
-				pendingKeys = append(pendingKeys, key)
-			}
-		}
-		if cursor == 0 {
-			break
-		}
-	}
-
 	var msgs []*ExpressLaneSubmission
-	for _, key := range pendingKeys {
-		if msg := fetchMsg(key); msg != nil {
+	for seq := startSeqNum; seq <= endSeqNum; seq++ {
+		if msg := fetchMsg(acceptedTxKeyFor(round, seq)); msg != nil {
 			msgs = append(msgs, msg)
 		}
 	}
