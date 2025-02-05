@@ -5,7 +5,6 @@
 use crate::kzg::ETHEREUM_KZG_SETTINGS;
 use crate::kzgbn254::KZG_BN254_SETTINGS;
 use arbutil::PreimageType;
-use ark_serialize::CanonicalSerialize;
 #[cfg(feature = "native")]
 use c_kzg::{Blob, KzgCommitment};
 use digest::Digest;

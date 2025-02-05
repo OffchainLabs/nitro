@@ -3,11 +3,10 @@ use crate::{utils::append_left_padded_biguint_be, Bytes32};
 use ark_bn254::G2Affine;
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, PrimeField};
-use ark_serialize::CanonicalSerialize;
 use eyre::{ensure, Result};
 use kzgbn254::{blob::Blob, kzg::Kzg, polynomial::PolynomialFormat};
 use num::BigUint;
-use sha2::{Digest, Sha256};
+use sha2::{Digest};
 use sha3::Keccak256;
 use std::env;
 use std::io::Write;
@@ -29,20 +28,14 @@ lazy_static::lazy_static! {
 // or for challenge testing.
 fn load_directory_with_prefix(directory_name: &str) -> String {
     let cwd = env::current_dir().expect("Failed to get current directory");
-    return match cwd {
-        cwd if cwd.ends_with("system_tests") => {
-            return PathBuf::from("../arbitrator/prover/")
-                .join(directory_name)
-                .to_string_lossy()
-                .into_owned();
-        }
-        _ => {
-            return PathBuf::from("./arbitrator/prover/")
-                .join(directory_name)
-                .to_string_lossy()
-                .into_owned();
-        }
+
+    let path = if cwd.ends_with("system_tests") {
+        PathBuf::from("../arbitrator/prover/").join(directory_name)
+    } else {
+        PathBuf::from("./arbitrator/prover/").join(directory_name)
     };
+
+    path.to_string_lossy().into_owned()
 }
 
 /// Creates a KZG preimage proof consumable by the point evaluation precompile.
