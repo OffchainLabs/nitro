@@ -390,16 +390,19 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 				for i := int64(0); i < int64(32) && ctx.Err() == nil; i++ {
 					// note: we are passing data.Root as stateRoot here, to skip the check for stateRoot existence in trie.newTrieReader,
 					// we already check that when opening state trie and reading the account node
-					trieID := trie.StorageTrieID(data.Root, key, data.Root)
+					owner := key
+					trieID := trie.StorageTrieID(data.Root, owner, data.Root)
 					// StateTrie is not safe for concurrent use, so we open new one for each thread
 					storageTr, err := trie.NewStateTrie(trieID, triedb)
 					if err != nil {
 						return err
 					}
-					storageIt, err := storageTr.NodeIterator(big.NewInt(i << 3).Bytes())
+					start := big.NewInt(i << 3).Bytes()
+					storageIt, err := storageTr.NodeIterator(start)
 					if err != nil {
 						return err
 					}
+					startPath := trie.KeybytesToHex(start)
 					endPath := trie.KeybytesToHex(big.NewInt((i + 1) << 3).Bytes())
 					isLastKeyRange := i == 31
 					threadsRunning.Add(1)
@@ -437,7 +440,11 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 							}
 						}
 
-						return storageIt.Error()
+						if err := storageIt.Error(); err != nil {
+							return err
+						}
+						log.Trace("Exporting database - storage traversal worker finished", "owner", owner, "startPath", startPath, "endPath", endPath)
+						return nil
 					})
 					if err != nil {
 						return err
