@@ -686,6 +686,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2.Client = client
 	l2.ExecNode = execNode
 	l2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	l2.Stack = stack
 
 	b.L2 = l2
 	b.L2Info = l2info
@@ -1336,15 +1337,17 @@ func deployOnParentChain(
 			ReplenishRateInBasis: 500,                  // 5%
 		}
 		cfg := rollupgen.Config{
-			MiniStakeValues:     miniStakeValues,
-			ConfirmPeriodBlocks: 120,
-			StakeToken:          stakeToken,
-			BaseStake:           big.NewInt(1),
-			WasmModuleRoot:      wasmModuleRoot,
-			Owner:               parentChainTransactionOpts.From,
-			LoserStakeEscrow:    parentChainTransactionOpts.From,
-			ChainId:             chainConfig.ChainID,
-			ChainConfig:         string(serializedChainConfig),
+			MiniStakeValues:        miniStakeValues,
+			ConfirmPeriodBlocks:    120,
+			StakeToken:             stakeToken,
+			BaseStake:              big.NewInt(1),
+			WasmModuleRoot:         wasmModuleRoot,
+			Owner:                  parentChainTransactionOpts.From,
+			LoserStakeEscrow:       parentChainTransactionOpts.From,
+			MinimumAssertionPeriod: big.NewInt(75),
+			ValidatorAfkBlocks:     201600,
+			ChainId:                chainConfig.ChainID,
+			ChainConfig:            string(serializedChainConfig),
 			SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
 				DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 				FutureBlocks:  big.NewInt(12),
