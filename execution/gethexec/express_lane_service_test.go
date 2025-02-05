@@ -311,7 +311,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
-		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
+		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
 	}
 	var err error
 	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els.roundTimingInfo.Round)
@@ -357,7 +357,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
-		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
+		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
 	}
 	var err error
 	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els.roundTimingInfo.Round)
@@ -454,7 +454,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	els1 := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
-		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
+		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
 	}
 	var err error
 	els1.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els1.roundTimingInfo.Round)
@@ -496,7 +496,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	els2 := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: defaultTestRoundTimingInfo(time.Now()),
-		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
+		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
 	}
 	els2.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, els2.roundTimingInfo.Round)
 	require.NoError(t, err)
