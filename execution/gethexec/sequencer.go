@@ -79,9 +79,13 @@ type SequencerConfig struct {
 	ExpectedSurplusSoftThreshold string          `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
-	Timeboost                    TimeboostConfig `koanf:"timeboost"`
+	Dangerous                    DangerousConfig `koanf:"dangerous"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
+}
+
+type DangerousConfig struct {
+	Timeboost TimeboostConfig `koanf:"timeboost"`
 }
 
 type TimeboostConfig struct {
@@ -132,7 +136,7 @@ func (c *SequencerConfig) Validate() error {
 	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
 		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
 	}
-	return c.Timeboost.Validate()
+	return c.Dangerous.Timeboost.Validate()
 }
 
 func (c *TimeboostConfig) Validate() error {
@@ -171,7 +175,11 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
-	Timeboost:                    DefaultTimeboostConfig,
+	Dangerous:                    DefaultDangerousConfig,
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	Timeboost: DefaultTimeboostConfig,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -481,7 +489,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 
 	config := s.config()
 	queueTimeout := config.QueueTimeout
-	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout+config.Timeboost.ExpressLaneAdvantage) // Include timeboost delay in ctx timeout
+	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout+config.Dangerous.Timeboost.ExpressLaneAdvantage) // Include timeboost delay in ctx timeout
 	defer cancelFunc()
 
 	resultChan := make(chan error, 1)
@@ -511,7 +519,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 }
 
 func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
-	if !s.config().Timeboost.Enable {
+	if !s.config().Dangerous.Timeboost.Enable {
 		return errors.New("timeboost not enabled")
 	}
 
@@ -567,7 +575,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 }
 
 func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
-	if !s.config().Timeboost.Enable {
+	if !s.config().Dangerous.Timeboost.Enable {
 		return errors.New("timeboost not enabled")
 	}
 
@@ -640,9 +648,9 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		return err
 	}
 
-	if s.config().Timeboost.Enable && s.expressLaneService != nil {
+	if s.config().Dangerous.Timeboost.Enable && s.expressLaneService != nil {
 		if !isExpressLaneController && s.expressLaneService.currentRoundHasController() {
-			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
+			time.Sleep(s.config().Dangerous.Timeboost.ExpressLaneAdvantage)
 		}
 	}
 
@@ -1089,7 +1097,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	queueItems = s.precheckNonces(queueItems, totalBlockSize)
 	txes := make([]*types.Transaction, len(queueItems))
 	var timeboostedTxs map[common.Hash]struct{}
-	if config.Timeboost.Enable {
+	if config.Dangerous.Timeboost.Enable {
 		timeboostedTxs = make(map[common.Hash]struct{})
 	}
 	hooks := s.makeSequencingHooks()
@@ -1402,7 +1410,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
-	if s.config().Timeboost.Enable && s.expressLaneService != nil {
+	if s.config().Dangerous.Timeboost.Enable && s.expressLaneService != nil {
 		s.expressLaneService.StopAndWait()
 	}
 	if s.txRetryQueue.Len() == 0 &&
