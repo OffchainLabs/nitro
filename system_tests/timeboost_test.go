@@ -1293,9 +1293,10 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
-		Enable:               false, // We need to start without timeboost initially to create the auction contract
-		ExpressLaneAdvantage: time.Second * 5,
-		RedisUrl:             expressLaneRedisURL,
+		Enable:                    false, // We need to start without timeboost initially to create the auction contract
+		ExpressLaneAdvantage:      time.Second * 5,
+		RedisUrl:                  expressLaneRedisURL,
+		MaxFutureSequenceDistance: 1500, // Required for TestExpressLaneTransactionHandlingComplex
 	}
 	builderSeq.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	cleanupSeq := builderSeq.Build(t)
