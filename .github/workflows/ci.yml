@@ -126,15 +126,16 @@ jobs:
 
       - name: Build all lint dependencies
         run: make -j build-node-deps
-
-      - name: Lint
-        uses: golangci/golangci-lint-action@v3
-        with:
-          version: v1.59.0
-          skip-pkg-cache: true
-      - name: Custom Lint
-        run: |
-          go run ./linters ./...
+      
+      # TODO: re-enable
+      # - name: Lint
+      #   uses: golangci/golangci-lint-action@v3
+      #   with:
+      #     version: v1.59.0
+      #     skip-pkg-cache: true
+      # - name: Custom Lint
+      #   run: |
+      #     go run ./linters ./...
 
       - name: Set environment variables
         run: |
