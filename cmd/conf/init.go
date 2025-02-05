@@ -3,6 +3,7 @@ package conf
 import (
 	"fmt"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -106,7 +107,7 @@ func (c *InitConfig) Validate() error {
 	if c.Force && c.RecreateMissingStateFrom > 0 {
 		log.Warn("force init enabled, recreate-missing-state-from will have no effect")
 	}
-	if c.Latest != "" && !isAcceptedSnapshotKind(c.Latest) {
+	if c.Latest != "" && !slices.Contains(acceptedSnapshotKinds, c.Latest) {
 		return fmt.Errorf("invalid value for latest option: \"%s\" %s", c.Latest, acceptedSnapshotKindsStr)
 	}
 	if c.Prune != "" && c.PruneThreads <= 0 {
@@ -139,12 +140,3 @@ var (
 	acceptedSnapshotKinds    = []string{"archive", "pruned", "genesis"}
 	acceptedSnapshotKindsStr = "(accepted values: \"" + strings.Join(acceptedSnapshotKinds, "\" | \"") + "\")"
 )
-
-func isAcceptedSnapshotKind(kind string) bool {
-	for _, valid := range acceptedSnapshotKinds {
-		if kind == valid {
-			return true
-		}
-	}
-	return false
-}

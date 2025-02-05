@@ -211,6 +211,7 @@
     "chain-name": "sepolia-rollup",
     "sequencer-url": "https://sepolia-rollup-sequencer.arbitrum.io/rpc",
     "feed-url": "wss://sepolia-rollup.arbitrum.io/feed",
+    "track-block-metadata-from": 121300000,
     "chain-config": {
       "chainId": 421614,
       "homesteadBlock": 0,

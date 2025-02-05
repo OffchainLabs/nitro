@@ -87,7 +87,7 @@ func TestContractTxDeploy(t *testing.T) {
 				},
 				DelayedMessagesRead: delayedMessagesRead,
 			},
-		})
+		}, nil)
 		Require(t, err)
 
 		txHash := types.NewTx(contractTx).Hash()

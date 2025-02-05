@@ -14,6 +14,7 @@ func CreateStackConfigForTest(dataDir string) *node.Config {
 	stackConf.HTTPPort = 0
 	stackConf.HTTPHost = ""
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth", "debug")
+	stackConf.AuthPort = 0
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.ListenAddr = ""

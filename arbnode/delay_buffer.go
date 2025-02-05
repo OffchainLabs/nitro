@@ -26,7 +26,7 @@ type DelayBufferConfig struct {
 	Threshold uint64
 }
 
-// GetBufferConfig gets the delay buffer config from the sequencer inbox contract.
+// GetDelayBufferConfig gets the delay buffer config from the sequencer inbox contract.
 // If the contract doesn't support the delay buffer, it returns a config with Enabled set to false.
 func GetDelayBufferConfig(ctx context.Context, sequencerInbox *bridgegen.SequencerInbox) (
 	*DelayBufferConfig, error) {

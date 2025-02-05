@@ -83,24 +83,25 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 }
 
 type Config struct {
-	Sequencer           bool                           `koanf:"sequencer"`
-	ParentChainReader   headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader         InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer    DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster         BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
-	MessagePruner       MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
-	BlockValidator      staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
-	Feed                broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
-	Staker              legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
-	Bold                boldstaker.BoldConfig          `koanf:"bold"`
-	SeqCoordinator      SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability    das.DataAvailabilityConfig     `koanf:"data-availability"`
-	EigenDA             eigenda.EigenDAConfig          `koanf:"eigen-da"`
-	SyncMonitor         SyncMonitorConfig              `koanf:"sync-monitor"`
-	Dangerous           DangerousConfig                `koanf:"dangerous"`
-	TransactionStreamer TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance         MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
-	ResourceMgmt        resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
+	Sequencer            bool                           `koanf:"sequencer"`
+	ParentChainReader    headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader          InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster          BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
+	MessagePruner        MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
+	BlockValidator       staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
+	Feed                 broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
+	Staker               legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
+	Bold                 boldstaker.BoldConfig          `koanf:"bold"`
+	SeqCoordinator       SeqCoordinatorConfig           `koanf:"seq-coordinator"`
+	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
+	EigenDA              eigenda.EigenDAConfig          `koanf:"eigen-da"`
+	SyncMonitor          SyncMonitorConfig              `koanf:"sync-monitor"`
+	Dangerous            DangerousConfig                `koanf:"dangerous"`
+	TransactionStreamer  TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance          MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
+	ResourceMgmt         resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
+	BlockMetadataFetcher BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -137,6 +138,9 @@ func (c *Config) Validate() error {
 	if err := c.Staker.Validate(); err != nil {
 		return err
 	}
+	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
+		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
+	}
 	return nil
 }
 
@@ -167,27 +171,29 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
+	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 }
 
 var ConfigDefault = Config{
-	Sequencer:           false,
-	ParentChainReader:   headerreader.DefaultConfig,
-	InboxReader:         DefaultInboxReaderConfig,
-	DelayedSequencer:    DefaultDelayedSequencerConfig,
-	BatchPoster:         DefaultBatchPosterConfig,
-	MessagePruner:       DefaultMessagePrunerConfig,
-	BlockValidator:      staker.DefaultBlockValidatorConfig,
-	Feed:                broadcastclient.FeedConfigDefault,
-	Staker:              legacystaker.DefaultL1ValidatorConfig,
-	Bold:                boldstaker.DefaultBoldConfig,
-	SeqCoordinator:      DefaultSeqCoordinatorConfig,
-	DataAvailability:    das.DefaultDataAvailabilityConfig,
-	SyncMonitor:         DefaultSyncMonitorConfig,
-	Dangerous:           DefaultDangerousConfig,
-	TransactionStreamer: DefaultTransactionStreamerConfig,
-	ResourceMgmt:        resourcemanager.DefaultConfig,
-	Maintenance:         DefaultMaintenanceConfig,
-	SnapSyncTest:        DefaultSnapSyncConfig,
+	Sequencer:            false,
+	ParentChainReader:    headerreader.DefaultConfig,
+	InboxReader:          DefaultInboxReaderConfig,
+	DelayedSequencer:     DefaultDelayedSequencerConfig,
+	BatchPoster:          DefaultBatchPosterConfig,
+	MessagePruner:        DefaultMessagePrunerConfig,
+	BlockValidator:       staker.DefaultBlockValidatorConfig,
+	Feed:                 broadcastclient.FeedConfigDefault,
+	Staker:               legacystaker.DefaultL1ValidatorConfig,
+	Bold:                 boldstaker.DefaultBoldConfig,
+	SeqCoordinator:       DefaultSeqCoordinatorConfig,
+	DataAvailability:     das.DefaultDataAvailabilityConfig,
+	SyncMonitor:          DefaultSyncMonitorConfig,
+	Dangerous:            DefaultDangerousConfig,
+	TransactionStreamer:  DefaultTransactionStreamerConfig,
+	ResourceMgmt:         resourcemanager.DefaultConfig,
+	Maintenance:          DefaultMaintenanceConfig,
+	BlockMetadataFetcher: DefaultBlockMetadataFetcherConfig,
+	SnapSyncTest:         DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -289,6 +295,7 @@ type Node struct {
 	MaintenanceRunner       *MaintenanceRunner
 	DASLifecycleManager     *das.LifecycleManager
 	SyncMonitor             *SyncMonitor
+	blockMetadataFetcher    *BlockMetadataFetcher
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
 }
@@ -522,6 +529,14 @@ func createNodeImpl(
 		}
 	}
 
+	var blockMetadataFetcher *BlockMetadataFetcher
+	if config.BlockMetadataFetcher.Enable {
+		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec, config.TransactionStreamer.TrackBlockMetadataFrom)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if !config.ParentChainReader.Enable {
 		return &Node{
 			ArbDB:                   arbDb,
@@ -545,6 +560,7 @@ func createNodeImpl(
 			MaintenanceRunner:       maintenanceRunner,
 			DASLifecycleManager:     nil,
 			SyncMonitor:             syncMonitor,
+			blockMetadataFetcher:    blockMetadataFetcher,
 			configFetcher:           configFetcher,
 			ctx:                     ctx,
 		}, nil
@@ -822,6 +838,7 @@ func createNodeImpl(
 		MaintenanceRunner:       maintenanceRunner,
 		DASLifecycleManager:     dasLifecycleManager,
 		SyncMonitor:             syncMonitor,
+		blockMetadataFetcher:    blockMetadataFetcher,
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
 	}, nil
@@ -918,7 +935,16 @@ func CreateNode(
 			Public: false,
 		})
 	}
-
+	if currentNode.MaintenanceRunner != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "maintenance",
+			Version:   "1.0",
+			Service: &MaintenanceAPI{
+				runner: currentNode.MaintenanceRunner,
+			},
+			Public: false,
+		})
+	}
 	stack.RegisterAPIs(apis)
 
 	return currentNode, nil
@@ -1052,6 +1078,9 @@ func (n *Node) Start(ctx context.Context) error {
 			n.BroadcastClients.Start(ctx)
 		}()
 	}
+	if n.blockMetadataFetcher != nil {
+		n.blockMetadataFetcher.Start(ctx)
+	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
 	}
@@ -1150,8 +1179,8 @@ func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, 
 	return n.InboxReader.GetFinalizedMsgCount(ctx)
 }
 
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult) error {
-	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult)
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) error {
+	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
 }
 
 func (n *Node) ExpectChosenSequencer() error {
@@ -1163,4 +1192,8 @@ func (n *Node) ValidatedMessageCount() (arbutil.MessageIndex, error) {
 		return 0, errors.New("validator not set up")
 	}
 	return n.BlockValidator.GetValidated(), nil
+}
+
+func (n *Node) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
+	return n.TxStreamer.BlockMetadataAtCount(count)
 }

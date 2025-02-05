@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -22,19 +23,64 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type ArbAPI struct {
-	txPublisher TransactionPublisher
+	txPublisher              TransactionPublisher
+	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 }
 
-func NewArbAPI(publisher TransactionPublisher) *ArbAPI {
-	return &ArbAPI{publisher}
+func NewArbAPI(publisher TransactionPublisher, bulkBlockMetadataFetcher *BulkBlockMetadataFetcher) *ArbAPI {
+	return &ArbAPI{
+		txPublisher:              publisher,
+		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+	}
+}
+
+type NumberAndBlockMetadata struct {
+	BlockNumber uint64        `json:"blockNumber"`
+	RawMetadata hexutil.Bytes `json:"rawMetadata"`
 }
 
 func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
 	return a.txPublisher.CheckHealth(ctx)
+}
+
+func (a *ArbAPI) GetRawBlockMetadata(ctx context.Context, fromBlock, toBlock rpc.BlockNumber) ([]NumberAndBlockMetadata, error) {
+	if a.bulkBlockMetadataFetcher == nil {
+		return nil, errors.New("arb_getRawBlockMetadata is not available")
+	}
+	return a.bulkBlockMetadataFetcher.Fetch(fromBlock, toBlock)
+}
+
+type ArbTimeboostAuctioneerAPI struct {
+	txPublisher TransactionPublisher
+}
+
+func NewArbTimeboostAuctioneerAPI(publisher TransactionPublisher) *ArbTimeboostAuctioneerAPI {
+	return &ArbTimeboostAuctioneerAPI{publisher}
+}
+
+func (a *ArbTimeboostAuctioneerAPI) SubmitAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	return a.txPublisher.PublishAuctionResolutionTransaction(ctx, tx)
+}
+
+type ArbTimeboostAPI struct {
+	txPublisher TransactionPublisher
+}
+
+func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
+	return &ArbTimeboostAPI{publisher}
+}
+
+func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
+	goMsg, err := timeboost.JsonSubmissionToGo(msg)
+	if err != nil {
+		return err
+	}
+	return a.txPublisher.PublishExpressLaneTransaction(ctx, goMsg)
 }
 
 type ArbDebugAPI struct {
