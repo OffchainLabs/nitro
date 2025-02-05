@@ -104,8 +104,8 @@ pending:
 	}
 
 	var redisCoordinator *timeboost.RedisCoordinator
-	if seqConfig().Timeboost.RedisUrl != "" {
-		redisCoordinator, err = timeboost.NewRedisCoordinator(seqConfig().Timeboost.RedisUrl, roundTimingInfo.Round)
+	if seqConfig().Dangerous.Timeboost.RedisUrl != "" {
+		redisCoordinator, err = timeboost.NewRedisCoordinator(seqConfig().Dangerous.Timeboost.RedisUrl, roundTimingInfo.Round)
 		if err != nil {
 			return nil, fmt.Errorf("error initializing expressLaneService redis: %w", err)
 		}
@@ -367,11 +367,11 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 
 	// Log an informational warning if the message's sequence number is in the future.
 	if msg.SequenceNumber > roundInfo.sequence {
-		if seqConfig.Timeboost.MaxQueuedTxCount != 0 &&
+		if seqConfig.Dangerous.Timeboost.MaxQueuedTxCount != 0 &&
 			// Pending msgs count=(total msgs present in the map)-(number of processed messages=roundInfo.Sequence)
 			// #nosec G115
-			len(roundInfo.msgAndResultBySequenceNumber)-int(roundInfo.sequence) >= seqConfig.Timeboost.MaxQueuedTxCount {
-			return fmt.Errorf("reached limit for queuing of future sequence number transactions, please try again with the correct sequence number. Limit: %d, Current sequence number: %d", seqConfig.Timeboost.MaxQueuedTxCount, roundInfo.sequence)
+			len(roundInfo.msgAndResultBySequenceNumber)-int(roundInfo.sequence) >= seqConfig.Dangerous.Timeboost.MaxQueuedTxCount {
+			return fmt.Errorf("reached limit for queuing of future sequence number transactions, please try again with the correct sequence number. Limit: %d, Current sequence number: %d", seqConfig.Dangerous.Timeboost.MaxQueuedTxCount, roundInfo.sequence)
 		}
 		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
