@@ -373,6 +373,9 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 			len(roundInfo.msgAndResultBySequenceNumber)-int(roundInfo.sequence) >= seqConfig.Dangerous.Timeboost.MaxQueuedTxCount {
 			return fmt.Errorf("reached limit for queuing of future sequence number transactions, please try again with the correct sequence number. Limit: %d, Current sequence number: %d", seqConfig.Dangerous.Timeboost.MaxQueuedTxCount, roundInfo.sequence)
 		}
+		if msg.SequenceNumber > roundInfo.sequence+seqConfig.Dangerous.Timeboost.MaxFutureSequenceDistance {
+			return fmt.Errorf("message sequence number has reached max allowed limit. SequenceNumber: %d, Limit: %d", msg.SequenceNumber, roundInfo.sequence+seqConfig.Dangerous.Timeboost.MaxFutureSequenceDistance)
+		}
 		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
 
@@ -505,9 +508,11 @@ func (es *expressLaneService) syncFromRedis() {
 		roundInfo.sequence = redisSeqCount
 	}
 	es.roundInfo.Add(currentRound, roundInfo)
+	sequenceCount := roundInfo.sequence
 	es.roundInfoMutex.Unlock()
 
-	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, roundInfo.sequence)
+	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, sequenceCount, sequenceCount+es.seqConfig().Dangerous.Timeboost.MaxFutureSequenceDistance)
+	log.Info("Attempting to sequence pending expressLane transactions from redis", "count", len(pendingMsgs))
 	for _, msg := range pendingMsgs {
 		es.LaunchThread(func(ctx context.Context) {
 			if err := es.sequenceExpressLaneSubmission(ctx, msg); err != nil {
