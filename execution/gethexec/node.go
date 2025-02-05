@@ -191,7 +191,7 @@ func CreateExecutionNode(
 	configFetcher ConfigFetcher,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain, config.Sequencer.Timeboost.Enable)
+	execEngine, err := NewExecutionEngine(l2BlockChain, config.Sequencer.Dangerous.Timeboost.Enable)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
