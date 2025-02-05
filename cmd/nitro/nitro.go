@@ -182,8 +182,8 @@ func mainImpl() int {
 	//	}
 	//}
 
-	tracingConfig := json.RawMessage(`{"path": "/home/user/.arbitrum", "ttl": 14, "primary":
-          "rdb-primary-v1.0.0", "instrumentation": true, "network_id": "42161", "enable_code_tracing":
+	tracingConfig := json.RawMessage(`{"path": "/livetracing/output", "ttl": 14, "primary":
+          "rdb-primary", "instrumentation": true, "network_id": "42161", "enable_code_tracing":
           false }`)
 
 	nodeConfig, l2DevWallet, err := ParseNode(ctx, args)
