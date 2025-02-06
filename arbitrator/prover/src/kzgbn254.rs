@@ -6,7 +6,7 @@ use ark_ff::{BigInteger, PrimeField};
 use eyre::{ensure, Result};
 use kzgbn254::{blob::Blob, kzg::Kzg, polynomial::PolynomialFormat};
 use num::BigUint;
-use sha2::{Digest};
+use sha2::Digest;
 use sha3::Keccak256;
 use std::env;
 use std::io::Write;
