@@ -91,8 +91,12 @@ func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum, endSeqNum uint64)
 	ctx := rc.GetContext()
 	fetchMsg := func(key string) *ExpressLaneSubmission {
 		msgBytes, err := rc.client.Get(ctx, key).Bytes()
+		if errors.Is(err, redis.Nil) {
+			log.Debug("ExpressLane tx not found in redis", "key", key, "err", err)
+			return nil
+		}
 		if err != nil {
-			log.Debug("Error fetching accepted expressLane tx", "key", key, "err", err)
+			log.Error("Error fetching accepted expressLane tx", "key", key, "err", err)
 			return nil
 		}
 		msgJson := JsonExpressLaneSubmission{}
