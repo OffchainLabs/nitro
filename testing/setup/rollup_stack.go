@@ -171,9 +171,11 @@ type ChainSetup struct {
 	useMockBridge              bool
 	useMockOneStepProver       bool
 	numAccountsToGen           uint64
+	numFundedAccounts          uint64
 	minimumAssertionPeriod     int64
 	challengeTestingOpts       []challenge_testing.Opt
 	StateManagerOpts           []statemanager.Opt
+	StakeTokenAddress          common.Address
 	EnableFastConfirmation     bool
 	EnableSafeFastConfirmation bool
 }
@@ -225,6 +227,12 @@ func WithStateManagerOpts(opts ...statemanager.Opt) Opt {
 func WithNumAccounts(n uint64) Opt {
 	return func(setup *ChainSetup) {
 		setup.numAccountsToGen = n
+	}
+}
+
+func WithNumFundedAccounts(n uint64) Opt {
+	return func(setup *ChainSetup) {
+		setup.numFundedAccounts = n
 	}
 }
 
@@ -431,7 +439,8 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 	if !ok {
 		return nil, errors.New("could not set big int")
 	}
-	for _, acc := range accs {
+	for i := 0; i < len(accs); i++ {
+		acc := accs[i]
 		transferTx, err := tokenBindings.TestWETH9Transactor.Transfer(accs[0].TxOpts, acc.TxOpts.From, seed)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not approve account")
@@ -481,6 +490,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 	setp.Addrs = addresses
 	setp.Backend = backend
 	setp.RollupConfig = cfg
+	setp.StakeTokenAddress = stakeToken
 	return setp, nil
 }
 

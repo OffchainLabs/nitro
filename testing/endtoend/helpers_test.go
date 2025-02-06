@@ -29,6 +29,7 @@ func setupAssertionChain(
 	backend protocol.ChainBackend,
 	rollup common.Address,
 	txOpts *bind.TransactOpts,
+	opts ...solimpl.Opt,
 ) *solimpl.AssertionChain {
 	t.Helper()
 	assertionChainBinding, err := rollupgen.NewRollupUserLogic(
@@ -46,6 +47,7 @@ func setupAssertionChain(
 		txOpts,
 		backend,
 		solimpl.NewChainBackendTransactor(backend),
+		opts...,
 	)
 	require.NoError(t, err)
 	return chain
