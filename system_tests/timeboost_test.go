@@ -732,6 +732,7 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	latestL2, err = builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
 	var receiptWithoutTimeboostEnabled []timeboostedFromReceipt
+	// #nosec G115
 	err = l2rpc.CallContext(ctx, &receiptWithoutTimeboostEnabled, "eth_getBlockReceipts", rpc.BlockNumber(latestL2))
 	Require(t, err)
 	if len(receiptWithoutTimeboostEnabled) != 2 {
