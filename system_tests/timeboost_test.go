@@ -1292,10 +1292,11 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
 	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
-	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
-		Enable:               false, // We need to start without timeboost initially to create the auction contract
-		ExpressLaneAdvantage: time.Second * 5,
-		RedisUrl:             expressLaneRedisURL,
+	builderSeq.execConfig.Sequencer.Dangerous.Timeboost = gethexec.TimeboostConfig{
+		Enable:                    false, // We need to start without timeboost initially to create the auction contract
+		ExpressLaneAdvantage:      time.Second * 5,
+		RedisUrl:                  expressLaneRedisURL,
+		MaxFutureSequenceDistance: 1500, // Required for TestExpressLaneTransactionHandlingComplex
 	}
 	builderSeq.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	cleanupSeq := builderSeq.Build(t)
@@ -1475,7 +1476,7 @@ func setupExpressLaneAuction(
 
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
-	builderSeq.execConfig.Sequencer.Timeboost.Enable = true
+	builderSeq.execConfig.Sequencer.Dangerous.Timeboost.Enable = true
 	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(builderSeq.L2.ExecNode.Backend.APIBackend(), builderSeq.L2.ExecNode.FilterSystem, proxyAddr, seqInfo.GetAddress("AuctionContract"), gethexec.DefaultTimeboostConfig.EarlySubmissionGrace)
 	Require(t, err)
 	builderSeq.L2.ExecNode.Sequencer.StartExpressLaneService(ctx)
