@@ -145,3 +145,8 @@ func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetada
 func (s *SyncMonitor) StoreFinalityData(finalityData *arbutil.FinalityData) {
 	s.finalityData = finalityData
 }
+
+// Used for testing
+func (s *SyncMonitor) GetFinalityData() *arbutil.FinalityData {
+	return s.finalityData
+}
