@@ -36,6 +36,7 @@ type ExecutionClient interface {
 	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
 	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
+	StoreFinalizedAndSafeMsgCounts(safeMsgCount arbutil.MessageIndex, finalizedMsgCount arbutil.MessageIndex, blockNumberNotSupported bool)
 }
 
 // needed for validators / stakers
@@ -89,8 +90,6 @@ type ConsensusInfo interface {
 	BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error)
 
 	// TODO: switch from pulling to pushing safe/finalized
-	GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
-	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
 	ValidatedMessageCount() (arbutil.MessageIndex, error)
 }
 

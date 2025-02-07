@@ -638,7 +638,7 @@ func createNodeImpl(
 		}
 		firstMessageBlock.SetUint64(block)
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader }, exec)
 	if err != nil {
 		return nil, err
 	}
@@ -1139,15 +1139,6 @@ func (n *Node) Synced() bool {
 
 func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
 	return n.SyncMonitor.SyncTargetMessageCount()
-}
-
-// TODO: switch from pulling to pushing safe/finalized
-func (n *Node) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	return n.InboxReader.GetSafeMsgCount(ctx)
-}
-
-func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	return n.InboxReader.GetFinalizedMsgCount(ctx)
 }
 
 func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) error {

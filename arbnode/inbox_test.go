@@ -43,6 +43,9 @@ func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
 	w.t.Error("not supported")
 	return nil
 }
+func (w *execClientWrapper) StoreFinalizedAndSafeMsgCounts(finalizedMsgCount arbutil.MessageIndex, safeMsgCount arbutil.MessageIndex, blockNumberNotSupported bool) {
+	w.t.Error("not supported")
+}
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
