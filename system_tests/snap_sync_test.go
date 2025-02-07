@@ -63,7 +63,7 @@ func TestSnapSync(t *testing.T) {
 	nodeConfig := createNodeConfigWithSnapSync(t, builder)
 	// Cleanup the message data of 2nd node, but keep the block state data.
 	// This is to simulate a snap sync environment where we’ve just gotten the block state but don’t have any messages.
-	err := os.RemoveAll(nodeB.ConsensusNode.Stack.ResolvePath("arbitrumdata"))
+	err := os.RemoveAll(nodeB.ConsensusNode.Stack.ResolvePath("arbitrumdata2"))
 	Require(t, err)
 
 	// Cleanup the 2nd node to release the database lock

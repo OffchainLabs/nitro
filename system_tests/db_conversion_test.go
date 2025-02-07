@@ -57,7 +57,7 @@ func TestDatabaseConversion(t *testing.T) {
 	t.Log("stopped first node")
 
 	instanceDir := filepath.Join(dataDir, builder.l2StackConfig.Name)
-	for _, dbname := range []string{"l2chaindata", "arbitrumdata", "wasm"} {
+	for _, dbname := range []string{"l2chaindata2", "arbitrumdata2", "wasm2"} {
 		err := os.Rename(filepath.Join(instanceDir, dbname), filepath.Join(instanceDir, fmt.Sprintf("%s_old", dbname)))
 		Require(t, err)
 		t.Log("converting:", dbname)

@@ -1373,7 +1373,7 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 	}
 
 	submittedPayload := firstSubmitted.Payload
-	validated := validateIfPayloadIsInBlock(submittedPayload, resp.Transactions)
+	validated := arbutil.ValidateIfPayloadIsInBlock(submittedPayload, resp.Transactions)
 	if !validated {
 		return fmt.Errorf("transactions fetched from HotShot doesn't contain the submitted payload")
 	}
@@ -1401,7 +1401,7 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 	return nil
 }
 
-func (s *TransactionStreamer) getEspressoSubmittedTxns() ([]SubmittedEspressoTx, error) {
+func (s *TransactionStreamer) getEspressoSubmittedTxns() ([]arbutil.SubmittedEspressoTx, error) {
 	posBytes, err := s.db.Get(espressoSubmittedTxns)
 	if err != nil {
 		if dbutil.IsErrNotFound(err) {
@@ -1409,7 +1409,7 @@ func (s *TransactionStreamer) getEspressoSubmittedTxns() ([]SubmittedEspressoTx,
 		}
 		return nil, err
 	}
-	var tx []SubmittedEspressoTx
+	var tx []arbutil.SubmittedEspressoTx
 	err = rlp.DecodeBytes(posBytes, &tx)
 	if err != nil {
 		return nil, err
@@ -1450,7 +1450,7 @@ func (s *TransactionStreamer) getEspressoPendingTxnsPos() ([]arbutil.MessageInde
 	return pendingTxnsPos, nil
 }
 
-func (s *TransactionStreamer) setEspressoSubmittedTxns(batch ethdb.KeyValueWriter, txns []SubmittedEspressoTx) error {
+func (s *TransactionStreamer) setEspressoSubmittedTxns(batch ethdb.KeyValueWriter, txns []arbutil.SubmittedEspressoTx) error {
 	// if pos is nil, delete the key
 	if txns == nil {
 		err := batch.Delete(espressoSubmittedTxns)
@@ -1531,7 +1531,7 @@ func (s *TransactionStreamer) SubmitEspressoTransactionPos(pos arbutil.MessageIn
 	return nil
 }
 
-func (s *TransactionStreamer) resubmitEspressoTransactions(ctx context.Context, tx SubmittedEspressoTx) (*tagged_base64.TaggedBase64, error) {
+func (s *TransactionStreamer) resubmitEspressoTransactions(ctx context.Context, tx arbutil.SubmittedEspressoTx) (*tagged_base64.TaggedBase64, error) {
 	log.Info("Resubmitting tx to Espresso", "tx", tx.Hash)
 	txHash, err := s.espressoClient.SubmitTransaction(ctx, espressoTypes.Transaction{
 		Payload:   tx.Payload,
@@ -1564,12 +1564,12 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) er
 			return b, nil
 		}
 
-		payload, msgCnt := buildRawHotShotPayload(pendingTxnsPos, fetcher, s.espressoMaxTransactionSize)
+		payload, msgCnt := arbutil.BuildRawHotShotPayload(pendingTxnsPos, fetcher, s.espressoMaxTransactionSize)
 		if msgCnt == 0 {
 			return fmt.Errorf("failed to build the hotshot transaction: a large message has exceeded the size limit or failed to get a message from storage")
 		}
 
-		payload, err = signHotShotPayload(payload, s.getAttestationQuote)
+		payload, err = arbutil.SignHotShotPayload(payload, s.getAttestationQuote)
 		if err != nil {
 			return fmt.Errorf("failed to sign the hotshot payload %w", err)
 		}
@@ -1596,13 +1596,13 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) er
 		if err != nil {
 			return fmt.Errorf("failed to get the submitted txns: %w", err)
 		}
-		tx := SubmittedEspressoTx{
+		tx := arbutil.SubmittedEspressoTx{
 			Hash:    hash.String(),
 			Pos:     submittedPos,
 			Payload: payload,
 		}
 		if submittedTxns == nil {
-			submittedTxns = []SubmittedEspressoTx{tx}
+			submittedTxns = []arbutil.SubmittedEspressoTx{tx}
 		} else {
 			submittedTxns = append(submittedTxns, tx)
 		}
@@ -1741,7 +1741,7 @@ func (s *TransactionStreamer) shouldSubmitEspressoTransaction() bool {
 	return !s.EscapeHatchEnabled
 }
 
-func (s *TransactionStreamer) shouldResubmitEspressoTransactions(ctx context.Context, submittedTxns []SubmittedEspressoTx) bool {
+func (s *TransactionStreamer) shouldResubmitEspressoTransactions(ctx context.Context, submittedTxns []arbutil.SubmittedEspressoTx) bool {
 	if len(submittedTxns) == 0 {
 		// If no submitted transactions, we dont need to resubmit
 		return false

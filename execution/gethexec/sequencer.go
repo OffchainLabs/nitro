@@ -81,9 +81,9 @@ type SequencerConfig struct {
 	expectedSurplusHardThreshold int
 
 	// Espresso specific flags
-	EspressoFinalityNodeConfig EspressoFinalityNodeConfig `koanf:"espresso-finality-node-config"`
-	// Espresso Finality Node creates blocks with finalized hotshot transactions
-	EnableEspressoFinalityNode bool `koanf:"enable-espresso-finality-node"`
+	CaffNodeConfig CaffNodeConfig `koanf:"caff-node-config"`
+	// Caff Node creates blocks with finalized hotshot transactions
+	EnableCaffNode bool `koanf:"enable-caff-node"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -117,7 +117,7 @@ func (c *SequencerConfig) Validate() error {
 
 type SequencerConfigFetcher func() *SequencerConfig
 
-type EspressoFinalityNodeConfig struct {
+type CaffNodeConfig struct {
 	HotShotUrl string `koanf:"hotshot-url"`
 	StartBlock uint64 `koanf:"start-block"`
 	Namespace  uint64 `koanf:"namespace"`
@@ -142,7 +142,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 
-	EnableEspressoFinalityNode: false,
+	EnableCaffNode: false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -163,7 +163,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
 
 	// Espresso specific flags
-	f.Bool(prefix+".enable-espresso-finality-node", DefaultSequencerConfig.EnableEspressoFinalityNode, "enable espresso finality node")
+	f.Bool(prefix+".enable-caff-node", DefaultSequencerConfig.EnableCaffNode, "enable caff node")
 }
 
 type txQueueItem struct {

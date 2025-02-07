@@ -10,3 +10,13 @@ gotestsum \
     -p 1 \
     ./system_tests/ \
     -run 'TestEspresso'
+
+gotestsum \
+    --format short-verbose \
+    --packages="github.com/offchainlabs/nitro/system_tests" \
+    -- \
+    -v \
+    -timeout 35m \
+    -p 1 \
+    ./system_tests/ \
+    -run 'TestCaffNode'

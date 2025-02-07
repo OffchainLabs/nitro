@@ -218,8 +218,8 @@ func CreateExecutionNode(
 			return nil, err
 		}
 
-		if config.Sequencer.EnableEspressoFinalityNode {
-			espressoFinalityNode := NewEspressoFinalityNode(execEngine, seqConfigFetcher)
+		if config.Sequencer.EnableCaffNode {
+			espressoFinalityNode := NewCaffNode(seqConfigFetcher, execEngine)
 			txPublisher = espressoFinalityNode
 		} else {
 			txPublisher = sequencer

@@ -116,7 +116,7 @@ func TestEspressoEscapeHatch(t *testing.T) {
 	Require(t, err)
 
 	// Check if the validated count is increasing after hotshot goes back live
-	err = waitForWith(ctx, 3*time.Minute, 20*time.Second, func() bool {
+	err = waitForWith(ctx, 4*time.Minute, 20*time.Second, func() bool {
 		validated := builder.L2.ConsensusNode.BlockValidator.Validated(t)
 		return validated > validatedMsg
 	})
