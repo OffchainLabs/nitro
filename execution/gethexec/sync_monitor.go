@@ -33,10 +33,7 @@ type SyncMonitor struct {
 	consensus execution.ConsensusInfo
 	exec      *ExecutionEngine
 
-	finalizedAndSafeSynced  bool
-	finalizedMsgCount       arbutil.MessageIndex
-	safeMsgCount            arbutil.MessageIndex
-	blockNumberNotSupported bool
+	finalityData *arbutil.FinalityData
 }
 
 func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonitor {
@@ -76,13 +73,13 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 }
 
 func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
-	if !s.finalizedAndSafeSynced {
+	if s.finalityData == nil {
 		return 0, errors.New("finalized block number not synced")
 	}
-	if s.blockNumberNotSupported {
+	if s.finalityData.FinalityNotSupported {
 		return 0, headerreader.ErrBlockNumberNotSupported
 	}
-	msg := s.safeMsgCount
+	msg := s.finalityData.SafeMsgCount
 
 	if s.config.SafeBlockWaitForBlockValidator {
 		latestValidatedCount, err := s.consensus.ValidatedMessageCount()
@@ -98,13 +95,13 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 }
 
 func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
-	if !s.finalizedAndSafeSynced {
+	if s.finalityData == nil {
 		return 0, errors.New("finalized block number not synced")
 	}
-	if s.blockNumberNotSupported {
+	if s.finalityData.FinalityNotSupported {
 		return 0, headerreader.ErrBlockNumberNotSupported
 	}
-	msg := s.finalizedMsgCount
+	msg := s.finalityData.FinalizedMsgCount
 
 	if s.config.FinalizedBlockWaitForBlockValidator {
 		latestValidatedCount, err := s.consensus.ValidatedMessageCount()
@@ -147,9 +144,6 @@ func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetada
 	return nil, nil
 }
 
-func (s *SyncMonitor) StoreFinalizedAndSafeMsgCounts(finalizedMsgCount arbutil.MessageIndex, safeMsgCount arbutil.MessageIndex, blockNumberNotSupported bool) {
-	s.blockNumberNotSupported = blockNumberNotSupported
-	s.finalizedMsgCount = finalizedMsgCount
-	s.safeMsgCount = safeMsgCount
-	s.finalizedAndSafeSynced = true
+func (s *SyncMonitor) StoreFinalityData(finalityData *arbutil.FinalityData) {
+	s.finalityData = finalityData
 }

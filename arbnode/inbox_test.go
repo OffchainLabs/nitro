@@ -43,7 +43,7 @@ func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
 	w.t.Error("not supported")
 	return nil
 }
-func (w *execClientWrapper) StoreFinalizedAndSafeMsgCounts(finalizedMsgCount arbutil.MessageIndex, safeMsgCount arbutil.MessageIndex, blockNumberNotSupported bool) {
+func (w *execClientWrapper) StoreFinalityData(finalityData *arbutil.FinalityData) {
 	w.t.Error("not supported")
 }
 

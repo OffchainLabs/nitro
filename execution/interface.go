@@ -36,7 +36,7 @@ type ExecutionClient interface {
 	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
 	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
-	StoreFinalizedAndSafeMsgCounts(safeMsgCount arbutil.MessageIndex, finalizedMsgCount arbutil.MessageIndex, blockNumberNotSupported bool)
+	StoreFinalityData(finalityData *arbutil.FinalityData)
 }
 
 // needed for validators / stakers
