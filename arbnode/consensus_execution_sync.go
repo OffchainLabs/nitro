@@ -9,20 +9,27 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type ConsensusExecutionSync struct {
 	stopwaiter.StopWaiter
-	inboxReader *InboxReader
-	execClient  execution.ExecutionClient
+	inboxReader    *InboxReader
+	execClient     execution.ExecutionClient
+	blockValidator *staker.BlockValidator
 }
 
-func NewConsensusExecutionSync(inboxReader *InboxReader, execClient execution.ExecutionClient) *ConsensusExecutionSync {
+func NewConsensusExecutionSync(
+	inboxReader *InboxReader,
+	execClient execution.ExecutionClient,
+	blockValidator *staker.BlockValidator,
+) *ConsensusExecutionSync {
 	return &ConsensusExecutionSync{
-		inboxReader: inboxReader,
-		execClient:  execClient,
+		inboxReader:    inboxReader,
+		execClient:     execClient,
+		blockValidator: blockValidator,
 	}
 }
 
@@ -51,10 +58,19 @@ func (c *ConsensusExecutionSync) pushFinalityDataFromConsensusToExecution(ctx co
 		return sleepTime
 	}
 
+	var validatedMsgCount arbutil.MessageIndex
+	var blockValidatorSet bool
+	if c.blockValidator != nil {
+		validatedMsgCount = c.blockValidator.GetValidated()
+		blockValidatorSet = true
+	}
+
 	finalityData := &arbutil.FinalityData{
 		SafeMsgCount:         safeMsgCount,
 		FinalizedMsgCount:    finalizedMsgCount,
+		ValidatedMsgCount:    validatedMsgCount,
 		FinalityNotSupported: finalityNotSupported,
+		BlockValidatorSet:    blockValidatorSet,
 	}
 	c.execClient.StoreFinalityData(finalityData)
 

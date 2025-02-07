@@ -788,7 +788,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	consensusExecutionSync := NewConsensusExecutionSync(inboxReader, exec)
+	consensusExecutionSync := NewConsensusExecutionSync(inboxReader, exec, blockValidator)
 
 	return &Node{
 		ArbDB:                   arbDb,
@@ -1154,13 +1154,6 @@ func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta a
 
 func (n *Node) ExpectChosenSequencer() error {
 	return n.TxStreamer.ExpectChosenSequencer()
-}
-
-func (n *Node) ValidatedMessageCount() (arbutil.MessageIndex, error) {
-	if n.BlockValidator == nil {
-		return 0, errors.New("validator not set up")
-	}
-	return n.BlockValidator.GetValidated(), nil
 }
 
 func (n *Node) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
