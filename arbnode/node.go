@@ -291,6 +291,7 @@ type Node struct {
 	blockMetadataFetcher    *BlockMetadataFetcher
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
+	ConsensusExecutionSync  *ConsensusExecutionSync
 }
 
 type SnapSyncConfig struct {
@@ -638,7 +639,7 @@ func createNodeImpl(
 		}
 		firstMessageBlock.SetUint64(block)
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader }, exec)
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, err
 	}
@@ -787,6 +788,8 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	consensusExecutionSync := NewConsensusExecutionSync(inboxReader, exec)
+
 	return &Node{
 		ArbDB:                   arbDb,
 		Stack:                   stack,
@@ -812,6 +815,7 @@ func createNodeImpl(
 		blockMetadataFetcher:    blockMetadataFetcher,
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
+		ConsensusExecutionSync:  consensusExecutionSync,
 	}, nil
 }
 
@@ -1056,6 +1060,9 @@ func (n *Node) Start(ctx context.Context) error {
 		n.configFetcher.Start(ctx)
 	}
 	n.SyncMonitor.Start(ctx)
+	if n.ConsensusExecutionSync != nil {
+		n.ConsensusExecutionSync.Start(ctx)
+	}
 	return nil
 }
 
