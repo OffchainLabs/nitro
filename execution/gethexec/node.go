@@ -499,3 +499,7 @@ func (n *ExecutionNode) Synced() bool {
 func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
 	return n.SyncMonitor.FullSyncProgressMap()
 }
+
+func (n *ExecutionNode) StoreFinalizedAndSafeMsgCounts(finalizedMsgCount arbutil.MessageIndex, safeMsgCount arbutil.MessageIndex, blockNumberNotSupported bool) {
+	n.SyncMonitor.StoreFinalizedAndSafeMsgCounts(finalizedMsgCount, safeMsgCount, blockNumberNotSupported)
+}

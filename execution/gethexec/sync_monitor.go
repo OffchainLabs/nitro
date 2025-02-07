@@ -2,15 +2,15 @@ package gethexec
 
 import (
 	"context"
-
-	"github.com/pkg/errors"
-	flag "github.com/spf13/pflag"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 type SyncMonitorConfig struct {
@@ -32,6 +32,11 @@ type SyncMonitor struct {
 	config    *SyncMonitorConfig
 	consensus execution.ConsensusInfo
 	exec      *ExecutionEngine
+
+	finalizedAndSafeSynced  bool
+	finalizedMsgCount       arbutil.MessageIndex
+	safeMsgCount            arbutil.MessageIndex
+	blockNumberNotSupported bool
 }
 
 func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonitor {
@@ -71,13 +76,14 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 }
 
 func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
-	if s.consensus == nil {
-		return 0, errors.New("not set up for safeblock")
+	if !s.finalizedAndSafeSynced {
+		return 0, errors.New("finalized block number not synced")
 	}
-	msg, err := s.consensus.GetSafeMsgCount(ctx)
-	if err != nil {
-		return 0, err
+	if s.blockNumberNotSupported {
+		return 0, headerreader.ErrBlockNumberNotSupported
 	}
+	msg := s.safeMsgCount
+
 	if s.config.SafeBlockWaitForBlockValidator {
 		latestValidatedCount, err := s.consensus.ValidatedMessageCount()
 		if err != nil {
@@ -92,13 +98,14 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 }
 
 func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
-	if s.consensus == nil {
-		return 0, errors.New("not set up for safeblock")
+	if !s.finalizedAndSafeSynced {
+		return 0, errors.New("finalized block number not synced")
 	}
-	msg, err := s.consensus.GetFinalizedMsgCount(ctx)
-	if err != nil {
-		return 0, err
+	if s.blockNumberNotSupported {
+		return 0, headerreader.ErrBlockNumberNotSupported
 	}
+	msg := s.finalizedMsgCount
+
 	if s.config.FinalizedBlockWaitForBlockValidator {
 		latestValidatedCount, err := s.consensus.ValidatedMessageCount()
 		if err != nil {
@@ -138,4 +145,11 @@ func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetada
 	}
 	log.Debug("FullConsensusClient is not accessible to execution, BlockMetadataByNumber will return nil")
 	return nil, nil
+}
+
+func (s *SyncMonitor) StoreFinalizedAndSafeMsgCounts(finalizedMsgCount arbutil.MessageIndex, safeMsgCount arbutil.MessageIndex, blockNumberNotSupported bool) {
+	s.blockNumberNotSupported = blockNumberNotSupported
+	s.finalizedMsgCount = finalizedMsgCount
+	s.safeMsgCount = safeMsgCount
+	s.finalizedAndSafeSynced = true
 }
