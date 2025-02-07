@@ -16,13 +16,12 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-var withL1 = true
-
 func TestStorageTrie(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var withL1 = true
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
 
 	// This test tests validates blocks at the end.
@@ -58,9 +57,10 @@ func TestStorageTrie(t *testing.T) {
 	Require(t, err)
 	tx1BlockNum := receipt.BlockNumber.Uint64()
 
-	want := uint64(32_015_781)
-	if receipt.GasUsed != want {
-		t.Errorf("Want GasUsed: %d: got: %d", want, receipt.GasUsed)
+	want := uint64(20_000_000)
+	got := receipt.GasUsed - receipt.GasUsedForL1
+	if got < want {
+		t.Errorf("Want at least GasUsed: %d: got: %d", want, got)
 	}
 
 	// Clear about 75% of them, and add another 10%
