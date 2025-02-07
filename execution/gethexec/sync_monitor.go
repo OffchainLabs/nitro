@@ -74,7 +74,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 
 func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	if s.finalityData == nil {
-		return 0, errors.New("finalized block number not synced")
+		return 0, errors.New("safe block number not synced")
 	}
 	if s.finalityData.FinalityNotSupported {
 		return 0, headerreader.ErrBlockNumberNotSupported
@@ -82,12 +82,11 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	msg := s.finalityData.SafeMsgCount
 
 	if s.config.SafeBlockWaitForBlockValidator {
-		latestValidatedCount, err := s.consensus.ValidatedMessageCount()
-		if err != nil {
-			return 0, err
+		if !s.finalityData.BlockValidatorSet {
+			return 0, errors.New("block validator not set")
 		}
-		if msg > latestValidatedCount {
-			msg = latestValidatedCount
+		if msg > s.finalityData.ValidatedMsgCount {
+			msg = s.finalityData.ValidatedMsgCount
 		}
 	}
 	block := s.exec.MessageIndexToBlockNumber(msg - 1)
@@ -104,12 +103,11 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 	msg := s.finalityData.FinalizedMsgCount
 
 	if s.config.FinalizedBlockWaitForBlockValidator {
-		latestValidatedCount, err := s.consensus.ValidatedMessageCount()
-		if err != nil {
-			return 0, err
+		if !s.finalityData.BlockValidatorSet {
+			return 0, errors.New("block validator not set")
 		}
-		if msg > latestValidatedCount {
-			msg = latestValidatedCount
+		if msg > s.finalityData.ValidatedMsgCount {
+			msg = s.finalityData.ValidatedMsgCount
 		}
 	}
 	block := s.exec.MessageIndexToBlockNumber(msg - 1)
