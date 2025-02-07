@@ -74,7 +74,7 @@ func (c *ConsensusExecutionSync) pushFinalityDataFromConsensusToExecution(ctx co
 	}
 	c.execClient.StoreFinalityData(finalityData)
 
-	log.Debug("Pushed finality data from consensus to execution", "finalityData", finalityData)
+	log.Info("Pushed finality data from consensus to execution", "finalityData", finalityData)
 
 	return sleepTime
 }
