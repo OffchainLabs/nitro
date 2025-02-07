@@ -503,6 +503,8 @@ github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128221801-ce50a21d24d7 h1:f
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128221801-ce50a21d24d7/go.mod h1:YrArnZ7cR3FZKQV7f2hgjB6BIuOAcGjxAKvXpBBNKLM=
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250205191008-5cd344e5f6d3 h1:Eo6xjcznaLXIkQdi85sfV+cOnY3poZ9EyQLcqfRqxS8=
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250205191008-5cd344e5f6d3/go.mod h1:/4xH/pwveTHPVDA3gZWbUkQmsKMngqioxSX6WMcu+Yg=
+github.com/tenderly/live-tracer-arbitrum v0.0.0-20250207092717-325f519f2993 h1:IL3n/dwmWhw30Mu7gu58L+d69sgChzEHXqLJsj4Um1s=
+github.com/tenderly/live-tracer-arbitrum v0.0.0-20250207092717-325f519f2993/go.mod h1:/4xH/pwveTHPVDA3gZWbUkQmsKMngqioxSX6WMcu+Yg=
 github.com/tklauser/go-sysconf v0.3.12 h1:0QaGUFOdQaIVdPgfITYzaTegZvdCjmYO52cSFAEVmqU=
 github.com/tklauser/go-sysconf v0.3.12/go.mod h1:Ho14jnntGE1fpdOqQEEaiKRpvIavV0hSfmBq8nJbHYI=
 github.com/tklauser/numcpus v0.6.1 h1:ng9scYS7az0Bk4OZLvrNXNSAO2Pxr1XXRAPyjhIx+Fk=
