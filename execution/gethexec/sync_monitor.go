@@ -76,7 +76,7 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	if s.finalityData == nil {
 		return 0, errors.New("safe block number not synced")
 	}
-	if s.finalityData.FinalityNotSupported {
+	if !s.finalityData.FinalitySupported {
 		return 0, headerreader.ErrBlockNumberNotSupported
 	}
 	msg := s.finalityData.SafeMsgCount
@@ -97,7 +97,7 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 	if s.finalityData == nil {
 		return 0, errors.New("finalized block number not synced")
 	}
-	if s.finalityData.FinalityNotSupported {
+	if !s.finalityData.FinalitySupported {
 		return 0, headerreader.ErrBlockNumberNotSupported
 	}
 	msg := s.finalityData.FinalizedMsgCount
