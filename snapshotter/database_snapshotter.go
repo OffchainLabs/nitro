@@ -220,6 +220,10 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 }
 
 func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash common.Hash) error {
+	if s.bc.StateCache().TrieDB().Scheme() != rawdb.HashScheme {
+		return errors.New("unsupported state scheme, database snapshotter supports only hash state scheme")
+	}
+
 	if err := s.exporter.Open(); err != nil {
 		return fmt.Errorf("failed to open blockchain exporter: %w", err)
 	}
