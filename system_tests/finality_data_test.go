@@ -63,7 +63,7 @@ func TestFinalityData(t *testing.T) {
 	if finalityData == nil {
 		t.Fatal("Finality data is nil")
 	}
-	// block validator and finality data usage are disabled
+	// block validator and finality data usage are disabled in first node
 	expectedFinalityData := arbutil.FinalityData{
 		SafeMsgCount:      0,
 		FinalizedMsgCount: 0,

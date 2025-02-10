@@ -3,6 +3,7 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 
 	flag "github.com/spf13/pflag"
 
@@ -34,7 +35,7 @@ type SyncMonitor struct {
 	consensus execution.ConsensusInfo
 	exec      *ExecutionEngine
 
-	finalityData *arbutil.FinalityData
+	finalityData atomic.Pointer[arbutil.FinalityData]
 }
 
 func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonitor {
@@ -74,7 +75,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 }
 
 func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
-	finalityData := s.finalityData
+	finalityData := s.finalityData.Load()
 	if finalityData == nil {
 		return 0, errors.New("safe block number not synced")
 	}
@@ -96,7 +97,7 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 }
 
 func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
-	finalityData := s.finalityData
+	finalityData := s.finalityData.Load()
 	if finalityData == nil {
 		return 0, errors.New("finalized block number not synced")
 	}
@@ -146,10 +147,10 @@ func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetada
 }
 
 func (s *SyncMonitor) StoreFinalityData(finalityData *arbutil.FinalityData) {
-	s.finalityData = finalityData
+	s.finalityData.Store(finalityData)
 }
 
 // Used for testing
 func (s *SyncMonitor) GetFinalityData() *arbutil.FinalityData {
-	return s.finalityData
+	return s.finalityData.Load()
 }
