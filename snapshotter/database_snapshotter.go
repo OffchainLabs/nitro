@@ -157,40 +157,35 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 		if hash == (common.Hash{}) {
 			return fmt.Errorf("canonical hash for block %v not found", number)
 		}
+		if err := batch.ExportCanonicalHash(number, hash); err != nil {
+			return fmt.Errorf("failed to export canonical hash: %w", err)
+		}
 		tdRlp := rawdb.ReadTdRLP(s.db, hash, number)
 		if len(tdRlp) == 0 {
 			return fmt.Errorf("total difficulty for block %v (hash %v) not found", number, hash)
 		}
-		err := batch.ExportTD(number, hash, tdRlp)
-		if err != nil {
+		if err := batch.ExportTD(number, hash, tdRlp); err != nil {
 			return fmt.Errorf("failed to export block %v (hash %v) total difficulty: %w", number, hash, err)
-		}
-		err = batch.ExportCanonicalHash(number, hash)
-		if err != nil {
-			return fmt.Errorf("failed to export canonical hash: %w", err)
 		}
 		headerRlp := rawdb.ReadHeaderRLP(s.db, hash, number)
 		if len(headerRlp) == 0 {
 			return fmt.Errorf("header for block %v (hash %v) not found", number, hash)
 		}
-		err = batch.ExportBlockHeader(number, hash, headerRlp)
-		if err != nil {
+		if err := batch.ExportBlockHeader(number, hash, headerRlp); err != nil {
 			return fmt.Errorf("failed to export block %v (hash %v) header: %w", number, hash, err)
 		}
 		bodyRlp := rawdb.ReadBodyRLP(s.db, hash, number)
 		if len(bodyRlp) == 0 {
 			return fmt.Errorf("body for block %v (hash %v) not found", number, hash)
 		}
-		err = batch.ExportBlockBody(number, hash, bodyRlp)
-		if err != nil {
+		if err := batch.ExportBlockBody(number, hash, bodyRlp); err != nil {
 			return fmt.Errorf("failed to export block %v (hash %v) body: %w", number, hash, err)
 		}
 		receiptsRlp := rawdb.ReadReceiptsRLP(s.db, hash, number)
 		if len(receiptsRlp) == 0 {
 			return fmt.Errorf("receipts for block %v (hash %v) not found", number, hash)
 		}
-		err = batch.ExportBlockReceipts(number, hash, receiptsRlp)
-		if err != nil {
+		if err := batch.ExportBlockReceipts(number, hash, receiptsRlp); err != nil {
 			return fmt.Errorf("failed to export block %v (hash %v) receipts: %w", number, hash, err)
 		}
 		if time.Since(lastLog) > time.Minute && number != genesisNumber {
@@ -334,8 +329,8 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 		// If the iterator hash is the empty hash, this is an embedded node
 		if accountTrieHash != (common.Hash{}) {
 			hash := accountTrieHash
-			threadsRunning.Add(1)
 			err := startWorker(func(batch BlockChainExporterBatch) error {
+				threadsRunning.Add(1)
 				defer threadsRunning.Add(-1)
 				// get trie node directly from triedb
 				blob, err := triedb.Node(hash)
@@ -372,9 +367,8 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 					return fmt.Errorf("unexpected code hash length: %v", len(keyBytes))
 				}
 				codeHash := common.BytesToHash(data.CodeHash)
-
-				threadsRunning.Add(1)
 				err := startWorker(func(batch BlockChainExporterBatch) error {
+					threadsRunning.Add(1)
 					defer threadsRunning.Add(-1)
 					code := rawdb.ReadCode(s.db, codeHash)
 					if len(code) == 0 {
@@ -390,32 +384,38 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 				for i := int64(0); i < int64(32) && ctx.Err() == nil; i++ {
 					// note: we are passing data.Root as stateRoot here, to skip the check for stateRoot existence in trie.newTrieReader,
 					// we already check that when opening state trie and reading the account node
-					owner := key
-					trieID := trie.StorageTrieID(data.Root, owner, data.Root)
+					trieID := trie.StorageTrieID(data.Root, key, data.Root)
 					// StateTrie is not safe for concurrent use, so we open new one for each thread
 					storageTr, err := trie.NewStateTrie(trieID, triedb)
 					if err != nil {
 						return err
 					}
-					start := big.NewInt(i << 3).Bytes()
-					storageIt, err := storageTr.NodeIterator(start)
+					startKey := big.NewInt(i << 3).Bytes()
+					storageIt, err := storageTr.NodeIterator(startKey)
 					if err != nil {
 						return err
 					}
-					startPath := trie.KeybytesToHex(start)
-					endPath := trie.KeybytesToHex(big.NewInt((i + 1) << 3).Bytes())
+					startPath := trie.KeybytesToHex(startKey)
+					startPath = startPath[:len(startPath)-1] // remove terminator byte
+					endKey := big.NewInt((i + 1) << 3).Bytes()
+					endPath := trie.KeybytesToHex(endKey) // by including terminator byte we make sure that we exhaust all nodes with the endKey prefix
 					isLastKeyRange := i == 31
-					threadsRunning.Add(1)
 					err = startWorker(func(batch BlockChainExporterBatch) error {
+						threadsRunning.Add(1)
 						defer threadsRunning.Add(-1)
 						threadStartedAt := time.Now()
 						threadLastLog := time.Now()
 						var threadExportedNodes uint64
 						var threadExportedNodeBlobBytes uint64
+						var firstPath, lastPath []byte
 						for storageIt.Next(true) && ctx.Err() == nil {
 							if !isLastKeyRange && bytes.Compare(storageIt.Path(), endPath) > 0 {
-								return nil
+								break
 							}
+							if firstPath == nil {
+								firstPath = storageIt.Path()
+							}
+							lastPath = storageIt.Path()
 							storageTrieHash := storageIt.Hash()
 							if storageTrieHash != (common.Hash{}) {
 								// get trie node directly from triedb
@@ -443,7 +443,7 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 						if err := storageIt.Error(); err != nil {
 							return err
 						}
-						log.Trace("Exporting database - storage traversal worker finished", "owner", owner, "startPath", startPath, "endPath", endPath)
+						log.Trace("Exporting database - storage traversal worker finished", "owner", key, "startPath", startPath, "endPath", endPath, "firstPath", firstPath, "lastPath", lastPath)
 						return nil
 					})
 					if err != nil {
