@@ -65,9 +65,6 @@ jobs:
           cd nitro-testnode
           ./test-node.bash --init --dev &
 
-      - name: Setup upterm session
-        uses: lhotari/action-upterm@v1
-
       - name: Wait for rpc to come up
         shell: bash
         run: |
