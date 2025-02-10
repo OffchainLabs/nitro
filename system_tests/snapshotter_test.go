@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/snapshotter"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
 func TestDatabsaseSnapshotter(t *testing.T) {
@@ -42,7 +43,7 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	}()
 	var txes []*types.Transaction
 	var users []string
-	for i := 0; i < 63; i++ {
+	for i := 0; i < 16; i++ {
 		user := fmt.Sprintf("user-%d", i)
 		users = append(users, user)
 		builder.L2Info.GenerateAccount(user)
@@ -62,17 +63,21 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			auth := builder.L2Info.GetDefaultTransactOpts(user, ctx)
-			for j := 0; j < 15; j++ {
-				_, simple := builder.L2.DeploySimple(t, auth)
+			for j := 0; j < 16; j++ {
 				var txes []*types.Transaction
-				for k := 0; k < j; k++ {
-					tx, err := simple.LogAndIncrement(&auth, common.Big0) // we don't care about expected arg
-					Require(t, err)
-					txes = append(txes, tx)
-					tx, err = simple.StoreDifficulty(&auth)
-					Require(t, err)
-					txes = append(txes, tx)
-				}
+				_, tx, mock, err := mocksgen.DeploySdkStorage(&auth, builder.L2.Client)
+				Require(t, err)
+				txes = append(txes, tx)
+				tx, err = mock.Populate(&auth)
+				Require(t, err)
+				txes = append(txes, tx)
+				_, simple := builder.L2.DeploySimple(t, auth)
+				tx, err = simple.LogAndIncrement(&auth, common.Big0) // we don't care about expected arg
+				Require(t, err)
+				txes = append(txes, tx)
+				tx, err = simple.StoreDifficulty(&auth)
+				Require(t, err)
+				txes = append(txes, tx)
 				for _, tx := range txes {
 					_, err := builder.L2.EnsureTxSucceeded(tx)
 					Require(t, err)
@@ -103,7 +108,7 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 
 		snapshotterConfig := snapshotter.DatabaseSnapshotterConfigDefault
 		snapshotterConfig.Enable = true
-		snapshotterConfig.Threads = 16
+		snapshotterConfig.Threads = 32
 		snapshotterConfig.GethExporter.Output.Data = snapshotDir
 
 		trigger := make(chan common.Hash)
@@ -159,7 +164,9 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 			Fatal(t, "header not found for block:", number)
 		}
 		_, err := bc.StateAt(header.Root)
-		Require(t, err)
+		if err != nil {
+			Fatal(t, "failed to get state for root:", header.Root, "number:", header.Number, "err:", err)
+		}
 		tr, err := trie.New(trie.TrieID(header.Root), triedb)
 		Require(t, err)
 		accountIt, err := tr.NodeIterator(nil)
@@ -188,6 +195,11 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 					storageIt, err := storageTr.NodeIterator(nil)
 					Require(t, err)
 					for storageIt.Next(true) {
+						if storageIt.Hash() != (common.Hash{}) {
+							if len(storageIt.NodeBlob()) == 0 {
+								Fatal(t, "Missing node blob, node hash:", storageIt.Hash())
+							}
+						}
 					}
 					Require(t, storageIt.Error())
 				}
@@ -205,16 +217,19 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 			Fatal(t, "state shouldn't be found for block:", number)
 		}
 	}
+	currentHead := bc.CurrentBlock()
 	// check genesis and head block state
 	checkBlock(0)
 	checkStateExists(0)
-	checkBlock(lastBlock)
-	checkStateExists(lastBlock)
+	checkBlock(currentHead.Number.Uint64())
+	checkStateExists(currentHead.Number.Uint64())
 	for i := uint64(1); i < lastBlock; i++ {
 		checkBlock(i)
 		checkStateDoesNotExist(i)
 	}
 
+	// make sure we use big enough GasFeeCap (deploying bunch of contracts in short time may bump up the gas price
+	builder.L2Info.GasPrice = new(big.Int).Mul(builder.L2Info.GasPrice, big.NewInt(100))
 	tx := builder.L2Info.PrepareTx("Owner", "user-0", builder.L2Info.TransferGas, common.Big1, nil)
 	err = testClient.Client.SendTransaction(ctx, tx)
 	Require(t, err)
