@@ -17,7 +17,7 @@ import (
 )
 
 type BlockChainExporter interface {
-	Open() error
+	Open(shouldExist bool) error
 	IsOpened() bool
 	NewBatch() (BlockChainExporterBatch, error)
 	Close(compact bool) error
@@ -87,7 +87,7 @@ func (e *GethDatabaseExporter) IsOpened() bool {
 	return e.opened
 }
 
-func (e *GethDatabaseExporter) Open() error {
+func (e *GethDatabaseExporter) Open(shouldExist bool) error {
 	if e.opened {
 		return errors.New("already opened")
 	}
@@ -97,16 +97,35 @@ func (e *GethDatabaseExporter) Open() error {
 	} else if !filepath.IsAbs(ancient) {
 		ancient = filepath.Join(e.config.Output.Data, ancient)
 	}
-	db, err := rawdb.Open(rawdb.OpenOptions{
+	openOptions := rawdb.OpenOptions{
 		Type:               e.config.Output.DBEngine,
 		Directory:          e.config.Output.Data,
 		AncientsDirectory:  ancient,
 		Namespace:          e.config.Output.Namespace,
 		Cache:              e.config.Output.Cache,
 		Handles:            e.config.Output.Handles,
-		ReadOnly:           false,
+		ReadOnly:           true,
 		PebbleExtraOptions: e.config.Output.Pebble.ExtraOptions(e.config.Output.Namespace),
-	})
+	}
+	readOnlyDb, err := rawdb.Open(openOptions)
+	if err != nil && shouldExist {
+		return fmt.Errorf("failed to open pre-existing database, data dir: %v, err: %w", e.config.Output.Data, err)
+	}
+	if err == nil {
+		var err error
+		if !shouldExist {
+			err = fmt.Errorf("database already exists, data dir: %v", e.config.Output.Data)
+		}
+		closeErr := readOnlyDb.Close()
+		if closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close readonly database, data dir: %v, err: %w", closeErr))
+		}
+		if err != nil {
+			return err
+		}
+	}
+	openOptions.ReadOnly = false
+	db, err := rawdb.Open(openOptions)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -119,6 +120,14 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		err = <-result
 		Require(t, err)
 
+		trigger <- common.Hash{}
+		err = <-result
+		if err == nil {
+			Fatal(t, "should fail when output database already exists")
+		}
+		if !strings.Contains(err.Error(), "already exists") {
+			Fatal(t, "failed with unexpected error when output database already exists, err: ", err)
+		}
 	}()
 
 	// replace l2chaindata database with snapshot
