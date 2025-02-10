@@ -14,31 +14,31 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-type ConsensusExecutionSync struct {
+type ConsensusExecutionSyncer struct {
 	stopwaiter.StopWaiter
 	inboxReader    *InboxReader
 	execClient     execution.ExecutionClient
 	blockValidator *staker.BlockValidator
 }
 
-func NewConsensusExecutionSync(
+func NewConsensusExecutionSyncer(
 	inboxReader *InboxReader,
 	execClient execution.ExecutionClient,
 	blockValidator *staker.BlockValidator,
-) *ConsensusExecutionSync {
-	return &ConsensusExecutionSync{
+) *ConsensusExecutionSyncer {
+	return &ConsensusExecutionSyncer{
 		inboxReader:    inboxReader,
 		execClient:     execClient,
 		blockValidator: blockValidator,
 	}
 }
 
-func (c *ConsensusExecutionSync) Start(ctx_in context.Context) {
+func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 	c.StopWaiter.Start(ctx_in, c)
 	c.CallIteratively(c.pushFinalityDataFromConsensusToExecution)
 }
 
-func (c *ConsensusExecutionSync) pushFinalityDataFromConsensusToExecution(ctx context.Context) time.Duration {
+func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx context.Context) time.Duration {
 	sleepTime := time.Second
 	finalitySupported := true
 
