@@ -14,12 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
 
-	"github.com/offchainlabs/nitro/cmd/conf"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/snapshotter"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
@@ -34,6 +32,10 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	// for simplicity we use archive node as snapshotter reads state from disk
 	builder.execConfig.Caching.Archive = true
+	builder.execConfig.DatabaseSnapshotter.Enable = true
+	builder.execConfig.DatabaseSnapshotter.Threads = 32
+	snapshotDir := t.TempDir()
+	builder.execConfig.DatabaseSnapshotter.GethExporter.Output.Data = snapshotDir
 	_ = builder.Build(t)
 	l2cleanupDone := false
 	defer func() {
@@ -90,44 +92,22 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 
 	lastBlock, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
+
+	l2rpc := builder.L2.Stack.Attach()
+	var result snapshotter.SnapshotResult
+	err = l2rpc.CallContext(ctx, &result, "snapshotter_snapshot", rpc.LatestBlockNumber)
+	Require(t, err)
+
+	err = l2rpc.CallContext(ctx, &result, "snapshotter_snapshot", rpc.LatestBlockNumber)
+	if err == nil {
+		Fatal(t, "should fail when output database already exists")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		Fatal(t, "failed with unexpected error when output database already exists, err: ", err)
+	}
 	l2cleanupDone = true
 	builder.L2.cleanup()
 	t.Log("stopped l2 node")
-
-	snapshotDir := t.TempDir()
-
-	func() {
-		stack, err := node.New(builder.l2StackConfig)
-		Require(t, err)
-		defer stack.Close()
-		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
-		Require(t, err)
-		defer chainDb.Close()
-		coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &builder.execConfig.Caching)
-		bc, err := gethexec.GetBlockChain(chainDb, coreCacheConfig, builder.chainConfig, builder.execConfig.TxLookupLimit)
-		Require(t, err)
-
-		snapshotterConfig := snapshotter.DatabaseSnapshotterConfigDefault
-		snapshotterConfig.Enable = true
-		snapshotterConfig.Threads = 32
-		snapshotterConfig.GethExporter.Output.Data = snapshotDir
-
-		snapshotter := snapshotter.NewDatabaseSnapshotter(chainDb, bc, &snapshotterConfig)
-		snapshotter.Start(ctx)
-
-		promise := snapshotter.Trigger(common.Hash{})
-		_, err = promise.Await(ctx)
-		Require(t, err)
-
-		promise = snapshotter.Trigger(common.Hash{})
-		_, err = promise.Await(ctx)
-		if err == nil {
-			Fatal(t, "should fail when output database already exists")
-		}
-		if !strings.Contains(err.Error(), "already exists") {
-			Fatal(t, "failed with unexpected error when output database already exists, err: ", err)
-		}
-	}()
 
 	// replace l2chaindata database with snapshot
 	instanceDir := filepath.Join(builder.dataDir, builder.l2StackConfig.Name)
