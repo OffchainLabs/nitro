@@ -71,8 +71,10 @@ type BoldConfig struct {
 	AutoIncreaseAllowance               bool                   `koanf:"auto-increase-allowance"`
 	DelegatedStaking                    DelegatedStakingConfig `koanf:"delegated-staking"`
 	RPCBlockNumber                      string                 `koanf:"rpc-block-number"`
-	strategy                            legacystaker.StakerStrategy
-	blockNum                            rpc.BlockNumber
+	// How long to wait since parent assertion was created to post a new assertion
+	MinimumGapToParentAssertion time.Duration `koanf:"minimum-gap-to-parent-assertion"`
+	strategy                    legacystaker.StakerStrategy
+	blockNum                    rpc.BlockNumber
 }
 
 func (c *BoldConfig) Validate() error {
@@ -126,6 +128,7 @@ var DefaultBoldConfig = BoldConfig{
 	AssertionPostingInterval:            time.Minute * 15,
 	AssertionScanningInterval:           time.Minute,
 	AssertionConfirmingInterval:         time.Minute,
+	MinimumGapToParentAssertion:         time.Minute, // Correct default?
 	API:                                 false,
 	APIHost:                             "127.0.0.1",
 	APIPort:                             9393,
@@ -154,6 +157,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "assertion posting interval")
 	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "scan assertion interval")
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
+	f.Duration(prefix+".minimum-gap-to-parent-assertion", DefaultBoldConfig.MinimumGapToParentAssertion, "minimum duration to wait since the parent assertion was created to post a new assertion")
 	f.Duration(prefix+".check-staker-switch-interval", DefaultBoldConfig.CheckStakerSwitchInterval, "how often to check if staker can switch to bold")
 	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
@@ -514,6 +518,7 @@ func newBOLDChallengeManager(
 		challengemanager.StackWithPollingInterval(scanningInterval),
 		challengemanager.StackWithPostingInterval(postingInterval),
 		challengemanager.StackWithConfirmationInterval(confirmingInterval),
+		challengemanager.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
 		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 		challengemanager.StackWithHeaderProvider(l1Reader),
 	}

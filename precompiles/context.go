@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -58,7 +57,7 @@ func (c *Context) GasLeft() *uint64 {
 }
 
 func (c *Context) Restrict(err error) {
-	log.Crit("A metered burner was used for access-controlled work", "error", err)
+	panic("A metered burner was used for access-controlled work :" + err.Error())
 }
 
 func (c *Context) HandleError(err error) error {
@@ -88,13 +87,13 @@ func testContext(caller addr, evm mech) *Context {
 	}
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracingInfo, false))
 	if err != nil {
-		log.Crit("unable to open arbos state", "error", err)
+		panic("unable to open arbos state :" + err.Error())
 	}
 	ctx.State = state
 	var ok bool
 	ctx.txProcessor, ok = evm.ProcessingHook.(*arbos.TxProcessor)
 	if !ok {
-		log.Crit("must have tx processor")
+		panic("must have tx processor")
 	}
 	return ctx
 }

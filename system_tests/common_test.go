@@ -686,6 +686,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2.Client = client
 	l2.ExecNode = execNode
 	l2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	l2.Stack = stack
 
 	b.L2 = l2
 	b.L2Info = l2info
@@ -1336,15 +1337,17 @@ func deployOnParentChain(
 			ReplenishRateInBasis: 500,                  // 5%
 		}
 		cfg := rollupgen.Config{
-			MiniStakeValues:     miniStakeValues,
-			ConfirmPeriodBlocks: 120,
-			StakeToken:          stakeToken,
-			BaseStake:           big.NewInt(1),
-			WasmModuleRoot:      wasmModuleRoot,
-			Owner:               parentChainTransactionOpts.From,
-			LoserStakeEscrow:    parentChainTransactionOpts.From,
-			ChainId:             chainConfig.ChainID,
-			ChainConfig:         string(serializedChainConfig),
+			MiniStakeValues:        miniStakeValues,
+			ConfirmPeriodBlocks:    120,
+			StakeToken:             stakeToken,
+			BaseStake:              big.NewInt(1),
+			WasmModuleRoot:         wasmModuleRoot,
+			Owner:                  parentChainTransactionOpts.From,
+			LoserStakeEscrow:       parentChainTransactionOpts.From,
+			MinimumAssertionPeriod: big.NewInt(75),
+			ValidatorAfkBlocks:     201600,
+			ChainId:                chainConfig.ChainID,
+			ChainConfig:            string(serializedChainConfig),
 			SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
 				DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 				FutureBlocks:  big.NewInt(12),
@@ -1428,6 +1431,7 @@ func createNonL1BlockChainWithStackConfig(
 	if execConfig == nil {
 		execConfig = ExecConfigDefaultTest(t)
 	}
+	Require(t, execConfig.Validate())
 
 	stack, err := node.New(stackConfig)
 	Require(t, err)
@@ -1515,6 +1519,8 @@ func Create2ndNodeWithConfig(
 	if execConfig == nil {
 		execConfig = ExecConfigDefaultNonSequencerTest(t)
 	}
+	Require(t, execConfig.Validate())
+
 	feedErrChan := make(chan error, 10)
 	parentChainRpcClient := parentChainStack.Attach()
 	parentChainClient := ethclient.NewClient(parentChainRpcClient)
@@ -1548,7 +1554,6 @@ func Create2ndNodeWithConfig(
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
-	Require(t, execConfig.Validate())
 	Require(t, nodeConfig.Validate())
 	configFetcher := func() *gethexec.Config { return execConfig }
 	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher)
