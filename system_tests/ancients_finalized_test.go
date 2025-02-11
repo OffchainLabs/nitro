@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -18,8 +20,8 @@ import (
 	"github.com/offchainlabs/nitro/validator/client/redis"
 )
 
-func generateBlocks(t *testing.T, ctx context.Context, builder *NodeBuilder, testClient2ndNode *TestClient, n int) {
-	for i := 0; i < n; i++ {
+func generateBlocks(t *testing.T, ctx context.Context, builder *NodeBuilder, testClient2ndNode *TestClient, transactions int) {
+	for i := 0; i < transactions; i++ {
 		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
 		Require(t, err)
@@ -37,10 +39,11 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	// The procedure that periodically pushes finality data from consensus to execution
+	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get the finalized block number since UseFinalityData is false.
-	// Therefore, with UseFinalityData set to false, ExecutionEngine will not be able to move data to ancients,
-	// at least for blocks with numbers smaller than FullImmutabilityThreshold const defined in go-ethereum.
+	// Therefore, with UseFinalityData set to false, ExecutionEngine will not be able to move data to ancients by itself,
+	// at least while HEAD is smaller than the params.FullImmutabilityThreshold const defined in go-ethereum.
+	// In that way we can control in this test which blocks are moved to ancients by calling ExecEngine.SetFinalized.
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
 
 	cleanup := builder.Build(t)
@@ -52,6 +55,11 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	// Creates at least 20 L2 blocks
 	builder.L2Info.GenerateAccount("User2")
 	generateBlocks(t, ctx, builder, testClient2ndNode, 20)
+
+	headOfTheChain := builder.L2.ExecNode.Backend.BlockChain().CurrentBlock().Number.Uint64()
+	if headOfTheChain >= params.FullImmutabilityThreshold {
+		t.Fatalf("Test should be adjusted to generate less blocks. Current head: %d", headOfTheChain)
+	}
 
 	ancients, err := builder.L2.ExecNode.ChainDB.Ancients()
 	Require(t, err)
