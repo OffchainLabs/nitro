@@ -57,7 +57,7 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
-require github.com/tenderly/live-tracer-arbitrum v0.0.0-20250211162324-52eeaf098987 // indirect
+require github.com/tenderly/live-tracer-arbitrum v0.0.0-20250211201200-b830c97f9389 // indirect
 
 require (
 	cloud.google.com/go v0.115.0 // indirect
