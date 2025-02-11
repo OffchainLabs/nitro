@@ -152,16 +152,11 @@ func (s *SyncMonitor) StoreFinalityData(ctx context.Context, finalityData *arbut
 	finalizedBlockNumber, err := s.FinalizedBlockNumber(ctx)
 	if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
 		log.Warn("Finality not supported so not setting finalized block number")
-	} else if err != nil {
-		return err
-	} else {
+	} else if err == nil {
 		err = s.exec.SetFinalized(finalizedBlockNumber)
-		if err != nil {
-			return err
-		}
 	}
 
-	return nil
+	return err
 }
 
 // Used for testing
