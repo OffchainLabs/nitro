@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"math"
 	"math/big"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -195,11 +195,12 @@ func ProduceBlockAdvanced(
 	}
 
 	defer func() {
+		td := new(big.Int).Add(blockChain.GetTd(outBlock.ParentHash(), outBlock.Number().Uint64()-1), outBlock.Difficulty())
 		getVMConfig().Tracer.OnBlockEndV2(
 			outError,
 			tracing.BlockEvent{
 				Block:     outBlock,
-				TD:        nil,
+				TD:        td,
 				Finalized: nil,
 				Safe:      nil,
 			})

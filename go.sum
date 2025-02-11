@@ -499,6 +499,7 @@ github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 h1:epCh84lMvA70
 github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7/go.mod h1:q4W45IWZaF22tdD+VEXcAWRA037jwmWEB5VWYORlTpc=
 github.com/tenderly/blockchain-proto v0.0.0-20241224173603-9a58daab90a2 h1:VoazcbSD8A/3eepYLxpS4+Z2Ug7cSe9/sbI+z7Sh/Eg=
 github.com/tenderly/blockchain-proto v0.0.0-20241224173603-9a58daab90a2/go.mod h1:yp/IkDpq4o6eeWNYPIsSwRUEqNGNV8NIZG1Eot2fZ3s=
+github.com/tenderly/blockchain-proto v0.0.0-20250211213144-fe53d125e61c/go.mod h1:yp/IkDpq4o6eeWNYPIsSwRUEqNGNV8NIZG1Eot2fZ3s=
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128221801-ce50a21d24d7 h1:fhI/pRKguP139M0MmE4DDqzr7fLinLwqt2dRII2fnv8=
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250128221801-ce50a21d24d7/go.mod h1:YrArnZ7cR3FZKQV7f2hgjB6BIuOAcGjxAKvXpBBNKLM=
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250205191008-5cd344e5f6d3 h1:Eo6xjcznaLXIkQdi85sfV+cOnY3poZ9EyQLcqfRqxS8=
@@ -509,6 +510,8 @@ github.com/tenderly/live-tracer-arbitrum v0.0.0-20250211162324-52eeaf098987 h1:l
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250211162324-52eeaf098987/go.mod h1:DXEqifqbqp81tNjqQ7/GlfBBXqQj/hDU1Fa7Njs38wg=
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250211201200-b830c97f9389 h1:CCu6axKfy9AxCIryv5IB+pR3IMyO8kUXNzZ3bag5dIk=
 github.com/tenderly/live-tracer-arbitrum v0.0.0-20250211201200-b830c97f9389/go.mod h1:DXEqifqbqp81tNjqQ7/GlfBBXqQj/hDU1Fa7Njs38wg=
+github.com/tenderly/live-tracer-arbitrum v0.0.0-20250211214718-468f8feeeb5c h1:ZB8+xdaFJpdFxr2HYwu+XSzfdERhTGUOonTyGVc6X3g=
+github.com/tenderly/live-tracer-arbitrum v0.0.0-20250211214718-468f8feeeb5c/go.mod h1:CZm0DEn7UFlpr7ygqfXbllss3w35gFy4XlL290H88pE=
 github.com/tenderly/live-tracing-store v0.0.0-20250204174531-2aa7325a7f44 h1:5cdSxQUoHilOibCe+QfOb5XgHHYeehBnAKpJkJndBYM=
 github.com/tenderly/live-tracing-store v0.0.0-20250204174531-2aa7325a7f44/go.mod h1:araL6nUIWyx2fT+kzwRi4OQzvirklIK0PL3fhrtSKJk=
 github.com/tklauser/go-sysconf v0.3.12 h1:0QaGUFOdQaIVdPgfITYzaTegZvdCjmYO52cSFAEVmqU=
