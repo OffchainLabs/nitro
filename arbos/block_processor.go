@@ -195,7 +195,14 @@ func ProduceBlockAdvanced(
 	}
 
 	defer func() {
-		getVMConfig().Tracer.OnBlockEnd(outError)
+		getVMConfig().Tracer.OnBlockEndV2(
+			outError,
+			tracing.BlockEvent{
+				Block:     outBlock,
+				TD:        nil,
+				Finalized: nil,
+				Safe:      nil,
+			})
 	}()
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
