@@ -64,7 +64,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	}
 
 	checkCorrectness := func(startSeqNum uint64) {
-		fetchedMsgs := redisCoordinator.GetAcceptedTxs(round, startSeqNum)
+		fetchedMsgs := redisCoordinator.GetAcceptedTxs(round, startSeqNum, startSeqNum+5)
 		if len(fetchedMsgs) != len(addedMsgs[startSeqNum:]) {
 			t.Fatal("mismatch in number of fetched msgs")
 		}
