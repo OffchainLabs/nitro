@@ -146,8 +146,22 @@ func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetada
 	return nil, nil
 }
 
-func (s *SyncMonitor) StoreFinalityData(finalityData *arbutil.FinalityData) {
+func (s *SyncMonitor) StoreFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
 	s.finalityData.Store(finalityData)
+
+	finalizedBlockNumber, err := s.FinalizedBlockNumber(ctx)
+	if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
+		log.Warn("Finality not supported so not setting finalized block number")
+	} else if err != nil {
+		return err
+	} else {
+		err = s.exec.SetFinalized(finalizedBlockNumber)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Used for testing

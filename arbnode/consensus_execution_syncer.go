@@ -75,9 +75,13 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 		FinalitySupported: finalitySupported,
 		BlockValidatorSet: blockValidatorSet,
 	}
-	c.execClient.StoreFinalityData(finalityData)
 
-	log.Info("Pushed finality data from consensus to execution", "finalityData", finalityData)
+	err = c.execClient.StoreFinalityData(ctx, finalityData)
+	if err != nil {
+		log.Warn("Error pushing finality data from consensus to execution", "err", err)
+	} else {
+		log.Info("Pushed finality data from consensus to execution", "finalityData", finalityData)
+	}
 
 	return sleepTime
 }

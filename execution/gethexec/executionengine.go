@@ -1060,3 +1060,13 @@ func (s *ExecutionEngine) Maintenance(capLimit uint64) error {
 	defer s.createBlocksMutex.Unlock()
 	return s.bc.FlushTrieDB(common.StorageSize(capLimit))
 }
+
+func (s *ExecutionEngine) SetFinalized(finalizedBlockNumber uint64) error {
+	block := s.bc.GetBlockByNumber(finalizedBlockNumber)
+	if block == nil {
+		return errors.New("unable to get block by number")
+	}
+
+	s.bc.SetFinalized(block.Header())
+	return nil
+}

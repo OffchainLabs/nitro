@@ -43,8 +43,9 @@ func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
 	w.t.Error("not supported")
 	return nil
 }
-func (w *execClientWrapper) StoreFinalityData(finalityData *arbutil.FinalityData) {
+func (w *execClientWrapper) StoreFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
 	w.t.Error("not supported")
+	return nil
 }
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
