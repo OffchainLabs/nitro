@@ -228,7 +228,7 @@ func ProduceBlockAdvanced(
 	getVMConfig().Tracer.OnBlockStart(
 		tracing.BlockEvent{
 			Block:     types.NewBlock(header, &types.Body{Transactions: nil}, nil, trie.NewStackTrie(nil)),
-			TD:        nil,
+			TD:        new(big.Int),
 			Finalized: nil,
 			Safe:      nil,
 		},
