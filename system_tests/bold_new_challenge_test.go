@@ -290,6 +290,9 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 			CheckBatchFinality:     false,
 		},
 		cacheDir,
+		node.ConsensusNode.StatelessBlockValidator.InboxReader(),
+		node.ConsensusNode.StatelessBlockValidator.InboxTracker(),
+		node.ConsensusNode.StatelessBlockValidator.InboxStreamer(),
 	)
 	Require(t, err)
 

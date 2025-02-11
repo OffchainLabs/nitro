@@ -125,6 +125,9 @@ func TestOverflowAssertions(t *testing.T) {
 			CheckBatchFinality:     false,
 		},
 		goodDir,
+		stateless.InboxReader(),
+		stateless.InboxTracker(),
+		stateless.InboxStreamer(),
 	)
 	Require(t, err)
 

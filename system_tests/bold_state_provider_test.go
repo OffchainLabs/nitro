@@ -411,6 +411,9 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 			CheckBatchFinality:     false,
 		},
 		dir,
+		stateless.InboxReader(),
+		stateless.InboxTracker(),
+		stateless.InboxStreamer(),
 	)
 	Require(t, err)
 
