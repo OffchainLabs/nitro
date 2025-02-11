@@ -6,12 +6,16 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/testhelpers/github"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 )
 
 func generateBlocks(t *testing.T, ctx context.Context, builder *NodeBuilder, testClient2ndNode *TestClient, n int) {
@@ -23,41 +27,6 @@ func generateBlocks(t *testing.T, ctx context.Context, builder *NodeBuilder, tes
 		Require(t, err)
 		_, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
 		Require(t, err)
-	}
-}
-
-func TestFinalizedSet(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.nodeConfig.ParentChainReader.UseFinalityData = true
-
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: arbnode.ConfigDefaultL1NonSequencerTest()})
-	defer cleanup2ndNode()
-
-	bc := builder.L2.ExecNode.Backend.BlockChain()
-	finalBlock := bc.CurrentFinalBlock()
-	if finalBlock != nil {
-		t.Fatalf("finalBlock should be nil, but got %v", finalBlock)
-	}
-
-	// Creates at least 100 L2 blocks
-	builder.L2Info.GenerateAccount("User2")
-	generateBlocks(t, ctx, builder, testClient2ndNode, 100)
-
-	// Waits for the procedure that periodically pushes finality data from consensus to execution
-	time.Sleep(65 * time.Second)
-
-	// Final block should have been set
-	finalBlock = bc.CurrentFinalBlock()
-	if finalBlock == nil {
-		t.Fatalf("finalBlock should not be nil")
 	}
 }
 
@@ -114,5 +83,92 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	Require(t, err)
 	if hasAncient {
 		t.Fatalf("Ancient should not exist")
+	}
+}
+
+func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.ParentChainReader.UseFinalityData = false
+	builder.nodeConfig.BlockValidator.Enable = false
+	// For now PathDB is not supported when using block validation
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	validatorConfig.ParentChainReader.UseFinalityData = true
+	validatorConfig.BlockValidator.Enable = true
+	validatorConfig.BlockValidator.RedisValidationClientConfig = redis.ValidationClientConfig{}
+
+	cr, err := github.LatestConsensusRelease(context.Background())
+	Require(t, err)
+	machPath := populateMachineDir(t, cr)
+	AddValNode(t, ctx, validatorConfig, true, "", machPath)
+
+	testClientVal, cleanupVal := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
+	defer cleanupVal()
+
+	// final block should be nil in before generating blocks
+	finalBlock := builder.L2.ExecNode.Backend.BlockChain().CurrentFinalBlock()
+	if finalBlock != nil {
+		t.Fatalf("finalBlock should be nil, but got %v", finalBlock)
+	}
+	finalBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentFinalBlock()
+	if finalBlock != nil {
+		t.Fatalf("finalBlock should be nil, but got %v", finalBlock)
+	}
+
+	builder.L2Info.GenerateAccount("User2")
+	generateBlocks(t, ctx, builder, testClientVal, 100)
+
+	// wait for finality data to be updated in execution side
+	time.Sleep(time.Second * 20)
+
+	// block validator and finality data usage are disabled in first node,
+	// so finality data should not be set in first node
+	finalityData := builder.L2.ExecNode.SyncMonitor.GetFinalityData()
+	if finalityData == nil {
+		t.Fatal("Finality data is nil")
+	}
+	expectedFinalityData := arbutil.FinalityData{
+		SafeMsgCount:      0,
+		FinalizedMsgCount: 0,
+		BlockValidatorSet: false,
+		FinalitySupported: false,
+	}
+	if !reflect.DeepEqual(*finalityData, expectedFinalityData) {
+		t.Fatalf("Finality data is not as expected. Expected: %v, Got: %v", expectedFinalityData, *finalityData)
+	}
+	finalBlock = builder.L2.ExecNode.Backend.BlockChain().CurrentFinalBlock()
+	if finalBlock != nil {
+		t.Fatalf("finalBlock should be nil, but got %v", finalBlock)
+	}
+
+	// block validator and finality data usage are enabled in second node,
+	// so finality data should be set in second node
+	finalityDataVal := testClientVal.ExecNode.SyncMonitor.GetFinalityData()
+	if finalityDataVal == nil {
+		t.Fatal("Finality data is nil")
+	}
+	if finalityDataVal.SafeMsgCount == 0 {
+		t.Fatal("SafeMsgCount is 0")
+	}
+	if finalityDataVal.FinalizedMsgCount == 0 {
+		t.Fatal("FinalizedMsgCount is 0")
+	}
+	if !finalityDataVal.BlockValidatorSet {
+		t.Fatal("BlockValidatorSet is false")
+	}
+	if !finalityDataVal.FinalitySupported {
+		t.Fatal("FinalitySupported is false")
+	}
+	finalBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentFinalBlock()
+	if finalBlock == nil {
+		t.Fatalf("finalBlock should not be nil")
 	}
 }
