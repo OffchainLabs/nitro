@@ -103,6 +103,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		TriesInMemory:                      cachingConfig.BlockCount,
 		TrieRetention:                      cachingConfig.BlockAge,
 		SnapshotLimit:                      cachingConfig.SnapshotCache,
+		SnapshotWait:                       true,
 		Preimages:                          baseConf.Preimages,
 		SnapshotRestoreMaxGas:              cachingConfig.SnapshotRestoreGasLimit,
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,

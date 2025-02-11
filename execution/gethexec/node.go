@@ -277,7 +277,7 @@ func CreateExecutionNode(
 
 	var databaseSnapshotter *snapshotter.DatabaseSnapshotter
 	if config.DatabaseSnapshotter.Enable {
-		databaseSnapshotter = snapshotter.NewDatabaseSnapshotter(chainDB, l2BlockChain, &config.DatabaseSnapshotter, nil, nil)
+		databaseSnapshotter = snapshotter.NewDatabaseSnapshotter(chainDB, l2BlockChain, &config.DatabaseSnapshotter)
 	}
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
@@ -326,6 +326,13 @@ func CreateExecutionNode(
 		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDB)),
 		Public:    false,
 	})
+	if databaseSnapshotter != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "snapshotter",
+			Service:   snapshotter.NewDatabaseSnapshotterAPI(l2BlockChain, databaseSnapshotter),
+			Public:    false,
+		})
+	}
 
 	stack.RegisterAPIs(apis)
 

@@ -118,7 +118,7 @@ func (e *GethDatabaseExporter) Open(shouldExist bool) error {
 		}
 		closeErr := readOnlyDb.Close()
 		if closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("failed to close readonly database, data dir: %v, err: %w", closeErr))
+			err = errors.Join(err, fmt.Errorf("failed to close readonly database, data dir: %v, err: %w", e.config.Output.Data, closeErr))
 		}
 		if err != nil {
 			return err

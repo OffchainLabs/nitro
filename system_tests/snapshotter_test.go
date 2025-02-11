@@ -112,16 +112,15 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		snapshotterConfig.Threads = 32
 		snapshotterConfig.GethExporter.Output.Data = snapshotDir
 
-		trigger := make(chan common.Hash)
-		result := make(chan error)
-		snapshotter := snapshotter.NewDatabaseSnapshotter(chainDb, bc, &snapshotterConfig, trigger, result)
+		snapshotter := snapshotter.NewDatabaseSnapshotter(chainDb, bc, &snapshotterConfig)
 		snapshotter.Start(ctx)
-		trigger <- common.Hash{}
-		err = <-result
+
+		promise := snapshotter.Trigger(common.Hash{})
+		_, err = promise.Await(ctx)
 		Require(t, err)
 
-		trigger <- common.Hash{}
-		err = <-result
+		promise = snapshotter.Trigger(common.Hash{})
+		_, err = promise.Await(ctx)
 		if err == nil {
 			Fatal(t, "should fail when output database already exists")
 		}

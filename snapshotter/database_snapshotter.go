@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -51,6 +52,18 @@ func DatabaseSnapshotterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	GethDatabaseExporterConfigAddOptions(prefix+".geth-exporter", f)
 }
 
+type SnapshotResult struct {
+	GenesisHash   common.Hash `json:"genesisHash"`
+	GenesisNumber uint64      `json:"genesisNumber"`
+	HeadHash      common.Hash `json:"headHash"`
+	HeadNumber    uint64      `json:"headNumber"`
+}
+
+type snapshotTrigger struct {
+	blockHash common.Hash
+	promise   *containers.Promise[SnapshotResult]
+}
+
 type DatabaseSnapshotter struct {
 	stopwaiter.StopWaiter
 
@@ -60,19 +73,30 @@ type DatabaseSnapshotter struct {
 	bc       *core.BlockChain
 	exporter BlockChainExporter
 
-	triggerChan chan common.Hash
-	resultChan  chan error
+	triggerChan chan snapshotTrigger
 }
 
-func NewDatabaseSnapshotter(db ethdb.Database, bc *core.BlockChain, config *DatabaseSnapshotterConfig, triggerChan chan common.Hash, resultChan chan error) *DatabaseSnapshotter {
+func NewDatabaseSnapshotter(db ethdb.Database, bc *core.BlockChain, config *DatabaseSnapshotterConfig) *DatabaseSnapshotter {
 	return &DatabaseSnapshotter{
 		config:      config,
 		db:          db,
 		bc:          bc,
 		exporter:    NewGethDatabaseExporter(&config.GethExporter),
-		triggerChan: triggerChan,
-		resultChan:  resultChan,
+		triggerChan: make(chan snapshotTrigger, 1),
 	}
+}
+
+func (s *DatabaseSnapshotter) Trigger(blockHash common.Hash) containers.PromiseInterface[SnapshotResult] {
+	if !s.Started() {
+		return containers.NewReadyPromise(SnapshotResult{}, errors.New("not started"))
+	}
+	promise := containers.NewPromise[SnapshotResult](nil)
+	select {
+	case s.triggerChan <- snapshotTrigger{blockHash: blockHash, promise: &promise}:
+	default:
+		promise.ProduceError(errors.New("already scheduled"))
+	}
+	return &promise
 }
 
 func (s *DatabaseSnapshotter) Start(ctx context.Context) {
@@ -83,7 +107,7 @@ func (s *DatabaseSnapshotter) Start(ctx context.Context) {
 
 	s.LaunchThread(func(ctx context.Context) {
 		for {
-			var blockHash common.Hash
+			var trigger snapshotTrigger
 			select {
 			case <-ctx.Done():
 				return
@@ -92,29 +116,43 @@ func (s *DatabaseSnapshotter) Start(ctx context.Context) {
 					continue
 				}
 				log.Info("Database snapshot triggered by SIGUSR2")
-				blockHash = common.Hash{}
-			case blockHash = <-s.triggerChan:
+				trigger = snapshotTrigger{
+					blockHash: common.Hash{},
+					promise:   nil,
+				}
+			case trigger = <-s.triggerChan:
 				if !s.config.Enable {
-					log.Warn("Ignoring database snapshot trigger, snapshotter disabled", "blockHash", blockHash)
+					log.Warn("Ignoring database snapshot trigger, snapshotter disabled", "blockHash", trigger.blockHash)
+					if trigger.promise != nil {
+						trigger.promise.ProduceError(errors.New("database snapshotter is disabled"))
+					}
 					continue
 				}
-				log.Info("Database snapshot tiggered", "blockHash", blockHash)
+				log.Info("Database snapshot tiggered", "blockHash", trigger.blockHash)
 			}
-			if blockHash == (common.Hash{}) {
+			// mostly needed for SIGUSR2 case
+			if trigger.blockHash == (common.Hash{}) {
 				header := s.bc.CurrentHeader()
 				if header == nil {
-					log.Error("Aborting snapshot: failed to get current head header.")
+					err := errors.New("aborting snapshot: failed to get current head header")
+					log.Error(err.Error())
+					if trigger.promise != nil {
+						trigger.promise.ProduceError(err)
+					}
 					continue
 				}
-				blockHash = header.Hash()
+				trigger.blockHash = header.Hash()
 			}
-			log.Info("Creating database snapshot", "blockHash", blockHash)
-			err := s.CreateSnapshot(ctx, blockHash)
+			log.Info("Creating database snapshot", "blockHash", trigger.blockHash)
+			result, err := s.CreateSnapshot(ctx, trigger.blockHash)
 			if err != nil {
 				log.Error("Database snapshot failed", "err", err)
+				if trigger.promise != nil {
+					trigger.promise.ProduceError(err)
+				}
 			}
-			if s.resultChan != nil {
-				s.resultChan <- err
+			if trigger.promise != nil {
+				trigger.promise.Produce(*result)
 			}
 		}
 	})
@@ -219,12 +257,12 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 	return nil
 }
 
-func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash common.Hash) error {
+func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash common.Hash) (*SnapshotResult, error) {
 	if s.bc.StateCache().TrieDB().Scheme() != rawdb.HashScheme {
-		return errors.New("unsupported state scheme, database snapshotter supports only hash state scheme")
+		return nil, errors.New("unsupported state scheme, database snapshotter supports only hash state scheme")
 	}
 	if err := s.exporter.Open(false); err != nil {
-		return fmt.Errorf("failed to open blockchain exporter: %w", err)
+		return nil, fmt.Errorf("failed to open blockchain exporter: %w", err)
 	}
 	defer func() {
 		if s.exporter.IsOpened() {
@@ -243,7 +281,7 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 	for i := 0; i < threads; i++ {
 		batch, err := s.exporter.NewBatch()
 		if err != nil {
-			return fmt.Errorf("failed to create new blockchain exporter batch: %w", err)
+			return nil, fmt.Errorf("failed to create new blockchain exporter batch: %w", err)
 		}
 		batchPool <- batch
 	}
@@ -271,7 +309,7 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 	defer triedb.Close()
 	lastHeader, err := s.findLastAvailableState(ctx, triedb, blockHash)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	workersCtx, cancelWorkers := context.WithCancel(ctx)
 	defer cancelWorkers()
@@ -281,38 +319,47 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 		return s.exportBlocks(workersCtx, batch, header)
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	genesisNumber := s.bc.Config().ArbitrumChainParams.GenesisBlockNum
 	genesisHeader := s.bc.GetHeaderByNumber(genesisNumber)
 	if genesisHeader == nil {
-		return errors.New("genesis header not found")
+		return nil, errors.New("genesis header not found")
 	}
-	log.Info("exporting genesis state", "genesisNumber", genesisHeader.Number.Uint64(), "genesisHash", genesisHeader.Hash())
+	genesisHash := genesisHeader.Hash()
+	log.Info("exporting genesis state", "genesisNumber", genesisNumber, "genesisHash", genesisHash)
 	if err = s.exportState(workersCtx, startWorker, triedb, genesisHeader.Root); err != nil {
-		return err
+		return nil, err
 	}
-	log.Info("exporting last state", "blockNumber", header.Number.Uint64(), "blockHash", header.Hash())
+	log.Info("exporting last state", "blockNumber", lastHeader.Number.Uint64(), "blockHash", lastHeader.Hash())
 	if err = s.exportState(workersCtx, startWorker, triedb, lastHeader.Root); err != nil {
-		return err
+		return nil, err
 	}
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 	for i := 0; i < threads; i++ {
 		err = <-results
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	// flush all batches from batchPool
 	for i := 0; i < threads; i++ {
 		batch := <-batchPool
 		if err = batch.Flush(); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return s.exporter.Close(true)
+	if err := s.exporter.Close(true); err != nil {
+		return nil, err
+	}
+	return &SnapshotResult{
+		GenesisNumber: genesisNumber,
+		GenesisHash:   genesisHash,
+		HeadHash:      lastHeader.Hash(),
+		HeadNumber:    lastHeader.Number.Uint64(),
+	}, nil
 }
 
 func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(work func(batch BlockChainExporterBatch) error) error, triedb *triedb.Database, root common.Hash) error {
