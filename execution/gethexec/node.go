@@ -500,6 +500,6 @@ func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
 	return n.SyncMonitor.FullSyncProgressMap()
 }
 
-func (n *ExecutionNode) StoreFinalityData(finalityData *arbutil.FinalityData) {
-	n.SyncMonitor.StoreFinalityData(finalityData)
+func (n *ExecutionNode) StoreFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
+	return n.SyncMonitor.StoreFinalityData(ctx, finalityData)
 }
