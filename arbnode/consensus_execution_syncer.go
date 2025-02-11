@@ -49,7 +49,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 	if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
 		finalitySupported = false
 	} else if err != nil {
-		log.Warn("Error getting safe message count", "err", err)
+		log.Error("Error getting safe message count", "err", err)
 		return sleepTime
 	}
 
@@ -57,7 +57,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 	if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
 		finalitySupported = false
 	} else if err != nil {
-		log.Warn("Error getting finalized message count", "err", err)
+		log.Error("Error getting finalized message count", "err", err)
 		return sleepTime
 	}
 
@@ -78,7 +78,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 
 	err = c.execClient.StoreFinalityData(ctx, finalityData)
 	if err != nil {
-		log.Warn("Error pushing finality data from consensus to execution", "err", err)
+		log.Error("Error pushing finality data from consensus to execution", "err", err)
 	} else {
 		log.Info("Pushed finality data from consensus to execution", "finalityData", finalityData)
 	}
