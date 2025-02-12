@@ -65,6 +65,7 @@ type BoldConfig struct {
 	APIDBPath                           string                 `koanf:"api-db-path"`
 	TrackChallengeParentAssertionHashes []string               `koanf:"track-challenge-parent-assertion-hashes"`
 	CheckStakerSwitchInterval           time.Duration          `koanf:"check-staker-switch-interval"`
+	MaxSyncLookbackBlocks               uint64                 `koanf:"max-sync-lookback-blocks"`
 	StateProviderConfig                 StateProviderConfig    `koanf:"state-provider-config"`
 	StartValidationFromStaked           bool                   `koanf:"start-validation-from-staked"`
 	AutoDeposit                         bool                   `koanf:"auto-deposit"`
@@ -141,6 +142,7 @@ var DefaultBoldConfig = BoldConfig{
 	AutoIncreaseAllowance:               true,
 	DelegatedStaking:                    DefaultDelegatedStakingConfig,
 	RPCBlockNumber:                      "finalized",
+	MaxSyncLookbackBlocks:               7200,
 }
 
 var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
@@ -521,6 +523,7 @@ func newBOLDChallengeManager(
 		challengemanager.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
 		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 		challengemanager.StackWithHeaderProvider(l1Reader),
+		challengemanager.StackWithSyncMaxLookbackBlocks(config.MaxSyncLookbackBlocks),
 	}
 	if config.API {
 		apiAddr := fmt.Sprintf("%s:%d", config.APIHost, config.APIPort)
