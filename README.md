@@ -47,8 +47,8 @@ Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on
 - Nix package manager
 - Docker daemon running
 
-### For MacOS Users
-1. Build WASM components:
+### Build Steps
+1. For MacOS Users Only:
 ```bash
 bash ./scripts/build-wasm-on-macos-with-nix
 ```
@@ -58,7 +58,7 @@ nix develop
 make build
 make build-replay-env
 ```
-3. Run E2E tests:
+3. Run E2E tests (ensure Docker is running):
 ```bash
 gotestsum --format standard-verbose --packages="$packages" -- -v -timeout 15m -p 1 ./system_tests/... -run 'TestEspressoE2E'
 ```
