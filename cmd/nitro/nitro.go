@@ -877,7 +877,7 @@ func (c *NodeConfig) Validate() error {
 	if c.Node.ValidatorRequired() && (c.Execution.Caching.StateScheme == rawdb.PathScheme) {
 		return errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
 	}
-	if c.Node.Execution.DatabaseSnapshotter.Enable && c.Node.MessagePruner.Enable {
+	if c.Execution.DatabaseSnapshotter.Enable && c.Node.MessagePruner.Enable {
 		return errors.New("database snapshotter requires message pruner to be disabled")
 	}
 	return c.Persistent.Validate()
