@@ -64,22 +64,28 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 		return
 	}
 	if fromBlock != toBlock {
-		filterOpts := &bind.FilterOpts{
-			Start:   fromBlock,
-			End:     &toBlock,
-			Context: ctx,
-		}
-		_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-			innerErr := m.processAllAssertionsInRange(ctx, filterer, filterOpts)
-			if innerErr != nil {
-				log.Error("Could not process assertions in range", "err", innerErr)
-				return false, innerErr
+		for startBlock := fromBlock; startBlock <= toBlock; startBlock = startBlock + m.maxGetLogBlocks {
+			endBlock := startBlock + m.maxGetLogBlocks
+			if endBlock > toBlock {
+				endBlock = toBlock
 			}
-			return true, nil
-		})
-		if err != nil {
-			log.Error("Could not check for assertion added event")
-			return
+			filterOpts := &bind.FilterOpts{
+				Start:   startBlock,
+				End:     &endBlock,
+				Context: ctx,
+			}
+			_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
+				innerErr := m.processAllAssertionsInRange(ctx, filterer, filterOpts)
+				if innerErr != nil {
+					log.Error("Could not process assertions in range", "err", innerErr)
+					return false, innerErr
+				}
+				return true, nil
+			})
+			if err != nil {
+				log.Error("Could not check for assertion added event")
+				return
+			}
 		}
 		fromBlock = toBlock
 	}

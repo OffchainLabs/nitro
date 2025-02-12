@@ -93,6 +93,7 @@ type Manager struct {
 	delegatedStaking            bool
 	autoDeposit                 bool
 	autoAllowanceApproval       bool
+	maxGetLogBlocks             uint64
 }
 
 type assertionChainData struct {
@@ -192,6 +193,14 @@ func WithAverageBlockCreationTime(t time.Duration) Opt {
 	}
 }
 
+// WithMaxGetLogBlocks overrides the default maximum number of blocks to get
+// logs for in a single call.
+func WithMaxGetLogBlocks(n uint64) Opt {
+	return func(m *Manager) {
+		m.maxGetLogBlocks = n
+	}
+}
+
 // WithMinimumGapToParentAssertion overrides the default minimum gap (in duration)
 // to parent assertion creation time.
 //
@@ -238,6 +247,7 @@ func NewManager(
 		rivalHandler:                nil, // Must be set after construction if mode > DefensiveMode
 		autoDeposit:                 true,
 		autoAllowanceApproval:       true,
+		maxGetLogBlocks:             1000,
 	}
 	for _, o := range opts {
 		o(m)

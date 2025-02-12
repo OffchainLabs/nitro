@@ -36,6 +36,7 @@ type stackParams struct {
 	enableFastConfirmation              bool
 	assertionManagerOverride            *assertions.Manager
 	maxLookbackBlocks                   int64
+	maxGetLogBlocks                     int64
 	delegatedStaking                    bool
 	autoDeposit                         bool
 	autoAllowanceApproval               bool
@@ -56,6 +57,7 @@ var defaultStackParams = stackParams{
 	enableFastConfirmation:              false,
 	assertionManagerOverride:            nil,
 	maxLookbackBlocks:                   blocksPerInterval(time.Second*12, 21*24*time.Hour), // Default to 3 weeks worth of blocks.
+	maxGetLogBlocks:                     1000,
 	delegatedStaking:                    false,
 	autoDeposit:                         true,
 	autoAllowanceApproval:               true,
@@ -158,6 +160,14 @@ func StackWithSyncMaxLookbackBlocks(maxLookback int64) StackOpt {
 	}
 }
 
+// StackWithSyncMaxGetLogBlocks specifies the max size chunks of blocks to use when using get logs rpc for
+// when syncing the chain watcher.
+func StackWithSyncMaxGetLogBlocks(maxGetLog int64) StackOpt {
+	return func(p *stackParams) {
+		p.maxGetLogBlocks = maxGetLog
+	}
+}
+
 // StackWithDelegatedStaking specifies that the challenge manager will call
 // the `newStake` function in the rollup contract on startup to await funding from another account
 // such that it becomes a delegated staker.
@@ -218,6 +228,10 @@ func NewChallengeStack(
 	if err != nil {
 		return nil, err
 	}
+	maxGetLogBlocks, err := safecast.ToUint64(params.maxGetLogBlocks)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create the chain watcher.
 	watcher, err := watcher.New(
@@ -229,6 +243,7 @@ func NewChallengeStack(
 		params.avgBlockTime,
 		params.trackChallengeParentAssertionHashes,
 		maxLookbackBlocks,
+		maxGetLogBlocks,
 	)
 	if err != nil {
 		return nil, err
@@ -254,6 +269,7 @@ func NewChallengeStack(
 			assertions.WithPollingInterval(params.pollInterval),
 			assertions.WithPostingInterval(params.postInterval),
 			assertions.WithMinimumGapToParentAssertion(params.minGapToParent),
+			assertions.WithMaxGetLogBlocks(maxGetLogBlocks),
 		}
 		if apiDB != nil {
 			amOpts = append(amOpts, assertions.WithAPIDB(apiDB))

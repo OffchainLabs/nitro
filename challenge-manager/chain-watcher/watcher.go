@@ -89,6 +89,7 @@ type Watcher struct {
 	// Track all if empty / nil.
 	trackChallengeParentAssertionHashes []protocol.AssertionHash
 	maxLookbackBlocks                   uint64
+	maxGetLogBlocks                     uint64
 }
 
 // New initializes a watcher service for frequently scanning the chain
@@ -102,6 +103,7 @@ func New(
 	averageTimeForBlockCreation time.Duration,
 	trackChallengeParentAssertionHashes []protocol.AssertionHash,
 	maxLookbackBlocks uint64,
+	maxGetLogBlocks uint64,
 ) (*Watcher, error) {
 	return &Watcher{
 		chain:                               chain,
@@ -118,6 +120,7 @@ func New(
 		evilEdgesByLevel:                    threadsafe.NewMap(threadsafe.MapWithMetric[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]("evilEdgesByLevel")),
 		trackChallengeParentAssertionHashes: trackChallengeParentAssertionHashes,
 		maxLookbackBlocks:                   maxLookbackBlocks,
+		maxGetLogBlocks:                     maxGetLogBlocks,
 	}, nil
 }
 
@@ -211,33 +214,39 @@ func (w *Watcher) Start(ctx context.Context) {
 		log.Error("Could not initialize edge challenge manager filterer", "err", err)
 		return
 	}
-	filterOpts := &bind.FilterOpts{
-		Start:   fromBlock,
-		End:     &toBlock,
-		Context: ctx,
-	}
+	for startBlock := fromBlock; startBlock <= toBlock; startBlock = startBlock + w.maxGetLogBlocks {
+		endBlock := startBlock + w.maxGetLogBlocks
+		if endBlock > toBlock {
+			endBlock = toBlock
+		}
+		filterOpts := &bind.FilterOpts{
+			Start:   startBlock,
+			End:     &endBlock,
+			Context: ctx,
+		}
 
-	// Checks for different events right away before we start polling.
-	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-		return true, w.checkForEdgeAdded(ctx, filterer, filterOpts)
-	})
-	if err != nil {
-		log.Error("Could not check for edge added", "err", err)
-		return
-	}
-	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-		return true, w.checkForEdgeConfirmedByOneStepProof(ctx, filterer, filterOpts)
-	})
-	if err != nil {
-		log.Error("Could not check for edge confirmed by osp", "err", err)
-		return
-	}
-	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-		return true, w.checkForEdgeConfirmedByTime(ctx, filterer, filterOpts)
-	})
-	if err != nil {
-		log.Error("Could not check for edge confirmed by time", "err", err)
-		return
+		// Checks for different events right away before we start polling.
+		_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
+			return true, w.checkForEdgeAdded(ctx, filterer, filterOpts)
+		})
+		if err != nil {
+			log.Error("Could not check for edge added", "err", err)
+			return
+		}
+		_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
+			return true, w.checkForEdgeConfirmedByOneStepProof(ctx, filterer, filterOpts)
+		})
+		if err != nil {
+			log.Error("Could not check for edge confirmed by osp", "err", err)
+			return
+		}
+		_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
+			return true, w.checkForEdgeConfirmedByTime(ctx, filterer, filterOpts)
+		})
+		if err != nil {
+			log.Error("Could not check for edge confirmed by time", "err", err)
+			return
+		}
 	}
 
 	fromBlock = toBlock
