@@ -3,9 +3,14 @@ package gethexec
 import (
 	"context"
 
-	"github.com/offchainlabs/nitro/execution"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 )
 
 type SyncMonitorConfig struct {
@@ -120,4 +125,17 @@ func (s *SyncMonitor) Synced() bool {
 
 func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
 	s.consensus = consensus
+}
+
+func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetadata, error) {
+	genesis := s.exec.GetGenesisBlockNumber()
+	if blockNum < genesis { // Arbitrum classic block
+		return nil, nil
+	}
+	pos := arbutil.MessageIndex(blockNum - genesis)
+	if s.consensus != nil {
+		return s.consensus.BlockMetadataAtCount(pos + 1)
+	}
+	log.Debug("FullConsensusClient is not accessible to execution, BlockMetadataByNumber will return nil")
+	return nil, nil
 }

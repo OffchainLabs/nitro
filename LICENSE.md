@@ -10,7 +10,7 @@ Parameters
 Licensor:             Offchain Labs
 
 Licensed Work:        Arbitrum Nitro
-                      The Licensed Work is (c) 2021-2024 Offchain Labs
+                      The Licensed Work is (c) 2021-2025 Offchain Labs
 
 Additional Use Grant: You may use the Licensed Work in a production environment solely
                       to provide a point of interface to permit end users or applications
@@ -19,10 +19,10 @@ Additional Use Grant: You may use the Licensed Work in a production environment 
                       validating the correctness of the posted chain state, or to deploy
                       and operate (x) a blockchain that settles to a Covered Arbitrum Chain
                       or (y) a blockchain in accordance with, and subject to, the [Arbitrum
-                      Expansion Program Term of Use](https://docs.arbitrum.foundation/assets/files/Arbitrum%20Expansion%20Program%20Jan182024-4f08b0c2cb476a55dc153380fa3e64b0.pdf). For purposes of this
+                      Expansion Program Term of Use](https://docs.arbitrum.foundation/aep/ArbitrumExpansionProgramTerms.pdf). For purposes of this
                       Additional Use Grant, the "Covered Arbitrum Chains" are 
                       (a) Arbitrum One (chainid:42161), Arbitrum Nova (chainid:42170), 
-                      rbitrum Rinkeby testnet/Rinkarby (chainid:421611),Arbitrum Nitro
+                      Arbitrum Rinkeby testnet/Rinkarby (chainid:421611),Arbitrum Nitro
                       Goerli testnet (chainid:421613), and Arbitrum Sepolia Testnet
                       (chainid:421614); (b) any future blockchains authorized to be
                       designated as Covered Arbitrum Chains by the decentralized autonomous

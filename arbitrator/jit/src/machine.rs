@@ -2,8 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    arbcompress, caller_env::GoRuntimeState, program, socket, stylus_backend::CothreadHandler,
-    wasip1_stub, wavmio, Opts,
+    arbcompress, caller_env::GoRuntimeState, prepare::prepare_env, program, socket,
+    stylus_backend::CothreadHandler, wasip1_stub, wavmio, Opts,
 };
 use arbutil::{Bytes32, Color, PreimageType};
 use eyre::{bail, ErrReport, Result, WrapErr};
@@ -15,7 +15,7 @@ use std::{
     io::{BufReader, BufWriter, ErrorKind, Read},
     net::TcpStream,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Instant,
 };
 use thiserror::Error;
 use wasmer::{
@@ -129,7 +129,9 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "send_response" => func!(program::send_response),
             "create_stylus_config" => func!(program::create_stylus_config),
             "create_evm_data" => func!(program::create_evm_data),
+            "create_evm_data_v2" => func!(program::create_evm_data_v2),
             "activate" => func!(program::activate),
+            "activate_v2" => func!(program::activate_v2),
         },
     };
 
@@ -213,72 +215,76 @@ pub struct WasmEnv {
 
 impl WasmEnv {
     pub fn cli(opts: &Opts) -> Result<Self> {
-        let mut env = WasmEnv::default();
-        env.process.forks = opts.forks;
-        env.process.debug = opts.debug;
+        if let Some(json_inputs) = opts.json_inputs.clone() {
+            prepare_env(json_inputs, opts.debug)
+        } else {
+            let mut env = WasmEnv::default();
+            env.process.forks = opts.forks;
+            env.process.debug = opts.debug;
 
-        let mut inbox_position = opts.inbox_position;
-        let mut delayed_position = opts.delayed_inbox_position;
+            let mut inbox_position = opts.inbox_position;
+            let mut delayed_position = opts.delayed_inbox_position;
 
-        for path in &opts.inbox {
-            let mut msg = vec![];
-            File::open(path)?.read_to_end(&mut msg)?;
-            env.sequencer_messages.insert(inbox_position, msg);
-            inbox_position += 1;
-        }
-        for path in &opts.delayed_inbox {
-            let mut msg = vec![];
-            File::open(path)?.read_to_end(&mut msg)?;
-            env.delayed_messages.insert(delayed_position, msg);
-            delayed_position += 1;
-        }
-
-        if let Some(path) = &opts.preimages {
-            let mut file = BufReader::new(File::open(path)?);
-            let mut preimages = Vec::new();
-            let filename = path.to_string_lossy();
-            loop {
-                let mut size_buf = [0u8; 8];
-                match file.read_exact(&mut size_buf) {
-                    Ok(()) => {}
-                    Err(err) if err.kind() == ErrorKind::UnexpectedEof => break,
-                    Err(err) => bail!("Failed to parse {filename}: {}", err),
-                }
-                let size = u64::from_le_bytes(size_buf) as usize;
-                let mut buf = vec![0u8; size];
-                file.read_exact(&mut buf)?;
-                preimages.push(buf);
+            for path in &opts.inbox {
+                let mut msg = vec![];
+                File::open(path)?.read_to_end(&mut msg)?;
+                env.sequencer_messages.insert(inbox_position, msg);
+                inbox_position += 1;
             }
-            let keccak_preimages = env.preimages.entry(PreimageType::Keccak256).or_default();
-            for preimage in preimages {
-                let mut hasher = Keccak256::new();
-                hasher.update(&preimage);
-                let hash = hasher.finalize().into();
-                keccak_preimages.insert(hash, preimage);
+            for path in &opts.delayed_inbox {
+                let mut msg = vec![];
+                File::open(path)?.read_to_end(&mut msg)?;
+                env.delayed_messages.insert(delayed_position, msg);
+                delayed_position += 1;
             }
-        }
 
-        fn parse_hex(arg: &Option<String>, name: &str) -> Result<Bytes32> {
-            match arg {
-                Some(arg) => {
-                    let mut arg = arg.as_str();
-                    if arg.starts_with("0x") {
-                        arg = &arg[2..];
+            if let Some(path) = &opts.preimages {
+                let mut file = BufReader::new(File::open(path)?);
+                let mut preimages = Vec::new();
+                let filename = path.to_string_lossy();
+                loop {
+                    let mut size_buf = [0u8; 8];
+                    match file.read_exact(&mut size_buf) {
+                        Ok(()) => {}
+                        Err(err) if err.kind() == ErrorKind::UnexpectedEof => break,
+                        Err(err) => bail!("Failed to parse {filename}: {}", err),
                     }
-                    let mut bytes32 = [0u8; 32];
-                    hex::decode_to_slice(arg, &mut bytes32)
-                        .wrap_err_with(|| format!("failed to parse {} contents", name))?;
-                    Ok(bytes32.into())
+                    let size = u64::from_le_bytes(size_buf) as usize;
+                    let mut buf = vec![0u8; size];
+                    file.read_exact(&mut buf)?;
+                    preimages.push(buf);
                 }
-                None => Ok(Bytes32::default()),
+                let keccak_preimages = env.preimages.entry(PreimageType::Keccak256).or_default();
+                for preimage in preimages {
+                    let mut hasher = Keccak256::new();
+                    hasher.update(&preimage);
+                    let hash = hasher.finalize().into();
+                    keccak_preimages.insert(hash, preimage);
+                }
             }
-        }
 
-        let last_block_hash = parse_hex(&opts.last_block_hash, "--last-block-hash")?;
-        let last_send_root = parse_hex(&opts.last_send_root, "--last-send-root")?;
-        env.small_globals = [opts.inbox_position, opts.position_within_message];
-        env.large_globals = [last_block_hash, last_send_root];
-        Ok(env)
+            fn parse_hex(arg: &Option<String>, name: &str) -> Result<Bytes32> {
+                match arg {
+                    Some(arg) => {
+                        let mut arg = arg.as_str();
+                        if arg.starts_with("0x") {
+                            arg = &arg[2..];
+                        }
+                        let mut bytes32 = [0u8; 32];
+                        hex::decode_to_slice(arg, &mut bytes32)
+                            .wrap_err_with(|| format!("failed to parse {} contents", name))?;
+                        Ok(bytes32.into())
+                    }
+                    None => Ok(Bytes32::default()),
+                }
+            }
+
+            let last_block_hash = parse_hex(&opts.last_block_hash, "--last-block-hash")?;
+            let last_send_root = parse_hex(&opts.last_send_root, "--last-send-root")?;
+            env.small_globals = [opts.inbox_position, opts.position_within_message];
+            env.large_globals = [last_block_hash, last_send_root];
+            Ok(env)
+        }
     }
 
     pub fn send_results(&mut self, error: Option<String>, memory_used: Pages) {
@@ -322,8 +328,6 @@ pub struct ProcessEnv {
     pub socket: Option<(BufWriter<TcpStream>, BufReader<TcpStream>)>,
     /// A timestamp that helps with printing at various moments
     pub timestamp: Instant,
-    /// How long to wait on any child threads to compute a result
-    pub child_timeout: Duration,
     /// Whether the machine has reached the first wavmio instruction
     pub reached_wavmio: bool,
 }
@@ -335,7 +339,6 @@ impl Default for ProcessEnv {
             debug: false,
             socket: None,
             timestamp: Instant::now(),
-            child_timeout: Duration::from_secs(15),
             reached_wavmio: false,
         }
     }

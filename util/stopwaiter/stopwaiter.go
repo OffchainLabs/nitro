@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -95,20 +96,12 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 }
 
 func (s *StopWaiterSafe) StopOnly() {
-	_ = s.stopOnly()
-}
-
-// returns true if stop function was called
-func (s *StopWaiterSafe) stopOnly() bool {
-	stopWasCalled := false
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if s.started && !s.stopped {
 		s.stopFunc()
-		stopWasCalled = true
 	}
 	s.stopped = true
-	return stopWasCalled
 }
 
 // StopAndWait may be called multiple times, even before start.
@@ -125,9 +118,15 @@ func getAllStackTraces() string {
 }
 
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
-	if !s.stopOnly() {
+	s.StopOnly()
+	if !s.Started() {
+		// No need to wait, because nothing can be started if it's already stopped.
 		return nil
 	}
+	// Even if StopOnly has been previously called, make sure we wait for everything to shut down.
+	// Otherwise, a StopOnly call followed by StopAndWait might return early without waiting.
+	// At this point started must be true (because it was true above and cannot go back to false),
+	// so GetWaitChannel won't return an error.
 	waitChan, err := s.GetWaitChannel()
 	if err != nil {
 		return err
@@ -246,6 +245,26 @@ func CallIterativelyWith[T any](
 				return
 			case <-timer.C:
 			case val = <-triggerChan:
+			}
+		}
+	})
+}
+
+func CallWhenTriggeredWith[T any](
+	s ThreadLauncher,
+	foo func(context.Context, T),
+	triggerChan <-chan T,
+) error {
+	return s.LaunchThreadSafe(func(ctx context.Context) {
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case val := <-triggerChan:
+				foo(ctx, val)
 			}
 		}
 	})

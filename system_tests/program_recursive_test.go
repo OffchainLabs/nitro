@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -136,7 +137,7 @@ func testProgramResursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit boo
 	validatorConfig.BlockValidator.Enable = true
 	emptyRedisURL := ""
 	defaultWasmRootPath := ""
-	AddDefaultValNode(t, ctx, validatorConfig, jit, emptyRedisURL, defaultWasmRootPath)
+	AddValNode(t, ctx, validatorConfig, jit, emptyRedisURL, defaultWasmRootPath)
 	valClient, valCleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer valCleanup()
 
@@ -154,6 +155,7 @@ func testProgramResursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit boo
 	// execute transactions
 	blockNum := uint64(0)
 	for {
+		// #nosec G115
 		item := int(rander.GetUint64()/4) % len(tests)
 		blockNum = testProgramRecursiveCall(t, builder, slotVals, rander, tests[item])
 		tests[item] = tests[len(tests)-1]

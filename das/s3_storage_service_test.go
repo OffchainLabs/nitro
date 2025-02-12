@@ -18,11 +18,15 @@ import (
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
-type mockS3Uploader struct {
+type mockS3FullClient struct {
 	mockStorageService StorageService
 }
 
-func (m *mockS3Uploader) Upload(ctx context.Context, input *s3.PutObjectInput, opts ...func(*manager.Uploader)) (*manager.UploadOutput, error) {
+func (m *mockS3FullClient) Client() *s3.Client {
+	return nil
+}
+
+func (m *mockS3FullClient) Upload(ctx context.Context, input *s3.PutObjectInput, opts ...func(*manager.Uploader)) (*manager.UploadOutput, error) {
 	buf := new(bytes.Buffer)
 	_, err := buf.ReadFrom(input.Body)
 	if err != nil {
@@ -33,11 +37,7 @@ func (m *mockS3Uploader) Upload(ctx context.Context, input *s3.PutObjectInput, o
 	return nil, err
 }
 
-type mockS3Downloader struct {
-	mockStorageService StorageService
-}
-
-func (m *mockS3Downloader) Download(ctx context.Context, w io.WriterAt, input *s3.GetObjectInput, options ...func(*manager.Downloader)) (n int64, err error) {
+func (m *mockS3FullClient) Download(ctx context.Context, w io.WriterAt, input *s3.GetObjectInput, options ...func(*manager.Downloader)) (n int64, err error) {
 	key, err := DecodeStorageServiceKey(*input.Key)
 	if err != nil {
 		return 0, err
@@ -56,14 +56,16 @@ func (m *mockS3Downloader) Download(ctx context.Context, w io.WriterAt, input *s
 
 func NewTestS3StorageService(ctx context.Context, s3Config genericconf.S3Config) (StorageService, error) {
 	mockStorageService := NewMemoryBackedStorageService(ctx)
+	s3FullClient := &mockS3FullClient{mockStorageService}
 	return &S3StorageService{
-		bucket:     s3Config.Bucket,
-		uploader:   &mockS3Uploader{mockStorageService},
-		downloader: &mockS3Downloader{mockStorageService}}, nil
+		bucket: s3Config.Bucket,
+		client: s3FullClient,
+	}, nil
 }
 
 func TestS3StorageService(t *testing.T) {
 	ctx := context.Background()
+	// #nosec G115
 	timeout := uint64(time.Now().Add(time.Hour).Unix())
 	s3Service, err := NewTestS3StorageService(ctx, genericconf.DefaultS3Config)
 	Require(t, err)

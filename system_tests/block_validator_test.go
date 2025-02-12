@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -58,12 +59,11 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, opts.dasModeString)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	if opts.workload == upgradeArbOs {
-		chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+		chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_10
 	}
 
 	var delayEvery int
 	if opts.workloadLoops > 1 {
-		l1NodeConfigA.BatchPoster.MaxDelay = time.Millisecond * 500
 		delayEvery = opts.workloadLoops / 3
 	}
 
@@ -92,7 +92,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.ValidationClientConfig{}
 	}
 
-	AddDefaultValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
+	AddValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer cleanupB()
@@ -203,8 +203,6 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 			WrapL2ForDelayed(t, delayedTx, builder.L1Info, "User", 100000),
 		})
-		// give the inbox reader a bit of time to pick up the delayed message
-		time.Sleep(time.Millisecond * 500)
 
 		// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 		for i := 0; i < 30; i++ {
@@ -259,6 +257,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	Require(t, err)
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
 	largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
+	// #nosec G115
 	if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
 		Fatal(t, "unexpected refcount:", finalRefCount)
 	}
@@ -280,6 +279,20 @@ func TestBlockValidatorSimpleOnchain(t *testing.T) {
 		workloadLoops: 1,
 		workload:      ethSend,
 		arbitrator:    true,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
+	cr, err := github.LatestConsensusRelease(context.Background())
+	Require(t, err)
+	machPath := populateMachineDir(t, cr)
+	opts := Options{
+		dasModeString: "onchain",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    false,
+		wasmRootDir:   machPath,
 	}
 	testBlockValidatorSimple(t, opts)
 }

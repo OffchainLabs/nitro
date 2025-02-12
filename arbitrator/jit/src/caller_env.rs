@@ -8,7 +8,6 @@ use rand::RngCore;
 use rand_pcg::Pcg32;
 use std::{
     cmp::Ordering,
-    collections::{BTreeSet, BinaryHeap},
     fmt::Debug,
     mem::{self, MaybeUninit},
 };
@@ -35,7 +34,7 @@ impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
     }
 }
 
-impl<'s> JitMemAccess<'s> {
+impl JitMemAccess<'_> {
     fn view(&self) -> MemoryView {
         self.memory.view(&self.store)
     }
@@ -102,7 +101,7 @@ impl MemAccess for JitMemAccess<'_> {
             self.view()
                 .read_uninit(ptr.into(), &mut data)
                 .expect("bad read");
-            mem::transmute(data)
+            mem::transmute::<Vec<MaybeUninit<u8>>, Vec<u8>>(data)
         }
     }
 
@@ -174,12 +173,4 @@ impl PartialOrd for TimeoutInfo {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
-}
-
-#[derive(Default, Debug)]
-pub struct TimeoutState {
-    /// Contains tuples of (time, id)
-    pub times: BinaryHeap<TimeoutInfo>,
-    pub pending_ids: BTreeSet<u32>,
-    pub next_id: u32,
 }

@@ -11,6 +11,8 @@ pub mod machine;
 /// cbindgen:ignore
 pub mod memory;
 pub mod merkle;
+pub mod parse_input;
+pub mod prepare;
 mod print;
 pub mod programs;
 mod reinterpret;
@@ -34,6 +36,7 @@ use once_cell::sync::OnceCell;
 use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
+    marker::PhantomData,
     num::NonZeroUsize,
     os::raw::{c_char, c_int},
     path::Path,
@@ -57,11 +60,67 @@ pub struct CByteArray {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
-pub struct RustByteArray {
+pub struct RustSlice<'a> {
+    pub ptr: *const u8,
+    pub len: usize,
+    pub phantom: PhantomData<&'a [u8]>,
+}
+
+impl<'a> RustSlice<'a> {
+    pub fn new(slice: &'a [u8]) -> Self {
+        if slice.is_empty() {
+            return Self {
+                ptr: ptr::null(),
+                len: 0,
+                phantom: PhantomData,
+            };
+        }
+        Self {
+            ptr: slice.as_ptr(),
+            len: slice.len(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+#[repr(C)]
+pub struct RustBytes {
     pub ptr: *mut u8,
     pub len: usize,
-    pub capacity: usize,
+    pub cap: usize,
+}
+
+impl RustBytes {
+    pub unsafe fn into_vec(self) -> Vec<u8> {
+        Vec::from_raw_parts(self.ptr, self.len, self.cap)
+    }
+
+    pub unsafe fn write(&mut self, mut vec: Vec<u8>) {
+        if vec.capacity() == 0 {
+            *self = RustBytes {
+                ptr: ptr::null_mut(),
+                len: 0,
+                cap: 0,
+            };
+            return;
+        }
+        self.ptr = vec.as_mut_ptr();
+        self.len = vec.len();
+        self.cap = vec.capacity();
+        std::mem::forget(vec);
+    }
+}
+
+/// Frees the vector. Does nothing when the vector is null.
+///
+/// # Safety
+///
+/// Must only be called once per vec.
+#[no_mangle]
+pub unsafe extern "C" fn free_rust_bytes(vec: RustBytes) {
+    if !vec.ptr.is_null() {
+        drop(vec.into_vec())
+    }
 }
 
 #[no_mangle]
@@ -123,6 +182,12 @@ pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char)
             ptr::null_mut()
         }
     }
+}
+
+#[no_mangle]
+#[cfg(feature = "native")]
+pub unsafe extern "C" fn arbitrator_new_finished(gs: GlobalState) -> *mut Machine {
+    Box::into_raw(Box::new(Machine::new_finished(gs)))
 }
 
 unsafe fn cstr_to_string(c_str: *const c_char) -> String {
@@ -402,18 +467,6 @@ pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> Bytes32 {
 
 #[no_mangle]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine) -> RustByteArray {
-    let mut proof = (*mach).serialize_proof();
-    let ret = RustByteArray {
-        ptr: proof.as_mut_ptr(),
-        len: proof.len(),
-        capacity: proof.capacity(),
-    };
-    std::mem::forget(proof);
-    ret
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_free_proof(proof: RustByteArray) {
-    drop(Vec::from_raw_parts(proof.ptr, proof.len, proof.capacity))
+pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine, out: *mut RustBytes) {
+    (*out).write((*mach).serialize_proof());
 }

@@ -20,34 +20,46 @@ import (
 	"time"
 
 	"github.com/Knetic/govaluate"
+	"github.com/holiman/uint256"
+	"github.com/redis/go-redis/v9"
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
-	"github.com/go-redis/redis/v8"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/spf13/pflag"
+)
 
-	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
+var (
+	latestFinalizedNonceGauge     = metrics.NewRegisteredGauge("arb/dataposter/nonce/finalized", nil)
+	latestSoftConfirmedNonceGauge = metrics.NewRegisteredGauge("arb/dataposter/nonce/softconfirmed", nil)
+	latestUnconfirmedNonceGauge   = metrics.NewRegisteredGauge("arb/dataposter/nonce/unconfirmed", nil)
+	totalQueueLengthGauge         = metrics.NewRegisteredGauge("arb/dataposter/queue/length", nil)
+	totalQueueWeightGauge         = metrics.NewRegisteredGauge("arb/dataposter/queue/weight", nil)
 )
 
 // Dataposter implements functionality to post transactions on the chain. It
@@ -59,18 +71,16 @@ import (
 // DataPoster must be RLP serializable and deserializable
 type DataPoster struct {
 	stopwaiter.StopWaiter
-	headerReader           *headerreader.HeaderReader
-	client                 arbutil.L1Interface
-	auth                   *bind.TransactOpts
-	signer                 signerFn
-	config                 ConfigFetcher
-	usingNoOpStorage       bool
-	replacementTimes       []time.Duration
-	blobTxReplacementTimes []time.Duration
-	metadataRetriever      func(ctx context.Context, blockNum *big.Int) ([]byte, error)
-	extraBacklog           func() uint64
-	parentChainID          *big.Int
-	parentChainID256       *uint256.Int
+	headerReader      *headerreader.HeaderReader
+	client            *ethclient.Client
+	auth              *bind.TransactOpts
+	signer            signerFn
+	config            ConfigFetcher
+	usingNoOpStorage  bool
+	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	extraBacklog      func() uint64
+	parentChainID     *big.Int
+	parentChainID256  *uint256.Int
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -92,27 +102,6 @@ type DataPoster struct {
 // This can be local or external, hence the context parameter.
 type signerFn func(context.Context, common.Address, *types.Transaction) (*types.Transaction, error)
 
-func parseReplacementTimes(val string) ([]time.Duration, error) {
-	var res []time.Duration
-	var lastReplacementTime time.Duration
-	for _, s := range strings.Split(val, ",") {
-		t, err := time.ParseDuration(s)
-		if err != nil {
-			return nil, fmt.Errorf("parsing durations: %w", err)
-		}
-		if t <= lastReplacementTime {
-			return nil, errors.New("replacement times must be increasing")
-		}
-		res = append(res, t)
-		lastReplacementTime = t
-	}
-	if len(res) == 0 {
-		log.Warn("Disabling replace-by-fee for data poster")
-	}
-	// To avoid special casing "don't replace again", replace in 10 years.
-	return append(res, time.Hour*24*365*10), nil
-}
-
 type DataPosterOpts struct {
 	Database          ethdb.Database
 	HeaderReader      *headerreader.HeaderReader
@@ -127,14 +116,6 @@ type DataPosterOpts struct {
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
 	cfg := opts.Config()
-	replacementTimes, err := parseReplacementTimes(cfg.ReplacementTimes)
-	if err != nil {
-		return nil, err
-	}
-	blobTxReplacementTimes, err := parseReplacementTimes(cfg.BlobTxReplacementTimes)
-	if err != nil {
-		return nil, err
-	}
 	useNoOpStorage := cfg.UseNoOpStorage
 	if opts.HeaderReader.IsParentChainArbitrum() && !cfg.UseNoOpStorage {
 		useNoOpStorage = true
@@ -178,16 +159,14 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		signer: func(_ context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			return opts.Auth.Signer(addr, tx)
 		},
-		config:                 opts.Config,
-		usingNoOpStorage:       useNoOpStorage,
-		replacementTimes:       replacementTimes,
-		blobTxReplacementTimes: blobTxReplacementTimes,
-		metadataRetriever:      opts.MetadataRetriever,
-		queue:                  queue,
-		errorCount:             make(map[uint64]int),
-		maxFeeCapExpression:    expression,
-		extraBacklog:           opts.ExtraBacklog,
-		parentChainID:          opts.ParentChainID,
+		config:              opts.Config,
+		usingNoOpStorage:    useNoOpStorage,
+		metadataRetriever:   opts.MetadataRetriever,
+		queue:               queue,
+		errorCount:          make(map[uint64]int),
+		maxFeeCapExpression: expression,
+		extraBacklog:        opts.ExtraBacklog,
+		parentChainID:       opts.ParentChainID,
 	}
 	var overflow bool
 	dp.parentChainID256, overflow = uint256.FromBig(opts.ParentChainID)
@@ -383,6 +362,8 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
+		// #nosec G115
+		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		if nextNonce >= cfg.MaxMempoolTransactions+unconfirmedNonce {
 			return fmt.Errorf("%w: transaction nonce: %d, unconfirmed nonce: %d, max mempool size: %d", ErrExceedsMaxMempoolSize, nextNonce, unconfirmedNonce, cfg.MaxMempoolTransactions)
 		}
@@ -394,6 +375,8 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
+		// #nosec G115
+		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		if unconfirmedNonce > nextNonce {
 			return fmt.Errorf("latest on-chain nonce %v is greater than to next nonce %v", unconfirmedNonce, nextNonce)
 		}
@@ -547,6 +530,8 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get latest nonce %v blocks ago (block %v): %w", config.NonceRbfSoftConfs, softConfBlock, err)
 	}
+	// #nosec G115
+	latestSoftConfirmedNonceGauge.Update(int64(softConfNonce))
 
 	suggestedTip, err := p.client.SuggestGasTipCap(ctx)
 	if err != nil {
@@ -656,11 +641,11 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 
 	if config.MaxFeeBidMultipleBips > 0 {
 		// Limit the fee caps to be no greater than max(MaxFeeBidMultipleBips, minRbf)
-		maxNonBlobFee := arbmath.BigMulByBips(currentNonBlobFee, config.MaxFeeBidMultipleBips)
+		maxNonBlobFee := arbmath.BigMulByUBips(currentNonBlobFee, config.MaxFeeBidMultipleBips)
 		if lastTx != nil {
 			maxNonBlobFee = arbmath.BigMax(maxNonBlobFee, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
 		}
-		maxBlobFee := arbmath.BigMulByBips(currentBlobFee, config.MaxFeeBidMultipleBips)
+		maxBlobFee := arbmath.BigMulByUBips(currentBlobFee, config.MaxFeeBidMultipleBips)
 		if lastTx != nil && lastTx.BlobGasFeeCap() != nil {
 			maxBlobFee = arbmath.BigMax(maxBlobFee, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
 		}
@@ -728,13 +713,23 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
 }
 
-func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
-	return p.PostTransaction(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
+func (p *DataPoster) PostSimpleTransaction(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	nonce, _, _, _, err := p.getNextNonceAndMaybeMeta(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
+	return p.postTransactionWithMutex(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
 }
 
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+	return p.postTransactionWithMutex(ctx, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
+}
+
+func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 
 	if p.config().DisableNewTx {
 		return nil, fmt.Errorf("posting new transaction is disabled")
@@ -769,9 +764,9 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 
 	var deprecatedData types.DynamicFeeTx
 	var inner types.TxData
-	replacementTimes := p.replacementTimes
+	replacementTimes := p.config().ReplacementTimes
 	if len(kzgBlobs) > 0 {
-		replacementTimes = p.blobTxReplacementTimes
+		replacementTimes = p.config().BlobTxReplacementTimes
 		value256, overflow := uint256.FromBig(value)
 		if overflow {
 			return nil, fmt.Errorf("blob transaction callvalue %v overflows uint256", value)
@@ -1014,9 +1009,9 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 		return p.sendTx(ctx, prevTx, &newTx)
 	}
 
-	replacementTimes := p.replacementTimes
+	replacementTimes := p.config().ReplacementTimes
 	if len(prevTx.FullTx.BlobHashes()) > 0 {
-		replacementTimes = p.blobTxReplacementTimes
+		replacementTimes = p.config().BlobTxReplacementTimes
 	}
 
 	elapsed := time.Since(prevTx.Created)
@@ -1073,6 +1068,8 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 		}
 		return nil
 	}
+	// #nosec G115
+	latestFinalizedNonceGauge.Update(int64(nonce))
 	log.Info("Data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
 	if len(p.errorCount) > 0 {
 		for x := p.nonce; x < nonce; x++ {
@@ -1103,7 +1100,7 @@ func (p *DataPoster) updateBalance(ctx context.Context) error {
 	return nil
 }
 
-const maxConsecutiveIntermittentErrors = 10
+const maxConsecutiveIntermittentErrors = 20
 
 func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg string) {
 	nonce := tx.FullTx.Nonce()
@@ -1112,10 +1109,17 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 		return
 	}
 	logLevel := log.Error
-	if errors.Is(err, storage.ErrStorageRace) {
+	isStorageRace := errors.Is(err, storage.ErrStorageRace)
+	if isStorageRace || strings.Contains(err.Error(), txpool.ErrFutureReplacePending.Error()) {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
-			logLevel = log.Debug
+			if isStorageRace {
+				logLevel = log.Debug
+			} else {
+				logLevel = log.Info
+			}
+		} else if isStorageRace {
+			logLevel = log.Warn
 		}
 	} else {
 		delete(p.errorCount, nonce)
@@ -1142,7 +1146,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Warn("failed to update tx poster nonce", "err", err)
 		}
 		now := time.Now()
-		nextCheck := now.Add(arbmath.MinInt(p.replacementTimes[0], p.blobTxReplacementTimes[0]))
+		nextCheck := now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
 		maxTxsToRbf := p.config().MaxMempoolTransactions
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
@@ -1152,6 +1156,8 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Warn("Failed to get latest nonce", "err", err)
 			return minWait
 		}
+		// #nosec G115
+		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
 		// excluding those that are in an unconfirmed block. If a reorg occurs, we'll continue
 		// replacing them by fee.
@@ -1162,43 +1168,49 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		}
 		latestQueued, err := p.queue.FetchLast(ctx)
 		if err != nil {
-			log.Error("Failed to fetch lastest queued tx", "err", err)
+			log.Error("Failed to fetch last queued tx", "err", err)
 			return minWait
 		}
 		var latestCumulativeWeight, latestNonce uint64
 		if latestQueued != nil {
 			latestCumulativeWeight = latestQueued.CumulativeWeight()
 			latestNonce = latestQueued.FullTx.Nonce()
+
+			confirmedNonce := unconfirmedNonce - 1
+			confirmedMeta, err := p.queue.Get(ctx, confirmedNonce)
+			if err == nil && confirmedMeta != nil {
+				// #nosec G115
+				totalQueueWeightGauge.Update(int64(arbmath.SaturatingUSub(latestCumulativeWeight, confirmedMeta.CumulativeWeight())))
+				// #nosec G115
+				totalQueueLengthGauge.Update(int64(arbmath.SaturatingUSub(latestNonce, confirmedNonce)))
+			} else {
+				log.Error("Failed to fetch latest confirmed tx from queue", "confirmedNonce", confirmedNonce, "err", err, "confirmedMeta", confirmedMeta)
+			}
+
 		}
+
 		for _, tx := range queueContents {
-			previouslyUnsent := !tx.Sent
-			sendAttempted := false
 			if now.After(tx.NextReplacement) {
-				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
 				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
+				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
 				err := p.replaceTx(ctx, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
-				sendAttempted = true
 				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
+			} else {
+				err := p.sendTx(ctx, tx, tx)
+				p.maybeLogError(err, tx, "failed to re-send transaction")
+			}
+			tx, err = p.queue.Get(ctx, tx.FullTx.Nonce())
+			if err != nil {
+				log.Error("Failed to fetch tx from queue to check updated status", "nonce", tx.FullTx.Nonce(), "err", err)
+				return minWait
 			}
 			if nextCheck.After(tx.NextReplacement) {
 				nextCheck = tx.NextReplacement
 			}
-			if !sendAttempted && previouslyUnsent {
-				err := p.sendTx(ctx, tx, tx)
-				sendAttempted = true
-				p.maybeLogError(err, tx, "failed to re-send transaction")
-				if err != nil {
-					nextSend := time.Now().Add(time.Minute)
-					if nextCheck.After(nextSend) {
-						nextCheck = nextSend
-					}
-				}
-			}
-			if previouslyUnsent && sendAttempted {
-				// Don't try to send more than 1 unsent transaction, to play nicely with parent chain mempools.
-				// Transactions will be unsent if there was some error when originally sending them,
-				// or if transaction type changes and the prior tx is not yet reorg resistant.
-				break
+			if !tx.Sent {
+				// We can't progress any further if we failed to send this tx
+				// Retry sending this tx soon
+				return minWait
 			}
 		}
 		wait := time.Until(nextCheck)
@@ -1235,8 +1247,8 @@ type QueueStorage interface {
 
 type DataPosterConfig struct {
 	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
-	ReplacementTimes       string                     `koanf:"replacement-times"`
-	BlobTxReplacementTimes string                     `koanf:"blob-tx-replacement-times"`
+	ReplacementTimes       []time.Duration            `koanf:"replacement-times"`
+	BlobTxReplacementTimes []time.Duration            `koanf:"blob-tx-replacement-times"`
 	// This is forcibly disabled if the parent chain is an Arbitrum chain,
 	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
 	WaitForL1Finality      bool              `koanf:"wait-for-l1-finality" reload:"hot"`
@@ -1249,7 +1261,7 @@ type DataPosterConfig struct {
 	MinBlobTxTipCapGwei    float64           `koanf:"min-blob-tx-tip-cap-gwei" reload:"hot"`
 	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
 	MaxBlobTxTipCapGwei    float64           `koanf:"max-blob-tx-tip-cap-gwei" reload:"hot"`
-	MaxFeeBidMultipleBips  arbmath.Bips      `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
+	MaxFeeBidMultipleBips  arbmath.UBips     `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
@@ -1286,6 +1298,21 @@ type ExternalSignerCfg struct {
 	InsecureSkipVerify bool `koanf:"insecure-skip-verify"`
 }
 
+func ExternalSignerTestCfg(addr common.Address, url string) (*ExternalSignerCfg, error) {
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		return nil, fmt.Errorf("getting certificates path: %w", err)
+	}
+	return &ExternalSignerCfg{
+		Address:          common.Bytes2Hex(addr.Bytes()),
+		URL:              url,
+		Method:           externalsignertest.SignerMethod,
+		RootCA:           cp.ServerCert,
+		ClientCert:       cp.ClientCert,
+		ClientPrivateKey: cp.ClientKey,
+	}, nil
+}
+
 type DangerousConfig struct {
 	// This should be used with caution, only when dataposter somehow gets in a
 	// bad state and we require clearing it.
@@ -1297,8 +1324,8 @@ type DangerousConfig struct {
 type ConfigFetcher func() *DataPosterConfig
 
 func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig) {
-	f.String(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
-	f.String(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
+	f.DurationSlice(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
+	f.DurationSlice(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", defaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-mempool-transactions", defaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
 	f.Uint64(prefix+".max-mempool-weight", defaultDataPosterConfig.MaxMempoolWeight, "the maximum number of weight (weight = min(1, tx.blobs)) to have queued in the mempool at once (0 = unlimited)")
@@ -1342,8 +1369,8 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
-	BlobTxReplacementTimes: "5m,10m,30m,1h,4h,8h,16h,22h",
+	ReplacementTimes:       []time.Duration{5 * time.Minute, 10 * time.Minute, 20 * time.Minute, 30 * time.Minute, time.Hour, 2 * time.Hour, 4 * time.Hour, 6 * time.Hour, 8 * time.Hour, 12 * time.Hour, 16 * time.Hour, 18 * time.Hour, 20 * time.Hour, 22 * time.Hour},
+	BlobTxReplacementTimes: []time.Duration{5 * time.Minute, 10 * time.Minute, 30 * time.Minute, time.Hour, 4 * time.Hour, 8 * time.Hour, 16 * time.Hour, 22 * time.Hour},
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
@@ -1351,9 +1378,9 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxMempoolWeight:       18,
 	MinTipCapGwei:          0.05,
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
-	MaxTipCapGwei:          5,
+	MaxTipCapGwei:          1.2,
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
-	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
@@ -1376,8 +1403,8 @@ var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 }()
 
 var TestDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:       "1s,2s,5s,10s,20s,30s,1m,5m",
-	BlobTxReplacementTimes: "1s,10s,30s,5m",
+	ReplacementTimes:       []time.Duration{1 * time.Second, 2 * time.Second, 5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, time.Minute, 5 * time.Minute},
+	BlobTxReplacementTimes: []time.Duration{1 * time.Second, 10 * time.Second, 30 * time.Second, 5 * time.Minute},
 	RedisSigner:            signature.TestSimpleHmacConfig,
 	WaitForL1Finality:      false,
 	TargetPriceGwei:        60.,
@@ -1388,7 +1415,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MinBlobTxTipCapGwei:    1,
 	MaxTipCapGwei:          5,
 	MaxBlobTxTipCapGwei:    1,
-	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,

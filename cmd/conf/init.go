@@ -3,12 +3,13 @@ package conf
 import (
 	"fmt"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type InitConfig struct {
@@ -21,18 +22,23 @@ type InitConfig struct {
 	DownloadPoll             time.Duration `koanf:"download-poll"`
 	DevInit                  bool          `koanf:"dev-init"`
 	DevInitAddress           string        `koanf:"dev-init-address"`
+	DevMaxCodeSize           uint64        `koanf:"dev-max-code-size"`
 	DevInitBlockNum          uint64        `koanf:"dev-init-blocknum"`
 	Empty                    bool          `koanf:"empty"`
+	ImportWasm               bool          `koanf:"import-wasm"`
 	AccountsPerSync          uint          `koanf:"accounts-per-sync"`
 	ImportFile               string        `koanf:"import-file"`
+	GenesisJsonFile          string        `koanf:"genesis-json-file"`
 	ThenQuit                 bool          `koanf:"then-quit"`
 	Prune                    string        `koanf:"prune"`
 	PruneBloomSize           uint64        `koanf:"prune-bloom-size"`
 	PruneThreads             int           `koanf:"prune-threads"`
 	PruneTrieCleanCache      int           `koanf:"prune-trie-clean-cache"`
-	ResetToMessage           int64         `koanf:"reset-to-message"`
 	RecreateMissingStateFrom uint64        `koanf:"recreate-missing-state-from"`
-	RebuildLocalWasm         bool          `koanf:"rebuild-local-wasm"`
+	RebuildLocalWasm         string        `koanf:"rebuild-local-wasm"`
+	ReorgToBatch             int64         `koanf:"reorg-to-batch"`
+	ReorgToMessageBatch      int64         `koanf:"reorg-to-message-batch"`
+	ReorgToBlockBatch        int64         `koanf:"reorg-to-block-batch"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -45,18 +51,23 @@ var InitConfigDefault = InitConfig{
 	DownloadPoll:             time.Minute,
 	DevInit:                  false,
 	DevInitAddress:           "",
+	DevMaxCodeSize:           0,
 	DevInitBlockNum:          0,
 	Empty:                    false,
+	ImportWasm:               false,
 	ImportFile:               "",
+	GenesisJsonFile:          "",
 	AccountsPerSync:          100000,
 	ThenQuit:                 false,
 	Prune:                    "",
 	PruneBloomSize:           2048,
 	PruneThreads:             runtime.NumCPU(),
-	PruneTrieCleanCache:      gethexec.DefaultCachingConfig.TrieCleanCache,
-	ResetToMessage:           -1,
+	PruneTrieCleanCache:      600,
 	RecreateMissingStateFrom: 0, // 0 = disabled
-	RebuildLocalWasm:         true,
+	RebuildLocalWasm:         "auto",
+	ReorgToBatch:             -1,
+	ReorgToMessageBatch:      -1,
+	ReorgToBlockBatch:        -1,
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -70,24 +81,33 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddress, "Address of dev-account. Leave empty to use the dev-wallet.")
 	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in ancient database.")
+	f.Uint64(prefix+".dev-max-code-size", InitConfigDefault.DevMaxCodeSize, "Max code size for dev accounts")
 	f.Bool(prefix+".empty", InitConfigDefault.Empty, "init with empty state")
+	f.Bool(prefix+".import-wasm", InitConfigDefault.ImportWasm, "if set, import the wasm directory when downloading a database (contains executable code - only use with highly trusted source)")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
+	f.String(prefix+".genesis-json-file", InitConfigDefault.GenesisJsonFile, "path for genesis json file")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Uint64(prefix+".prune-bloom-size", InitConfigDefault.PruneBloomSize, "the amount of memory in megabytes to use for the pruning bloom filter (higher values prune better)")
 	f.Int(prefix+".prune-threads", InitConfigDefault.PruneThreads, "the number of threads to use when pruning")
 	f.Int(prefix+".prune-trie-clean-cache", InitConfigDefault.PruneTrieCleanCache, "amount of memory in megabytes to cache unchanged state trie nodes with when traversing state database during pruning")
-	f.Int64(prefix+".reset-to-message", InitConfigDefault.ResetToMessage, "forces a reset to an old message height. Also set max-reorg-resequence-depth=0 to force re-reading messages")
 	f.Uint64(prefix+".recreate-missing-state-from", InitConfigDefault.RecreateMissingStateFrom, "block number to start recreating missing states from (0 = disabled)")
-	f.Bool(prefix+".rebuild-local-wasm", InitConfigDefault.RebuildLocalWasm, "rebuild local wasm database on boot if needed (otherwise-will be done lazily)")
+	f.Int64(prefix+".reorg-to-batch", InitConfigDefault.ReorgToBatch, "rolls back the blockchain to a specified batch number")
+	f.Int64(prefix+".reorg-to-message-batch", InitConfigDefault.ReorgToMessageBatch, "rolls back the blockchain to the first batch at or before a given message index")
+	f.Int64(prefix+".reorg-to-block-batch", InitConfigDefault.ReorgToBlockBatch, "rolls back the blockchain to the first batch at or before a given block number")
+	f.String(prefix+".rebuild-local-wasm", InitConfigDefault.RebuildLocalWasm, "rebuild local wasm database on boot if needed (otherwise-will be done lazily). Three modes are supported \n"+
+		"\"auto\"- (enabled by default) if any previous rebuilding attempt was successful then rebuilding is disabled else continues to rebuild,\n"+
+		"\"force\"- force rebuilding which would commence rebuilding despite the status of previous attempts,\n"+
+		"\"false\"- do not rebuild on startup",
+	)
 }
 
 func (c *InitConfig) Validate() error {
 	if c.Force && c.RecreateMissingStateFrom > 0 {
 		log.Warn("force init enabled, recreate-missing-state-from will have no effect")
 	}
-	if c.Latest != "" && !isAcceptedSnapshotKind(c.Latest) {
+	if c.Latest != "" && !slices.Contains(acceptedSnapshotKinds, c.Latest) {
 		return fmt.Errorf("invalid value for latest option: \"%s\" %s", c.Latest, acceptedSnapshotKindsStr)
 	}
 	if c.Prune != "" && c.PruneThreads <= 0 {
@@ -96,19 +116,27 @@ func (c *InitConfig) Validate() error {
 	if c.PruneTrieCleanCache < 0 {
 		return fmt.Errorf("invalid trie clean cache size: %d, has to be greater or equal 0", c.PruneTrieCleanCache)
 	}
+	numReorgOptionsSpecified := 0
+	for _, reorgOption := range []int64{c.ReorgToBatch, c.ReorgToMessageBatch, c.ReorgToBlockBatch} {
+		if reorgOption >= 0 {
+			numReorgOptionsSpecified++
+			if numReorgOptionsSpecified > 1 {
+				return fmt.Errorf("at most one init reorg option can be specified")
+			}
+		}
+	}
+	c.RebuildLocalWasm = strings.ToLower(c.RebuildLocalWasm)
+	if c.RebuildLocalWasm != "auto" && c.RebuildLocalWasm != "force" && c.RebuildLocalWasm != "false" {
+		return fmt.Errorf("invalid value of rebuild-local-wasm, want: auto or force or false, got: %s", c.RebuildLocalWasm)
+	}
 	return nil
+}
+
+func (c *InitConfig) IsReorgRequested() bool {
+	return c.ReorgToBatch >= 0 || c.ReorgToBlockBatch >= 0 || c.ReorgToMessageBatch >= 0
 }
 
 var (
 	acceptedSnapshotKinds    = []string{"archive", "pruned", "genesis"}
 	acceptedSnapshotKindsStr = "(accepted values: \"" + strings.Join(acceptedSnapshotKinds, "\" | \"") + "\")"
 )
-
-func isAcceptedSnapshotKind(kind string) bool {
-	for _, valid := range acceptedSnapshotKinds {
-		if kind == valid {
-			return true
-		}
-	}
-	return false
-}

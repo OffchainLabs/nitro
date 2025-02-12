@@ -4,6 +4,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
 use crate::{programs::meter, value::FunctionType};
+use arbutil::evm::api::{Gas, Ink};
 use derivative::Derivative;
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
@@ -17,7 +18,7 @@ use {
         meter::Meter, start::StartMover, MiddlewareWrapper,
     },
     std::sync::Arc,
-    wasmer::{Cranelift, CraneliftOptLevel, Engine, Store},
+    wasmer::{Cranelift, CraneliftOptLevel, Engine, Store, Target},
     wasmer_compiler_singlepass::Singlepass,
 };
 
@@ -72,12 +73,12 @@ impl PricingParams {
         Self { ink_price }
     }
 
-    pub fn gas_to_ink(&self, gas: u64) -> u64 {
-        gas.saturating_mul(self.ink_price.into())
+    pub fn gas_to_ink(&self, gas: Gas) -> Ink {
+        Ink(gas.0.saturating_mul(self.ink_price.into()))
     }
 
-    pub fn ink_to_gas(&self, ink: u64) -> u64 {
-        ink / self.ink_price as u64 // never 0
+    pub fn ink_to_gas(&self, ink: Ink) -> Gas {
+        Gas(ink.0 / self.ink_price as u64) // ink_price is never 0
     }
 }
 
@@ -180,17 +181,19 @@ impl CompileConfig {
     }
 
     #[cfg(feature = "native")]
-    pub fn store(&self) -> Store {
-        let mut compiler: Box<dyn wasmer::CompilerConfig> = match self.debug.cranelift {
+    pub fn engine(&self, target: Target) -> Engine {
+        use wasmer::sys::EngineBuilder;
+
+        let mut wasmer_config: Box<dyn wasmer::CompilerConfig> = match self.debug.cranelift {
             true => {
-                let mut compiler = Cranelift::new();
-                compiler.opt_level(CraneliftOptLevel::Speed);
-                Box::new(compiler)
+                let mut wasmer_config = Cranelift::new();
+                wasmer_config.opt_level(CraneliftOptLevel::Speed);
+                Box::new(wasmer_config)
             }
             false => Box::new(Singlepass::new()),
         };
-        compiler.canonicalize_nans(true);
-        compiler.enable_verifier();
+        wasmer_config.canonicalize_nans(true);
+        wasmer_config.enable_verifier();
 
         let start = MiddlewareWrapper::new(StartMover::new(self.debug.debug_info));
         let meter = MiddlewareWrapper::new(Meter::new(&self.pricing));
@@ -200,22 +203,24 @@ impl CompileConfig {
 
         // add the instrumentation in the order of application
         // note: this must be consistent with the prover
-        compiler.push_middleware(Arc::new(start));
-        compiler.push_middleware(Arc::new(meter));
-        compiler.push_middleware(Arc::new(dygas));
-        compiler.push_middleware(Arc::new(depth));
-        compiler.push_middleware(Arc::new(bound));
+        wasmer_config.push_middleware(Arc::new(start));
+        wasmer_config.push_middleware(Arc::new(meter));
+        wasmer_config.push_middleware(Arc::new(dygas));
+        wasmer_config.push_middleware(Arc::new(depth));
+        wasmer_config.push_middleware(Arc::new(bound));
 
         if self.debug.count_ops {
             let counter = Counter::new();
-            compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
+            wasmer_config.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
         }
 
-        Store::new(compiler)
+        EngineBuilder::new(wasmer_config)
+            .set_target(Some(target))
+            .into()
     }
 
     #[cfg(feature = "native")]
-    pub fn engine(&self) -> Engine {
-        self.store().engine().clone()
+    pub fn store(&self, target: Target) -> Store {
+        Store::new(self.engine(target))
     }
 }

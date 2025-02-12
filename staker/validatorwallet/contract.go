@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum"
@@ -16,18 +17,21 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
-var validatorABI abi.ABI
-var walletCreatedID common.Hash
+var (
+	validatorABI              abi.ABI
+	validatorWalletCreatorABI abi.ABI
+	walletCreatedID           common.Hash
+)
 
 func init() {
 	parsedValidator, err := abi.JSON(strings.NewReader(rollupgen.ValidatorWalletABI))
@@ -40,6 +44,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	validatorWalletCreatorABI = parsedValidatorWalletCreator
 	walletCreatedID = parsedValidatorWalletCreator.Events["WalletCreated"].ID
 }
 
@@ -56,6 +61,7 @@ type Contract struct {
 	challengeManagerAddress common.Address
 	dataPoster              *dataposter.DataPoster
 	getExtraGas             func() uint64
+	populateWalletMutex     sync.Mutex
 }
 
 func NewContract(dp *dataposter.DataPoster, address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address),
@@ -150,36 +156,51 @@ func (v *Contract) From() common.Address {
 	return v.auth.From
 }
 
-// nil value == 0 value
-func (v *Contract) getAuth(ctx context.Context, value *big.Int) (*bind.TransactOpts, error) {
-	newAuth := *v.auth
-	newAuth.Context = ctx
-	newAuth.Value = value
-	nonce, err := v.L1Client().NonceAt(ctx, v.auth.From, nil)
-	if err != nil {
-		return nil, err
-	}
-	newAuth.Nonce = new(big.Int).SetUint64(nonce)
-	return &newAuth, nil
-}
-
 func (v *Contract) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
-	auth, err := v.getAuth(ctx, tx.Value())
-	if err != nil {
-		return nil, err
-	}
 	data, err := validatorABI.Pack("executeTransactionWithGasRefunder", gasRefunder, tx.Data(), *tx.To(), tx.Value())
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
 	}
-	gas, err := v.gasForTxData(ctx, auth, data)
+	gas, err := v.gasForTxData(ctx, data, tx.Value())
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	return v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), *v.Address(), data, gas, auth.Value)
+	return v.dataPoster.PostSimpleTransaction(ctx, *v.Address(), data, gas, tx.Value())
+}
+
+func createWalletContract(
+	ctx context.Context,
+	l1Reader *headerreader.HeaderReader,
+	from common.Address,
+	dataPoster *dataposter.DataPoster,
+	getExtraGas func() uint64,
+	validatorWalletFactoryAddr common.Address,
+) (*types.Transaction, error) {
+	var initialExecutorAllowedDests []common.Address
+	txData, err := validatorWalletCreatorABI.Pack("createWallet", initialExecutorAllowedDests)
+	if err != nil {
+		return nil, err
+	}
+
+	gas, err := gasForTxData(
+		ctx,
+		l1Reader,
+		from,
+		&validatorWalletFactoryAddr,
+		txData,
+		common.Big0,
+		getExtraGas,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting gas for tx data when creating validator wallet, validatorWalletFactory=%v: %w", validatorWalletFactoryAddr, err)
+	}
+
+	return dataPoster.PostSimpleTransaction(ctx, validatorWalletFactoryAddr, txData, gas, common.Big0)
 }
 
 func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) error {
+	v.populateWalletMutex.Lock()
+	defer v.populateWalletMutex.Unlock()
 	if v.con != nil {
 		return nil
 	}
@@ -190,11 +211,10 @@ func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) err
 		return nil
 	}
 	if v.address.Load() == nil {
-		auth, err := v.getAuth(ctx, nil)
-		if err != nil {
-			return err
-		}
-		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, auth, v.l1Reader, createIfMissing)
+		// By passing v.dataPoster as a parameter to GetValidatorWalletContract we force to create a validator wallet through the Staker's DataPoster object.
+		// DataPoster keeps in its internal state information related to the transactions sent through it, which is used to infer the expected nonce in a transaction for example.
+		// If a transaction is sent using the Staker's DataPoster key, but not through the Staker's DataPoster object, DataPoster's internal state will be outdated, which can compromise the expected nonce inference.
+		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.l1Reader, createIfMissing, v.dataPoster, v.getExtraGas)
 		if err != nil {
 			return err
 		}
@@ -233,9 +253,7 @@ func combineTxes(txes []*types.Transaction) ([][]byte, []common.Address, []*big.
 	return data, dest, amount, totalAmount
 }
 
-// Not thread safe! Don't call this from multiple threads at the same time.
-func (v *Contract) ExecuteTransactions(ctx context.Context, builder *txbuilder.Builder, gasRefunder common.Address) (*types.Transaction, error) {
-	txes := builder.Transactions()
+func (v *Contract) ExecuteTransactions(ctx context.Context, txes []*types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
 	if len(txes) == 0 {
 		return nil, nil
 	}
@@ -250,7 +268,6 @@ func (v *Contract) ExecuteTransactions(ctx context.Context, builder *txbuilder.B
 		if err != nil {
 			return nil, err
 		}
-		builder.ClearTransactions()
 		return arbTx, nil
 	}
 
@@ -275,44 +292,39 @@ func (v *Contract) ExecuteTransactions(ctx context.Context, builder *txbuilder.B
 	if callValue.Sign() < 0 {
 		callValue.SetInt64(0)
 	}
-	auth, err := v.getAuth(ctx, callValue)
-	if err != nil {
-		return nil, err
-	}
 	txData, err := validatorABI.Pack("executeTransactionsWithGasRefunder", gasRefunder, data, dest, amount)
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for executeTransactionWithGasRefunder: %w", err)
 	}
-	gas, err := v.gasForTxData(ctx, auth, txData)
+	gas, err := v.gasForTxData(ctx, txData, callValue)
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	arbTx, err := v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), *v.Address(), txData, gas, auth.Value)
+	arbTx, err := v.dataPoster.PostSimpleTransaction(ctx, *v.Address(), txData, gas, callValue)
 	if err != nil {
 		return nil, err
 	}
-	builder.ClearTransactions()
 	return arbTx, nil
 }
 
-func (v *Contract) estimateGas(ctx context.Context, value *big.Int, data []byte) (uint64, error) {
-	h, err := v.l1Reader.LastHeader(ctx)
+func gasForTxData(ctx context.Context, l1Reader *headerreader.HeaderReader, from common.Address, to *common.Address, data []byte, value *big.Int, getExtraGas func() uint64) (uint64, error) {
+	h, err := l1Reader.LastHeader(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("getting the last header: %w", err)
 	}
 	gasFeeCap := new(big.Int).Mul(h.BaseFee, big.NewInt(2))
 	gasFeeCap = arbmath.BigMax(gasFeeCap, arbmath.FloatToBig(params.GWei))
 
-	gasTipCap, err := v.l1Reader.Client().SuggestGasTipCap(ctx)
+	gasTipCap, err := l1Reader.Client().SuggestGasTipCap(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("getting suggested gas tip cap: %w", err)
 	}
 	gasFeeCap.Add(gasFeeCap, gasTipCap)
-	g, err := v.l1Reader.Client().EstimateGas(
+	g, err := l1Reader.Client().EstimateGas(
 		ctx,
 		ethereum.CallMsg{
-			From:      v.auth.From,
-			To:        v.Address(),
+			From:      from,
+			To:        to,
 			Value:     value,
 			Data:      data,
 			GasFeeCap: gasFeeCap,
@@ -322,34 +334,26 @@ func (v *Contract) estimateGas(ctx context.Context, value *big.Int, data []byte)
 	if err != nil {
 		return 0, fmt.Errorf("estimating gas: %w", err)
 	}
-	return g + v.getExtraGas(), nil
+	return g + getExtraGas(), nil
+}
+
+func (v *Contract) gasForTxData(ctx context.Context, data []byte, value *big.Int) (uint64, error) {
+	return gasForTxData(ctx, v.l1Reader, v.From(), v.Address(), data, value, v.getExtraGas)
 }
 
 func (v *Contract) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
-	auth, err := v.getAuth(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
 	data, err := validatorABI.Pack("timeoutChallenges", v.challengeManagerAddress, challenges)
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for timeoutChallenges: %w", err)
 	}
-	gas, err := v.gasForTxData(ctx, auth, data)
+	gas, err := v.gasForTxData(ctx, data, common.Big0)
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	return v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), *v.Address(), data, gas, auth.Value)
+	return v.dataPoster.PostSimpleTransaction(ctx, *v.Address(), data, gas, common.Big0)
 }
 
-// gasForTxData returns auth.GasLimit if it's nonzero, otherwise returns estimate.
-func (v *Contract) gasForTxData(ctx context.Context, auth *bind.TransactOpts, data []byte) (uint64, error) {
-	if auth.GasLimit != 0 {
-		return auth.GasLimit, nil
-	}
-	return v.estimateGas(ctx, auth.Value, data)
-}
-
-func (v *Contract) L1Client() arbutil.L1Interface {
+func (v *Contract) L1Client() *ethclient.Client {
 	return v.l1Reader.Client()
 }
 
@@ -400,15 +404,22 @@ func (b *Contract) DataPoster() *dataposter.DataPoster {
 	return b.dataPoster
 }
 
+// Exported for testing
+func (b *Contract) GetExtraGas() func() uint64 {
+	return b.getExtraGas
+}
+
 func GetValidatorWalletContract(
 	ctx context.Context,
 	validatorWalletFactoryAddr common.Address,
 	fromBlock int64,
-	transactAuth *bind.TransactOpts,
 	l1Reader *headerreader.HeaderReader,
 	createIfMissing bool,
+	dataPoster *dataposter.DataPoster,
+	getExtraGas func() uint64,
 ) (*common.Address, error) {
 	client := l1Reader.Client()
+	transactAuth := dataPoster.Auth()
 
 	// TODO: If we just save a mapping in the wallet creator we won't need log search
 	walletCreator, err := rollupgen.NewValidatorWalletCreator(validatorWalletFactoryAddr, client)
@@ -443,8 +454,7 @@ func GetValidatorWalletContract(
 		return nil, nil
 	}
 
-	var initialExecutorAllowedDests []common.Address
-	tx, err := walletCreator.CreateWallet(transactAuth, initialExecutorAllowedDests)
+	tx, err := createWalletContract(ctx, l1Reader, transactAuth.From, dataPoster, getExtraGas, validatorWalletFactoryAddr)
 	if err != nil {
 		return nil, err
 	}

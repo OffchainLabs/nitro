@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::test::{new_test_machine, test_compile_config};
+use arbutil::evm::api::Ink;
 use eyre::Result;
 use prover::{programs::prelude::*, Machine};
 
@@ -15,8 +16,8 @@ fn test_ink() -> Result<()> {
 
     macro_rules! exhaust {
         ($ink:expr) => {
-            machine.set_ink($ink);
-            assert_eq!(machine.ink_left(), MachineMeter::Ready($ink));
+            machine.set_ink(Ink($ink));
+            assert_eq!(machine.ink_left(), MachineMeter::Ready(Ink($ink)));
             assert!(call(machine, 32).is_err());
             assert_eq!(machine.ink_left(), MachineMeter::Exhausted);
         };
@@ -26,12 +27,12 @@ fn test_ink() -> Result<()> {
     exhaust!(50);
     exhaust!(99);
 
-    let mut ink_left = 500;
+    let mut ink_left = Ink(500);
     machine.set_ink(ink_left);
-    while ink_left > 0 {
+    while ink_left > Ink(0) {
         assert_eq!(machine.ink_left(), MachineMeter::Ready(ink_left));
         assert_eq!(call(machine, 64)?, vec![65_u32.into()]);
-        ink_left -= 100;
+        ink_left -= Ink(100);
     }
     assert!(call(machine, 32).is_err());
     assert_eq!(machine.ink_left(), MachineMeter::Exhausted);

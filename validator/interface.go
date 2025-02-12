@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
+
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -13,7 +15,7 @@ type ValidationSpawner interface {
 	Start(context.Context) error
 	Stop()
 	Name() string
-	StylusArchs() []string
+	StylusArchs() []ethdb.WasmTarget
 	Room() int
 }
 
@@ -24,9 +26,8 @@ type ValidationRun interface {
 
 type ExecutionSpawner interface {
 	ValidationSpawner
-	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) containers.PromiseInterface[ExecutionRun]
+	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput, useBoldMachine bool) containers.PromiseInterface[ExecutionRun]
 	LatestWasmModuleRoot() containers.PromiseInterface[common.Hash]
-	WriteToFile(input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}]
 }
 
 type ExecutionRun interface {
@@ -36,4 +37,5 @@ type ExecutionRun interface {
 	GetProofAt(uint64) containers.PromiseInterface[[]byte]
 	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]
 	Close()
+	CheckAlive(ctx context.Context) error
 }

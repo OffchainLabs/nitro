@@ -6,6 +6,7 @@ package arbtest
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -13,7 +14,9 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -61,21 +64,6 @@ func addNewBatchPoster(ctx context.Context, t *testing.T, builder *NodeBuilder, 
 	}
 }
 
-func externalSignerTestCfg(addr common.Address, url string) (*dataposter.ExternalSignerCfg, error) {
-	cp, err := externalsignertest.CertPaths()
-	if err != nil {
-		return nil, fmt.Errorf("getting certificates path: %w", err)
-	}
-	return &dataposter.ExternalSignerCfg{
-		Address:          common.Bytes2Hex(addr.Bytes()),
-		URL:              url,
-		Method:           externalsignertest.SignerMethod,
-		RootCA:           cp.ServerCert,
-		ClientCert:       cp.ClientCert,
-		ClientPrivateKey: cp.ClientKey,
-	}, nil
-}
-
 func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -102,7 +90,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
-	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
@@ -362,4 +350,120 @@ func TestAllowPostingFirstBatchWhenSequencerMessageCountMismatchEnabled(t *testi
 
 func TestAllowPostingFirstBatchWhenSequencerMessageCountMismatchDisabled(t *testing.T) {
 	testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t, false)
+}
+
+func GetBatchCount(t *testing.T, builder *NodeBuilder) uint64 {
+	t.Helper()
+	sequenceInbox, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
+	Require(t, err)
+	batchCount, err := sequenceInbox.BatchCount(&bind.CallOpts{Context: builder.ctx})
+	Require(t, err)
+	return batchCount.Uint64()
+}
+
+func CheckBatchCount(t *testing.T, builder *NodeBuilder, want uint64) {
+	if got := GetBatchCount(t, builder); got != want {
+		t.Fatalf("invalid batch count, want %v, got %v", want, got)
+	}
+}
+
+func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
+	const messagesPerBatch = 3
+	const numBatches = 3
+	var threshold uint64
+	if delayBufferEnabled {
+		threshold = 100
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithBoldDeployment().
+		WithDelayBuffer(threshold)
+	builder.L2Info.GenerateAccount("User2")
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour // set high max-delay so we can test the delay buffer
+	cleanup := builder.Build(t)
+	defer cleanup()
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
+
+	initialBatchCount := GetBatchCount(t, builder)
+	for batch := uint64(0); batch < numBatches; batch++ {
+		txs := make(types.Transactions, messagesPerBatch)
+		for i := range txs {
+			txs[i] = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
+		}
+		SendSignedTxesInBatchViaL1(t, ctx, builder.L1Info, builder.L1.Client, builder.L2.Client, txs)
+
+		// Check batch wasn't sent
+		_, err := WaitForTx(ctx, testClientB.Client, txs[0].Hash(), 100*time.Millisecond)
+		if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+			Fatal(t, "expected context-deadline exceeded error, but got:", err)
+		}
+		CheckBatchCount(t, builder, initialBatchCount+batch)
+
+		// Advance L1 to force a batch given the delay buffer threshold
+		AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(threshold)) // #nosec G115
+		if !delayBufferEnabled {
+			// If the delay buffer is disabled, set max delay to zero to force it
+			CheckBatchCount(t, builder, initialBatchCount+batch)
+			builder.nodeConfig.BatchPoster.MaxDelay = 0
+		}
+		for _, tx := range txs {
+			_, err := testClientB.EnsureTxSucceeded(tx)
+			Require(t, err, "tx not found on second node")
+		}
+		CheckBatchCount(t, builder, initialBatchCount+batch+1)
+		if !delayBufferEnabled {
+			builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+		}
+	}
+}
+
+func TestBatchPosterDelayBufferEnabled(t *testing.T) {
+	testBatchPosterDelayBuffer(t, true)
+}
+
+func TestBatchPosterDelayBufferDisabled(t *testing.T) {
+	testBatchPosterDelayBuffer(t, false)
+}
+
+func TestBatchPosterDelayBufferDontForceNonDelayedMessages(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const threshold = 100
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithBoldDeployment().
+		WithDelayBuffer(threshold)
+	builder.L2Info.GenerateAccount("User2")
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour // set high max-delay so we can test the delay buffer
+	cleanup := builder.Build(t)
+	defer cleanup()
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
+
+	// Send non-delayed message and advance L1
+	initialBatchCount := GetBatchCount(t, builder)
+	const numTxs = 3
+	txs := make(types.Transactions, numTxs)
+	for i := range txs {
+		txs[i] = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
+	}
+	builder.L2.SendWaitTestTransactions(t, txs)
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, threshold)
+
+	// Even advancing the L1, the batch won't be posted because it doesn't contain a delayed message
+	CheckBatchCount(t, builder, initialBatchCount)
+
+	// Set delay to zero to force non-delayed messages
+	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	for _, tx := range txs {
+		_, err := testClientB.EnsureTxSucceeded(tx)
+		Require(t, err, "tx not found on second node")
+	}
+	CheckBatchCount(t, builder, initialBatchCount+1)
 }

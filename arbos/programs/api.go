@@ -4,14 +4,15 @@
 package programs
 
 import (
-	"errors"
+	"strconv"
+
+	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
@@ -65,14 +66,10 @@ func newApiClosures(
 	actingAddress := contract.Address() // not necessarily WASM
 	readOnly := interpreter.ReadOnly()
 	evm := interpreter.Evm()
-	depth := evm.Depth()
 	db := evm.StateDB
 	chainConfig := evm.ChainConfig()
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
-		if tracingInfo != nil {
-			tracingInfo.RecordStorageGet(key)
-		}
 		cost := vm.WasmStateLoadCost(db, actingAddress, key)
 		return db.GetState(actingAddress, key), cost
 	}
@@ -82,9 +79,6 @@ func newApiClosures(
 			value := common.BytesToHash(data[32:64])
 			data = data[64:]
 
-			if tracingInfo != nil {
-				tracingInfo.RecordStorageSet(key, value)
-			}
 			if readOnly {
 				return WriteProtection
 			}
@@ -144,22 +138,7 @@ func newApiClosures(
 
 		// Tracing: emit the call (value transfer is done later in evm.Call)
 		if tracingInfo != nil {
-			var args []uint256.Int
-			args = append(args, *uint256.NewInt(gas))                          // gas
-			args = append(args, *uint256.NewInt(0).SetBytes(contract.Bytes())) // to address
-			if opcode == vm.CALL {
-				args = append(args, *uint256.NewInt(0).SetBytes(value.Bytes())) // call value
-			}
-			args = append(args, *uint256.NewInt(0))                  // memory offset
-			args = append(args, *uint256.NewInt(uint64(len(input)))) // memory length
-			args = append(args, *uint256.NewInt(0))                  // return offset
-			args = append(args, *uint256.NewInt(0))                  // return size
-			s := &vm.ScopeContext{
-				Memory:   util.TracingMemoryFromBytes(input),
-				Stack:    util.TracingStackFromArgs(args...),
-				Contract: scope.Contract,
-			}
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, s, []byte{}, depth, nil)
+			tracingInfo.CaptureStylusCall(opcode, contract, value, input, gas, startGas, baseCost)
 		}
 
 		var ret []byte
@@ -173,7 +152,7 @@ func newApiClosures(
 		case vm.STATICCALL:
 			ret, returnGas, err = evm.StaticCall(scope.Contract, contract, input, gas)
 		default:
-			log.Crit("unsupported call type", "opcode", opcode)
+			panic("unsupported call type: " + opcode.String())
 		}
 
 		interpreter.SetReturnData(ret)
@@ -217,11 +196,6 @@ func newApiClosures(
 		one64th := gas / 64
 		gas -= one64th
 
-		// Tracing: emit the create
-		if tracingInfo != nil {
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, scope, []byte{}, depth, nil)
-		}
-
 		var res []byte
 		var addr common.Address // zero on failure
 		var returnGas uint64
@@ -235,7 +209,10 @@ func newApiClosures(
 		if suberr != nil {
 			addr = zeroAddr
 		}
-		if !errors.Is(vm.ErrExecutionReverted, suberr) {
+		// This matches geth behavior of doing an exact error comparison instead of errors.Is
+		// See e.g. EVM's create method or the opCreate function for references of how geth checks this
+		//nolint:errorlint
+		if suberr != vm.ErrExecutionReverted {
 			res = nil // returnData is only provided in the revert case (opCreate)
 		}
 		interpreter.SetReturnData(res)
@@ -243,9 +220,6 @@ func newApiClosures(
 		return addr, res, cost, nil
 	}
 	emitLog := func(topics []common.Hash, data []byte) error {
-		if tracingInfo != nil {
-			tracingInfo.RecordEmitLog(topics, data)
-		}
 		if readOnly {
 			return vm.ErrWriteProtection
 		}
@@ -283,18 +257,17 @@ func newApiClosures(
 		return memoryModel.GasCost(pages, open, ever)
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
-		tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
-		if name == "evm_gas_left" || name == "evm_ink_left" {
-			tracingInfo.Tracer.CaptureState(0, vm.GAS, 0, 0, scope, []byte{}, depth, nil)
-			tracingInfo.Tracer.CaptureState(0, vm.POP, 0, 0, scope, []byte{}, depth, nil)
+		if tracingInfo.Tracer != nil && tracingInfo.Tracer.CaptureStylusHostio != nil {
+			tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
 		}
+		tracingInfo.CaptureEVMTraceForHostio(name, args, outs, startInk, endInk)
 	}
 
 	return func(req RequestType, input []byte) ([]byte, []byte, uint64) {
 		original := input
 
 		crash := func(reason string) {
-			log.Crit("bad API call", "reason", reason, "request", req, "len", len(original), "remaining", len(input))
+			panic("bad API call reason: " + reason + " request: " + strconv.Itoa(int(req)) + " len: " + strconv.Itoa(len(original)) + " remaining: " + strconv.Itoa(len(input)))
 		}
 		takeInput := func(needed int, reason string) []byte {
 			if len(input) < needed {
@@ -366,7 +339,7 @@ func newApiClosures(
 			case StaticCall:
 				opcode = vm.STATICCALL
 			default:
-				log.Crit("unsupported call type", "opcode", opcode)
+				panic("unsupported call type opcode: " + opcode.String())
 			}
 			contract := takeAddress()
 			value := takeU256()
@@ -432,9 +405,9 @@ func newApiClosures(
 			}
 			startInk := takeU64()
 			endInk := takeU64()
-			nameLen := takeU16()
-			argsLen := takeU16()
-			outsLen := takeU16()
+			nameLen := takeU32()
+			argsLen := takeU32()
+			outsLen := takeU32()
 			name := string(takeFixed(int(nameLen)))
 			args := takeFixed(int(argsLen))
 			outs := takeFixed(int(outsLen))
@@ -442,8 +415,7 @@ func newApiClosures(
 			captureHostio(name, args, outs, startInk, endInk)
 			return []byte{}, nil, 0
 		default:
-			log.Crit("unsupported call type", "req", req)
-			return []byte{}, nil, 0
+			panic("unsupported call type: " + strconv.Itoa(int(req)))
 		}
 	}
 }

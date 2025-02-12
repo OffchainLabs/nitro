@@ -31,7 +31,7 @@ type MachineCache struct {
 }
 
 type MachineCacheConfig struct {
-	CachedChallengeMachines int    `koanf:"cached-challenge-machines"`
+	CachedChallengeMachines uint64 `koanf:"cached-challenge-machines"`
 	InitialSteps            uint64 `koanf:"initial-steps"`
 }
 
@@ -42,7 +42,7 @@ var DefaultMachineCacheConfig = MachineCacheConfig{
 
 func MachineCacheConfigConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".initial-steps", DefaultMachineCacheConfig.InitialSteps, "initial steps between machines")
-	f.Int(prefix+".cached-challenge-machines", DefaultMachineCacheConfig.CachedChallengeMachines, "how many machines to store in cache while working on a challenge (should be even)")
+	f.Uint64(prefix+".cached-challenge-machines", DefaultMachineCacheConfig.CachedChallengeMachines, "how many machines to store in cache while working on a challenge (should be even)")
 }
 
 // `initialMachine` won't be mutated by this function.
@@ -140,7 +140,7 @@ func (c *MachineCache) unlockBuild(err error) {
 }
 
 func (c *MachineCache) setRangeLocked(ctx context.Context, start uint64, end uint64) error {
-	newInterval := (end - start) / uint64(c.config.CachedChallengeMachines)
+	newInterval := (end - start) / c.config.CachedChallengeMachines
 	if newInterval == 0 {
 		newInterval = 2
 	}
@@ -150,7 +150,7 @@ func (c *MachineCache) setRangeLocked(ctx context.Context, start uint64, end uin
 	if end >= c.finalMachineStep {
 		end = c.finalMachineStep - newInterval/2
 	}
-	newInterval = (end - start) / uint64(c.config.CachedChallengeMachines)
+	newInterval = (end - start) / c.config.CachedChallengeMachines
 	if newInterval == 0 {
 		newInterval = 1
 	}
@@ -212,7 +212,7 @@ func (c *MachineCache) populateCache(ctx context.Context) error {
 		if nextMachine.GetStepCount()+c.machineStepInterval >= c.finalMachineStep {
 			break
 		}
-		if len(c.machines) >= c.config.CachedChallengeMachines {
+		if uint64(len(c.machines)) >= c.config.CachedChallengeMachines {
 			break
 		}
 		nextMachine = nextMachine.CloneMachineInterface()
@@ -236,9 +236,11 @@ func (c *MachineCache) getClosestMachine(stepCount uint64) (int, MachineInterfac
 	}
 	stepsFromStart := stepCount - c.firstMachineStep
 	var index int
+	// #nosec G115
 	if c.machineStepInterval == 0 || stepsFromStart > c.machineStepInterval*uint64(len(c.machines)-1) {
 		index = len(c.machines) - 1
 	} else {
+		// #nosec G115
 		index = int(stepsFromStart / c.machineStepInterval)
 	}
 	return index, c.machines[index]

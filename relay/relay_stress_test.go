@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -47,6 +48,7 @@ func (r *DummyUpStream) PopulateFeedBacklogByNumber(ctx context.Context, backlog
 	was := r.broadcaster.GetCachedMessageCount()
 	var seqNums []arbutil.MessageIndex
 	for i := was; i < was+backlogSize; i++ {
+		// #nosec G115
 		seqNums = append(seqNums, arbutil.MessageIndex(i))
 	}
 
@@ -91,7 +93,7 @@ func (ts *dummyTxStreamer) AddBroadcastMessages(feedMessages []*message.Broadcas
 	time.Sleep(50 * time.Millisecond)
 	if !ts.logConnection {
 		ts.logConnection = true
-		log.Info("test client is succesfully receiving messages", "client_Id", ts.id, "msg_size", feedMessages[0].Size())
+		log.Info("test client is successfully receiving messages", "client_Id", ts.id, "msg_size", feedMessages[0].Size())
 	}
 	return nil
 }
@@ -160,7 +162,7 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 			connected++
 		}
 	}
-	if int32(connected) != int32(numClients) {
+	if connected != numClients {
 		t.Fail()
 	}
 	log.Info("number of clients connected", "expected", numClients, "got", connected)

@@ -377,7 +377,7 @@ impl Merkle {
         // This will set one or no values depending on if the length was even or odd.
         layers.dirty_leaf_parents[(start >> 1)..].fill(true);
         // This then resizes and marks the dirty leaf parents as dirty.
-        layers.dirty_leaf_parents.resize(new_len >> 1, true);
+        layers.dirty_leaf_parents.resize((new_len + 1) >> 1, true);
         Ok(layers.data[0].len())
     }
 }
@@ -529,14 +529,27 @@ mod test {
     }
 
     #[test]
+    fn resize_and_set_odd() {
+        let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 20);
+        merkle.resize(9).expect("resize failed");
+        merkle.set(8, Bytes32::from([2; 32]));
+    }
+
+    #[test]
+    fn resize_and_set_even() {
+        let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 20);
+        merkle.resize(10).expect("resize failed");
+        merkle.set(9, Bytes32::from([2; 32]));
+    }
+
+    #[test]
     #[ignore = "This is just used for generating the zero hashes for the memory merkle trees."]
     fn emit_memory_zerohashes() {
         // The following code was generated from the empty_leaf_hash() test in the memory package.
         let mut empty_node = Bytes32([
             57, 29, 211, 154, 252, 227, 18, 99, 65, 126, 203, 166, 252, 232, 32, 3, 98, 194, 254,
             186, 118, 14, 139, 192, 101, 156, 55, 194, 101, 11, 11, 168,
-        ])
-        .clone();
+        ]);
         for _ in 0..64 {
             print!("Bytes32([");
             for i in 0..32 {
@@ -593,7 +606,7 @@ mod test {
             for layer in 0..64 {
                 // empty_hash_at is just a lookup, but empty_hash is calculated iteratively.
                 assert_eq!(empty_hash_at(ty, layer), &empty_hash);
-                empty_hash = hash_node(ty, &empty_hash, &empty_hash);
+                empty_hash = hash_node(ty, empty_hash, empty_hash);
             }
         }
     }
