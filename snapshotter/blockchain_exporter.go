@@ -66,6 +66,7 @@ var GethDatabaseExporterConfigDefault = GethDatabaseExporterConfig{
 
 func GethDatabaseExporterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	conf.DBConfigAddOptions(prefix+".output", f, &GethDatabaseExporterConfigDefault.Output)
+	f.Int(prefix+".ideal-batch-size", GethDatabaseExporterConfigDefault.IdealBatchSize, "ideal write batch size in bytes")
 }
 
 // GethDatabaseExporter is not thread safe
