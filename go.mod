@@ -57,7 +57,10 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
-require github.com/tenderly/blockchain-proto v0.0.0-20250211213144-fe53d125e61c // indirect
+require (
+	github.com/tenderly/blockchain-proto v0.0.0-20250211213144-fe53d125e61c // indirect
+	github.com/tenderly/live-tracer-arbitrum v0.0.0-20250212142341-da73fb080259 // indirect
+)
 
 require (
 	cloud.google.com/go v0.115.0 // indirect
@@ -73,7 +76,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/tenderly/live-tracer-arbitrum v0.0.0-20250212135252-5d733470d022 // indirect
 	github.com/tenderly/live-tracing-store v0.0.0-20250204174531-2aa7325a7f44 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0 // indirect
