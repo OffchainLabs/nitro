@@ -150,10 +150,8 @@ func (s *DatabaseSnapshotter) Start(ctx context.Context) {
 				if trigger.promise != nil {
 					trigger.promise.ProduceError(err)
 				}
-			} else {
-				if trigger.promise != nil {
-					trigger.promise.Produce(*result)
-				}
+			} else if trigger.promise != nil {
+				trigger.promise.Produce(*result)
 			}
 		}
 	})
