@@ -877,6 +877,9 @@ func (c *NodeConfig) Validate() error {
 	if c.Node.ValidatorRequired() && (c.Execution.Caching.StateScheme == rawdb.PathScheme) {
 		return errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
 	}
+	if c.Node.Execution.DatabaseSnapshotter.Enable && c.Node.MessagePruner.Enable {
+		return errors.New("database snapshotter requires message pruner to be disabled")
+	}
 	return c.Persistent.Validate()
 }
 
@@ -953,6 +956,11 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Execution.TxLookupLimit = 0
+	}
+
+	if nodeConfig.Execution.DatabaseSnapshotter.Enable && nodeConfig.Node.MessagePruner.Enable {
+		log.Info("disabling message pruner as database snapshotter is enabled")
+		nodeConfig.Node.MessagePruner.Enable = false
 	}
 
 	err = nodeConfig.Validate()
