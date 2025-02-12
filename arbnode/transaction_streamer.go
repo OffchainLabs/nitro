@@ -1332,32 +1332,33 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 		return // We dont need to back fill if trackBlockMetadataFrom is in the future
 	}
 
-	wasKeyFound := func(pos uint64, prefix []byte) bool {
-		key := dbKey(prefix, pos)
-		_, err := s.db.Get(key)
-		if err == nil {
-			return true
+	wasKeyFound := func(pos uint64) bool {
+		searchWithPrefix := func(prefix []byte) bool {
+			key := dbKey(prefix, pos)
+			_, err := s.db.Get(key)
+			if err == nil {
+				return true
+			}
+			if !dbutil.IsErrNotFound(err) {
+				log.Error("Error reading key in arbDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
+			}
+			return false
 		}
-		if !dbutil.IsErrNotFound(err) {
-			log.Error("Error reading key in arbDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
-		}
-		return false
+		return searchWithPrefix(blockMetadataInputFeedPrefix) || searchWithPrefix(missingBlockMetadataInputFeedPrefix)
 	}
 
 	start := s.trackBlockMetadataFrom
+	if wasKeyFound(uint64(start)) {
+		return // back-filling not required
+	}
 	finish := msgCount - 1
 	for start < finish {
 		mid := (start + finish + 1) / 2
-		if wasKeyFound(uint64(mid), blockMetadataInputFeedPrefix) ||
-			wasKeyFound(uint64(mid), missingBlockMetadataInputFeedPrefix) {
+		if wasKeyFound(uint64(mid)) {
 			finish = mid - 1
 		} else {
 			start = mid
 		}
-	}
-	if wasKeyFound(uint64(start), blockMetadataInputFeedPrefix) ||
-		wasKeyFound(uint64(start), missingBlockMetadataInputFeedPrefix) {
-		return // back-filling not required
 	}
 	lastNonExistent := start
 
