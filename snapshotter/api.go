@@ -2,16 +2,24 @@ package snapshotter
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type DatabaseSnapshotterAPI struct {
 	bc          *core.BlockChain
 	snapshotter *DatabaseSnapshotter
+
+	promise     containers.PromiseInterface[SnapshotResult]
+	promiseLock sync.Mutex
 }
 
 func NewDatabaseSnapshotterAPI(bc *core.BlockChain, snapshotter *DatabaseSnapshotter) *DatabaseSnapshotterAPI {
@@ -21,7 +29,7 @@ func NewDatabaseSnapshotterAPI(bc *core.BlockChain, snapshotter *DatabaseSnapsho
 	}
 }
 
-func (a *DatabaseSnapshotterAPI) Snapshot(ctx context.Context, number rpc.BlockNumber) (SnapshotResult, error) {
+func (a *DatabaseSnapshotterAPI) Snapshot(ctx context.Context, number rpc.BlockNumber) error {
 	if number == rpc.PendingBlockNumber {
 		number = rpc.LatestBlockNumber
 	}
@@ -35,22 +43,56 @@ func (a *DatabaseSnapshotterAPI) Snapshot(ctx context.Context, number rpc.BlockN
 		header = a.bc.CurrentSafeBlock()
 	default:
 		if number < 0 {
-			return SnapshotResult{}, fmt.Errorf("invalid block number: %d", number)
+			return fmt.Errorf("invalid block number: %d", number)
 		}
 		// #nosec G115
 		block := a.bc.GetBlockByNumber(uint64(number))
 		if block == nil {
-			return SnapshotResult{}, fmt.Errorf("block #%d not found", number)
+			return fmt.Errorf("block #%d not found", number)
 		}
 		header = block.Header()
 	}
 	if header == nil {
-		return SnapshotResult{}, fmt.Errorf("block #%d not found", number)
+		return fmt.Errorf("block #%d not found", number)
 	}
-	promise := a.snapshotter.Trigger(header.Hash())
-	result, err := promise.Await(ctx)
+	var promise containers.PromiseInterface[SnapshotResult]
+	err := func() error {
+		a.promiseLock.Lock()
+		defer a.promiseLock.Unlock()
+		if promise != nil {
+			if a.promise.Ready() {
+				return errors.New("needs rewind")
+			}
+			return errors.New("already running")
+		}
+		promise = a.snapshotter.Trigger(header.Hash())
+		a.promise = promise
+		return nil
+	}()
 	if err != nil {
-		return SnapshotResult{}, err
+		return err
 	}
-	return result, nil
+	timer := time.NewTicker(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-promise.ReadyChan():
+		_, err := promise.Current()
+		return err
+	case <-timer.C:
+	}
+	return nil
+}
+
+// if rewind is set to true, the snapshotter api will be rewound if the result is ready
+func (a *DatabaseSnapshotterAPI) Result(ctx context.Context, rewind bool) (SnapshotResult, error) {
+	a.promiseLock.Lock()
+	defer a.promiseLock.Unlock()
+	if a.promise == nil {
+		return SnapshotResult{}, errors.New("not started yet")
+	}
+	promise := a.promise
+	if a.promise.Ready() && rewind {
+		a.promise = nil
+	}
+	return promise.Current()
 }

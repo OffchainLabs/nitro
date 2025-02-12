@@ -94,8 +94,12 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	Require(t, err)
 
 	l2rpc := builder.L2.Stack.Attach()
+	err = l2rpc.CallContext(ctx, nil, "snapshotter_snapshot", rpc.LatestBlockNumber)
+	Require(t, err)
+	time.Sleep(1 * time.Second)
+	//TODO poll result
 	var result snapshotter.SnapshotResult
-	err = l2rpc.CallContext(ctx, &result, "snapshotter_snapshot", rpc.LatestBlockNumber)
+	err = l2rpc.CallContext(ctx, nil, "snapshotter_result", false)
 	Require(t, err)
 
 	err = l2rpc.CallContext(ctx, &result, "snapshotter_snapshot", rpc.LatestBlockNumber)
