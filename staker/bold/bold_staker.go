@@ -65,7 +65,7 @@ type BoldConfig struct {
 	APIDBPath                           string                 `koanf:"api-db-path"`
 	TrackChallengeParentAssertionHashes []string               `koanf:"track-challenge-parent-assertion-hashes"`
 	CheckStakerSwitchInterval           time.Duration          `koanf:"check-staker-switch-interval"`
-	MaxSyncLookbackBlocks               uint64                 `koanf:"max-sync-lookback-blocks"`
+	MaxSyncLookbackBlocks               int64                  `koanf:"max-sync-lookback-blocks"`
 	StateProviderConfig                 StateProviderConfig    `koanf:"state-provider-config"`
 	StartValidationFromStaked           bool                   `koanf:"start-validation-from-staked"`
 	AutoDeposit                         bool                   `koanf:"auto-deposit"`
