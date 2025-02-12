@@ -191,7 +191,7 @@ func CreateExecutionNode(
 	configFetcher ConfigFetcher,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain, config.Sequencer.Timeboost.Enable)
+	execEngine, err := NewExecutionEngine(l2BlockChain)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -282,7 +282,7 @@ func CreateExecutionNode(
 		Version:       "1.0",
 		Service:       NewArbTimeboostAuctioneerAPI(txPublisher),
 		Public:        false,
-		Authenticated: true, // Only exposed via JWT Auth to the auctioneer.
+		Authenticated: false,
 	})
 	apis = append(apis, rpc.API{
 		Namespace: "timeboost",

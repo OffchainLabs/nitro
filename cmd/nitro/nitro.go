@@ -238,9 +238,8 @@ func mainImpl() int {
 		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
 		return 1
 	}
-	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
-		log.Error("Sequencer node's track-block-metadata-from should not be set when timeboost is not enabled")
-		return 1
+	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Dangerous.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
+		log.Warn("Sequencer node's track-block-metadata-from is set but timeboost is not enabled")
 	}
 
 	var dataSigner signature.DataSignerFunc
@@ -694,13 +693,13 @@ func mainImpl() int {
 	}
 
 	execNodeConfig := execNode.ConfigFetcher()
-	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Timeboost.Enable {
+	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Dangerous.Timeboost.Enable {
 		err := execNode.Sequencer.InitializeExpressLaneService(
 			execNode.Backend.APIBackend(),
 			execNode.FilterSystem,
-			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress),
-			common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress),
-			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
+			common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctionContractAddress),
+			common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
+			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
 		)
 		if err != nil {
 			log.Error("failed to create express lane service", "err", err)
@@ -1023,6 +1022,8 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
+	// 0 is default for any chain unless specified in the chain_defaults
+	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err
