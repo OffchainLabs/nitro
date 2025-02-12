@@ -171,7 +171,7 @@ func (s *DatabaseSnapshotter) findLastAvailableState(ctx context.Context, triedb
 		// we don't need to reference the state root, as we opened triedb from disk and the triedb dirties cache is empty
 		return statedb, arbitrum.NoopStateRelease, nil
 	}
-	_, lastHeader, _, err := arbitrum.FindLastAvailableState(ctx, s.bc, stateFor, header, nil, 0)
+	_, lastHeader, _, err := arbitrum.FindLastAvailableState(ctx, s.bc, stateFor, header, nil, arbitrum.InfiniteMaxRecreateStateDepth)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find latest available state not newer then for block %v (hash %v): %w", header.Number.Uint64(), header.Hash(), err)
 	}
