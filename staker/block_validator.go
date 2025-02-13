@@ -102,6 +102,7 @@ type BlockValidator struct {
 	validationInputsWriter *inputs.Writer
 
 	fatalErr chan<- error
+	quitNode chan<- string
 
 	MemoryFreeLimitChecker resourcemanager.LimitChecker
 }
@@ -172,7 +173,14 @@ func (c *BlockValidatorConfig) Validate() error {
 }
 
 type BlockValidatorDangerousConfig struct {
-	ResetBlockValidation bool `koanf:"reset-block-validation"`
+	ResetBlockValidation bool               `koanf:"reset-block-validation"`
+	Revalidation         RevalidationConfig `koanf:"revalidation"`
+}
+
+type RevalidationConfig struct {
+	StartBlock uint64 `koanf:"start-block"`
+	EndBlock   uint64 `koanf:"end-block"`
+	ThenQuit   bool   `koanf:"then-quit"`
 }
 
 type BlockValidatorConfigFetcher func() *BlockValidatorConfig
@@ -197,6 +205,13 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
+	RevalidationConfigAddOptions(prefix+".revalidation", f)
+}
+
+func RevalidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Uint64(prefix+".start-block", DefaultBlockValidatorDangerousConfig.Revalidation.StartBlock, "start revalidation from this block")
+	f.Uint64(prefix+".end-block", DefaultBlockValidatorDangerousConfig.Revalidation.EndBlock, "end revalidation at this block")
+	f.Bool(prefix+".then-quit", DefaultBlockValidatorDangerousConfig.Revalidation.ThenQuit, "exit node after revalidation is done")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
@@ -237,6 +252,13 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
 	ResetBlockValidation: false,
+	Revalidation:         DefaultRevalidationConfig,
+}
+
+var DefaultRevalidationConfig = RevalidationConfig{
+	StartBlock: 0,
+	EndBlock:   0,
+	ThenQuit:   false,
 }
 
 type valStatusField uint32
@@ -280,6 +302,7 @@ func NewBlockValidator(
 	streamer TransactionStreamerInterface,
 	config BlockValidatorConfigFetcher,
 	fatalErr chan<- error,
+	quitNode chan<- string,
 ) (*BlockValidator, error) {
 	ret := &BlockValidator{
 		StatelessBlockValidator: statelessBlockValidator,
@@ -288,6 +311,7 @@ func NewBlockValidator(
 		progressValidationsChan: make(chan struct{}, 1),
 		config:                  config,
 		fatalErr:                fatalErr,
+		quitNode:                quitNode,
 		prevBatchCache:          make(map[uint64][]byte),
 	}
 	valInputsWriter, err := inputs.NewWriter(
@@ -323,6 +347,27 @@ func NewBlockValidator(
 			SendRoot:   genesis.SendRoot,
 			Batch:      1,
 			PosInBatch: 0,
+		}
+	}
+	if config().Dangerous.Revalidation.StartBlock > 0 {
+		startBlock := config().Dangerous.Revalidation.StartBlock
+		messageCount, err := inbox.GetBatchMessageCount(startBlock - 1)
+		if err != nil {
+			return nil, err
+		}
+		res, err := streamer.ResultAtCount(messageCount)
+		if err != nil {
+			return nil, err
+		}
+		gs := validator.GoGlobalState{
+			BlockHash:  res.BlockHash,
+			SendRoot:   res.SendRoot,
+			Batch:      startBlock,
+			PosInBatch: 0,
+		}
+		err = ret.writeLastValidated(gs, nil)
+		if err != nil {
+			return nil, err
 		}
 	}
 	streamer.SetBlockValidator(ret)
@@ -791,6 +836,13 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	}
 	log.Info("validated execution", "messageCount", printedCount, "globalstate", validated.GlobalState, "WasmRoots", validated.WasmRoots)
 	v.lastValidInfoPrinted = validated
+	if v.config().Dangerous.Revalidation.EndBlock > 0 && validated.GlobalState.Batch >= v.config().Dangerous.Revalidation.EndBlock {
+		if v.config().Dangerous.Revalidation.ThenQuit {
+			v.quitNode <- fmt.Sprintf("revalidation done from %d to %d", v.config().Dangerous.Revalidation.StartBlock, v.config().Dangerous.Revalidation.EndBlock)
+		} else {
+			v.StopAndWait()
+		}
+	}
 	return time.Second
 }
 
