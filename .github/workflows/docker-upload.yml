@@ -25,90 +25,96 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+  
+      - name: Login to Github Container Repo
+        uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
         with:
-          install: true
-      
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache-${{ matrix.platform }}
-          key: buildx-${{ matrix.platform }}-${{ hashFiles('Dockerfile') }}
-          restore-keys: buildx-${{ matrix.platform }}-
+          registry: ghcr.io
+          username: ${{ github.repository_owner  }}
+          password: ${{ secrets.GITHUB_TOKEN  }}
 
-      - name: Login to GHCR
+      - name: Build nitro-node image
+        uses: ./.github/actions/docker-image
+        with:
+          context: .
+          file: Dockerfile
+          images: ghcr.io/layr-labs/nitro/nitro-node
+          target: nitro-node
+          platforms: ${{ matrix.platform }}
+          push: ${{ github.event_name != 'pull_request' }}
+
+      - name: Build nitro-node-dev image
+        uses: ./.github/actions/docker-image
+        id: nitro-node-dev
+        with:
+          context: .
+          file: Dockerfile
+          images: ghcr.io/layr-labs/nitro/nitro-node-dev
+          target: nitro-node-dev
+          platforms: ${{ matrix.platform }}
+          push: ${{ github.event_name != 'pull_request' }}
+  
+  merge_into_multiplatform_images:
+    # We only build the ARM images for non-PR builds, so skip this job if we're on PRs.
+    if: github.event_name != 'pull_request'
+    needs:
+      - build
+    strategy:
+      matrix:
+        target: [nitro-node, nitro-node-dev]
+        include:
+          - target: nitro-node
+            image: ghcr.io/layr-labs/nitro/nitro-node
+          - target: nitro-node-dev
+            image: ghcr.io/layr-labs/nitro/nitro-node-dev
+
+    runs-on: linux-2xl
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Github Container Repo
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.repository_owner  }}
+          password: ${{ secrets.GITHUB_TOKEN  }}
+
+      - name: Download digest amd64
+        uses: actions/download-artifact@v4
+        with:
+          name: "${{ matrix.target }}-digests-${{ github.run_number }}-amd64"
+          path: "${{ runner.temp }}/${{ matrix.target }}-${{ github.run_number }}-digests"
+
+      - name: Download digest arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: "${{ matrix.target }}-digests-${{ github.run_number }}-arm64"
+          path: "${{ runner.temp }}/${{ matrix.target }}-${{ github.run_number }}-digests"
 
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/${{ github.repository_owner }}/nitro-eigenda
-            ghcr.io/${{ github.repository_owner }}/nitro-eigenda-dev
-          tags: |
-            ${{ github.ref_name }}-${{ matrix.platform }}
-            latest-${{ matrix.platform }}
+          images: ${{ matrix.image }}
 
-      - name: Build and push nitro-node image (prod)
-        uses: docker/build-push-action@v5
-        with:
-          platform: ${{ matrix.platform }}
-          target: nitro-node
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/nitro-eigenda:${{ github.ref_name }}-${{ matrix.platform }}
-            ghcr.io/${{ github.repository_owner }}/nitro-eigenda:latest-${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Build and push nitro-node image (dev)
-        uses: docker/build-push-action@v5
-        with:
-          platform: ${{ matrix.platform }}
-          target: nitro-node-dev
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/nitro-eigenda-dev:${{ github.ref_name }}-${{ matrix.platform }}
-            ghcr.io/${{ github.repository_owner }}/nitro-eigenda-dev:latest-${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Move Cache
+      - name: Create manifest list and push
+        working-directory: "${{ runner.temp }}/${{ matrix.target }}-${{ github.run_number }}-digests"
         run: |
-          rm -rf /tmp/.buildx-cache-${{ matrix.platform }}
-          mv /tmp/.buildx-cache-${{ matrix.platform }}-new /tmp/.buildx-cache-${{ matrix.platform }}
+          # Count the number of files in the directory
+          file_count=$(find . -type f | wc -l)
 
-  merge-multiarch:
-    needs: build
-    runs-on: linux-2xl
+          if [ "$file_count" -ne 2 ]; then
+            echo "Should have exactly 2 digests to combine, something went wrong"
+            ls -lah
+            exit 1
+          fi
 
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create and Push Multi-Platform Manifests
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ matrix.image }}@sha256:%s ' *)
+      - name: Inspect image
         run: |
-          for IMAGE in nitro-eigenda nitro-eigenda-dev; do
-            docker buildx imagetools create \
-              --tag ghcr.io/${{ github.repository_owner }}/${IMAGE}:${{ github.ref_name }} \
-              --tag ghcr.io/${{ github.repository_owner }}/${IMAGE}:latest \
-              ghcr.io/${{ github.repository_owner }}/${IMAGE}:${{ github.ref_name }}-linux-amd64 \
-              ghcr.io/${{ github.repository_owner }}/${IMAGE}:${{ github.ref_name }}-linux-arm64
-          done
+          docker buildx imagetools inspect ${{ matrix.image }}:${{ steps.meta.outputs.version }}
