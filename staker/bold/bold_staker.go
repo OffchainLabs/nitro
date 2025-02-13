@@ -142,7 +142,7 @@ var DefaultBoldConfig = BoldConfig{
 	AutoIncreaseAllowance:               true,
 	DelegatedStaking:                    DefaultDelegatedStakingConfig,
 	RPCBlockNumber:                      "finalized",
-	MaxGetLogBlocks:                     1000,
+	MaxGetLogBlocks:                     5000,
 }
 
 var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
