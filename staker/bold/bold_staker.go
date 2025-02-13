@@ -143,7 +143,7 @@ var DefaultBoldConfig = BoldConfig{
 	AutoIncreaseAllowance:               true,
 	DelegatedStaking:                    DefaultDelegatedStakingConfig,
 	RPCBlockNumber:                      "finalized",
-	MaxSyncLookbackBlocks:               7200,
+	MaxSyncLookbackBlocks:               151200, // Number of eth blocks in 3 weeks
 	MaxGetLogBlocks:                     1000,
 }
 
