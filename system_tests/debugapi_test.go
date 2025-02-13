@@ -95,7 +95,7 @@ func TestPrestateTracingSimple(t *testing.T) {
 	value := big.NewInt(1e6)
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, value, nil)
 	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
-	_, err = builder.L2.EnsureTxSucceeded(tx)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	l2rpc := builder.L2.Stack.Attach()
@@ -116,8 +116,16 @@ func TestPrestateTracingSimple(t *testing.T) {
 	if !arbmath.BigEquals(result.Pre[receiver].Balance.ToInt(), user2OldBalance) {
 		Fatal(t, "Unexpected initial balance of receiver")
 	}
-	if !arbmath.BigEquals(result.Post[sender].Balance.ToInt(), arbmath.BigSub(ownerOldBalance, value)) {
+	expBalance := arbmath.BigSub(ownerOldBalance, value)
+	gas := arbmath.BigMulByUint(receipt.EffectiveGasPrice, receipt.GasUsed)
+	expBalance = arbmath.BigSub(expBalance, gas)
+	if !arbmath.BigEquals(result.Post[sender].Balance.ToInt(), expBalance) {
 		Fatal(t, "Unexpected final balance of sender")
+	}
+	onchain, err := builder.L2.Client.BalanceAt(ctx, sender, receipt.BlockNumber)
+	Require(t, err)
+	if !arbmath.BigEquals(result.Post[sender].Balance.ToInt(), onchain) {
+		Fatal(t, "Final balance of sender does not fit chain")
 	}
 	if !arbmath.BigEquals(result.Post[receiver].Balance.ToInt(), value) {
 		Fatal(t, "Unexpected final balance of receiver")

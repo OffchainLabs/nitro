@@ -88,7 +88,7 @@ func TestReorgResequencing(t *testing.T) {
 	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadata{{
 		Message:             newMessage,
 		DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
-	}})
+	}}, nil)
 	Require(t, err)
 
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
