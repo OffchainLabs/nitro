@@ -65,7 +65,6 @@ type BoldConfig struct {
 	APIDBPath                           string                 `koanf:"api-db-path"`
 	TrackChallengeParentAssertionHashes []string               `koanf:"track-challenge-parent-assertion-hashes"`
 	CheckStakerSwitchInterval           time.Duration          `koanf:"check-staker-switch-interval"`
-	MaxSyncLookbackBlocks               int64                  `koanf:"max-sync-lookback-blocks"`
 	MaxGetLogBlocks                     int64                  `koanf:"max-get-log-blocks"`
 	StateProviderConfig                 StateProviderConfig    `koanf:"state-provider-config"`
 	StartValidationFromStaked           bool                   `koanf:"start-validation-from-staked"`
@@ -143,7 +142,6 @@ var DefaultBoldConfig = BoldConfig{
 	AutoIncreaseAllowance:               true,
 	DelegatedStaking:                    DefaultDelegatedStakingConfig,
 	RPCBlockNumber:                      "finalized",
-	MaxSyncLookbackBlocks:               151200, // Number of eth blocks in 3 weeks
 	MaxGetLogBlocks:                     1000,
 }
 
@@ -158,7 +156,6 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
 	f.String(prefix+".strategy", DefaultBoldConfig.Strategy, "define the bold validator staker strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.String(prefix+".rpc-block-number", DefaultBoldConfig.RPCBlockNumber, "define the block number to use for reading data onchain, either latest, safe, or finalized")
-	f.Int64(prefix+".max-sync-lookback-blocks", DefaultBoldConfig.MaxSyncLookbackBlocks, "maximum number of blocks to look back when syncing")
 	f.Int64(prefix+".max-get-log-blocks", DefaultBoldConfig.MaxGetLogBlocks, "maximum size for chunk of blocks when using get logs rpc")
 	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "assertion posting interval")
 	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "scan assertion interval")
@@ -527,7 +524,6 @@ func newBOLDChallengeManager(
 		challengemanager.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
 		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 		challengemanager.StackWithHeaderProvider(l1Reader),
-		challengemanager.StackWithSyncMaxLookbackBlocks(config.MaxSyncLookbackBlocks),
 		challengemanager.StackWithSyncMaxGetLogBlocks(config.MaxGetLogBlocks),
 	}
 	if config.API {
