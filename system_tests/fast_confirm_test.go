@@ -45,6 +45,7 @@ import (
 )
 
 func TestFastConfirmationWithdrawal(t *testing.T) {
+	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	builder, stakerA, cleanupBuilder, cleanupBackgroundTx := setupFastConfirmation(ctx, t)
