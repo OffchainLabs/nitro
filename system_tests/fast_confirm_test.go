@@ -61,14 +61,8 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 	tx, err := arbSys.WithdrawEth(&authL2, common.Address{})
 	Require(t, err, "ArbSys failed")
 
-	// Wait for transaction to be executed
-	time.Sleep(4 * time.Millisecond) // Geth takes a few ms for the receipt to show up
-	var receipt *types.Receipt
-	receipt, err = builder.L2.Client.TransactionReceipt(ctx, tx.Hash())
-	Require(t, err, "No receipt for txn")
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t, "Tx failed with status code:", receipt)
-	}
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 	if len(receipt.Logs) == 0 {
 		Fatal(t, "Tx didn't emit any logs")
 	}
