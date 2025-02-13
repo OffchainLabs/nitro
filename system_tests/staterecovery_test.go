@@ -54,7 +54,7 @@ func TestRectreateMissingStates(t *testing.T) {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
+		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata2", 0, 0, "l2chaindata2/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata2"))
 		Require(t, err)
 		defer chainDb.Close()
 		cachingConfig := TestCachingConfig

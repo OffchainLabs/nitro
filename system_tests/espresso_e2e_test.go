@@ -23,7 +23,7 @@ import (
 var workingDir = "./espresso-e2e"
 
 // light client proxy
-var lightClientAddress = "0x60571c8f4b52954a24a5e7306d435e951528d963"
+var lightClientAddress = "0x0f1f89aaf1c6fdb7ff9d361e4388f5f3997f12a8"
 
 var hotShotUrl = "http://127.0.0.1:41000"
 
@@ -145,7 +145,7 @@ func waitForEspressoNode(ctx context.Context) error {
 }
 
 func waitForHotShotLiveness(ctx context.Context, lightClientReader *lightclient.LightClientReader) error {
-	return waitForWith(ctx, 400*time.Second, 1*time.Second, func() bool {
+	return waitForWith(ctx, 500*time.Second, 1*time.Second, func() bool {
 		log.Info("Waiting for HotShot Liveness")
 		_, err := lightClientReader.FetchMerkleRoot(1, nil)
 		return err == nil

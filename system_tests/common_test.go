@@ -1427,12 +1427,12 @@ func createNonL1BlockChainWithStackConfig(
 	stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	chainData, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
+	chainData, err := stack.OpenDatabaseWithExtraOptions("l2chaindata2", 0, 0, "l2chaindata2/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata2"))
 	Require(t, err)
-	wasmData, err := stack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
+	wasmData, err := stack.OpenDatabaseWithExtraOptions("wasm2", 0, 0, "wasm2/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm2"))
 	Require(t, err)
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, wasmCacheTag, execConfig.StylusTarget.WasmTargets())
-	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
+	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata2", 0, 0, "arbitrumdataL2/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdataL2"))
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&info.ArbInitData)
@@ -1520,13 +1520,13 @@ func Create2ndNodeWithConfig(
 	chainStack, err := node.New(stackConfig)
 	Require(t, err)
 
-	chainData, err := chainStack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
+	chainData, err := chainStack.OpenDatabaseWithExtraOptions("l2chaindata2", 0, 0, "l2chaindata2/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata2"))
 	Require(t, err)
-	wasmData, err := chainStack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
+	wasmData, err := chainStack.OpenDatabaseWithExtraOptions("wasm2", 0, 0, "wasm2/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm2"))
 	Require(t, err)
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, wasmCacheTag, execConfig.StylusTarget.WasmTargets())
 
-	arbDb, err := chainStack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
+	arbDb, err := chainStack.OpenDatabaseWithExtraOptions("arbitrumdata2", 0, 0, "arbitrumdataL2/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdataL2"))
 	Require(t, err)
 	initReader := statetransfer.NewMemoryInitDataReader(chainInitData)
 

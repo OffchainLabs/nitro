@@ -1,4 +1,4 @@
-package arbnode
+package arbutil
 
 import (
 	"bytes"
@@ -9,18 +9,16 @@ import (
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 
 	"github.com/ethereum/go-ethereum/rlp"
-
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
-func mockMsgFetcher(index arbutil.MessageIndex) ([]byte, error) {
+func mockMsgFetcher(index MessageIndex) ([]byte, error) {
 	return []byte("message" + fmt.Sprint(index)), nil
 }
 
 func TestParsePayload(t *testing.T) {
-	msgPositions := []arbutil.MessageIndex{1, 2, 10, 24, 100}
+	msgPositions := []MessageIndex{1, 2, 10, 24, 100}
 
-	rawPayload, cnt := buildRawHotShotPayload(msgPositions, mockMsgFetcher, 200*1024)
+	rawPayload, cnt := BuildRawHotShotPayload(msgPositions, mockMsgFetcher, 200*1024)
 	if cnt != len(msgPositions) {
 		t.Fatal("exceed transactions")
 	}
@@ -29,7 +27,7 @@ func TestParsePayload(t *testing.T) {
 	fakeSigner := func(payload []byte) ([]byte, error) {
 		return mockSignature, nil
 	}
-	signedPayload, err := signHotShotPayload(rawPayload, fakeSigner)
+	signedPayload, err := SignHotShotPayload(rawPayload, fakeSigner)
 	if err != nil {
 		t.Fatalf("failed to sign payload: %v", err)
 	}
@@ -46,7 +44,7 @@ func TestParsePayload(t *testing.T) {
 	}
 
 	for i, index := range indices {
-		if arbutil.MessageIndex(index) != msgPositions[i] {
+		if MessageIndex(index) != msgPositions[i] {
 			t.Errorf("expected index %d, got %d", msgPositions[i], index)
 		}
 	}
@@ -66,13 +64,13 @@ func TestParsePayload(t *testing.T) {
 }
 
 func TestValidateIfPayloadIsInBlock(t *testing.T) {
-	msgPositions := []arbutil.MessageIndex{1, 2}
+	msgPositions := []MessageIndex{1, 2}
 
-	rawPayload, _ := buildRawHotShotPayload(msgPositions, mockMsgFetcher, 200*1024)
+	rawPayload, _ := BuildRawHotShotPayload(msgPositions, mockMsgFetcher, 200*1024)
 	fakeSigner := func(payload []byte) ([]byte, error) {
 		return []byte("fake_signature"), nil
 	}
-	signedPayload, err := signHotShotPayload(rawPayload, fakeSigner)
+	signedPayload, err := SignHotShotPayload(rawPayload, fakeSigner)
 	if err != nil {
 		t.Fatalf("failed to sign payload: %v", err)
 	}
@@ -83,11 +81,11 @@ func TestValidateIfPayloadIsInBlock(t *testing.T) {
 		[]byte("other_payload"),
 	}
 
-	if !validateIfPayloadIsInBlock(signedPayload, blockPayloads) {
+	if !ValidateIfPayloadIsInBlock(signedPayload, blockPayloads) {
 		t.Error("expected payload to be validated in block")
 	}
 
-	if validateIfPayloadIsInBlock([]byte("invalid_payload"), blockPayloads) {
+	if ValidateIfPayloadIsInBlock([]byte("invalid_payload"), blockPayloads) {
 		t.Error("did not expect invalid payload to be validated in block")
 	}
 }
@@ -129,7 +127,7 @@ func TestParsePayloadInvalidCases(t *testing.T) {
 func TestSerdeSubmittedEspressoTx(t *testing.T) {
 	submiitedTx := SubmittedEspressoTx{
 		Hash:    "0x1234",
-		Pos:     []arbutil.MessageIndex{arbutil.MessageIndex(10)},
+		Pos:     []MessageIndex{MessageIndex(10)},
 		Payload: []byte{0, 1, 2, 3},
 	}
 

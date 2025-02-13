@@ -1,4 +1,4 @@
-package arbnode
+package arbutil
 
 import (
 	"bytes"
@@ -9,8 +9,6 @@ import (
 	"github.com/ccoveille/go-safecast"
 
 	"github.com/ethereum/go-ethereum/log"
-
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 const MAX_ATTESTATION_QUOTE_SIZE int = 4 * 1024
@@ -19,13 +17,13 @@ const INDEX_SIZE int = 8
 
 type SubmittedEspressoTx struct {
 	Hash    string
-	Pos     []arbutil.MessageIndex
+	Pos     []MessageIndex
 	Payload []byte
 }
 
-func buildRawHotShotPayload(
-	msgPositions []arbutil.MessageIndex,
-	msgFetcher func(arbutil.MessageIndex) ([]byte, error),
+func BuildRawHotShotPayload(
+	msgPositions []MessageIndex,
+	msgFetcher func(MessageIndex) ([]byte, error),
 	maxSize int64,
 ) ([]byte, int) {
 
@@ -57,7 +55,7 @@ func buildRawHotShotPayload(
 	return payload, msgCnt
 }
 
-func signHotShotPayload(
+func SignHotShotPayload(
 	unsigned []byte,
 	signer func([]byte) ([]byte, error),
 ) ([]byte, error) {
@@ -76,7 +74,7 @@ func signHotShotPayload(
 	return result, nil
 }
 
-func validateIfPayloadIsInBlock(p []byte, payloads []espressoTypes.Bytes) bool {
+func ValidateIfPayloadIsInBlock(p []byte, payloads []espressoTypes.Bytes) bool {
 	validated := false
 	for _, payload := range payloads {
 		if bytes.Equal(p, payload) {
