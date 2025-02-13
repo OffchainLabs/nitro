@@ -58,8 +58,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
   
   merge_into_multiplatform_images:
-    # We only build the ARM images for non-PR builds, so skip this job if we're on PRs.
-    if: github.event_name != 'pull_request'
     needs:
       - build
     strategy:
