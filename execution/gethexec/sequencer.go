@@ -79,31 +79,37 @@ type SequencerConfig struct {
 	ExpectedSurplusSoftThreshold string          `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
-	Timeboost                    TimeboostConfig `koanf:"timeboost"`
+	Dangerous                    DangerousConfig `koanf:"dangerous"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
 
+type DangerousConfig struct {
+	Timeboost TimeboostConfig `koanf:"timeboost"`
+}
+
 type TimeboostConfig struct {
-	Enable                 bool          `koanf:"enable"`
-	AuctionContractAddress string        `koanf:"auction-contract-address"`
-	AuctioneerAddress      string        `koanf:"auctioneer-address"`
-	ExpressLaneAdvantage   time.Duration `koanf:"express-lane-advantage"`
-	SequencerHTTPEndpoint  string        `koanf:"sequencer-http-endpoint"`
-	EarlySubmissionGrace   time.Duration `koanf:"early-submission-grace"`
-	MaxQueuedTxCount       int           `koanf:"max-queued-tx-count"`
-	RedisUrl               string        `koanf:"redis-url"`
+	Enable                    bool          `koanf:"enable"`
+	AuctionContractAddress    string        `koanf:"auction-contract-address"`
+	AuctioneerAddress         string        `koanf:"auctioneer-address"`
+	ExpressLaneAdvantage      time.Duration `koanf:"express-lane-advantage"`
+	SequencerHTTPEndpoint     string        `koanf:"sequencer-http-endpoint"`
+	EarlySubmissionGrace      time.Duration `koanf:"early-submission-grace"`
+	MaxQueuedTxCount          int           `koanf:"max-queued-tx-count"`
+	MaxFutureSequenceDistance uint64        `koanf:"max-future-sequence-distance"`
+	RedisUrl                  string        `koanf:"redis-url"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
-	Enable:                 false,
-	AuctionContractAddress: "",
-	AuctioneerAddress:      "",
-	ExpressLaneAdvantage:   time.Millisecond * 200,
-	SequencerHTTPEndpoint:  "http://localhost:8547",
-	EarlySubmissionGrace:   time.Second * 2,
-	MaxQueuedTxCount:       10,
-	RedisUrl:               "unset",
+	Enable:                    false,
+	AuctionContractAddress:    "",
+	AuctioneerAddress:         "",
+	ExpressLaneAdvantage:      time.Millisecond * 200,
+	SequencerHTTPEndpoint:     "http://localhost:8547",
+	EarlySubmissionGrace:      time.Second * 2,
+	MaxQueuedTxCount:          10,
+	MaxFutureSequenceDistance: 100,
+	RedisUrl:                  "unset",
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -132,7 +138,7 @@ func (c *SequencerConfig) Validate() error {
 	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
 		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
 	}
-	return c.Timeboost.Validate()
+	return c.Dangerous.Timeboost.Validate()
 }
 
 func (c *TimeboostConfig) Validate() error {
@@ -147,6 +153,9 @@ func (c *TimeboostConfig) Validate() error {
 	}
 	if len(c.AuctioneerAddress) > 0 && !common.IsHexAddress(c.AuctioneerAddress) {
 		return fmt.Errorf("invalid timeboost.auctioneer-address \"%v\"", c.AuctioneerAddress)
+	}
+	if c.MaxFutureSequenceDistance == 0 {
+		return errors.New("timeboost max-future-sequence-distance option cannot be zero, it should be set to a positive value")
 	}
 	return nil
 }
@@ -171,7 +180,11 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
-	Timeboost:                    DefaultTimeboostConfig,
+	Dangerous:                    DefaultDangerousConfig,
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	Timeboost: DefaultTimeboostConfig,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -181,7 +194,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
-	TimeboostAddOptions(prefix+".timeboost", f)
+	DangerousAddOptions(prefix+".dangerous", f)
 
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
@@ -202,7 +215,12 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 	f.Duration(prefix+".early-submission-grace", DefaultTimeboostConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
 	f.Int(prefix+".max-queued-tx-count", DefaultTimeboostConfig.MaxQueuedTxCount, "maximum allowed number of express lane txs with future sequence number to be queued. Set 0 to disable this check and a negative value to prevent queuing of any future sequence number transactions")
+	f.Uint64(prefix+".max-future-sequence-distance", DefaultTimeboostConfig.MaxFutureSequenceDistance, "maximum allowed difference (in terms of sequence numbers) between a future express lane tx and the current sequence count of a round")
 	f.String(prefix+".redis-url", DefaultTimeboostConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
+}
+
+func DangerousAddOptions(prefix string, f *flag.FlagSet) {
+	TimeboostAddOptions(prefix+".timeboost", f)
 }
 
 type txQueueItem struct {
@@ -481,7 +499,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 
 	config := s.config()
 	queueTimeout := config.QueueTimeout
-	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout+config.Timeboost.ExpressLaneAdvantage) // Include timeboost delay in ctx timeout
+	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout+config.Dangerous.Timeboost.ExpressLaneAdvantage) // Include timeboost delay in ctx timeout
 	defer cancelFunc()
 
 	resultChan := make(chan error, 1)
@@ -511,7 +529,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 }
 
 func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
-	if !s.config().Timeboost.Enable {
+	if !s.config().Dangerous.Timeboost.Enable {
 		return errors.New("timeboost not enabled")
 	}
 
@@ -567,7 +585,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 }
 
 func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
-	if !s.config().Timeboost.Enable {
+	if !s.config().Dangerous.Timeboost.Enable {
 		return errors.New("timeboost not enabled")
 	}
 
@@ -640,9 +658,9 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		return err
 	}
 
-	if s.config().Timeboost.Enable && s.expressLaneService != nil {
+	if s.config().Dangerous.Timeboost.Enable && s.expressLaneService != nil {
 		if !isExpressLaneController && s.expressLaneService.currentRoundHasController() {
-			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
+			time.Sleep(s.config().Dangerous.Timeboost.ExpressLaneAdvantage)
 		}
 	}
 
@@ -1088,10 +1106,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.nonceCache.BeginNewBlock()
 	queueItems = s.precheckNonces(queueItems, totalBlockSize)
 	txes := make([]*types.Transaction, len(queueItems))
-	var timeboostedTxs map[common.Hash]struct{}
-	if config.Timeboost.Enable {
-		timeboostedTxs = make(map[common.Hash]struct{})
-	}
+	timeboostedTxs := make(map[common.Hash]struct{})
 	hooks := s.makeSequencingHooks()
 	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
 	totalBlockSize = 0 // recompute the totalBlockSize to double check it
@@ -1402,7 +1417,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
-	if s.config().Timeboost.Enable && s.expressLaneService != nil {
+	if s.config().Dangerous.Timeboost.Enable && s.expressLaneService != nil {
 		s.expressLaneService.StopAndWait()
 	}
 	if s.txRetryQueue.Len() == 0 &&
