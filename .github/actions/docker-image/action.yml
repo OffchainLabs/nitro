@@ -1,4 +1,4 @@
-name: Espresso Docker Image
+name: EigenDA Docker Image
 
 inputs:
   context:
