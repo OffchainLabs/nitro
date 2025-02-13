@@ -35,7 +35,6 @@ type stackParams struct {
 	headerProvider                      HeaderProvider
 	enableFastConfirmation              bool
 	assertionManagerOverride            *assertions.Manager
-	maxLookbackBlocks                   int64
 	maxGetLogBlocks                     int64
 	delegatedStaking                    bool
 	autoDeposit                         bool
@@ -56,7 +55,6 @@ var defaultStackParams = stackParams{
 	headerProvider:                      nil,
 	enableFastConfirmation:              false,
 	assertionManagerOverride:            nil,
-	maxLookbackBlocks:                   blocksPerInterval(time.Second*12, 21*24*time.Hour), // Default to 3 weeks worth of blocks.
 	maxGetLogBlocks:                     1000,
 	delegatedStaking:                    false,
 	autoDeposit:                         true,
@@ -152,14 +150,6 @@ func StackWithFastConfirmationEnabled() StackOpt {
 	}
 }
 
-// StackWithSyncMaxLookbackBlocks specifies the number of blocks behind the latest block
-// to start syncing the chain watcher from.
-func StackWithSyncMaxLookbackBlocks(maxLookback int64) StackOpt {
-	return func(p *stackParams) {
-		p.maxLookbackBlocks = maxLookback
-	}
-}
-
 // StackWithSyncMaxGetLogBlocks specifies the max size chunks of blocks to use when using get logs rpc for
 // when syncing the chain watcher.
 func StackWithSyncMaxGetLogBlocks(maxGetLog int64) StackOpt {
@@ -224,10 +214,6 @@ func NewChallengeStack(
 		}
 		provider.UpdateAPIDatabase(apiDB)
 	}
-	maxLookbackBlocks, err := safecast.ToUint64(params.maxLookbackBlocks)
-	if err != nil {
-		return nil, err
-	}
 	maxGetLogBlocks, err := safecast.ToUint64(params.maxGetLogBlocks)
 	if err != nil {
 		return nil, err
@@ -242,7 +228,6 @@ func NewChallengeStack(
 		params.confInterval,
 		params.avgBlockTime,
 		params.trackChallengeParentAssertionHashes,
-		maxLookbackBlocks,
 		maxGetLogBlocks,
 	)
 	if err != nil {
@@ -312,9 +297,4 @@ func NewChallengeStack(
 		cmOpts = append(cmOpts, WithAPIServer(api))
 	}
 	return New(chain, provider, watcher, asm, cmOpts...)
-}
-
-func blocksPerInterval(avgBlockTime time.Duration, interval time.Duration) int64 {
-	// Calculate the number of blocks as an integer division
-	return int64(interval / avgBlockTime)
 }

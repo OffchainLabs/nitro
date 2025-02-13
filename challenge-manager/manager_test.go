@@ -187,7 +187,6 @@ func setupEdgeTrackersForBisection(
 		confInterval,
 		avgBlockTime,
 		nil,
-		100,
 		10,
 	)
 	require.NoError(t, err)
@@ -220,7 +219,6 @@ func setupEdgeTrackersForBisection(
 		confInterval,
 		avgBlockTime,
 		nil,
-		100,
 		10,
 	)
 	require.NoError(t, err)
