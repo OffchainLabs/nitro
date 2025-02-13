@@ -55,6 +55,7 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
 	Require(t, err)
 	authL2 := builder.L2Info.GetDefaultTransactOpts("User", ctx)
+	intialL2Balance := builder.L2.GetBalance(t, authL2.From)
 	withdrawAmount := big.NewInt(1000)
 	authL2.Value = withdrawAmount
 	builder.L1Info.GenerateAccount("Receiver")
@@ -67,6 +68,8 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 	if len(receipt.Logs) == 0 {
 		Fatal(t, "Tx didn't emit any logs")
 	}
+	gasUsedInL2 := new(big.Int).Mul(new(big.Int).SetUint64(receipt.GasUsed), receipt.EffectiveGasPrice)
+	l2FundsSpent := new(big.Int).Add(withdrawAmount, gasUsedInL2)
 
 	// Wait for staker to confirm the withdrawal
 	time.Sleep(time.Second)
@@ -108,12 +111,10 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 			)
 			Require(t, err)
 			// Execute the transaction on L1
-			println("balance1: ", builder.L1.GetBalance(t, common.Address{}).Uint64())
 			execTx, err := outboxBinding.ExecuteTransaction(&authL1, outboxProof.Proof, parsedLog.Position, parsedLog.Caller, parsedLog.Destination, parsedLog.ArbBlockNum, parsedLog.EthBlockNum, parsedLog.Timestamp, parsedLog.Callvalue, parsedLog.Data)
 			Require(t, err)
 			execReceipt, err := builder.L1.EnsureTxSucceeded(execTx)
 			Require(t, err)
-			println("balance2: ", builder.L1.GetBalance(t, common.Address{}).Uint64())
 			if len(execReceipt.Logs) == 0 {
 				Fatal(t, "Tx didn't emit any logs")
 			}
@@ -134,6 +135,9 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 		Fatal(t, "Withdraw event not found in logs")
 	}
 	if builder.L1.GetBalance(t, receiver).Cmp(withdrawAmount) != 0 {
+		Fatal(t, "Withdrawal failed")
+	}
+	if builder.L2.GetBalance(t, authL2.From).Cmp(new(big.Int).Sub(intialL2Balance, l2FundsSpent)) != 0 {
 		Fatal(t, "Withdrawal failed")
 	}
 }
