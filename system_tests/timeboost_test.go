@@ -728,6 +728,22 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	Require(t, err)
 	colors.PrintGrey("receipt object- ", string(receiptResultRaw))
 
+	builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+	latestL2, err = builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	var receiptWithoutTimeboostEnabled []timeboostedFromReceipt
+	// #nosec G115
+	err = l2rpc.CallContext(ctx, &receiptWithoutTimeboostEnabled, "eth_getBlockReceipts", rpc.BlockNumber(latestL2))
+	Require(t, err)
+	if len(receiptWithoutTimeboostEnabled) != 2 {
+		t.Fatalf("expecting two tx receipts got: %d", len(receiptWithoutTimeboostEnabled))
+	}
+	if receiptWithoutTimeboostEnabled[0].Timeboosted == nil || *receiptWithoutTimeboostEnabled[0].Timeboosted {
+		t.Fatal("timeboosted field should exist in the receipt object of all the txs and it should be false")
+	}
+	if receiptWithoutTimeboostEnabled[1].Timeboosted == nil || *receiptWithoutTimeboostEnabled[1].Timeboosted {
+		t.Fatal("timeboosted field should exist in the receipt object of all the txs and it should be false")
+	}
 }
 
 func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
@@ -1292,10 +1308,11 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
 	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
-	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
-		Enable:               false, // We need to start without timeboost initially to create the auction contract
-		ExpressLaneAdvantage: time.Second * 5,
-		RedisUrl:             expressLaneRedisURL,
+	builderSeq.execConfig.Sequencer.Dangerous.Timeboost = gethexec.TimeboostConfig{
+		Enable:                    false, // We need to start without timeboost initially to create the auction contract
+		ExpressLaneAdvantage:      time.Second * 5,
+		RedisUrl:                  expressLaneRedisURL,
+		MaxFutureSequenceDistance: 1500, // Required for TestExpressLaneTransactionHandlingComplex
 	}
 	builderSeq.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	cleanupSeq := builderSeq.Build(t)
@@ -1475,7 +1492,7 @@ func setupExpressLaneAuction(
 
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
-	builderSeq.execConfig.Sequencer.Timeboost.Enable = true
+	builderSeq.execConfig.Sequencer.Dangerous.Timeboost.Enable = true
 	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(builderSeq.L2.ExecNode.Backend.APIBackend(), builderSeq.L2.ExecNode.FilterSystem, proxyAddr, seqInfo.GetAddress("AuctionContract"), gethexec.DefaultTimeboostConfig.EarlySubmissionGrace)
 	Require(t, err)
 	builderSeq.L2.ExecNode.Sequencer.StartExpressLaneService(ctx)

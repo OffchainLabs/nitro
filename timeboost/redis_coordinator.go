@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -89,50 +87,35 @@ func acceptedTxKeyFor(round, seqNum uint64) string {
 	return fmt.Sprintf("%s%d.%d", EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX, round, seqNum)
 }
 
-func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum uint64) []*ExpressLaneSubmission {
+func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum, endSeqNum uint64) []*ExpressLaneSubmission {
 	ctx := rc.GetContext()
 	fetchMsg := func(key string) *ExpressLaneSubmission {
 		msgBytes, err := rc.client.Get(ctx, key).Bytes()
+		if errors.Is(err, redis.Nil) {
+			log.Debug("ExpressLane tx not found in redis", "key", key, "err", err)
+			return nil
+		}
 		if err != nil {
-			log.Error("Error fetching accepted expressLane tx", "err", err)
+			log.Error("Error fetching accepted expressLane tx", "key", key, "err", err)
 			return nil
 		}
 		msgJson := JsonExpressLaneSubmission{}
 		if err := json.Unmarshal(msgBytes, &msgJson); err != nil {
-			log.Error("Error unmarshalling", "err", err)
+			log.Error("Error unmarshalling", "key", key, "err", err)
 			return nil
 		}
 		msg, err := JsonSubmissionToGo(&msgJson)
 		if err != nil {
-			log.Error("Error converting JsonExpressLaneSubmission to ExpressLaneSubmission", "err", err)
+			log.Error("Error converting JsonExpressLaneSubmission to ExpressLaneSubmission", "key", key, "err", err)
 			return nil
 		}
 		return msg
 	}
 
 	var msgs []*ExpressLaneSubmission
-	prefix := fmt.Sprintf("%s%d.", EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX, round)
-	cursor := uint64(0)
-	for {
-		keys, cursor, err := rc.client.Scan(ctx, cursor, prefix+"*", 0).Result()
-		if err != nil {
-			break // Best effort
-		}
-		for _, key := range keys {
-			seq, err := strconv.Atoi(strings.TrimPrefix(key, prefix))
-			if err != nil {
-				log.Error("Error getting sequence number from the redis key of accepted timeboost Tx", "key", key, "error", err)
-				continue
-			}
-			// #nosec G115
-			if uint64(seq) >= startSeqNum {
-				if msg := fetchMsg(key); msg != nil {
-					msgs = append(msgs, msg)
-				}
-			}
-		}
-		if cursor == 0 {
-			break
+	for seq := startSeqNum; seq <= endSeqNum; seq++ {
+		if msg := fetchMsg(acceptedTxKeyFor(round, seq)); msg != nil {
+			msgs = append(msgs, msg)
 		}
 	}
 	return msgs
