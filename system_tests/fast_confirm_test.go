@@ -104,12 +104,8 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 			// Execute the transaction on L1
 			execTx, err := outboxBinding.ExecuteTransaction(&authL1, outboxProof.Proof, parsedLog.Position, parsedLog.Caller, parsedLog.Destination, parsedLog.ArbBlockNum, parsedLog.EthBlockNum, parsedLog.Timestamp, parsedLog.Callvalue, parsedLog.Data)
 			Require(t, err)
-			time.Sleep(200 * time.Millisecond)
-			execReceipt, err := builder.L1.Client.TransactionReceipt(ctx, execTx.Hash())
-			Require(t, err, "No receipt for txn")
-			if execReceipt.Status != types.ReceiptStatusSuccessful {
-				Fatal(t, "Tx failed with status code:", receipt)
-			}
+			execReceipt, err := builder.L1.EnsureTxSucceeded(execTx)
+			Require(t, err)
 			if len(execReceipt.Logs) == 0 {
 				Fatal(t, "Tx didn't emit any logs")
 			}
