@@ -29,7 +29,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
@@ -53,12 +52,14 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 	defer cleanupBackgroundTx()
 
 	// Withdraw ETH from L2 to L1
-	gethhook.RequireHookedGeth()
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
 	Require(t, err)
 	authL2 := builder.L2Info.GetDefaultTransactOpts("User", ctx)
-	authL2.Value = big.NewInt(1000)
-	tx, err := arbSys.WithdrawEth(&authL2, common.Address{})
+	withdrawAmount := big.NewInt(1000)
+	authL2.Value = withdrawAmount
+	builder.L1Info.GenerateAccount("Receiver")
+	receiver := builder.L1Info.GetAddress("Receiver")
+	tx, err := arbSys.WithdrawEth(&authL2, receiver)
 	Require(t, err, "ArbSys failed")
 
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
@@ -90,9 +91,14 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 	Require(t, err)
 	outboxBinding, err := bridgegen.NewOutbox(outboxAddress, builder.L1.Client)
 	Require(t, err)
+	ouboxAbi, err := bridgegen.AbsOutboxMetaData.GetAbi()
+	Require(t, err, "failed to get abi")
+	outBoxTransactionExecutedTopic := ouboxAbi.Events["OutBoxTransactionExecuted"].ID
 	// Check logs for withdraw event
+	foundWithdraw := false
 	for _, log := range receipt.Logs {
 		if log.Topics[0] == withdrawTopic {
+			foundWithdraw = true
 			parsedLog, err := arbSys.ParseL2ToL1Tx(*log)
 			Require(t, err, "Failed to parse log")
 
@@ -102,17 +108,35 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 			)
 			Require(t, err)
 			// Execute the transaction on L1
+			println("balance1: ", builder.L1.GetBalance(t, common.Address{}).Uint64())
 			execTx, err := outboxBinding.ExecuteTransaction(&authL1, outboxProof.Proof, parsedLog.Position, parsedLog.Caller, parsedLog.Destination, parsedLog.ArbBlockNum, parsedLog.EthBlockNum, parsedLog.Timestamp, parsedLog.Callvalue, parsedLog.Data)
 			Require(t, err)
 			execReceipt, err := builder.L1.EnsureTxSucceeded(execTx)
 			Require(t, err)
+			println("balance2: ", builder.L1.GetBalance(t, common.Address{}).Uint64())
 			if len(execReceipt.Logs) == 0 {
 				Fatal(t, "Tx didn't emit any logs")
 			}
+			foundExec := false
+			for _, execLog := range execReceipt.Logs {
+				if execLog.Topics[0] == outBoxTransactionExecutedTopic {
+					foundExec = true
+					break
+				}
+			}
+			if !foundExec {
+				Fatal(t, "Execution event not found in logs")
+			}
+			break
 		}
 	}
+	if !foundWithdraw {
+		Fatal(t, "Withdraw event not found in logs")
+	}
+	if builder.L1.GetBalance(t, receiver).Cmp(withdrawAmount) != 0 {
+		Fatal(t, "Withdrawal failed")
+	}
 }
-
 func TestFastConfirmation(t *testing.T) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
