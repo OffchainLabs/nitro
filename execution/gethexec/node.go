@@ -499,3 +499,7 @@ func (n *ExecutionNode) Synced() bool {
 func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
 	return n.SyncMonitor.FullSyncProgressMap()
 }
+
+func (n *ExecutionNode) StoreFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
+	return n.SyncMonitor.StoreFinalityData(ctx, finalityData)
+}

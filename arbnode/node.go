@@ -267,30 +267,31 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Node struct {
-	ArbDB                   ethdb.Database
-	Stack                   *node.Node
-	Execution               execution.FullExecutionClient
-	L1Reader                *headerreader.HeaderReader
-	TxStreamer              *TransactionStreamer
-	DeployInfo              *chaininfo.RollupAddresses
-	BlobReader              daprovider.BlobReader
-	InboxReader             *InboxReader
-	InboxTracker            *InboxTracker
-	DelayedSequencer        *DelayedSequencer
-	BatchPoster             *BatchPoster
-	MessagePruner           *MessagePruner
-	BlockValidator          *staker.BlockValidator
-	StatelessBlockValidator *staker.StatelessBlockValidator
-	Staker                  *multiprotocolstaker.MultiProtocolStaker
-	BroadcastServer         *broadcaster.Broadcaster
-	BroadcastClients        *broadcastclients.BroadcastClients
-	SeqCoordinator          *SeqCoordinator
-	MaintenanceRunner       *MaintenanceRunner
-	DASLifecycleManager     *das.LifecycleManager
-	SyncMonitor             *SyncMonitor
-	blockMetadataFetcher    *BlockMetadataFetcher
-	configFetcher           ConfigFetcher
-	ctx                     context.Context
+	ArbDB                    ethdb.Database
+	Stack                    *node.Node
+	Execution                execution.FullExecutionClient
+	L1Reader                 *headerreader.HeaderReader
+	TxStreamer               *TransactionStreamer
+	DeployInfo               *chaininfo.RollupAddresses
+	BlobReader               daprovider.BlobReader
+	InboxReader              *InboxReader
+	InboxTracker             *InboxTracker
+	DelayedSequencer         *DelayedSequencer
+	BatchPoster              *BatchPoster
+	MessagePruner            *MessagePruner
+	BlockValidator           *staker.BlockValidator
+	StatelessBlockValidator  *staker.StatelessBlockValidator
+	Staker                   *multiprotocolstaker.MultiProtocolStaker
+	BroadcastServer          *broadcaster.Broadcaster
+	BroadcastClients         *broadcastclients.BroadcastClients
+	SeqCoordinator           *SeqCoordinator
+	MaintenanceRunner        *MaintenanceRunner
+	DASLifecycleManager      *das.LifecycleManager
+	SyncMonitor              *SyncMonitor
+	blockMetadataFetcher     *BlockMetadataFetcher
+	configFetcher            ConfigFetcher
+	ctx                      context.Context
+	ConsensusExecutionSyncer *ConsensusExecutionSyncer
 }
 
 type SnapSyncConfig struct {
@@ -787,31 +788,34 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(inboxReader, exec, blockValidator)
+
 	return &Node{
-		ArbDB:                   arbDb,
-		Stack:                   stack,
-		Execution:               exec,
-		L1Reader:                l1Reader,
-		TxStreamer:              txStreamer,
-		DeployInfo:              deployInfo,
-		BlobReader:              blobReader,
-		InboxReader:             inboxReader,
-		InboxTracker:            inboxTracker,
-		DelayedSequencer:        delayedSequencer,
-		BatchPoster:             batchPoster,
-		MessagePruner:           messagePruner,
-		BlockValidator:          blockValidator,
-		StatelessBlockValidator: statelessBlockValidator,
-		Staker:                  stakerObj,
-		BroadcastServer:         broadcastServer,
-		BroadcastClients:        broadcastClients,
-		SeqCoordinator:          coordinator,
-		MaintenanceRunner:       maintenanceRunner,
-		DASLifecycleManager:     dasLifecycleManager,
-		SyncMonitor:             syncMonitor,
-		blockMetadataFetcher:    blockMetadataFetcher,
-		configFetcher:           configFetcher,
-		ctx:                     ctx,
+		ArbDB:                    arbDb,
+		Stack:                    stack,
+		Execution:                exec,
+		L1Reader:                 l1Reader,
+		TxStreamer:               txStreamer,
+		DeployInfo:               deployInfo,
+		BlobReader:               blobReader,
+		InboxReader:              inboxReader,
+		InboxTracker:             inboxTracker,
+		DelayedSequencer:         delayedSequencer,
+		BatchPoster:              batchPoster,
+		MessagePruner:            messagePruner,
+		BlockValidator:           blockValidator,
+		StatelessBlockValidator:  statelessBlockValidator,
+		Staker:                   stakerObj,
+		BroadcastServer:          broadcastServer,
+		BroadcastClients:         broadcastClients,
+		SeqCoordinator:           coordinator,
+		MaintenanceRunner:        maintenanceRunner,
+		DASLifecycleManager:      dasLifecycleManager,
+		SyncMonitor:              syncMonitor,
+		blockMetadataFetcher:     blockMetadataFetcher,
+		configFetcher:            configFetcher,
+		ctx:                      ctx,
+		ConsensusExecutionSyncer: consensusExecutionSyncer,
 	}, nil
 }
 
@@ -1056,6 +1060,9 @@ func (n *Node) Start(ctx context.Context) error {
 		n.configFetcher.Start(ctx)
 	}
 	n.SyncMonitor.Start(ctx)
+	if n.ConsensusExecutionSyncer != nil {
+		n.ConsensusExecutionSyncer.Start(ctx)
+	}
 	return nil
 }
 
@@ -1141,28 +1148,12 @@ func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
 	return n.SyncMonitor.SyncTargetMessageCount()
 }
 
-// TODO: switch from pulling to pushing safe/finalized
-func (n *Node) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	return n.InboxReader.GetSafeMsgCount(ctx)
-}
-
-func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	return n.InboxReader.GetFinalizedMsgCount(ctx)
-}
-
 func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) error {
 	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
 }
 
 func (n *Node) ExpectChosenSequencer() error {
 	return n.TxStreamer.ExpectChosenSequencer()
-}
-
-func (n *Node) ValidatedMessageCount() (arbutil.MessageIndex, error) {
-	if n.BlockValidator == nil {
-		return 0, errors.New("validator not set up")
-	}
-	return n.BlockValidator.GetValidated(), nil
 }
 
 func (n *Node) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
