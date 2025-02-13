@@ -55,10 +55,14 @@ bash ./scripts/build-wasm-on-macos-with-nix
 2. Enter development environment:
 ```bash
 nix develop
+```
+
+3. Build environment:
+```bash
 make build
 make build-replay-env
 ```
-3. Run E2E tests (ensure Docker is running):
+4. Run E2E tests (ensure Docker is running):
 ```bash
 gotestsum --format standard-verbose --packages="$packages" -- -v -timeout 15m -p 1 ./system_tests/... -run 'TestEspressoE2E'
 ```
