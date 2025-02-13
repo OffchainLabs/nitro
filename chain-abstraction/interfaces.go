@@ -189,7 +189,7 @@ type AssertionChain interface {
 	FastConfirmAssertion(
 		ctx context.Context,
 		assertionCreationInfo *AssertionCreatedInfo,
-	) error
+	) (bool, error)
 	ConfirmAssertionByTime(
 		ctx context.Context,
 		assertionHash AssertionHash,

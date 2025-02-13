@@ -342,7 +342,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		}
 		tx, err = safe.Setup(
 			accs[0].TxOpts,
-			[]common.Address{accs[1].AccountAddr, accs[2].AccountAddr},
+			[]common.Address{accs[1].AccountAddr, accs[2].AccountAddr, accs[3].AccountAddr},
 			big.NewInt(2),
 			common.Address{},
 			nil,
@@ -418,6 +418,12 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		if err != nil {
 			return nil, err
 		}
+		assertionChainOpts := []solimpl.Opt{
+			solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		}
+		if setp.EnableSafeFastConfirmation || (setp.EnableFastConfirmation && acc.AccountAddr == cfgOpts.AnyTrustFastConfirmer) {
+			assertionChainOpts = append(assertionChainOpts, solimpl.WithFastConfirmation())
+		}
 		chain, chainErr := solimpl.NewAssertionChain(
 			ctx,
 			addresses.Rollup,
@@ -425,8 +431,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 			acc.TxOpts,
 			backend,
 			solimpl.NewChainBackendTransactor(backend),
-			solimpl.WithFastConfirmSafeAddress(safeProxyAddress),
-			solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+			assertionChainOpts...,
 		)
 		if chainErr != nil {
 			return nil, chainErr

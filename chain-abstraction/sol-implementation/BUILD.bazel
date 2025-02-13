@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "assertion_chain.go",
         "edge_challenge_manager.go",
+        "fast_confirm.go",
         "fifo_lock.go",
         "metrics_contract_backend.go",
         "tracked_contract_backend.go",
