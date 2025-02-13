@@ -97,7 +97,7 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	err = l2rpc.CallContext(ctx, nil, "snapshotter_snapshot", rpc.LatestBlockNumber)
 	Require(t, err)
 	time.Sleep(1 * time.Second)
-	//TODO poll result
+	// TODO poll result
 	var result snapshotter.SnapshotResult
 	err = l2rpc.CallContext(ctx, nil, "snapshotter_result", false)
 	Require(t, err)
