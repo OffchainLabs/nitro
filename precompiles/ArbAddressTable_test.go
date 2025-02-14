@@ -167,9 +167,9 @@ func newMockEVMForTesting() *vm.EVM {
 	return newMockEVMForTestingWithVersion(nil)
 }
 
-func newMockEVMForTestingWithVersionAndRunMode(version *uint64, runMode core.MessageRunMode) *vm.EVM {
+func newMockEVMForTestingWithVersionAndRunMode(version *uint64, runCtx *core.MessageRunContext) *vm.EVM {
 	evm := newMockEVMForTestingWithVersion(version)
-	evm.ProcessingHook = arbos.NewTxProcessor(evm, &core.Message{TxRunMode: runMode})
+	evm.ProcessingHook = arbos.NewTxProcessor(evm, &core.Message{TxRunContext: runCtx})
 	return evm
 }
 

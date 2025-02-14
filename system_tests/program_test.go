@@ -2178,14 +2178,14 @@ func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
 	return modules
 }
 
-func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []ethdb.WasmTarget, numModules int) {
+func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []rawdb.WasmTarget, numModules int) {
 	t.Helper()
 	modules := readModuleHashes(t, wasmDb)
 	if len(modules) != numModules {
 		t.Fatalf("Unexpected number of module hashes found in wasm store, want: %d, have: %d", numModules, len(modules))
 	}
 	readAsm := func(module common.Hash, target string) []byte {
-		wasmTarget := ethdb.WasmTarget(target)
+		wasmTarget := rawdb.WasmTarget(target)
 		if !rawdb.IsSupportedWasmTarget(wasmTarget) {
 			t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
 		}
@@ -2203,7 +2203,7 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTar
 		for _, target := range allWasmTargets {
 			var expected bool
 			for _, expectedTarget := range expectedTargets {
-				if ethdb.WasmTarget(target) == expectedTarget {
+				if rawdb.WasmTarget(target) == expectedTarget {
 					expected = true
 					break
 				}
@@ -2355,9 +2355,7 @@ func checkLruCacheMetrics(t *testing.T, expected programs.WasmLruCacheMetrics) {
 }
 
 func TestWasmLongTermCache(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
-		builder.WithStylusLongTermCache(true)
-	})
+	builder, ownerAuth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2493,9 +2491,7 @@ func TestWasmLongTermCache(t *testing.T) {
 }
 
 func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
-		builder.WithStylusLongTermCache(true)
-	})
+	builder, ownerAuth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
