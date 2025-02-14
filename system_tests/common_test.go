@@ -1453,12 +1453,7 @@ func createNonL1BlockChainWithStackConfig(
 	}
 	Require(t, err)
 
-	var wasmData ethdb.Database
-	if useFreezer {
-		wasmData, err = stack.OpenDatabaseWithFreezerWithExtraOptions("wasm", 0, 0, "", "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
-	} else {
-		wasmData, err = stack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
-	}
+	wasmData, err := stack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
 	Require(t, err)
 
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, wasmCacheTag, execConfig.StylusTarget.WasmTargets())
