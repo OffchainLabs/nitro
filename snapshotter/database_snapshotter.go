@@ -495,7 +495,7 @@ func (s *DatabaseSnapshotter) exportState(ctx context.Context, startWorker func(
 									} else {
 										threadEta = time.Duration(float32(elapsedThread)/threadProgress - float32(elapsedThread))
 									}
-									log.Info("exporting trie database - exporting storage trie taking long", "key", key, "elapsedTotal", elapsedTotal, "elapsedThread", elapsedThread, "threadExportedNodes", threadExportedNodes, "threadExportedNodeBlobBytes", threadExportedNodeBlobBytes, "threads", threadsRunning.Load(), "threadProgress", threadProgress, "threadEta", threadEta)
+									log.Info("exporting trie database - exporting storage trie taking long", "accountKey", key, "storageKey", storageIt.LeafKey(), "threadStart", startKey, "elapsedTotal", elapsedTotal, "elapsedThread", elapsedThread, "threadExportedNodes", threadExportedNodes, "threadExportedNodeBlobBytes", threadExportedNodeBlobBytes, "threads", threadsRunning.Load(), "threadProgress", threadProgress, "threadEta", threadEta)
 									threadLastLog = time.Now()
 								}
 							}
