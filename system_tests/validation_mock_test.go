@@ -20,9 +20,11 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
 	validatorclient "github.com/offchainlabs/nitro/validator/client"
+	clientredis "github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -206,11 +208,26 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 
 // mostly tests translation to/from json and running over network
 func TestValidationServerAPI(t *testing.T) {
+	testValidationServerAPI(t, false)
+}
+
+// mostly tests translation to/from json and running over network with bold validation redis consumer/producer
+func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
+	testValidationServerAPI(t, true)
+}
+func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bool) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	var redisBoldValidationClientConfig *clientredis.ValidationClientConfig
+	if withBoldValidationConsumerProducer {
+		redisBoldValidationClientConfig = &clientredis.TestValidationClientConfig
+		redisBoldValidationClientConfig.RedisURL = redisutil.CreateTestRedis(ctx, t)
+		redisBoldValidationClientConfig.CreateStreams = true
+	}
+
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
-	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
+	client := validatorclient.NewBoldExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisBoldValidationClientConfig, validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -279,6 +296,13 @@ func TestValidationServerAPI(t *testing.T) {
 	Require(t, err)
 	if !bytes.Equal(proof, mockProof) {
 		t.Error("mock proof not expected")
+	}
+
+	hashes := execRun.GetMachineHashesWithStepSize(0, 1, 5)
+	hashesRes, err := hashes.Await(ctx)
+	Require(t, err)
+	if len(hashesRes) != 5 {
+		t.Error("unexpected number of hashes")
 	}
 }
 
