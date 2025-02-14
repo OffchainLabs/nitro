@@ -570,7 +570,7 @@ func mainImpl() int {
 		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
 		if err == nil {
 			seqInboxMaxDataSize = int(res.Int64())
-		} else if !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		} else if !headerreader.IsExecutionReverted(err) {
 			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
 			return 1
 		}
