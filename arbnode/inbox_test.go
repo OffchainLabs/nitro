@@ -43,7 +43,7 @@ func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
 	w.t.Error("not supported")
 	return nil
 }
-func (w *execClientWrapper) StoreFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
+func (w *execClientWrapper) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
 	w.t.Error("not supported")
 	return nil
 }

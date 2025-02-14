@@ -6,15 +6,14 @@ package arbtest
 import (
 	"context"
 	"math/big"
-	"reflect"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 )
@@ -120,23 +119,30 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	testClientVal, cleanupVal := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer cleanupVal()
 
-	// final and safe blocks should be nil in before generating blocks
-	finalBlock := builder.L2.ExecNode.Backend.BlockChain().CurrentFinalBlock()
-	if finalBlock != nil {
-		t.Fatalf("finalBlock should be nil, but got %v", finalBlock)
+	ensureFinalizedBlockDoesNotExist := func(testClient *TestClient, scenario string) {
+		_, err = testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+		if err == nil {
+			t.Fatalf("err should not be nil, scenario: %v", scenario)
+		}
+		if err.Error() != "finalized block not found" {
+			t.Fatalf("err is not correct, scenario: %v", scenario)
+		}
 	}
-	safeBlock := builder.L2.ExecNode.Backend.BlockChain().CurrentSafeBlock()
-	if safeBlock != nil {
-		t.Fatalf("safeBlock should be nil, but got %v", safeBlock)
+	ensureSafeBlockDoesNotExist := func(testClient *TestClient, scenario string) {
+		_, err = testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+		if err == nil {
+			t.Fatalf("err should not be nil, scenario: %v", scenario)
+		}
+		if err.Error() != "safe block not found" {
+			t.Fatalf("err is not correct, scenario: %v", scenario)
+		}
 	}
-	finalBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentFinalBlock()
-	if finalBlock != nil {
-		t.Fatalf("finalBlock should be nil, but got %v", finalBlock)
-	}
-	safeBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentSafeBlock()
-	if safeBlock != nil {
-		t.Fatalf("safeBlock should be nil, but got %v", safeBlock)
-	}
+
+	// final and safe blocks shouldn't exist before generating blocks
+	ensureFinalizedBlockDoesNotExist(builder.L2, "first node before generating blocks")
+	ensureSafeBlockDoesNotExist(builder.L2, "first node before generating blocks")
+	ensureFinalizedBlockDoesNotExist(testClientVal, "val node before generating blocks")
+	ensureSafeBlockDoesNotExist(testClientVal, "val node before generating blocks")
 
 	builder.L2Info.GenerateAccount("User2")
 	generateBlocks(t, ctx, builder, testClientVal, 100)
@@ -146,58 +152,25 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 
 	// block validator and finality data usage are disabled in first node,
 	// so finality data should not be set in first node
-	finalityData := builder.L2.ExecNode.SyncMonitor.GetFinalityData()
-	if finalityData == nil {
-		t.Fatal("Finality data is nil")
-	}
-	expectedFinalityData := arbutil.FinalityData{
-		SafeMsgCount:      0,
-		FinalizedMsgCount: 0,
-		BlockValidatorSet: false,
-		FinalitySupported: false,
-	}
-	if !reflect.DeepEqual(*finalityData, expectedFinalityData) {
-		t.Fatalf("Finality data is not as expected. Expected: %v, Got: %v", expectedFinalityData, *finalityData)
-	}
-	finalBlock = builder.L2.ExecNode.Backend.BlockChain().CurrentFinalBlock()
-	if finalBlock != nil {
-		t.Fatalf("finalBlock should be nil, but got %v", finalBlock)
-	}
-	safeBlock = builder.L2.ExecNode.Backend.BlockChain().CurrentSafeBlock()
-	if safeBlock != nil {
-		t.Fatalf("safeBlock should be nil, but got %v", safeBlock)
-	}
+	ensureFinalizedBlockDoesNotExist(builder.L2, "first node after generating blocks")
+	ensureSafeBlockDoesNotExist(builder.L2, "first node after generating blocks")
 
 	// block validator and finality data usage are enabled in second node,
 	// so finality data should be set in second node
-	finalityData = testClientVal.ExecNode.SyncMonitor.GetFinalityData()
-	if finalityData == nil {
-		t.Fatal("Finality data is nil")
-	}
-	if finalityData.SafeMsgCount == 0 {
-		t.Fatal("SafeMsgCount is 0")
-	}
-	if finalityData.FinalizedMsgCount == 0 {
-		t.Fatal("FinalizedMsgCount is 0")
-	}
-	if !finalityData.BlockValidatorSet {
-		t.Fatal("BlockValidatorSet is false")
-	}
-	if !finalityData.FinalitySupported {
-		t.Fatal("FinalitySupported is false")
-	}
-	finalBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentFinalBlock()
+	finalBlock, err := testClientVal.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+	Require(t, err)
 	if finalBlock == nil {
 		t.Fatalf("finalBlock should not be nil")
 	}
-	if testClientVal.ExecNode.MessageIndexToBlockNumber(finalityData.FinalizedMsgCount-1) != finalBlock.Number.Uint64() {
+	if finalBlock.NumberU64() == 0 {
 		t.Fatalf("finalBlock is not correct")
 	}
-	safeBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentSafeBlock()
+	safeBlock, err := testClientVal.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+	Require(t, err)
 	if safeBlock == nil {
 		t.Fatalf("safeBlock should not be nil")
 	}
-	if testClientVal.ExecNode.MessageIndexToBlockNumber(finalityData.SafeMsgCount-1) != safeBlock.Number.Uint64() {
+	if safeBlock.NumberU64() == 0 {
 		t.Fatalf("safeBlock is not correct")
 	}
 }

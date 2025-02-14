@@ -3,16 +3,15 @@ package gethexec
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 type SyncMonitorConfig struct {
@@ -34,8 +33,6 @@ type SyncMonitor struct {
 	config    *SyncMonitorConfig
 	consensus execution.ConsensusInfo
 	exec      *ExecutionEngine
-
-	finalityData atomic.Pointer[arbutil.FinalityData]
 }
 
 func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonitor {
@@ -74,50 +71,6 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	return s.FullSyncProgressMap()
 }
 
-func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
-	finalityData := s.finalityData.Load()
-	if finalityData == nil {
-		return 0, errors.New("safe block number not synced")
-	}
-	if !finalityData.FinalitySupported {
-		return 0, headerreader.ErrBlockNumberNotSupported
-	}
-	msg := finalityData.SafeMsgCount
-
-	if s.config.SafeBlockWaitForBlockValidator {
-		if !finalityData.BlockValidatorSet {
-			return 0, errors.New("block validator not set")
-		}
-		if msg > finalityData.ValidatedMsgCount {
-			msg = finalityData.ValidatedMsgCount
-		}
-	}
-	block := s.exec.MessageIndexToBlockNumber(msg - 1)
-	return block, nil
-}
-
-func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
-	finalityData := s.finalityData.Load()
-	if finalityData == nil {
-		return 0, errors.New("finalized block number not synced")
-	}
-	if !finalityData.FinalitySupported {
-		return 0, headerreader.ErrBlockNumberNotSupported
-	}
-	msg := finalityData.FinalizedMsgCount
-
-	if s.config.FinalizedBlockWaitForBlockValidator {
-		if !finalityData.BlockValidatorSet {
-			return 0, errors.New("block validator not set")
-		}
-		if msg > finalityData.ValidatedMsgCount {
-			msg = finalityData.ValidatedMsgCount
-		}
-	}
-	block := s.exec.MessageIndexToBlockNumber(msg - 1)
-	return block, nil
-}
-
 func (s *SyncMonitor) Synced() bool {
 	if s.consensus.Synced() {
 		built, err := s.exec.HeadMessageNumber()
@@ -146,33 +99,47 @@ func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetada
 	return nil, nil
 }
 
-func (s *SyncMonitor) StoreFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
-	s.finalityData.Store(finalityData)
-
-	finalizedBlockNumber, err := s.FinalizedBlockNumber(ctx)
-	if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
-		log.Warn("Finality not supported so not setting finalized block number")
-	} else if err == nil {
-		err = s.exec.SetFinalized(finalizedBlockNumber)
-		if err != nil {
-			return err
+func (s *SyncMonitor) getFinalityBlock(
+	waitForBlockValidator bool,
+	validatedMsgCount *arbutil.MessageIndex,
+	finalityMsgCount arbutil.MessageIndex,
+) (*types.Block, error) {
+	if waitForBlockValidator {
+		if validatedMsgCount == nil {
+			return nil, errors.New("block validator not set")
+		}
+		if finalityMsgCount > *validatedMsgCount {
+			finalityMsgCount = *validatedMsgCount
 		}
 	}
-
-	safeBlockNumber, err := s.SafeBlockNumber(ctx)
-	if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
-		log.Warn("Finality not supported so not setting safe block number")
-	} else if err == nil {
-		err = s.exec.SetSafe(safeBlockNumber)
-		if err != nil {
-			return err
-		}
+	finalityBlockNumber := s.exec.MessageIndexToBlockNumber(finalityMsgCount - 1)
+	finalityBlock := s.exec.bc.GetBlockByNumber(finalityBlockNumber)
+	if finalityBlock == nil {
+		return nil, errors.New("unable to get block by number")
 	}
-
-	return nil
+	return finalityBlock, nil
 }
 
-// Used for testing
-func (s *SyncMonitor) GetFinalityData() *arbutil.FinalityData {
-	return s.finalityData.Load()
+func (s *SyncMonitor) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
+	finalizedBlock, err := s.getFinalityBlock(
+		s.config.FinalizedBlockWaitForBlockValidator,
+		finalityData.ValidatedMsgCount,
+		finalityData.FinalizedMsgCount,
+	)
+	if err != nil {
+		return err
+	}
+	s.exec.bc.SetFinalized(finalizedBlock.Header())
+
+	safeBlock, err := s.getFinalityBlock(
+		s.config.SafeBlockWaitForBlockValidator,
+		finalityData.ValidatedMsgCount,
+		finalityData.SafeMsgCount,
+	)
+	if err != nil {
+		return err
+	}
+	s.exec.bc.SetSafe(safeBlock.Header())
+
+	return nil
 }
