@@ -170,28 +170,34 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 
 	// block validator and finality data usage are enabled in second node,
 	// so finality data should be set in second node
-	finalityDataVal := testClientVal.ExecNode.SyncMonitor.GetFinalityData()
-	if finalityDataVal == nil {
+	finalityData = testClientVal.ExecNode.SyncMonitor.GetFinalityData()
+	if finalityData == nil {
 		t.Fatal("Finality data is nil")
 	}
-	if finalityDataVal.SafeMsgCount == 0 {
+	if finalityData.SafeMsgCount == 0 {
 		t.Fatal("SafeMsgCount is 0")
 	}
-	if finalityDataVal.FinalizedMsgCount == 0 {
+	if finalityData.FinalizedMsgCount == 0 {
 		t.Fatal("FinalizedMsgCount is 0")
 	}
-	if !finalityDataVal.BlockValidatorSet {
+	if !finalityData.BlockValidatorSet {
 		t.Fatal("BlockValidatorSet is false")
 	}
-	if !finalityDataVal.FinalitySupported {
+	if !finalityData.FinalitySupported {
 		t.Fatal("FinalitySupported is false")
 	}
 	finalBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentFinalBlock()
 	if finalBlock == nil {
 		t.Fatalf("finalBlock should not be nil")
 	}
+	if testClientVal.ExecNode.MessageIndexToBlockNumber(finalityData.FinalizedMsgCount-1) != finalBlock.Number.Uint64() {
+		t.Fatalf("finalBlock is not correct")
+	}
 	safeBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentSafeBlock()
 	if safeBlock == nil {
 		t.Fatalf("safeBlock should not be nil")
+	}
+	if testClientVal.ExecNode.MessageIndexToBlockNumber(finalityData.SafeMsgCount-1) != safeBlock.Number.Uint64() {
+		t.Fatalf("safeBlock is not correct")
 	}
 }
