@@ -8,6 +8,8 @@ import (
 	"errors"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -17,19 +19,36 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+type ConsensusExecutionSyncerConfig struct {
+	SyncInterval time.Duration `koanf:"sync-interval"`
+}
+
+var DefaultConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
+	SyncInterval: 1 * time.Second,
+}
+
+func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Duration(prefix+"sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval at which to push finality data from consensus to execution")
+}
+
 type ConsensusExecutionSyncer struct {
 	stopwaiter.StopWaiter
+
+	config func() *ConsensusExecutionSyncerConfig
+
 	inboxReader    *InboxReader
 	execClient     execution.ExecutionClient
 	blockValidator *staker.BlockValidator
 }
 
 func NewConsensusExecutionSyncer(
+	config func() *ConsensusExecutionSyncerConfig,
 	inboxReader *InboxReader,
 	execClient execution.ExecutionClient,
 	blockValidator *staker.BlockValidator,
 ) *ConsensusExecutionSyncer {
 	return &ConsensusExecutionSyncer{
+		config:         config,
 		inboxReader:    inboxReader,
 		execClient:     execClient,
 		blockValidator: blockValidator,
@@ -42,7 +61,6 @@ func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 }
 
 func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx context.Context) time.Duration {
-	sleepTime := time.Second
 	finalitySupported := true
 
 	safeMsgCount, err := c.inboxReader.GetSafeMsgCount(ctx)
@@ -50,7 +68,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 		finalitySupported = false
 	} else if err != nil {
 		log.Error("Error getting safe message count", "err", err)
-		return sleepTime
+		return c.config().SyncInterval
 	}
 
 	finalizedMsgCount, err := c.inboxReader.GetFinalizedMsgCount(ctx)
@@ -58,7 +76,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 		finalitySupported = false
 	} else if err != nil {
 		log.Error("Error getting finalized message count", "err", err)
-		return sleepTime
+		return c.config().SyncInterval
 	}
 
 	var validatedMsgCount arbutil.MessageIndex
@@ -83,5 +101,5 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 		log.Info("Pushed finality data from consensus to execution", "finalityData", finalityData)
 	}
 
-	return sleepTime
+	return c.config().SyncInterval
 }

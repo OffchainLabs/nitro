@@ -82,24 +82,25 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 }
 
 type Config struct {
-	Sequencer            bool                           `koanf:"sequencer"`
-	ParentChainReader    headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader          InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster          BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
-	MessagePruner        MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
-	BlockValidator       staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
-	Feed                 broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
-	Staker               legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
-	Bold                 boldstaker.BoldConfig          `koanf:"bold"`
-	SeqCoordinator       SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
-	SyncMonitor          SyncMonitorConfig              `koanf:"sync-monitor"`
-	Dangerous            DangerousConfig                `koanf:"dangerous"`
-	TransactionStreamer  TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance          MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
-	ResourceMgmt         resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
-	BlockMetadataFetcher BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
+	Sequencer                bool                           `koanf:"sequencer"`
+	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader              InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer         DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster              BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
+	MessagePruner            MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
+	BlockValidator           staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
+	Feed                     broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
+	Staker                   legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
+	Bold                     boldstaker.BoldConfig          `koanf:"bold"`
+	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
+	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
+	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
+	Dangerous                DangerousConfig                `koanf:"dangerous"`
+	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance              MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
+	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
+	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
+	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -170,28 +171,30 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
+	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
 }
 
 var ConfigDefault = Config{
-	Sequencer:            false,
-	ParentChainReader:    headerreader.DefaultConfig,
-	InboxReader:          DefaultInboxReaderConfig,
-	DelayedSequencer:     DefaultDelayedSequencerConfig,
-	BatchPoster:          DefaultBatchPosterConfig,
-	MessagePruner:        DefaultMessagePrunerConfig,
-	BlockValidator:       staker.DefaultBlockValidatorConfig,
-	Feed:                 broadcastclient.FeedConfigDefault,
-	Staker:               legacystaker.DefaultL1ValidatorConfig,
-	Bold:                 boldstaker.DefaultBoldConfig,
-	SeqCoordinator:       DefaultSeqCoordinatorConfig,
-	DataAvailability:     das.DefaultDataAvailabilityConfig,
-	SyncMonitor:          DefaultSyncMonitorConfig,
-	Dangerous:            DefaultDangerousConfig,
-	TransactionStreamer:  DefaultTransactionStreamerConfig,
-	ResourceMgmt:         resourcemanager.DefaultConfig,
-	Maintenance:          DefaultMaintenanceConfig,
-	BlockMetadataFetcher: DefaultBlockMetadataFetcherConfig,
-	SnapSyncTest:         DefaultSnapSyncConfig,
+	Sequencer:                false,
+	ParentChainReader:        headerreader.DefaultConfig,
+	InboxReader:              DefaultInboxReaderConfig,
+	DelayedSequencer:         DefaultDelayedSequencerConfig,
+	BatchPoster:              DefaultBatchPosterConfig,
+	MessagePruner:            DefaultMessagePrunerConfig,
+	BlockValidator:           staker.DefaultBlockValidatorConfig,
+	Feed:                     broadcastclient.FeedConfigDefault,
+	Staker:                   legacystaker.DefaultL1ValidatorConfig,
+	Bold:                     boldstaker.DefaultBoldConfig,
+	SeqCoordinator:           DefaultSeqCoordinatorConfig,
+	DataAvailability:         das.DefaultDataAvailabilityConfig,
+	SyncMonitor:              DefaultSyncMonitorConfig,
+	Dangerous:                DefaultDangerousConfig,
+	TransactionStreamer:      DefaultTransactionStreamerConfig,
+	ResourceMgmt:             resourcemanager.DefaultConfig,
+	Maintenance:              DefaultMaintenanceConfig,
+	BlockMetadataFetcher:     DefaultBlockMetadataFetcherConfig,
+	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
+	SnapSyncTest:             DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -788,7 +791,10 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	consensusExecutionSyncer := NewConsensusExecutionSyncer(inboxReader, exec, blockValidator)
+	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
+		return &configFetcher.Get().ConsensusExecutionSyncer
+	}
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, exec, blockValidator)
 
 	return &Node{
 		ArbDB:                    arbDb,
