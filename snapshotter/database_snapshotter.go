@@ -62,6 +62,7 @@ type SnapshotResult struct {
 type snapshotTrigger struct {
 	blockHash common.Hash
 	promise   *containers.Promise[SnapshotResult]
+	started   chan struct{}
 }
 
 type DatabaseSnapshotter struct {
@@ -86,13 +87,13 @@ func NewDatabaseSnapshotter(db ethdb.Database, bc *core.BlockChain, config *Data
 	}
 }
 
-func (s *DatabaseSnapshotter) Trigger(blockHash common.Hash) containers.PromiseInterface[SnapshotResult] {
+func (s *DatabaseSnapshotter) Trigger(blockHash common.Hash, started chan struct{}) containers.PromiseInterface[SnapshotResult] {
 	if !s.Started() {
 		return containers.NewReadyPromise(SnapshotResult{}, errors.New("not started"))
 	}
 	promise := containers.NewPromise[SnapshotResult](nil)
 	select {
-	case s.triggerChan <- snapshotTrigger{blockHash: blockHash, promise: &promise}:
+	case s.triggerChan <- snapshotTrigger{blockHash: blockHash, promise: &promise, started: started}:
 	default:
 		promise.ProduceError(errors.New("already scheduled"))
 	}
@@ -144,7 +145,7 @@ func (s *DatabaseSnapshotter) Start(ctx context.Context) {
 				trigger.blockHash = header.Hash()
 			}
 			log.Info("Creating database snapshot", "blockHash", trigger.blockHash)
-			result, err := s.CreateSnapshot(ctx, trigger.blockHash)
+			result, err := s.CreateSnapshot(ctx, trigger.blockHash, trigger.started)
 			if err != nil {
 				log.Error("Database snapshot failed", "err", err)
 				if trigger.promise != nil {
@@ -256,7 +257,7 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 	return nil
 }
 
-func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash common.Hash) (*SnapshotResult, error) {
+func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash common.Hash, started chan struct{}) (*SnapshotResult, error) {
 	if s.bc.StateCache().TrieDB().Scheme() != rawdb.HashScheme {
 		return nil, errors.New("unsupported state scheme, database snapshotter supports only hash state scheme")
 	}
@@ -309,6 +310,9 @@ func (s *DatabaseSnapshotter) CreateSnapshot(ctx context.Context, blockHash comm
 	lastHeader, err := s.findLastAvailableState(ctx, triedb, blockHash)
 	if err != nil {
 		return nil, err
+	}
+	if started != nil {
+		started <- struct{}{}
 	}
 	workersCtx, cancelWorkers := context.WithCancel(ctx)
 	defer cancelWorkers()

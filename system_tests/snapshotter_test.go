@@ -96,10 +96,26 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	l2rpc := builder.L2.Stack.Attach()
 	err = l2rpc.CallContext(ctx, nil, "snapshotter_snapshot", rpc.LatestBlockNumber)
 	Require(t, err)
-	time.Sleep(1 * time.Second)
-	// TODO poll result
+
 	var result snapshotter.SnapshotResult
-	err = l2rpc.CallContext(ctx, nil, "snapshotter_result", false)
+	err = l2rpc.CallContext(ctx, &result, "snapshotter_result", false)
+	for err != nil && strings.Contains(err.Error(), "not ready") {
+		err = l2rpc.CallContext(ctx, &result, "snapshotter_result", false)
+		time.Sleep(10 * time.Millisecond)
+	}
+	for err != nil && !strings.Contains(err.Error(), "not ready") {
+		Fatal(t, "snapshotter_result returned unexpected error, err:", err)
+	}
+	// TODO validate SnapshotResult
+	err = l2rpc.CallContext(ctx, &result, "snapshotter_snapshot", rpc.LatestBlockNumber)
+	if err == nil {
+		Fatal(t, "should fail when we already have a result")
+	}
+	if !strings.Contains(err.Error(), "needs rewind") {
+		Fatal(t, "failed with unexpected error when output database already exists, err: ", err)
+	}
+	// rewind
+	err = l2rpc.CallContext(ctx, &result, "snapshotter_result", true)
 	Require(t, err)
 
 	err = l2rpc.CallContext(ctx, &result, "snapshotter_snapshot", rpc.LatestBlockNumber)
@@ -109,6 +125,7 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	if !strings.Contains(err.Error(), "already exists") {
 		Fatal(t, "failed with unexpected error when output database already exists, err: ", err)
 	}
+
 	l2cleanupDone = true
 	builder.L2.cleanup()
 	t.Log("stopped l2 node")

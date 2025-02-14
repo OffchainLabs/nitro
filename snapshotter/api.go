@@ -56,6 +56,7 @@ func (a *DatabaseSnapshotterAPI) Snapshot(ctx context.Context, number rpc.BlockN
 		return fmt.Errorf("block #%d not found", number)
 	}
 	var promise containers.PromiseInterface[SnapshotResult]
+	started := make(chan struct{}, 1)
 	err := func() error {
 		a.promiseLock.Lock()
 		defer a.promiseLock.Unlock()
@@ -65,7 +66,7 @@ func (a *DatabaseSnapshotterAPI) Snapshot(ctx context.Context, number rpc.BlockN
 			}
 			return errors.New("already running")
 		}
-		promise = a.snapshotter.Trigger(header.Hash())
+		promise = a.snapshotter.Trigger(header.Hash(), started)
 		a.promise = promise
 		return nil
 	}()
@@ -78,6 +79,7 @@ func (a *DatabaseSnapshotterAPI) Snapshot(ctx context.Context, number rpc.BlockN
 	case <-promise.ReadyChan():
 		_, err := promise.Current()
 		return err
+	case <-started:
 	case <-timer.C:
 	}
 	return nil
