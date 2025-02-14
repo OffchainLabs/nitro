@@ -185,7 +185,11 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 	if lastNumber < genesisNumber {
 		return fmt.Errorf("failed to export blocks: last block (number %v) older then genesis (number %v)", lastNumber, genesisNumber)
 	}
-	number := genesisNumber
+	// even if genesisNumber > 0, freezer still expects blocks from block 0
+	// currently, GenesisBlockNum != 0 only for Arb1 Nitro and nitro nodes have the Arb1 Classic (pre-nitro) blocks stored,
+	// so it makes sense to export also blocks from range [0, genesisNumber)
+	// if we needed to export only [genesisNumber, ...] blocks we'd need to sort out the freezer's assumption and update progress calculation
+	number := uint64(0)
 	log.Info("exporting blocks", "blockFrom", number, "blockTo", lastNumber)
 	startedAt := time.Now()
 	lastLog := time.Now()
@@ -226,9 +230,9 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 		if err := batch.ExportBlockReceipts(number, hash, receiptsRlp); err != nil {
 			return fmt.Errorf("failed to export block %v (hash %v) receipts: %w", number, hash, err)
 		}
-		if time.Since(lastLog) > time.Minute && number != genesisNumber {
+		if time.Since(lastLog) > time.Minute {
 			elapsed := time.Since(startedAt)
-			log.Info("exporting blocks", "currentBlock", number, "blockTo", lastNumber, "elapsed", elapsed, "eta", time.Duration(float32(elapsed)*float32(lastNumber-number)/float32(number-genesisNumber)))
+			log.Info("exporting blocks", "currentBlock", number, "blockTo", lastNumber, "elapsed", elapsed, "eta", time.Duration(float32(elapsed)*float32(lastNumber-number+1)/float32(number+1)))
 			lastLog = time.Now()
 		}
 		number++
@@ -240,9 +244,6 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 	if block0Hash == (common.Hash{}) {
 		return fmt.Errorf("block 0 canonical hash not found")
 	}
-	if err := batch.ExportCanonicalHash(0, block0Hash); err != nil {
-		return fmt.Errorf("failed to export canonical hash for block 0: %w", err)
-	}
 	chainConfigJson, err := s.db.Get(rawdb.ConfigKey(block0Hash))
 	if err != nil {
 		return fmt.Errorf("failed to read stored chain config, block 0 hash %v, err: %w", block0Hash, err)
@@ -253,7 +254,7 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 	if err := batch.ExportChainConfig(block0Hash, chainConfigJson); err != nil {
 		return fmt.Errorf("failed to export chain config: %w", err)
 	}
-	log.Info("exported blocks", "blocks", lastNumber-genesisNumber+1, "elapsed", time.Since(startedAt))
+	log.Info("exported blocks", "blocks", lastNumber+1, "elapsed", time.Since(startedAt))
 	return nil
 }
 
