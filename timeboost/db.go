@@ -1,6 +1,7 @@
 package timeboost
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
@@ -120,7 +121,7 @@ func (d *SqliteDatabase) InsertBid(b *ValidatedBid) error {
 		"AuctionContractAddress": b.AuctionContractAddress.Hex(),
 		"Round":                  b.Round,
 		"Amount":                 b.Amount.String(),
-		"Signature":              b.Signature,
+		"Signature":              hex.EncodeToString(b.Signature),
 	}
 	_, err := d.sqlDB.NamedExec(query, params)
 	if err != nil {
