@@ -59,7 +59,7 @@ func (a *DatabaseSnapshotterAPI) Snapshot(ctx context.Context, number rpc.BlockN
 	err := func() error {
 		a.promiseLock.Lock()
 		defer a.promiseLock.Unlock()
-		if promise != nil {
+		if a.promise != nil {
 			if a.promise.Ready() {
 				return errors.New("needs rewind")
 			}
