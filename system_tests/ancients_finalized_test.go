@@ -120,14 +120,22 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	testClientVal, cleanupVal := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer cleanupVal()
 
-	// final block should be nil in before generating blocks
+	// final and safe blocks should be nil in before generating blocks
 	finalBlock := builder.L2.ExecNode.Backend.BlockChain().CurrentFinalBlock()
 	if finalBlock != nil {
 		t.Fatalf("finalBlock should be nil, but got %v", finalBlock)
 	}
+	safeBlock := builder.L2.ExecNode.Backend.BlockChain().CurrentSafeBlock()
+	if safeBlock != nil {
+		t.Fatalf("safeBlock should be nil, but got %v", safeBlock)
+	}
 	finalBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentFinalBlock()
 	if finalBlock != nil {
 		t.Fatalf("finalBlock should be nil, but got %v", finalBlock)
+	}
+	safeBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentSafeBlock()
+	if safeBlock != nil {
+		t.Fatalf("safeBlock should be nil, but got %v", safeBlock)
 	}
 
 	builder.L2Info.GenerateAccount("User2")
@@ -155,6 +163,10 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	if finalBlock != nil {
 		t.Fatalf("finalBlock should be nil, but got %v", finalBlock)
 	}
+	safeBlock = builder.L2.ExecNode.Backend.BlockChain().CurrentSafeBlock()
+	if safeBlock != nil {
+		t.Fatalf("safeBlock should be nil, but got %v", safeBlock)
+	}
 
 	// block validator and finality data usage are enabled in second node,
 	// so finality data should be set in second node
@@ -177,5 +189,9 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	finalBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentFinalBlock()
 	if finalBlock == nil {
 		t.Fatalf("finalBlock should not be nil")
+	}
+	safeBlock = testClientVal.ExecNode.Backend.BlockChain().CurrentSafeBlock()
+	if safeBlock == nil {
+		t.Fatalf("safeBlock should not be nil")
 	}
 }
