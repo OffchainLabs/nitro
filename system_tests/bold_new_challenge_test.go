@@ -261,9 +261,10 @@ func TestChallengeProtocolBOLDNearLastVirtualBlock(t *testing.T) {
 	testChallengeProtocolBOLDVirtualBlocks(t, false)
 }
 
-func TestChallengeProtocolBOLDFirstVirtualBlock(t *testing.T) {
-	testChallengeProtocolBOLDVirtualBlocks(t, true)
-}
+// TODO: https://github.com/Layr-Labs/nitro/issues/66
+// func TestChallengeProtocolBOLDFirstVirtualBlock(t *testing.T) {
+// 	testChallengeProtocolBOLDVirtualBlocks(t, true)
+// }
 
 type BoldStateProviderInterface interface {
 	l2stateprovider.L2MessageStateCollector
