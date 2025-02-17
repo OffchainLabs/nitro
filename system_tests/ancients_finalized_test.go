@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -38,7 +37,7 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	// The procedure that periodically pushes finality data, from consensus to execution,
-	// will not be able to get the finalized block number since UseFinalityData is false.
+	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, ExecutionEngine will not be able to move data to ancients by itself,
 	// at least while HEAD is smaller than the params.FullImmutabilityThreshold const defined in go-ethereum.
 	// In that way we can control in this test which blocks are moved to ancients by calling ExecEngine.SetFinalized.
@@ -100,10 +99,9 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	// The procedure that periodically pushes finality data, from consensus to execution,
-	// will not be able to get the finalized block number since UseFinalityData is false.
-	// Therefore, with UseFinalityData set to false, ExecutionEngine will not be able to move data to ancients by itself,
-	// at least while HEAD is smaller than the params.FullImmutabilityThreshold const defined in go-ethereum.
-	// In that way we can control in this test which blocks are moved to ancients by calling ExecEngine.SetFinalized.
+	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
+	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
+	// In that way we can control in this test which finality data is pushed to from Consentus to Execution by calling SyncMonitor.SetFinalityData.
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
 	builder.execConfig.SyncMonitor.SafeBlockWaitForBlockValidator = true
 	builder.execConfig.SyncMonitor.FinalizedBlockWaitForBlockValidator = true
@@ -111,11 +109,9 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	nodeConfig2nd := arbnode.ConfigDefaultL1NonSequencerTest()
-	execConfig2nd := ExecConfigDefaultTest(t)
-	builder.execConfig.SyncMonitor.SafeBlockWaitForBlockValidator = true
-	builder.execConfig.SyncMonitor.FinalizedBlockWaitForBlockValidator = true
-	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2nd, execConfig: execConfig2nd})
+	nodeConfig2ndNode := arbnode.ConfigDefaultL1NonSequencerTest()
+	execConfig2ndNode := ExecConfigDefaultTest(t)
+	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2ndNode, execConfig: execConfig2ndNode})
 	defer cleanup2ndNode()
 
 	// Creates at least 20 L2 blocks
@@ -158,7 +154,6 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 		t.Fatalf("finalBlock should not be nil")
 	}
 	if finalBlock.NumberU64() != uint64(finalityData.FinalizedMsgCount-1) {
-		log.Error("finalityData", "finalBlock", finalBlock.NumberU64(), "finalityData.FinalizedMsgCount", finalityData.FinalizedMsgCount-1)
 		t.Fatalf("finalBlock is not correct")
 	}
 	safeBlock, err = testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
@@ -168,6 +163,16 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	}
 	if safeBlock.NumberU64() != uint64(finalityData.SafeMsgCount-1) {
 		t.Fatalf("safeBlock is not correct")
+	}
+
+	// if validatedMsgCount is nil, error should be returned if waitForBlockValidator is set to true
+	finalityData.ValidatedMsgCount = nil
+	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &finalityData)
+	if err == nil {
+		t.Fatalf("err should not be nil")
+	}
+	if err.Error() != "block validator not set" {
+		t.Fatalf("err is not correct")
 	}
 }
 
@@ -182,9 +187,9 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	nodeConfig2nd := arbnode.ConfigDefaultL1NonSequencerTest()
-	nodeConfig2nd.ParentChainReader.UseFinalityData = true
-	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2nd})
+	nodeConfig2ndNode := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfig2ndNode.ParentChainReader.UseFinalityData = true
+	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2ndNode})
 	defer cleanup2ndNode()
 
 	ensureFinalizedBlockDoesNotExist := func(testClient *TestClient, scenario string) {
