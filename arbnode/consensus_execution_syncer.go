@@ -28,7 +28,7 @@ var DefaultConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
 }
 
 func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Duration(prefix+"sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality data is pushed from consensus to execution")
+	f.Duration(prefix+".sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality data is pushed from consensus to execution")
 }
 
 type ConsensusExecutionSyncer struct {
