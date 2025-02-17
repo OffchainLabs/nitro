@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -73,14 +72,11 @@ func (a *DatabaseSnapshotterAPI) Snapshot(ctx context.Context, number rpc.BlockN
 	if err != nil {
 		return err
 	}
-	timer := time.NewTicker(5 * time.Second)
-	defer timer.Stop()
 	select {
 	case <-promise.ReadyChan():
 		_, err := promise.Current()
 		return err
 	case <-started:
-	case <-timer.C:
 	}
 	return nil
 }
