@@ -27,8 +27,7 @@ jobs:
           declare -Ar exceptions=(
             [contracts]=origin/v2-main
             [nitro-testnode]=origin/master
-
-            #TODO Rachel to check these are the intended branches.
+            [bold]=origin/main
             [arbitrator/langs/c]=origin/vm-storage-cache
             [arbitrator/tools/wasmer]=origin/stylus
           )
