@@ -254,6 +254,9 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 	if err := batch.ExportChainConfig(block0Hash, chainConfigJson); err != nil {
 		return fmt.Errorf("failed to export chain config: %w", err)
 	}
+	if err := batch.Flush(); err != nil {
+		return err
+	}
 	log.Info("exported blocks", "blocks", lastNumber+1, "elapsed", time.Since(startedAt))
 	return nil
 }
