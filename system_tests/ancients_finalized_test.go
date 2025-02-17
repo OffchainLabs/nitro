@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/util/testhelpers/github"
-	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func generateBlocks(t *testing.T, ctx context.Context, builder *NodeBuilder, testClient2ndNode *TestClient, transactions int) {
@@ -92,6 +92,85 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	}
 }
 
+func TestFinalityDataWaitForBlockValidator(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// The procedure that periodically pushes finality data, from consensus to execution,
+	// will not be able to get the finalized block number since UseFinalityData is false.
+	// Therefore, with UseFinalityData set to false, ExecutionEngine will not be able to move data to ancients by itself,
+	// at least while HEAD is smaller than the params.FullImmutabilityThreshold const defined in go-ethereum.
+	// In that way we can control in this test which blocks are moved to ancients by calling ExecEngine.SetFinalized.
+	builder.nodeConfig.ParentChainReader.UseFinalityData = false
+	builder.execConfig.SyncMonitor.SafeBlockWaitForBlockValidator = true
+	builder.execConfig.SyncMonitor.FinalizedBlockWaitForBlockValidator = true
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	nodeConfig2nd := arbnode.ConfigDefaultL1NonSequencerTest()
+	execConfig2nd := ExecConfigDefaultTest(t)
+	builder.execConfig.SyncMonitor.SafeBlockWaitForBlockValidator = true
+	builder.execConfig.SyncMonitor.FinalizedBlockWaitForBlockValidator = true
+	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2nd, execConfig: execConfig2nd})
+	defer cleanup2ndNode()
+
+	// Creates at least 20 L2 blocks
+	builder.L2Info.GenerateAccount("User2")
+	generateBlocks(t, ctx, builder, testClient2ndNode, 20)
+
+	validatedMsgCount := arbutil.MessageIndex(7)
+	finalityData := arbutil.FinalityData{
+		FinalizedMsgCount: 10,
+		SafeMsgCount:      15,
+		ValidatedMsgCount: &validatedMsgCount,
+	}
+
+	// wait for block validator is set to true in first node
+	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &finalityData)
+	Require(t, err)
+	finalBlock, err := builder.L2.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+	Require(t, err)
+	if finalBlock == nil {
+		t.Fatalf("finalBlock should not be nil")
+	}
+	if finalBlock.NumberU64() != builder.L2.ExecNode.MessageIndexToBlockNumber(validatedMsgCount-1) {
+		t.Fatalf("finalBlock is not correct")
+	}
+	safeBlock, err := builder.L2.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+	Require(t, err)
+	if safeBlock == nil {
+		t.Fatalf("safeBlock should not be nil")
+	}
+	if safeBlock.NumberU64() != builder.L2.ExecNode.MessageIndexToBlockNumber(validatedMsgCount-1) {
+		t.Fatalf("safeBlock is not correct")
+	}
+
+	// wait for block validator is no set to true in second node
+	err = testClient2ndNode.ExecNode.SyncMonitor.SetFinalityData(ctx, &finalityData)
+	Require(t, err)
+	finalBlock, err = testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+	Require(t, err)
+	if finalBlock == nil {
+		t.Fatalf("finalBlock should not be nil")
+	}
+	if finalBlock.NumberU64() != uint64(finalityData.FinalizedMsgCount-1) {
+		log.Error("finalityData", "finalBlock", finalBlock.NumberU64(), "finalityData.FinalizedMsgCount", finalityData.FinalizedMsgCount-1)
+		t.Fatalf("finalBlock is not correct")
+	}
+	safeBlock, err = testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+	Require(t, err)
+	if safeBlock == nil {
+		t.Fatalf("safeBlock should not be nil")
+	}
+	if safeBlock.NumberU64() != uint64(finalityData.SafeMsgCount-1) {
+		t.Fatalf("safeBlock is not correct")
+	}
+}
+
 func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	t.Parallel()
 
@@ -100,27 +179,16 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
-	builder.nodeConfig.BlockValidator.Enable = false
-	// For now PathDB is not supported when using block validation
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
-	validatorConfig.ParentChainReader.UseFinalityData = true
-	validatorConfig.BlockValidator.Enable = true
-	validatorConfig.BlockValidator.RedisValidationClientConfig = redis.ValidationClientConfig{}
-
-	cr, err := github.LatestConsensusRelease(context.Background())
-	Require(t, err)
-	machPath := populateMachineDir(t, cr)
-	AddValNode(t, ctx, validatorConfig, true, "", machPath)
-
-	testClientVal, cleanupVal := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
-	defer cleanupVal()
+	nodeConfig2nd := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfig2nd.ParentChainReader.UseFinalityData = true
+	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2nd})
+	defer cleanup2ndNode()
 
 	ensureFinalizedBlockDoesNotExist := func(testClient *TestClient, scenario string) {
-		_, err = testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+		_, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
 		if err == nil {
 			t.Fatalf("err should not be nil, scenario: %v", scenario)
 		}
@@ -129,7 +197,7 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 		}
 	}
 	ensureSafeBlockDoesNotExist := func(testClient *TestClient, scenario string) {
-		_, err = testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+		_, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
 		if err == nil {
 			t.Fatalf("err should not be nil, scenario: %v", scenario)
 		}
@@ -141,23 +209,21 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	// final and safe blocks shouldn't exist before generating blocks
 	ensureFinalizedBlockDoesNotExist(builder.L2, "first node before generating blocks")
 	ensureSafeBlockDoesNotExist(builder.L2, "first node before generating blocks")
-	ensureFinalizedBlockDoesNotExist(testClientVal, "val node before generating blocks")
-	ensureSafeBlockDoesNotExist(testClientVal, "val node before generating blocks")
+	ensureFinalizedBlockDoesNotExist(testClient2ndNode, "2nd node before generating blocks")
+	ensureSafeBlockDoesNotExist(testClient2ndNode, "2nd node before generating blocks")
 
 	builder.L2Info.GenerateAccount("User2")
-	generateBlocks(t, ctx, builder, testClientVal, 100)
+	generateBlocks(t, ctx, builder, testClient2ndNode, 100)
 
 	// wait for finality data to be updated in execution side
 	time.Sleep(time.Second * 20)
 
-	// block validator and finality data usage are disabled in first node,
-	// so finality data should not be set in first node
+	// finality data usage is disabled in first node, so finality data should not be set in first node
 	ensureFinalizedBlockDoesNotExist(builder.L2, "first node after generating blocks")
 	ensureSafeBlockDoesNotExist(builder.L2, "first node after generating blocks")
 
-	// block validator and finality data usage are enabled in second node,
-	// so finality data should be set in second node
-	finalBlock, err := testClientVal.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+	// finality data usage is enabled in second node, so finality data should be set in second node
+	finalBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
 	Require(t, err)
 	if finalBlock == nil {
 		t.Fatalf("finalBlock should not be nil")
@@ -165,7 +231,7 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	if finalBlock.NumberU64() == 0 {
 		t.Fatalf("finalBlock is not correct")
 	}
-	safeBlock, err := testClientVal.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+	safeBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
 	Require(t, err)
 	if safeBlock == nil {
 		t.Fatalf("safeBlock should not be nil")
