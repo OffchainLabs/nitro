@@ -55,7 +55,7 @@ func NewBlockMetadataFetcher(ctx context.Context, c BlockMetadataFetcherConfig, 
 	var trackBlockMetadataFrom arbutil.MessageIndex
 	var err error
 	if startPos != 0 {
-		trackBlockMetadataFrom, err = exec.BlockNumberToMessageIndex(startPos)
+		trackBlockMetadataFrom, err = exec.BlockNumberToMessageIndex(startPos).Await(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -83,11 +83,11 @@ func (b *BlockMetadataFetcher) fetch(ctx context.Context, fromBlock, toBlock uin
 	return result, nil
 }
 
-func (b *BlockMetadataFetcher) persistBlockMetadata(query []uint64, result []gethexec.NumberAndBlockMetadata) error {
+func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query []uint64, result []gethexec.NumberAndBlockMetadata) error {
 	batch := b.db.NewBatch()
 	queryMap := util.ArrayToSet(query)
 	for _, elem := range result {
-		pos, err := b.exec.BlockNumberToMessageIndex(elem.BlockNumber)
+		pos, err := b.exec.BlockNumberToMessageIndex(elem.BlockNumber).Await(ctx)
 		if err != nil {
 			return err
 		}
@@ -132,7 +132,7 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 			log.Error("Error getting result from bulk blockMetadata API", "err", err)
 			return false
 		}
-		if err = b.persistBlockMetadata(query, result); err != nil {
+		if err = b.persistBlockMetadata(ctx, query, result); err != nil {
 			log.Error("Error committing result from bulk blockMetadata API to ArbDB", "err", err)
 			return false
 		}

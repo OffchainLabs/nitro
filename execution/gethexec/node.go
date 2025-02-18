@@ -487,8 +487,8 @@ func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageInde
 	blockNum := n.ExecEngine.MessageIndexToBlockNumber(messageNum)
 	return containers.NewReadyPromise(blockNum, nil)
 }
-func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
-	return n.ExecEngine.BlockNumberToMessageIndex(blockNum)
+func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(n.ExecEngine.BlockNumberToMessageIndex(blockNum))
 }
 
 func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {

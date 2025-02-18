@@ -102,6 +102,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func NewTransactionStreamer(
+	ctx context.Context,
 	db ethdb.Database,
 	chainConfig *params.ChainConfig,
 	exec execution.ExecutionClient,
@@ -125,7 +126,7 @@ func NewTransactionStreamer(
 		return nil, err
 	}
 	if config().TrackBlockMetadataFrom != 0 {
-		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom)
+		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
 		if err != nil {
 			return nil, err
 		}

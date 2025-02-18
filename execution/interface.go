@@ -34,7 +34,7 @@ type ExecutionClient interface {
 	HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex]
 	ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
-	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
+	BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex]
 	SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 

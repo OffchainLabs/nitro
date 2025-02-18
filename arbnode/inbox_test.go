@@ -98,15 +98,15 @@ func (w *execClientWrapper) MessageIndexToBlockNumber(messageNum arbutil.Message
 	return containers.NewReadyPromise(w.ExecutionEngine.MessageIndexToBlockNumber(messageNum), nil)
 }
 
-func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
-	return w.ExecutionEngine.BlockNumberToMessageIndex(blockNum)
+func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(w.ExecutionEngine.BlockNumberToMessageIndex(blockNum))
 }
 
 func (w *execClientWrapper) StopAndWait() containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
+func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 
 	initData := statetransfer.ArbosInitializationInfo{
@@ -140,7 +140,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 	execSeq := &execClientWrapper{execEngine, t}
-	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
+	inbox, err := NewTransactionStreamer(ctx, arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -164,10 +164,11 @@ type blockTestState struct {
 func TestTransactionStreamer(t *testing.T) {
 	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
 
-	exec, inbox, _, bc := NewTransactionStreamerForTest(t, ownerAddress)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	exec, inbox, _, bc := NewTransactionStreamerForTest(t, ctx, ownerAddress)
+
 	err := inbox.Start(ctx)
 	Require(t, err)
 	exec.Start(ctx)
