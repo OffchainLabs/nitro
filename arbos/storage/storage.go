@@ -669,7 +669,7 @@ func (sbbi *StorageBackedBigInt) Get() (*big.Int, error) {
 	if asBig.Bit(255) != 0 {
 		asBig = new(big.Int).Sub(asBig, twoToThe256)
 	}
-	return asBig, err
+	return asBig, nil
 }
 
 // Warning: this will panic if it underflows or overflows with a system burner

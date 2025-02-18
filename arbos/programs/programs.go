@@ -377,7 +377,7 @@ func (p Programs) programExists(codeHash common.Hash, time uint64, params *Stylu
 	}
 	activatedAt := program.activatedAt
 	expired := activatedAt == 0 || hoursToAge(time, activatedAt) > am.DaysToSeconds(params.ExpiryDays)
-	return program.version, expired, program.cached, err
+	return program.version, expired, program.cached, nil
 }
 
 func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *StylusParams) (*big.Int, error) {
