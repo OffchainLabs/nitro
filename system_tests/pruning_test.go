@@ -32,6 +32,14 @@ func countStateEntries(db ethdb.Iteratee) int {
 }
 
 func TestPruning(t *testing.T) {
+	testPruning(t, false)
+}
+
+func TestPruningPruneParallelStorageTraversal(t *testing.T) {
+	testPruning(t, true)
+}
+
+func testPruning(t *testing.T, pruneParallelStorageTraversal bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -91,6 +99,7 @@ func TestPruning(t *testing.T) {
 
 		initConfig := conf.InitConfigDefault
 		initConfig.Prune = "full"
+		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
 		err = pruning.PruneChainDb(ctx, chainDb, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false)
