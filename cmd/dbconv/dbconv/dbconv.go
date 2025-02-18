@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/util/dbutil"
 )
 
@@ -25,7 +26,7 @@ func NewDBConverter(config *DBConvConfig) *DBConverter {
 	}
 }
 
-func openDB(config *DBConfig, name string, readonly bool) (ethdb.Database, error) {
+func openDB(config *conf.DBConfig, name string, readonly bool) (ethdb.Database, error) {
 	db, err := rawdb.Open(rawdb.OpenOptions{
 		Type:      config.DBEngine,
 		Directory: config.Data,
