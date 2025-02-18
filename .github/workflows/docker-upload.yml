@@ -1,120 +1,114 @@
 name: Build and Publish Docker Image
+
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - eigenda
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-linux-amd64:
+  build:
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'linux-2xl' || 'linux-xl-arm' }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+  
+      - name: Login to Github Container Repo
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner  }}
+          password: ${{ secrets.GITHUB_TOKEN  }}
+
+      - name: Build nitro-node image
+        uses: ./.github/actions/docker-image
+        with:
+          context: .
+          file: Dockerfile
+          images: ghcr.io/layr-labs/nitro/nitro-node
+          target: nitro-node
+          platforms: ${{ matrix.platform }}
+
+      - name: Build nitro-node-dev image
+        uses: ./.github/actions/docker-image
+        id: nitro-node-dev
+        with:
+          context: .
+          file: Dockerfile
+          images: ghcr.io/layr-labs/nitro/nitro-node-dev
+          target: nitro-node-dev
+          platforms: ${{ matrix.platform }}
+  
+  merge_into_multiplatform_images:
+    needs:
+      - build
+    strategy:
+      matrix:
+        target: [nitro-node, nitro-node-dev]
+        include:
+          - target: nitro-node
+            image: ghcr.io/layr-labs/nitro/nitro-node
+          - target: nitro-node-dev
+            image: ghcr.io/layr-labs/nitro/nitro-node-dev
+
     runs-on: linux-2xl
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          install: true
 
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache-amd64
-          key: linux-amd64-buildx-${{ hashFiles('Dockerfile') }}
-          restore-keys: linux-amd64-buildx-
-
-      - name: Login to GitHub Container Registry
+      - name: Login to Github Container Repo
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.repository_owner  }}
+          password: ${{ secrets.GITHUB_TOKEN  }}
+
+      - name: Download digest amd64
+        uses: actions/download-artifact@v4
+        with:
+          name: "${{ matrix.target }}-digests-${{ github.run_number }}-amd64"
+          path: "${{ runner.temp }}/${{ matrix.target }}-${{ github.run_number }}-digests"
+
+      - name: Download digest arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: "${{ matrix.target }}-digests-${{ github.run_number }}-arm64"
+          path: "${{ runner.temp }}/${{ matrix.target }}-${{ github.run_number }}-digests"
 
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/${{ github.repository_owner }}/nitro-eigenda
-          tags: |
-            ${{ github.ref_name }}-linux-amd64
-            latest-linux-amd64
+          images: ${{ matrix.image }}
 
-      - name: Build and push for linux/amd64
-        uses: docker/build-push-action@v5
-        with:
-          platform: linux/amd64
-          target: nitro-node
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=local,src=/tmp/.buildx-cache-amd64
-          cache-to: type=local,dest=/tmp/.buildx-cache-amd64-new,mode=max
-
-      - name: Move cache
+      - name: Create manifest list and push
+        working-directory: "${{ runner.temp }}/${{ matrix.target }}-${{ github.run_number }}-digests"
         run: |
-          rm -rf /tmp/.buildx-cache-amd64
-          mv /tmp/.buildx-cache-amd64-new /tmp/.buildx-cache-amd64
+          # Count the number of files in the directory
+          file_count=$(find . -type f | wc -l)
 
-  build-linux-arm64:
-    runs-on: linux-xl-arm
+          if [ "$file_count" -ne 2 ]; then
+            echo "Should have exactly 2 digests to combine, something went wrong"
+            ls -lah
+            exit 1
+          fi
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          install: true
-
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache-arm64
-          key: linux-arm64-buildx-${{ hashFiles('Dockerfile') }}
-          restore-keys: linux-arm64-buildx-
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/${{ github.repository_owner }}/nitro-eigenda
-          tags: |
-            ${{ github.ref_name }}-linux-arm64
-            latest-linux-arm64
-
-      - name: Build and push for linux/arm64
-        uses: docker/build-push-action@v5
-        with:
-          platform: linux/arm64/v8
-          target: nitro-node
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=local,src=/tmp/.buildx-cache-arm64
-          cache-to: type=local,dest=/tmp/.buildx-cache-arm64-new,mode=max
-
-      - name: Move cache
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ matrix.image }}@sha256:%s ' *)
+      - name: Inspect image
         run: |
-          rm -rf /tmp/.buildx-cache-arm64
-          mv /tmp/.buildx-cache-arm64-new /tmp/.buildx-cache-arm64
+          docker buildx imagetools inspect ${{ matrix.image }}:${{ steps.meta.outputs.version }}
