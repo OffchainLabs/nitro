@@ -163,7 +163,7 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	builder.nodeConfig.ParentChainReader.Enable = false
 	builder.withL1 = false
 	builder.RestartL2Node(t)
-	t.Log("restarted the node")
+	t.Log("restarted l2 node without l1 connection")
 
 	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 	triedb := bc.StateCache().TrieDB()

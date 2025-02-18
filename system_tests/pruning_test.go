@@ -46,14 +46,8 @@ func testPruning(t *testing.T, pruneParallelStorageTraversal bool) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
-	_ = builder.Build(t)
-	l2cleanupDone := false
-	defer func() {
-		if !l2cleanupDone {
-			builder.L2.cleanup()
-		}
-		builder.L1.cleanup()
-	}()
+	cleanup := builder.Build(t)
+	defer cleanup()
 	builder.L2Info.GenerateAccount("User2")
 	var txs []*types.Transaction
 	for i := uint64(0); i < 200; i++ {
@@ -68,8 +62,8 @@ func testPruning(t *testing.T, pruneParallelStorageTraversal bool) {
 	}
 	lastBlock, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
-	l2cleanupDone = true
 	builder.L2.cleanup()
+	builder.L2.cleanup = func() {}
 	t.Log("stopped l2 node")
 
 	func() {
@@ -120,21 +114,22 @@ func testPruning(t *testing.T, pruneParallelStorageTraversal bool) {
 		}
 	}()
 
-	// we pass original l2StackConfig to 2nd node to start from the same data dir
-	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
-	defer cleanup()
+	builder.nodeConfig.ParentChainReader.Enable = false
+	builder.withL1 = false
+	builder.RestartL2Node(t)
+	t.Log("restarted L2 node without L1 connection")
 
 	currentBlock := uint64(0)
 	// wait for the chain to catch up
 	for currentBlock < lastBlock {
-		currentBlock, err = testClient.Client.BlockNumber(ctx)
+		currentBlock, err = builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	currentBlock, err = testClient.Client.BlockNumber(ctx)
+	currentBlock, err = builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
-	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
+	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 	triedb := bc.StateCache().TrieDB()
 	var start uint64
 	if currentBlock+1 >= builder.execConfig.Caching.BlockCount {
@@ -156,8 +151,8 @@ func testPruning(t *testing.T, pruneParallelStorageTraversal bool) {
 	}
 
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
-	err = testClient.Client.SendTransaction(ctx, tx)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = testClient.EnsureTxSucceeded(tx)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 }
