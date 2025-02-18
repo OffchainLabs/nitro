@@ -112,10 +112,21 @@ func (b *BlockMetadataFetcher) persistBlockMetadata(query []uint64, result []get
 
 func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	handleQuery := func(query []uint64) bool {
+		fromBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])).Await(ctx)
+		if err != nil {
+			log.Error("Error getting fromBlock", "err", err)
+			return false
+		}
+		toBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1])).Await(ctx)
+		if err != nil {
+			log.Error("Error getting toBlock", "err", err)
+			return false
+		}
+
 		result, err := b.fetch(
 			ctx,
-			b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])),
-			b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1])),
+			fromBlock,
+			toBlock,
 		)
 		if err != nil {
 			log.Error("Error getting result from bulk blockMetadata API", "err", err)

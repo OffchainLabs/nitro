@@ -483,8 +483,9 @@ func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClie
 	n.SyncMonitor.SetConsensusInfo(consensus)
 }
 
-func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
-	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
+func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	blockNum := n.ExecEngine.MessageIndexToBlockNumber(messageNum)
+	return containers.NewReadyPromise(blockNum, nil)
 }
 func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
 	return n.ExecEngine.BlockNumberToMessageIndex(blockNum)

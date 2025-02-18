@@ -78,16 +78,12 @@ func (w *execClientWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbosty
 	return containers.NewReadyPromise(w.ExecutionEngine.DigestMessage(num, msg, msgForPrefetch))
 }
 
-func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
+func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
 	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages, oldMessages))
 }
 
 func (w *execClientWrapper) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
 	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageNumber())
-}
-
-func (w *execClientWrapper) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageNumberSync(t))
 }
 
 func (w *execClientWrapper) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
@@ -96,6 +92,14 @@ func (w *execClientWrapper) ResultAtPos(pos arbutil.MessageIndex) containers.Pro
 
 func (w *execClientWrapper) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
+func (w *execClientWrapper) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(w.ExecutionEngine.MessageIndexToBlockNumber(messageNum), nil)
+}
+
+func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
+	return w.ExecutionEngine.BlockNumberToMessageIndex(blockNum)
 }
 
 func (w *execClientWrapper) StopAndWait() containers.PromiseInterface[struct{}] {
