@@ -728,6 +728,22 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	Require(t, err)
 	colors.PrintGrey("receipt object- ", string(receiptResultRaw))
 
+	builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+	latestL2, err = builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	var receiptWithoutTimeboostEnabled []timeboostedFromReceipt
+	// #nosec G115
+	err = l2rpc.CallContext(ctx, &receiptWithoutTimeboostEnabled, "eth_getBlockReceipts", rpc.BlockNumber(latestL2))
+	Require(t, err)
+	if len(receiptWithoutTimeboostEnabled) != 2 {
+		t.Fatalf("expecting two tx receipts got: %d", len(receiptWithoutTimeboostEnabled))
+	}
+	if receiptWithoutTimeboostEnabled[0].Timeboosted == nil || *receiptWithoutTimeboostEnabled[0].Timeboosted {
+		t.Fatal("timeboosted field should exist in the receipt object of all the txs and it should be false")
+	}
+	if receiptWithoutTimeboostEnabled[1].Timeboosted == nil || *receiptWithoutTimeboostEnabled[1].Timeboosted {
+		t.Fatal("timeboosted field should exist in the receipt object of all the txs and it should be false")
+	}
 }
 
 func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
