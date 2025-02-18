@@ -36,14 +36,8 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	builder.execConfig.DatabaseSnapshotter.Threads = 32
 	snapshotDir := t.TempDir()
 	builder.execConfig.DatabaseSnapshotter.GethExporter.Output.Data = snapshotDir
-	_ = builder.Build(t)
-	l2cleanupDone := false
-	defer func() {
-		if !l2cleanupDone {
-			builder.L2.cleanup()
-		}
-		builder.L1.cleanup()
-	}()
+	cleanup := builder.Build(t)
+	defer cleanup()
 	var txes []*types.Transaction
 	var users []string
 	for i := 0; i < 16; i++ {
@@ -90,11 +84,13 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	}
 	wg.Wait()
 
-	lastBlock, err := builder.L2.Client.BlockNumber(ctx)
+	lastHeader, err := builder.L2.Client.HeaderByNumber(ctx, nil)
 	Require(t, err)
-
+	genesisHeader, err := builder.L2.Client.HeaderByNumber(ctx, common.Big0)
+	Require(t, err)
 	l2rpc := builder.L2.Stack.Attach()
-	err = l2rpc.CallContext(ctx, nil, "snapshotter_snapshot", rpc.LatestBlockNumber)
+	// #nosec G115
+	err = l2rpc.CallContext(ctx, nil, "snapshotter_snapshot", rpc.BlockNumber(lastHeader.Number.Uint64()))
 	Require(t, err)
 
 	var result snapshotter.SnapshotResult
@@ -103,10 +99,20 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		err = l2rpc.CallContext(ctx, &result, "snapshotter_result", false)
 		time.Sleep(10 * time.Millisecond)
 	}
-	for err != nil && !strings.Contains(err.Error(), "not ready") {
-		Fatal(t, "snapshotter_result returned unexpected error, err:", err)
+	Require(t, err, "snapshotter_result returned unexpected error")
+	if result.GenesisHash != genesisHeader.Hash() {
+		Fatal(t, "Unexpected result.GenesisHash, want:", genesisHeader.Hash(), ", have:", result.GenesisHash)
 	}
-	// TODO validate SnapshotResult
+	if result.GenesisNumber != 0 {
+		Fatal(t, "Unexpected result.GenesisNumber, want: 0, have:", result.GenesisNumber)
+	}
+	if result.HeadHash != lastHeader.Hash() {
+		Fatal(t, "Unexpected result.HeadHash, want:", lastHeader.Hash(), ", have:", result.HeadHash)
+	}
+	if result.HeadNumber != lastHeader.Number.Uint64() {
+		Fatal(t, "Unexpected result.HeadNumber, want:", lastHeader.Number, ", have:", result.HeadNumber)
+	}
+
 	err = l2rpc.CallContext(ctx, &result, "snapshotter_snapshot", rpc.LatestBlockNumber)
 	if err == nil {
 		Fatal(t, "should fail when we already have a result")
@@ -126,31 +132,40 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		Fatal(t, "failed with unexpected error when output database already exists, err: ", err)
 	}
 
-	l2cleanupDone = true
 	builder.L2.cleanup()
+	builder.L2.cleanup = func() {}
 	t.Log("stopped l2 node")
 
-	// replace l2chaindata database with snapshot
 	instanceDir := filepath.Join(builder.dataDir, builder.l2StackConfig.Name)
-	l2ChainDataDir := filepath.Join(instanceDir, "l2chaindata")
-	err = os.RemoveAll(l2ChainDataDir)
+	arbitrumDataDir := filepath.Join(instanceDir, "arbitrumdata")
+
+	builder.dataDir = t.TempDir()
+	builder.l2StackConfig.DataDir = builder.dataDir
+	newInstanceDir := filepath.Join(builder.dataDir, builder.l2StackConfig.Name)
+	newL2ChainDataDir := filepath.Join(newInstanceDir, "l2chaindata")
+	newArbitrumDataDir := filepath.Join(newInstanceDir, "arbitrumdata")
+	err = os.Mkdir(newInstanceDir, 0777)
 	Require(t, err)
-	err = os.Rename(snapshotDir, l2ChainDataDir)
+	// move original arbitrumdata to new dir
+	err = os.Rename(arbitrumDataDir, newArbitrumDataDir)
 	Require(t, err)
+	// move snapshot to l2chaindata
+	err = os.Rename(snapshotDir, newL2ChainDataDir)
+	Require(t, err)
+	t.Log("moved ", arbitrumDataDir, " -> ", newArbitrumDataDir)
+	t.Log("moved ", snapshotDir, " -> ", newL2ChainDataDir)
 
-	// we pass original l2StackConfig to 2nd node to start from the same data dir
-	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
-	defer cleanup()
+	// clean up previous db to be sure
+	err = os.RemoveAll(instanceDir)
+	Require(t, err)
+	t.Log("removed ", instanceDir)
 
-	currentBlock := uint64(0)
-	// wait for the chain to catch up
-	for currentBlock < lastBlock {
-		currentBlock, err = testClient.Client.BlockNumber(ctx)
-		Require(t, err)
-		time.Sleep(20 * time.Millisecond)
-	}
+	builder.nodeConfig.ParentChainReader.Enable = false
+	builder.withL1 = false
+	builder.RestartL2Node(t)
+	t.Log("restarted the node")
 
-	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
+	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 	triedb := bc.StateCache().TrieDB()
 
 	checkBlock := func(number uint64) {
@@ -227,12 +242,15 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 		}
 	}
 	currentHead := bc.CurrentBlock()
+	if currentHead.Number.Cmp(lastHeader.Number) < 0 {
+		Fatal(t, "Invalid head block after start from snapshot, want greater or equal:", lastHeader.Number, "have:", currentHead.Number)
+	}
 	// check genesis and head block state
 	checkBlock(0)
 	checkStateExists(0)
-	checkBlock(currentHead.Number.Uint64())
-	checkStateExists(currentHead.Number.Uint64())
-	for i := uint64(1); i < lastBlock; i++ {
+	checkBlock(lastHeader.Number.Uint64())
+	checkStateExists(lastHeader.Number.Uint64())
+	for i := uint64(1); i < lastHeader.Number.Uint64(); i++ {
 		checkBlock(i)
 		checkStateDoesNotExist(i)
 	}
@@ -240,8 +258,8 @@ func TestDatabsaseSnapshotter(t *testing.T) {
 	// make sure we use big enough GasFeeCap (deploying bunch of contracts in short time may bump up the gas price
 	builder.L2Info.GasPrice = new(big.Int).Mul(builder.L2Info.GasPrice, big.NewInt(100))
 	tx := builder.L2Info.PrepareTx("Owner", "user-0", builder.L2Info.TransferGas, common.Big1, nil)
-	err = testClient.Client.SendTransaction(ctx, tx)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = testClient.EnsureTxSucceeded(tx)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 }
