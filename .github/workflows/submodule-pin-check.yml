@@ -27,7 +27,7 @@ jobs:
           declare -Ar exceptions=(
             [contracts]=origin/v2-main
             [nitro-testnode]=origin/master
-            [bold]=main
+            [bold]=origin/main
             [arbitrator/langs/c]=origin/vm-storage-cache
             [arbitrator/tools/wasmer]=origin/stylus
           )
