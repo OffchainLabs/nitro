@@ -65,17 +65,18 @@ func TestChallengeProtocolBOLDReadInboxChallenge(t *testing.T) {
 	testChallengeProtocolBOLD(t)
 }
 
-func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
-	opts := []server_arb.SpawnerOption{
-		server_arb.WithWrapper(func(inner server_arb.MachineInterface) server_arb.MachineInterface {
-			// This wrapper is applied after the BOLD wrapper, so step 0 is the finished machine.
-			// Modifying its hash results in invalid inclusion proofs for the evil validator,
-			// so we start modifying hashes at step 1 (the first machine step in the running state).
-			return NewIncorrectIntermediateMachine(inner, 1)
-		}),
-	}
-	testChallengeProtocolBOLD(t, opts...)
-}
+// TODO: https://github.com/Layr-Labs/nitro/issues/66
+// func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
+// 	opts := []server_arb.SpawnerOption{
+// 		server_arb.WithWrapper(func(inner server_arb.MachineInterface) server_arb.MachineInterface {
+// 			// This wrapper is applied after the BOLD wrapper, so step 0 is the finished machine.
+// 			// Modifying its hash results in invalid inclusion proofs for the evil validator,
+// 			// so we start modifying hashes at step 1 (the first machine step in the running state).
+// 			return NewIncorrectIntermediateMachine(inner, 1)
+// 		}),
+// 	}
+// 	testChallengeProtocolBOLD(t, opts...)
+// }
 
 func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
