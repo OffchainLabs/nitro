@@ -31,11 +31,11 @@ import (
 	"github.com/offchainlabs/nitro/eigenda"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/staker"
-	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
@@ -549,7 +549,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	if err != nil {
 		Fatal(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2.ArbDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
+	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2.ArbDB, readers, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
 	if err != nil {
 		Fatal(t, err)
 	}
