@@ -18,18 +18,19 @@ jobs:
         with:
           fetch-depth: 0
           submodules: true
-          ref: "${{ github.event.pull_request.merge_commit_sha }}"
+          persist-credentials: false
+          ref: "${{ github.event.pull_request.head.sha }}"
 
       - name: Check all submodules are ancestors of origin/HEAD or configured branch
         run: |
           status_state="pending"
           declare -Ar exceptions=(
-            [contracts]=origin/develop
+            [contracts]=origin/pre-bold
             [nitro-testnode]=origin/master
-            
+
             #TODO Rachel to check these are the intended branches.
             [arbitrator/langs/c]=origin/vm-storage-cache
-            [arbitrator/tools/wasmer]=origin/adopt-v4.2.8
+            [arbitrator/tools/wasmer]=origin/stylus
           )
           divergent=0
           for mod in `git submodule --quiet foreach 'echo $name'`; do
@@ -37,7 +38,7 @@ jobs:
             if [[ -v exceptions[$mod] ]]; then
               branch=${exceptions[$mod]}
             fi
-            
+
             if ! git -C $mod merge-base --is-ancestor HEAD $branch; then
               echo $mod diverges from $branch
               divergent=1

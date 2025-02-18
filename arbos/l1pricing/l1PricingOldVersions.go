@@ -9,6 +9,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -23,7 +25,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 	l1Basefee *big.Int,
 	scenario util.TracingScenario,
 ) error {
-	if arbosVersion < 2 {
+	if arbosVersion < params.ArbosVersion_2 {
 		return ps._preVersion2_UpdateForBatchPosterSpending(statedb, evm, updateTime, currentTime, batchPoster, weiSpent, scenario)
 	}
 
@@ -68,7 +70,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 	}
 
 	// impose cap on amortized cost, if there is one
-	if arbosVersion >= 3 {
+	if arbosVersion >= params.ArbosVersion_3 {
 		amortizedCostCapBips, err := ps.AmortizedCostCapBips()
 		if err != nil {
 			return err

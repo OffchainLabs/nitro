@@ -34,7 +34,7 @@ impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
     }
 }
 
-impl<'s> JitMemAccess<'s> {
+impl JitMemAccess<'_> {
     fn view(&self) -> MemoryView {
         self.memory.view(&self.store)
     }

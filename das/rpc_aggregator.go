@@ -14,14 +14,15 @@ import (
 
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/metricsutil"
 	"github.com/offchainlabs/nitro/util/signature"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type BackendConfig struct {
@@ -83,7 +84,7 @@ func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig, signer
 	return NewAggregator(ctx, config, services)
 }
 
-func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address, signer signature.DataSignerFunc) (*Aggregator, error) {
+func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client *ethclient.Client, seqInboxAddress common.Address, signer signature.DataSignerFunc) (*Aggregator, error) {
 	services, err := ParseServices(config.RPCAggregator, signer)
 	if err != nil {
 		return nil, err
@@ -109,7 +110,7 @@ func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]
 		}
 		metricName := metricsutil.CanonicalizeMetricName(url.Hostname())
 
-		service, err := NewDASRPCClient(b.URL, signer, config.MaxStoreChunkBodySize)
+		service, err := NewDASRPCClient(b.URL, signer, config.MaxStoreChunkBodySize, config.EnableChunkedStore)
 		if err != nil {
 			return nil, err
 		}

@@ -55,6 +55,12 @@ func TestSequencerFeePaid(t *testing.T) {
 	l1Estimate, err := arbGasInfo.GetL1BaseFeeEstimate(callOpts)
 	Require(t, err)
 
+	l1EstimateThroughGetL1GasPriceEstimate, err := arbGasInfo.GetL1GasPriceEstimate(callOpts)
+	Require(t, err)
+	if !arbmath.BigEquals(l1Estimate, l1EstimateThroughGetL1GasPriceEstimate) {
+		Fatal(t, "GetL1BaseFeeEstimate and GetL1GasPriceEstimate should return the same value")
+	}
+
 	baseFee := builder.L2.GetBaseFee(t)
 	builder.L2Info.GasPrice = baseFee
 
@@ -83,10 +89,10 @@ func TestSequencerFeePaid(t *testing.T) {
 		feePaidForL2 := arbmath.BigMulByUint(gasPrice, gasUsedForL2)
 		tipPaidToNet := arbmath.BigMulByUint(tipCap, receipt.GasUsedForL1)
 		gotTip := arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipPaidToNet))
-		if !gotTip && version == 9 {
+		if !gotTip && version == params.ArbosVersion_9 {
 			Fatal(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
 		}
-		if gotTip && version != 9 {
+		if gotTip && version != params.ArbosVersion_9 {
 			Fatal(t, "tips are somehow enabled")
 		}
 
@@ -104,7 +110,7 @@ func TestSequencerFeePaid(t *testing.T) {
 		return networkRevenue, tipPaidToNet
 	}
 
-	if version != 9 {
+	if version != params.ArbosVersion_9 {
 		testFees(3)
 		return
 	}

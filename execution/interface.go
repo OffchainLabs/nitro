@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -29,10 +30,12 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 // always needed
 type ExecutionClient interface {
 	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*MessageResult, error)
-	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*MessageResult, error)
+	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*MessageResult, error)
 	HeadMessageNumber() (arbutil.MessageIndex, error)
 	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
 	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
+	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
+	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
 }
 
 // needed for validators / stakers
@@ -83,6 +86,7 @@ type ConsensusInfo interface {
 	Synced() bool
 	FullSyncProgressMap() map[string]interface{}
 	SyncTargetMessageCount() arbutil.MessageIndex
+	BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error)
 
 	// TODO: switch from pulling to pushing safe/finalized
 	GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
@@ -91,7 +95,7 @@ type ConsensusInfo interface {
 }
 
 type ConsensusSequencer interface {
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult) error
+	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) error
 	ExpectChosenSequencer() error
 }
 

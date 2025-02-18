@@ -3,17 +3,18 @@ package valnode
 import (
 	"context"
 
-	"github.com/offchainlabs/nitro/validator"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/server_jit"
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
-	"github.com/spf13/pflag"
 )
 
 type WasmConfig struct {
@@ -93,7 +94,7 @@ func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
 	}
 }
 
-func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Node, fatalErrChan chan error) (*ValidationNode, error) {
+func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Node, fatalErrChan chan error, spawnerOpts ...server_arb.SpawnerOption) (*ValidationNode, error) {
 	config := configFetcher()
 	locator, err := server_common.NewMachineLocator(config.Wasm.RootPath)
 	if err != nil {
@@ -102,7 +103,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
 		return &configFetcher().Arbitrator
 	}
-	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
+	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher, spawnerOpts...)
 	if err != nil {
 		return nil, err
 	}

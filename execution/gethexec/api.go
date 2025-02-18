@@ -15,24 +15,72 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type ArbAPI struct {
-	txPublisher TransactionPublisher
+	txPublisher              TransactionPublisher
+	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 }
 
-func NewArbAPI(publisher TransactionPublisher) *ArbAPI {
-	return &ArbAPI{publisher}
+func NewArbAPI(publisher TransactionPublisher, bulkBlockMetadataFetcher *BulkBlockMetadataFetcher) *ArbAPI {
+	return &ArbAPI{
+		txPublisher:              publisher,
+		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+	}
+}
+
+type NumberAndBlockMetadata struct {
+	BlockNumber uint64        `json:"blockNumber"`
+	RawMetadata hexutil.Bytes `json:"rawMetadata"`
 }
 
 func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
 	return a.txPublisher.CheckHealth(ctx)
+}
+
+func (a *ArbAPI) GetRawBlockMetadata(ctx context.Context, fromBlock, toBlock rpc.BlockNumber) ([]NumberAndBlockMetadata, error) {
+	if a.bulkBlockMetadataFetcher == nil {
+		return nil, errors.New("arb_getRawBlockMetadata is not available")
+	}
+	return a.bulkBlockMetadataFetcher.Fetch(fromBlock, toBlock)
+}
+
+type ArbTimeboostAuctioneerAPI struct {
+	txPublisher TransactionPublisher
+}
+
+func NewArbTimeboostAuctioneerAPI(publisher TransactionPublisher) *ArbTimeboostAuctioneerAPI {
+	return &ArbTimeboostAuctioneerAPI{publisher}
+}
+
+func (a *ArbTimeboostAuctioneerAPI) SubmitAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	return a.txPublisher.PublishAuctionResolutionTransaction(ctx, tx)
+}
+
+type ArbTimeboostAPI struct {
+	txPublisher TransactionPublisher
+}
+
+func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
+	return &ArbTimeboostAPI{publisher}
+}
+
+func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
+	goMsg, err := timeboost.JsonSubmissionToGo(msg)
+	if err != nil {
+		return err
+	}
+	return a.txPublisher.PublishExpressLaneTransaction(ctx, goMsg)
 }
 
 type ArbDebugAPI struct {
@@ -284,14 +332,16 @@ func stateAndHeader(blockchain *core.BlockChain, block uint64) (*arbosState.Arbo
 type ArbTraceForwarderAPI struct {
 	fallbackClientUrl     string
 	fallbackClientTimeout time.Duration
+	blockchainConfig      *params.ChainConfig
 
 	initialized    atomic.Bool
 	mutex          sync.Mutex
 	fallbackClient types.FallbackClient
 }
 
-func NewArbTraceForwarderAPI(fallbackClientUrl string, fallbackClientTimeout time.Duration) *ArbTraceForwarderAPI {
+func NewArbTraceForwarderAPI(blockchainConfig *params.ChainConfig, fallbackClientUrl string, fallbackClientTimeout time.Duration) *ArbTraceForwarderAPI {
 	return &ArbTraceForwarderAPI{
+		blockchainConfig:      blockchainConfig,
 		fallbackClientUrl:     fallbackClientUrl,
 		fallbackClientTimeout: fallbackClientTimeout,
 	}
@@ -331,16 +381,45 @@ func (api *ArbTraceForwarderAPI) forward(ctx context.Context, method string, arg
 	return resp, nil
 }
 
-func (api *ArbTraceForwarderAPI) Call(ctx context.Context, callArgs json.RawMessage, traceTypes json.RawMessage, blockNum json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_call", callArgs, traceTypes, blockNum)
+func (api *ArbTraceForwarderAPI) blockSupportedByClassicNode(blockNumOrHash json.RawMessage) error {
+	var bnh rpc.BlockNumberOrHash
+	err := bnh.UnmarshalJSON(blockNumOrHash)
+	if err != nil {
+		return err
+	}
+	blockNum, isNum := bnh.Number()
+	if !isNum {
+		return nil
+	}
+	// #nosec G115
+	if blockNum < 0 || blockNum > rpc.BlockNumber(api.blockchainConfig.ArbitrumChainParams.GenesisBlockNum) {
+		return fmt.Errorf("block number %v is not supported by classic node", blockNum)
+	}
+	return nil
 }
 
-func (api *ArbTraceForwarderAPI) CallMany(ctx context.Context, calls json.RawMessage, blockNum json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_callMany", calls, blockNum)
+func (api *ArbTraceForwarderAPI) Call(ctx context.Context, callArgs json.RawMessage, traceTypes json.RawMessage, blockNumOrHash json.RawMessage) (*json.RawMessage, error) {
+	err := api.blockSupportedByClassicNode(blockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+	return api.forward(ctx, "arbtrace_call", callArgs, traceTypes, blockNumOrHash)
 }
 
-func (api *ArbTraceForwarderAPI) ReplayBlockTransactions(ctx context.Context, blockNum json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_replayBlockTransactions", blockNum, traceTypes)
+func (api *ArbTraceForwarderAPI) CallMany(ctx context.Context, calls json.RawMessage, blockNumOrHash json.RawMessage) (*json.RawMessage, error) {
+	err := api.blockSupportedByClassicNode(blockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+	return api.forward(ctx, "arbtrace_callMany", calls, blockNumOrHash)
+}
+
+func (api *ArbTraceForwarderAPI) ReplayBlockTransactions(ctx context.Context, blockNumOrHash json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
+	err := api.blockSupportedByClassicNode(blockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+	return api.forward(ctx, "arbtrace_replayBlockTransactions", blockNumOrHash, traceTypes)
 }
 
 func (api *ArbTraceForwarderAPI) ReplayTransaction(ctx context.Context, txHash json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
@@ -355,8 +434,12 @@ func (api *ArbTraceForwarderAPI) Get(ctx context.Context, txHash json.RawMessage
 	return api.forward(ctx, "arbtrace_get", txHash, path)
 }
 
-func (api *ArbTraceForwarderAPI) Block(ctx context.Context, blockNum json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_block", blockNum)
+func (api *ArbTraceForwarderAPI) Block(ctx context.Context, blockNumOrHash json.RawMessage) (*json.RawMessage, error) {
+	err := api.blockSupportedByClassicNode(blockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+	return api.forward(ctx, "arbtrace_block", blockNumOrHash)
 }
 
 func (api *ArbTraceForwarderAPI) Filter(ctx context.Context, filter json.RawMessage) (*json.RawMessage, error) {

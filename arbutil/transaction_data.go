@@ -8,9 +8,10 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-func GetLogTransaction(ctx context.Context, client L1Interface, log types.Log) (*types.Transaction, error) {
+func GetLogTransaction(ctx context.Context, client *ethclient.Client, log types.Log) (*types.Transaction, error) {
 	tx, err := client.TransactionInBlock(ctx, log.BlockHash, log.TxIndex)
 	if err != nil {
 		return nil, err
@@ -22,7 +23,7 @@ func GetLogTransaction(ctx context.Context, client L1Interface, log types.Log) (
 }
 
 // GetLogEmitterTxData requires that the tx's data is at least 4 bytes long
-func GetLogEmitterTxData(ctx context.Context, client L1Interface, log types.Log) ([]byte, error) {
+func GetLogEmitterTxData(ctx context.Context, client *ethclient.Client, log types.Log) ([]byte, error) {
 	tx, err := GetLogTransaction(ctx, client, log)
 	if err != nil {
 		return nil, err

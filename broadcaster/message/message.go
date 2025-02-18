@@ -2,12 +2,14 @@ package message
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
 const (
-	V1 = 1
+	V1                 = 1
+	TimeboostedVersion = byte(0)
 )
 
 // BroadcastMessage is the base message type for messages to send over the network.
@@ -36,6 +38,7 @@ type BroadcastFeedMessage struct {
 	Message        arbostypes.MessageWithMetadata `json:"message"`
 	BlockHash      *common.Hash                   `json:"blockHash,omitempty"`
 	Signature      []byte                         `json:"signature"`
+	BlockMetadata  common.BlockMetadata           `json:"blockMetadata,omitempty"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`
 }

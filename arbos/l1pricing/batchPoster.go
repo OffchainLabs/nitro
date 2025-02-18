@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"

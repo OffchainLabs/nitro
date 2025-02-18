@@ -2,6 +2,7 @@ package testhelpers
 
 import (
 	"net"
+	"testing"
 )
 
 // FreeTCPPortListener returns a listener listening on an unused local port.
@@ -14,4 +15,14 @@ func FreeTCPPortListener() (net.Listener, error) {
 		return nil, err
 	}
 	return l, nil
+}
+
+// Func AddrTCPPort returns the port of a net.Addr.
+func AddrTCPPort(n net.Addr, t *testing.T) int {
+	t.Helper()
+	tcpAddr, ok := n.(*net.TCPAddr)
+	if !ok {
+		t.Fatal("Could not get TCP address net.Addr")
+	}
+	return tcpAddr.Port
 }

@@ -595,13 +595,13 @@ impl Display for OperatorCode {
     }
 }
 
-impl<'a> From<Operator<'a>> for OperatorCode {
+impl From<Operator<'_>> for OperatorCode {
     fn from(op: Operator) -> Self {
         OperatorCode::from(&op)
     }
 }
 
-impl<'a> From<&Operator<'a>> for OperatorCode {
+impl From<&Operator<'_>> for OperatorCode {
     fn from(op: &Operator) -> Self {
         use Operator as O;
 

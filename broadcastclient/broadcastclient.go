@@ -25,6 +25,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -129,9 +130,10 @@ type BroadcastClient struct {
 
 	chainId uint64
 
-	// Protects conn and shuttingDown
-	connMutex sync.Mutex
-	conn      net.Conn
+	// Protects conn, shuttingDown and compression
+	connMutex   sync.Mutex
+	conn        net.Conn
+	compression bool
 
 	retryCount atomic.Int64
 
@@ -280,13 +282,25 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 			MinVersion: tls.VersionTLS12,
 		},
 		Extensions: extensions,
+		NetDial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			var netDialer net.Dialer
+			// For tcp connections, prefer IPv4 over IPv6 to avoid rate limiting issues
+			if network == "tcp" {
+				conn, err := netDialer.DialContext(ctx, "tcp4", addr)
+				if err == nil {
+					return conn, nil
+				}
+				return netDialer.DialContext(ctx, "tcp6", addr)
+			}
+			return netDialer.DialContext(ctx, network, addr)
+		},
 	}
 
 	if bc.isShuttingDown() {
 		return nil, nil
 	}
 
-	conn, br, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
+	conn, br, hs, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
 	if errors.Is(err, ErrIncorrectFeedServerVersion) || errors.Is(err, ErrIncorrectChainId) {
 		return nil, err
 	}
@@ -312,6 +326,24 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		return nil, ErrMissingFeedServerVersion
 	}
 
+	compressionNegotiated := false
+	for _, ext := range hs.Extensions {
+		if ext.Equal(deflateExt) {
+			compressionNegotiated = true
+			break
+		}
+	}
+	if !compressionNegotiated && config.EnableCompression {
+		log.Warn("Compression was not negotiated when connecting to feed server.")
+	}
+	if compressionNegotiated && !config.EnableCompression {
+		err := conn.Close()
+		if err != nil {
+			return nil, fmt.Errorf("error closing connection when negotiated disabled extension: %w", err)
+		}
+		return nil, errors.New("error dialing feed server: negotiated compression ws extension, but it is disabled")
+	}
+
 	var earlyFrameData io.Reader
 	if br != nil {
 		// Depending on how long the client takes to read the response, there may be
@@ -326,6 +358,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 
 	bc.connMutex.Lock()
 	bc.conn = conn
+	bc.compression = compressionNegotiated
 	bc.connMutex.Unlock()
 	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum)
 
@@ -349,7 +382,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 			var op ws.OpCode
 			var err error
 			config := bc.config()
-			msg, op, err = wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, config.Timeout, ws.StateClientSide, config.EnableCompression, flateReader)
+			msg, op, err = wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, config.Timeout, ws.StateClientSide, bc.compression, flateReader)
 			if err != nil {
 				if bc.isShuttingDown() {
 					return

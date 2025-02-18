@@ -4,7 +4,7 @@
 package server_arb
 
 /*
-#cgo CFLAGS: -g -Wall -I../target/include/
+#cgo CFLAGS: -g -I../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 #include <stdlib.h>
@@ -22,10 +22,12 @@ void AddToStringList(char** list, int index, char* val) {
 }
 */
 import "C"
+
 import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/validator"
 )
 

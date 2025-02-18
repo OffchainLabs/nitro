@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::program::Program;
+use arbutil::evm::api::Gas;
 use caller_env::GuestPtr;
 use user_host_trait::UserHost;
 
@@ -63,7 +64,14 @@ pub unsafe extern "C" fn vm_hooks__call_contract(
     gas: u64,
     ret_len: GuestPtr,
 ) -> u8 {
-    hostio!(call_contract(contract, data, data_len, value, gas, ret_len))
+    hostio!(call_contract(
+        contract,
+        data,
+        data_len,
+        value,
+        Gas(gas),
+        ret_len
+    ))
 }
 
 #[no_mangle]
@@ -75,7 +83,11 @@ pub unsafe extern "C" fn vm_hooks__delegate_call_contract(
     ret_len: GuestPtr,
 ) -> u8 {
     hostio!(delegate_call_contract(
-        contract, data, data_len, gas, ret_len
+        contract,
+        data,
+        data_len,
+        Gas(gas),
+        ret_len
     ))
 }
 
@@ -87,7 +99,13 @@ pub unsafe extern "C" fn vm_hooks__static_call_contract(
     gas: u64,
     ret_len: GuestPtr,
 ) -> u8 {
-    hostio!(static_call_contract(contract, data, data_len, gas, ret_len))
+    hostio!(static_call_contract(
+        contract,
+        data,
+        data_len,
+        Gas(gas),
+        ret_len
+    ))
 }
 
 #[no_mangle]
@@ -189,12 +207,12 @@ pub unsafe extern "C" fn vm_hooks__contract_address(ptr: GuestPtr) {
 
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__evm_gas_left() -> u64 {
-    hostio!(evm_gas_left())
+    hostio!(evm_gas_left()).0
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__evm_ink_left() -> u64 {
-    hostio!(evm_ink_left())
+    hostio!(evm_ink_left()).0
 }
 
 #[no_mangle]

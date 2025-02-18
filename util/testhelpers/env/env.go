@@ -14,7 +14,7 @@ import (
 // An environment variable controls that behavior.
 func GetTestStateScheme() string {
 	envTestStateScheme := os.Getenv("TEST_STATE_SCHEME")
-	stateScheme := rawdb.PathScheme
+	stateScheme := rawdb.HashScheme
 	if envTestStateScheme == rawdb.PathScheme || envTestStateScheme == rawdb.HashScheme {
 		stateScheme = envTestStateScheme
 	}

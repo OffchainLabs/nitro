@@ -549,8 +549,7 @@ mod test {
         let mut empty_node = Bytes32([
             57, 29, 211, 154, 252, 227, 18, 99, 65, 126, 203, 166, 252, 232, 32, 3, 98, 194, 254,
             186, 118, 14, 139, 192, 101, 156, 55, 194, 101, 11, 11, 168,
-        ])
-        .clone();
+        ]);
         for _ in 0..64 {
             print!("Bytes32([");
             for i in 0..32 {
@@ -607,7 +606,7 @@ mod test {
             for layer in 0..64 {
                 // empty_hash_at is just a lookup, but empty_hash is calculated iteratively.
                 assert_eq!(empty_hash_at(ty, layer), &empty_hash);
-                empty_hash = hash_node(ty, &empty_hash, &empty_hash);
+                empty_hash = hash_node(ty, empty_hash, empty_hash);
             }
         }
     }

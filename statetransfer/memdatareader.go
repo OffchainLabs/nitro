@@ -99,6 +99,10 @@ func (r *MemoryInitDataReader) GetAccountDataReader() (AccountDataReader, error)
 	}, nil
 }
 
+func (r *MemoryInitDataReader) GetChainOwner() (common.Address, error) {
+	return r.d.ChainOwner, nil
+}
+
 func (r *MemoryInitDataReader) Close() error {
 	return nil
 }

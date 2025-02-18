@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
@@ -243,21 +242,18 @@ func deployRollupCreator(ctx context.Context, parentChainReader *headerreader.He
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func DeployOnParentChain(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPosters []common.Address, batchPosterManager common.Address, authorizeValidators uint64, config rollupgen.Config, nativeToken common.Address, maxDataSize *big.Int, eigenDASvcManager common.Address, eigenDARollupManager common.Address, chainSupportsBlobs bool) (*chaininfo.RollupAddresses, error) {
+func DeployOnParentChain(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPosters []common.Address, batchPosterManager common.Address, authorizeValidators uint64, config rollupgen.Config, nativeToken common.Address, maxDataSize *big.Int, eigenDARollupManager common.Address, chainSupportsBlobs bool) (*chaininfo.RollupAddresses, error) {
 	if config.WasmModuleRoot == (common.Hash{}) {
 		return nil, errors.New("no machine specified")
 	}
 
 	if eigenDARollupManager == (common.Address{0x0}) {
-		log.Warn("No EigenDA Rollup Manager contract address specified, deploying dummy rollup manager instead")
-
 		dummyRollupManager, tx, _, err := bridgegen.DeployEigenDABlobVerifierL2(deployAuth, parentChainReader.Client())
 		err = andTxSucceeded(ctx, parentChainReader, tx, err)
 		if err != nil {
 			return nil, fmt.Errorf("dummy manager deploy error: %w", err)
 		}
 
-		log.Info("Dummy eigenda rollup manager deployed", "address", dummyRollupManager.String())
 		eigenDARollupManager = dummyRollupManager
 	}
 

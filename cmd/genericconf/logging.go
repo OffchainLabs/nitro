@@ -8,8 +8,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/log"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 var globalFileLoggerFactory = fileLoggerFactory{}
@@ -88,7 +89,7 @@ func (l *fileLoggerFactory) close() error {
 	return nil
 }
 
-// initLog is not threadsafe
+// InitLog is not threadsafe
 func InitLog(logType string, logLevel string, fileLoggingConfig *FileLoggingConfig, pathResolver func(string) string) error {
 	var glogger *log.GlogHandler
 	// always close previous instance of file logger

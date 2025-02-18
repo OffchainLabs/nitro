@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -20,7 +20,9 @@ const PRIORITIES_KEY string = "coordinator.priorities"                 // Read o
 const WANTS_LOCKOUT_KEY_PREFIX string = "coordinator.liveliness."      // Per server. Only written by self
 const MESSAGE_KEY_PREFIX string = "coordinator.msg."                   // Per Message. Only written by sequencer holding CHOSEN
 const SIGNATURE_KEY_PREFIX string = "coordinator.msg.sig."             // Per Message. Only written by sequencer holding CHOSEN
+const BLOCKMETADATA_KEY_PREFIX string = "coordinator.blockMetadata."   // Per Message. Only written by sequencer holding CHOSEN
 const WANTS_LOCKOUT_VAL string = "OK"
+const SWITCHED_REDIS string = "SWITCHED_REDIS"
 const INVALID_VAL string = "INVALID"
 const INVALID_URL string = "<?INVALID-URL?>"
 
@@ -117,4 +119,8 @@ func MessageKeyFor(pos arbutil.MessageIndex) string {
 
 func MessageSigKeyFor(pos arbutil.MessageIndex) string {
 	return fmt.Sprintf("%s%d", SIGNATURE_KEY_PREFIX, pos)
+}
+
+func BlockMetadataKeyFor(pos arbutil.MessageIndex) string {
+	return fmt.Sprintf("%s%d", BLOCKMETADATA_KEY_PREFIX, pos)
 }

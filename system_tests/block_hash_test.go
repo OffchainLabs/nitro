@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 

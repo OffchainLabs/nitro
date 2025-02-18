@@ -4,8 +4,9 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::caller_env::JitEnv;
-use crate::machine::{Escape, MaybeEscape, WasmEnvMut};
-use crate::stylus_backend::exec_wasm;
+use crate::machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
+use crate::stylus_backend::{exec_wasm, MessageFromCothread};
+use arbutil::evm::api::Gas;
 use arbutil::Bytes32;
 use arbutil::{evm::EvmData, format::DebugBytes, heapify};
 use caller_env::{GuestPtr, MemAccess};
@@ -15,6 +16,7 @@ use prover::{
     machine::Module,
     programs::{config::PricingParams, prelude::*},
 };
+use std::sync::Arc;
 
 const DEFAULT_STYLUS_ARBOS_VERSION: u64 = 31;
 
@@ -129,10 +131,6 @@ pub fn new_program(
     let evm_data: EvmData = unsafe { *Box::from_raw(evm_data_handler as *mut EvmData) };
     let config: JitConfig = unsafe { *Box::from_raw(stylus_config_handler as *mut JitConfig) };
 
-    // buy ink
-    let pricing = config.stylus.pricing;
-    let ink = pricing.gas_to_ink(gas);
-
     let Some(module) = exec.module_asms.get(&compiled_hash).cloned() else {
         return Err(Escape::Failure(format!(
             "module hash {:?} not found in {:?}",
@@ -140,6 +138,21 @@ pub fn new_program(
             exec.module_asms.keys()
         )));
     };
+
+    launch_program_thread(exec, module, calldata, config, evm_data, gas)
+}
+
+pub fn launch_program_thread(
+    exec: &mut WasmEnv,
+    module: Arc<[u8]>,
+    calldata: Vec<u8>,
+    config: JitConfig,
+    evm_data: EvmData,
+    gas: u64,
+) -> Result<u32, Escape> {
+    // buy ink
+    let pricing = config.stylus.pricing;
+    let ink = pricing.gas_to_ink(Gas(gas));
 
     let cothread = exec_wasm(
         module,
@@ -161,7 +174,10 @@ pub fn new_program(
 /// returns request_id for the first request from the program
 pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
     let (_, exec) = env.jit_env();
+    start_program_with_wasm_env(exec, module)
+}
 
+pub fn start_program_with_wasm_env(exec: &mut WasmEnv, module: u32) -> Result<u32, Escape> {
     if exec.threads.len() as u32 != module || module == 0 {
         return Escape::hostio(format!(
             "got request for thread {module} but len is {}",
@@ -178,13 +194,18 @@ pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
 /// request_id MUST be last request id returned from start_program or send_response
 pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: GuestPtr) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
+    let msg = get_last_msg(exec, id)?;
+    mem.write_u32(len_ptr, msg.req_data.len() as u32);
+    Ok(msg.req_type)
+}
+
+pub fn get_last_msg(exec: &mut WasmEnv, id: u32) -> Result<MessageFromCothread, Escape> {
     let thread = exec.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != id {
         return Escape::hostio("get_request id doesn't match");
     };
-    mem.write_u32(len_ptr, msg.0.req_data.len() as u32);
-    Ok(msg.0.req_type)
+    Ok(msg.0)
 }
 
 // gets data associated with last request.
@@ -192,12 +213,8 @@ pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: GuestPtr) -> Result<u3
 // data_ptr MUST point to a buffer of at least the length returned by get_request
 pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: GuestPtr) -> MaybeEscape {
     let (mut mem, exec) = env.jit_env();
-    let thread = exec.threads.last_mut().unwrap();
-    let msg = thread.last_message()?;
-    if msg.1 != id {
-        return Escape::hostio("get_request id doesn't match");
-    };
-    mem.write_slice(data_ptr, &msg.0.req_data);
+    let msg = get_last_msg(exec, id)?;
+    mem.write_slice(data_ptr, &msg.req_data);
     Ok(())
 }
 
@@ -216,11 +233,21 @@ pub fn set_response(
     let result = mem.read_slice(result_ptr, result_len as usize);
     let raw_data = mem.read_slice(raw_data_ptr, raw_data_len as usize);
 
-    let thread = exec.threads.last_mut().unwrap();
-    thread.set_response(id, result, raw_data, gas)
+    set_response_with_wasm_env(exec, id, gas, result, raw_data)
 }
 
-/// sends previos response
+pub fn set_response_with_wasm_env(
+    exec: &mut WasmEnv,
+    id: u32,
+    gas: u64,
+    result: Vec<u8>,
+    raw_data: Vec<u8>,
+) -> MaybeEscape {
+    let thread = exec.threads.last_mut().unwrap();
+    thread.set_response(id, result, raw_data, Gas(gas))
+}
+
+/// sends previous response
 /// MUST be called right after set_response to the same id
 /// returns request_id for the next request
 pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
@@ -238,7 +265,10 @@ pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
 /// removes the last created program
 pub fn pop(mut env: WasmEnvMut) -> MaybeEscape {
     let (_, exec) = env.jit_env();
+    pop_with_wasm_env(exec)
+}
 
+pub fn pop_with_wasm_env(exec: &mut WasmEnv) -> MaybeEscape {
     match exec.threads.pop() {
         None => Err(Escape::Child(eyre!("no child"))),
         Some(mut thread) => thread.wait_done(),
@@ -246,8 +276,8 @@ pub fn pop(mut env: WasmEnvMut) -> MaybeEscape {
 }
 
 pub struct JitConfig {
-    stylus: StylusConfig,
-    compile: CompileConfig,
+    pub stylus: StylusConfig,
+    pub compile: CompileConfig,
 }
 
 /// Creates a `StylusConfig` from its component parts.

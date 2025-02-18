@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
+
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -41,7 +42,7 @@ type CertAbsPaths struct {
 type SignerServer struct {
 	*http.Server
 	*SignerAPI
-	listener net.Listener
+	Listener net.Listener
 }
 
 func basePath() (string, error) {
@@ -146,7 +147,7 @@ func (s *SignerServer) Start() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ServeTLS(s.listener, cp.ServerCert, cp.ServerKey); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := s.ServeTLS(s.Listener, cp.ServerCert, cp.ServerKey); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

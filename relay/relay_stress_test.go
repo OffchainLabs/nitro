@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -92,7 +93,7 @@ func (ts *dummyTxStreamer) AddBroadcastMessages(feedMessages []*message.Broadcas
 	time.Sleep(50 * time.Millisecond)
 	if !ts.logConnection {
 		ts.logConnection = true
-		log.Info("test client is succesfully receiving messages", "client_Id", ts.id, "msg_size", feedMessages[0].Size())
+		log.Info("test client is successfully receiving messages", "client_Id", ts.id, "msg_size", feedMessages[0].Size())
 	}
 	return nil
 }

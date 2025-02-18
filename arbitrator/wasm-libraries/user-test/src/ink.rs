@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{program::Program, CONFIG};
+use arbutil::evm::api::Ink;
 use prover::programs::{
     config::PricingParams,
     prelude::{GasMeteredMachine, MachineMeter, MeteredMachine},
@@ -18,7 +19,7 @@ impl MeteredMachine for Program {
     fn ink_left(&self) -> MachineMeter {
         unsafe {
             match user_ink_status() {
-                0 => MachineMeter::Ready(user_ink_left()),
+                0 => MachineMeter::Ready(Ink(user_ink_left())),
                 _ => MachineMeter::Exhausted,
             }
         }
@@ -26,7 +27,7 @@ impl MeteredMachine for Program {
 
     fn set_meter(&mut self, meter: MachineMeter) {
         unsafe {
-            user_set_ink(meter.ink(), meter.status());
+            user_set_ink(meter.ink().0, meter.status());
         }
     }
 }

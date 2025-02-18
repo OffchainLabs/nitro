@@ -9,6 +9,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
@@ -36,7 +38,7 @@ func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
 // ArbBlockHash gets the L2 block hash, if sufficiently recent
 func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes32, error) {
 	if !arbBlockNumber.IsUint64() {
-		if c.State.ArbOSVersion() >= 11 {
+		if c.State.ArbOSVersion() >= params.ArbosVersion_11 {
 			return bytes32{}, con.InvalidBlockNumberError(arbBlockNumber, evm.Context.BlockNumber)
 		}
 		return bytes32{}, errors.New("invalid block number")
@@ -45,7 +47,7 @@ func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes
 
 	currentNumber := evm.Context.BlockNumber.Uint64()
 	if requestedBlockNum >= currentNumber || requestedBlockNum+256 < currentNumber {
-		if c.State.ArbOSVersion() >= 11 {
+		if c.State.ArbOSVersion() >= params.ArbosVersion_11 {
 			return common.Hash{}, con.InvalidBlockNumberError(arbBlockNumber, evm.Context.BlockNumber)
 		}
 		return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
@@ -83,7 +85,7 @@ func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest 
 // WasMyCallersAddressAliased checks if the caller's caller was aliased
 func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
 	topLevel := con.isTopLevel(c, evm)
-	if c.State.ArbOSVersion() < 6 {
+	if c.State.ArbOSVersion() < params.ArbosVersion_6 {
 		topLevel = evm.Depth() == 2
 	}
 	aliased := topLevel && util.DoesTxTypeAlias(c.txProcessor.TopTxType)
@@ -92,7 +94,6 @@ func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
 
 // MyCallersAddressWithoutAliasing gets the caller's caller without any potential aliasing
 func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
-
 	address := addr{}
 
 	if evm.Depth() > 1 {
@@ -180,7 +181,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		calldataForL1,
 	)
 
-	if c.State.ArbOSVersion() >= 4 {
+	if c.State.ArbOSVersion() >= params.ArbosVersion_4 {
 		return leafNum, nil
 	}
 	return sendHash.Big(), err

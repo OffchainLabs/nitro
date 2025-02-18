@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -18,9 +19,10 @@ type MessageWithMetadata struct {
 	DelayedMessagesRead uint64             `json:"delayedMessagesRead"`
 }
 
-type MessageWithMetadataAndBlockHash struct {
+type MessageWithMetadataAndBlockInfo struct {
 	MessageWithMeta MessageWithMetadata
 	BlockHash       *common.Hash
+	BlockMetadata   common.BlockMetadata
 }
 
 var EmptyTestMessageWithMetadata = MessageWithMetadata{

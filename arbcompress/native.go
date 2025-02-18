@@ -7,11 +7,12 @@
 package arbcompress
 
 /*
-#cgo CFLAGS: -g -Wall -I${SRCDIR}/../target/include/
+#cgo CFLAGS: -g -I${SRCDIR}/../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../target/lib/libstylus.a -lm
 #include "arbitrator.h"
 */
 import "C"
+
 import (
 	"errors"
 	"fmt"

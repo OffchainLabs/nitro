@@ -3,11 +3,13 @@ package conf
 import (
 	"fmt"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type InitConfig struct {
@@ -20,11 +22,13 @@ type InitConfig struct {
 	DownloadPoll             time.Duration `koanf:"download-poll"`
 	DevInit                  bool          `koanf:"dev-init"`
 	DevInitAddress           string        `koanf:"dev-init-address"`
+	DevMaxCodeSize           uint64        `koanf:"dev-max-code-size"`
 	DevInitBlockNum          uint64        `koanf:"dev-init-blocknum"`
 	Empty                    bool          `koanf:"empty"`
 	ImportWasm               bool          `koanf:"import-wasm"`
 	AccountsPerSync          uint          `koanf:"accounts-per-sync"`
 	ImportFile               string        `koanf:"import-file"`
+	GenesisJsonFile          string        `koanf:"genesis-json-file"`
 	ThenQuit                 bool          `koanf:"then-quit"`
 	Prune                    string        `koanf:"prune"`
 	PruneBloomSize           uint64        `koanf:"prune-bloom-size"`
@@ -47,10 +51,12 @@ var InitConfigDefault = InitConfig{
 	DownloadPoll:             time.Minute,
 	DevInit:                  false,
 	DevInitAddress:           "",
+	DevMaxCodeSize:           0,
 	DevInitBlockNum:          0,
 	Empty:                    false,
 	ImportWasm:               false,
 	ImportFile:               "",
+	GenesisJsonFile:          "",
 	AccountsPerSync:          100000,
 	ThenQuit:                 false,
 	Prune:                    "",
@@ -75,10 +81,12 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddress, "Address of dev-account. Leave empty to use the dev-wallet.")
 	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in ancient database.")
+	f.Uint64(prefix+".dev-max-code-size", InitConfigDefault.DevMaxCodeSize, "Max code size for dev accounts")
 	f.Bool(prefix+".empty", InitConfigDefault.Empty, "init with empty state")
 	f.Bool(prefix+".import-wasm", InitConfigDefault.ImportWasm, "if set, import the wasm directory when downloading a database (contains executable code - only use with highly trusted source)")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
+	f.String(prefix+".genesis-json-file", InitConfigDefault.GenesisJsonFile, "path for genesis json file")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Uint64(prefix+".prune-bloom-size", InitConfigDefault.PruneBloomSize, "the amount of memory in megabytes to use for the pruning bloom filter (higher values prune better)")
@@ -99,7 +107,7 @@ func (c *InitConfig) Validate() error {
 	if c.Force && c.RecreateMissingStateFrom > 0 {
 		log.Warn("force init enabled, recreate-missing-state-from will have no effect")
 	}
-	if c.Latest != "" && !isAcceptedSnapshotKind(c.Latest) {
+	if c.Latest != "" && !slices.Contains(acceptedSnapshotKinds, c.Latest) {
 		return fmt.Errorf("invalid value for latest option: \"%s\" %s", c.Latest, acceptedSnapshotKindsStr)
 	}
 	if c.Prune != "" && c.PruneThreads <= 0 {
@@ -132,12 +140,3 @@ var (
 	acceptedSnapshotKinds    = []string{"archive", "pruned", "genesis"}
 	acceptedSnapshotKindsStr = "(accepted values: \"" + strings.Join(acceptedSnapshotKinds, "\" | \"") + "\")"
 )
-
-func isAcceptedSnapshotKind(kind string) bool {
-	for _, valid := range acceptedSnapshotKinds {
-		if kind == valid {
-			return true
-		}
-	}
-	return false
-}

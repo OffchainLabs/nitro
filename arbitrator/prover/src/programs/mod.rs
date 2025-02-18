@@ -244,7 +244,7 @@ impl ModuleMod for ModuleInfo {
     fn drop_exports_and_names(&mut self, keep: &HashMap<&str, ExportKind>) {
         self.exports.retain(|name, export| {
             keep.get(name.as_str())
-                .map_or(false, |x| *x == (*export).into())
+                .is_some_and(|x| *x == (*export).into())
         });
         self.function_names.clear();
     }
@@ -263,7 +263,7 @@ impl ModuleMod for ModuleInfo {
     }
 }
 
-impl<'a> ModuleMod for WasmBinary<'a> {
+impl ModuleMod for WasmBinary<'_> {
     fn add_global(&mut self, name: &str, _ty: Type, init: GlobalInit) -> Result<GlobalIndex> {
         let global = match init {
             GlobalInit::I32Const(x) => Value::I32(x as u32),
@@ -364,7 +364,7 @@ impl<'a> ModuleMod for WasmBinary<'a> {
 
     fn drop_exports_and_names(&mut self, keep: &HashMap<&str, ExportKind>) {
         self.exports
-            .retain(|name, ty| keep.get(name.as_str()).map_or(false, |x| *x == ty.1));
+            .retain(|name, ty| keep.get(name.as_str()).is_some_and(|x| *x == ty.1));
         self.names.functions.clear();
     }
 

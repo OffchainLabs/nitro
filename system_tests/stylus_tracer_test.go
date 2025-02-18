@@ -7,9 +7,11 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/google/go-cmp/cmp"
+
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/util/containers"

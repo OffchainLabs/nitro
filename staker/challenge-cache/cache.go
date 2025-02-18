@@ -79,29 +79,21 @@ type Cache struct {
 
 // New cache from a base directory path.
 func New(baseDir string) (*Cache, error) {
-	return &Cache{
-		baseDir:       baseDir,
-		tempWritesDir: "",
-	}, nil
-}
-
-// Init a cache by verifying its base directory exists.
-func (c *Cache) Init(_ context.Context) error {
-	if _, err := os.Stat(c.baseDir); err != nil {
-		if err := os.MkdirAll(c.baseDir, os.ModePerm); err != nil {
-			return fmt.Errorf("could not make initialize challenge cache directory %s: %w", c.baseDir, err)
-		}
+	if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
+		return nil, err
 	}
 	// We create a temp directory to write our hashes to first when putting to the cache.
 	// Once writing succeeds, we rename in an atomic operation to the correct file name
 	// in the cache directory hierarchy in the `Put` function. All of these temporary writes
 	// will occur in a subdir of the base directory called temp.
-	tempWritesDir, err := os.MkdirTemp(c.baseDir, "temp")
+	tempWritesDir, err := os.MkdirTemp(baseDir, "temp")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	c.tempWritesDir = tempWritesDir
-	return nil
+	return &Cache{
+		baseDir:       baseDir,
+		tempWritesDir: tempWritesDir,
+	}, nil
 }
 
 // Get a list of hashes from the cache from index 0 up to a certain index. Hashes are saved as files in the directory
@@ -217,11 +209,11 @@ func (c *Cache) Prune(ctx context.Context, messageNumber uint64) error {
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
-func readHashes(r io.Reader, numToRead uint64) ([]common.Hash, error) {
+func readHashes(r io.Reader, toReadLimit uint64) ([]common.Hash, error) {
 	br := bufio.NewReader(r)
 	hashes := make([]common.Hash, 0)
 	buf := make([]byte, 0, common.HashLength)
-	for totalRead := uint64(0); totalRead < numToRead; totalRead++ {
+	for totalRead := uint64(0); totalRead < toReadLimit; totalRead++ {
 		n, err := br.Read(buf[:cap(buf)])
 		if err != nil {
 			// If we try to read but reach EOF, we break out of the loop.
@@ -235,13 +227,6 @@ func readHashes(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 			return nil, fmt.Errorf("expected to read %d bytes, got %d bytes", common.HashLength, n)
 		}
 		hashes = append(hashes, common.BytesToHash(buf))
-	}
-	if numToRead > uint64(len(hashes)) {
-		return nil, fmt.Errorf(
-			"wanted to read %d hashes, but only read %d hashes",
-			numToRead,
-			len(hashes),
-		)
 	}
 	return hashes, nil
 }

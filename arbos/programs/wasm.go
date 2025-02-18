@@ -154,6 +154,8 @@ func callProgram(
 	return retData, err
 }
 
+func GetWasmLruCacheMetrics() {}
+
 func CallProgramLoop(
 	moduleHash common.Hash,
 	calldata []byte,

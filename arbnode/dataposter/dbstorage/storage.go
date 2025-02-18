@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/ethereum/go-ethereum/ethdb"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/dbutil"
 )

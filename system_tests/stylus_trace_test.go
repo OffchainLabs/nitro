@@ -6,15 +6,18 @@ package arbtest
 import (
 	"bytes"
 	"encoding/binary"
+	"math"
 	"math/big"
 	"testing"
+
+	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -477,4 +480,18 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	// outer return
 	checkOpcode(t, wasmResult, 12, vm.RETURN, offset, returnLen)
 	checkOpcode(t, evmResult, 5078, vm.RETURN, offset, returnLen)
+}
+
+func TestStylusHugeWriteResultTrace(t *testing.T) {
+	const jit = false
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	program := deployWasm(t, ctx, auth, l2client, watFile("write-result-len"))
+	const returnLen = math.MaxUint16 + 1
+	args := binary.LittleEndian.AppendUint32(nil, returnLen)
+	result := sendAndTraceTransaction(t, builder, program, nil, args)
+	checkOpcode(t, result, 3, vm.RETURN, nil, intToBe32(returnLen))
 }

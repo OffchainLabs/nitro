@@ -5,11 +5,11 @@ package genericconf
 
 import (
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/log"
-	"golang.org/x/exp/slog"
 )
 
 func ToSlogLevel(str string) (slog.Level, error) {

@@ -1,0 +1,36 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - git submodule update --init
+      - echo Logging in to Dockerhub....
+      - docker login --username $DOCKERHUB_USERNAME --password $DOCKERHUB_PASSWORD
+      - aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $REPOSITORY_URI
+      - COMMIT_HASH=$(git rev-parse --short=7 HEAD || echo "latest")
+      - VERSION_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV | sed 's/_$//' | head -n 1 | grep ^ || git show -s --pretty=%D | sed 's/, /\n/g' | grep -v '^origin/' |grep -v '^grafted\|HEAD\|master\|main$' || echo "dev")
+      - NITRO_VERSION=${VERSION_TAG}-${COMMIT_HASH}
+      - IMAGE_TAG=${NITRO_VERSION}
+      - NITRO_DATETIME=$(git show -s --date=iso-strict --format=%cd)
+      - NITRO_MODIFIED="false"
+      - echo ${NITRO_VERSION} > ./.nitro-tag.txt
+  build:
+    commands:
+      - echo Build started on `date` 
+      - echo Building the Docker image ${NITRO_VERSION}...
+      - DOCKER_BUILDKIT=1 docker build . -t nitro-node-slim --target nitro-node-slim --build-arg version=$NITRO_VERSION --build-arg datetime=$NITRO_DATETIME --build-arg modified=$NITRO_MODIFIED
+      - DOCKER_BUILDKIT=1 docker build . -t nitro-node --target nitro-node --build-arg version=$NITRO_VERSION --build-arg datetime=$NITRO_DATETIME --build-arg modified=$NITRO_MODIFIED
+      - DOCKER_BUILDKIT=1 docker build . -t nitro-node-dev --target nitro-node-dev --build-arg version=$NITRO_VERSION --build-arg datetime=$NITRO_DATETIME --build-arg modified=$NITRO_MODIFIED
+      - DOCKER_BUILDKIT=1 docker build . -t nitro-node-validator --target nitro-node-validator --build-arg version=$NITRO_VERSION --build-arg datetime=$NITRO_DATETIME --build-arg modified=$NITRO_MODIFIED
+      - docker tag nitro-node:latest $REPOSITORY_URI:$IMAGE_TAG-$ARCH_TAG
+      - docker tag nitro-node-slim:latest $REPOSITORY_URI:$IMAGE_TAG-slim-$ARCH_TAG
+      - docker tag nitro-node-dev:latest $REPOSITORY_URI:$IMAGE_TAG-dev-$ARCH_TAG
+      - docker tag nitro-node-validator:latest $REPOSITORY_URI:$IMAGE_TAG-validator-$ARCH_TAG
+  post_build: 
+    commands:
+      - echo Build completed on `date` 
+      - echo pushing to repo
+      - docker push $REPOSITORY_URI:$IMAGE_TAG-$ARCH_TAG
+      - docker push $REPOSITORY_URI:$IMAGE_TAG-slim-$ARCH_TAG
+      - docker push $REPOSITORY_URI:$IMAGE_TAG-dev-$ARCH_TAG
+      - docker push $REPOSITORY_URI:$IMAGE_TAG-validator-$ARCH_TAG

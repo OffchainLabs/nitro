@@ -4,11 +4,12 @@
 package server_arb
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #include "arbitrator.h"
 #include <stdlib.h>
 */
 import "C"
+
 import (
 	"context"
 	"errors"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 

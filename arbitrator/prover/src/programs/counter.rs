@@ -75,7 +75,7 @@ pub struct FuncCounter<'a> {
     block: Vec<Operator<'a>>,
 }
 
-impl<'a> FuncCounter<'a> {
+impl FuncCounter<'_> {
     fn new(counters: Arc<Mutex<Vec<GlobalIndex>>>) -> Self {
         let block = vec![];
         Self { counters, block }

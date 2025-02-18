@@ -22,10 +22,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
-
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dastree"
@@ -92,6 +92,7 @@ type ClientStoreConfig struct {
 	SigningWallet         string        `koanf:"signing-wallet"`
 	SigningWalletPassword string        `koanf:"signing-wallet-password"`
 	MaxStoreChunkBodySize int           `koanf:"max-store-chunk-body-size"`
+	EnableChunkedStore    bool          `koanf:"enable-chunked-store"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -99,11 +100,12 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("url", "", "URL of DAS server to connect to")
 	f.String("message", "", "message to send")
 	f.Int("random-message-size", 0, "send a message of a specified number of random bytes")
-	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherise treated as a file; if not specified the message is not signed")
+	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherwise treated as a file; if not specified the message is not signed")
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	f.Int("max-store-chunk-body-size", 512*1024, "The maximum HTTP POST body size for a chunked store request")
+	f.Bool("enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -152,7 +154,7 @@ func startClientStore(args []string) error {
 		}
 	}
 
-	client, err := das.NewDASRPCClient(config.URL, signer, config.MaxStoreChunkBodySize)
+	client, err := das.NewDASRPCClient(config.URL, signer, config.MaxStoreChunkBodySize, config.EnableChunkedStore)
 	if err != nil {
 		return err
 	}

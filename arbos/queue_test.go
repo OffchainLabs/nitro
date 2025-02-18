@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 )

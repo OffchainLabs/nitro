@@ -16,7 +16,7 @@ import (
 )
 
 //go:embed arbitrum_chain_info.json
-var DefaultChainInfo []byte
+var DefaultChainsInfoBytes []byte
 
 type ChainInfo struct {
 	ChainName             string `json:"chain-name"`
@@ -29,6 +29,7 @@ type ChainInfo struct {
 	SecondaryFeedUrl          string              `json:"secondary-feed-url"`
 	DasIndexUrl               string              `json:"das-index-url"`
 	HasGenesisState           bool                `json:"has-genesis-state"`
+	TrackBlockMetadataFrom    uint64              `json:"track-block-metadata-from,omitempty"`
 	ChainConfig               *params.ChainConfig `json:"chain-config"`
 	RollupAddresses           *RollupAddresses    `json:"rollup"`
 }
@@ -80,7 +81,7 @@ func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []strin
 		}
 	}
 
-	chainInfo, err := findChainInfo(chainId, chainName, DefaultChainInfo)
+	chainInfo, err := findChainInfo(chainId, chainName, DefaultChainsInfoBytes)
 	if err != nil || chainInfo != nil {
 		return chainInfo, err
 	}
@@ -120,5 +121,6 @@ type RollupAddresses struct {
 	UpgradeExecutor        common.Address `json:"upgrade-executor"`
 	ValidatorUtils         common.Address `json:"validator-utils"`
 	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
+	StakeToken             common.Address `json:"stake-token"`
 	DeployedAt             uint64         `json:"deployed-at"`
 }

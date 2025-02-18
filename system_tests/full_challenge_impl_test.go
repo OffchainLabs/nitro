@@ -28,10 +28,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/eigenda"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/yulgen"
@@ -105,8 +105,8 @@ func CreateChallenge(
 		auth,
 		wasmModuleRoot,
 		[2]uint8{
-			staker.StatusFinished,
-			staker.StatusFinished,
+			legacystaker.StatusFinished,
+			legacystaker.StatusFinished,
 		},
 		[2]mocksgen.GlobalState{
 			{
@@ -275,7 +275,7 @@ func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTest
 	Require(t, err, "failed to get batch metadata after adding batch:")
 }
 
-func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend arbutil.L1Interface) {
+func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend *ethclient.Client) {
 	t.Helper()
 	// With SimulatedBeacon running in on-demand block production mode, the
 	// finalized block is considered to be be the nearest multiple of 32 less
@@ -287,7 +287,7 @@ func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTes
 	}
 }
 
-func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, l1Client arbutil.L1Interface, chainConfig *params.ChainConfig) (common.Address, *mocksgen.SequencerInboxStub, common.Address) {
+func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, l1Client *ethclient.Client, chainConfig *params.ChainConfig) (common.Address, *mocksgen.SequencerInboxStub, common.Address) {
 	txOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	bridgeAddr, tx, bridge, err := mocksgen.DeployBridgeUnproxied(&txOpts, l1Client)
 	Require(t, err)
@@ -359,14 +359,12 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	if useEigenDA {
 		t.Log("Using EigenDA configurations for challenge test")
-		builder.chainConfig = params.ArbitrumDevTestEigenDAConfig()
 		builder.chainConfig.ArbitrumChainParams.EigenDA = true
 		builder.nodeConfig.EigenDA = eigenda.EigenDAConfig{
 			Enable: true,
 			Rpc:    "http://localhost:4242",
 		}
 
-		chainConfig = params.ArbitrumDevTestEigenDAConfig()
 		chainConfig.ArbitrumChainParams.EigenDA = true
 		conf.EigenDA = eigenda.EigenDAConfig{
 			Enable: true,
@@ -547,7 +545,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		Fatal(t, err)
 	}
 	defer asserterValidator.Stop()
-	asserterManager, err := staker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterValidator, 0, 0)
+	asserterManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterValidator, 0, 0)
 	if err != nil {
 		Fatal(t, err)
 	}
@@ -564,7 +562,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		Fatal(t, err)
 	}
 	defer challengerValidator.Stop()
-	challengerManager, err := staker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerValidator, 0, 0)
+	challengerManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerValidator, 0, 0)
 	if err != nil {
 		Fatal(t, err)
 	}
