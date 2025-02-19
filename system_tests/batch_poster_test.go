@@ -383,7 +383,9 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 		WithBoldDeployment().
 		WithDelayBuffer(threshold)
 	builder.L2Info.GenerateAccount("User2")
-	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour // set high max-delay so we can test the delay buffer
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	// and prevent race conditions due to config changes during the test. We'll call MaybePostSequencerBatch manually.
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
@@ -411,6 +413,8 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 			CheckBatchCount(t, builder, initialBatchCount+batch)
 			builder.nodeConfig.BatchPoster.MaxDelay = 0
 		}
+		_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+		Require(t, err)
 		for _, tx := range txs {
 			_, err := testClientB.EnsureTxSucceeded(tx)
 			Require(t, err, "tx not found on second node")
