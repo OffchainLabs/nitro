@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 )
 
@@ -127,12 +128,13 @@ func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
 }
 
 func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetadata, error) {
-	count, err := s.exec.BlockNumberToMessageIndex(blockNum)
-	if err != nil {
-		return nil, err
+	genesis := s.exec.GetGenesisBlockNumber()
+	if blockNum < genesis { // Arbitrum classic block
+		return nil, nil
 	}
+	pos := arbutil.MessageIndex(blockNum - genesis)
 	if s.consensus != nil {
-		return s.consensus.BlockMetadataAtCount(count + 1)
+		return s.consensus.BlockMetadataAtCount(pos + 1)
 	}
 	log.Debug("FullConsensusClient is not accessible to execution, BlockMetadataByNumber will return nil")
 	return nil, nil
