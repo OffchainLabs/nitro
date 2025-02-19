@@ -212,20 +212,20 @@ func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTest
 	blobInfo, err := eigenDA.Store(ctx, message)
 	Require(t, err)
 
-	bh := mocksgen.IEigenDAServiceManagerBatchHeader{
+	bh := mocksgen.BatchHeader{
 		BlobHeadersRoot:       blobInfo.BlobVerificationProof.BatchMetadata.BatchHeader.BlobHeadersRoot,
 		QuorumNumbers:         blobInfo.BlobVerificationProof.BatchMetadata.BatchHeader.QuorumNumbers,
 		SignedStakeForQuorums: blobInfo.BlobVerificationProof.BatchMetadata.BatchHeader.SignedStakeForQuorums,
 		ReferenceBlockNumber:  blobInfo.BlobVerificationProof.BatchMetadata.BatchHeader.ReferenceBlockNumber,
 	}
 
-	bm := mocksgen.IEigenDAServiceManagerBatchMetadata{
+	bm := mocksgen.BatchMetadata{
 		BatchHeader:             bh,
 		SignatoryRecordHash:     blobInfo.BlobVerificationProof.BatchMetadata.SignatoryRecordHash,
 		ConfirmationBlockNumber: blobInfo.BlobVerificationProof.BatchMetadata.ConfirmationBlockNumber,
 	}
 
-	bvp := mocksgen.EigenDARollupUtilsBlobVerificationProof{
+	bvp := mocksgen.BlobVerificationProof{
 		BatchId:        blobInfo.BlobVerificationProof.BatchID,
 		BlobIndex:      blobInfo.BlobVerificationProof.BlobIndex,
 		BatchMetadata:  bm,
@@ -233,9 +233,9 @@ func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTest
 		QuorumIndices:  blobInfo.BlobVerificationProof.QuorumIndices,
 	}
 
-	solQps := make([]mocksgen.IEigenDAServiceManagerQuorumBlobParam, len(blobInfo.BlobHeader.QuorumBlobParams))
+	solQps := make([]mocksgen.QuorumBlobParam, len(blobInfo.BlobHeader.QuorumBlobParams))
 	for _, qp := range blobInfo.BlobHeader.QuorumBlobParams {
-		solQps = append(solQps, mocksgen.IEigenDAServiceManagerQuorumBlobParam{
+		solQps = append(solQps, mocksgen.QuorumBlobParam{
 			QuorumNumber:                    qp.QuorumNumber,
 			AdversaryThresholdPercentage:    qp.AdversaryThresholdPercentage,
 			ConfirmationThresholdPercentage: qp.ConfirmationThresholdPercentage,
@@ -243,7 +243,7 @@ func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTest
 		})
 	}
 
-	blobHeader := mocksgen.IEigenDAServiceManagerBlobHeader{
+	blobHeader := mocksgen.BlobHeader{
 		Commitment: mocksgen.BN254G1Point{
 			X: blobInfo.BlobHeader.Commitment.X,
 			Y: blobInfo.BlobHeader.Commitment.Y,
