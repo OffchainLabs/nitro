@@ -359,6 +359,8 @@ $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 
 $(arbitrator_cases)/go/testcase.wasm: $(arbitrator_cases)/go/*.go .make/solgen
 	cd $(arbitrator_cases)/go && GOOS=wasip1 GOARCH=wasm go build -o testcase.wasm
