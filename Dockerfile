@@ -57,6 +57,7 @@ COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY brotli brotli
 COPY scripts/build-brotli.sh scripts/
+COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
 RUN apt-get update && apt-get install -y cmake
 RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
