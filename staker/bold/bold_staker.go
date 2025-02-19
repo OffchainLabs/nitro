@@ -65,6 +65,7 @@ type BoldConfig struct {
 	APIDBPath                           string                 `koanf:"api-db-path"`
 	TrackChallengeParentAssertionHashes []string               `koanf:"track-challenge-parent-assertion-hashes"`
 	CheckStakerSwitchInterval           time.Duration          `koanf:"check-staker-switch-interval"`
+	MaxGetLogBlocks                     int64                  `koanf:"max-get-log-blocks"`
 	StateProviderConfig                 StateProviderConfig    `koanf:"state-provider-config"`
 	StartValidationFromStaked           bool                   `koanf:"start-validation-from-staked"`
 	AutoDeposit                         bool                   `koanf:"auto-deposit"`
@@ -143,6 +144,7 @@ var DefaultBoldConfig = BoldConfig{
 	DelegatedStaking:                    DefaultDelegatedStakingConfig,
 	RPCBlockNumber:                      "finalized",
 	EnableFastConfirmation:              false,
+	MaxGetLogBlocks:                     5000,
 }
 
 var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
@@ -156,6 +158,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
 	f.String(prefix+".strategy", DefaultBoldConfig.Strategy, "define the bold validator staker strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.String(prefix+".rpc-block-number", DefaultBoldConfig.RPCBlockNumber, "define the block number to use for reading data onchain, either latest, safe, or finalized")
+	f.Int64(prefix+".max-get-log-blocks", DefaultBoldConfig.MaxGetLogBlocks, "maximum size for chunk of blocks when using get logs rpc")
 	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "assertion posting interval")
 	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "scan assertion interval")
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
@@ -528,6 +531,7 @@ func newBOLDChallengeManager(
 		challengemanager.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
 		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 		challengemanager.StackWithHeaderProvider(l1Reader),
+		challengemanager.StackWithSyncMaxGetLogBlocks(config.MaxGetLogBlocks),
 	}
 	if config.API {
 		apiAddr := fmt.Sprintf("%s:%d", config.APIHost, config.APIPort)
