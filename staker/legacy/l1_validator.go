@@ -188,7 +188,7 @@ func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error)
 	}
 	requiredStake, err := v.rollup.CurrentRequiredStake(callOpts)
 	if err != nil {
-		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		if headerreader.IsExecutionReverted(err) {
 			log.Warn("execution reverted checking if required state is elevated; assuming elevated", "err", err)
 			return true, nil
 		}
