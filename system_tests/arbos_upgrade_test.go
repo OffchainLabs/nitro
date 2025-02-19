@@ -184,6 +184,8 @@ func TestArbos11To32UpgradeWithMcopy(t *testing.T) {
 	if blockSeq.Hash() != blockReplica.Hash() {
 		t.Errorf("expected sequencer and replica to have same block hash, got %v and %v", blockSeq.Hash(), blockReplica.Hash())
 	}
+
+	AutomatedPrestateTracerTest(t, builder.L2)
 }
 
 func TestArbos11To32UpgradeWithCalldata(t *testing.T) {
