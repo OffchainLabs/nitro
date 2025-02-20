@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sort"
 	"sync/atomic"
-	"testing"
 
 	flag "github.com/spf13/pflag"
 
@@ -424,9 +423,6 @@ func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostyp
 }
 func (n *ExecutionNode) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
 	return containers.NewReadyPromise(n.ExecEngine.HeadMessageNumber())
-}
-func (n *ExecutionNode) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise(n.ExecEngine.HeadMessageNumberSync(t))
 }
 func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 	return n.ExecEngine.NextDelayedMessageNumber()
