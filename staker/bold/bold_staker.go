@@ -574,11 +574,14 @@ func readBoldAssertionCreationInfo(
 	} else {
 		var b [32]byte
 		copy(b[:], assertionHash[:])
-		node, err := rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
+		assertionCreationBlock, err := rollup.GetAssertionCreationBlockForLogLookup(&bind.CallOpts{Context: ctx}, b)
 		if err != nil {
 			return nil, err
 		}
-		creationBlock = node.CreatedAtBlock
+		if !assertionCreationBlock.IsUint64() {
+			return nil, errors.New("assertion creation block was not a uint64")
+		}
+		creationBlock = assertionCreationBlock.Uint64()
 	}
 	topics = [][]common.Hash{{assertionCreatedId}, {assertionHash}}
 	var query = ethereum.FilterQuery{
