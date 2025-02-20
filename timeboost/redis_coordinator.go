@@ -92,6 +92,10 @@ func (rc *RedisCoordinator) trackSequenceCountUpdates(ctx context.Context) {
 		var roundSeqUpdate roundSeqUpdateItem
 		select {
 		case roundSeqUpdate = <-rc.roundSeqUpdateChan:
+			if roundSeqUpdate.round < rc.roundTimingInfo.RoundNumber() {
+				// This prevents stale roundSeqUpdates from being written to redis and unclogs roundSeqUpdateChan
+				continue
+			}
 		case <-ctx.Done():
 			return
 		}
