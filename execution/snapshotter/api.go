@@ -88,9 +88,9 @@ func (a *DatabaseSnapshotterAPI) Result(ctx context.Context, rewind bool) (Snaps
 	if a.promise == nil {
 		return SnapshotResult{}, errors.New("not started yet")
 	}
-	promise := a.promise
-	if a.promise.Ready() && rewind {
+	res, err := a.promise.Current()
+	if (err == nil || !errors.Is(err, containers.ErrNotReady)) && rewind {
 		a.promise = nil
 	}
-	return promise.Current()
+	return res, err
 }
