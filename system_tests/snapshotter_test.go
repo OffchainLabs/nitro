@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
 
-	"github.com/offchainlabs/nitro/snapshotter"
+	"github.com/offchainlabs/nitro/execution/snapshotter"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
