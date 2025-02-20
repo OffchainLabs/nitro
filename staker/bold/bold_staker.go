@@ -72,6 +72,7 @@ type BoldConfig struct {
 	AutoIncreaseAllowance               bool                   `koanf:"auto-increase-allowance"`
 	DelegatedStaking                    DelegatedStakingConfig `koanf:"delegated-staking"`
 	RPCBlockNumber                      string                 `koanf:"rpc-block-number"`
+	EnableFastConfirmation              bool                   `koanf:"enable-fast-confirmation"`
 	// How long to wait since parent assertion was created to post a new assertion
 	MinimumGapToParentAssertion time.Duration `koanf:"minimum-gap-to-parent-assertion"`
 	strategy                    legacystaker.StakerStrategy
@@ -142,6 +143,7 @@ var DefaultBoldConfig = BoldConfig{
 	AutoIncreaseAllowance:               true,
 	DelegatedStaking:                    DefaultDelegatedStakingConfig,
 	RPCBlockNumber:                      "finalized",
+	EnableFastConfirmation:              false,
 	MaxGetLogBlocks:                     5000,
 }
 
@@ -172,6 +174,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".auto-deposit", DefaultBoldConfig.AutoDeposit, "auto-deposit stake token whenever making a move in BoLD that does not have enough stake token balance")
 	f.Bool(prefix+".auto-increase-allowance", DefaultBoldConfig.AutoIncreaseAllowance, "auto-increase spending allowance of the stake token by the rollup and challenge manager contracts")
 	DelegatedStakingConfigAddOptions(prefix+".delegated-staking", f)
+	f.Bool(prefix+".enable-fast-confirmation", DefaultBoldConfig.EnableFastConfirmation, "enable fast confirmation")
 }
 
 func StateProviderConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -430,6 +433,10 @@ func newBOLDChallengeManager(
 	if !config.AutoDeposit {
 		assertionChainOpts = append(assertionChainOpts, solimpl.WithoutAutoDeposit())
 	}
+
+	if config.EnableFastConfirmation {
+		assertionChainOpts = append(assertionChainOpts, solimpl.WithFastConfirmation())
+	}
 	assertionChain, err := solimpl.NewAssertionChain(
 		ctx,
 		rollupAddress,
@@ -539,6 +546,9 @@ func newBOLDChallengeManager(
 	if config.DelegatedStaking.Enable {
 		stackOpts = append(stackOpts, challengemanager.StackWithDelegatedStaking())
 	}
+	if config.EnableFastConfirmation {
+		stackOpts = append(stackOpts, challengemanager.StackWithFastConfirmationEnabled())
+	}
 
 	manager, err := challengemanager.NewChallengeStack(
 		assertionChain,
@@ -574,11 +584,14 @@ func readBoldAssertionCreationInfo(
 	} else {
 		var b [32]byte
 		copy(b[:], assertionHash[:])
-		node, err := rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
+		assertionCreationBlock, err := rollup.GetAssertionCreationBlockForLogLookup(&bind.CallOpts{Context: ctx}, b)
 		if err != nil {
 			return nil, err
 		}
-		creationBlock = node.CreatedAtBlock
+		if !assertionCreationBlock.IsUint64() {
+			return nil, errors.New("assertion creation block was not a uint64")
+		}
+		creationBlock = assertionCreationBlock.Uint64()
 	}
 	topics = [][]common.Hash{{assertionCreatedId}, {assertionHash}}
 	var query = ethereum.FilterQuery{
