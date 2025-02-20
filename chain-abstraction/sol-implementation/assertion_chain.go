@@ -327,10 +327,15 @@ func (a *AssertionChain) GetAssertion(ctx context.Context, opts *bind.CallOpts, 
 			assertionHash,
 		)
 	}
+
+	assertionCreationBlock, err := a.GetAssertionCreationBlock(ctx, b)
+	if err != nil {
+		return nil, err
+	}
 	return &Assertion{
 		id:        assertionHash,
 		chain:     a,
-		createdAt: res.CreatedAtBlock,
+		createdAt: assertionCreationBlock,
 	}, nil
 }
 
@@ -884,10 +889,14 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 	if !wantNode.IsFirstChild {
 		return 0, nil
 	}
+	assertionCreationBlock, err := a.GetAssertionCreationBlock(ctx, b)
+	if err != nil {
+		return 0, err
+	}
 	assertion := &Assertion{
 		id:        assertionHash,
 		chain:     a,
-		createdAt: wantNode.CreatedAtBlock,
+		createdAt: assertionCreationBlock,
 	}
 	prevId, err := assertion.PrevId(ctx)
 	if err != nil {
@@ -914,15 +923,15 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 		}
 
 		// Should never happen.
-		if wantNode.CreatedAtBlock > num {
+		if assertionCreationBlock > num {
 			return 0, fmt.Errorf(
 				"assertion creation block %d > latest block number %d for assertion hash %#x",
-				wantNode.CreatedAtBlock,
+				assertionCreationBlock,
 				num,
 				assertionHash,
 			)
 		}
-		return num - wantNode.CreatedAtBlock, nil
+		return num - assertionCreationBlock, nil
 	}
 	// Should never happen.
 	if prevNode.FirstChildBlock > prevNode.SecondChildBlock {
@@ -934,6 +943,24 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 		)
 	}
 	return prevNode.SecondChildBlock - prevNode.FirstChildBlock, nil
+}
+
+// GetAssertionCreationBlock returns parent chain block number when the assertion was created.
+// assertion.CreatedAtBlock is the block number when the assertion was created on L1.
+// But in case of L3, we need to look up the block number when the assertion was created on L2.
+// To do this, we use getAssertionCreationBlockForLogLookup which returns the block number when the assertion was created
+// on parent chain be it L2 or L1.
+func (a *AssertionChain) GetAssertionCreationBlock(ctx context.Context, assertionHash common.Hash) (uint64, error) {
+	callOpts := a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
+	createdAtBlock, err := a.userLogic.GetAssertionCreationBlockForLogLookup(callOpts, assertionHash)
+	if err != nil {
+		return 0, errors.Wrapf(err, "could not get assertion creation block for assertion hash %#x", assertionHash)
+	}
+	if !createdAtBlock.IsUint64() {
+		return 0, errors.New(fmt.Sprintf("for assertion hash %#x, createdAtBlock was not a uint64", assertionHash))
+
+	}
+	return createdAtBlock.Uint64(), nil
 }
 
 func (a *AssertionChain) TopLevelAssertion(ctx context.Context, edgeId protocol.EdgeId) (protocol.AssertionHash, error) {
@@ -966,7 +993,7 @@ func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protoc
 func (a *AssertionChain) ReadAssertionCreationInfo(
 	ctx context.Context, id protocol.AssertionHash,
 ) (*protocol.AssertionCreatedInfo, error) {
-	var creationBlock uint64
+	var assertionCreationBlock uint64
 	var topics [][]common.Hash
 	if id == (protocol.AssertionHash{}) {
 		rollupDeploymentBlock, err := a.rollup.RollupDeploymentBlock(&bind.CallOpts{Context: ctx})
@@ -976,21 +1003,21 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		if !rollupDeploymentBlock.IsUint64() {
 			return nil, errors.New("rollup deployment block was not a uint64")
 		}
-		creationBlock = rollupDeploymentBlock.Uint64()
+		assertionCreationBlock = rollupDeploymentBlock.Uint64()
 		topics = [][]common.Hash{{assertionCreatedId}}
 	} else {
 		var b [32]byte
 		copy(b[:], id.Bytes())
-		node, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
+		var err error
+		assertionCreationBlock, err = a.GetAssertionCreationBlock(ctx, b)
 		if err != nil {
 			return nil, err
 		}
-		creationBlock = node.CreatedAtBlock
 		topics = [][]common.Hash{{assertionCreatedId}, {id.Hash}}
 	}
 	var query = ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(creationBlock),
-		ToBlock:   new(big.Int).SetUint64(creationBlock),
+		FromBlock: new(big.Int).SetUint64(assertionCreationBlock),
+		ToBlock:   new(big.Int).SetUint64(assertionCreationBlock),
 		Addresses: []common.Address{a.rollupAddr},
 		Topics:    topics,
 	}
