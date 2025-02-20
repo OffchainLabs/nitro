@@ -338,11 +338,8 @@ func CreateExecutionNode(
 }
 
 func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
-	markFeedStartWithReturn := func(to arbutil.MessageIndex) (struct{}, error) {
-		n.ExecEngine.MarkFeedStart(to)
-		return struct{}{}, nil
-	}
-	return containers.NewReadyPromise(markFeedStartWithReturn(to))
+	n.ExecEngine.MarkFeedStart(to)
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
