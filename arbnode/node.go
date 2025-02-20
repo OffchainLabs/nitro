@@ -191,6 +191,7 @@ var ConfigDefault = Config{
 	Dangerous:                DefaultDangerousConfig,
 	TransactionStreamer:      DefaultTransactionStreamerConfig,
 	ResourceMgmt:             resourcemanager.DefaultConfig,
+	BlockMetadataFetcher:     DefaultBlockMetadataFetcherConfig,
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
 	SnapSyncTest:             DefaultSnapSyncConfig,
