@@ -46,7 +46,7 @@ jobs:
         if: ${{ runner.arch != 'ARM64' }}
         run: |
           # rmz seems to be faster at deleting files than rm
-          cargo binstall -y rmz
+          cargo binstall -y --version 2.2.0 rmz
           sudo mv /home/runner/.cargo/bin/rmz /usr/local/bin/rmz
 
           echo "Available storage before:"

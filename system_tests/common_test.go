@@ -652,6 +652,40 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	return func() { b.L2.cleanup() }
 }
 
+func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T) func() {
+	b.L2 = NewTestClient(b.ctx)
+	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+
+	var chainDb ethdb.Database
+	var arbDb ethdb.Database
+	var blockchain *core.BlockChain
+	b.L2Info, b.L2.Stack, chainDb, arbDb, blockchain = createL2BlockChain(
+		t, b.L2Info, b.dataDir, b.chainConfig, b.execConfig, b.wasmCacheTag)
+
+	Require(t, b.execConfig.Validate())
+	execConfig := b.execConfig
+	execConfigFetcher := func() *gethexec.Config { return execConfig }
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher)
+	Require(t, err)
+
+	fatalErrChan := make(chan error, 10)
+	b.L2.ConsensusNode, err = arbnode.CreateNode(
+		b.ctx, b.L2.Stack, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(),
+		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil)
+	Require(t, err)
+
+	err = b.L2.ConsensusNode.Start(b.ctx)
+	Require(t, err)
+
+	b.L2.Client = ClientForStack(t, b.L2.Stack)
+
+	StartWatchChanErr(t, b.ctx, fatalErrChan, b.L2.ConsensusNode)
+
+	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
+	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	return func() { b.L2.cleanup() }
+}
+
 // L2 -Only. RestartL2Node shutdowns the existing l2 node and start it again using the same data dir.
 func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	if b.L2 == nil {
@@ -1401,6 +1435,7 @@ func deployOnParentChain(
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
 	parentChainInfo.SetContract("Inbox", addresses.Inbox)
 	parentChainInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
+	parentChainInfo.SetContract("EspressoTEEVerifierMock", espressoTEEVerifierAddress)
 	initMessage := getInitMessage(ctx, t, parentChainClient, addresses)
 	return addresses, initMessage
 }

@@ -81,7 +81,7 @@ type SequencerConfig struct {
 	expectedSurplusHardThreshold int
 
 	// Espresso specific flags
-	CaffNodeConfig CaffNodeConfig `koanf:"caff-node-config"`
+	CaffNodeConfig CaffNodeConfig `koanf:"caff-node-config" reload:"hot"`
 	// Caff Node creates blocks with finalized hotshot transactions
 	EnableCaffNode bool `koanf:"enable-caff-node"`
 }
@@ -118,11 +118,27 @@ func (c *SequencerConfig) Validate() error {
 type SequencerConfigFetcher func() *SequencerConfig
 
 type CaffNodeConfig struct {
-	HotShotUrl             string        `koanf:"hotshot-url"`
-	StartBlock             uint64        `koanf:"start-block"`
-	Namespace              uint64        `koanf:"namespace"`
-	RetryInterval          time.Duration `koanf:"retry-interval"`
-	HotshotPollingInterval time.Duration `koanf:"hotshot-polling-interval"`
+	HotShotUrls             []string            `koanf:"hot-shot-urls"`
+	NextHotshotBlock        uint64              `koanf:"next-hotshot-block"`
+	Namespace               uint64              `koanf:"namespace"`
+	RetryTime               time.Duration       `koanf:"retry-time"`
+	HotshotPollingInterval  time.Duration       `koanf:"hotshot-polling-interval"`
+	ParentChainReader       headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
+	ParentChainNodeUrl      string              `koanf:"parent-chain-node-url"`
+	EspressoTEEVerifierAddr common.Address      `koanf:"espresso-tee-verifier-addr"`
+	SequencerUrl            string              `koanf:"sequencer-url"`
+}
+
+var DefaultCaffNodeConfig = CaffNodeConfig{
+	HotShotUrls:             []string{},
+	NextHotshotBlock:        1,
+	Namespace:               0,
+	RetryTime:               time.Second * 2,
+	HotshotPollingInterval:  time.Millisecond * 100,
+	ParentChainReader:       headerreader.DefaultConfig,
+	ParentChainNodeUrl:      "",
+	EspressoTEEVerifierAddr: common.Address{},
+	SequencerUrl:            "",
 }
 
 var DefaultSequencerConfig = SequencerConfig{
@@ -145,6 +161,19 @@ var DefaultSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 
 	EnableCaffNode: false,
+	CaffNodeConfig: DefaultCaffNodeConfig,
+}
+
+func CaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.StringSlice(prefix+".hot-shot-urls", DefaultCaffNodeConfig.HotShotUrls, "hotshot urls")
+	f.Uint64(prefix+".next-hotshot-block", DefaultCaffNodeConfig.NextHotshotBlock, "the hotshot block number from which the caff node will read")
+	f.Uint64(prefix+".namespace", DefaultCaffNodeConfig.Namespace, "the namespace of the chain in Espresso Network, usually the chain id")
+	f.Duration(prefix+".retry-time", DefaultCaffNodeConfig.RetryTime, "retry time after a failure")
+	f.Duration(prefix+".hotshot-polling-interval", DefaultCaffNodeConfig.HotshotPollingInterval, "time after a success")
+	headerreader.AddOptions(prefix+".parent-chain-reader", f)
+	f.String(prefix+".sequencer-url", DefaultCaffNodeConfig.SequencerUrl, "the sequencer url")
+	f.String(prefix+".parent-chain-node-url", DefaultCaffNodeConfig.ParentChainNodeUrl, "the parent chain url")
+	f.String(prefix+".espresso-tee-verifier-addr", "", "tee verifier address")
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -166,6 +195,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 	// Espresso specific flags
 	f.Bool(prefix+".enable-caff-node", DefaultSequencerConfig.EnableCaffNode, "enable caff node")
+	CaffNodeConfigAddOptions(prefix+".caff-node-config", f)
 }
 
 type txQueueItem struct {

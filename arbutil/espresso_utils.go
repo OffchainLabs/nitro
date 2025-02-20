@@ -8,6 +8,7 @@ import (
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ccoveille/go-safecast"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -85,21 +86,21 @@ func ValidateIfPayloadIsInBlock(p []byte, payloads []espressoTypes.Bytes) bool {
 	return validated
 }
 
-func ParseHotShotPayload(payload []byte) (signature []byte, indices []uint64, messages [][]byte, err error) {
+func ParseHotShotPayload(payload []byte) (signature []byte, userDataHash []byte, indices []uint64, messages [][]byte, err error) {
 	if len(payload) < LEN_SIZE {
-		return nil, nil, nil, errors.New("payload too short to parse signature size")
+		return nil, nil, nil, nil, errors.New("payload too short to parse signature size")
 	}
 
 	// Extract the signature size
 	signatureSize, err := safecast.ToInt(binary.BigEndian.Uint64(payload[:LEN_SIZE]))
 	if err != nil {
-		return nil, nil, nil, errors.New("could not convert signature size to int")
+		return nil, nil, nil, nil, errors.New("could not convert signature size to int")
 	}
 
 	currentPos := LEN_SIZE
 
 	if len(payload[currentPos:]) < signatureSize {
-		return nil, nil, nil, errors.New("payload too short for signature")
+		return nil, nil, nil, nil, errors.New("payload too short for signature")
 	}
 
 	// Extract the signature
@@ -109,13 +110,15 @@ func ParseHotShotPayload(payload []byte) (signature []byte, indices []uint64, me
 	indices = []uint64{}
 	messages = [][]byte{}
 
+	// Take keccak256 hash of the rest of payload
+	userDataHash = crypto.Keccak256(payload[currentPos:])
 	// Parse messages
 	for {
 		if currentPos == len(payload) {
 			break
 		}
 		if len(payload[currentPos:]) < LEN_SIZE+INDEX_SIZE {
-			return nil, nil, nil, errors.New("remaining bytes")
+			return nil, nil, nil, nil, errors.New("remaining bytes")
 		}
 
 		// Extract the index
@@ -125,12 +128,12 @@ func ParseHotShotPayload(payload []byte) (signature []byte, indices []uint64, me
 		// Extract the message size
 		messageSize, err := safecast.ToInt(binary.BigEndian.Uint64(payload[currentPos : currentPos+LEN_SIZE]))
 		if err != nil {
-			return nil, nil, nil, errors.New("could not convert message size to int")
+			return nil, nil, nil, nil, errors.New("could not convert message size to int")
 		}
 		currentPos += LEN_SIZE
 
 		if len(payload[currentPos:]) < messageSize {
-			return nil, nil, nil, errors.New("message size mismatch")
+			return nil, nil, nil, nil, errors.New("message size mismatch")
 		}
 
 		// Extract the message
@@ -141,5 +144,5 @@ func ParseHotShotPayload(payload []byte) (signature []byte, indices []uint64, me
 		messages = append(messages, message)
 	}
 
-	return signature, indices, messages, nil
+	return signature, userDataHash, indices, messages, nil
 }

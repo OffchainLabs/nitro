@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"slices"
 	"testing"
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -33,9 +35,13 @@ func TestParsePayload(t *testing.T) {
 	}
 
 	// Parse the signed payload
-	signature, indices, messages, err := ParseHotShotPayload(signedPayload)
+	signature, userDataHash, indices, messages, err := ParseHotShotPayload(signedPayload)
 	if err != nil {
 		t.Fatalf("failed to parse payload: %v", err)
+	}
+
+	if !slices.Equal(userDataHash, crypto.Keccak256(rawPayload)) {
+		t.Fatalf("User data hash is not for the correct payload")
 	}
 
 	// Validate parsed data
@@ -116,7 +122,7 @@ func TestParsePayloadInvalidCases(t *testing.T) {
 
 	for _, tc := range invalidPayloads {
 		t.Run(tc.description, func(t *testing.T) {
-			_, _, _, err := ParseHotShotPayload(tc.payload)
+			_, _, _, _, err := ParseHotShotPayload(tc.payload)
 			if err == nil {
 				t.Errorf("expected error for case '%s', but got none", tc.description)
 			}
