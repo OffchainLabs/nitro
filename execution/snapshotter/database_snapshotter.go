@@ -199,36 +199,20 @@ func (s *DatabaseSnapshotter) exportBlocks(ctx context.Context, batch BlockChain
 		if hash == (common.Hash{}) {
 			return fmt.Errorf("canonical hash for block %v not found", number)
 		}
-		if err := batch.ExportCanonicalHash(number, hash); err != nil {
-			return fmt.Errorf("failed to export canonical hash: %w", err)
-		}
-		tdRlp := rawdb.ReadTdRLP(s.db, hash, number)
-		if len(tdRlp) == 0 {
+		td := rawdb.ReadTd(s.db, hash, number)
+		if td == nil {
 			return fmt.Errorf("total difficulty for block %v (hash %v) not found", number, hash)
 		}
-		if err := batch.ExportTD(number, hash, tdRlp); err != nil {
-			return fmt.Errorf("failed to export block %v (hash %v) total difficulty: %w", number, hash, err)
+		block := rawdb.ReadBlock(s.db, hash, number)
+		if block == nil {
+			return fmt.Errorf("block %v (hash %v) not found", number, hash)
 		}
-		headerRlp := rawdb.ReadHeaderRLP(s.db, hash, number)
-		if len(headerRlp) == 0 {
-			return fmt.Errorf("header for block %v (hash %v) not found", number, hash)
-		}
-		if err := batch.ExportBlockHeader(number, hash, headerRlp); err != nil {
-			return fmt.Errorf("failed to export block %v (hash %v) header: %w", number, hash, err)
-		}
-		bodyRlp := rawdb.ReadBodyRLP(s.db, hash, number)
-		if len(bodyRlp) == 0 {
-			return fmt.Errorf("body for block %v (hash %v) not found", number, hash)
-		}
-		if err := batch.ExportBlockBody(number, hash, bodyRlp); err != nil {
-			return fmt.Errorf("failed to export block %v (hash %v) body: %w", number, hash, err)
-		}
-		receiptsRlp := rawdb.ReadReceiptsRLP(s.db, hash, number)
-		if len(receiptsRlp) == 0 {
+		receipts := rawdb.ReadRawReceipts(s.db, hash, number)
+		if receipts == nil {
 			return fmt.Errorf("receipts for block %v (hash %v) not found", number, hash)
 		}
-		if err := batch.ExportBlockReceipts(number, hash, receiptsRlp); err != nil {
-			return fmt.Errorf("failed to export block %v (hash %v) receipts: %w", number, hash, err)
+		if err := batch.ExportBlock(block, receipts, td); err != nil {
+			return fmt.Errorf("failed to export block %v (hash %v): %w", number, hash, err)
 		}
 		if time.Since(lastLog) > time.Minute {
 			elapsed := time.Since(startedAt)

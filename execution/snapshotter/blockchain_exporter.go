@@ -3,12 +3,14 @@ package snapshotter
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"path/filepath"
 
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -29,12 +31,8 @@ type BlockChainExporterBatch interface {
 	ExportChainConfig(block0Hash common.Hash, chainConfigJson []byte) error
 	// exports head block number and hash
 	ExportHead(number uint64, hash common.Hash) error
-	ExportCanonicalHash(number uint64, hash common.Hash) error
 
-	ExportTD(number uint64, hash common.Hash, tdRlp []byte) error
-	ExportBlockHeader(number uint64, hash common.Hash, headerRlp []byte) error
-	ExportBlockBody(number uint64, hash common.Hash, bodyRlp []byte) error
-	ExportBlockReceipts(number uint64, hash common.Hash, receiptsRlp []byte) error
+	ExportBlock(block *types.Block, receipts types.Receipts, td *big.Int) error
 
 	ExportAccountTrieNode(hash common.Hash, nodeBlob []byte) error
 	ExportStorageTrieNode(hash common.Hash, nodeBlob []byte) error
@@ -191,35 +189,11 @@ func (b *GethDatabaseExporterBatch) ExportHead(number uint64, hash common.Hash) 
 	return b.maybeFlush()
 }
 
-func (b *GethDatabaseExporterBatch) ExportCanonicalHash(number uint64, hash common.Hash) error {
-	rawdb.WriteCanonicalHash(b.batch, hash, number)
-	return b.maybeFlush()
-}
-
-func (b *GethDatabaseExporterBatch) ExportTD(number uint64, hash common.Hash, tdRlp []byte) error {
-	if err := b.batch.Put(rawdb.HeaderTDKey(number, hash), tdRlp); err != nil {
-		return fmt.Errorf("failed to export block difficulty: %w", err)
-	}
-	return b.maybeFlush()
-}
-
-func (b *GethDatabaseExporterBatch) ExportBlockHeader(number uint64, hash common.Hash, headerRlp []byte) error {
-	rawdb.WriteHeaderNumber(b.batch, hash, number)
-	if err := b.batch.Put(rawdb.HeaderKey(number, hash), headerRlp); err != nil {
-		return fmt.Errorf("failed to export block header: %w", err)
-	}
-	return b.maybeFlush()
-}
-
-func (b *GethDatabaseExporterBatch) ExportBlockBody(number uint64, hash common.Hash, bodyRlp []byte) error {
-	rawdb.WriteBodyRLP(b.batch, hash, number, bodyRlp)
-	return b.maybeFlush()
-}
-
-func (b *GethDatabaseExporterBatch) ExportBlockReceipts(number uint64, hash common.Hash, receiptsRlp []byte) error {
-	if err := b.batch.Put(rawdb.BlockReceiptsKey(number, hash), receiptsRlp); err != nil {
-		return fmt.Errorf("failed to export block header: %w", err)
-	}
+func (b *GethDatabaseExporterBatch) ExportBlock(block *types.Block, receipts types.Receipts, td *big.Int) error {
+	rawdb.WriteTd(b.batch, block.Hash(), block.NumberU64(), td)
+	rawdb.WriteBlock(b.batch, block)
+	rawdb.WriteReceipts(b.batch, block.Hash(), block.NumberU64(), receipts)
+	rawdb.WriteCanonicalHash(b.batch, block.Hash(), block.NumberU64())
 	return b.maybeFlush()
 }
 
