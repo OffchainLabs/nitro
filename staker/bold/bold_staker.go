@@ -616,7 +616,7 @@ func readBoldAssertionCreationInfo(
 		return nil, err
 	}
 	afterState := parsedLog.Assertion.AfterState
-	creationL1Block, err := util.CorrespondingL1BlockNumber(ctx, client, ethLog.BlockNumber)
+	creationL1Block, err := arbutil.CorrespondingL1BlockNumber(ctx, client, ethLog.BlockNumber)
 	if err != nil {
 		return nil, err
 	}
