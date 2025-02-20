@@ -323,9 +323,6 @@ func NewStaker(
 		return nil, err
 	}
 	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
-	if config().StartValidationFromStaked && blockValidator != nil {
-		stakedNotifiers = append(stakedNotifiers, blockValidator)
-	}
 	inactiveValidatedNodes := btree.NewG(2, func(a, b validatedNode) bool {
 		return a.number < b.number || (a.number == b.number && a.hash.Cmp(b.hash) < 0)
 	})
@@ -429,7 +426,6 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 		fastConfirmer,
 		s.builder,
 		s.wallet,
-		cfg.GasRefunder(),
 		s.l1Reader,
 	)
 	if err != nil {

@@ -82,23 +82,25 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 }
 
 type Config struct {
-	Sequencer           bool                           `koanf:"sequencer"`
-	ParentChainReader   headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader         InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer    DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster         BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
-	MessagePruner       MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
-	BlockValidator      staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
-	Feed                broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
-	Staker              legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
-	Bold                boldstaker.BoldConfig          `koanf:"bold"`
-	SeqCoordinator      SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability    das.DataAvailabilityConfig     `koanf:"data-availability"`
-	SyncMonitor         SyncMonitorConfig              `koanf:"sync-monitor"`
-	Dangerous           DangerousConfig                `koanf:"dangerous"`
-	TransactionStreamer TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance         MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
-	ResourceMgmt        resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
+	Sequencer                bool                           `koanf:"sequencer"`
+	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader              InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer         DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster              BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
+	MessagePruner            MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
+	BlockValidator           staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
+	Feed                     broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
+	Staker                   legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
+	Bold                     boldstaker.BoldConfig          `koanf:"bold"`
+	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
+	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
+	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
+	Dangerous                DangerousConfig                `koanf:"dangerous"`
+	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance              MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
+	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
+	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
+	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -135,6 +137,9 @@ func (c *Config) Validate() error {
 	if err := c.Staker.Validate(); err != nil {
 		return err
 	}
+	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
+		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
+	}
 	return nil
 }
 
@@ -165,27 +170,31 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
+	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
+	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
 }
 
 var ConfigDefault = Config{
-	Sequencer:           false,
-	ParentChainReader:   headerreader.DefaultConfig,
-	InboxReader:         DefaultInboxReaderConfig,
-	DelayedSequencer:    DefaultDelayedSequencerConfig,
-	BatchPoster:         DefaultBatchPosterConfig,
-	MessagePruner:       DefaultMessagePrunerConfig,
-	BlockValidator:      staker.DefaultBlockValidatorConfig,
-	Feed:                broadcastclient.FeedConfigDefault,
-	Staker:              legacystaker.DefaultL1ValidatorConfig,
-	Bold:                boldstaker.DefaultBoldConfig,
-	SeqCoordinator:      DefaultSeqCoordinatorConfig,
-	DataAvailability:    das.DefaultDataAvailabilityConfig,
-	SyncMonitor:         DefaultSyncMonitorConfig,
-	Dangerous:           DefaultDangerousConfig,
-	TransactionStreamer: DefaultTransactionStreamerConfig,
-	ResourceMgmt:        resourcemanager.DefaultConfig,
-	Maintenance:         DefaultMaintenanceConfig,
-	SnapSyncTest:        DefaultSnapSyncConfig,
+	Sequencer:                false,
+	ParentChainReader:        headerreader.DefaultConfig,
+	InboxReader:              DefaultInboxReaderConfig,
+	DelayedSequencer:         DefaultDelayedSequencerConfig,
+	BatchPoster:              DefaultBatchPosterConfig,
+	MessagePruner:            DefaultMessagePrunerConfig,
+	BlockValidator:           staker.DefaultBlockValidatorConfig,
+	Feed:                     broadcastclient.FeedConfigDefault,
+	Staker:                   legacystaker.DefaultL1ValidatorConfig,
+	Bold:                     boldstaker.DefaultBoldConfig,
+	SeqCoordinator:           DefaultSeqCoordinatorConfig,
+	DataAvailability:         das.DefaultDataAvailabilityConfig,
+	SyncMonitor:              DefaultSyncMonitorConfig,
+	Dangerous:                DefaultDangerousConfig,
+	TransactionStreamer:      DefaultTransactionStreamerConfig,
+	ResourceMgmt:             resourcemanager.DefaultConfig,
+	Maintenance:              DefaultMaintenanceConfig,
+	BlockMetadataFetcher:     DefaultBlockMetadataFetcherConfig,
+	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
+	SnapSyncTest:             DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -212,6 +221,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.Staker = legacystaker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
+	config.Bold.MinimumGapToParentAssertion = 0
 
 	return &config
 }
@@ -230,6 +240,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
+	config.Bold.MinimumGapToParentAssertion = 0
 
 	return &config
 }
@@ -259,45 +270,49 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Node struct {
-	ArbDB                   ethdb.Database
-	Stack                   *node.Node
-	Execution               execution.FullExecutionClient
-	L1Reader                *headerreader.HeaderReader
-	TxStreamer              *TransactionStreamer
-	DeployInfo              *chaininfo.RollupAddresses
-	BlobReader              daprovider.BlobReader
-	InboxReader             *InboxReader
-	InboxTracker            *InboxTracker
-	DelayedSequencer        *DelayedSequencer
-	BatchPoster             *BatchPoster
-	MessagePruner           *MessagePruner
-	BlockValidator          *staker.BlockValidator
-	StatelessBlockValidator *staker.StatelessBlockValidator
-	Staker                  *multiprotocolstaker.MultiProtocolStaker
-	BroadcastServer         *broadcaster.Broadcaster
-	BroadcastClients        *broadcastclients.BroadcastClients
-	SeqCoordinator          *SeqCoordinator
-	MaintenanceRunner       *MaintenanceRunner
-	DASLifecycleManager     *das.LifecycleManager
-	SyncMonitor             *SyncMonitor
-	configFetcher           ConfigFetcher
-	ctx                     context.Context
+	ArbDB                    ethdb.Database
+	Stack                    *node.Node
+	Execution                execution.FullExecutionClient
+	L1Reader                 *headerreader.HeaderReader
+	TxStreamer               *TransactionStreamer
+	DeployInfo               *chaininfo.RollupAddresses
+	BlobReader               daprovider.BlobReader
+	InboxReader              *InboxReader
+	InboxTracker             *InboxTracker
+	DelayedSequencer         *DelayedSequencer
+	BatchPoster              *BatchPoster
+	MessagePruner            *MessagePruner
+	BlockValidator           *staker.BlockValidator
+	StatelessBlockValidator  *staker.StatelessBlockValidator
+	Staker                   *multiprotocolstaker.MultiProtocolStaker
+	BroadcastServer          *broadcaster.Broadcaster
+	BroadcastClients         *broadcastclients.BroadcastClients
+	SeqCoordinator           *SeqCoordinator
+	MaintenanceRunner        *MaintenanceRunner
+	DASLifecycleManager      *das.LifecycleManager
+	SyncMonitor              *SyncMonitor
+	blockMetadataFetcher     *BlockMetadataFetcher
+	configFetcher            ConfigFetcher
+	ctx                      context.Context
+	ConsensusExecutionSyncer *ConsensusExecutionSyncer
 }
 
 type SnapSyncConfig struct {
-	Enabled               bool
-	PrevBatchMessageCount uint64
-	PrevDelayedRead       uint64
-	BatchCount            uint64
-	DelayedCount          uint64
+	Enabled                   bool
+	PrevBatchMessageCount     uint64
+	PrevDelayedRead           uint64
+	BatchCount                uint64
+	DelayedCount              uint64
+	ParentChainAssertionBlock uint64
 }
 
 var DefaultSnapSyncConfig = SnapSyncConfig{
-	Enabled:               false,
-	PrevBatchMessageCount: 0,
-	BatchCount:            0,
-	DelayedCount:          0,
-	PrevDelayedRead:       0,
+	Enabled:                   false,
+	PrevBatchMessageCount:     0,
+	PrevDelayedRead:           0,
+	BatchCount:                0,
+	DelayedCount:              0,
+	ParentChainAssertionBlock: 0,
 }
 
 type ConfigFetcher interface {
@@ -511,6 +526,14 @@ func createNodeImpl(
 		}
 	}
 
+	var blockMetadataFetcher *BlockMetadataFetcher
+	if config.BlockMetadataFetcher.Enable {
+		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec, config.TransactionStreamer.TrackBlockMetadataFrom)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if !config.ParentChainReader.Enable {
 		return &Node{
 			ArbDB:                   arbDb,
@@ -534,6 +557,7 @@ func createNodeImpl(
 			MaintenanceRunner:       maintenanceRunner,
 			DASLifecycleManager:     nil,
 			SyncMonitor:             syncMonitor,
+			blockMetadataFetcher:    blockMetadataFetcher,
 			configFetcher:           configFetcher,
 			ctx:                     ctx,
 		}, nil
@@ -596,7 +620,29 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
+	if config.SnapSyncTest.Enabled {
+		batchCount := config.SnapSyncTest.BatchCount
+		delayedMessageNumber, err := exec.NextDelayedMessageNumber()
+		if err != nil {
+			return nil, err
+		}
+		if batchCount > delayedMessageNumber {
+			batchCount = delayedMessageNumber
+		}
+		// Find the first block containing the batch count.
+		// Subtract 1 to get the block before the needed batch count,
+		// this is done to fetch previous batch metadata needed for snap sync.
+		if batchCount > 0 {
+			batchCount--
+		}
+		block, err := FindBlockContainingBatchCount(ctx, deployInfo.Bridge, l1client, config.SnapSyncTest.ParentChainAssertionBlock, batchCount)
+		if err != nil {
+			return nil, err
+		}
+		firstMessageBlock.SetUint64(block)
+	}
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, err
 	}
@@ -745,31 +791,85 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
+		return &configFetcher.Get().ConsensusExecutionSyncer
+	}
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, exec, blockValidator)
+
 	return &Node{
-		ArbDB:                   arbDb,
-		Stack:                   stack,
-		Execution:               exec,
-		L1Reader:                l1Reader,
-		TxStreamer:              txStreamer,
-		DeployInfo:              deployInfo,
-		BlobReader:              blobReader,
-		InboxReader:             inboxReader,
-		InboxTracker:            inboxTracker,
-		DelayedSequencer:        delayedSequencer,
-		BatchPoster:             batchPoster,
-		MessagePruner:           messagePruner,
-		BlockValidator:          blockValidator,
-		StatelessBlockValidator: statelessBlockValidator,
-		Staker:                  stakerObj,
-		BroadcastServer:         broadcastServer,
-		BroadcastClients:        broadcastClients,
-		SeqCoordinator:          coordinator,
-		MaintenanceRunner:       maintenanceRunner,
-		DASLifecycleManager:     dasLifecycleManager,
-		SyncMonitor:             syncMonitor,
-		configFetcher:           configFetcher,
-		ctx:                     ctx,
+		ArbDB:                    arbDb,
+		Stack:                    stack,
+		Execution:                exec,
+		L1Reader:                 l1Reader,
+		TxStreamer:               txStreamer,
+		DeployInfo:               deployInfo,
+		BlobReader:               blobReader,
+		InboxReader:              inboxReader,
+		InboxTracker:             inboxTracker,
+		DelayedSequencer:         delayedSequencer,
+		BatchPoster:              batchPoster,
+		MessagePruner:            messagePruner,
+		BlockValidator:           blockValidator,
+		StatelessBlockValidator:  statelessBlockValidator,
+		Staker:                   stakerObj,
+		BroadcastServer:          broadcastServer,
+		BroadcastClients:         broadcastClients,
+		SeqCoordinator:           coordinator,
+		MaintenanceRunner:        maintenanceRunner,
+		DASLifecycleManager:      dasLifecycleManager,
+		SyncMonitor:              syncMonitor,
+		blockMetadataFetcher:     blockMetadataFetcher,
+		configFetcher:            configFetcher,
+		ctx:                      ctx,
+		ConsensusExecutionSyncer: consensusExecutionSyncer,
 	}, nil
+}
+
+func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Address, l1Client *ethclient.Client, parentChainAssertionBlock uint64, batchCount uint64) (uint64, error) {
+	bridge, err := bridgegen.NewIBridge(bridgeAddress, l1Client)
+	if err != nil {
+		return 0, err
+	}
+	high := parentChainAssertionBlock
+	low := uint64(0)
+	reduceBy := uint64(100)
+	if high > reduceBy {
+		low = high - reduceBy
+	}
+	// Reduce high and low by 100 until lowNode.InboxMaxCount < batchCount
+	// This will give us a range (low to high) of blocks that contain the batch count.
+	for low > 0 {
+		lowCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(low)})
+		if err != nil {
+			return 0, err
+		}
+		if lowCount.Uint64() > batchCount {
+			high = low
+			reduceBy = reduceBy * 2
+			if low > reduceBy {
+				low = low - reduceBy
+			} else {
+				low = 0
+			}
+		} else {
+			break
+		}
+	}
+	// Then binary search between low and high to find the block containing the batch count.
+	for low < high {
+		mid := low + (high-low)/2
+
+		midCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(mid)})
+		if err != nil {
+			return 0, err
+		}
+		if midCount.Uint64() < batchCount {
+			low = mid + 1
+		} else {
+			high = mid
+		}
+	}
+	return low, nil
 }
 
 func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
@@ -816,7 +916,16 @@ func CreateNode(
 			Public: false,
 		})
 	}
-
+	if currentNode.MaintenanceRunner != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "maintenance",
+			Version:   "1.0",
+			Service: &MaintenanceAPI{
+				runner: currentNode.MaintenanceRunner,
+			},
+			Public: false,
+		})
+	}
 	stack.RegisterAPIs(apis)
 
 	return currentNode, nil
@@ -950,10 +1059,16 @@ func (n *Node) Start(ctx context.Context) error {
 			n.BroadcastClients.Start(ctx)
 		}()
 	}
+	if n.blockMetadataFetcher != nil {
+		n.blockMetadataFetcher.Start(ctx)
+	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
 	}
 	n.SyncMonitor.Start(ctx)
+	if n.ConsensusExecutionSyncer != nil {
+		n.ConsensusExecutionSyncer.Start(ctx)
+	}
 	return nil
 }
 
@@ -1039,26 +1154,14 @@ func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
 	return n.SyncMonitor.SyncTargetMessageCount()
 }
 
-// TODO: switch from pulling to pushing safe/finalized
-func (n *Node) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	return n.InboxReader.GetSafeMsgCount(ctx)
-}
-
-func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	return n.InboxReader.GetFinalizedMsgCount(ctx)
-}
-
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult) error {
-	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult)
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) error {
+	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
 }
 
 func (n *Node) ExpectChosenSequencer() error {
 	return n.TxStreamer.ExpectChosenSequencer()
 }
 
-func (n *Node) ValidatedMessageCount() (arbutil.MessageIndex, error) {
-	if n.BlockValidator == nil {
-		return 0, errors.New("validator not set up")
-	}
-	return n.BlockValidator.GetValidated(), nil
+func (n *Node) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
+	return n.TxStreamer.BlockMetadataAtCount(count)
 }

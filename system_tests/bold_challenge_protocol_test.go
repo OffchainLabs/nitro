@@ -417,6 +417,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		challengemanager.StackWithMode(modes.MakeMode),
 		challengemanager.StackWithPostingInterval(time.Second * 3),
 		challengemanager.StackWithPollingInterval(time.Second),
+		challengemanager.StackWithMinimumGapToParentAssertion(0),
 		challengemanager.StackWithAverageBlockCreationTime(time.Second),
 	}
 
@@ -594,7 +595,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	execConfig.Caching.StateScheme = rawdb.HashScheme
 	useWasmCache := uint32(1)
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, nil, execConfig, useWasmCache)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, nil, execConfig, useWasmCache, true)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
