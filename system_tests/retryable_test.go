@@ -13,8 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
+	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -240,6 +242,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	if !arbmath.BigEquals(l2balance, callValue) {
 		Fatal(t, "Unexpected balance:", l2balance)
 	}
+	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
 }
 
 func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
@@ -424,6 +427,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	if parsed.Redeemer != ownerTxOpts.From {
 		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
 	}
+	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
 }
 
 func TestGetLifetime(t *testing.T) {
@@ -929,6 +933,7 @@ func TestDepositETH(t *testing.T) {
 	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
 		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
 	}
+	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
 }
 
 func TestArbitrumContractTx(t *testing.T) {
@@ -980,6 +985,7 @@ func TestArbitrumContractTx(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
 	}
+	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
 }
 
 func TestL1FundedUnsignedTransaction(t *testing.T) {
@@ -1052,6 +1058,7 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("L2 transaction: %v has failed", receipt.TxHash)
 	}
+	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
 }
 
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
@@ -1387,4 +1394,17 @@ func setupFeeAddresses(t *testing.T, ctx context.Context, builder *NodeBuilder) 
 	t.Log("Infra fee account: ", infraFeeAccount)
 	t.Log("Network fee account: ", networkFeeAccount)
 	return infraFeeAddr, networkFeeAddr
+}
+
+func testFlatCallTracer(t *testing.T, ctx context.Context, client rpc.ClientInterface) {
+	var blockNumber hexutil.Uint64
+	err := client.CallContext(ctx, &blockNumber, "eth_blockNumber")
+	Require(t, err)
+	// #nosec G115
+	for i := int64(1); i < int64(blockNumber); i++ {
+		flatCallTracer := "flatCallTracer"
+		var result interface{}
+		err = client.CallContext(ctx, result, "debug_traceBlockByNumber", rpc.BlockNumber(i).String(), &tracers.TraceConfig{Tracer: &flatCallTracer})
+		Require(t, err)
+	}
 }
