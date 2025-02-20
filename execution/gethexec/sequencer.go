@@ -612,7 +612,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
 
-	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg)
+	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg, false)
 }
 
 func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) {
@@ -1461,7 +1461,12 @@ func (s *Sequencer) StopAndWait() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				err := forwarder.PublishTransaction(item.ctx, item.tx, item.options)
+				var err error
+				if source == "timeboostAuctionResolutionTxQueue" {
+					err = forwarder.PublishAuctionResolutionTransaction(item.ctx, item.tx)
+				} else {
+					err = forwarder.PublishTransaction(item.ctx, item.tx, item.options)
+				}
 				if err != nil {
 					log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
 				}
