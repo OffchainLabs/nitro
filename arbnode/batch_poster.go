@@ -539,7 +539,7 @@ func (b *BatchPoster) getTxsInfoByBlock(ctx context.Context, number int64) ([]tx
 	return blk.Transactions, nil
 }
 
-// checkRevert checks blocks with number in range [from, to] whether they
+// checkReverts checks blocks with number in range [from, to] whether they
 // contain reverted batch_poster transaction.
 // It returns true if it finds batch posting needs to halt, which is true if a batch reverts
 // unless the data poster is configured with noop storage which can tolerate reverts.
@@ -1157,7 +1157,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			if err != nil {
 				return false, err
 			}
-			if arbOSVersion >= 20 {
+			if arbOSVersion >= params.ArbosVersion_20 {
 				if config.IgnoreBlobPrice {
 					use4844 = true
 				} else {
@@ -1472,7 +1472,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	var delayProof *bridgegen.DelayProof
-	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil {
+	latestHeader, err := b.l1Reader.LastHeader(ctx)
+	if err != nil {
+		return false, err
+	}
+	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil && delayBuffer.isUpdatable(latestHeader.Number.Uint64()) {
 		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.inbox)
 		if err != nil {
 			return false, fmt.Errorf("failed to generate delay proof: %w", err)

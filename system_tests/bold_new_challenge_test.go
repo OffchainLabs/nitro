@@ -245,12 +245,14 @@ func fundBoldStaker(t *testing.T, ctx context.Context, builder *NodeBuilder, nam
 	txOpts.Value = nil
 
 	tx, err = stakeTokenWeth.Approve(&txOpts, builder.addresses.Rollup, balance)
+	Require(t, err)
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	challengeManager, err := rollupUserLogic.ChallengeManager(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	tx, err = stakeTokenWeth.Approve(&txOpts, challengeManager, balance)
+	Require(t, err)
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 }
@@ -335,6 +337,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		&txOpts,
 		butil.NewBackendWrapper(builder.L1.Client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
+		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 
@@ -344,6 +347,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		challengemanager.StackWithPostingInterval(time.Second * 3),
 		challengemanager.StackWithPollingInterval(time.Second),
 		challengemanager.StackWithAverageBlockCreationTime(time.Second),
+		challengemanager.StackWithMinimumGapToParentAssertion(0),
 	}
 
 	challengeManager, err := challengemanager.NewChallengeStack(

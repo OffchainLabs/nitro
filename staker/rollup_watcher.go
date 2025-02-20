@@ -113,7 +113,7 @@ func (r *RollupWatcher) getNodeCreationBlock(ctx context.Context, nodeNum uint64
 			r.supportedL3Method.Store(true)
 			return createdAtBlock, nil
 		}
-		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) && !looksLikeNoNodeError(err) {
+		if headerreader.IsExecutionReverted(err) && !looksLikeNoNodeError(err) {
 			if r.supportedL3Method.Load() {
 				return nil, fmt.Errorf("getNodeCreationBlockForLogLookup failed despite previously succeeding: %w", err)
 			}

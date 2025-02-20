@@ -89,12 +89,12 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			},
 			DelayedMessagesRead: 1,
 		}
-		err = node.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage)
+		err = node.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage, nil)
 		if errors.Is(err, execution.ErrRetrySequencer) {
 			return false
 		}
 		Require(t, err)
-		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbostypes.MessageWithMetadata{emptyMessage}))
+		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbostypes.MessageWithMetadata{emptyMessage}, nil))
 		return true
 	}
 
