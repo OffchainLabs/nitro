@@ -524,6 +524,61 @@ type txInfo struct {
 	Accesses  *types.AccessList `json:"accessList,omitempty"`
 }
 
+func (b *BatchPoster) parentChainIsUsingEIP7623(ctx context.Context) (uint64, error) {
+	nonce, _, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	dynamicFeeTx := &types.DynamicFeeTx{
+		To:        &b.seqInboxAddr,
+		Gas:       32000000,
+		GasFeeCap: new(big.Int).SetUint64(1000000000),
+		Value:     common.Big0,
+		Nonce:     nonce,
+		Data:      nil,
+	}
+	auth := b.dataPoster.Auth()
+	tx, err := auth.Signer(b.dataPoster.Sender(), types.NewTx(dynamicFeeTx))
+	if err != nil {
+		return 0, err
+	}
+	data, err := tx.MarshalBinary()
+	if err != nil {
+		return 0, err
+	}
+
+	// rpcClient := b.l1Reader.Client()
+	//
+	// latestHeader, err := rpcClient.HeaderByNumber(ctx, nil)
+	// if err != nil {
+	// 	return false, err
+	// }
+	// config := b.config()
+	// maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
+	// gas, err := estimateGas(rpcClient.Client(), ctx, estimateGasParams{
+	// 	From:         b.dataPoster.Sender(),
+	// 	To:           &b.seqInboxAddr,
+	// 	Data:         data,
+	// 	MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
+	// })
+	msgCount, err := b.streamer.GetMessageCount()
+	if err != nil {
+		return 0, err
+	}
+	lastPotentialMsg, err := b.streamer.GetMessage(msgCount - 1)
+	if err != nil {
+		return 0, err
+	}
+	var accessList types.AccessList
+	gas, err := b.estimateGas(ctx, data, lastPotentialMsg.DelayedMessagesRead, data, nil, nonce, accessList, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	return gas, nil
+}
+
 // getTxsInfoByBlock fetches all the transactions inside block of id 'number' using json rpc
 // and returns an array of txInfo which has fields that are necessary in checking for batch reverts
 func (b *BatchPoster) getTxsInfoByBlock(ctx context.Context, number int64) ([]txInfo, error) {
@@ -1654,6 +1709,9 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		normalGasEstimationFailedEphemeralErrorHandler.Reset()
 		accumulatorNotFoundEphemeralErrorHandler.Reset()
 	}
+	gas, err := b.parentChainIsUsingEIP7623(ctxIn)
+	log.Error("parentChainIsUsingEIP7623", "gas", gas, "err", err)
+
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
