@@ -632,7 +632,7 @@ func readBoldAssertionCreationInfo(
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
 		TransactionHash:     ethLog.TxHash,
-		CreationBlock:       ethLog.BlockNumber,
+		CreationParentBlock: ethLog.BlockNumber,
 		CreationL1Block:     creationL1Block,
 	}, nil
 }
