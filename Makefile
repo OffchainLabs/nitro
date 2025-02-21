@@ -577,9 +577,6 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint run --disable-all -E gofmt --fix
-	cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
-	cargo fmt --all --manifest-path arbitrator/wasm-testsuite/Cargo.toml -- --check
-	cargo fmt --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
 	yarn --cwd contracts prettier:solidity
 	@touch $@
 
