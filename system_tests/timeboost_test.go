@@ -53,6 +53,85 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+func TestAuctionResolutionDuringATie(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tmpDir, err := os.MkdirTemp("", "*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	})
+
+	auctionContractAddr, aliceBidderClient, bobBidderClient, _, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0)
+	_, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
+	defer cleanupSeq()
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
+	Require(t, err)
+	domainSeparator, err := auctionContract.DomainSeparator(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+
+	// For the next round, we will send equal bids and verify we get the correct winner
+	t.Logf("Alice and Bob now submitting their equal bids at %v", time.Now())
+	aliceAddr := seqInfo.GetAddress("Alice")
+	aliceBid, err := aliceBidderClient.Bid(ctx, big.NewInt(1), aliceAddr)
+	Require(t, err)
+	bobAddr := seqInfo.GetAddress("Bob")
+	bobBid, err := bobBidderClient.Bid(ctx, big.NewInt(1), bobAddr)
+	Require(t, err)
+	t.Logf("Alice bid %+v", aliceBid)
+	t.Logf("Bob bid %+v", bobBid)
+
+	// Check if bidHash from ToEIP712Hash matches with the calculation in auction contract
+	matchBidHash := func(bid *timeboost.Bid) {
+		expectedBidHash, err := auctionContract.GetBidHash(&bind.CallOpts{}, bid.Round, bid.ExpressLaneController, bid.Amount)
+		Require(t, err)
+		bidHash, err := bid.ToEIP712Hash(domainSeparator)
+		Require(t, err)
+		if !bytes.Equal(expectedBidHash[:], bidHash.Bytes()) {
+			t.Fatalf("bid hash mismatch with contract. Want: %v, Got: %v", expectedBidHash, bidHash.Bytes())
+		}
+	}
+	matchBidHash(aliceBid)
+	matchBidHash(bobBid)
+
+	// Subscribe to auction resolutions and wait for a winner
+	winnerAddr, _ := awaitAuctionResolved(t, ctx, seqClient, auctionContract)
+
+	// Get expected Winner on the GO side
+	toValidatedBid := func(bidder common.Address, bid *timeboost.Bid) *timeboost.ValidatedBid {
+		return &timeboost.ValidatedBid{
+			ExpressLaneController:  bid.ExpressLaneController,
+			Amount:                 bid.Amount,
+			Signature:              bid.Signature,
+			ChainId:                bid.ChainId,
+			AuctionContractAddress: bid.AuctionContractAddress,
+			Round:                  bid.Round,
+			Bidder:                 bidder,
+		}
+
+	}
+
+	var expectedWinner common.Address
+	aliceBigIntHash := toValidatedBid(aliceAddr, aliceBid).BigIntHash(domainSeparator)
+	BobBigIntHash := toValidatedBid(bobAddr, bobBid).BigIntHash(domainSeparator)
+	if aliceBigIntHash.Cmp(BobBigIntHash) > 0 {
+		expectedWinner = aliceAddr
+	} else if aliceBigIntHash.Cmp(BobBigIntHash) < 0 {
+		expectedWinner = bobAddr
+	}
+
+	// If tie can't be broken by BigIntHash, then whoever is picked first is the winner- auction contract will agree with that as well
+	if (expectedWinner != common.Address{}) {
+		// Verify that the winner on the GO side is the same on the contract side
+		if expectedWinner != winnerAddr {
+			t.Fatalf("Unexpected auction winner in case of a tie. Want: %s, Got: %s", expectedWinner, winnerAddr)
+		}
+	}
+}
+
 func TestExpressLaneTxsHandlingDuringSequencerSwapDueToPriorities(t *testing.T) {
 	testTxsHandlingDuringSequencerSwap(t, false)
 }
