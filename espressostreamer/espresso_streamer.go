@@ -8,19 +8,13 @@ import (
 
 	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
 
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -32,7 +26,6 @@ type MessageWithMetadataAndPos struct {
 
 type EspressoStreamer struct {
 	stopwaiter.StopWaiter
-	l1Reader                      *headerreader.HeaderReader
 	espressoClient                *espressoClient.MultipleNodesClient
 	nextHotshotBlockNum           uint64
 	currentMessagePos             uint64
@@ -40,8 +33,7 @@ type EspressoStreamer struct {
 	retryTime                     time.Duration
 	pollingHotshotPollingInterval time.Duration
 	messageWithMetadataAndPos     []*MessageWithMetadataAndPos
-	espressoTEEVerifierABI        *abi.ABI
-	espressoTEEVerifierAddr       common.Address
+	espressoTEEVerifierCaller     bridgegen.EspressoTEEVerifier
 
 	messageMutex sync.Mutex
 }
@@ -50,45 +42,16 @@ func NewEspressoStreamer(namespace uint64, hotshotUrls []string,
 	nextHotshotBlockNum uint64,
 	retryTime time.Duration,
 	pollingHotshotPollingInterval time.Duration,
-	parentChainNodeUrl string,
-	headerReaderConfig headerreader.Config,
-	espressoTEEVerifierAddress common.Address,
+	espressoTEEVerifierCaller bridgegen.EspressoTEEVerifier,
 ) *EspressoStreamer {
 
-	espressoTEEVerifierAbi, err := bridgegen.IEspressoTEEVerifierMetaData.GetAbi()
-	if err != nil {
-		log.Crit("Unable to find EspressoTEEVerifier ABI")
-	}
-	l1Client, err := ethclient.Dial(parentChainNodeUrl)
-	if err != nil {
-		log.Crit("Failed to create l1 client", "url", parentChainNodeUrl)
-		return nil
-	}
-
-	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
-	if err != nil {
-		log.Crit("Failed to create arbsys", "err", err)
-		return nil
-	}
-
-	// we initialze a l1 reader that will poll for header every 60 seconds
-	l1Reader, err := headerreader.New(context.Background(), l1Client, func() *headerreader.Config {
-		return &headerReaderConfig
-	}, arbSys)
-
-	if err != nil {
-		log.Crit("Failed to create l1 reader", "err", err)
-		return nil
-	}
 	return &EspressoStreamer{
 		espressoClient:                espressoClient.NewMultipleNodesClient(hotshotUrls),
 		nextHotshotBlockNum:           nextHotshotBlockNum,
 		retryTime:                     retryTime,
 		pollingHotshotPollingInterval: pollingHotshotPollingInterval,
 		namespace:                     namespace,
-		l1Reader:                      l1Reader,
-		espressoTEEVerifierABI:        espressoTEEVerifierAbi,
-		espressoTEEVerifierAddr:       espressoTEEVerifierAddress,
+		espressoTEEVerifierCaller:     espressoTEEVerifierCaller,
 	}
 }
 
@@ -121,35 +84,12 @@ func (s *EspressoStreamer) Next() (*MessageWithMetadataAndPos, error) {
 }
 
 /* Verify the attestation quote */
-func (s *EspressoStreamer) verifyAttestationQuote(ctx context.Context, attestation []byte, userDataHash [32]byte) error {
+func (s *EspressoStreamer) verifyAttestationQuote(attestation []byte, userDataHash [32]byte) error {
 
-	method, ok := s.espressoTEEVerifierABI.Methods["verify"]
-	if !ok {
-		return fmt.Errorf("verify method not found")
-	}
-
-	calldata, err := method.Inputs.Pack(
-		attestation,
-		userDataHash,
-	)
-
+	err := s.espressoTEEVerifierCaller.Verify(&bind.CallOpts{}, attestation, userDataHash)
 	if err != nil {
-		return fmt.Errorf("failed to pack calldata: %w", err)
+		return fmt.Errorf("call to the espressoTEEVerifier contract failed: %w", err)
 	}
-	fullCalldata := append([]byte{}, method.ID...)
-	fullCalldata = append(fullCalldata, calldata...)
-
-	_, err = s.l1Reader.Client().CallContract(
-		ctx,
-		ethereum.CallMsg{
-			To:   &s.espressoTEEVerifierAddr,
-			Data: fullCalldata,
-		}, nil,
-	)
-	if err != nil {
-		return fmt.Errorf("call to the contract failed: %w", err)
-	}
-
 	return nil
 }
 
@@ -205,7 +145,7 @@ func (s *EspressoStreamer) queueMessagesFromHotshot(ctx context.Context) error {
 			continue
 		}
 		userDataHashArr := [32]byte(userDataHash)
-		err = s.verifyAttestationQuote(ctx, attestation, userDataHashArr)
+		err = s.verifyAttestationQuote(attestation, userDataHashArr)
 		if err != nil {
 			log.Warn("failed to verify attestation quote", "err", err)
 			continue

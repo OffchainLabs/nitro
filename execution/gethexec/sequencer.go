@@ -118,14 +118,14 @@ func (c *SequencerConfig) Validate() error {
 type SequencerConfigFetcher func() *SequencerConfig
 
 type CaffNodeConfig struct {
-	HotShotUrls             []string            `koanf:"hot-shot-urls"`
+	HotShotUrls             []string            `koanf:"hotshot-urls"`
 	NextHotshotBlock        uint64              `koanf:"next-hotshot-block"`
 	Namespace               uint64              `koanf:"namespace"`
 	RetryTime               time.Duration       `koanf:"retry-time"`
 	HotshotPollingInterval  time.Duration       `koanf:"hotshot-polling-interval"`
 	ParentChainReader       headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
 	ParentChainNodeUrl      string              `koanf:"parent-chain-node-url"`
-	EspressoTEEVerifierAddr common.Address      `koanf:"espresso-tee-verifier-addr"`
+	EspressoTEEVerifierAddr string              `koanf:"espresso-tee-verifier-addr"`
 	SequencerUrl            string              `koanf:"sequencer-url"`
 }
 
@@ -137,7 +137,7 @@ var DefaultCaffNodeConfig = CaffNodeConfig{
 	HotshotPollingInterval:  time.Millisecond * 100,
 	ParentChainReader:       headerreader.DefaultConfig,
 	ParentChainNodeUrl:      "",
-	EspressoTEEVerifierAddr: common.Address{},
+	EspressoTEEVerifierAddr: "",
 	SequencerUrl:            "",
 }
 
@@ -165,7 +165,7 @@ var DefaultSequencerConfig = SequencerConfig{
 }
 
 func CaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.StringSlice(prefix+".hot-shot-urls", DefaultCaffNodeConfig.HotShotUrls, "hotshot urls")
+	f.StringSlice(prefix+".hotshot-urls", DefaultCaffNodeConfig.HotShotUrls, "hotshot urls")
 	f.Uint64(prefix+".next-hotshot-block", DefaultCaffNodeConfig.NextHotshotBlock, "the hotshot block number from which the caff node will read")
 	f.Uint64(prefix+".namespace", DefaultCaffNodeConfig.Namespace, "the namespace of the chain in Espresso Network, usually the chain id")
 	f.Duration(prefix+".retry-time", DefaultCaffNodeConfig.RetryTime, "retry time after a failure")
