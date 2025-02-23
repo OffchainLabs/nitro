@@ -242,19 +242,9 @@ func deployRollupCreator(ctx context.Context, parentChainReader *headerreader.He
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func DeployOnParentChain(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPosters []common.Address, batchPosterManager common.Address, authorizeValidators uint64, config rollupgen.Config, nativeToken common.Address, maxDataSize *big.Int, eigenDARollupManager common.Address, chainSupportsBlobs bool) (*chaininfo.RollupAddresses, error) {
+func DeployOnParentChain(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPosters []common.Address, batchPosterManager common.Address, authorizeValidators uint64, config rollupgen.Config, nativeToken common.Address, maxDataSize *big.Int, chainSupportsBlobs bool) (*chaininfo.RollupAddresses, error) {
 	if config.WasmModuleRoot == (common.Hash{}) {
 		return nil, errors.New("no machine specified")
-	}
-
-	if eigenDARollupManager == (common.Address{0x0}) {
-		dummyRollupManager, tx, _, err := bridgegen.DeployEigenDABlobVerifierL2(deployAuth, parentChainReader.Client())
-		err = andTxSucceeded(ctx, parentChainReader, tx, err)
-		if err != nil {
-			return nil, fmt.Errorf("dummy manager deploy error: %w", err)
-		}
-
-		eigenDARollupManager = dummyRollupManager
 	}
 
 	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth, maxDataSize, chainSupportsBlobs)
@@ -276,7 +266,11 @@ func DeployOnParentChain(ctx context.Context, parentChainReader *headerreader.He
 		MaxFeePerGasForRetryables: big.NewInt(0), // needed when utility factories are deployed
 		BatchPosters:              batchPosters,
 		BatchPosterManager:        batchPosterManager,
-		EigenDARollupManager:      eigenDARollupManager,
+		// zero address indicates to the SequencerInbox that certificate verification should be disabled
+		// THIS creates an insecure testing environment for /system_tests
+		// testing a secure E2E Stage1 integration with EigenDA currently can only be done on
+		// a holesky testnet environment
+		EigenDACertVerifier:     common.HexToAddress("0x0"), 
 	}
 
 	tx, err := rollupCreator.CreateRollup(

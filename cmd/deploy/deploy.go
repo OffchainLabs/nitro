@@ -40,7 +40,6 @@ func main() {
 	ctx := context.Background()
 
 	/* EigenDA dependency contracts */
-	daRollupManagerString := flag.String("daRollupManager", "0x0000000000000000000000000000000000000000", "the address of the eigenda rollup manager contract")
 
 	l1conn := flag.String("l1conn", "", "l1 connection")
 	l1keystore := flag.String("l1keystore", "", "l1 private key store")
@@ -182,7 +181,6 @@ func main() {
 	defer l1Reader.StopAndWait()
 
 	nativeToken := common.HexToAddress(*nativeTokenAddressString)
-	eigenDARollupManager := common.HexToAddress(*daRollupManagerString)
 
 	deployedAddresses, err := deploycode.DeployOnParentChain(
 		ctx,
@@ -194,7 +192,6 @@ func main() {
 		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 		nativeToken,
 		maxDataSize,
-		eigenDARollupManager,
 		true,
 	)
 	if err != nil {
