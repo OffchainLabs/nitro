@@ -43,6 +43,7 @@ func NewEspressoStreamer(namespace uint64, hotshotUrls []string,
 	retryTime time.Duration,
 	pollingHotshotPollingInterval time.Duration,
 	espressoTEEVerifierCaller bridgegen.EspressoTEEVerifier,
+	currentMessagePos uint64,
 ) *EspressoStreamer {
 
 	return &EspressoStreamer{
@@ -52,6 +53,7 @@ func NewEspressoStreamer(namespace uint64, hotshotUrls []string,
 		pollingHotshotPollingInterval: pollingHotshotPollingInterval,
 		namespace:                     namespace,
 		espressoTEEVerifierCaller:     espressoTEEVerifierCaller,
+		currentMessagePos:             currentMessagePos,
 	}
 }
 
@@ -63,7 +65,7 @@ func (s *EspressoStreamer) Reset(currentMessagePos uint64, currentHostshotBlock 
 	s.messageWithMetadataAndPos = []*MessageWithMetadataAndPos{}
 }
 
-func (s *EspressoStreamer) Next() (*MessageWithMetadataAndPos, error) {
+func (s *EspressoStreamer) Next() (MessageWithMetadataAndPos, error) {
 	s.messageMutex.Lock()
 	defer s.messageMutex.Unlock()
 
@@ -76,11 +78,11 @@ func (s *EspressoStreamer) Next() (*MessageWithMetadataAndPos, error) {
 		}
 		return 1
 	})
-	if !found {
-		return nil, fmt.Errorf("no message found")
+	if !found || message == nil {
+		return MessageWithMetadataAndPos{}, fmt.Errorf("no message found")
 	}
 	s.currentMessagePos += 1
-	return message, nil
+	return *message, nil
 }
 
 /* Verify the attestation quote */
