@@ -54,6 +54,15 @@ import (
 )
 
 func TestAuctionResolutionDuringATie(t *testing.T) {
+	testAuctionResolutionDuringATie(t, false)
+}
+
+func TestAuctionResolutionDuringATieMultipleRuns(t *testing.T) {
+	t.Skip("This test is skipped in CI as it might probably take too long to complete")
+	testAuctionResolutionDuringATie(t, true)
+}
+
+func testAuctionResolutionDuringATie(t *testing.T, multiRuns bool) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -70,65 +79,91 @@ func TestAuctionResolutionDuringATie(t *testing.T) {
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
 	Require(t, err)
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
+	Require(t, err)
 	domainSeparator, err := auctionContract.DomainSeparator(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 
-	// For the next round, we will send equal bids and verify we get the correct winner
-	t.Logf("Alice and Bob now submitting their equal bids at %v", time.Now())
 	aliceAddr := seqInfo.GetAddress("Alice")
-	aliceBid, err := aliceBidderClient.Bid(ctx, big.NewInt(1), aliceAddr)
-	Require(t, err)
 	bobAddr := seqInfo.GetAddress("Bob")
-	bobBid, err := bobBidderClient.Bid(ctx, big.NewInt(1), bobAddr)
-	Require(t, err)
-	t.Logf("Alice bid %+v", aliceBid)
-	t.Logf("Bob bid %+v", bobBid)
+	var aliceHasWon, bobHasWon bool
 
-	// Check if bidHash from ToEIP712Hash matches with the calculation in auction contract
-	matchBidHash := func(bid *timeboost.Bid) {
-		expectedBidHash, err := auctionContract.GetBidHash(&bind.CallOpts{}, bid.Round, bid.ExpressLaneController, bid.Amount)
+	for {
+		// For the next round, we will send equal bids and verify we get the correct winner
+		t.Logf("Alice and Bob now submitting their equal bids at %v", time.Now())
+		aliceBid, err := aliceBidderClient.Bid(ctx, big.NewInt(1), aliceAddr)
 		Require(t, err)
-		bidHash, err := bid.ToEIP712Hash(domainSeparator)
+		bobBid, err := bobBidderClient.Bid(ctx, big.NewInt(1), bobAddr)
 		Require(t, err)
-		if !bytes.Equal(expectedBidHash[:], bidHash.Bytes()) {
-			t.Fatalf("bid hash mismatch with contract. Want: %v, Got: %v", expectedBidHash, bidHash.Bytes())
+		t.Logf("Alice bid %+v", aliceBid)
+		t.Logf("Bob bid %+v", bobBid)
+
+		// Check if bidHash from ToEIP712Hash matches with the calculation in auction contract
+		matchBidHash := func(bid *timeboost.Bid) {
+			expectedBidHash, err := auctionContract.GetBidHash(&bind.CallOpts{}, bid.Round, bid.ExpressLaneController, bid.Amount)
+			Require(t, err)
+			bidHash, err := bid.ToEIP712Hash(domainSeparator)
+			Require(t, err)
+			if !bytes.Equal(expectedBidHash[:], bidHash.Bytes()) {
+				t.Fatalf("bid hash mismatch with contract. Want: %v, Got: %v", expectedBidHash, bidHash.Bytes())
+			}
 		}
-	}
-	matchBidHash(aliceBid)
-	matchBidHash(bobBid)
+		matchBidHash(aliceBid)
+		matchBidHash(bobBid)
 
-	// Subscribe to auction resolutions and wait for a winner
-	winnerAddr, _ := awaitAuctionResolved(t, ctx, seqClient, auctionContract)
+		// Subscribe to auction resolutions and wait for a winner
+		winnerAddr, _ := awaitAuctionResolved(t, ctx, seqClient, auctionContract)
 
-	// Get expected Winner on the GO side
-	toValidatedBid := func(bidder common.Address, bid *timeboost.Bid) *timeboost.ValidatedBid {
-		return &timeboost.ValidatedBid{
-			ExpressLaneController:  bid.ExpressLaneController,
-			Amount:                 bid.Amount,
-			Signature:              bid.Signature,
-			ChainId:                bid.ChainId,
-			AuctionContractAddress: bid.AuctionContractAddress,
-			Round:                  bid.Round,
-			Bidder:                 bidder,
+		// Get expected Winner on the GO side
+		toValidatedBid := func(bidder common.Address, bid *timeboost.Bid) *timeboost.ValidatedBid {
+			return &timeboost.ValidatedBid{
+				ExpressLaneController:  bid.ExpressLaneController,
+				Amount:                 bid.Amount,
+				Signature:              bid.Signature,
+				ChainId:                bid.ChainId,
+				AuctionContractAddress: bid.AuctionContractAddress,
+				Round:                  bid.Round,
+				Bidder:                 bidder,
+			}
+
 		}
 
-	}
-
-	var expectedWinner common.Address
-	aliceBigIntHash := toValidatedBid(aliceAddr, aliceBid).BigIntHash(domainSeparator)
-	BobBigIntHash := toValidatedBid(bobAddr, bobBid).BigIntHash(domainSeparator)
-	if aliceBigIntHash.Cmp(BobBigIntHash) > 0 {
-		expectedWinner = aliceAddr
-	} else if aliceBigIntHash.Cmp(BobBigIntHash) < 0 {
-		expectedWinner = bobAddr
-	}
-
-	// If tie can't be broken by BigIntHash, then whoever is picked first is the winner- auction contract will agree with that as well
-	if (expectedWinner != common.Address{}) {
-		// Verify that the winner on the GO side is the same on the contract side
-		if expectedWinner != winnerAddr {
-			t.Fatalf("Unexpected auction winner in case of a tie. Want: %s, Got: %s", expectedWinner, winnerAddr)
+		var expectedWinner common.Address
+		aliceBigIntHash := toValidatedBid(aliceAddr, aliceBid).BigIntHash(domainSeparator)
+		BobBigIntHash := toValidatedBid(bobAddr, bobBid).BigIntHash(domainSeparator)
+		if aliceBigIntHash.Cmp(BobBigIntHash) > 0 {
+			expectedWinner = aliceAddr
+		} else if aliceBigIntHash.Cmp(BobBigIntHash) < 0 {
+			expectedWinner = bobAddr
 		}
+
+		// If tie can't be broken by BigIntHash, then whoever is picked first is the winner- auction contract will agree with that as well
+		if (expectedWinner != common.Address{}) {
+			// Verify that the winner on the GO side is the same on the contract side
+			if expectedWinner != winnerAddr {
+				t.Fatalf("Unexpected auction winner in case of a tie. Want: %s, Got: %s", expectedWinner, winnerAddr)
+			}
+		}
+
+		if !multiRuns {
+			break
+		}
+
+		if winnerAddr == aliceAddr {
+			aliceHasWon = true
+		} else if winnerAddr == bobAddr {
+			bobHasWon = true
+		} else {
+			t.Fatalf("Unexpected winner of the auction round: %s", winnerAddr)
+		}
+
+		// Both bidders winning a tie has been tested
+		if aliceHasWon && bobHasWon {
+			break
+		}
+		time.Sleep(roundTimingInfo.TimeTilNextRound())
 	}
 }
 
