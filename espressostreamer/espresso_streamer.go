@@ -43,7 +43,6 @@ func NewEspressoStreamer(namespace uint64, hotshotUrls []string,
 	retryTime time.Duration,
 	pollingHotshotPollingInterval time.Duration,
 	espressoTEEVerifierCaller bridgegen.EspressoTEEVerifier,
-	currentMessagePos uint64,
 ) *EspressoStreamer {
 
 	return &EspressoStreamer{
@@ -53,7 +52,6 @@ func NewEspressoStreamer(namespace uint64, hotshotUrls []string,
 		pollingHotshotPollingInterval: pollingHotshotPollingInterval,
 		namespace:                     namespace,
 		espressoTEEVerifierCaller:     espressoTEEVerifierCaller,
-		currentMessagePos:             currentMessagePos,
 	}
 }
 

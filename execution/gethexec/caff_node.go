@@ -85,8 +85,6 @@ func NewCaffNode(configFetcher SequencerConfigFetcher, execEngine *ExecutionEngi
 		config.CaffNodeConfig.RetryTime,
 		config.CaffNodeConfig.HotshotPollingInterval,
 		*espressoTEEVerifierCaller,
-		// This is +1 because the current block is the block after the last processed block
-		execEngine.bc.CurrentBlock().Number.Uint64()+1,
 	)
 
 	if espressoStreamer == nil {
@@ -184,6 +182,9 @@ func (n *CaffNode) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to start espresso streamer: %w", err)
 	}
+	// This is +1 because the current block is the block after the last processed block
+	currentBlockNum := n.executionEngine.bc.CurrentBlock().Number.Uint64() + 1
+	n.espressoStreamer.Reset(currentBlockNum, n.config().CaffNodeConfig.NextHotshotBlock)
 
 	err = n.CallIterativelySafe(func(ctx context.Context) time.Duration {
 		madeBlock := n.createBlock()
