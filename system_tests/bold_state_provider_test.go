@@ -89,7 +89,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	// Wait until the validator has validated the batches.
 	for {
 		time.Sleep(time.Millisecond * 100)
-		lastInfo, err := blockValidator.ReadLastValidatedInfo()
+		lastInfo, err := blockValidator.ReadLastValidatedInfo(ctx)
 		if lastInfo == nil || err != nil {
 			continue
 		}
@@ -202,7 +202,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	// Wait until the validator has validated the batches.
 	for {
 		time.Sleep(time.Millisecond * 100)
-		lastInfo, err := blockValidator.ReadLastValidatedInfo()
+		lastInfo, err := blockValidator.ReadLastValidatedInfo(ctx)
 		if lastInfo == nil || err != nil {
 			continue
 		}
@@ -390,11 +390,13 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	Require(t, stateless.Start(ctx))
 
 	blockValidator, err := staker.NewBlockValidator(
+		ctx,
 		stateless,
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
+		l1stack,
 	)
 	Require(t, err)
 	Require(t, blockValidator.Initialize(ctx))
