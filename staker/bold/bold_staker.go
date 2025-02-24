@@ -566,7 +566,7 @@ func newBOLDChallengeManager(
 func readBoldAssertionCreationInfo(
 	ctx context.Context,
 	rollup *boldrollup.RollupUserLogic,
-	client bind.ContractFilterer,
+	client protocol.ChainBackend,
 	rollupAddress common.Address,
 	assertionHash common.Hash,
 ) (*protocol.AssertionCreatedInfo, error) {
@@ -616,6 +616,10 @@ func readBoldAssertionCreationInfo(
 		return nil, err
 	}
 	afterState := parsedLog.Assertion.AfterState
+	creationL1Block, err := arbutil.CorrespondingL1BlockNumber(ctx, client, ethLog.BlockNumber)
+	if err != nil {
+		return nil, err
+	}
 	return &protocol.AssertionCreatedInfo{
 		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
 		RequiredStake:       parsedLog.RequiredStake,
@@ -628,6 +632,7 @@ func readBoldAssertionCreationInfo(
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
 		TransactionHash:     ethLog.TxHash,
-		CreationBlock:       ethLog.BlockNumber,
+		CreationParentBlock: ethLog.BlockNumber,
+		CreationL1Block:     creationL1Block,
 	}, nil
 }
