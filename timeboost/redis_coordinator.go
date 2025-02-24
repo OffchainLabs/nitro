@@ -19,7 +19,7 @@ import (
 const EXPRESS_LANE_ROUND_SEQUENCE_KEY_PREFIX string = "expressLane.roundSequence." // Only written by sequencer holding CHOSEN (seqCoordinator) key
 const EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX string = "expressLane.acceptedTx."       // Only written by sequencer holding CHOSEN (seqCoordinator) key
 
-const UpdateEventsChannelSize int = 50
+const UpdateEventsChannelSize int = 500
 
 type roundSeqUpdateItem struct {
 	round    uint64
@@ -91,10 +91,29 @@ func (rc *RedisCoordinator) trackSequenceCountUpdates(ctx context.Context) {
 	for {
 		var roundSeqUpdate roundSeqUpdateItem
 		select {
-		case roundSeqUpdate = <-rc.roundSeqUpdateChan:
-			if roundSeqUpdate.round < rc.roundTimingInfo.RoundNumber() {
+		case update := <-rc.roundSeqUpdateChan:
+			if update.round < rc.roundTimingInfo.RoundNumber() ||
+				update.round < roundSeqUpdate.round ||
+				(update.round == roundSeqUpdate.round && update.sequence < roundSeqUpdate.sequence) {
 				// This prevents stale roundSeqUpdates from being written to redis and unclogs roundSeqUpdateChan
 				continue
+			}
+			roundSeqUpdate = update
+			// Attempt to pull upto next 5 updates from the channel (batching logic)
+			for i := 0; i < 5; i++ {
+				select {
+				case update := <-rc.roundSeqUpdateChan:
+					if update.round < rc.roundTimingInfo.RoundNumber() ||
+						update.round < roundSeqUpdate.round ||
+						(update.round == roundSeqUpdate.round && update.sequence < roundSeqUpdate.sequence) {
+						// This prevents stale roundSeqUpdates from being written to redis and unclogs roundSeqUpdateChan
+						continue
+					}
+					roundSeqUpdate = update // update roundSeqUpdate with local maxima
+				case <-ctx.Done():
+					return
+				default:
+				}
 			}
 		case <-ctx.Done():
 			return
