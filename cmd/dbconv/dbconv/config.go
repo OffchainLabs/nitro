@@ -10,16 +10,8 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
 
-type DBConfig struct {
-	Data      string            `koanf:"data"`
-	DBEngine  string            `koanf:"db-engine"`
-	Handles   int               `koanf:"handles"`
-	Cache     int               `koanf:"cache"`
-	Namespace string            `koanf:"namespace"`
-	Pebble    conf.PebbleConfig `koanf:"pebble"`
-}
-
-var DBConfigDefaultDst = DBConfig{
+var DBConfigDefaultDst = conf.DBConfig{
+	Ancient:   "", // not supported
 	DBEngine:  "pebble",
 	Handles:   conf.PersistentConfigDefault.Handles,
 	Cache:     2048, // 2048 MB
@@ -27,25 +19,17 @@ var DBConfigDefaultDst = DBConfig{
 	Pebble:    conf.PebbleConfigDefault,
 }
 
-var DBConfigDefaultSrc = DBConfig{
+var DBConfigDefaultSrc = conf.DBConfig{
+	Ancient:   "", // not supported
 	DBEngine:  "leveldb",
 	Handles:   conf.PersistentConfigDefault.Handles,
 	Cache:     2048, // 2048 MB
 	Namespace: "srcdb/",
 }
 
-func DBConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *DBConfig) {
-	f.String(prefix+".data", defaultConfig.Data, "directory of stored chain state")
-	f.String(prefix+".db-engine", defaultConfig.DBEngine, "backing database implementation to use ('leveldb' or 'pebble')")
-	f.Int(prefix+".handles", defaultConfig.Handles, "number of files to be open simultaneously")
-	f.Int(prefix+".cache", defaultConfig.Cache, "the capacity(in megabytes) of the data caching")
-	f.String(prefix+".namespace", defaultConfig.Namespace, "metrics namespace")
-	conf.PebbleConfigAddOptions(prefix+".pebble", f, &defaultConfig.Pebble)
-}
-
 type DBConvConfig struct {
-	Src            DBConfig                        `koanf:"src"`
-	Dst            DBConfig                        `koanf:"dst"`
+	Src            conf.DBConfig                   `koanf:"src"`
+	Dst            conf.DBConfig                   `koanf:"dst"`
 	IdealBatchSize int                             `koanf:"ideal-batch-size"`
 	Convert        bool                            `koanf:"convert"`
 	Compact        bool                            `koanf:"compact"`
@@ -70,8 +54,8 @@ var DefaultDBConvConfig = DBConvConfig{
 }
 
 func DBConvConfigAddOptions(f *flag.FlagSet) {
-	DBConfigAddOptions("src", f, &DefaultDBConvConfig.Src)
-	DBConfigAddOptions("dst", f, &DefaultDBConvConfig.Dst)
+	conf.DBConfigAddOptions("src", f, &DefaultDBConvConfig.Src)
+	conf.DBConfigAddOptions("dst", f, &DefaultDBConvConfig.Dst)
 	f.Int("ideal-batch-size", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size in bytes")
 	f.Bool("convert", DefaultDBConvConfig.Convert, "enables conversion step")
 	f.Bool("compact", DefaultDBConvConfig.Compact, "enables compaction step")
@@ -91,6 +75,9 @@ func (c *DBConvConfig) Validate() error {
 	}
 	if c.IdealBatchSize <= 0 {
 		return fmt.Errorf("Invalid ideal batch size: %d, has to be greater then 0", c.IdealBatchSize)
+	}
+	if c.Src.Ancient != "" || c.Dst.Ancient != "" {
+		return errors.New("copying source database ancients is not supported and has to be done manually")
 	}
 	return nil
 }
