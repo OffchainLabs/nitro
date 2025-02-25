@@ -127,3 +127,68 @@ func TestFilterAndFind(t *testing.T) {
 		}
 	})
 }
+
+func TestFilterAndFindWithStruct(t *testing.T) {
+	type TestStruct struct {
+		ID   int
+		Name string
+	}
+
+	tests := []struct {
+		name          string
+		input         []TestStruct
+		compareFunc   func(TestStruct) int
+		wantFound     TestStruct
+		wantExists    bool
+		wantRemaining []TestStruct
+	}{
+		{
+			name:  "find middle element and filter smaller ones",
+			input: []TestStruct{{ID: 1, Name: "Alice"}, {ID: 2, Name: "Bob"}, {ID: 3, Name: "Charlie"}},
+			compareFunc: func(ts TestStruct) int {
+				if ts.ID == 2 {
+					return 0
+				}
+				return 1
+			},
+			wantFound:     TestStruct{ID: 2, Name: "Bob"},
+			wantExists:    true,
+			wantRemaining: []TestStruct{{ID: 1, Name: "Alice"}, {ID: 3, Name: "Charlie"}},
+		},
+		{
+			name:  "consume elements in order and filter out duplicates",
+			input: []TestStruct{{ID: 2, Name: "Charlie"}, {ID: 1, Name: "Alice"}, {ID: 1, Name: "Bob"}},
+			compareFunc: func(ts TestStruct) int {
+				if ts.ID == 1 {
+					return 0
+				}
+				return 1
+			},
+			wantFound:     TestStruct{ID: 1, Name: "Alice"},
+			wantExists:    true,
+			wantRemaining: []TestStruct{{ID: 2, Name: "Charlie"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Make a copy of input slice to test against
+			input := make([]TestStruct, len(tt.input))
+			copy(input, tt.input)
+
+			found, exists := FilterAndFind(&input, tt.compareFunc)
+
+			if found != tt.wantFound {
+				t.Errorf("FilterAndFind() found = %v, want %v", found, tt.wantFound)
+			}
+
+			if exists != tt.wantExists {
+				t.Errorf("FilterAndFind() exists = %v, want %v", exists, tt.wantExists)
+			}
+
+			if !reflect.DeepEqual(input, tt.wantRemaining) {
+				t.Errorf("FilterAndFind() remaining = %v, want %v", input, tt.wantRemaining)
+			}
+		})
+	}
+}
