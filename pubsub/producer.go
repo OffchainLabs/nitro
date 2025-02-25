@@ -142,6 +142,24 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 			return 0
 		}
 		checked++
+		// First check if there is an error for this promise
+		errorKey := ErrorKeyFor(p.redisStream, id)
+		errorResponse, err := p.client.Get(ctx, errorKey).Result()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			// If we get an error that is not redis.Nil, then log it and continue.
+			log.Error("Error reading error in redis", "key", errorKey, "error", err)
+			continue
+		}
+		if err == nil {
+			// If we found the error key, then delete it and return the error to the promise and continue.
+			p.client.Del(ctx, errorKey)
+			promise.ProduceError(errors.New(errorResponse))
+			log.Error("error getting response", "error", errorResponse)
+			errored++
+			delete(p.promises, id)
+			continue
+		}
+		// If we do not find the error key, then check for the result key.
 		resultKey := ResultKeyFor(p.redisStream, id)
 		res, err := p.client.Get(ctx, resultKey).Result()
 		if err != nil {
