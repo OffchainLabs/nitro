@@ -209,7 +209,7 @@ pub fn get_last_msg(exec: &mut WasmEnv, id: u32) -> Result<MessageFromCothread, 
 }
 
 // gets data associated with last request.
-// request_id MUST be last request receieved
+// request_id MUST be last request received
 // data_ptr MUST point to a buffer of at least the length returned by get_request
 pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: GuestPtr) -> MaybeEscape {
     let (mut mem, exec) = env.jit_env();
