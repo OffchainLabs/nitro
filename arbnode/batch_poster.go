@@ -34,7 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	eigenda_proxy "github.com/Layr-Labs/eigenda-proxy/client"
+	eigenda_proxy "github.com/Layr-Labs/eigenda-proxy/clients/standard_client"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -580,14 +580,6 @@ func (b *BatchPoster) getTxsInfoByBlock(ctx context.Context, number int64) ([]tx
 		return nil, fmt.Errorf("error fetching block %d : %w", number, err)
 	}
 	return blk.Transactions, nil
-}
-
-func (b *BatchPoster) SetEigenDAClientMock() {
-	b.eigenDAWriter = eigenda.NewMockEigenDA(true)
-}
-
-func (b *BatchPoster) SetEigenDAWriter(writer eigenda.EigenDAWriter) {
-	b.eigenDAWriter = writer
 }
 
 // checkRevert checks blocks with number in range [from, to] whether they

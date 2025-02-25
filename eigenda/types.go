@@ -288,7 +288,7 @@ func (e *EigenDABlobInfo) ToDisperserBlobInfo() (*DisperserBlobInfo, error) {
 					ReferenceBlockNumber:    metadata.BatchHeader.ReferenceBlockNumber,
 				},
 				BatchHeaderHash:         metadata.BatchHeaderHash,
-				Fee:                     metadata.Fee,
+				Fee:                     []byte{0x00},
 				SignatoryRecordHash:     metadata.SignatoryRecordHash[:],
 				ConfirmationBlockNumber: metadata.ConfirmationBlockNumber,
 			}

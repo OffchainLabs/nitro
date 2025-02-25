@@ -26,8 +26,8 @@ github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible h1
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
 github.com/Layr-Labs/eigenda v0.6.1 h1:uU04t+dsR5oHsbr+A5XIeJdyZIfNW3YvG03dMTKLSK4=
 github.com/Layr-Labs/eigenda v0.6.1/go.mod h1:XongI0xM6ks66DzxvTpF2yi4x2QH0X2RgEbKl/WFebY=
-github.com/Layr-Labs/eigenda-proxy/client v0.1.0 h1:aqYW/yJhwNQ8Ufwc4Lqws1U43nzm98POatP/vx+Gv6c=
-github.com/Layr-Labs/eigenda-proxy/client v0.1.0/go.mod h1:U8iAmZIDzpuKD4yDVBIE4v4Oruyqj6IS0GjoNZI4hKU=
+github.com/Layr-Labs/eigenda-proxy/clients v0.2.0 h1:FtxhmaGAHUyTnVDY1SFpcNPl9IE8bmLVRIvFfKZTuuc=
+github.com/Layr-Labs/eigenda-proxy/clients v0.2.0/go.mod h1:JbDNvSritUGHErvzwB5Tb1IrVk7kea9DSBLKEOkBebE=
 github.com/Layr-Labs/eigenda/api v0.6.1 h1:TAstOttTmFZQoFlZtgu/rNktNOhx62TwRFMxGOhUx8M=
 github.com/Layr-Labs/eigenda/api v0.6.1/go.mod h1:kVXqWM13s/1hXyv9QdHweWAbKin9MeOBbS4i8c9rLbU=
 github.com/Microsoft/go-winio v0.6.1 h1:9/kr64B9VUZrLm5YYwbGtUJnMgqWVOdUAXu6Migciow=
