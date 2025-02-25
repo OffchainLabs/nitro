@@ -64,7 +64,15 @@ func TestEigenDAProxyBatchPosting(t *testing.T) {
 	}
 }
 
-func TestFailOverFromEigenDAToCallData(t *testing.T) {
+func TestEigenDAFailover(t * testing.T) {
+	// single threaded test execution since conflicts can happen
+	// on proxy memconfig states if ran in parallel.
+	// TODO: https://github.com/Layr-Labs/nitro/issues/73
+	testFailOverFromEigenDAToAnyTrust(t)
+	testFailOverFromEigenDAToCallData(t)
+}
+
+func testFailOverFromEigenDAToCallData(t *testing.T) {
 	memCfgClient := memconfig_client.New(
 		&memconfig_client.Config{URL: proxyURL},
 	)
@@ -126,7 +134,7 @@ func TestFailOverFromEigenDAToCallData(t *testing.T) {
 	}
 }
 
-func TestFailOverFromEigenDAToAnyTrust(t *testing.T) {
+func testFailOverFromEigenDAToAnyTrust(t *testing.T) {
 	initTest(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
