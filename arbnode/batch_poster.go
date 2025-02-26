@@ -525,8 +525,12 @@ type txInfo struct {
 	Accesses  *types.AccessList `json:"accessList,omitempty"`
 }
 
-// Exported for testing
-func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context) (bool, error) {
+// Exposed for testing
+func (b *BatchPoster) GetParentChainIsUsingEIP7623(ctx context.Context) *bool {
+	return b.parentChainIsUsingEIP7623.Load()
+}
+
+func (b *BatchPoster) setParentChainIsUsingEIP7623(ctx context.Context) {
 	// Before EIP-7623 tx.gasUsed is defined as:
 	// tx.gasUsed = (
 	//     21000
@@ -568,7 +572,8 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context) (bool, erro
 	rpcClient := b.l1Reader.Client()
 	latestHeader, err := rpcClient.HeaderByNumber(ctx, nil)
 	if err != nil {
-		return false, err
+		log.Warn("HeaderByNumber failed", "err", err)
+		return
 	}
 	config := b.config()
 	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
@@ -586,7 +591,8 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context) (bool, erro
 		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
 	})
 	if err != nil {
-		return false, err
+		log.Warn("estimateGas failed", "err", err)
+		return
 	}
 
 	data = append(data, 1)
@@ -597,33 +603,29 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context) (bool, erro
 		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
 	})
 	if err != nil {
-		return false, err
+		log.Warn("estimateGas failed", "err", err)
+		return
 	}
 
 	// Takes into consideration that eth_estimateGas is an approximation.
 	// As an example, go-ethereum can only return an estimate that is equal
 	// or bigger than the true estimate, and currently defines the allowed error ratio as 0.015
+	var parentChainIsUsingEIP7623 bool
 	diffIsClose := func(gas1, gas2, lowerTargetDiff, upperTargetDiff uint64) bool {
 		diff := gas2 - gas1
 		return diff >= lowerTargetDiff && diff <= upperTargetDiff
 	}
 	if diffIsClose(gas1, gas2, 14, 18) {
 		// targetDiff is 16
-		return false, nil
+		parentChainIsUsingEIP7623 = false
 	} else if diffIsClose(gas1, gas2, 36, 44) {
 		// targetDiff is 40
-		return true, nil
+		parentChainIsUsingEIP7623 = true
 	} else {
-		return false, fmt.Errorf("unexpected gas difference, gas1=%v, gas2=%v", gas1, gas2)
-	}
-}
-
-func (b *BatchPoster) setParentChainIsUsingEIP7623(ctx context.Context) {
-	parentChainIsUsingEIP7623, err := b.ParentChainIsUsingEIP7623(ctx)
-	if err != nil {
-		log.Warn("ParentChainIsUsingEIP7623 failed", "err", err)
+		log.Error("setParentChainIsUsingEIP7623 failed, unexpected gas difference", "gas1", gas1, "gas2", gas2, "diff", gas2-gas1)
 		return
 	}
+
 	b.parentChainIsUsingEIP7623.Store(&parentChainIsUsingEIP7623)
 }
 
