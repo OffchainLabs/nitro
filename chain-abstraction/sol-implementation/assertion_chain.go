@@ -313,6 +313,21 @@ func (a *AssertionChain) DesiredHeaderU64(ctx context.Context) (uint64, error) {
 	return header.Number.Uint64(), nil
 }
 
+func (a *AssertionChain) DesiredL1HeaderU64(ctx context.Context) (uint64, error) {
+	header, err := a.backend.HeaderByNumber(ctx, big.NewInt(int64(a.rpcHeadBlockNumber)))
+	if err != nil {
+		return 0, err
+	}
+	headerInfo := types.DeserializeHeaderExtraInformation(header)
+	if headerInfo.ArbOSFormatVersion > 0 {
+		return headerInfo.L1BlockNumber, nil
+	}
+	if !header.Number.IsUint64() {
+		return 0, errors.New("block number is not uint64")
+	}
+	return header.Number.Uint64(), nil
+}
+
 func (a *AssertionChain) GetAssertion(ctx context.Context, opts *bind.CallOpts, assertionHash protocol.AssertionHash) (protocol.Assertion, error) {
 	var b [32]byte
 	copy(b[:], assertionHash.Bytes())
@@ -327,15 +342,10 @@ func (a *AssertionChain) GetAssertion(ctx context.Context, opts *bind.CallOpts, 
 			assertionHash,
 		)
 	}
-
-	assertionCreationBlock, err := a.GetAssertionCreationBlock(ctx, b)
-	if err != nil {
-		return nil, err
-	}
 	return &Assertion{
 		id:        assertionHash,
 		chain:     a,
-		createdAt: assertionCreationBlock,
+		createdAt: res.CreatedAtBlock,
 	}, nil
 }
 
@@ -701,20 +711,20 @@ func TryConfirmingAssertion(
 		return true, nil
 	}
 	for {
-		var latestHeaderNumber uint64
-		latestHeaderNumber, err = chain.DesiredHeaderU64(ctx)
+		var latestL1HeaderNumber uint64
+		latestL1HeaderNumber, err = chain.DesiredL1HeaderU64(ctx)
 		if err != nil {
 			return false, err
 		}
-		confirmable := latestHeaderNumber >= confirmableAfterBlock
+		confirmable := latestL1HeaderNumber >= confirmableAfterBlock
 
 		// If the assertion is not yet confirmable, we can simply wait.
 		if !confirmable {
 			var blocksLeftForConfirmation int64
-			if latestHeaderNumber > confirmableAfterBlock {
+			if latestL1HeaderNumber > confirmableAfterBlock {
 				blocksLeftForConfirmation = 0
 			} else {
-				blocksLeftForConfirmation, err = safecast.ToInt64(confirmableAfterBlock - latestHeaderNumber)
+				blocksLeftForConfirmation, err = safecast.ToInt64(confirmableAfterBlock - latestL1HeaderNumber)
 				if err != nil {
 					return false, err
 				}
@@ -889,14 +899,14 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 	if !wantNode.IsFirstChild {
 		return 0, nil
 	}
-	assertionCreationBlock, err := a.GetAssertionCreationBlock(ctx, b)
+	assertionCreationBlock, err := a.GetAssertionCreationParentBlock(ctx, b)
 	if err != nil {
 		return 0, err
 	}
 	assertion := &Assertion{
 		id:        assertionHash,
 		chain:     a,
-		createdAt: assertionCreationBlock,
+		createdAt: wantNode.CreatedAtBlock,
 	}
 	prevId, err := assertion.PrevId(ctx)
 	if err != nil {
@@ -917,21 +927,21 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 	// If there is no second child, we simply return the number of blocks
 	// since the assertion was created and its parent.
 	if prevNode.SecondChildBlock == 0 {
-		num, err := a.DesiredHeaderU64(ctx)
+		l1BlockNum, err := a.DesiredL1HeaderU64(ctx)
 		if err != nil {
 			return 0, err
 		}
 
 		// Should never happen.
-		if assertionCreationBlock > num {
+		if assertionCreationBlock > l1BlockNum {
 			return 0, fmt.Errorf(
 				"assertion creation block %d > latest block number %d for assertion hash %#x",
 				assertionCreationBlock,
-				num,
+				l1BlockNum,
 				assertionHash,
 			)
 		}
-		return num - assertionCreationBlock, nil
+		return l1BlockNum - assertionCreationBlock, nil
 	}
 	// Should never happen.
 	if prevNode.FirstChildBlock > prevNode.SecondChildBlock {
@@ -945,12 +955,12 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 	return prevNode.SecondChildBlock - prevNode.FirstChildBlock, nil
 }
 
-// GetAssertionCreationBlock returns parent chain block number when the assertion was created.
+// GetAssertionCreationParentBlock returns parent chain block number when the assertion was created.
 // assertion.CreatedAtBlock is the block number when the assertion was created on L1.
 // But in case of L3, we need to look up the block number when the assertion was created on L2.
 // To do this, we use getAssertionCreationBlockForLogLookup which returns the block number when the assertion was created
 // on parent chain be it L2 or L1.
-func (a *AssertionChain) GetAssertionCreationBlock(ctx context.Context, assertionHash common.Hash) (uint64, error) {
+func (a *AssertionChain) GetAssertionCreationParentBlock(ctx context.Context, assertionHash common.Hash) (uint64, error) {
 	callOpts := a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
 	createdAtBlock, err := a.userLogic.GetAssertionCreationBlockForLogLookup(callOpts, assertionHash)
 	if err != nil {
@@ -1009,7 +1019,7 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		var b [32]byte
 		copy(b[:], id.Bytes())
 		var err error
-		assertionCreationBlock, err = a.GetAssertionCreationBlock(ctx, b)
+		assertionCreationBlock, err = a.GetAssertionCreationParentBlock(ctx, b)
 		if err != nil {
 			return nil, err
 		}
@@ -1037,6 +1047,10 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		return nil, err
 	}
 	afterState := parsedLog.Assertion.AfterState
+	creationL1Block, err := a.GetAssertionCreationParentBlock(ctx, parsedLog.AssertionHash)
+	if err != nil {
+		return nil, err
+	}
 	return &protocol.AssertionCreatedInfo{
 		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
 		RequiredStake:       parsedLog.RequiredStake,
@@ -1049,7 +1063,8 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
 		TransactionHash:     ethLog.TxHash,
-		CreationBlock:       ethLog.BlockNumber,
+		CreationParentBlock: ethLog.BlockNumber,
+		CreationL1Block:     creationL1Block,
 	}, nil
 }
 

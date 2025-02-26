@@ -429,12 +429,23 @@ func (m *MockProtocol) GetCallOptsWithDesiredRpcHeadBlockNumber(opts *bind.CallO
 	return opts
 }
 
+func (m *MockProtocol) GetAssertionCreationParentBlock(ctx context.Context, assertionHash common.Hash) (uint64, error) {
+	args := m.Called(ctx, assertionHash)
+	return args.Get(0).(uint64), args.Error(1)
+}
+
 func (m *MockProtocol) GetDesiredRpcHeadBlockNumber() rpc.BlockNumber {
 	return rpc.LatestBlockNumber
 }
 
 // Read-only methods.
 func (m *MockProtocol) DesiredHeaderU64(ctx context.Context) (uint64, error) {
+	args := m.Called()
+	return args.Get(0).(uint64), args.Error(1)
+}
+
+// Read-only methods.
+func (m *MockProtocol) DesiredL1HeaderU64(ctx context.Context) (uint64, error) {
 	args := m.Called()
 	return args.Get(0).(uint64), args.Error(1)
 }

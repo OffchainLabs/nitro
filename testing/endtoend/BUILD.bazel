@@ -14,6 +14,7 @@ go_test(
     size = "large",
     srcs = [
         "e2e_crash_test.go",
+        "e2e_delegated_staking_test.go",
         "e2e_test.go",
         "helpers_test.go",
     ],

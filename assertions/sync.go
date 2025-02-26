@@ -47,8 +47,10 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 	}
 	m.assertionChainData.Unlock()
 
-	fromBlock := latestConfirmed.CreatedAtBlock()
-
+	fromBlock, err := m.chain.GetAssertionCreationParentBlock(ctx, latestConfirmed.Id().Hash)
+	if err != nil {
+		return
+	}
 	filterer, err := retry.UntilSucceeds(ctx, func() (*rollupgen.RollupUserLogicFilterer, error) {
 		return rollupgen.NewRollupUserLogicFilterer(m.rollupAddr, m.backend)
 	})
@@ -512,7 +514,7 @@ func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.
 	if err != nil {
 		return err
 	}
-	firstChildBlock, err := assertion.SecondChildCreationBlock(ctx, opts)
+	firstChildBlock, err := assertion.FirstChildCreationBlock(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -529,7 +531,7 @@ func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.
 		AfterInboxBatchAcc:       creationInfo.AfterInboxBatchAcc,
 		WasmModuleRoot:           creationInfo.WasmModuleRoot,
 		ChallengeManager:         creationInfo.ChallengeManager,
-		CreationBlock:            creationInfo.CreationBlock,
+		CreationBlock:            creationInfo.CreationParentBlock,
 		TransactionHash:          creationInfo.TransactionHash,
 		BeforeStateBlockHash:     beforeState.GlobalState.BlockHash,
 		BeforeStateSendRoot:      beforeState.GlobalState.SendRoot,

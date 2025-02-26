@@ -207,7 +207,7 @@ func (m *Manager) waitToPostIfNeeded(
 	parentCreationInfo *protocol.AssertionCreatedInfo,
 ) error {
 	if m.times.minGapToParent != 0 {
-		parentCreationBlock, err := m.backend.HeaderByNumber(ctx, new(big.Int).SetUint64(parentCreationInfo.CreationBlock))
+		parentCreationBlock, err := m.backend.HeaderByNumber(ctx, new(big.Int).SetUint64(parentCreationInfo.CreationParentBlock))
 		if err != nil {
 			return fmt.Errorf("error getting parent assertion creation block header: %w", err)
 		}
@@ -220,13 +220,13 @@ func (m *Manager) waitToPostIfNeeded(
 	}
 	minPeriodBlocks := m.chain.MinAssertionPeriodBlocks()
 	for {
-		latestBlockNumber, err := m.chain.DesiredHeaderU64(ctx)
+		latestL1BlockNumber, err := m.chain.DesiredL1HeaderU64(ctx)
 		if err != nil {
 			return err
 		}
 		blocksSinceLast := uint64(0)
-		if parentCreationInfo.CreationBlock < latestBlockNumber {
-			blocksSinceLast = latestBlockNumber - parentCreationInfo.CreationBlock
+		if parentCreationInfo.CreationL1Block < latestL1BlockNumber {
+			blocksSinceLast = latestL1BlockNumber - parentCreationInfo.CreationL1Block
 		}
 		if blocksSinceLast >= minPeriodBlocks {
 			return nil
@@ -235,7 +235,7 @@ func (m *Manager) waitToPostIfNeeded(
 		log.Info(
 			fmt.Sprintf("Need to wait %d blocks before posting next assertion. Current block number: %d",
 				minPeriodBlocks-blocksSinceLast,
-				latestBlockNumber,
+				latestL1BlockNumber,
 			),
 		)
 		select {

@@ -296,7 +296,7 @@ func (w *Watcher) Start(ctx context.Context) {
 // GetRoyalEdges returns all royal, tracked edges in the watcher by assertion
 // hash.
 func (w *Watcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash][]*api.JsonTrackedRoyalEdge, error) {
-	blockNum, err := w.chain.DesiredHeaderU64(ctx)
+	l1BlockNum, err := w.chain.DesiredL1HeaderU64(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -309,12 +309,12 @@ func (w *Watcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash
 			if err2 != nil {
 				return err2
 			}
-			unrivaled, err2 := t.honestEdgeTree.IsUnrivaledAtBlockNum(edge, blockNum)
+			unrivaled, err2 := t.honestEdgeTree.IsUnrivaledAtBlockNum(edge, l1BlockNum)
 			if err2 != nil {
 				return err2
 			}
 			hasRival := !unrivaled
-			timeUnrivaled, err2 := t.honestEdgeTree.TimeUnrivaled(ctx, edge, blockNum)
+			timeUnrivaled, err2 := t.honestEdgeTree.TimeUnrivaled(ctx, edge, l1BlockNum)
 			if err2 != nil {
 				return err2
 			}
@@ -392,11 +392,11 @@ func (w *Watcher) ComputeAncestors(
 			challengedAssertionHash,
 		)
 	}
-	blockHeaderNumber, err := w.chain.DesiredHeaderU64(ctx)
+	l1BlockHeaderNumber, err := w.chain.DesiredL1HeaderU64(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return chal.honestEdgeTree.ComputeAncestors(ctx, edgeId, blockHeaderNumber)
+	return chal.honestEdgeTree.ComputeAncestors(ctx, edgeId, l1BlockHeaderNumber)
 }
 
 func (w *Watcher) ClosestEssentialAncestor(
@@ -427,7 +427,7 @@ func (w *Watcher) IsEssentialAncestorConfirmable(
 			challengedAssertionHash,
 		)
 	}
-	blockHeaderNumber, err := w.chain.DesiredHeaderU64(ctx)
+	blockL1HeaderNumber, err := w.chain.DesiredL1HeaderU64(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -441,7 +441,7 @@ func (w *Watcher) IsEssentialAncestorConfirmable(
 	pathWeight, err := chal.honestEdgeTree.ComputePathWeight(ctx, challengetree.ComputePathWeightArgs{
 		Child:    edge.Id(),
 		Ancestor: essentialAncestor.Id(),
-		BlockNum: blockHeaderNumber,
+		BlockNum: blockL1HeaderNumber,
 	})
 	if err != nil {
 		return false, err
@@ -459,7 +459,7 @@ func (w *Watcher) IsConfirmableEssentialEdge(
 	if !ok {
 		return false, nil, 0, fmt.Errorf("could not get challenge for top level assertion %#x", challengedAssertionHash)
 	}
-	blockHeaderNumber, err := w.chain.DesiredHeaderU64(ctx)
+	blockL1HeaderNumber, err := w.chain.DesiredL1HeaderU64(ctx)
 	if err != nil {
 		return false, nil, 0, err
 	}
@@ -467,7 +467,7 @@ func (w *Watcher) IsConfirmableEssentialEdge(
 		ctx,
 		challengetree.IsConfirmableArgs{
 			EssentialEdge:         essentialEdgeId,
-			BlockNum:              blockHeaderNumber,
+			BlockNum:              blockL1HeaderNumber,
 			ConfirmationThreshold: confirmationThreshold,
 		},
 	)
@@ -926,7 +926,7 @@ func challengedAssertionConfirmableBlock(
 	info *protocol.AssertionCreatedInfo,
 	challengeGracePeriodBlocks uint64,
 ) uint64 {
-	confirmableAtBlock := info.CreationBlock + parentInfo.ConfirmPeriodBlocks
+	confirmableAtBlock := info.CreationL1Block + parentInfo.ConfirmPeriodBlocks
 	if winningEdgeConfirmationBlock+challengeGracePeriodBlocks > confirmableAtBlock {
 		confirmableAtBlock = winningEdgeConfirmationBlock + challengeGracePeriodBlocks
 	}
@@ -953,8 +953,12 @@ func (w *Watcher) getStartEndBlockNum(ctx context.Context) (filterRange, error) 
 	if err != nil {
 		return filterRange{}, err
 	}
+	latestConfirmedAssertionCreationBlock, err := w.chain.GetAssertionCreationParentBlock(ctx, latestConfirmedAssertion.Id().Hash)
+	if err != nil {
+		return filterRange{}, err
+	}
 	return filterRange{
-		startBlockNum: latestConfirmedAssertion.CreatedAtBlock(),
+		startBlockNum: latestConfirmedAssertionCreationBlock,
 		endBlockNum:   latestDesiredBlockNum,
 	}, nil
 }

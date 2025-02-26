@@ -93,7 +93,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			if parentAssertionHasSecondChild {
 				return
 			}
-			confirmed, err := solimpl.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationBlock, m.chain, m.times.avgBlockTime, option.None[protocol.EdgeId]())
+			confirmed, err := solimpl.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationL1Block, m.chain, m.times.avgBlockTime, option.None[protocol.EdgeId]())
 			if err != nil {
 				if !strings.Contains(err.Error(), "PREV_NOT_LATEST_CONFIRMED") {
 					logLevel := log.Error
