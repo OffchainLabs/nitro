@@ -94,24 +94,25 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader           *headerreader.HeaderReader
-	inbox              *InboxTracker
-	streamer           *TransactionStreamer
-	arbOSVersionGetter execution.FullExecutionClient
-	config             BatchPosterConfigFetcher
-	seqInbox           *bridgegen.SequencerInbox
-	syncMonitor        *SyncMonitor
-	seqInboxABI        *abi.ABI
-	seqInboxAddr       common.Address
-	bridgeAddr         common.Address
-	gasRefunderAddr    common.Address
-	building           *buildingBatch
-	dapWriter          daprovider.Writer
-	dapReaders         []daprovider.Reader
-	dataPoster         *dataposter.DataPoster
-	redisLock          *redislock.Simple
-	messagesPerBatch   *arbmath.MovingAverage[uint64]
-	non4844BatchCount  int // Count of consecutive non-4844 batches posted
+	l1Reader                  *headerreader.HeaderReader
+	inbox                     *InboxTracker
+	streamer                  *TransactionStreamer
+	arbOSVersionGetter        execution.FullExecutionClient
+	config                    BatchPosterConfigFetcher
+	seqInbox                  *bridgegen.SequencerInbox
+	syncMonitor               *SyncMonitor
+	seqInboxABI               *abi.ABI
+	seqInboxAddr              common.Address
+	bridgeAddr                common.Address
+	gasRefunderAddr           common.Address
+	building                  *buildingBatch
+	dapWriter                 daprovider.Writer
+	dapReaders                []daprovider.Reader
+	dataPoster                *dataposter.DataPoster
+	redisLock                 *redislock.Simple
+	messagesPerBatch          *arbmath.MovingAverage[uint64]
+	non4844BatchCount         int // Count of consecutive non-4844 batches posted
+	parentChainIsUsingEIP7623 atomic.Pointer[bool]
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
@@ -615,6 +616,15 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context) (bool, erro
 	} else {
 		return false, fmt.Errorf("unexpected gas difference, gas1=%v, gas2=%v", gas1, gas2)
 	}
+}
+
+func (b *BatchPoster) setParentChainIsUsingEIP7623(ctx context.Context) {
+	parentChainIsUsingEIP7623, err := b.ParentChainIsUsingEIP7623(ctx)
+	if err != nil {
+		log.Warn("ParentChainIsUsingEIP7623 failed", "err", err)
+		return
+	}
+	b.parentChainIsUsingEIP7623.Store(&parentChainIsUsingEIP7623)
 }
 
 // getTxsInfoByBlock fetches all the transactions inside block of id 'number' using json rpc
@@ -1267,7 +1277,27 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 						blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 						blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 
-						calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
+						// STANDARD_TOKEN_COST = 4
+						// TOTAL_COST_FLOOR_PER_TOKEN = 10
+						//
+						// The following analysis is applied for transactions unrelated to contract creation.
+						//
+						// Before EIP-7623, gas used related to calldata is defined as
+						// STANDARD_TOKEN_COST * (zero_bytes_in_calldata + nonzero_bytes_in_calldata * 4).
+						// Considering the worst case scenario regarding gas used per calldata byte,
+						// in which calldata only has non-zero bytes, each calldata byte will consume STANDARD_TOKEN * 4, which is 16 gas.
+						//
+						// With EIP-7623, considering the worst case scenario regarding gas used per calldata byte,
+						// in which calldata is also composed only of non-zero bytes,
+						// and that (TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata > STANDARD_TOKEN_COST * tokens_in_calldata + execution_gas_used),
+						// each calldata byte will consume TOTAL_COST_FLOOR_PER_TOKEN * 4, which is 40 gas.
+						calldataFeePerByteMultiplier := uint64(16)
+						parentChainIsUsingEIP7623 := b.parentChainIsUsingEIP7623.Load()
+						if parentChainIsUsingEIP7623 != nil && *parentChainIsUsingEIP7623 {
+							calldataFeePerByteMultiplier = 40
+						}
+
+						calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, calldataFeePerByteMultiplier)
 						use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
 					}
 				}
@@ -1779,6 +1809,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			resetAllEphemeralErrs()
 			return b.config().PollInterval
 		}
+		b.setParentChainIsUsingEIP7623(ctx)
 		posted, err := b.maybePostSequencerBatch(ctx)
 		if err == nil {
 			resetAllEphemeralErrs()
