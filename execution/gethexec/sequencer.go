@@ -107,7 +107,7 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	ExpressLaneAdvantage:      time.Millisecond * 200,
 	SequencerHTTPEndpoint:     "http://localhost:8547",
 	EarlySubmissionGrace:      time.Second * 2,
-	MaxQueuedTxCount:          10,
+	MaxQueuedTxCount:          50,
 	MaxFutureSequenceDistance: 100,
 	RedisUrl:                  "unset",
 }
