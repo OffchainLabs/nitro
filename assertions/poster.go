@@ -37,6 +37,7 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 	}
 
 	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
+	gasEstimationEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
 
 	log.Info("Ready to post")
 	ticker := time.NewTicker(m.times.postInterval)
@@ -51,6 +52,7 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 			default:
 				logLevel := log.Error
 				logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+				logLevel = gasEstimationEphemeralErrorHandler.LogLevel(err, logLevel)
 
 				logLevel("Could not submit latest assertion", "err", err, "validatorName", m.validatorName)
 				errorPostingAssertionCounter.Inc(1)

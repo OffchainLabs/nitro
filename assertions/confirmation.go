@@ -67,6 +67,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		return
 	}
 	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
+	gasEstimationEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
 	ticker := time.NewTicker(m.times.confInterval)
 	defer ticker.Stop()
 	for {
@@ -98,6 +99,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 				if !strings.Contains(err.Error(), "PREV_NOT_LATEST_CONFIRMED") {
 					logLevel := log.Error
 					logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
+					logLevel = gasEstimationEphemeralErrorHandler.LogLevel(err, logLevel)
 
 					logLevel("Could not confirm assertion", "err", err, "assertionHash", assertionHash.Hash)
 					errorConfirmingAssertionByTimeCounter.Inc(1)
