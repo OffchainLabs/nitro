@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
+
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -80,11 +82,11 @@ func NewCaffNode(configFetcher SequencerConfigFetcher, execEngine *ExecutionEngi
 	}
 
 	espressoStreamer := espressostreamer.NewEspressoStreamer(config.CaffNodeConfig.Namespace,
-		config.CaffNodeConfig.HotShotUrls,
 		config.CaffNodeConfig.NextHotshotBlock,
 		config.CaffNodeConfig.RetryTime,
 		config.CaffNodeConfig.HotshotPollingInterval,
-		*espressoTEEVerifierCaller,
+		espressoTEEVerifierCaller,
+		espressoClient.NewMultipleNodesClient(config.CaffNodeConfig.HotShotUrls),
 	)
 
 	if espressoStreamer == nil {
