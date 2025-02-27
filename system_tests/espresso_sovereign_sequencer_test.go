@@ -28,6 +28,7 @@ func createL1AndL2Node(
 	builder.l1StackConfig.WSModules = append(builder.l1StackConfig.WSModules, "eth")
 	builder.l2StackConfig.HTTPPort = 8945
 	builder.l2StackConfig.HTTPHost = "0.0.0.0"
+	builder.l2StackConfig.IPCPath = tmpPath(t, "test.ipc")
 
 	// poster config
 	builder.nodeConfig.BatchPoster.Enable = true

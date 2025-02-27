@@ -359,7 +359,8 @@ func checkTransferTxOnL2(
 		log.Info("waiting for balance", "account", account, "addr", addr, "balance", balance)
 		if balance.Cmp(transferAmount) >= 0 {
 			log.Info("target balance reached", "account", account, "addr", addr, "balance", balance)
+			return true
 		}
-		return true
+		return false
 	})
 }

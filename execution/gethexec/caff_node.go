@@ -29,10 +29,10 @@ type CaffNode struct {
 	config           SequencerConfigFetcher
 	executionEngine  *ExecutionEngine
 	espressoStreamer *espressostreamer.EspressoStreamer
-	l2Client         *ethclient.Client
+	txForwarder      TransactionPublisher
 }
 
-func NewCaffNode(configFetcher SequencerConfigFetcher, execEngine *ExecutionEngine) *CaffNode {
+func NewCaffNode(configFetcher SequencerConfigFetcher, execEngine *ExecutionEngine, txForwarder TransactionPublisher) *CaffNode {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		log.Crit("Failed to validate caff  node config", "err", err)
@@ -91,20 +91,11 @@ func NewCaffNode(configFetcher SequencerConfigFetcher, execEngine *ExecutionEngi
 		log.Crit("Failed to create espresso streamer")
 	}
 
-	var l2Client *ethclient.Client
-	if config.CaffNodeConfig.SequencerUrl != "" {
-		ethClient, err := ethclient.Dial(config.CaffNodeConfig.SequencerUrl)
-		if err != nil {
-			log.Crit("Failed to connect to Ethereum client: %v", err)
-		}
-		l2Client = ethClient
-	}
-
 	return &CaffNode{
 		config:           configFetcher,
 		executionEngine:  execEngine,
 		espressoStreamer: espressoStreamer,
-		l2Client:         l2Client,
+		txForwarder:      txForwarder,
 	}
 }
 
@@ -200,20 +191,13 @@ func (n *CaffNode) Start(ctx context.Context) error {
 }
 
 func (n *CaffNode) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	if n.l2Client != nil {
-		err := n.l2Client.SendTransaction(ctx, tx)
-		if err != nil {
-			log.Error("failed to publish transaction", "err", err)
-			return err
-		}
-	}
-	return nil
+	return n.txForwarder.PublishTransaction(ctx, tx, options)
 }
 
 func (n *CaffNode) CheckHealth(ctx context.Context) error {
-	return nil
+	return n.txForwarder.CheckHealth(ctx)
 }
 
 func (n *CaffNode) Initialize(ctx context.Context) error {
-	return nil
+	return n.txForwarder.Initialize(ctx)
 }
