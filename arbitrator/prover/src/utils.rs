@@ -214,7 +214,7 @@ pub fn hash_eigenda_preimage(preimage: &[u8]) -> Result<[u8; 32]> {
 
     let commitment_x_bigint: BigUint = blob_commitment.x.into();
     let commitment_y_bigint: BigUint = blob_commitment.y.into();
-    let length_uint32: u32 = blob.len() as u32;
+    let length_uint32: u32 = (blob.len() / 32) as u32;
 
     let mut commitment_length_encoded_bytes = Vec::with_capacity(68);
     append_left_padded_biguint_be(&mut commitment_length_encoded_bytes, &commitment_x_bigint);
