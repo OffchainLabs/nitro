@@ -564,10 +564,14 @@ func (b *BatchPoster) setParentChainIsUsingEIP7623(ctx context.Context) {
 	// length(calldata_tx_2) == length(calldata_tx_1) + 1
 	//
 	// So, if parent chain is not running EIP-7623:
-	// tx_2.gasUsed - tx_1.gasUsed = STANDARD_TOKEN_COST * 1 * 4 = 16
+	// tx_2.gasUsed - tx_1.gasUsed =
+	// STANDARD_TOKEN_COST * 4 * (length(calldata_tx_2) - length(calldata_tx_1)) =
+	// 16
 	//
 	// And if the parent chain is running EIP-7623:
-	// tx_2.gasUsed - tx_1.gasUsed = TOTAL_COST_FLOOR_PER_TOKEN * 1 * 4 = 40
+	// tx_2.gasUsed - tx_1.gasUsed =
+	// TOTAL_COST_FLOOR_PER_TOKEN * 4 * (length(calldata_tx_2) - length(calldata_tx_1)) =
+	// 40
 
 	rpcClient := b.l1Reader.Client()
 	latestHeader, err := rpcClient.HeaderByNumber(ctx, nil)
