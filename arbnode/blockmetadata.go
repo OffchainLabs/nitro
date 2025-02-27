@@ -42,6 +42,9 @@ func BlockMetadataFetcherConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"This should be set lesser than or equal to the limit on the api provider side")
 }
 
+// BlockMetadataFetcher looks for missing blockMetadata of block numbers starting from trackBlockMetadataFrom (config option of tx streamer)
+// and adds them to arbDB. BlockMetadata is fetched by querying the source's bulk blockMetadata fetching API "arb_getRawBlockMetadata".
+// Missing trackers are removed after their corresponding blockMetadata are added to the arbDB
 type BlockMetadataFetcher struct {
 	stopwaiter.StopWaiter
 	config                 BlockMetadataFetcherConfig

@@ -992,6 +992,7 @@ func (c *SeqCoordinator) CurrentlyChosen() bool {
 	return time.Now().Before(atomicTimeRead(&c.lockoutUntil))
 }
 
+// SequencingMessage persists blockMetadata and message from the active sequencer to redis, this is used by other sequencers to stay up-to-date
 func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, blockMetadata common.BlockMetadata) error {
 	if !c.CurrentlyChosen() {
 		return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)

@@ -24,6 +24,8 @@ type BlockMetadataFetcher interface {
 	SetReorgEventsNotifier(reorgEventsNotifier chan struct{})
 }
 
+// BulkBlockMetadataFetcher is the underlying provider of bulk blockMetadata to service arb_getRawBlockMetadata api. Given a starting
+// and ending block number, it returns an array of struct (NumberAndBlockMetadata) containing blockMetadata and their corresponding blockNumbers
 type BulkBlockMetadataFetcher struct {
 	stopwaiter.StopWaiter
 	bc            *core.BlockChain
@@ -50,6 +52,8 @@ func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetch
 	}
 }
 
+// Fetch won't include block numbers for whom consensus (arbDB) doesn't have blockMetadata, it stores recently fetched blockMetadata into an LRU
+// which is cleared in the events of reorg in order to provide accurate blockMetadata
 func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]NumberAndBlockMetadata, error) {
 	fromBlock, _ = b.bc.ClipToPostNitroGenesis(fromBlock)
 	toBlock, _ = b.bc.ClipToPostNitroGenesis(toBlock)
