@@ -195,7 +195,7 @@ func runChallengeTest(
 	for i := 0; i < 100; i++ {
 		if testTimeout {
 			backend.Commit()
-			err = backend.AdjustTime(time.Second * 40)
+			err = backend.AdjustTime(time.Second * 50)
 		}
 		Require(t, err)
 		backend.Commit()
