@@ -67,11 +67,6 @@ func (db PreimageDb) Compact(start []byte, limit []byte) error {
 	return nil
 }
 
-func (db PreimageDb) NewSnapshot() (ethdb.Snapshot, error) {
-	// This is fine as PreimageDb doesn't support mutation
-	return db, nil
-}
-
 func (db PreimageDb) Close() error {
 	return nil
 }
