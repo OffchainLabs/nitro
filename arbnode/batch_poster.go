@@ -1669,7 +1669,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		log.Debug("Successfully checked that the batch produces correct messages when ran through inbox multiplexer", "sequenceNumber", batchPosition.NextSeqNum)
 	}
 
-	log.Error("PostTransaction", "firstUsefulMsgTime", firstUsefulMsgTime, "nonce", nonce, "newMeta", newMeta, "seqInboxAddr", b.seqInboxAddr, "data", data, "gasLimit", gasLimit, "new(big.Int)", new(big.Int), "kzgBlobs", kzgBlobs, "accessList", accessList)
 	tx, err := b.dataPoster.PostTransaction(ctx,
 		firstUsefulMsgTime,
 		nonce,
@@ -1681,7 +1680,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		kzgBlobs,
 		accessList,
 	)
-	log.Error("maybePostSequencerBatch", "tx", tx, "err", err)
 	if err != nil {
 		return false, err
 	}
