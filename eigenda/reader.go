@@ -41,19 +41,19 @@ func RecoverPayloadFromEigenDABatch(ctx context.Context,
 	domain string,
 ) ([]byte, error) {
 
-	blobInfo, err := ParseSequencerMsg(sequencerMsg)
+	eigenDAV1Cert, err := ParseSequencerMsg(sequencerMsg)
 	if err != nil {
 		log.Error("Failed to parse sequencer message", "err", err)
 		return nil, err
 	}
 
-	data, err := daReader.QueryBlob(ctx, blobInfo, domain)
+	data, err := daReader.QueryBlob(ctx, eigenDAV1Cert, domain)
 	if err != nil {
 		log.Error("Failed to query data from EigenDA", "err", err)
 		return nil, err
 	}
 
-	hash, err := blobInfo.PreimageHash()
+	hash, err := eigenDAV1Cert.PreimageHash()
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func interfaceToBytesJSON(data interface{}) ([]byte, error) {
 }
 
 // ParseSequencerMsg parses the certificate from the inbox message
-func ParseSequencerMsg(abiEncodedCert []byte) (*EigenDABlobInfo, error) {
+func ParseSequencerMsg(abiEncodedCert []byte) (*EigenDAV1Cert, error) {
 
 	spoofedFunc := certDecodeABI.Methods["decodeCert"]
 
@@ -93,8 +93,8 @@ func ParseSequencerMsg(abiEncodedCert []byte) (*EigenDABlobInfo, error) {
 		return nil, err
 	}
 
-	// decode to EigenDABlobInfo
-	var blobInfo EigenDABlobInfo
+	// decode to EigenDAV1Cert
+	var blobInfo EigenDAV1Cert
 	err = json.Unmarshal(b, &blobInfo)
 
 	if err != nil {

@@ -22,10 +22,26 @@ import (
 )
 
 const (
+	// TODO: https://github.com/Layr-Labs/nitro/issues/73
 	proxyURL = "http://127.0.0.1:4242"
 )
 
-func TestEigenDAProxyBatchPosting(t *testing.T) {
+func TestEigenDAIntegration(t * testing.T) {
+	// single threaded test execution since conflicts can happen
+	// on proxy memconfig states if ran in parallel.
+	// TODO: https://github.com/Layr-Labs/nitro/issues/73
+
+
+	// 1 - Batch posting / derivation
+	testEigenDAProxyBatchPosting(t)
+
+	// 2 - EigenDA failover to native Arbitrum DA destinations
+	testFailOverFromEigenDAToAnyTrust(t)
+	testFailOverFromEigenDAToCallData(t)
+
+}
+
+func testEigenDAProxyBatchPosting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer func() {
 		cancel()
@@ -62,14 +78,6 @@ func TestEigenDAProxyBatchPosting(t *testing.T) {
 		builder.L2.cleanup()
 		cleanupB()
 	}
-}
-
-func TestEigenDAFailover(t * testing.T) {
-	// single threaded test execution since conflicts can happen
-	// on proxy memconfig states if ran in parallel.
-	// TODO: https://github.com/Layr-Labs/nitro/issues/73
-	testFailOverFromEigenDAToAnyTrust(t)
-	testFailOverFromEigenDAToCallData(t)
 }
 
 func testFailOverFromEigenDAToCallData(t *testing.T) {
@@ -135,7 +143,7 @@ func testFailOverFromEigenDAToCallData(t *testing.T) {
 }
 
 func testFailOverFromEigenDAToAnyTrust(t *testing.T) {
-	initTest(t)
+	initEigenDATest(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

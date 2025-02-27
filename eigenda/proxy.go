@@ -35,7 +35,7 @@ func (c *EigenDAProxyClient) Put(ctx context.Context, data []byte) (*disperser.B
 	return &blobInfo, nil
 }
 
-func (c *EigenDAProxyClient) Get(ctx context.Context, blobInfo *DisperserBlobInfo) ([]byte, error) {
+func (c *EigenDAProxyClient) Get(ctx context.Context, blobInfo *disperser.BlobInfo) ([]byte, error) {
 	commitment, err := rlp.EncodeToBytes(blobInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode blob info: %w", err)

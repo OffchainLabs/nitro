@@ -199,8 +199,8 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 			return nil, err
 		}
 
-		var blobInfo eigenda.EigenDABlobInfo
-		err = json.Unmarshal(certBytes, &blobInfo)
+		var eigenDACert eigenda.EigenDAV1Cert
+		err = json.Unmarshal(certBytes, &eigenDACert)
 		if err != nil {
 			return nil, err
 		}
@@ -209,7 +209,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 			{Type: eigenda.DACertTypeABI},
 		}
 
-		b, err := arguments.Pack(blobInfo)
+		b, err := arguments.Pack(eigenDACert)
 		if err != nil {
 			return nil, err
 		}

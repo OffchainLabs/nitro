@@ -13,7 +13,7 @@ func init() {
 	var err error
 	DACertTypeABI, err = abi.NewType("tuple", "", []abi.ArgumentMarshaling{
 		{Name: "blobVerificationProof", Type: "tuple", Components: []abi.ArgumentMarshaling{
-			{Name: "batchID", Type: "uint32"},
+			{Name: "batchId", Type: "uint32"},
 			{Name: "blobIndex", Type: "uint32"},
 			{Name: "batchMetadata", Type: "tuple",
 				Components: []abi.ArgumentMarshaling{
