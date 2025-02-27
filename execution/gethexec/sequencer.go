@@ -157,6 +157,9 @@ func (c *TimeboostConfig) Validate() error {
 	if c.MaxFutureSequenceDistance == 0 {
 		return errors.New("timeboost max-future-sequence-distance option cannot be zero, it should be set to a positive value")
 	}
+	if c.MaxQueuedTxCount > int(c.MaxFutureSequenceDistance) {
+		return fmt.Errorf("MaxQueuedTxCount: %d should be lesser than or equal to MaxFutureSequenceDistance: %d", c.MaxQueuedTxCount, c.MaxFutureSequenceDistance)
+	}
 	return nil
 }
 
