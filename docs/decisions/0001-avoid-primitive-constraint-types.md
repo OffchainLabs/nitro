@@ -10,7 +10,7 @@ decision-makers: eljobe@ plasmapower@
 
 When working on the go code for BoLD, we became slightly annoyed that several
 places in the history package were checking the constraint that the `virtual`
-argumet to a function was positive. One possible workaround would have been
+argument to a function was positive. One possible workaround would have been
 to create a constrained wrapper type around `uint64` which would only allow
 positive values. For example:
 

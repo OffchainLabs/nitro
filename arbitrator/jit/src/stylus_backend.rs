@@ -1,4 +1,4 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
+// Copyright 2023-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![allow(clippy::too_many_arguments)]
@@ -180,7 +180,7 @@ pub fn exec_wasm(
             .request_handler()
             .tx
             .send(msg)
-            .or_else(|_| Escape::hostio("failed sending messaage to thread"))
+            .or_else(|_| Escape::hostio("failed sending message to thread"))
     });
 
     Ok(CothreadHandler {
