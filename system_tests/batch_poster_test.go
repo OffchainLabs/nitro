@@ -372,7 +372,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 	const numBatches = 3
 	var threshold uint64
 	if delayBufferEnabled {
-		threshold = 110
+		threshold = 200
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
