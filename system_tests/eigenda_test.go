@@ -31,7 +31,6 @@ func TestEigenDAIntegration(t * testing.T) {
 	// on proxy memconfig states if ran in parallel.
 	// TODO: https://github.com/Layr-Labs/nitro/issues/73
 
-
 	// 1 - Batch posting / derivation
 	testEigenDAProxyBatchPosting(t)
 

@@ -206,7 +206,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 		}
 
 		arguments := abi.Arguments{
-			{Type: eigenda.DACertTypeABI},
+			addSequencerBatchFromEigenDACallABI.Inputs[1],
 		}
 
 		b, err := arguments.Pack(eigenDACert)

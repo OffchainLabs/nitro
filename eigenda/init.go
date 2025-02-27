@@ -6,51 +6,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 )
 
-var DACertTypeABI abi.Type
 var certDecodeABI abi.ABI
 
 func init() {
 	var err error
-	DACertTypeABI, err = abi.NewType("tuple", "", []abi.ArgumentMarshaling{
-		{Name: "blobVerificationProof", Type: "tuple", Components: []abi.ArgumentMarshaling{
-			{Name: "batchId", Type: "uint32"},
-			{Name: "blobIndex", Type: "uint32"},
-			{Name: "batchMetadata", Type: "tuple",
-				Components: []abi.ArgumentMarshaling{
-					{Name: "batchHeader", Type: "tuple",
-						Components: []abi.ArgumentMarshaling{
-							{Name: "blobHeadersRoot", Type: "bytes32"},
-							{Name: "quorumNumbers", Type: "bytes"},
-							{Name: "signedStakeForQuorums", Type: "bytes"},
-							{Name: "referenceBlockNumber", Type: "uint32"},
-						},
-					},
-					{Name: "signatoryRecordHash", Type: "bytes32"},
-					{Name: "confirmationBlockNumber", Type: "uint32"},
-				},
-			},
-			{Name: "inclusionProof", Type: "bytes"},
-			{Name: "quorumIndices", Type: "bytes"},
-		}},
-		{Name: "blobHeader", Type: "tuple", Components: []abi.ArgumentMarshaling{
-			{Name: "commitment", Type: "tuple", Components: []abi.ArgumentMarshaling{
-				{Name: "X", Type: "uint256"},
-				{Name: "Y", Type: "uint256"},
-			}},
-			{Name: "dataLength", Type: "uint32"},
-			{Name: "quorumBlobParams", Type: "tuple[]", Components: []abi.ArgumentMarshaling{
-				{Name: "quorumNumber", Type: "uint8"},
-				{Name: "adversaryThresholdPercentage", Type: "uint8"},
-				{Name: "confirmationThresholdPercentage", Type: "uint8"},
-				{Name: "chunkLength", Type: "uint32"},
-			}},
-		}},
-	})
-
-	if err != nil {
-		panic(err)
-	}
-
 	certDecodeRawABI := `[
 		{
 			"type": "function",

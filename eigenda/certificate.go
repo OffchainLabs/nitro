@@ -33,14 +33,22 @@ func (e *EigenDAV1Cert) PreimageHash() (*common.Hash, error) {
 		return nil, err
 	}
 
+	// length := uint32ToBytes(e.BlobHeader.DataLength)
+	println("length: ", e.BlobHeader.DataLength)
+
 	bytes = append(bytes, uint32ToBytes(e.BlobHeader.DataLength)...)
 	dataHash := crypto.Keccak256Hash(bytes)
+
+	println("preimage hash used for inserting into oracle", dataHash.String())
 
 	return &dataHash, nil
 }
 
 // SerializeCommitment serializes the kzg commitment points to a byte slice
 func (e *EigenDAV1Cert) SerializeCommitment() ([]byte, error) {
+	println(fmt.Sprintf("commitment_x: %x", e.BlobHeader.Commitment.X.Bytes()))
+	println(fmt.Sprintf("commitment_y: %x", e.BlobHeader.Commitment.Y.Bytes()))
+
 	return append(e.BlobHeader.Commitment.X.Bytes(), e.BlobHeader.Commitment.Y.Bytes()...), nil
 }
 
