@@ -118,7 +118,7 @@ func BigToUintSaturating(value *big.Int) uint64 {
 	return value.Uint64()
 }
 
-// BigToUintSaturating casts a huge to an int, saturating if out of bounds
+// BigToIntSaturating casts a huge to an int, saturating if out of bounds
 func BigToIntSaturating(value *big.Int) int64 {
 	if !value.IsInt64() {
 		if value.Sign() < 0 {
@@ -216,7 +216,7 @@ func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
 	return new(big.Int).Add(augend, UintToBig(addend))
 }
 
-// BigSub subtracts a uint from a huge
+// BigSubByUint subtracts a uint from a huge
 func BigSubByUint(minuend *big.Int, subtrahend uint64) *big.Int {
 	return new(big.Int).Sub(minuend, UintToBig(subtrahend))
 }
