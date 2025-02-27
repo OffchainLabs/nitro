@@ -133,7 +133,9 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	if finalBlock == nil {
 		t.Fatalf("finalBlock should not be nil")
 	}
-	if finalBlock.NumberU64() != builder.L2.ExecNode.MessageIndexToBlockNumber(validatedMsgCount-1) {
+	validatedBlockNumber, err := builder.L2.ExecNode.MessageIndexToBlockNumber(validatedMsgCount - 1).Await(ctx)
+	Require(t, err)
+	if finalBlock.NumberU64() != validatedBlockNumber {
 		t.Fatalf("finalBlock is not correct")
 	}
 	safeBlock, err := builder.L2.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
@@ -141,7 +143,7 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	if safeBlock == nil {
 		t.Fatalf("safeBlock should not be nil")
 	}
-	if safeBlock.NumberU64() != builder.L2.ExecNode.MessageIndexToBlockNumber(validatedMsgCount-1) {
+	if safeBlock.NumberU64() != validatedBlockNumber {
 		t.Fatalf("safeBlock is not correct")
 	}
 

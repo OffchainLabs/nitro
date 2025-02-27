@@ -94,7 +94,7 @@ func TestOverflowAssertions(t *testing.T) {
 		l2node.InboxReader,
 		l2node.InboxTracker,
 		l2node.TxStreamer,
-		l2node.Execution,
+		l2node.ExecutionRecorder,
 		l2node.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -173,7 +173,7 @@ func TestOverflowAssertions(t *testing.T) {
 	t.Logf("Node batch count %d, msgs %d", bc, msgs)
 
 	// Wait for the node to catch up.
-	nodeExec, ok := l2node.Execution.(*gethexec.ExecutionNode)
+	nodeExec, ok := l2node.ExecutionClient.(*gethexec.ExecutionNode)
 	if !ok {
 		Fatal(t, "not geth execution node")
 	}

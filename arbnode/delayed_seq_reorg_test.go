@@ -19,7 +19,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	exec, streamer, db, _ := NewTransactionStreamerForTest(t, common.Address{})
+	exec, streamer, db, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
 	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig)
 	Require(t, err)
 
@@ -219,7 +219,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	exec, streamer, db, _ := NewTransactionStreamerForTest(t, common.Address{})
+	exec, streamer, db, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
 	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig)
 	Require(t, err)
 
