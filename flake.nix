@@ -7,8 +7,9 @@
   inputs.flake-compat.flake = false;
   inputs.rust-overlay.url = "github:oxalica/rust-overlay";
   inputs.foundry.url = "github:shazow/foundry.nix/monthly";
+  inputs.pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
 
-  outputs = { flake-utils, nixpkgs, foundry, rust-overlay, ... }:
+  outputs = { self, flake-utils, nixpkgs, foundry, rust-overlay, pre-commit-hooks, ... }:
     let
       goVersion = 23; # Change this to update the whole stack
       overlays = [
@@ -66,7 +67,20 @@
           test -f $HOME/.docker/cli-plugins/docker-buildx || ln -sn $(which docker-buildx) $HOME/.docker/cli-plugins
         '';
       in
-      {
+      with pkgs; {
+        checks = {
+          pre-commit-check = pre-commit-hooks.lib.${system}.run {
+            src = ./.;
+            hooks = {
+              golangci-lint = {
+                enable = true;
+                entry = "golangci-lint run --new-from-rev=HEAD --fix";
+                pass_filenames = false;
+                types = [ "go" ];
+              };
+            };
+          };
+        };
         devShells =
           {
             # This shell is only used for one make recipe because the other
@@ -154,6 +168,8 @@
 
                 # provides abigen
                 go-ethereum
+
+                pre-commit
               ] ++ lib.optionals stdenv.isDarwin [
                 apple-sdk_11
               ] ++ lib.optionals (! stdenv.isDarwin) [
@@ -175,7 +191,8 @@
                 + pkgs.lib.optionalString pkgs.stdenv.isDarwin
                 ''
                   export NIX_LDFLAGS="-framework SystemConfiguration $NIX_LDFLAGS"
-                '';
+                ''
+                + self.checks.${system}.pre-commit-check.shellHook;
             };
           };
       });
