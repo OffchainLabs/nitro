@@ -371,7 +371,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 			// Pending msgs count=(total msgs present in the map)-(number of processed messages=roundInfo.Sequence)
 			// #nosec G115
 			len(roundInfo.msgAndResultBySequenceNumber)-int(roundInfo.sequence) >= seqConfig.Dangerous.Timeboost.MaxQueuedTxCount {
-			return fmt.Errorf("reached limit for buffering future sequence number transactions, please try again with the correct sequence number. Limit: %d, Current sequence number: %d", seqConfig.Dangerous.Timeboost.MaxQueuedTxCount, roundInfo.sequence)
+			return fmt.Errorf("too many out of order sequence number transactions, please try again with the correct sequence number. Limit: %d, Current sequence number: %d", seqConfig.Dangerous.Timeboost.MaxQueuedTxCount, roundInfo.sequence)
 		}
 		if msg.SequenceNumber > roundInfo.sequence+seqConfig.Dangerous.Timeboost.MaxFutureSequenceDistance {
 			return fmt.Errorf("message sequence number has reached max allowed limit. SequenceNumber: %d, Limit: %d", msg.SequenceNumber, roundInfo.sequence+seqConfig.Dangerous.Timeboost.MaxFutureSequenceDistance)
