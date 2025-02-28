@@ -498,12 +498,12 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	Require(t, err)
 
 	// Check if L2's parent chain is using EIP-7623
-	isUsingEIP7623 := builder.L2.ConsensusNode.BatchPoster.GetParentChainIsUsingEIP7623(ctx)
-	if isUsingEIP7623 == nil {
-		t.Fatal("Failed to get parent chain EIP-7623 status")
-	}
-	if *isUsingEIP7623 {
-		t.Fatal("L3's parent chain should not be using EIP-7623")
+	latestHeader, err := builder.L2.ConsensusNode.L1Reader.LastHeader(ctx)
+	Require(t, err)
+	isUsingEIP7623, err := builder.L2.ConsensusNode.BatchPoster.ParentChainIsUsingEIP7623(ctx, latestHeader)
+	Require(t, err)
+	if isUsingEIP7623 {
+		t.Fatal("L2's parent chain should not be using EIP-7623")
 	}
 
 	// Build L3
@@ -525,11 +525,11 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	Require(t, err)
 
 	// Check if L3's parent chain is using EIP-7623
-	isUsingEIP7623 = builder.L3.ConsensusNode.BatchPoster.GetParentChainIsUsingEIP7623(ctx)
-	if isUsingEIP7623 == nil {
-		t.Fatal("Failed to get parent chain EIP-7623 status")
-	}
-	if *isUsingEIP7623 {
-		t.Fatal("L3's parent chain should not be using EIP-7623")
+	latestHeader, err = builder.L3.ConsensusNode.L1Reader.LastHeader(ctx)
+	Require(t, err)
+	isUsingEIP7623, err = builder.L3.ConsensusNode.BatchPoster.ParentChainIsUsingEIP7623(ctx, latestHeader)
+	Require(t, err)
+	if isUsingEIP7623 {
+		t.Fatal("L2's parent chain should not be using EIP-7623")
 	}
 }
