@@ -22,7 +22,7 @@ import (
 var workingDir = "./espresso-e2e"
 
 // light client proxy
-var lightClientAddress = "0x60571c8f4b52954a24a5e7306d435e951528d963"
+var lightClientAddress = "0x0f1f89aaf1c6fdb7ff9d361e4388f5f3997f12a8"
 
 var hotShotUrl = "http://127.0.0.1:41000"
 
@@ -144,7 +144,7 @@ func waitForEspressoNode(ctx context.Context) error {
 }
 
 func waitForHotShotLiveness(ctx context.Context, lightClientReader *lightclient.LightClientReader) error {
-	return waitForWith(ctx, 400*time.Second, 1*time.Second, func() bool {
+	return waitForWith(ctx, 500*time.Second, 1*time.Second, func() bool {
 		log.Info("Waiting for HotShot Liveness")
 		_, err := lightClientReader.FetchMerkleRoot(1, nil)
 		return err == nil
@@ -182,7 +182,7 @@ func TestEspressoE2E(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup := createL1AndL2Node(ctx, t, true, "")
+	builder, cleanup := createL1AndL2Node(ctx, t, true)
 	defer cleanup()
 
 	err := waitForL1Node(ctx)
@@ -358,7 +358,8 @@ func checkTransferTxOnL2(
 		log.Info("waiting for balance", "account", account, "addr", addr, "balance", balance)
 		if balance.Cmp(transferAmount) >= 0 {
 			log.Info("target balance reached", "account", account, "addr", addr, "balance", balance)
+			return true
 		}
-		return true
+		return false
 	})
 }

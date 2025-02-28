@@ -176,6 +176,7 @@ func (b *BlockchainTestInfo) SetFullAccountInfo(name string, info *AccountInfo) 
 
 func (b *BlockchainTestInfo) GetAddress(name string) common.Address {
 	b.T.Helper()
+
 	info, ok := b.Accounts[name]
 	if !ok {
 		b.T.Fatal("not found account: ", name)

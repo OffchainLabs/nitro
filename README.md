@@ -41,6 +41,34 @@ compiled to WASM.
 
 Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on 8/31/22. (See [state migration](https://developer.arbitrum.io/migration/state-migration) and [dapp migration](https://developer.arbitrum.io/migration/dapp_migration) for more info).
 
+## Running E2E Tests
+
+### Prerequisites
+- Nix package manager
+- Docker daemon running
+
+### Build Steps
+1. For MacOS Users Only:
+```bash
+bash ./scripts/build-wasm-on-macos-with-nix
+```
+2. Enter development environment:
+```bash
+nix develop
+```
+
+3. Build environment:
+```bash
+make build
+make build-replay-env
+```
+4. Run E2E tests (ensure Docker is running):
+```bash
+gotestsum --format standard-verbose --packages="$packages" -- -v -timeout 15m -p 1 ./system_tests/... -run 'TestEspressoE2E'
+```
+
+Note: The E2E tests typically take around 10-15 minutes to complete.
+
 ## License
 
 Nitro is currently licensed under a [Business Source License](./LICENSE.md), similar to our friends at Uniswap and Aave, with an "Additional Use Grant" to ensure that everyone can have full comfort using and running nodes on all public Arbitrum chains.

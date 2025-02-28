@@ -81,9 +81,9 @@ type SequencerConfig struct {
 	expectedSurplusHardThreshold int
 
 	// Espresso specific flags
-	EspressoFinalityNodeConfig EspressoFinalityNodeConfig `koanf:"espresso-finality-node-config"`
-	// Espresso Finality Node creates blocks with finalized hotshot transactions
-	EnableEspressoFinalityNode bool `koanf:"enable-espresso-finality-node"`
+	CaffNodeConfig CaffNodeConfig `koanf:"caff-node-config" reload:"hot"`
+	// Caff Node creates blocks with finalized hotshot transactions
+	EnableCaffNode bool `koanf:"enable-caff-node"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -117,10 +117,30 @@ func (c *SequencerConfig) Validate() error {
 
 type SequencerConfigFetcher func() *SequencerConfig
 
-type EspressoFinalityNodeConfig struct {
-	HotShotUrl string `koanf:"hotshot-url"`
-	StartBlock uint64 `koanf:"start-block"`
-	Namespace  uint64 `koanf:"namespace"`
+type CaffNodeConfig struct {
+	HotShotUrls             []string            `koanf:"hotshot-urls"`
+	NextHotshotBlock        uint64              `koanf:"next-hotshot-block"`
+	Namespace               uint64              `koanf:"namespace"`
+	RetryTime               time.Duration       `koanf:"retry-time"`
+	HotshotPollingInterval  time.Duration       `koanf:"hotshot-polling-interval"`
+	ParentChainReader       headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
+	ParentChainNodeUrl      string              `koanf:"parent-chain-node-url"`
+	EspressoTEEVerifierAddr string              `koanf:"espresso-tee-verifier-addr"`
+	// See how it is used in cmd/nitro/nitro.go
+	// search for "caff-node-config.forwarding"
+	Forwarding bool `koanf:"forwarding"`
+}
+
+var DefaultCaffNodeConfig = CaffNodeConfig{
+	HotShotUrls:             []string{},
+	NextHotshotBlock:        1,
+	Namespace:               0,
+	RetryTime:               time.Second * 2,
+	HotshotPollingInterval:  time.Millisecond * 100,
+	ParentChainReader:       headerreader.DefaultConfig,
+	ParentChainNodeUrl:      "",
+	EspressoTEEVerifierAddr: "",
+	Forwarding:              true,
 }
 
 var DefaultSequencerConfig = SequencerConfig{
@@ -142,7 +162,20 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 
-	EnableEspressoFinalityNode: false,
+	EnableCaffNode: false,
+	CaffNodeConfig: DefaultCaffNodeConfig,
+}
+
+func CaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.StringSlice(prefix+".hotshot-urls", DefaultCaffNodeConfig.HotShotUrls, "hotshot urls")
+	f.Uint64(prefix+".next-hotshot-block", DefaultCaffNodeConfig.NextHotshotBlock, "the hotshot block number from which the caff node will read")
+	f.Uint64(prefix+".namespace", DefaultCaffNodeConfig.Namespace, "the namespace of the chain in Espresso Network, usually the chain id")
+	f.Duration(prefix+".retry-time", DefaultCaffNodeConfig.RetryTime, "retry time after a failure")
+	f.Duration(prefix+".hotshot-polling-interval", DefaultCaffNodeConfig.HotshotPollingInterval, "time after a success")
+	headerreader.AddOptions(prefix+".parent-chain-reader", f)
+	f.String(prefix+".parent-chain-node-url", DefaultCaffNodeConfig.ParentChainNodeUrl, "the parent chain url")
+	f.String(prefix+".espresso-tee-verifier-addr", "", "tee verifier address")
+	f.Bool(prefix+".forwarding", DefaultCaffNodeConfig.Forwarding, "forward transactions to the sequencer")
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -163,7 +196,8 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
 
 	// Espresso specific flags
-	f.Bool(prefix+".enable-espresso-finality-node", DefaultSequencerConfig.EnableEspressoFinalityNode, "enable espresso finality node")
+	f.Bool(prefix+".enable-caff-node", DefaultSequencerConfig.EnableCaffNode, "enable caff node")
+	CaffNodeConfigAddOptions(prefix+".caff-node-config", f)
 }
 
 type txQueueItem struct {

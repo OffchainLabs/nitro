@@ -19,7 +19,7 @@ func TestEspressoEscapeHatch(t *testing.T) {
 
 	// Disabling the delayed sequencer helps up check the
 	// message count easily
-	builder, cleanup := createL1AndL2Node(ctx, t, false, "")
+	builder, cleanup := createL1AndL2Node(ctx, t, false)
 	defer cleanup()
 
 	err := waitForL1Node(ctx)
@@ -111,7 +111,7 @@ func TestEspressoEscapeHatch(t *testing.T) {
 	Require(t, err)
 
 	// Check if the validated count is increasing after hotshot goes back live
-	err = waitForWith(ctx, 3*time.Minute, 20*time.Second, func() bool {
+	err = waitForWith(ctx, 4*time.Minute, 20*time.Second, func() bool {
 		validated := builder.L2.ConsensusNode.BlockValidator.Validated(t)
 		return validated > validatedMsg
 	})

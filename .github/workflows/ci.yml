@@ -62,7 +62,7 @@ jobs:
       - name: Make more disk space available on public runner
         run: |
           # rmz seems to be faster at deleting files than rm
-          cargo binstall -y rmz
+          cargo binstall -y --version 2.2.0 rmz
           sudo mv /home/runner/.cargo/bin/rmz /usr/local/bin/rmz
 
           echo "Available storage before:"
@@ -112,7 +112,6 @@ jobs:
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          # TODO: remove pinning: https://github.com/EspressoSystems/nitro-espresso-integration/issues/257
           toolchain: "1.81.0"
           targets: "wasm32-wasi, wasm32-unknown-unknown"
           components: "llvm-tools-preview, rustfmt, clippy"
@@ -124,6 +123,9 @@ jobs:
           toolchain: "nightly-2024-10-06"
           targets: "wasm32-wasi, wasm32-unknown-unknown"
           components: "rust-src, rustfmt, clippy"
+
+      - name: Install cbindgen
+        run: cargo install cbindgen
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
