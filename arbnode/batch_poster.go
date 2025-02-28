@@ -530,7 +530,7 @@ func (b *BatchPoster) GetParentChainIsUsingEIP7623(ctx context.Context) *bool {
 	return b.parentChainIsUsingEIP7623.Load()
 }
 
-func (b *BatchPoster) setParentChainIsUsingEIP7623(ctx context.Context) {
+func (b *BatchPoster) setParentChainIsUsingEIP7623(ctx context.Context, latestHeader *types.Header) {
 	// Before EIP-7623 tx.gasUsed is defined as:
 	// tx.gasUsed = (
 	//     21000
@@ -574,11 +574,6 @@ func (b *BatchPoster) setParentChainIsUsingEIP7623(ctx context.Context) {
 	// 40
 
 	rpcClient := b.l1Reader.Client()
-	latestHeader, err := rpcClient.HeaderByNumber(ctx, nil)
-	if err != nil {
-		log.Warn("HeaderByNumber failed", "err", err)
-		return
-	}
 	config := b.config()
 	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
 	to := b.dataPoster.Sender()
@@ -1297,8 +1292,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 						// in which calldata is also composed only of non-zero bytes,
 						// and that (TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata > STANDARD_TOKEN_COST * tokens_in_calldata + execution_gas_used),
 						// each calldata byte will consume TOTAL_COST_FLOOR_PER_TOKEN * 4, which is 40 gas.
-						calldataFeePerByteMultiplier := uint64(16)
+						b.setParentChainIsUsingEIP7623(ctx, latestHeader)
 						parentChainIsUsingEIP7623 := b.parentChainIsUsingEIP7623.Load()
+						calldataFeePerByteMultiplier := uint64(16)
 						if parentChainIsUsingEIP7623 != nil && *parentChainIsUsingEIP7623 {
 							calldataFeePerByteMultiplier = 40
 						}
@@ -1813,7 +1809,6 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			resetAllEphemeralErrs()
 			return b.config().PollInterval
 		}
-		b.setParentChainIsUsingEIP7623(ctx)
 		posted, err := b.maybePostSequencerBatch(ctx)
 		if err == nil {
 			resetAllEphemeralErrs()
