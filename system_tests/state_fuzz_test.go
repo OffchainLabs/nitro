@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
@@ -162,7 +163,7 @@ func FuzzStateTransition(f *testing.F) {
 			panic(err)
 		}
 		trieDBConfig := cacheConfig.TriedbConfig()
-		statedb, err := state.New(stateRoot, state.NewDatabaseWithConfig(chainDb, trieDBConfig), nil)
+		statedb, err := state.New(stateRoot, state.NewDatabase(triedb.NewDatabase(chainDb, trieDBConfig), nil))
 		if err != nil {
 			panic(err)
 		}
