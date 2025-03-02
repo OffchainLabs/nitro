@@ -23,9 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cavaliergopher/grab/v3"
-	"github.com/codeclysm/extract/v3"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -75,7 +72,7 @@ func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, err
 	}
 	file, err := downloadFile(ctx, initConfig, initConfig.Url, checksum)
 	if err != nil && errors.Is(err, notFoundError) {
-		return "", fmt.Errorf("file not found but checksum exists")
+		return "", errors.New("file not found but checksum exists")
 	}
 	return file, err
 }
@@ -177,7 +174,7 @@ func fetchChecksum(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("error decoding checksum: %w", err)
 	}
 	if len(checksum) != sha256.Size {
-		return nil, fmt.Errorf("invalid checksum length")
+		return nil, errors.New("invalid checksum length")
 	}
 	return checksum, nil
 }
@@ -204,7 +201,7 @@ func downloadInitInParts(ctx context.Context, initConfig *conf.InitConfig) (stri
 	for _, line := range lines {
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
-			return "", fmt.Errorf("manifest file in wrong format")
+			return "", errors.New("manifest file in wrong format")
 		}
 		checksum, err := hex.DecodeString(fields[0])
 		if err != nil {
@@ -246,7 +243,7 @@ func downloadInitInParts(ctx context.Context, initConfig *conf.InitConfig) (stri
 // joinArchive joins the archive parts into a single file and return its path.
 func joinArchive(parts []string, archivePath string) (string, error) {
 	if len(parts) == 0 {
-		return "", fmt.Errorf("no database parts found")
+		return "", errors.New("no database parts found")
 	}
 	archive, err := os.Create(archivePath)
 	if err != nil {
@@ -275,7 +272,7 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 		return nil
 	}
 	if initConfig.Url != "" {
-		return fmt.Errorf("cannot set latest url if url is already set")
+		return errors.New("cannot set latest url if url is already set")
 	}
 	baseUrl, err := url.Parse(initConfig.LatestBase)
 	if err != nil {
