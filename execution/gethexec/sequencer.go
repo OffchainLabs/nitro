@@ -95,7 +95,6 @@ type TimeboostConfig struct {
 	ExpressLaneAdvantage      time.Duration `koanf:"express-lane-advantage"`
 	SequencerHTTPEndpoint     string        `koanf:"sequencer-http-endpoint"`
 	EarlySubmissionGrace      time.Duration `koanf:"early-submission-grace"`
-	MaxQueuedTxCount          int           `koanf:"max-queued-tx-count"`
 	MaxFutureSequenceDistance uint64        `koanf:"max-future-sequence-distance"`
 	RedisUrl                  string        `koanf:"redis-url"`
 }
@@ -107,8 +106,7 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	ExpressLaneAdvantage:      time.Millisecond * 200,
 	SequencerHTTPEndpoint:     "http://localhost:8547",
 	EarlySubmissionGrace:      time.Second * 2,
-	MaxQueuedTxCount:          10,
-	MaxFutureSequenceDistance: 100,
+	MaxFutureSequenceDistance: 25,
 	RedisUrl:                  "unset",
 }
 
@@ -214,7 +212,6 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
 	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 	f.Duration(prefix+".early-submission-grace", DefaultTimeboostConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
-	f.Int(prefix+".max-queued-tx-count", DefaultTimeboostConfig.MaxQueuedTxCount, "maximum allowed number of express lane txs with future sequence number to be queued. Set 0 to disable this check and a negative value to prevent queuing of any future sequence number transactions")
 	f.Uint64(prefix+".max-future-sequence-distance", DefaultTimeboostConfig.MaxFutureSequenceDistance, "maximum allowed difference (in terms of sequence numbers) between a future express lane tx and the current sequence count of a round")
 	f.String(prefix+".redis-url", DefaultTimeboostConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
 }
