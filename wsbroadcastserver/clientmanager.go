@@ -142,19 +142,14 @@ func (cm *ClientManager) ClientCount() int32 {
 
 // Broadcast sends batch item to all clients.
 func (cm *ClientManager) Broadcast(bm *m.BroadcastMessage) {
-	ctx, err := cm.GetContextSafe()
-	if err != nil {
-		return
-	}
-	select {
-	case cm.broadcastChan <- bm:
-	case <-ctx.Done():
+	if cm.Stopped() {
 		// This should only occur if a reorg occurs after the broadcast server is stopped,
 		// with the sequencer enabled but not the sequencer coordinator.
 		// In this case we should proceed without broadcasting the message.
+		return
 	}
+	cm.broadcastChan <- bm
 }
-
 func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnection, error) {
 	if err := cm.backlog.Append(bm); err != nil {
 		return nil, err
@@ -309,7 +304,16 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				return
+				// We need to drain cm.broadcastChan to make sure no threads are waiting indefinitely to send messages to it post shutdown (context cancellation)
+				// Its certain that draining shouldn't take indefinite time as the only function feeding to cm.broadcastChan checks first if cm.Stopped() is true
+				cm.StopOnly() // Lets be sure that cm.broadcastChan won't receive anything after context cancellation
+				for {
+					select {
+					case <-cm.broadcastChan:
+					default:
+						return
+					}
+				}
 			case clientAction := <-cm.clientAction:
 				if clientAction.create {
 					err := cm.registerClient(ctx, clientAction.cc)
