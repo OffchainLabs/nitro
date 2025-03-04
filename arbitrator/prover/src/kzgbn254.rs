@@ -58,12 +58,12 @@ pub fn prove_kzg_preimage_bn254(
 
     let commitment_x_bigint: BigUint = blob_commitment.x.into();
     let commitment_y_bigint: BigUint = blob_commitment.y.into();
-    let length_uint32: u32 = blob.len() as u32;
+    let length_uint32_fe: u32 = (blob.len() as u32) / 32;
 
     let mut commitment_encoded_length_bytes = Vec::with_capacity(68);
     append_left_padded_biguint_be(&mut commitment_encoded_length_bytes, &commitment_x_bigint);
     append_left_padded_biguint_be(&mut commitment_encoded_length_bytes, &commitment_y_bigint);
-    append_left_padded_uint32_be(&mut commitment_encoded_length_bytes, &length_uint32);
+    append_left_padded_uint32_be(&mut commitment_encoded_length_bytes, &length_uint32_fe);
 
     let mut keccak256_hasher = Keccak256::new();
     keccak256_hasher.update(&commitment_encoded_length_bytes);
@@ -88,12 +88,13 @@ pub fn prove_kzg_preimage_bn254(
     append_left_padded_biguint_be(&mut commitment_encoded_bytes, &commitment_y_bigint);
 
     let mut proving_offset = offset;
-    let length_usize = preimage.len() as u64;
+    let length_usize_fe = (preimage.len() / 32) as u64;
 
-    assert!(length_usize / 32 == blob_polynomial_evaluation_form.len() as u64);
+    assert!(length_usize_fe == blob_polynomial_evaluation_form.len() as u64);
 
     // address proving past end edge case later
-    let proving_past_end = offset as u64 >= length_usize;
+    // offset refers to a 32 byte section or field element of the blob
+    let proving_past_end = offset >= preimage.len() as u32;
     if proving_past_end {
         // Proving any offset proves the length which is all we need here,
         // because we're past the end of the preimage.
@@ -107,7 +108,7 @@ pub fn prove_kzg_preimage_bn254(
             eyre::eyre!(
                 "Index ({}) out of bounds for preimage of length {} with data of ({} field elements x 32 bytes)",
                 proving_offset,
-                length_usize,
+                preimage.len(),
                 blob_polynomial_evaluation_form.len()
             )
         })?;
@@ -146,6 +147,12 @@ pub fn prove_kzg_preimage_bn254(
         );
     }
 
+    /*
+        Encode the machine state proof used for resolving a
+        one step proof. 
+    
+     */
+
     let xminusz_x0: BigUint = g2_tau_minus_g2_z.x.c0.into();
     let xminusz_x1: BigUint = g2_tau_minus_g2_z.x.c1.into();
     let xminusz_y0: BigUint = g2_tau_minus_g2_z.y.c0.into();
@@ -158,22 +165,23 @@ pub fn prove_kzg_preimage_bn254(
     append_left_padded_biguint_be(&mut xminusz_encoded_bytes, &xminusz_y1);
     append_left_padded_biguint_be(&mut xminusz_encoded_bytes, &xminusz_y0);
 
-    // encode the proof
+    // encode the kzg point opening proof
     let proof_x_bigint: BigUint = kzg_proof.x.into();
     let proof_y_bigint: BigUint = kzg_proof.y.into();
     let mut proof_encoded_bytes = Vec::with_capacity(64);
     append_left_padded_biguint_be(&mut proof_encoded_bytes, &proof_x_bigint);
     append_left_padded_biguint_be(&mut proof_encoded_bytes, &proof_y_bigint);
 
-    let mut length_bytes = Vec::with_capacity(32);
-    append_left_padded_biguint_be(&mut length_bytes, &BigUint::from(length_usize));
+    // en
+    let mut length_fe_bytes = Vec::with_capacity(32);
+    append_left_padded_biguint_be(&mut length_fe_bytes, &BigUint::from(length_usize_fe));
 
     out.write_all(&*z)?; // evaluation point [:32]
     out.write_all(&*proven_y)?; // expected output [32:64]
     out.write_all(&xminusz_encoded_bytes)?; // g2TauMinusG2z [64:192]
     out.write_all(&*commitment_encoded_bytes)?; // kzg commitment [192:256]
     out.write_all(&proof_encoded_bytes)?; // proof [256:320]
-    out.write_all(&*length_bytes)?; // length of preimage [320:352]
+    out.write_all(&*length_fe_bytes)?; // length of preimage [320:352]
 
     Ok(())
 }

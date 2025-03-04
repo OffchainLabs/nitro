@@ -1056,8 +1056,6 @@ func (b *BatchPoster) encodeAddBatch(
 		args = append(args, new(big.Int).SetUint64(uint64(prevMsgNum)))
 		args = append(args, new(big.Int).SetUint64(uint64(newMsgNum)))
 
-		println(method.Inputs)
-
 		calldata, err := method.Inputs.Pack(args...)
 
 		if err != nil {

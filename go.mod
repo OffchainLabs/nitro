@@ -6,13 +6,17 @@ replace github.com/VictoriaMetrics/fastcache => ./fastcache
 
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
+replace github.com/offchainlabs/bold => ./bold
+
+// These manual remappings are performed to mitigate dependency conflicts between
+// layr-labs/eigenda && ./go-ethereum
 replace github.com/wealdtech/go-merkletree => github.com/wealdtech/go-merkletree v1.0.0
 
 replace github.com/crate-crypto/go-ipa => github.com/crate-crypto/go-ipa v0.0.0-20231025140028-3c0104f4b233
 
 replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.2
 
-replace github.com/offchainlabs/bold => ./bold
+
 
 require (
 	cloud.google.com/go/storage v1.43.0
