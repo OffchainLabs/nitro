@@ -150,6 +150,7 @@ func (cm *ClientManager) Broadcast(bm *m.BroadcastMessage) {
 	}
 	cm.broadcastChan <- bm
 }
+
 func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnection, error) {
 	if err := cm.backlog.Append(bm); err != nil {
 		return nil, err
