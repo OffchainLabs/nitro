@@ -1663,8 +1663,11 @@ func testReturnDataCost(t *testing.T, arbosVersion uint64) {
 	}
 }
 
-func TestReturnDataCost(t *testing.T) {
+func TestReturnDataCostOld(t *testing.T) {
 	testReturnDataCost(t, params.ArbosVersion_Stylus)
+}
+
+func TestReturnDataCostNew(t *testing.T) {
 	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
 }
 
@@ -2476,7 +2479,7 @@ func TestWasmLongTermCache(t *testing.T) {
 
 func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
-		builder.WithStylusLongTermCache(true)
+		builder.WithStylusLongTermCache(true).DontParalellise()
 	})
 	ctx := builder.ctx
 	l2info := builder.L2Info

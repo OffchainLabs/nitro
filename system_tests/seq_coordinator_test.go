@@ -48,7 +48,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.takeOwnership = false
 	builder.nodeConfig.SeqCoordinator.Enable = true
 	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
