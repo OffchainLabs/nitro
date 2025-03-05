@@ -43,6 +43,10 @@ func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
 	w.t.Error("not supported")
 	return nil
 }
+func (w *execClientWrapper) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
+	w.t.Error("not supported")
+	return nil
+}
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
@@ -184,7 +188,7 @@ func TestTransactionStreamer(t *testing.T) {
 				state.balances[dest].Add(state.balances[dest], value)
 			}
 
-			Require(t, inbox.AddMessages(state.numMessages, false, messages))
+			Require(t, inbox.AddMessages(state.numMessages, false, messages, nil))
 
 			state.numMessages += arbutil.MessageIndex(len(messages))
 			prevBlockNumber := state.blockNumber
