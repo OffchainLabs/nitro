@@ -46,7 +46,7 @@ FROM wasm-base AS wasm-libs-builder
 RUN apt-get update && \
     apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
     # pinned rust 1.84.1
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.84.1 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasip1
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.84.1 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
 COPY ./Makefile ./
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
