@@ -88,9 +88,9 @@ pub fn prove_kzg_preimage_bn254(
     append_left_padded_biguint_be(&mut commitment_encoded_bytes, &commitment_y_bigint);
 
     let mut proving_offset = offset;
-    let length_usize_fe = (preimage.len() / 32) as u64;
+    let length_usize_32 = (preimage.len() / 32) as u32;
 
-    assert!(length_usize_fe == blob_polynomial_evaluation_form.len() as u64);
+    assert!(length_usize_32 == blob_polynomial_evaluation_form.len() as u32);
 
     // address proving past end edge case later
     // offset refers to a 32 byte section or field element of the blob
@@ -149,8 +149,7 @@ pub fn prove_kzg_preimage_bn254(
 
     /*
         Encode the machine state proof used for resolving a
-        one step proof. 
-    
+        one step proof for EigenDA preimage types.
      */
 
     let xminusz_x0: BigUint = g2_tau_minus_g2_z.x.c0.into();
@@ -172,9 +171,9 @@ pub fn prove_kzg_preimage_bn254(
     append_left_padded_biguint_be(&mut proof_encoded_bytes, &proof_x_bigint);
     append_left_padded_biguint_be(&mut proof_encoded_bytes, &proof_y_bigint);
 
-    // en
+    // encode the number of field elements in the blob
     let mut length_fe_bytes = Vec::with_capacity(32);
-    append_left_padded_biguint_be(&mut length_fe_bytes, &BigUint::from(length_usize_fe));
+    append_left_padded_biguint_be(&mut length_fe_bytes, &BigUint::from(length_usize_32));
 
     out.write_all(&*z)?; // evaluation point [:32]
     out.write_all(&*proven_y)?; // expected output [32:64]
