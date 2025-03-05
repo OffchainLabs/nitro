@@ -119,7 +119,7 @@ func (rc *RedisCoordinator) trackSequenceCountUpdates(ctx context.Context) {
 			return
 		}
 		curSeq, _ := rc.roundSeqMap.Get(roundSeqUpdate.round)
-		if roundSeqUpdate.sequence < curSeq {
+		if roundSeqUpdate.sequence <= curSeq {
 			continue
 		}
 		rc.roundSeqMap.Add(roundSeqUpdate.round, roundSeqUpdate.sequence)
