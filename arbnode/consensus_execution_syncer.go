@@ -63,7 +63,7 @@ func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx context.Context) time.Duration {
 	safeMsgCount, err := c.inboxReader.GetSafeMsgCount(ctx)
 	if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
-		log.Warn("Finality not supported, not pushing finality data to execution")
+		log.Info("Finality not supported, not pushing finality data to execution")
 		return c.config().SyncInterval
 	} else if err != nil {
 		log.Error("Error getting safe message count", "err", err)
@@ -72,7 +72,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 
 	finalizedMsgCount, err := c.inboxReader.GetFinalizedMsgCount(ctx)
 	if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
-		log.Warn("Finality not supported, not pushing finality data to execution")
+		log.Info("Finality not supported, not pushing finality data to execution")
 		return c.config().SyncInterval
 	} else if err != nil {
 		log.Error("Error getting finalized message count", "err", err)
