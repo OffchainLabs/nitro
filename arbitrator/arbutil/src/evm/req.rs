@@ -276,7 +276,9 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         req.extend(gas_left.to_be_bytes());
 
         let (_, data, cost) = self.request(EvmApiMethod::AccountCode, req);
-        self.last_code = Some((address, data.clone()));
+        if data.slice().len() > 0 {
+            self.last_code = Some((address, data.clone()));
+        }
         (data, cost)
     }
 
