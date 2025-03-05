@@ -481,21 +481,6 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	// Build L1 and L2
 	cleanupL1AndL2 := builder.Build(t)
 	defer cleanupL1AndL2()
-	firstNodeL2TestClient := builder.L2
-	secondNodeL2NodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
-	secondNodeL2TestClient, cleanupL2SecondNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: secondNodeL2NodeConfig})
-	defer cleanupL2SecondNode()
-
-	// Force L2 batch posting so parentChainIsUsingEIP7623 is set
-	accountName := "User2"
-	builder.L2Info.GenerateAccount(accountName)
-	tx := builder.L2Info.PrepareTx("Owner", accountName, builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	err := firstNodeL2TestClient.Client.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = firstNodeL2TestClient.EnsureTxSucceeded(tx)
-	Require(t, err)
-	_, err = WaitForTx(ctx, secondNodeL2TestClient.Client, tx.Hash(), time.Second*15)
-	Require(t, err)
 
 	// Check if L2's parent chain is using EIP-7623
 	latestHeader, err := builder.L2.ConsensusNode.L1Reader.LastHeader(ctx)
@@ -509,20 +494,6 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	// Build L3
 	cleanupL3FirstNode := builder.BuildL3OnL2(t)
 	defer cleanupL3FirstNode()
-	firstNodeL3TestClient := builder.L3
-	secondNodeL3NodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
-	secondNodeL3TestClient, cleanupL3SecondNode := builder.Build2ndNodeOnL3(t, &SecondNodeParams{nodeConfig: secondNodeL3NodeConfig})
-	defer cleanupL3SecondNode()
-
-	// Force L3 batch posting so parentChainIsUsingEIP7623 is set
-	builder.L3Info.GenerateAccount(accountName)
-	tx = builder.L3Info.PrepareTx("Owner", accountName, builder.L3Info.TransferGas, big.NewInt(1e12), nil)
-	err = firstNodeL3TestClient.Client.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = firstNodeL3TestClient.EnsureTxSucceeded(tx)
-	Require(t, err)
-	_, err = WaitForTx(ctx, secondNodeL3TestClient.Client, tx.Hash(), time.Second*15)
-	Require(t, err)
 
 	// Check if L3's parent chain is using EIP-7623
 	latestHeader, err = builder.L3.ConsensusNode.L1Reader.LastHeader(ctx)
@@ -530,6 +501,6 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	isUsingEIP7623, err = builder.L3.ConsensusNode.BatchPoster.ParentChainIsUsingEIP7623(ctx, latestHeader)
 	Require(t, err)
 	if isUsingEIP7623 {
-		t.Fatal("L2's parent chain should not be using EIP-7623")
+		t.Fatal("L3's parent chain should not be using EIP-7623")
 	}
 }
