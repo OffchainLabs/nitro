@@ -68,6 +68,10 @@ func TestProgramArbitratorEarlyExit(t *testing.T) {
 	testEarlyExit(t, false)
 }
 
+func TestProgramArbitratorInfiniteLoopShouldCauseErrOutOfGas(t *testing.T) {
+	testInfiniteLoopCausesErrOutOfGas(t, false)
+}
+
 func fullRecurseTest() [][]multiCallRecurse {
 	result := make([][]multiCallRecurse, 0)
 	for _, op0 := range []vm.OpCode{vm.SSTORE, vm.SLOAD} {
