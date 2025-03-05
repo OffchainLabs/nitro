@@ -106,7 +106,6 @@ func validateBlockRange(
 }
 
 func TestProgramEvmData(t *testing.T) {
-	t.Parallel()
 	testEvmData(t, true)
 }
 

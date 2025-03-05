@@ -206,7 +206,6 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 
 // mostly tests translation to/from json and running over network
 func TestValidationServerAPI(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
@@ -283,7 +282,6 @@ func TestValidationServerAPI(t *testing.T) {
 }
 
 func TestValidationClientRoom(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
@@ -365,7 +363,6 @@ func TestValidationClientRoom(t *testing.T) {
 }
 
 func TestExecutionKeepAlive(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)

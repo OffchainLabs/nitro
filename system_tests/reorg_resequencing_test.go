@@ -28,7 +28,6 @@ import (
 // If step 1 is still executing when Execution calls TransactionStreamer in step 2 then this error happens:
 // 'failed to re-sequence old user message removed by reorg err="insert lock taken"'
 func TestReorgResequencing(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

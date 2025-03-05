@@ -52,7 +52,6 @@ type Options struct {
 }
 
 func testBlockValidatorSimple(t *testing.T, opts Options) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

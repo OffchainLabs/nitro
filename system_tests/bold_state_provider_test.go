@@ -41,7 +41,6 @@ import (
 )
 
 func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
-	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, 1<<5)
@@ -156,8 +155,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 }
 
 func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
-	// t.Parallel()
-	ctx, cancelCtx := context.WithCancel(context.Background())
+	// 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	maxNumBlocks := uint64(1 << 14)
 	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, maxNumBlocks)

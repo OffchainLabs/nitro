@@ -63,7 +63,6 @@ func TestAuctionResolutionDuringATieMultipleRuns(t *testing.T) {
 }
 
 func testAuctionResolutionDuringATie(t *testing.T, multiRuns bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -176,7 +175,6 @@ func TestExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerCrashing(t
 }
 
 func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -309,7 +307,6 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 }
 
 func TestForwardingExpressLaneTxs(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -354,7 +351,6 @@ func TestForwardingExpressLaneTxs(t *testing.T) {
 }
 
 func TestExpressLaneTransactionHandlingComplex(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -451,7 +447,6 @@ func TestExpressLaneTransactionHandlingComplex(t *testing.T) {
 }
 
 func TestExpressLaneTransactionHandling(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -601,7 +596,6 @@ func dbKey(prefix []byte, pos uint64) []byte {
 }
 
 func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -970,8 +964,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 }
 
 // func TestExpressLaneControlTransfer(t *testing.T) {
-// 	t.Parallel()
-// 	ctx, cancel := context.WithCancel(context.Background())
+// 	// 	ctx, cancel := context.WithCancel(context.Background())
 // 	defer cancel()
 
 // 	tmpDir, err := os.MkdirTemp("", "*")
@@ -1071,7 +1064,6 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 // }
 
 func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1115,7 +1107,6 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 }
 
 func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrect(t *testing.T) {
-	t.Parallel()
 
 	logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
 	ctx, cancel := context.WithCancel(context.Background())

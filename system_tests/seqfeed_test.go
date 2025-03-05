@@ -65,6 +65,7 @@ func TestSequencerFeed(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	builder.takeOwnership = false
+	builder.parallelise = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 	client := builder.L2.Client
@@ -93,7 +94,6 @@ func TestSequencerFeed(t *testing.T) {
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -123,6 +123,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	builder.takeOwnership = false
+	builder.parallelise = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 	node, client := builder.L2.ConsensusNode, builder.L2.Client
@@ -187,7 +188,6 @@ func compareAllMsgResultsFromConsensusAndExecution(
 }
 
 func testLyingSequencer(t *testing.T, dasModeStr string) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -24,7 +24,6 @@ import (
 )
 
 func TestSequencerRejection(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -36,6 +35,7 @@ func TestSequencerRejection(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.takeOwnership = false
+	builder.parallelise = false
 	port := testhelpers.AddrTCPPort(builderSeq.L2.ConsensusNode.BroadcastServer.ListenerAddr(), t)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	cleanup := builder.Build(t)

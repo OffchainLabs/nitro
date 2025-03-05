@@ -30,7 +30,6 @@ func generateBlocks(t *testing.T, ctx context.Context, builder *NodeBuilder, tes
 }
 
 func TestFinalizedBlocksMovedToAncients(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -92,7 +91,6 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 }
 
 func TestFinalityDataWaitForBlockValidator(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -177,7 +175,6 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 }
 
 func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

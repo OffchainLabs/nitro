@@ -86,7 +86,6 @@ func TestFindBatch(t *testing.T) {
 }
 
 func TestL2BlockRangeForL1(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -146,7 +145,6 @@ func TestL2BlockRangeForL1(t *testing.T) {
 }
 
 func TestGetL1Confirmations(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
