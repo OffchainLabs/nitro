@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -534,7 +535,18 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-	statedb.StartPrefetcher("Sequencer")
+	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
+	if lastBlock == nil {
+		return nil, errors.New("can't find block for current header")
+	}
+	var witness *stateless.Witness
+	if s.bc.GetVMConfig().EnableWitnessCollection {
+		witness, err = stateless.NewWitness(s.bc, lastBlock)
+		if err != nil {
+			return nil, err
+		}
+	}
+	statedb.StartPrefetcher("Sequencer", witness)
 	defer statedb.StopPrefetcher()
 
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
@@ -725,7 +737,14 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	statedb.StartPrefetcher("TransactionStreamer")
+	var witness *stateless.Witness
+	if s.bc.GetVMConfig().EnableWitnessCollection {
+		witness, err = stateless.NewWitness(s.bc, currentBlock)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	statedb.StartPrefetcher("TransactionStreamer", witness)
 	defer statedb.StopPrefetcher()
 
 	runMode := core.MessageCommitMode
@@ -1059,4 +1078,24 @@ func (s *ExecutionEngine) Maintenance(capLimit uint64) error {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 	return s.bc.FlushTrieDB(common.StorageSize(capLimit))
+}
+
+func (s *ExecutionEngine) SetFinalized(finalizedBlockNumber uint64) error {
+	block := s.bc.GetBlockByNumber(finalizedBlockNumber)
+	if block == nil {
+		return errors.New("unable to get block by number")
+	}
+
+	s.bc.SetFinalized(block.Header())
+	return nil
+}
+
+func (s *ExecutionEngine) SetSafe(safeBlockNumber uint64) error {
+	block := s.bc.GetBlockByNumber(safeBlockNumber)
+	if block == nil {
+		return errors.New("unable to get block by number")
+	}
+
+	s.bc.SetSafe(block.Header())
+	return nil
 }
