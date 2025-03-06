@@ -363,7 +363,7 @@ func checkEmptyDatabaseDir(dir string, force bool) error {
 	}
 	unexpectedFiles := []string{}
 	allowedFiles := map[string]bool{
-		"LOCK": true, "classic-msg": true, "l2chaindata": true,
+		"LOCK": true, "classic-msg": true, "l2chaindata": true, "wasm": true,
 	}
 	for _, entry := range entries {
 		if !allowedFiles[entry.Name()] {
