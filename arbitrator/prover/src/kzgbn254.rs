@@ -148,9 +148,9 @@ pub fn prove_kzg_preimage_bn254(
     }
 
     /*
-        Encode the machine state proof used for resolving a
-        one step proof for EigenDA preimage types.
-     */
+       Encode the machine state proof used for resolving a
+       one step proof for EigenDA preimage types.
+    */
 
     let xminusz_x0: BigUint = g2_tau_minus_g2_z.x.c0.into();
     let xminusz_x1: BigUint = g2_tau_minus_g2_z.x.c1.into();

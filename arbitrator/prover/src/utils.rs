@@ -217,7 +217,10 @@ pub fn hash_eigenda_preimage(preimage: &[u8]) -> Result<[u8; 32], eyre::Error> {
     let commitment_y_bigint: BigUint = blob_commitment.y.into();
 
     if (blob.len() % 32) != 0 {
-        return Err(eyre!("expected blob length to be evenly divisible into 32 byte field elements, got {}", blob.len()))
+        return Err(eyre!(
+            "expected blob length to be evenly divisible into 32 byte field elements, got {}",
+            blob.len()
+        ));
     }
 
     let length_uint32_fe: u32 = (blob.len() / 32) as u32;
