@@ -49,7 +49,12 @@ func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interf
 		res["fullSyncProgressMapError"] = err
 	}
 
-	res["consensusSyncTarget"] = s.consensus.SyncTargetMessageCount()
+	consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
+	if err != nil {
+		res["consensusSyncTargetError"] = err
+	} else {
+		res["consensusSyncTarget"] = consensusSyncTarget
+	}
 
 	header, err := s.exec.getCurrentHeader()
 	if err != nil {
@@ -83,8 +88,18 @@ func (s *SyncMonitor) Synced(ctx context.Context) bool {
 	}
 	if synced {
 		built, err := s.exec.HeadMessageIndex()
-		consensusSyncTarget := s.consensus.SyncTargetMessageCount()
-		if err == nil && built+1 >= consensusSyncTarget {
+		if err != nil {
+			log.Warn("Error getting head message index", "err", err)
+			return false
+		}
+
+		consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
+		if err != nil {
+			log.Warn("Error getting consensus sync target", "err", err)
+			return false
+		}
+
+		if built+1 >= consensusSyncTarget {
 			return true
 		}
 	}

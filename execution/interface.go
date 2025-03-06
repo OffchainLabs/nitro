@@ -87,7 +87,7 @@ type BatchFetcher interface {
 type ConsensusInfo interface {
 	Synced() containers.PromiseInterface[bool]
 	FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}]
-	SyncTargetMessageCount() arbutil.MessageIndex
+	SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex]
 	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata]
 }
 
