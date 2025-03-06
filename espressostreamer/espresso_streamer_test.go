@@ -9,6 +9,7 @@ import (
 
 	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
 	"github.com/EspressoSystems/espresso-sequencer-go/types"
+	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -30,7 +31,7 @@ func TestEspressoStreamer(t *testing.T) {
 		// Simulate the call to the tee verifier returning a byte array. To the streamer, this indicates the attestation quote is valid.
 		mockEspressoTEEVerifierClient.On("Verify", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 		// create a new streamer object
-		streamer := NewEspressoStreamer(1, 1, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient)
+		streamer := NewEspressoStreamer(1, 1, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient, false)
 		streamer.Reset(735805, 1)
 		// Get the data for this test
 		testBlocks := GetTestBlocks()
@@ -63,7 +64,7 @@ func TestEspressoStreamer(t *testing.T) {
 
 		mockEspressoClient.On("FetchTransactionsInBlock", ctx, uint64(6), namespace).Return(espressoClient.TransactionsInBlock{}, errors.New("test error"))
 
-		streamer := NewEspressoStreamer(namespace, 3, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient)
+		streamer := NewEspressoStreamer(namespace, 3, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient, false)
 
 		testParseFn := func(tx types.Bytes) ([]*MessageWithMetadataAndPos, error) {
 			return nil, nil
@@ -105,7 +106,7 @@ func TestEspressoStreamer(t *testing.T) {
 			},
 		}, nil)
 
-		streamer := NewEspressoStreamer(namespace, 3, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient)
+		streamer := NewEspressoStreamer(namespace, 3, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient, false)
 
 		testParseFn := func(pos uint64, hotshotheight uint64) func(tx types.Bytes) ([]*MessageWithMetadataAndPos, error) {
 
@@ -169,6 +170,10 @@ func (m *mockEspressoClient) FetchTransactionsInBlock(ctx context.Context, block
 	args := m.Called(ctx, blockHeight, namespace)
 	//nolint:errcheck
 	return args.Get(0).(espressoClient.TransactionsInBlock), args.Error(1)
+}
+
+func (m *mockEspressoClient) FetchHeaderByHeight(ctx context.Context, blockHeight uint64) (espressoTypes.HeaderImpl, error) {
+	panic("not implemented")
 }
 
 // To generate test scripts for the mock clients, we can create a list of test blocks that we can iterate through and set as the call and return values.

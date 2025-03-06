@@ -12,7 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/espressostreamer"
@@ -32,9 +34,11 @@ type CaffNode struct {
 	executionEngine  *ExecutionEngine
 	espressoStreamer *espressostreamer.EspressoStreamer
 	txForwarder      TransactionPublisher
+
+	db ethdb.Database
 }
 
-func NewCaffNode(configFetcher SequencerConfigFetcher, execEngine *ExecutionEngine, txForwarder TransactionPublisher) *CaffNode {
+func NewCaffNode(configFetcher SequencerConfigFetcher, execEngine *ExecutionEngine, txForwarder TransactionPublisher, stack *node.Node) *CaffNode {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		log.Crit("Failed to validate caff  node config", "err", err)
@@ -81,12 +85,19 @@ func NewCaffNode(configFetcher SequencerConfigFetcher, execEngine *ExecutionEngi
 		return nil
 	}
 
+	db, err := stack.OpenDatabase("caffdata", 0, 0, "caffdata/", false)
+	if err != nil {
+		log.Crit("could not open the caff database")
+		return nil
+	}
+
 	espressoStreamer := espressostreamer.NewEspressoStreamer(config.CaffNodeConfig.Namespace,
 		config.CaffNodeConfig.NextHotshotBlock,
 		config.CaffNodeConfig.RetryTime,
 		config.CaffNodeConfig.HotshotPollingInterval,
 		espressoTEEVerifierCaller,
 		espressoClient.NewMultipleNodesClient(config.CaffNodeConfig.HotShotUrls),
+		config.CaffNodeConfig.RecordPerformance,
 	)
 
 	if espressoStreamer == nil {
@@ -98,6 +109,7 @@ func NewCaffNode(configFetcher SequencerConfigFetcher, execEngine *ExecutionEngi
 		executionEngine:  execEngine,
 		espressoStreamer: espressoStreamer,
 		txForwarder:      txForwarder,
+		db:               db,
 	}
 }
 
@@ -116,13 +128,18 @@ func (n *CaffNode) createBlock() (returnValue bool) {
 		return false
 	}
 
+	if messageWithMetadataAndPos == nil {
+		log.Debug("no message found")
+		return false
+	}
+
 	messageWithMetadata := messageWithMetadataAndPos.MessageWithMeta
 
 	// Get the state of the database at the last block
 	statedb, err := n.executionEngine.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		log.Error("failed to get state at last block header", "err", err)
-		log.Info("Resetting espresso streamer", "currentMessagePos",
+		log.Debug("Resetting espresso streamer", "currentMessagePos",
 			messageWithMetadataAndPos.Pos, "currentHostshotBlock",
 			messageWithMetadataAndPos.HotshotHeight)
 		n.espressoStreamer.Reset(messageWithMetadataAndPos.Pos, messageWithMetadataAndPos.HotshotHeight)
@@ -145,7 +162,7 @@ func (n *CaffNode) createBlock() (returnValue bool) {
 
 	if err != nil || block == nil {
 		log.Error("Failed to produce block", "err", err)
-		log.Info("Resetting espresso streamer", "currentMessagePos",
+		log.Debug("Resetting espresso streamer", "currentMessagePos",
 			messageWithMetadataAndPos.Pos, "currentHostshotBlock",
 			messageWithMetadataAndPos.HotshotHeight)
 		n.espressoStreamer.Reset(messageWithMetadataAndPos.Pos, messageWithMetadataAndPos.HotshotHeight)
@@ -159,7 +176,19 @@ func (n *CaffNode) createBlock() (returnValue bool) {
 	err = n.executionEngine.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
 		log.Error("Failed to append block", "err", err)
-		log.Info("Resetting espresso streamer", "currentMessagePos",
+		log.Debug("Resetting espresso streamer", "currentMessagePos",
+			messageWithMetadataAndPos.Pos, "currentHostshotBlock",
+			messageWithMetadataAndPos.HotshotHeight)
+		n.espressoStreamer.Reset(messageWithMetadataAndPos.Pos, messageWithMetadataAndPos.HotshotHeight)
+		return false
+	}
+
+	n.espressoStreamer.RecordTimeDurationBetweenHotshotAndCurrentBlock(messageWithMetadataAndPos.HotshotHeight, time.Now())
+
+	err = n.espressoStreamer.StoreHotshotBlock(n.db, messageWithMetadataAndPos.HotshotHeight)
+	if err != nil {
+		log.Error("Failed to store hotshot block", "err", err)
+		log.Debug("Resetting espresso streamer", "currentMessagePos",
 			messageWithMetadataAndPos.Pos, "currentHostshotBlock",
 			messageWithMetadataAndPos.HotshotHeight)
 		n.espressoStreamer.Reset(messageWithMetadataAndPos.Pos, messageWithMetadataAndPos.HotshotHeight)
@@ -177,7 +206,28 @@ func (n *CaffNode) Start(ctx context.Context) error {
 	}
 	// This is +1 because the current block is the block after the last processed block
 	currentBlockNum := n.executionEngine.bc.CurrentBlock().Number.Uint64() + 1
-	n.espressoStreamer.Reset(currentBlockNum, n.config().CaffNodeConfig.NextHotshotBlock)
+	currentMessagePos, err := n.executionEngine.BlockNumberToMessageIndex(currentBlockNum)
+	if err != nil {
+		return fmt.Errorf("failed to convert block number to message index: %w", err)
+	}
+	nextHotshotBlock, err := n.espressoStreamer.ReadNextHotshotBlockFromDb(n.db)
+	if err != nil {
+		log.Crit("failed to read  next hotshot block", "err", err)
+		return nil
+	}
+
+	if nextHotshotBlock == 0 {
+		// No next hotshot block found, so we need to start from config.CaffNodeConfig.NextHotshotBlock
+		nextHotshotBlock = n.config().CaffNodeConfig.NextHotshotBlock
+		if nextHotshotBlock == 0 {
+			log.Crit("No next hotshot block found in database, and no config.CaffNodeConfig.NextHotshotBlock set")
+		}
+	}
+	// The reason we do the reset here is because database is only initialized after Caff node is initialized
+	// so if we want to read the current position from the database, we need to reset the streamer
+	// during the start of the espresso streamer and caff node
+	log.Debug("Starting streamer at", "nextHotshotBlock", nextHotshotBlock, "currentMessagePos", currentMessagePos)
+	n.espressoStreamer.Reset(uint64(currentMessagePos), nextHotshotBlock)
 
 	err = n.CallIterativelySafe(func(ctx context.Context) time.Duration {
 		madeBlock := n.createBlock()
@@ -189,6 +239,7 @@ func (n *CaffNode) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to start node, error in createBlock: %w", err)
 	}
+
 	return nil
 }
 
