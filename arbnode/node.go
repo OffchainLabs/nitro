@@ -1513,8 +1513,8 @@ func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterfa
 	return containers.NewReadyPromise(batchParentChainBlock, err)
 }
 
-func (n *Node) FullSyncProgressMap() map[string]interface{} {
-	return n.SyncMonitor.FullSyncProgressMap()
+func (n *Node) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
+	return containers.NewReadyPromise(n.SyncMonitor.FullSyncProgressMap(), nil)
 }
 
 func (n *Node) Synced() containers.PromiseInterface[bool] {

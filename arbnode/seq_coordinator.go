@@ -762,7 +762,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and execution processed every message that consensus had 1 second ago
 	synced := c.sequencer.Synced(ctx)
 	if !synced {
-		syncProgress := c.sequencer.FullSyncProgressMap()
+		syncProgress := c.sequencer.FullSyncProgressMap(ctx)
 		var detailsList []interface{}
 		for key, value := range syncProgress {
 			detailsList = append(detailsList, key, value)

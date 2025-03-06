@@ -69,7 +69,7 @@ type ExecutionSequencer interface {
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
 	Synced(ctx context.Context) bool
-	FullSyncProgressMap() map[string]interface{}
+	FullSyncProgressMap(ctx context.Context) map[string]interface{}
 }
 
 // needed for batch poster
@@ -86,7 +86,7 @@ type BatchFetcher interface {
 
 type ConsensusInfo interface {
 	Synced() containers.PromiseInterface[bool]
-	FullSyncProgressMap() map[string]interface{}
+	FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}]
 	SyncTargetMessageCount() arbutil.MessageIndex
 	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata]
 }
