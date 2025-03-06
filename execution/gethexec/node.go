@@ -500,8 +500,8 @@ func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, err)
 }
 
-func (n *ExecutionNode) Synced() bool {
-	return n.SyncMonitor.Synced()
+func (n *ExecutionNode) Synced(ctx context.Context) bool {
+	return n.SyncMonitor.Synced(ctx)
 }
 
 func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
