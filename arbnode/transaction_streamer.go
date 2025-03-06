@@ -1292,6 +1292,8 @@ func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struc
 // Check if the latest submitted transaction has been finalized on L1 and verify it.
 // Return a bool indicating whether a new transaction can be submitted to HotShot
 func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.Context) error {
+	s.espressoTxnsStateInsertionMutex.Lock()
+	defer s.espressoTxnsStateInsertionMutex.Unlock()
 	submittedTxns, err := s.getEspressoSubmittedTxns()
 	if err != nil {
 		return fmt.Errorf("submitted pos not found: %w", err)
@@ -1380,10 +1382,6 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 
 	// Reset the last submit failure time if we successfully fetch the transaction and verify its inclusion/namespace proof
 	s.lastSubmitFailureAt = nil
-
-	// Validation completed. Update the database
-	s.espressoTxnsStateInsertionMutex.Lock()
-	defer s.espressoTxnsStateInsertionMutex.Unlock()
 
 	batch := s.db.NewBatch()
 	if err := s.setEspressoSubmittedTxns(batch, submittedTxns[1:]); err != nil {
@@ -1545,7 +1543,8 @@ func (s *TransactionStreamer) resubmitEspressoTransactions(ctx context.Context, 
 }
 
 func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) error {
-
+	s.espressoTxnsStateInsertionMutex.Lock()
+	defer s.espressoTxnsStateInsertionMutex.Unlock()
 	pendingTxnsPos, err := s.getEspressoPendingTxnsPos()
 	if err != nil {
 		return err
@@ -1585,9 +1584,6 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) er
 		if err != nil {
 			return fmt.Errorf("failed to submit transaction to espresso: %w", err)
 		}
-
-		s.espressoTxnsStateInsertionMutex.Lock()
-		defer s.espressoTxnsStateInsertionMutex.Unlock()
 
 		batch := s.db.NewBatch()
 		submittedPos := pendingTxnsPos[:msgCnt]
@@ -1711,6 +1707,9 @@ func (s *TransactionStreamer) submitTransactionsToEspresso(ctx context.Context, 
 }
 
 func (s *TransactionStreamer) pollToResubmitEspressoTransactions(ctx context.Context, ignored struct{}) time.Duration {
+	s.espressoTxnsStateInsertionMutex.Lock()
+	defer s.espressoTxnsStateInsertionMutex.Unlock()
+
 	retryRate := s.espressoTxnsPollingInterval * 50
 	submittedTxns, err := s.getEspressoSubmittedTxns()
 	if err != nil {
