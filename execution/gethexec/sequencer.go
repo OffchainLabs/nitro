@@ -744,7 +744,8 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	if pauseChan != nil {
 		return nil
 	}
-	return s.execEngine.consensus.ExpectChosenSequencer()
+	_, err := s.execEngine.consensus.ExpectChosenSequencer().Await(ctx)
+	return err
 }
 
 func (s *Sequencer) ForwardTarget() string {
