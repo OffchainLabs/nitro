@@ -504,8 +504,8 @@ func (n *ExecutionNode) Synced(ctx context.Context) bool {
 	return n.SyncMonitor.Synced(ctx)
 }
 
-func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
-	return n.SyncMonitor.FullSyncProgressMap()
+func (n *ExecutionNode) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
+	return n.SyncMonitor.FullSyncProgressMap(ctx)
 }
 
 func (n *ExecutionNode) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {

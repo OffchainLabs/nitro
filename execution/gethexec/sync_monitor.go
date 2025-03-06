@@ -42,8 +42,12 @@ func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonit
 	}
 }
 
-func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
-	res := s.consensus.FullSyncProgressMap()
+func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
+	res, err := s.consensus.FullSyncProgressMap().Await(ctx)
+	if err != nil {
+		res = make(map[string]interface{})
+		res["fullSyncProgressMapError"] = err
+	}
 
 	res["consensusSyncTarget"] = s.consensus.SyncTargetMessageCount()
 
@@ -68,7 +72,7 @@ func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{
 	if s.Synced(ctx) {
 		return make(map[string]interface{})
 	}
-	return s.FullSyncProgressMap()
+	return s.FullSyncProgressMap(ctx)
 }
 
 func (s *SyncMonitor) Synced(ctx context.Context) bool {
