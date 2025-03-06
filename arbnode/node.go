@@ -1503,8 +1503,9 @@ func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (ui
 	return n.InboxTracker.FindInboxBatchContainingMessage(message)
 }
 
-func (n *Node) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
-	return n.InboxTracker.GetBatchParentChainBlock(seqNum)
+func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
+	batchParentChainBlock, err := n.InboxTracker.GetBatchParentChainBlock(seqNum)
+	return containers.NewReadyPromise(batchParentChainBlock, err)
 }
 
 func (n *Node) FullSyncProgressMap() map[string]interface{} {
