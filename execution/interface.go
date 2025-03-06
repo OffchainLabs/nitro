@@ -88,7 +88,7 @@ type ConsensusInfo interface {
 
 type ConsensusSequencer interface {
 	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) error
-	ExpectChosenSequencer() error
+	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
 }
 
 type FullConsensusClient interface {
