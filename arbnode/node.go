@@ -1519,8 +1519,9 @@ func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
 	return n.SyncMonitor.SyncTargetMessageCount()
 }
 
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) error {
-	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
+	err := n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
+	return containers.NewReadyPromise(struct{}{}, err)
 }
 
 func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
