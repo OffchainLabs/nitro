@@ -186,22 +186,26 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	Require(t, err)
 
 	blockValidatorA, err := staker.NewBlockValidator(
+		ctx,
 		statelessA,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
+		l1stack,
 	)
 	Require(t, err)
 	Require(t, blockValidatorA.Initialize(ctx))
 	Require(t, blockValidatorA.Start(ctx))
 
 	blockValidatorB, err := staker.NewBlockValidator(
+		ctx,
 		statelessB,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
+		l1stack,
 	)
 	Require(t, err)
 	Require(t, blockValidatorB.Initialize(ctx))
@@ -360,7 +364,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 
 	// Wait until the validators have validated the batches.
 	for {
-		lastInfo, err := blockValidatorA.ReadLastValidatedInfo()
+		lastInfo, err := blockValidatorA.ReadLastValidatedInfo(ctx)
 		if lastInfo == nil || err != nil {
 			continue
 		}
@@ -371,7 +375,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		time.Sleep(time.Millisecond * 200)
 	}
 	for {
-		lastInfo, err := blockValidatorB.ReadLastValidatedInfo()
+		lastInfo, err := blockValidatorB.ReadLastValidatedInfo(ctx)
 		if lastInfo == nil || err != nil {
 			continue
 		}

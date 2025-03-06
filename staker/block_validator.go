@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
@@ -105,12 +106,15 @@ type BlockValidator struct {
 	fatalErr chan<- error
 
 	MemoryFreeLimitChecker resourcemanager.LimitChecker
+
+	remoteBlockValidatorClient *rpcclient.RpcClient
 }
 
 type BlockValidatorConfig struct {
 	Enable                      bool                          `koanf:"enable"`
 	RedisValidationClientConfig redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
 	ValidationServer            rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
+	RemoteBlockValidatorServer  rpcclient.ClientConfig        `koanf:"remote-block-validator-server" reload:"hot"`
 	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
 	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
 	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
@@ -181,6 +185,7 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
+	rpcclient.RPCClientAddOptions(prefix+".remote-block-validator-server", f, &DefaultBlockValidatorConfig.RemoteBlockValidatorServer)
 	redis.ValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of execution rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
@@ -204,6 +209,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                      false,
 	ValidationServerConfigsList: "default",
 	ValidationServer:            rpcclient.DefaultClientConfig,
+	RemoteBlockValidatorServer:  rpcclient.DefaultClientConfig,
 	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
 	ValidationPoll:              time.Second,
 	ForwardBlocks:               128,
@@ -276,20 +282,33 @@ func (s *validationStatus) profileStep() int64 {
 }
 
 func NewBlockValidator(
+	ctx context.Context,
 	statelessBlockValidator *StatelessBlockValidator,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
 	config BlockValidatorConfigFetcher,
 	fatalErr chan<- error,
+	stack *node.Node,
 ) (*BlockValidator, error) {
+	remoteBlockValidatorServerUrl := config().RemoteBlockValidatorServer.URL
+	var remoteBlockValidatorClient *rpcclient.RpcClient
+	if len(remoteBlockValidatorServerUrl) > 0 && remoteBlockValidatorServerUrl != "self" && remoteBlockValidatorServerUrl != "self-auth" {
+		confFetcher := func() *rpcclient.ClientConfig { return &config().RemoteBlockValidatorServer }
+		remoteBlockValidatorClient = rpcclient.NewRpcClient(confFetcher, stack)
+		err := remoteBlockValidatorClient.Start(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	ret := &BlockValidator{
-		StatelessBlockValidator: statelessBlockValidator,
-		createNodesChan:         make(chan struct{}, 1),
-		sendRecordChan:          make(chan struct{}, 1),
-		progressValidationsChan: make(chan struct{}, 1),
-		config:                  config,
-		fatalErr:                fatalErr,
-		prevBatchCache:          make(map[uint64][]byte),
+		StatelessBlockValidator:    statelessBlockValidator,
+		createNodesChan:            make(chan struct{}, 1),
+		sendRecordChan:             make(chan struct{}, 1),
+		progressValidationsChan:    make(chan struct{}, 1),
+		config:                     config,
+		fatalErr:                   fatalErr,
+		prevBatchCache:             make(map[uint64][]byte),
+		remoteBlockValidatorClient: remoteBlockValidatorClient,
 	}
 	valInputsWriter, err := inputs.NewWriter(
 		inputs.WithBaseDir(ret.stack.InstanceDir()),
@@ -299,7 +318,7 @@ func NewBlockValidator(
 	}
 	ret.validationInputsWriter = valInputsWriter
 	if !config().Dangerous.ResetBlockValidation {
-		validated, err := ret.ReadLastValidatedInfo()
+		validated, err := ret.ReadLastValidatedInfo(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -424,8 +443,15 @@ func ReadLastValidatedInfo(db ethdb.Database) (*GlobalStateValidatedInfo, error)
 	return &validated, nil
 }
 
-func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, error) {
-	return ReadLastValidatedInfo(v.db)
+func (v *BlockValidator) ReadLastValidatedInfo(ctx context.Context) (*GlobalStateValidatedInfo, error) {
+	if v.remoteBlockValidatorClient == nil {
+		return ReadLastValidatedInfo(v.db)
+	}
+	var res GlobalStateValidatedInfo
+	if err := v.remoteBlockValidatorClient.CallContext(ctx, &res, "arb_latestValidated"); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 func (v *BlockValidator) legacyReadLastValidatedInfo() (*legacyLastBlockValidatedDbInfo, error) {
@@ -766,7 +792,7 @@ func (v *BlockValidator) iterativeValidationEntryRecorder(ctx context.Context, i
 }
 
 func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Duration {
-	validated, err := v.ReadLastValidatedInfo()
+	validated, err := v.ReadLastValidatedInfo(ctx)
 	if err != nil {
 		log.Error("cannot read last validated data from database", "err", err)
 		return time.Second * 30

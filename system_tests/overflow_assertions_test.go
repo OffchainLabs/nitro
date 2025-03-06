@@ -105,11 +105,13 @@ func TestOverflowAssertions(t *testing.T) {
 	Require(t, err)
 
 	blockValidator, err := staker.NewBlockValidator(
+		ctx,
 		stateless,
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
+		l1stack,
 	)
 	Require(t, err)
 	Require(t, blockValidator.Initialize(ctx))
@@ -194,7 +196,7 @@ func TestOverflowAssertions(t *testing.T) {
 
 	// Wait until the validator has validated the batches.
 	for {
-		lastInfo, err := blockValidator.ReadLastValidatedInfo()
+		lastInfo, err := blockValidator.ReadLastValidatedInfo(ctx)
 		if lastInfo == nil || err != nil {
 			continue
 		}
