@@ -64,7 +64,7 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	return res
 }
 
-func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
+func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{} {
 	if s.Synced() {
 		return make(map[string]interface{})
 	}
