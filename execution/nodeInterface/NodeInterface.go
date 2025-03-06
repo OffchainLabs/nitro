@@ -87,7 +87,8 @@ func (n NodeInterface) msgNumToInboxBatch(msgIndex arbutil.MessageIndex) (uint64
 	if fetcher == nil {
 		return 0, false, errors.New("batch fetcher not set")
 	}
-	return fetcher.FindInboxBatchContainingMessage(msgIndex)
+	inboxBatch, err := fetcher.FindInboxBatchContainingMessage(msgIndex).Await(n.context)
+	return inboxBatch.BatchNum, inboxBatch.Found, err
 }
 
 func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
