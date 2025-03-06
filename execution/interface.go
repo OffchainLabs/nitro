@@ -76,7 +76,7 @@ type ExecutionBatchPoster interface {
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
 	FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error)
-	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
+	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
 }
 
 type ConsensusInfo interface {
