@@ -184,7 +184,7 @@ func TestPrestateTracingComplex(t *testing.T) {
 		Fatal(t, "Faucet account not found in the result of prestate tracer")
 	}
 	// Nonce shouldn't exist (in this case defaults to 0) in the Post map of the trace in DiffMode
-	if l2Tx.SkipAccountChecks() && result.Post[faucetAddr].Nonce != 0 {
+	if l2Tx.SkipNonceChecks() && result.Post[faucetAddr].Nonce != 0 {
 		Fatal(t, "Faucet account's nonce should remain unchanged ")
 	}
 	if !arbmath.BigEquals(result.Pre[faucetAddr].Balance.ToInt(), oldBalance) {
