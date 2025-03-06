@@ -88,7 +88,7 @@ type ConsensusInfo interface {
 	Synced() bool
 	FullSyncProgressMap() map[string]interface{}
 	SyncTargetMessageCount() arbutil.MessageIndex
-	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) (common.BlockMetadata, error)
+	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata]
 }
 
 type ConsensusSequencer interface {

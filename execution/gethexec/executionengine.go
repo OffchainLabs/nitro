@@ -262,9 +262,9 @@ func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) 
 	s.consensus = consensus
 }
 
-func (s *ExecutionEngine) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
+func (s *ExecutionEngine) BlockMetadataAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
 	if s.consensus != nil {
-		return s.consensus.BlockMetadataAtMessageIndex(msgIdx)
+		return s.consensus.BlockMetadataAtMessageIndex(msgIdx).Await(ctx)
 	}
 	return nil, errors.New("FullConsensusClient is not accessible to execution")
 }

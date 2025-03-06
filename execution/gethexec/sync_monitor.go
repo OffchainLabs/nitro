@@ -86,14 +86,14 @@ func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
 	s.consensus = consensus
 }
 
-func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetadata, error) {
+func (s *SyncMonitor) BlockMetadataByNumber(ctx context.Context, blockNum uint64) (common.BlockMetadata, error) {
 	genesis := s.exec.GetGenesisBlockNumber()
 	if blockNum < genesis { // Arbitrum classic block
 		return nil, nil
 	}
 	msgIdx := arbutil.MessageIndex(blockNum - genesis)
 	if s.consensus != nil {
-		return s.consensus.BlockMetadataAtMessageIndex(msgIdx)
+		return s.consensus.BlockMetadataAtMessageIndex(msgIdx).Await(ctx)
 	}
 	log.Debug("FullConsensusClient is not accessible to execution, BlockMetadataByNumber will return nil")
 	return nil, nil
