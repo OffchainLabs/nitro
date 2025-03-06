@@ -1521,8 +1521,8 @@ func (n *Node) Synced() containers.PromiseInterface[bool] {
 	return containers.NewReadyPromise(n.SyncMonitor.Synced(), nil)
 }
 
-func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
-	return n.SyncMonitor.SyncTargetMessageCount()
+func (n *Node) SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(n.SyncMonitor.SyncTargetMessageCount(), nil)
 }
 
 func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
