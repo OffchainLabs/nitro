@@ -1517,8 +1517,8 @@ func (n *Node) FullSyncProgressMap() map[string]interface{} {
 	return n.SyncMonitor.FullSyncProgressMap()
 }
 
-func (n *Node) Synced() bool {
-	return n.SyncMonitor.Synced()
+func (n *Node) Synced() containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(n.SyncMonitor.Synced(), nil)
 }
 
 func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {

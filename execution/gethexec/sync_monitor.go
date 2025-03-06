@@ -65,14 +65,19 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 }
 
 func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{} {
-	if s.Synced() {
+	if s.Synced(ctx) {
 		return make(map[string]interface{})
 	}
 	return s.FullSyncProgressMap()
 }
 
-func (s *SyncMonitor) Synced() bool {
-	if s.consensus.Synced() {
+func (s *SyncMonitor) Synced(ctx context.Context) bool {
+	synced, err := s.consensus.Synced().Await(ctx)
+	if err != nil {
+		log.Warn("Error checking if execution is synced", "err", err)
+		return false
+	}
+	if synced {
 		built, err := s.exec.HeadMessageIndex()
 		consensusSyncTarget := s.consensus.SyncTargetMessageCount()
 		if err == nil && built+1 >= consensusSyncTarget {

@@ -68,7 +68,7 @@ type ExecutionSequencer interface {
 	ForwardTo(url string) error
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
-	Synced() bool
+	Synced(ctx context.Context) bool
 	FullSyncProgressMap() map[string]interface{}
 }
 
@@ -85,7 +85,7 @@ type BatchFetcher interface {
 }
 
 type ConsensusInfo interface {
-	Synced() bool
+	Synced() containers.PromiseInterface[bool]
 	FullSyncProgressMap() map[string]interface{}
 	SyncTargetMessageCount() arbutil.MessageIndex
 	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata]
