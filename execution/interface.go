@@ -24,6 +24,11 @@ type RecordResult struct {
 	UserWasms state.UserWasms
 }
 
+type InboxBatch struct {
+	BatchNum uint64
+	Found    bool
+}
+
 var ErrRetrySequencer = errors.New("please retry transaction")
 var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
@@ -75,7 +80,7 @@ type ExecutionBatchPoster interface {
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error)
+	FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[InboxBatch]
 	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
 }
 
