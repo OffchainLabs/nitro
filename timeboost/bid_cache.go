@@ -7,13 +7,15 @@ import (
 )
 
 type bidCache struct {
+	auctionContractDomainSeparator [32]byte
 	sync.RWMutex
 	bidsByExpressLaneControllerAddr map[common.Address]*ValidatedBid
 }
 
-func newBidCache() *bidCache {
+func newBidCache(auctionContractDomainSeparator [32]byte) *bidCache {
 	return &bidCache{
 		bidsByExpressLaneControllerAddr: make(map[common.Address]*ValidatedBid),
+		auctionContractDomainSeparator:  auctionContractDomainSeparator,
 	}
 }
 
@@ -50,16 +52,16 @@ func (bc *bidCache) topTwoBids() *auctionResult {
 			result.secondPlace = result.firstPlace
 			result.firstPlace = bid
 		} else if bid.Amount.Cmp(result.firstPlace.Amount) == 0 {
-			if bid.bigIntHash().Cmp(result.firstPlace.bigIntHash()) > 0 {
+			if bid.BigIntHash(bc.auctionContractDomainSeparator).Cmp(result.firstPlace.BigIntHash(bc.auctionContractDomainSeparator)) > 0 {
 				result.secondPlace = result.firstPlace
 				result.firstPlace = bid
-			} else if result.secondPlace == nil || bid.bigIntHash().Cmp(result.secondPlace.bigIntHash()) > 0 {
+			} else if result.secondPlace == nil || bid.BigIntHash(bc.auctionContractDomainSeparator).Cmp(result.secondPlace.BigIntHash(bc.auctionContractDomainSeparator)) > 0 {
 				result.secondPlace = bid
 			}
 		} else if result.secondPlace == nil || bid.Amount.Cmp(result.secondPlace.Amount) > 0 {
 			result.secondPlace = bid
 		} else if bid.Amount.Cmp(result.secondPlace.Amount) == 0 {
-			if bid.bigIntHash().Cmp(result.secondPlace.bigIntHash()) > 0 {
+			if bid.BigIntHash(bc.auctionContractDomainSeparator).Cmp(result.secondPlace.BigIntHash(bc.auctionContractDomainSeparator)) > 0 {
 				result.secondPlace = bid
 			}
 		}

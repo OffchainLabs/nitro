@@ -566,7 +566,7 @@ func newBOLDChallengeManager(
 func readBoldAssertionCreationInfo(
 	ctx context.Context,
 	rollup *boldrollup.RollupUserLogic,
-	client bind.ContractFilterer,
+	client protocol.ChainBackend,
 	rollupAddress common.Address,
 	assertionHash common.Hash,
 ) (*protocol.AssertionCreatedInfo, error) {
@@ -584,11 +584,14 @@ func readBoldAssertionCreationInfo(
 	} else {
 		var b [32]byte
 		copy(b[:], assertionHash[:])
-		node, err := rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
+		assertionCreationBlock, err := rollup.GetAssertionCreationBlockForLogLookup(&bind.CallOpts{Context: ctx}, b)
 		if err != nil {
 			return nil, err
 		}
-		creationBlock = node.CreatedAtBlock
+		if !assertionCreationBlock.IsUint64() {
+			return nil, errors.New("assertion creation block was not a uint64")
+		}
+		creationBlock = assertionCreationBlock.Uint64()
 	}
 	topics = [][]common.Hash{{assertionCreatedId}, {assertionHash}}
 	var query = ethereum.FilterQuery{
@@ -613,6 +616,10 @@ func readBoldAssertionCreationInfo(
 		return nil, err
 	}
 	afterState := parsedLog.Assertion.AfterState
+	creationL1Block, err := arbutil.CorrespondingL1BlockNumber(ctx, client, ethLog.BlockNumber)
+	if err != nil {
+		return nil, err
+	}
 	return &protocol.AssertionCreatedInfo{
 		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
 		RequiredStake:       parsedLog.RequiredStake,
@@ -625,6 +632,7 @@ func readBoldAssertionCreationInfo(
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
 		TransactionHash:     ethLog.TxHash,
-		CreationBlock:       ethLog.BlockNumber,
+		CreationParentBlock: ethLog.BlockNumber,
+		CreationL1Block:     creationL1Block,
 	}, nil
 }
