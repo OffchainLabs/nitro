@@ -372,7 +372,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 	const numBatches = 3
 	var threshold uint64
 	if delayBufferEnabled {
-		threshold = 100
+		threshold = 200
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -391,6 +391,8 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
 
+	// Advance L1 to force a batch given the delay buffer threshold
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(threshold)) // #nosec G115
 	initialBatchCount := GetBatchCount(t, builder)
 	for batch := uint64(0); batch < numBatches; batch++ {
 		txs := make(types.Transactions, messagesPerBatch)
