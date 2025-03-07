@@ -1094,9 +1094,6 @@ func (n *Node) StopAndWait() {
 	if n.MessagePruner != nil && n.MessagePruner.Started() {
 		n.MessagePruner.StopAndWait()
 	}
-	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
-		n.BroadcastServer.StopAndWait()
-	}
 	if n.BroadcastClients != nil {
 		n.BroadcastClients.StopAndWait()
 	}
@@ -1117,6 +1114,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.TxStreamer.Started() {
 		n.TxStreamer.StopAndWait()
+	}
+	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
+		n.BroadcastServer.StopAndWait()
 	}
 	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
 		// Just stops the redis client (most other stuff was stopped earlier)
