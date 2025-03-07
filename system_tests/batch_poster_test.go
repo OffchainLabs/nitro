@@ -372,7 +372,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 	const numBatches = 3
 	var threshold uint64
 	if delayBufferEnabled {
-		threshold = 100
+		threshold = 200
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -383,12 +383,16 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 		WithBoldDeployment().
 		WithDelayBuffer(threshold)
 	builder.L2Info.GenerateAccount("User2")
-	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour // set high max-delay so we can test the delay buffer
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	// and prevent race conditions due to config changes during the test. We'll call MaybePostSequencerBatch manually.
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
 
+	// Advance L1 to force a batch given the delay buffer threshold
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(threshold)) // #nosec G115
 	initialBatchCount := GetBatchCount(t, builder)
 	for batch := uint64(0); batch < numBatches; batch++ {
 		txs := make(types.Transactions, messagesPerBatch)
@@ -411,6 +415,8 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 			CheckBatchCount(t, builder, initialBatchCount+batch)
 			builder.nodeConfig.BatchPoster.MaxDelay = 0
 		}
+		_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+		Require(t, err)
 		for _, tx := range txs {
 			_, err := testClientB.EnsureTxSucceeded(tx)
 			Require(t, err, "tx not found on second node")
