@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -60,11 +61,11 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
 	triedbConfig := cacheConfig.TriedbConfig()
 	triedbConfig.Preimages = false
-	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
+	stateDatabase := state.NewDatabase(triedb.NewDatabase(db, triedbConfig), nil)
 	defer func() {
 		err = errors.Join(err, stateDatabase.TrieDB().Close())
 	}()
-	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
+	statedb, err := state.New(common.Hash{}, stateDatabase)
 	if err != nil {
 		panic("failed to init empty statedb :" + err.Error())
 	}
@@ -86,7 +87,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 				return common.Hash{}, err
 			}
 		}
-		statedb, err = state.New(root, stateDatabase, nil)
+		statedb, err = state.New(root, stateDatabase)
 		if err != nil {
 			return common.Hash{}, err
 		}
