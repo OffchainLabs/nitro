@@ -899,6 +899,9 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 		c.StopWaiter.LaunchThread(c.launchHealthcheckServer)
 	}
 	// Verifies that c.config.MyUrl is valid and is in the priorities list in redis
+	if c.config.Url() == redisutil.INVALID_URL {
+		return // skip if used for read access only
+	}
 	priorities, err := c.RedisCoordinator().GetPriorities(ctxIn)
 	if err != nil {
 		log.Error("Error fetching priorities list from redis during start up", "err", err)
