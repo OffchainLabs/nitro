@@ -83,19 +83,19 @@ func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{
 func (s *SyncMonitor) Synced(ctx context.Context) bool {
 	synced, err := s.consensus.Synced().Await(ctx)
 	if err != nil {
-		log.Warn("Error checking if consensus is synced", "err", err)
+		log.Error("Error checking if consensus is synced", "err", err)
 		return false
 	}
 	if synced {
 		built, err := s.exec.HeadMessageIndex()
 		if err != nil {
-			log.Warn("Error getting head message index", "err", err)
+			log.Error("Error getting head message index", "err", err)
 			return false
 		}
 
 		consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
 		if err != nil {
-			log.Warn("Error getting consensus sync target", "err", err)
+			log.Error("Error getting consensus sync target", "err", err)
 			return false
 		}
 
