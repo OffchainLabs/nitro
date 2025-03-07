@@ -313,6 +313,18 @@ func enableLogging(logLvl int) {
 	log.SetDefault(log.NewLogger(glogger))
 }
 
+// initEigenDATest ... initializes DAS test for
+// EigenDA for single threaded execution
+func initEigenDATest(t *testing.T) {
+	loggingStr := os.Getenv("LOGGING")
+	if len(loggingStr) > 0 {
+		var err error
+		logLvl, err := strconv.Atoi(loggingStr)
+		Require(t, err, "Failed to parse string")
+		enableLogging(logLvl)
+	}
+}
+
 func initTest(t *testing.T) {
 	t.Parallel()
 	loggingStr := os.Getenv("LOGGING")

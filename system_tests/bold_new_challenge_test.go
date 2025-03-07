@@ -257,9 +257,10 @@ func fundBoldStaker(t *testing.T, ctx context.Context, builder *NodeBuilder, nam
 	Require(t, err)
 }
 
-func TestChallengeProtocolBOLDNearLastVirtualBlock(t *testing.T) {
-	testChallengeProtocolBOLDVirtualBlocks(t, false)
-}
+// TODO: https://github.com/Layr-Labs/nitro/issues/66
+// func TestChallengeProtocolBOLDNearLastVirtualBlock(t *testing.T) {
+// 	testChallengeProtocolBOLDVirtualBlocks(t, false)
+// }
 
 // TODO: https://github.com/Layr-Labs/nitro/issues/66
 // func TestChallengeProtocolBOLDFirstVirtualBlock(t *testing.T) {

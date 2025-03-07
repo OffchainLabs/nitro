@@ -109,7 +109,7 @@ fn main() {
         let expected_len = 0;
 
         for i in 0..5{
-            let eigen_hash = hex!("1c303f6af17677aa69367bea000420f4b0ee26bb2c542a8879b9791a4b43d4d0");
+            let eigen_hash = hex!("1ec2531a7a2a9de94a3d7c4a4f7f50b541d350e08c5243bf9d0bd6d93acf7cc5");
             bytebuffer = Bytes32(eigen_hash);
 
             let actual_len = wavm_read_eigen_da_hash_preimage(bytebuffer.0.as_mut_ptr(), i * 32);

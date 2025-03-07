@@ -34,7 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	eigenda_proxy "github.com/Layr-Labs/eigenda-proxy/client"
+	eigenda_proxy "github.com/Layr-Labs/eigenda-proxy/clients/standard_client"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -582,14 +582,6 @@ func (b *BatchPoster) getTxsInfoByBlock(ctx context.Context, number int64) ([]tx
 	return blk.Transactions, nil
 }
 
-func (b *BatchPoster) SetEigenDAClientMock() {
-	b.eigenDAWriter = eigenda.NewMockEigenDA(true)
-}
-
-func (b *BatchPoster) SetEigenDAWriter(writer eigenda.EigenDAWriter) {
-	b.eigenDAWriter = writer
-}
-
 // checkRevert checks blocks with number in range [from, to] whether they
 // contain reverted batch_poster transaction.
 // It returns true if it finds batch posting needs to halt, which is true if a batch reverts
@@ -1025,7 +1017,7 @@ func (b *BatchPoster) encodeAddBatch(
 	delayedMsg uint64,
 	use4844 bool,
 	useEigenDA bool,
-	eigenDaBlobInfo *eigenda.EigenDABlobInfo,
+	eigenDAV1Cert *eigenda.EigenDAV1Cert,
 	delayProof *bridgegen.DelayProof,
 ) ([]byte, []kzg4844.Blob, error) {
 	var methodName string
@@ -1058,35 +1050,13 @@ func (b *BatchPoster) encodeAddBatch(
 		}
 	} else if useEigenDA {
 
-		addressType, err := abi.NewType("address", "", nil)
-		if err != nil {
-			return nil, nil, err
-		}
+		args = append(args, eigenDAV1Cert)
+		args = append(args, b.config().gasRefunder)
+		args = append(args, new(big.Int).SetUint64(delayedMsg))
+		args = append(args, new(big.Int).SetUint64(uint64(prevMsgNum)))
+		args = append(args, new(big.Int).SetUint64(uint64(newMsgNum)))
 
-		uint256Type, err := abi.NewType("uint256", "", nil)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// Create ABI arguments
-		arguments := abi.Arguments{
-			{Type: uint256Type},
-			{Type: eigenda.DACertTypeABI},
-			{Type: addressType},
-			{Type: uint256Type},
-			{Type: uint256Type},
-			{Type: uint256Type},
-		}
-
-		values := make([]interface{}, 6)
-		values[0] = seqNum
-		values[1] = eigenDaBlobInfo
-		values[2] = b.config().gasRefunder
-		values[3] = new(big.Int).SetUint64(delayedMsg)
-		values[4] = new(big.Int).SetUint64(uint64(prevMsgNum))
-		values[5] = new(big.Int).SetUint64(uint64(newMsgNum))
-
-		calldata, err := arguments.PackValues(values)
+		calldata, err := method.Inputs.Pack(args...)
 
 		if err != nil {
 			return nil, nil, err
@@ -1141,7 +1111,7 @@ func (b *BatchPoster) estimateGas(
 	realBlobs []kzg4844.Blob,
 	realNonce uint64,
 	realAccessList types.AccessList,
-	eigenDaBlobInfo *eigenda.EigenDABlobInfo,
+	eigenDAV1Cert *eigenda.EigenDAV1Cert,
 	delayProof *bridgegen.DelayProof,
 ) (uint64, error) {
 
@@ -1186,7 +1156,7 @@ func (b *BatchPoster) estimateGas(
 	// However, we set nextMsgNum to 1 because it is necessary for a correct estimation for the final to be non-zero.
 	// Because we're likely estimating against older state, this might not be the actual next message,
 	// but the gas used should be the same.
-	data, kzgBlobs, err := b.encodeAddBatch(abi.MaxUint256, 0, 1, sequencerMessage, delayedMessages, len(realBlobs) > 0, eigenDaBlobInfo != nil, eigenDaBlobInfo, delayProof)
+	data, kzgBlobs, err := b.encodeAddBatch(abi.MaxUint256, 0, 1, sequencerMessage, delayedMessages, len(realBlobs) > 0, eigenDAV1Cert != nil, eigenDAV1Cert, delayProof)
 	if err != nil {
 		return 0, err
 	}
@@ -1522,7 +1492,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
-	var eigenDaBlobInfo *eigenda.EigenDABlobInfo
+	var eigenDAV1Cert *eigenda.EigenDAV1Cert
 	eigenDADispersed := false
 	failOver := false
 
@@ -1540,7 +1510,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			batchPosterDAFailureCounter.Inc(1)
 			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
 		}
-		eigenDaBlobInfo, err = b.eigenDAWriter.Store(ctx, sequencerMsg)
+		eigenDAV1Cert, err = b.eigenDAWriter.Store(ctx, sequencerMsg)
 
 		if err != nil && errors.Is(err, eigenda_proxy.ErrServiceUnavailable) && b.config().EnableEigenDAFailover && b.dapWriter != nil { // Failover to anytrust commitee if enabled
 			log.Error("EigenDA service is unavailable, failing over to any trust mode")
@@ -1654,7 +1624,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 
-	data, kzgBlobs, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), prevMessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg, b.building.use4844, b.building.useEigenDA, eigenDaBlobInfo, delayProof)
+	data, kzgBlobs, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), prevMessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg, b.building.use4844, b.building.useEigenDA, eigenDAV1Cert, delayProof)
 	if err != nil {
 		return false, err
 	}
@@ -1669,7 +1639,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	// In theory, this might reduce gas usage, but only by a factor that's already
 	// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
 	// posts a new delayed message that we didn't see while gas estimating.
-	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList, eigenDaBlobInfo, delayProof)
+	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList, eigenDAV1Cert, delayProof)
 	if err != nil {
 		return false, err
 	}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 echo "==== Pull eigenda-proxy container ===="
-docker pull  ghcr.io/layr-labs/eigenda-proxy:v1.6.4
+docker pull  ghcr.io/layr-labs/eigenda-proxy:v1.6.5
 
 echo "==== Starting eigenda-proxy container ===="
 
@@ -13,11 +13,11 @@ docker run -d --name eigenda-proxy-nitro-test-instance \
   -e EIGENDA_PROXY_ADDR=0.0.0.0 \
   -e EIGENDA_PROXY_PORT=6666 \
   -e EIGENDA_PROXY_MEMSTORE_ENABLED=true \
-  -e EIGENDA_PROXY_MEMSTORE_EXPIRATION=1m \
+  -e EIGENDA_PROXY_MEMSTORE_EXPIRATION=120m \
   -e EIGENDA_PROXY_EIGENDA_ETH_RPC=http://localhost:6969 \
   -e EIGENDA_PROXY_EIGENDA_SERVICE_MANAGER_ADDR="0x0000000000000000000000000000000000000000" \
   -e EIGENDA_PROXY_EIGENDA_CERT_VERIFICATION_DISABLED=true \
-  ghcr.io/layr-labs/eigenda-proxy:v1.6.4
+  ghcr.io/layr-labs/eigenda-proxy:v1.6.5
 
 # shellcheck disable=SC2181
 if [ $? -ne 0 ]; then

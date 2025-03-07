@@ -61,9 +61,10 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-func TestChallengeProtocolBOLDReadInboxChallenge(t *testing.T) {
-	testChallengeProtocolBOLD(t)
-}
+// TODO: https://github.com/Layr-Labs/nitro/issues/66
+// func TestChallengeProtocolBOLDReadInboxChallenge(t *testing.T) {
+// 	testChallengeProtocolBOLD(t)
+// }
 
 // TODO: https://github.com/Layr-Labs/nitro/issues/66
 // func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {

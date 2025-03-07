@@ -209,46 +209,47 @@ func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTest
 
 	Require(t, err)
 
-	blobInfo, err := eigenDA.Store(ctx, message)
+	certV1, err := eigenDA.Store(ctx, message)
 	Require(t, err)
 
+	// cast EigenDA V1 certificate to a solidity compatible representation for inbox submission
 	bh := mocksgen.BatchHeader{
-		BlobHeadersRoot:       blobInfo.BlobVerificationProof.BatchMetadata.BatchHeader.BlobHeadersRoot,
-		QuorumNumbers:         blobInfo.BlobVerificationProof.BatchMetadata.BatchHeader.QuorumNumbers,
-		SignedStakeForQuorums: blobInfo.BlobVerificationProof.BatchMetadata.BatchHeader.SignedStakeForQuorums,
-		ReferenceBlockNumber:  blobInfo.BlobVerificationProof.BatchMetadata.BatchHeader.ReferenceBlockNumber,
+		BlobHeadersRoot:       certV1.BlobVerificationProof.BatchMetadata.BatchHeader.BlobHeadersRoot,
+		QuorumNumbers:         certV1.BlobVerificationProof.BatchMetadata.BatchHeader.QuorumNumbers,
+		SignedStakeForQuorums: certV1.BlobVerificationProof.BatchMetadata.BatchHeader.SignedStakeForQuorums,
+		ReferenceBlockNumber:  certV1.BlobVerificationProof.BatchMetadata.BatchHeader.ReferenceBlockNumber,
 	}
 
 	bm := mocksgen.BatchMetadata{
 		BatchHeader:             bh,
-		SignatoryRecordHash:     blobInfo.BlobVerificationProof.BatchMetadata.SignatoryRecordHash,
-		ConfirmationBlockNumber: blobInfo.BlobVerificationProof.BatchMetadata.ConfirmationBlockNumber,
+		SignatoryRecordHash:     certV1.BlobVerificationProof.BatchMetadata.SignatoryRecordHash,
+		ConfirmationBlockNumber: certV1.BlobVerificationProof.BatchMetadata.ConfirmationBlockNumber,
 	}
 
 	bvp := mocksgen.BlobVerificationProof{
-		BatchId:        blobInfo.BlobVerificationProof.BatchID,
-		BlobIndex:      blobInfo.BlobVerificationProof.BlobIndex,
+		BatchId:        certV1.BlobVerificationProof.BatchId,
+		BlobIndex:      certV1.BlobVerificationProof.BlobIndex,
 		BatchMetadata:  bm,
-		InclusionProof: blobInfo.BlobVerificationProof.InclusionProof,
-		QuorumIndices:  blobInfo.BlobVerificationProof.QuorumIndices,
+		InclusionProof: certV1.BlobVerificationProof.InclusionProof,
+		QuorumIndices:  certV1.BlobVerificationProof.QuorumIndices,
 	}
 
-	solQps := make([]mocksgen.QuorumBlobParam, len(blobInfo.BlobHeader.QuorumBlobParams))
-	for _, qp := range blobInfo.BlobHeader.QuorumBlobParams {
-		solQps = append(solQps, mocksgen.QuorumBlobParam{
+	solQps := make([]mocksgen.QuorumBlobParam, len(certV1.BlobHeader.QuorumBlobParams))
+	for i, qp := range certV1.BlobHeader.QuorumBlobParams {
+		solQps[i] = mocksgen.QuorumBlobParam{
 			QuorumNumber:                    qp.QuorumNumber,
 			AdversaryThresholdPercentage:    qp.AdversaryThresholdPercentage,
 			ConfirmationThresholdPercentage: qp.ConfirmationThresholdPercentage,
 			ChunkLength:                     qp.ChunkLength,
-		})
+		}
 	}
 
 	blobHeader := mocksgen.BlobHeader{
 		Commitment: mocksgen.BN254G1Point{
-			X: blobInfo.BlobHeader.Commitment.X,
-			Y: blobInfo.BlobHeader.Commitment.Y,
+			X: certV1.BlobHeader.Commitment.X,
+			Y: certV1.BlobHeader.Commitment.Y,
 		},
-		DataLength:       blobInfo.BlobHeader.DataLength,
+		DataLength:       certV1.BlobHeader.DataLength,
 		QuorumBlobParams: solQps,
 	}
 

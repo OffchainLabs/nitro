@@ -24,12 +24,12 @@ func hasBits(checking byte, bits byte) bool {
 }
 
 type EigenDAWriter interface {
-	Store(context.Context, []byte) (*EigenDABlobInfo, error)
-	Serialize(eigenDABlobInfo *EigenDABlobInfo) ([]byte, error)
+	Store(context.Context, []byte) (*EigenDAV1Cert, error)
+	Serialize(eigenDAV1Cert *EigenDAV1Cert) ([]byte, error)
 }
 
 type EigenDAReader interface {
-	QueryBlob(ctx context.Context, cert *EigenDABlobInfo, domainFilter string) ([]byte, error)
+	QueryBlob(ctx context.Context, cert *EigenDAV1Cert, domainFilter string) ([]byte, error)
 }
 
 type EigenDAConfig struct {
@@ -52,9 +52,9 @@ func NewEigenDA(config *EigenDAConfig) (*EigenDA, error) {
 	}, nil
 }
 
-// QueryBlob retrieves a blob from EigenDA using the provided EigenDABlobInfo
-func (e *EigenDA) QueryBlob(ctx context.Context, cert *EigenDABlobInfo, domainFilter string) ([]byte, error) {
-	log.Info("Reading blob from EigenDA", "batchID", cert.BlobVerificationProof.BatchID)
+// QueryBlob retrieves a blob from EigenDA using the provided EigenDAV1Cert
+func (e *EigenDA) QueryBlob(ctx context.Context, cert *EigenDAV1Cert, domainFilter string) ([]byte, error) {
+	log.Info("Reading blob from EigenDA", "batchID", cert.BlobVerificationProof.BatchId)
 	info, err := cert.ToDisperserBlobInfo()
 	if err != nil {
 		return nil, err
@@ -68,20 +68,20 @@ func (e *EigenDA) QueryBlob(ctx context.Context, cert *EigenDABlobInfo, domainFi
 	return data, nil
 }
 
-// Store disperses a blob to EigenDA and returns the appropriate EigenDABlobInfo or certificate values
-func (e *EigenDA) Store(ctx context.Context, data []byte) (*EigenDABlobInfo, error) {
+// Store disperses a blob to EigenDA and returns the appropriate EigenDAV1Cert or certificate values
+func (e *EigenDA) Store(ctx context.Context, data []byte) (*EigenDAV1Cert, error) {
 	log.Info("Dispersing batch as blob to EigenDA", "dataLength", len(data))
-	var blobInfo = &EigenDABlobInfo{}
-	cert, err := e.client.Put(ctx, data)
+	var v1Cert = &EigenDAV1Cert{}
+	blobInfo, err := e.client.Put(ctx, data)
 	if err != nil {
 		return nil, err
 	}
 
-	blobInfo.LoadBlobInfo(cert)
+	v1Cert.Load(blobInfo)
 
-	return blobInfo, nil
+	return v1Cert, nil
 }
 
-func (e *EigenDA) Serialize(blobInfo *EigenDABlobInfo) ([]byte, error) {
-	return rlp.EncodeToBytes(blobInfo)
+func (e *EigenDA) Serialize(cert *EigenDAV1Cert) ([]byte, error) {
+	return rlp.EncodeToBytes(cert)
 }

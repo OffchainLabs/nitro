@@ -10,6 +10,7 @@ use c_kzg::{Blob, KzgCommitment};
 use digest::Digest;
 use eyre::{eyre, Result};
 use kzgbn254::{blob::Blob as EigenDABlob, polynomial::PolynomialFormat};
+use nom::Err;
 use num::BigUint;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -206,7 +207,7 @@ pub fn append_left_padded_uint32_be(vec: &mut Vec<u8>, uint32: &u32) {
     vec.extend_from_slice(&bytes);
 }
 
-pub fn hash_eigenda_preimage(preimage: &[u8]) -> Result<[u8; 32]> {
+pub fn hash_eigenda_preimage(preimage: &[u8]) -> Result<[u8; 32], eyre::Error> {
     let blob = EigenDABlob::from_padded_bytes_unchecked(preimage);
 
     let blob_polynomial = blob.to_polynomial(PolynomialFormat::InCoefficientForm)?;
@@ -214,12 +215,20 @@ pub fn hash_eigenda_preimage(preimage: &[u8]) -> Result<[u8; 32]> {
 
     let commitment_x_bigint: BigUint = blob_commitment.x.into();
     let commitment_y_bigint: BigUint = blob_commitment.y.into();
-    let length_uint32: u32 = blob.len() as u32;
+
+    if (blob.len() % 32) != 0 {
+        return Err(eyre!(
+            "expected blob length to be evenly divisible into 32 byte field elements, got {}",
+            blob.len()
+        ));
+    }
+
+    let length_uint32_fe: u32 = (blob.len() / 32) as u32;
 
     let mut commitment_length_encoded_bytes = Vec::with_capacity(68);
     append_left_padded_biguint_be(&mut commitment_length_encoded_bytes, &commitment_x_bigint);
     append_left_padded_biguint_be(&mut commitment_length_encoded_bytes, &commitment_y_bigint);
-    append_left_padded_uint32_be(&mut commitment_length_encoded_bytes, &length_uint32);
+    append_left_padded_uint32_be(&mut commitment_length_encoded_bytes, &length_uint32_fe);
 
     let mut keccak256_hasher = Keccak256::new();
     keccak256_hasher.update(&commitment_length_encoded_bytes);

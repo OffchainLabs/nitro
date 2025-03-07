@@ -30,6 +30,7 @@ var batchDeliveredID common.Hash
 var addSequencerL2BatchFromOriginCallABI abi.Method
 var sequencerBatchDataABI abi.Event
 var addSequencerBatchFromEigenDACallABI abi.Method
+var eigenDAV1CertABI abi.Argument
 
 const sequencerBatchDataEvent = "SequencerBatchData"
 
@@ -53,6 +54,7 @@ func init() {
 	sequencerBatchDataABI = sequencerBridgeABI.Events[sequencerBatchDataEvent]
 	addSequencerBatchFromEigenDACallABI = sequencerBridgeABI.Methods["addSequencerL2BatchFromEigenDA"]
 	addSequencerL2BatchFromOriginCallABI = sequencerBridgeABI.Methods["addSequencerL2BatchFromOrigin0"]
+	eigenDAV1CertABI = addSequencerBatchFromEigenDACallABI.Inputs[1]
 }
 
 type SequencerInbox struct {
@@ -199,17 +201,17 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 			return nil, err
 		}
 
-		var blobInfo eigenda.EigenDABlobInfo
-		err = json.Unmarshal(certBytes, &blobInfo)
+		var eigenDACert eigenda.EigenDAV1Cert
+		err = json.Unmarshal(certBytes, &eigenDACert)
 		if err != nil {
 			return nil, err
 		}
 
 		arguments := abi.Arguments{
-			{Type: eigenda.DACertTypeABI},
+			eigenDAV1CertABI,
 		}
 
-		b, err := arguments.Pack(blobInfo)
+		b, err := arguments.Pack(eigenDACert)
 		if err != nil {
 			return nil, err
 		}

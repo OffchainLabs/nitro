@@ -10,22 +10,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Layr-Labs/eigenda-proxy/clients/memconfig_client"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/eigenda"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 const (
+	// TODO: https://github.com/Layr-Labs/nitro/issues/73
 	proxyURL = "http://127.0.0.1:4242"
 )
 
-func TestEigenDAProxyBatchPosting(t *testing.T) {
+func TestEigenDAIntegration(t * testing.T) {
+	// single threaded test execution since conflicts can happen
+	// on proxy memconfig states if ran in parallel.
+	// TODO: https://github.com/Layr-Labs/nitro/issues/73
+
+	// 1 - Batch posting / derivation
+	testEigenDAProxyBatchPosting(t)
+
+	// 2 - EigenDA failover to native Arbitrum DA destinations
+	testFailOverFromEigenDAToAnyTrust(t)
+	testFailOverFromEigenDAToCallData(t)
+
+}
+
+func testEigenDAProxyBatchPosting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer func() {
 		cancel()
@@ -64,7 +79,11 @@ func TestEigenDAProxyBatchPosting(t *testing.T) {
 	}
 }
 
-func TestFailOverFromEigenDAToCallData(t *testing.T) {
+func testFailOverFromEigenDAToCallData(t *testing.T) {
+	memCfgClient := memconfig_client.New(
+		&memconfig_client.Config{URL: proxyURL},
+	)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer func() {
 		cancel()
@@ -103,16 +122,18 @@ func TestFailOverFromEigenDAToCallData(t *testing.T) {
 		checkEigenDABatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
 
 		// 2 - Cause EigenDA to fail and ensure that the system falls back to anytrust in the presence of 503 eigenda-proxy errors
-		builder.L2.ConsensusNode.BatchPoster.SetEigenDAClientMock()
+		memCfg, err := memCfgClient.GetConfig(ctx)
+		Require(t, err)
+
+		memCfg.PutReturnsFailoverError = true
+		_, err = memCfgClient.UpdateConfig(ctx, memCfg)
+		Require(t, err)
+		
 		checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(2000000000000), l2B.Client)
 
 		// 3 - Emulate EigenDA becoming healthy again and ensure that the system starts using it for DA
-		eigenWriter, _ := eigenda.NewEigenDA(&eigenda.EigenDAConfig{
-			Enable: true,
-			Rpc:    proxyURL,
-		})
-
-		builder.L2.ConsensusNode.BatchPoster.SetEigenDAWriter(eigenWriter)
+		memCfg.PutReturnsFailoverError = false
+		memCfgClient.UpdateConfig(ctx, memCfg)
 
 		checkEigenDABatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(3000000000000), l2B.Client)
 		builder.L2.cleanup()
@@ -120,10 +141,14 @@ func TestFailOverFromEigenDAToCallData(t *testing.T) {
 	}
 }
 
-func TestFailOverFromEigenDAToAnyTrust(t *testing.T) {
-	initTest(t)
+func testFailOverFromEigenDAToAnyTrust(t *testing.T) {
+	initEigenDATest(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	memCfgClient := memconfig_client.New(
+		&memconfig_client.Config{URL: proxyURL},
+	)
 
 	// Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
@@ -239,16 +264,20 @@ func TestFailOverFromEigenDAToAnyTrust(t *testing.T) {
 	// 1 - Ensure that batches can be submitted and read via EigenDA batch posting
 	checkEigenDABatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
 	// 2 - Cause EigenDA to fail and ensure that the system falls back to anytrust in the presence of 503 eigenda-proxy errors
-	builder.L2.ConsensusNode.BatchPoster.SetEigenDAClientMock()
-	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(1e12*2), l2B.Client)
-	// 3 - Emulate EigenDA becoming healthy again and ensure that the system starts using it for DA
-	eigenWriter, err := eigenda.NewEigenDA(&eigenda.EigenDAConfig{
-		Enable: true,
-		Rpc:    proxyURL,
-	})
+
+	memCfg, err := memCfgClient.GetConfig(ctx)
 	Require(t, err)
 
-	builder.L2.ConsensusNode.BatchPoster.SetEigenDAWriter(eigenWriter)
+	memCfg.PutReturnsFailoverError = true
+	_, err = memCfgClient.UpdateConfig(ctx, memCfg)
+
+	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(1e12*2), l2B.Client)
+	// 3 - Emulate EigenDA becoming healthy again and ensure that the system starts using it for DA
+
+	memCfg.PutReturnsFailoverError = false
+	_, err = memCfgClient.UpdateConfig(ctx, memCfg)
+	Require(t, err)
+
 	checkEigenDABatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(1e12*3), l2B.Client)
 
 	err = restServer.Shutdown()

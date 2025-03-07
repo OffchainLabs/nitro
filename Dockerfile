@@ -1,4 +1,4 @@
-    FROM debian:bookworm-slim AS brotli-wasm-builder
+FROM debian:bookworm-slim AS brotli-wasm-builder
 WORKDIR /workspace
 RUN apt-get update && \
     apt-get install -y cmake make git lbzip2 python3 xz-utils && \
@@ -335,6 +335,9 @@ FROM nitro-node AS nitro-node-validator
 USER root
 COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
 COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
+## Load EigenDA BN254 SRS values
+COPY --from=wasm-libs-builder /workspace/arbitrator/prover/src/mainnet-files/ /home/user/arbitrator/prover/src/mainnet-files/
+
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y xxd netcat-traditional && \
