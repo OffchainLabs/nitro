@@ -83,7 +83,7 @@ func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{
 func (s *SyncMonitor) Synced(ctx context.Context) bool {
 	synced, err := s.consensus.Synced().Await(ctx)
 	if err != nil {
-		log.Warn("Error checking if execution is synced", "err", err)
+		log.Warn("Error checking if consensus is synced", "err", err)
 		return false
 	}
 	if synced {
