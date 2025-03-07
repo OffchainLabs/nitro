@@ -90,11 +90,11 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 		ValidatedMsgCount: &validatedMsgCount,
 	}
 
-	err = c.execClient.SetFinalityData(ctx, finalityData)
+	_, err = c.execClient.SetFinalityData(ctx, finalityData).Await(ctx)
 	if err != nil {
 		log.Error("Error pushing finality data from consensus to execution", "err", err)
 	} else {
-		log.Info("Pushed finality data from consensus to execution", "finalityData", finalityData)
+		log.Info("Pushed finality data from consensus to execution", "SafeMsgCount", safeMsgCount, "FinalizedMsgCount", finalizedMsgCount, "ValidatedMsgCount", validatedMsgCount)
 	}
 
 	return c.config().SyncInterval
