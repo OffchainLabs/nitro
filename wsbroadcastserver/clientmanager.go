@@ -305,16 +305,7 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				// We need to drain cm.broadcastChan to make sure no threads are waiting indefinitely to send messages to it post shutdown (context cancellation)
-				// Its certain that draining shouldn't take indefinite time as the only function feeding to cm.broadcastChan checks first if cm.Stopped() is true
-				cm.StopOnly() // Lets be sure that cm.broadcastChan won't receive anything after context cancellation
-				for {
-					select {
-					case <-cm.broadcastChan:
-					default:
-						return
-					}
-				}
+				return
 			case clientAction := <-cm.clientAction:
 				if clientAction.create {
 					err := cm.registerClient(ctx, clientAction.cc)
