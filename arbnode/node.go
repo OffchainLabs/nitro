@@ -1501,11 +1501,11 @@ func (n *Node) StopAndWait() {
 
 func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[execution.InboxBatch] {
 	batchNum, found, err := n.InboxTracker.FindInboxBatchContainingMessage(message)
-	inboxBatchRes := execution.InboxBatch{
+	inboxBatch := execution.InboxBatch{
 		BatchNum: batchNum,
 		Found:    found,
 	}
-	return containers.NewReadyPromise(inboxBatchRes, err)
+	return containers.NewReadyPromise(inboxBatch, err)
 }
 
 func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
