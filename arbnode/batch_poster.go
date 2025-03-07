@@ -800,7 +800,7 @@ func (s *batchSegments) recompressAll() error {
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		log.Info("Batch overflow: max decompressed length exceeded",
+		log.Info("Batch full: max decompressed length exceeded",
 			"current", s.totalUncompressedSize,
 			"max", arbstate.MaxDecompressedLen,
 			"isHeader", isHeader)
