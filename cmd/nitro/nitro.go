@@ -537,9 +537,12 @@ func mainImpl() int {
 		return 1
 	}
 
-	currentNode, err := arbnode.CreateNode(
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(
 		ctx,
 		stack,
+		execNode,
+		execNode,
+		execNode,
 		execNode,
 		arbDb,
 		&NodeConfigFetcher{liveNodeConfig},
