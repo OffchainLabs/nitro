@@ -73,7 +73,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -479,7 +479,6 @@ func TestStakersCooperative(t *testing.T) {
 }
 
 func TestGetValidatorWalletContractWithDataposterOnlyUsedToCreateValidatorWalletContract(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
