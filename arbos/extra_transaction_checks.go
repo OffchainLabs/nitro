@@ -1,6 +1,8 @@
 package arbos
 
 import (
+	"errors"
+
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -10,6 +12,9 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 )
+
+// Maximum size of transaction data in bytes
+const MaxTransactionDataSize = 128 * 1024 // 128KB
 
 // extraPreTxFilter should be modified by chain operators to enforce additional pre-transaction validity rules
 func extraPreTxFilter(
@@ -22,7 +27,11 @@ func extraPreTxFilter(
 	sender common.Address,
 	l1Info *L1Info,
 ) error {
-	// TODO: implement additional pre-transaction checks
+	// Check transaction data size
+	if len(tx.Data()) > MaxTransactionDataSize {
+		return errors.New("transaction data size exceeds maximum allowed")
+	}
+
 	return nil
 }
 
