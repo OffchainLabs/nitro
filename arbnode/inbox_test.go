@@ -81,12 +81,12 @@ func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbo
 	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages, oldMessages))
 }
 
-func (w *execClientWrapper) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageNumber())
+func (w *execClientWrapper) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageIndex())
 }
 
-func (w *execClientWrapper) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
-	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtPos(pos))
+func (w *execClientWrapper) ResultAtMessageIndex(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtMessageIndex(pos))
 }
 
 func (w *execClientWrapper) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
