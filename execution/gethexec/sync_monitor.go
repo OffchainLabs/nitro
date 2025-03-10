@@ -91,9 +91,9 @@ func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetada
 	if blockNum < genesis { // Arbitrum classic block
 		return nil, nil
 	}
-	pos := arbutil.MessageIndex(blockNum - genesis)
+	msgIdx := arbutil.MessageIndex(blockNum - genesis)
 	if s.consensus != nil {
-		return s.consensus.BlockMetadataAtCount(pos + 1)
+		return s.consensus.BlockMetadataAtMessageIndex(msgIdx)
 	}
 	log.Debug("FullConsensusClient is not accessible to execution, BlockMetadataByNumber will return nil")
 	return nil, nil

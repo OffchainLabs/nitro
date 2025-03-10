@@ -503,7 +503,7 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(msgIdx arbutil.
 		return nil, err
 	}
 
-	blockMetadata, err := s.BlockMetadataAtCount(msgIdx + 1)
+	blockMetadata, err := s.BlockMetadataAtMessageIndex(msgIdx)
 	if err != nil {
 		return nil, err
 	}
@@ -1108,7 +1108,7 @@ func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbo
 		} else {
 			// Mark that blockMetadata is missing only if it isn't already present. This check prevents unnecessary marking
 			// when updating BatchGasCost or when adding messages from seq-coordinator redis that doesn't have block metadata
-			prevBlockMetadata, err := s.BlockMetadataAtCount(msgIdx + 1)
+			prevBlockMetadata, err := s.BlockMetadataAtMessageIndex(msgIdx)
 			if err != nil {
 				return err
 			}
@@ -1164,17 +1164,12 @@ func (s *TransactionStreamer) writeMessages(firstMsgIdx arbutil.MessageIndex, me
 	return nil
 }
 
-func (s *TransactionStreamer) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
-	if count == 0 {
-		return nil, nil
-	}
-	pos := count - 1
-
-	if s.trackBlockMetadataFrom == 0 || pos < s.trackBlockMetadataFrom {
+func (s *TransactionStreamer) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
+	if s.trackBlockMetadataFrom == 0 || msgIdx < s.trackBlockMetadataFrom {
 		return nil, nil
 	}
 
-	key := dbKey(blockMetadataInputFeedPrefix, uint64(pos))
+	key := dbKey(blockMetadataInputFeedPrefix, uint64(msgIdx))
 	blockMetadata, err := s.db.Get(key)
 	if err != nil {
 		if dbutil.IsErrNotFound(err) {

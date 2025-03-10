@@ -1227,7 +1227,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_Timeboo
 // verifyTimeboostedCorrectness is used to check if the timeboosted byte array in both the sequencer's tx streamer and the client node's tx streamer (which is connected
 // to the sequencer feed) is accurate, i.e it represents correctly whether a tx is timeboosted or not
 func verifyTimeboostedCorrectness(t *testing.T, ctx context.Context, user string, tNode *arbnode.Node, tClient *ethclient.Client, isTimeboosted bool, userTx *types.Transaction, userTxBlockNum uint64) {
-	blockMetadataOfBlock, err := tNode.TxStreamer.BlockMetadataAtCount(arbutil.MessageIndex(userTxBlockNum) + 1)
+	blockMetadataOfBlock, err := tNode.TxStreamer.BlockMetadataAtMessageIndex(arbutil.MessageIndex(userTxBlockNum))
 	Require(t, err)
 	if len(blockMetadataOfBlock) == 0 {
 		t.Fatal("got empty blockMetadata byte array")
