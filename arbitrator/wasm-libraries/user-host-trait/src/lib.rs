@@ -609,8 +609,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
 
+        let arbos_version = self.evm_data().arbos_version;
+
         // we pass `gas` to check if there's enough before loading from the db
-        let (code, gas_cost) = self.evm_api().account_code(address, gas);
+        let (code, gas_cost) = self.evm_api().account_code(arbos_version, address, gas);
         self.buy_gas(gas_cost)?;
 
         let code = code.slice();
@@ -639,8 +641,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
 
+        let arbos_version = self.evm_data().arbos_version;
+
         // we pass `gas` to check if there's enough before loading from the db
-        let (code, gas_cost) = self.evm_api().account_code(address, gas);
+        let (code, gas_cost) = self.evm_api().account_code(arbos_version, address, gas);
         self.buy_gas(gas_cost)?;
 
         let code = code.slice();
