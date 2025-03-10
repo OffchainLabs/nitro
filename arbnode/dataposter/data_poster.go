@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -41,6 +42,7 @@ import (
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
@@ -1109,7 +1111,9 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 	}
 	logLevel := log.Error
 	isStorageRace := errors.Is(err, storage.ErrStorageRace)
-	if isStorageRace || strings.Contains(err.Error(), txpool.ErrFutureReplacePending.Error()) {
+	isFutureReplacePending := strings.Contains(err.Error(), txpool.ErrFutureReplacePending.Error())
+	isNonceTooHigh := strings.Contains(err.Error(), core.ErrNonceTooHigh.Error())
+	if isStorageRace || isFutureReplacePending || isNonceTooHigh {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
 			if isStorageRace {
@@ -1295,6 +1299,21 @@ type ExternalSignerCfg struct {
 	ClientPrivateKey string `koanf:"client-private-key"`
 	// TLS config option, when enabled skips certificate verification of external signer.
 	InsecureSkipVerify bool `koanf:"insecure-skip-verify"`
+}
+
+func ExternalSignerTestCfg(addr common.Address, url string) (*ExternalSignerCfg, error) {
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		return nil, fmt.Errorf("getting certificates path: %w", err)
+	}
+	return &ExternalSignerCfg{
+		Address:          common.Bytes2Hex(addr.Bytes()),
+		URL:              url,
+		Method:           externalsignertest.SignerMethod,
+		RootCA:           cp.ServerCert,
+		ClientCert:       cp.ClientCert,
+		ClientPrivateKey: cp.ClientKey,
+	}, nil
 }
 
 type DangerousConfig struct {

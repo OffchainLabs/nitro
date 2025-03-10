@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -33,6 +32,7 @@ type CachingConfig struct {
 	TrieTimeLimit                       time.Duration `koanf:"trie-time-limit"`
 	TrieDirtyCache                      int           `koanf:"trie-dirty-cache"`
 	TrieCleanCache                      int           `koanf:"trie-clean-cache"`
+	TrieCapLimit                        uint32        `koanf:"trie-cap-limit"`
 	SnapshotCache                       int           `koanf:"snapshot-cache"`
 	DatabaseCache                       int           `koanf:"database-cache"`
 	SnapshotRestoreGasLimit             uint64        `koanf:"snapshot-restore-gas-limit"`
@@ -53,6 +53,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".trie-clean-cache", DefaultCachingConfig.TrieCleanCache, "amount of memory in megabytes to cache unchanged state trie nodes with")
 	f.Int(prefix+".snapshot-cache", DefaultCachingConfig.SnapshotCache, "amount of memory in megabytes to cache state snapshots with")
 	f.Int(prefix+".database-cache", DefaultCachingConfig.DatabaseCache, "amount of memory in megabytes to cache database contents with")
+	f.Uint32(prefix+".trie-cap-limit", DefaultCachingConfig.TrieCapLimit, "amount of memory in megabytes to be used in the TrieDB Cap operation during maintenance")
 	f.Uint64(prefix+".snapshot-restore-gas-limit", DefaultCachingConfig.SnapshotRestoreGasLimit, "maximum gas rolled back to recover snapshot")
 	f.Uint32(prefix+".max-number-of-blocks-to-skip-state-saving", DefaultCachingConfig.MaxNumberOfBlocksToSkipStateSaving, "maximum number of blocks to skip state saving to persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint64(prefix+".max-amount-of-gas-to-skip-state-saving", DefaultCachingConfig.MaxAmountOfGasToSkipStateSaving, "maximum amount of gas in blocks to skip saving state to Persistent storage (archive node only) -- warning: this option seems to cause issues")
@@ -74,6 +75,7 @@ var DefaultCachingConfig = CachingConfig{
 	TrieTimeLimit:                      time.Hour,
 	TrieDirtyCache:                     1024,
 	TrieCleanCache:                     600,
+	TrieCapLimit:                       100,
 	SnapshotCache:                      400,
 	DatabaseCache:                      2048,
 	SnapshotRestoreGasLimit:            300_000_000_000,
@@ -211,7 +213,7 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 		EnablePreimageRecording: false,
 	}
 
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
+	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, &txLookupLimit)
 }
 
 func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, txLookupLimit uint64, accountsPerSync uint) (*core.BlockChain, error) {
@@ -232,11 +234,6 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 		return nil, err
 	}
 	return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit)
-}
-
-// Don't preserve reorg'd out blocks
-func shouldPreserveFalse(_ *types.Header) bool {
-	return false
 }
 
 func init() {

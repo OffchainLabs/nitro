@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sort"
 	"sync/atomic"
-	"testing"
 
 	flag "github.com/spf13/pflag"
 
@@ -29,6 +28,8 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -54,9 +55,6 @@ func (c *StylusTargetConfig) Validate() error {
 			return fmt.Errorf("unsupported architecture: %v, possible values: %s, %s, %s, %s", arch, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost)
 		}
 		targetsSet[target] = true
-	}
-	if !targetsSet[rawdb.TargetWavm] {
-		return fmt.Errorf("%s target not found in archs list, archs: %v", rawdb.TargetWavm, c.ExtraArchs)
 	}
 	targetsSet[rawdb.LocalTarget()] = true
 	targets := make([]ethdb.WasmTarget, 0, len(c.ExtraArchs)+1)
@@ -87,19 +85,21 @@ func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader         headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                 SequencerConfig     `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase         BlockRecorderConfig `koanf:"recording-database"`
-	TxPreChecker              TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                 ForwarderConfig     `koanf:"forwarder"`
-	ForwardingTarget          string              `koanf:"forwarding-target"`
-	SecondaryForwardingTarget []string            `koanf:"secondary-forwarding-target"`
-	Caching                   CachingConfig       `koanf:"caching"`
-	RPC                       arbitrum.Config     `koanf:"rpc"`
-	TxLookupLimit             uint64              `koanf:"tx-lookup-limit"`
-	EnablePrefetchBlock       bool                `koanf:"enable-prefetch-block"`
-	SyncMonitor               SyncMonitorConfig   `koanf:"sync-monitor"`
-	StylusTarget              StylusTargetConfig  `koanf:"stylus-target"`
+	ParentChainReader           headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig     `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                   ForwarderConfig     `koanf:"forwarder"`
+	ForwardingTarget            string              `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string            `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig       `koanf:"caching"`
+	RPC                         arbitrum.Config     `koanf:"rpc"`
+	TxLookupLimit               uint64              `koanf:"tx-lookup-limit"`
+	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
+	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
 
 	forwardingTarget string
 }
@@ -142,39 +142,44 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
+	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
+	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 }
 
 var ConfigDefault = Config{
-	RPC:                       arbitrum.DefaultConfig,
-	Sequencer:                 DefaultSequencerConfig,
-	ParentChainReader:         headerreader.DefaultConfig,
-	RecordingDatabase:         DefaultBlockRecorderConfig,
-	ForwardingTarget:          "",
-	SecondaryForwardingTarget: []string{},
-	TxPreChecker:              DefaultTxPreCheckerConfig,
-	TxLookupLimit:             126_230_400, // 1 year at 4 blocks per second
-	Caching:                   DefaultCachingConfig,
-	Forwarder:                 DefaultNodeForwarderConfig,
-	EnablePrefetchBlock:       true,
-	StylusTarget:              DefaultStylusTargetConfig,
+	RPC:                         arbitrum.DefaultConfig,
+	Sequencer:                   DefaultSequencerConfig,
+	ParentChainReader:           headerreader.DefaultConfig,
+	RecordingDatabase:           DefaultBlockRecorderConfig,
+	ForwardingTarget:            "",
+	SecondaryForwardingTarget:   []string{},
+	TxPreChecker:                DefaultTxPreCheckerConfig,
+	TxLookupLimit:               126_230_400, // 1 year at 4 blocks per second
+	Caching:                     DefaultCachingConfig,
+	Forwarder:                   DefaultNodeForwarderConfig,
+	EnablePrefetchBlock:         true,
+	StylusTarget:                DefaultStylusTargetConfig,
+	BlockMetadataApiCacheSize:   100 * 1024 * 1024,
+	BlockMetadataApiBlocksLimit: 100,
 }
 
 type ConfigFetcher func() *Config
 
 type ExecutionNode struct {
-	ChainDB           ethdb.Database
-	Backend           *arbitrum.Backend
-	FilterSystem      *filters.FilterSystem
-	ArbInterface      *ArbInterface
-	ExecEngine        *ExecutionEngine
-	Recorder          *BlockRecorder
-	Sequencer         *Sequencer // either nil or same as TxPublisher
-	TxPublisher       TransactionPublisher
-	ConfigFetcher     ConfigFetcher
-	SyncMonitor       *SyncMonitor
-	ParentChainReader *headerreader.HeaderReader
-	ClassicOutbox     *ClassicOutboxRetriever
-	started           atomic.Bool
+	ChainDB                  ethdb.Database
+	Backend                  *arbitrum.Backend
+	FilterSystem             *filters.FilterSystem
+	ArbInterface             *ArbInterface
+	ExecEngine               *ExecutionEngine
+	Recorder                 *BlockRecorder
+	Sequencer                *Sequencer // either nil or same as TxPublisher
+	TxPublisher              TransactionPublisher
+	ConfigFetcher            ConfigFetcher
+	SyncMonitor              *SyncMonitor
+	ParentChainReader        *headerreader.HeaderReader
+	ClassicOutbox            *ClassicOutboxRetriever
+	started                  atomic.Bool
+	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 }
 
 func CreateExecutionNode(
@@ -264,12 +269,27 @@ func CreateExecutionNode(
 		}
 	}
 
+	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
+
 	apis := []rpc.API{{
 		Namespace: "arb",
 		Version:   "1.0",
-		Service:   NewArbAPI(txPublisher),
+		Service:   NewArbAPI(txPublisher, bulkBlockMetadataFetcher),
 		Public:    false,
 	}}
+	apis = append(apis, rpc.API{
+		Namespace:     "auctioneer",
+		Version:       "1.0",
+		Service:       NewArbTimeboostAuctioneerAPI(txPublisher),
+		Public:        false,
+		Authenticated: false,
+	})
+	apis = append(apis, rpc.API{
+		Namespace: "timeboost",
+		Version:   "1.0",
+		Service:   NewArbTimeboostAPI(txPublisher),
+		Public:    false,
+	})
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",
@@ -284,6 +304,7 @@ func CreateExecutionNode(
 		Namespace: "arbtrace",
 		Version:   "1.0",
 		Service: NewArbTraceForwarderAPI(
+			l2BlockChain.Config(),
 			config.RPC.ClassicRedirect,
 			config.RPC.ClassicRedirectTimeout,
 		),
@@ -298,24 +319,26 @@ func CreateExecutionNode(
 	stack.RegisterAPIs(apis)
 
 	return &ExecutionNode{
-		ChainDB:           chainDB,
-		Backend:           backend,
-		FilterSystem:      filterSystem,
-		ArbInterface:      arbInterface,
-		ExecEngine:        execEngine,
-		Recorder:          recorder,
-		Sequencer:         sequencer,
-		TxPublisher:       txPublisher,
-		ConfigFetcher:     configFetcher,
-		SyncMonitor:       syncMon,
-		ParentChainReader: parentChainReader,
-		ClassicOutbox:     classicOutbox,
+		ChainDB:                  chainDB,
+		Backend:                  backend,
+		FilterSystem:             filterSystem,
+		ArbInterface:             arbInterface,
+		ExecEngine:               execEngine,
+		Recorder:                 recorder,
+		Sequencer:                sequencer,
+		TxPublisher:              txPublisher,
+		ConfigFetcher:            configFetcher,
+		SyncMonitor:              syncMon,
+		ParentChainReader:        parentChainReader,
+		ClassicOutbox:            classicOutbox,
+		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
 	}, nil
 
 }
 
-func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
+func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	n.ExecEngine.MarkFeedStart(to)
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
@@ -337,13 +360,14 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
+
 	return nil
 }
 
 // not thread safe
-func (n *ExecutionNode) Start(ctx context.Context) error {
+func (n *ExecutionNode) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
 	if n.started.Swap(true) {
-		return errors.New("already started")
+		return containers.NewReadyPromise(struct{}{}, errors.New("already started"))
 	}
 	// TODO after separation
 	// err := n.Stack.Start()
@@ -353,18 +377,20 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	n.ExecEngine.Start(ctx)
 	err := n.TxPublisher.Start(ctx)
 	if err != nil {
-		return fmt.Errorf("error starting transaction puiblisher: %w", err)
+		return containers.NewReadyPromise(struct{}{}, fmt.Errorf("error starting transaction puiblisher: %w", err))
 	}
 	if n.ParentChainReader != nil {
 		n.ParentChainReader.Start(ctx)
 	}
-	return nil
+	n.bulkBlockMetadataFetcher.Start(ctx)
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (n *ExecutionNode) StopAndWait() {
+func (n *ExecutionNode) StopAndWait() containers.PromiseInterface[struct{}] {
 	if !n.started.Load() {
-		return
+		return containers.NewReadyPromise(struct{}{}, nil)
 	}
+	n.bulkBlockMetadataFetcher.StopAndWait()
 	// TODO after separation
 	// n.Stack.StopRPC() // does nothing if not running
 	if n.TxPublisher.Started() {
@@ -385,19 +411,18 @@ func (n *ExecutionNode) StopAndWait() {
 	// if err := n.Stack.Close(); err != nil {
 	// 	log.Error("error on stak close", "err", err)
 	// }
+
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
-	return n.ExecEngine.DigestMessage(num, msg, msgForPrefetch)
+func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.DigestMessage(num, msg, msgForPrefetch))
 }
-func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
-	return n.ExecEngine.Reorg(count, newMessages, oldMessages)
+func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.Reorg(count, newMessages, oldMessages))
 }
-func (n *ExecutionNode) HeadMessageNumber() (arbutil.MessageIndex, error) {
-	return n.ExecEngine.HeadMessageNumber()
-}
-func (n *ExecutionNode) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
-	return n.ExecEngine.HeadMessageNumberSync(t)
+func (n *ExecutionNode) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(n.ExecEngine.HeadMessageNumber())
 }
 func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 	return n.ExecEngine.NextDelayedMessageNumber()
@@ -405,8 +430,8 @@ func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)
 }
-func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
-	return n.ExecEngine.ResultAtPos(pos)
+func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.ResultAtPos(pos))
 }
 func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
 	return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
@@ -451,12 +476,23 @@ func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClie
 	n.SyncMonitor.SetConsensusInfo(consensus)
 }
 
-func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
-	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
+func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	blockNum := n.ExecEngine.MessageIndexToBlockNumber(messageNum)
+	return containers.NewReadyPromise(blockNum, nil)
+}
+func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(n.ExecEngine.BlockNumberToMessageIndex(blockNum))
 }
 
-func (n *ExecutionNode) Maintenance() error {
-	return n.ChainDB.Compact(nil, nil)
+func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
+	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
+	err := n.ExecEngine.Maintenance(trieCapLimitBytes)
+	if err != nil {
+		return containers.NewReadyPromise(struct{}{}, err)
+	}
+
+	err = n.ChainDB.Compact(nil, nil)
+	return containers.NewReadyPromise(struct{}{}, err)
 }
 
 func (n *ExecutionNode) Synced() bool {
@@ -465,4 +501,9 @@ func (n *ExecutionNode) Synced() bool {
 
 func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
 	return n.SyncMonitor.FullSyncProgressMap()
+}
+
+func (n *ExecutionNode) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
+	err := n.SyncMonitor.SetFinalityData(ctx, finalityData)
+	return containers.NewReadyPromise(struct{}{}, err)
 }

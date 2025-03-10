@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -60,13 +61,13 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
 	triedbConfig := cacheConfig.TriedbConfig()
 	triedbConfig.Preimages = false
-	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
+	stateDatabase := state.NewDatabase(triedb.NewDatabase(db, triedbConfig), nil)
 	defer func() {
 		err = errors.Join(err, stateDatabase.TrieDB().Close())
 	}()
-	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
+	statedb, err := state.New(common.Hash{}, stateDatabase)
 	if err != nil {
-		log.Crit("failed to init empty statedb", "error", err)
+		panic("failed to init empty statedb :" + err.Error())
 	}
 
 	noStateTrieChangesToCommitError := regexp.MustCompile("^triedb layer .+ is disk layer$")
@@ -86,7 +87,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 				return common.Hash{}, err
 			}
 		}
-		statedb, err = state.New(root, stateDatabase, nil)
+		statedb, err = state.New(root, stateDatabase)
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -96,7 +97,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	burner := burn.NewSystemBurner(nil, false)
 	arbosState, err := InitializeArbosState(statedb, burner, chainConfig, initMessage)
 	if err != nil {
-		log.Crit("failed to open the ArbOS state", "error", err)
+		panic("failed to open the ArbOS state :" + err.Error())
 	}
 
 	chainOwner, err := initData.GetChainOwner()

@@ -1,0 +1,17 @@
+[package]
+name = "stylus_benchmark"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eyre = "0.6.12"
+jit = { path = "../../jit/" }
+wasmer = { path = "../wasmer/lib/api/" }
+wasmer-compiler-cranelift = { path = "../wasmer/lib/compiler-cranelift/" }
+arbutil = { path = "../../arbutil/" }
+prover = { path = "../../prover/", default-features = false, features = ["native"] }
+stylus = { path = "../../stylus/", default-features = false }
+clap = { version = "4.4.8", features = ["derive"] }
+strum = "0.26"
+strum_macros = "0.26"
+rand = "0.8.5"
