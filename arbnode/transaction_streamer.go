@@ -1218,7 +1218,7 @@ func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) 
 	return msgResult, nil
 }
 
-func (s *TransactionStreamer) checkResult(pos arbutil.MessageIndex, msgResult *execution.MessageResult, msgAndBlockInfo *arbostypes.MessageWithMetadataAndBlockInfo) {
+func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult *execution.MessageResult, msgAndBlockInfo *arbostypes.MessageWithMetadataAndBlockInfo) {
 	if msgAndBlockInfo.BlockHash == nil {
 		return
 	}
@@ -1230,18 +1230,18 @@ func (s *TransactionStreamer) checkResult(pos arbutil.MessageIndex, msgResult *e
 		)
 		// Try deleting the existing blockMetadata for this block in arbDB and set it as missing
 		if msgAndBlockInfo.BlockMetadata != nil &&
-			s.trackBlockMetadataFrom != 0 && pos >= s.trackBlockMetadataFrom {
+			s.trackBlockMetadataFrom != 0 && msgIdx >= s.trackBlockMetadataFrom {
 			batch := s.db.NewBatch()
-			if err := batch.Delete(dbKey(blockMetadataInputFeedPrefix, uint64(pos))); err != nil {
-				log.Error("error deleting blockMetadata of block whose BlockHash from feed doesn't match locally computed hash", "msgSeqNum", pos, "err", err)
+			if err := batch.Delete(dbKey(blockMetadataInputFeedPrefix, uint64(msgIdx))); err != nil {
+				log.Error("error deleting blockMetadata of block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
 				return
 			}
-			if err := batch.Put(dbKey(missingBlockMetadataInputFeedPrefix, uint64(pos)), nil); err != nil {
-				log.Error("error marking deleted blockMetadata as missing in arbDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgSeqNum", pos, "err", err)
+			if err := batch.Put(dbKey(missingBlockMetadataInputFeedPrefix, uint64(msgIdx)), nil); err != nil {
+				log.Error("error marking deleted blockMetadata as missing in arbDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
 				return
 			}
 			if err := batch.Write(); err != nil {
-				log.Error("error writing batch that deletes blockMetadata of the block whose BlockHash from feed doesn't match locally computed hash", "msgSeqNum", pos, "err", err)
+				log.Error("error writing batch that deletes blockMetadata of the block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
 			}
 		}
 	}
