@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"io"
 	"math/big"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -78,14 +77,8 @@ func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
 }
 
 func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
-	goodDir, err := os.MkdirTemp("", "good_*")
-	Require(t, err)
-	evilDir, err := os.MkdirTemp("", "evil_*")
-	Require(t, err)
-	t.Cleanup(func() {
-		Require(t, os.RemoveAll(goodDir))
-		Require(t, os.RemoveAll(evilDir))
-	})
+	goodDir := t.TempDir()
+	evilDir := t.TempDir()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
