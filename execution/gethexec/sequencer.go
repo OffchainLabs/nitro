@@ -609,13 +609,12 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
 
-	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg, false)
+	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg)
 }
 
-func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) {
-	if err := s.publishTransactionToQueue(queueCtx, tx, options, resultChan, true); err != nil {
-		resultChan <- err
-	}
+func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	resultChan := make(chan error, 1)
+	return s.publishTransactionToQueue(queueCtx, tx, options, resultChan, true)
 }
 
 func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error, isExpressLaneController bool) error {
