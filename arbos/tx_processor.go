@@ -6,8 +6,9 @@ package arbos
 import (
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/metrics"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/holiman/uint256"
 
@@ -27,10 +28,10 @@ import (
 )
 
 var (
-	infraFeeDistributionCounter   = metrics.NewRegisteredCounter("arbos/infra_fee/counter", nil)
-	infraFeeDistribution          = metrics.NewRegisteredCounter("arbos/infra_fee/distribution", nil)
-	networkFeeDistributionCounter = metrics.NewRegisteredCounter("arbos/network_fee/counter", nil)
-	networkFeeDistribution        = metrics.NewRegisteredCounter("arbos/network_fee/distribution", nil)
+	infraFeeDistributionCounter   = metrics.NewRegisteredCounter("arbos/infra_fee/count", nil)
+	infraFeeDistribution          = metrics.NewRegisteredCounter("arbos/infra_fee/total", nil)
+	networkFeeDistributionCounter = metrics.NewRegisteredCounter("arbos/network_fee/count", nil)
+	networkFeeDistribution        = metrics.NewRegisteredCounter("arbos/network_fee/total", nil)
 )
 
 var arbosAddress = types.ArbosAddress

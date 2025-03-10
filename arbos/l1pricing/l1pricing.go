@@ -7,22 +7,26 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/metrics"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	am "github.com/offchainlabs/nitro/util/arbmath"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/util/arbmath"
-	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type L1PricingState struct {
@@ -56,11 +60,10 @@ var (
 )
 
 var (
-	l1RewardsDistributionCounter    = metrics.NewRegisteredCounter("arbos/l1_rewards_recipient/rewards_counter", nil)
-	l1RewardsDistribution           = metrics.NewRegisteredCounter("arbos/l1_rewards_recipient/rewards_distribution", nil)
-	l1BaseFeeDueDistributionCounter = metrics.NewRegisteredCounter("arbos/batchposter_fee_collector/due_counter", nil)
-	l1BaseFeeDueDistribution        = metrics.NewRegisteredCounter("arbos/batchposter_fee_collector/due_distribution", nil)
-	l1PricerFundsPoolBalance        = metrics.NewRegisteredGaugeFloat64("arbos/l1_pricer_funds_pool_balance", nil)
+	l1RewardsDistributionCounter    = metrics.NewRegisteredCounter("arbos/l1_rewards/count", nil)
+	l1RewardsDistribution           = metrics.NewRegisteredCounter("arbos/l1_rewards/total", nil)
+	l1BaseFeeDueDistributionCounter = metrics.NewRegisteredCounter("arbos/batchposter/fee/count", nil)
+	l1BaseFeeDueDistribution        = metrics.NewRegisteredCounter("arbos/batchposter/fee/total", nil)
 )
 
 const (
@@ -423,7 +426,6 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	}
 	l1RewardsDistributionCounter.Inc(1)
 	l1RewardsDistribution.Inc(paymentForRewards.Int64())
-	l1PricerFundsPoolBalance.Update(arbmath.BalancePerEther())
 
 	// settle up payments owed to the batch poster, as much as possible
 	balanceDueToPoster, err := posterState.FundsDue()
