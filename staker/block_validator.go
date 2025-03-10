@@ -88,6 +88,7 @@ type BlockValidator struct {
 
 	createNodesChan         chan struct{}
 	sendRecordChan          chan struct{}
+	sendValidationsChan     chan struct{}
 	progressValidationsChan chan struct{}
 
 	chosenValidator map[common.Hash]validator.ValidationSpawner
@@ -292,6 +293,7 @@ func NewBlockValidator(
 		StatelessBlockValidator: statelessBlockValidator,
 		createNodesChan:         make(chan struct{}, 1),
 		sendRecordChan:          make(chan struct{}, 1),
+		sendValidationsChan:     make(chan struct{}, 1),
 		progressValidationsChan: make(chan struct{}, 1),
 		config:                  config,
 		fatalErr:                fatalErr,
@@ -533,7 +535,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.getStatus())
 			return
 		}
-		nonBlockingTrigger(v.progressValidationsChan)
+		nonBlockingTrigger(v.sendValidationsChan)
 	})
 	return nil
 }
@@ -872,6 +874,7 @@ validationsLoop:
 			v.validations.Delete(pos)
 			nonBlockingTrigger(v.createNodesChan)
 			nonBlockingTrigger(v.sendRecordChan)
+			nonBlockingTrigger(v.sendValidationsChan)
 			v.testingProgressMadeMutex.Lock()
 			if v.testingProgressMadeChan != nil {
 				nonBlockingTrigger(v.testingProgressMadeChan)
@@ -891,8 +894,12 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 
 	wasmRoots := v.GetModuleRootsToValidate()
 	pos := v.lastValidationSent()
+	recordSent := v.recordSent()
 	initialLastValidationSent := pos
-	sendValidationUntil := v.validated() + arbutil.MessageIndex(v.config().ValidationSentLimit)
+	sendValidationUntil := v.validated() + arbutil.MessageIndex(v.config().ValidationSentLimit) - 1
+	if sendValidationUntil > recordSent-1 {
+		sendValidationUntil = recordSent - 1
+	}
 	for pos <= sendValidationUntil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -902,10 +909,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		if v.lastValidationSent() != initialLastValidationSent {
 			pos = v.lastValidationSent()
 			initialLastValidationSent = pos
-		}
-		if pos >= v.recordSent() {
-			log.Debug("advanceValidations: nothing to validate", "pos", pos)
-			return nil, nil
 		}
 		validationStatus, found := v.validations.Load(pos)
 		if !found {
@@ -925,12 +928,12 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				return nil, notFoundErr
 			}
 			if spawner.Room() == 0 {
-				log.Trace("advanceValidations: no more room", "moduleRoot", moduleRoot)
+				log.Trace("sendValidations: no more room", "moduleRoot", moduleRoot)
 				return nil, nil
 			}
 		}
 		if v.isMemoryLimitExceeded() {
-			log.Warn("advanceValidations: aborting due to running low on memory")
+			log.Warn("sendValidations: aborting due to running low on memory")
 			return nil, nil
 		}
 		if currentStatus == Prepared {
@@ -952,7 +955,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 					return nil, ctx.Err()
 				}
 				run := spawner.Launch(input, moduleRoot)
-				log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
+				log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 				runs = append(runs, run)
 			}
 			validatorProfileLaunchingHist.Update(validationStatus.profileStep())
@@ -979,10 +982,12 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				validatorProfileRunningHist.Update(time.Now().UnixMilli() - startTsMilli)
 				nonBlockingTrigger(v.progressValidationsChan)
 			})
+			pos += 1
+			atomicStorePos(&v.lastValidationSentA, pos, validatorMsgCountLastValidationSentGauge)
+			log.Trace("validation sent", "pos", pos)
+		} else {
+			return nil, fmt.Errorf("bad status trying to send validation for pos %d status: %v", pos, currentStatus)
 		}
-		pos += 1
-		atomicStorePos(&v.lastValidationSentA, pos, validatorMsgCountLastValidationSentGauge)
-		log.Trace("validation sent", "pos", pos)
 	}
 	return nil, nil
 }
@@ -1431,7 +1436,7 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 	if err != nil {
 		v.possiblyFatal(err)
 	}
-	err = stopwaiter.CallIterativelyWith[struct{}](&v.StopWaiterSafe, v.iterativeValidationSentProgress, v.progressValidationsChan)
+	err = stopwaiter.CallIterativelyWith[struct{}](&v.StopWaiterSafe, v.iterativeValidationSentProgress, v.sendValidationsChan)
 	if err != nil {
 		v.possiblyFatal(err)
 	}
