@@ -61,8 +61,10 @@ func TestP256Verify(t *testing.T) {
 			want:           common.Hex2Bytes("0000000000000000000000000000000000000000000000000000000000000001"),
 		},
 	} {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+			builder.parallelise = false
 			builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = tc.initialVersion
 			cleanup := builder.Build(t)
 			defer cleanup()
