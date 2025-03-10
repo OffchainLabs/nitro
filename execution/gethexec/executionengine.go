@@ -262,9 +262,9 @@ func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) 
 	s.consensus = consensus
 }
 
-func (s *ExecutionEngine) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
+func (s *ExecutionEngine) BlockMetadataAtCount(ctx context.Context, count arbutil.MessageIndex) (common.BlockMetadata, error) {
 	if s.consensus != nil {
-		return s.consensus.BlockMetadataAtCount(count)
+		return s.consensus.BlockMetadataAtCount(count).Await(ctx)
 	}
 	return nil, errors.New("FullConsensusClient is not accessible to execution")
 }
@@ -462,7 +462,7 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 		}
 		// We got SequencerInsertLockTaken
 		// option 1: there was a race, we are no longer main sequencer
-		chosenErr := s.consensus.ExpectChosenSequencer()
+		_, chosenErr := s.consensus.ExpectChosenSequencer().Await(s.GetContext())
 		if chosenErr != nil {
 			return nil, chosenErr
 		}
@@ -608,7 +608,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
-	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult, blockMetadata)
+	_, err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult, blockMetadata).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -684,7 +684,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil))
+	_, err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil)).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
