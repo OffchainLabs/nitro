@@ -1,0 +1,57 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - COMMIT_HASH=$(git rev-parse --short=7 HEAD || echo "latest")
+      - VERSION_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV | sed 's/_$//' | head -n 1 | grep ^ || git show -s --pretty=%D | sed 's/, /\n/g' | grep -v '^origin/' |grep -v '^grafted\|HEAD\|master\|main$' || echo "dev")
+      - NITRO_VERSION=${VERSION_TAG}-${COMMIT_HASH}
+      - IMAGE_TAG=${NITRO_VERSION}
+
+      # Log IMAGE_TAG environment variable
+      - echo "Using IMAGE_TAG environment variable $IMAGE_TAG"
+
+      # Login to ECR
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $REPOSITORY_URI
+      # Login to DockerHub if credentials provided
+      - |
+        if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_PASSWORD" ]; then
+          echo "$DOCKERHUB_PASSWORD" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+        fi
+      # Enable experimental features while preserving auth
+      - mkdir -p $HOME/.docker
+      - |
+        if [ -f "$HOME/.docker/config.json" ]; then
+          # Add experimental flag to existing config
+          cat $HOME/.docker/config.json | jq '. + {"experimental":"enabled"}' > $HOME/.docker/config.json.tmp
+          mv $HOME/.docker/config.json.tmp $HOME/.docker/config.json
+        else
+          # Create new config with experimental flag
+          echo '{"experimental":"enabled"}' > $HOME/.docker/config.json
+        fi
+
+  build:
+    commands:
+      # Regular node image
+      - docker manifest create $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:$IMAGE_TAG-amd64 $REPOSITORY_URI:$IMAGE_TAG-arm64
+      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:$IMAGE_TAG-amd64 --arch amd64
+      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:$IMAGE_TAG-arm64 --arch arm64
+      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG
+
+      # Slim variant
+      - docker manifest create $REPOSITORY_URI:$IMAGE_TAG-slim $REPOSITORY_URI:$IMAGE_TAG-slim-amd64 $REPOSITORY_URI:$IMAGE_TAG-slim-arm64
+      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-slim $REPOSITORY_URI:$IMAGE_TAG-slim-amd64 --arch amd64
+      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-slim $REPOSITORY_URI:$IMAGE_TAG-slim-arm64 --arch arm64
+      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-slim
+
+      # Dev variant
+      - docker manifest create $REPOSITORY_URI:$IMAGE_TAG-dev $REPOSITORY_URI:$IMAGE_TAG-dev-amd64 $REPOSITORY_URI:$IMAGE_TAG-dev-arm64
+      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-dev $REPOSITORY_URI:$IMAGE_TAG-dev-amd64 --arch amd64
+      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-dev $REPOSITORY_URI:$IMAGE_TAG-dev-arm64 --arch arm64
+      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-dev
+
+      # Validator variant
+      - docker manifest create $REPOSITORY_URI:$IMAGE_TAG-validator $REPOSITORY_URI:$IMAGE_TAG-validator-amd64 $REPOSITORY_URI:$IMAGE_TAG-validator-arm64
+      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-validator $REPOSITORY_URI:$IMAGE_TAG-validator-amd64 --arch amd64
+      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-validator $REPOSITORY_URI:$IMAGE_TAG-validator-arm64 --arch arm64
+      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-validator

@@ -57,16 +57,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         id: install-rust
         with:
-          toolchain: '1.80.1'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          toolchain: '1.84.1'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-10-06'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          toolchain: 'nightly-2025-02-14'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
@@ -74,6 +74,9 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        
+      - name: Install cbindgen
+        run: cargo install --force cbindgen
 
       - name: Cache Build Products
         uses: actions/cache@v3

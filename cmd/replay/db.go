@@ -59,17 +59,12 @@ func (db PreimageDb) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 	return ErrorIterator{}
 }
 
-func (db PreimageDb) Stat(property string) (string, error) {
+func (db PreimageDb) Stat() (string, error) {
 	return "", errors.New("preimage DB doesn't support Stat")
 }
 
 func (db PreimageDb) Compact(start []byte, limit []byte) error {
 	return nil
-}
-
-func (db PreimageDb) NewSnapshot() (ethdb.Snapshot, error) {
-	// This is fine as PreimageDb doesn't support mutation
-	return db, nil
 }
 
 func (db PreimageDb) Close() error {

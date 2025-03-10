@@ -69,7 +69,7 @@ func TestReorgResequencing(t *testing.T) {
 	Require(t, err)
 
 	verifyBalances("after empty reorg")
-	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after empty reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after empty reorg")
 
 	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startMsgCount - 1)
 	Require(t, err)
@@ -88,7 +88,7 @@ func TestReorgResequencing(t *testing.T) {
 	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadata{{
 		Message:             newMessage,
 		DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
-	}})
+	}}, nil)
 	Require(t, err)
 
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
@@ -97,7 +97,7 @@ func TestReorgResequencing(t *testing.T) {
 	accountsWithBalance = append(accountsWithBalance, "User4")
 
 	verifyBalances("after reorg with new deposit")
-	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after reorg with new deposit")
+	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after reorg with new deposit")
 
 	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
@@ -106,5 +106,5 @@ func TestReorgResequencing(t *testing.T) {
 	Require(t, err)
 
 	verifyBalances("after second empty reorg")
-	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after second empty reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after second empty reorg")
 }

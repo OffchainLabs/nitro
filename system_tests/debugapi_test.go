@@ -92,7 +92,7 @@ func TestDebugAPI(t *testing.T) {
 	Require(t, err)
 	found := false
 	for _, balChange := range jsTrace {
-		if balChange.Reason == tracing.BalanceDecreaseWithdrawToL1.String() &&
+		if balChange.Reason == tracing.BalanceDecreaseWithdrawToL1.Str() &&
 			balChange.Addr == types.ArbSysAddress &&
 			balChange.Prev.Cmp(withdrawalValue) == 0 &&
 			balChange.New.Cmp(common.Big0) == 0 {
@@ -138,7 +138,7 @@ func TestPrestateTracingSimple(t *testing.T) {
 	value := big.NewInt(1e6)
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, value, nil)
 	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
-	_, err = builder.L2.EnsureTxSucceeded(tx)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	l2rpc := builder.L2.Stack.Attach()
@@ -159,8 +159,16 @@ func TestPrestateTracingSimple(t *testing.T) {
 	if !arbmath.BigEquals(result.Pre[receiver].Balance.ToInt(), user2OldBalance) {
 		Fatal(t, "Unexpected initial balance of receiver")
 	}
-	if !arbmath.BigEquals(result.Post[sender].Balance.ToInt(), arbmath.BigSub(ownerOldBalance, value)) {
+	expBalance := arbmath.BigSub(ownerOldBalance, value)
+	gas := arbmath.BigMulByUint(receipt.EffectiveGasPrice, receipt.GasUsed)
+	expBalance = arbmath.BigSub(expBalance, gas)
+	if !arbmath.BigEquals(result.Post[sender].Balance.ToInt(), expBalance) {
 		Fatal(t, "Unexpected final balance of sender")
+	}
+	onchain, err := builder.L2.Client.BalanceAt(ctx, sender, receipt.BlockNumber)
+	Require(t, err)
+	if !arbmath.BigEquals(result.Post[sender].Balance.ToInt(), onchain) {
+		Fatal(t, "Final balance of sender does not fit chain")
 	}
 	if !arbmath.BigEquals(result.Post[receiver].Balance.ToInt(), value) {
 		Fatal(t, "Unexpected final balance of receiver")
@@ -219,7 +227,7 @@ func TestPrestateTracingComplex(t *testing.T) {
 		Fatal(t, "Faucet account not found in the result of prestate tracer")
 	}
 	// Nonce shouldn't exist (in this case defaults to 0) in the Post map of the trace in DiffMode
-	if l2Tx.SkipAccountChecks() && result.Post[faucetAddr].Nonce != 0 {
+	if l2Tx.SkipNonceChecks() && result.Post[faucetAddr].Nonce != 0 {
 		Fatal(t, "Faucet account's nonce should remain unchanged ")
 	}
 	if !arbmath.BigEquals(result.Pre[faucetAddr].Balance.ToInt(), oldBalance) {
