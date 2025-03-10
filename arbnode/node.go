@@ -1081,9 +1081,6 @@ func (n *Node) StopAndWait() {
 	if n.MessagePruner != nil && n.MessagePruner.Started() {
 		n.MessagePruner.StopAndWait()
 	}
-	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
-		n.BroadcastServer.StopAndWait()
-	}
 	if n.BroadcastClients != nil {
 		n.BroadcastClients.StopAndWait()
 	}
@@ -1104,6 +1101,11 @@ func (n *Node) StopAndWait() {
 	}
 	if n.TxStreamer.Started() {
 		n.TxStreamer.StopAndWait()
+	}
+	// n.BroadcastServer is stopped after txStreamer and inboxReader because if done before it would lead to a deadlock, as the threads from these two components
+	// attempt to Broadcast i.e send feedMessage to clientManager's broadcastChan when there wont be any reader to read it as n.BroadcastServer would've been stopped
+	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
+		n.BroadcastServer.StopAndWait()
 	}
 	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
 		// Just stops the redis client (most other stuff was stopped earlier)
