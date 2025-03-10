@@ -53,7 +53,7 @@ var DefaultS3StorageServiceConfig = S3StorageServiceConfig{
 }
 
 func S3StorageServiceConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultS3StorageServiceConfig.Enable, "enable persisting of valdiated bids to AWS S3 bucket")
+	f.Bool(prefix+".enable", DefaultS3StorageServiceConfig.Enable, "enable persisting of validated bids to AWS S3 bucket")
 	f.String(prefix+".access-key", DefaultS3StorageServiceConfig.AccessKey, "S3 access key")
 	f.String(prefix+".bucket", DefaultS3StorageServiceConfig.Bucket, "S3 bucket")
 	f.String(prefix+".object-prefix", DefaultS3StorageServiceConfig.ObjectPrefix, "prefix to add to S3 objects")
