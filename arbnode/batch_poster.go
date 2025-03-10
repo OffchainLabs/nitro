@@ -894,10 +894,18 @@ func (s *batchSegments) recompressAll() error {
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
+		log.Info("Batch full: max decompressed length exceeded",
+			"current", s.totalUncompressedSize,
+			"max", arbstate.MaxDecompressedLen,
+			"isHeader", isHeader)
 		return true, nil
 	}
 	// we've reached the max number of segments
 	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+		log.Info("Batch overflow: max segments exceeded",
+			"segments", len(s.rawSegments),
+			"max", arbstate.MaxSegmentsPerSequencerMessage,
+			"isHeader", isHeader)
 		return true, nil
 	}
 	// there is room, no need to flush
@@ -915,6 +923,10 @@ func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	s.lastCompressedSize = s.compressedBuffer.Len()
 	s.newUncompressedSize = 0
 	if s.lastCompressedSize >= s.sizeLimit {
+		log.Info("Batch overflow: compressed size limit exceeded",
+			"compressedSize", s.lastCompressedSize,
+			"limit", s.sizeLimit,
+			"isHeader", isHeader)
 		return true, nil
 	}
 	return false, nil
