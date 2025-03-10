@@ -940,7 +940,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	}
 
 	// A Reorg event should clear the cache, hence the data fetched now should be accurate
-	Require(t, builder.L2.ConsensusNode.TxStreamer.ReorgTo(10))
+	Require(t, builder.L2.ConsensusNode.TxStreamer.ReorgAt(10))
 	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
 	Require(t, err)
 	if !bytes.Equal(updatedBlockMetadata, result[0].RawMetadata) {
