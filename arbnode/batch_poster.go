@@ -97,7 +97,7 @@ type BatchPoster struct {
 	l1Reader           *headerreader.HeaderReader
 	inbox              *InboxTracker
 	streamer           *TransactionStreamer
-	arbOSVersionGetter execution.FullExecutionClient
+	arbOSVersionGetter execution.ExecutionBatchPoster
 	config             BatchPosterConfigFetcher
 	seqInbox           *bridgegen.SequencerInbox
 	syncMonitor        *SyncMonitor
@@ -307,7 +307,7 @@ type BatchPosterOpts struct {
 	L1Reader      *headerreader.HeaderReader
 	Inbox         *InboxTracker
 	Streamer      *TransactionStreamer
-	VersionGetter execution.FullExecutionClient
+	VersionGetter execution.ExecutionBatchPoster
 	SyncMonitor   *SyncMonitor
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses
@@ -522,6 +522,100 @@ type txInfo struct {
 	Input     hexutil.Bytes     `json:"input"`
 	Value     *hexutil.Big      `json:"value"`
 	Accesses  *types.AccessList `json:"accessList,omitempty"`
+}
+
+func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeader *types.Header) (bool, error) {
+	// Before EIP-7623 tx.gasUsed is defined as:
+	// tx.gasUsed = (
+	//     21000
+	//     + STANDARD_TOKEN_COST * tokens_in_calldata
+	//     + execution_gas_used
+	//     + isContractCreation * (32000 + INITCODE_WORD_COST * words(calldata))
+	// )
+	//
+	// With EIP-7623 tx.gasUsed is defined as:
+	// tx.gasUsed = (
+	//     21000
+	//     +
+	//     max(
+	//         STANDARD_TOKEN_COST * tokens_in_calldata
+	//         + execution_gas_used
+	//         + isContractCreation * (32000 + INITCODE_WORD_COST * words(calldata)),
+	//         TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata
+	//     )
+	// )
+	//
+	// STANDARD_TOKEN_COST = 4
+	// TOTAL_COST_FLOOR_PER_TOKEN = 10
+	//
+	// To infer whether the parent chain is using EIP-7623 we estimate gas usage of two parent chain native token transfer transactions,
+	// that then have equal execution_gas_used.
+	// Also, in both transactions isContractCreation is zero, and tokens_in_calldata is big enough so
+	// (TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata > STANDARD_TOKEN_COST * tokens_in_calldata + execution_gas_used).
+	// Also, the used calldatas only have non-zero bytes, so tokens_in_calldata is defined as length(calldata) * 4.
+	//
+	// The difference between the transactions is:
+	// length(calldata_tx_2) == length(calldata_tx_1) + 1
+	//
+	// So, if parent chain is not running EIP-7623:
+	// tx_2.gasUsed - tx_1.gasUsed =
+	// STANDARD_TOKEN_COST * 4 * (length(calldata_tx_2) - length(calldata_tx_1)) =
+	// 16
+	//
+	// And if the parent chain is running EIP-7623:
+	// tx_2.gasUsed - tx_1.gasUsed =
+	// TOTAL_COST_FLOOR_PER_TOKEN * 4 * (length(calldata_tx_2) - length(calldata_tx_1)) =
+	// 40
+
+	rpcClient := b.l1Reader.Client()
+	config := b.config()
+	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
+	to := b.dataPoster.Sender()
+
+	data := []byte{}
+	for i := 0; i < 100_000; i++ {
+		data = append(data, 1)
+	}
+
+	gas1, err := estimateGas(rpcClient.Client(), ctx, estimateGasParams{
+		From:         b.dataPoster.Sender(),
+		To:           &to,
+		Data:         data,
+		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	data = append(data, 1)
+	gas2, err := estimateGas(rpcClient.Client(), ctx, estimateGasParams{
+		From:         b.dataPoster.Sender(),
+		To:           &to,
+		Data:         data,
+		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	// Takes into consideration that eth_estimateGas is an approximation.
+	// As an example, go-ethereum can only return an estimate that is equal
+	// or bigger than the true estimate, and currently defines the allowed error ratio as 0.015
+	var parentChainIsUsingEIP7623 bool
+	diffIsClose := func(gas1, gas2, lowerTargetDiff, upperTargetDiff uint64) bool {
+		diff := gas2 - gas1
+		return diff >= lowerTargetDiff && diff <= upperTargetDiff
+	}
+	if diffIsClose(gas1, gas2, 14, 18) {
+		// targetDiff is 16
+		parentChainIsUsingEIP7623 = false
+	} else if diffIsClose(gas1, gas2, 36, 44) {
+		// targetDiff is 40
+		parentChainIsUsingEIP7623 = true
+	} else {
+		return false, fmt.Errorf("unexpected gas difference, gas1: %d, gas2: %d", gas1, gas2)
+	}
+	return parentChainIsUsingEIP7623, nil
 }
 
 // getTxsInfoByBlock fetches all the transactions inside block of id 'number' using json rpc
@@ -800,10 +894,18 @@ func (s *batchSegments) recompressAll() error {
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
+		log.Info("Batch full: max decompressed length exceeded",
+			"current", s.totalUncompressedSize,
+			"max", arbstate.MaxDecompressedLen,
+			"isHeader", isHeader)
 		return true, nil
 	}
 	// we've reached the max number of segments
 	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+		log.Info("Batch overflow: max segments exceeded",
+			"segments", len(s.rawSegments),
+			"max", arbstate.MaxSegmentsPerSequencerMessage,
+			"isHeader", isHeader)
 		return true, nil
 	}
 	// there is room, no need to flush
@@ -821,6 +923,10 @@ func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	s.lastCompressedSize = s.compressedBuffer.Len()
 	s.newUncompressedSize = 0
 	if s.lastCompressedSize >= s.sizeLimit {
+		log.Info("Batch overflow: compressed size limit exceeded",
+			"compressedSize", s.lastCompressedSize,
+			"limit", s.sizeLimit,
+			"isHeader", isHeader)
 		return true, nil
 	}
 	return false, nil
@@ -1174,7 +1280,29 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 						blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 						blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 
-						calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
+						// STANDARD_TOKEN_COST = 4
+						// TOTAL_COST_FLOOR_PER_TOKEN = 10
+						//
+						// The following analysis is applied for transactions unrelated to contract creation.
+						//
+						// Before EIP-7623, gas used related to calldata is defined as
+						// STANDARD_TOKEN_COST * (zero_bytes_in_calldata + nonzero_bytes_in_calldata * 4).
+						// Considering the worst case scenario regarding gas used per calldata byte,
+						// in which calldata only has non-zero bytes, each calldata byte will consume STANDARD_TOKEN * 4, which is 16 gas.
+						//
+						// With EIP-7623, considering the worst case scenario regarding gas used per calldata byte,
+						// in which calldata is also composed only of non-zero bytes,
+						// and that (TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata > STANDARD_TOKEN_COST * tokens_in_calldata + execution_gas_used),
+						// each calldata byte will consume TOTAL_COST_FLOOR_PER_TOKEN * 4, which is 40 gas.
+						calldataFeePerByteMultiplier := uint64(16)
+						parentChainIsUsingEIP7623, err := b.ParentChainIsUsingEIP7623(ctx, latestHeader)
+						if err != nil {
+							log.Error("ParentChainIsUsingEIP7623 failed", "err", err)
+						} else if parentChainIsUsingEIP7623 {
+							calldataFeePerByteMultiplier = uint64(40)
+						}
+
+						calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, calldataFeePerByteMultiplier)
 						use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
 					}
 				}
