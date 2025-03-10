@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -15,11 +17,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	flag "github.com/spf13/pflag"
 )
 
 var (
@@ -221,4 +224,41 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 		return err
 	}
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
+}
+
+func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	if msg == nil || msg.Transaction == nil {
+		return timeboost.ErrMalformedData
+	}
+	block := c.bc.CurrentBlock()
+	statedb, err := c.bc.StateAt(block.Root)
+	if err != nil {
+		return err
+	}
+	arbos, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return err
+	}
+	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, msg.Transaction, msg.Options, c.config())
+	if err != nil {
+		return err
+	}
+	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
+}
+
+func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	block := c.bc.CurrentBlock()
+	statedb, err := c.bc.StateAt(block.Root)
+	if err != nil {
+		return err
+	}
+	arbos, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return err
+	}
+	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, tx, nil, c.config())
+	if err != nil {
+		return err
+	}
+	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
 }

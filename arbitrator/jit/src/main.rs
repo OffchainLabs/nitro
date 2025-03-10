@@ -1,52 +1,12 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::machine::{Escape, WasmEnv};
 use arbutil::{color, Color};
 use eyre::Result;
-use std::path::PathBuf;
+use jit::machine;
+use jit::machine::{Escape, WasmEnv};
+use jit::Opts;
 use structopt::StructOpt;
-
-mod arbcompress;
-mod caller_env;
-mod machine;
-mod program;
-mod socket;
-mod stylus_backend;
-mod test;
-mod wasip1_stub;
-mod wavmio;
-
-#[derive(StructOpt)]
-#[structopt(name = "jit-prover")]
-pub struct Opts {
-    #[structopt(short, long)]
-    binary: PathBuf,
-    #[structopt(long, default_value = "0")]
-    inbox_position: u64,
-    #[structopt(long, default_value = "0")]
-    delayed_inbox_position: u64,
-    #[structopt(long, default_value = "0")]
-    position_within_message: u64,
-    #[structopt(long)]
-    last_block_hash: Option<String>,
-    #[structopt(long)]
-    last_send_root: Option<String>,
-    #[structopt(long)]
-    inbox: Vec<PathBuf>,
-    #[structopt(long)]
-    delayed_inbox: Vec<PathBuf>,
-    #[structopt(long)]
-    preimages: Option<PathBuf>,
-    #[structopt(long)]
-    cranelift: bool,
-    #[structopt(long)]
-    forks: bool,
-    #[structopt(long)]
-    debug: bool,
-    #[structopt(long)]
-    require_success: bool,
-}
 
 fn main() -> Result<()> {
     let opts = Opts::from_args();

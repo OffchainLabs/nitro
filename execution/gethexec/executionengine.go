@@ -7,11 +7,12 @@
 package gethexec
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 */
 import "C"
+
 import (
 	"bytes"
 	"context"
@@ -26,20 +27,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/google/uuid"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -53,6 +58,8 @@ var (
 	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
 	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
 	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
+	blockExecutionTimer        = metrics.NewRegisteredTimer("arb/block/execution", nil)
+	blockWriteToDbTimer        = metrics.NewRegisteredTimer("arb/block/writetodb", nil)
 )
 
 type L1PriceDataOfMsg struct {
@@ -79,13 +86,16 @@ type ExecutionEngine struct {
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
 
-	newBlockNotifier chan struct{}
-	latestBlockMutex sync.Mutex
-	latestBlock      *types.Block
+	newBlockNotifier    chan struct{}
+	reorgEventsNotifier chan struct{}
+	latestBlockMutex    sync.Mutex
+	latestBlock         *types.Block
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
 	reorgSequencing bool
+
+	disableStylusCacheMetricsCollection bool
 
 	prefetchBlock bool
 
@@ -150,7 +160,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
+func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	localTarget := rawdb.LocalTarget()
 	targets := targetConfig.WasmTargets()
 	var nativeSet bool
@@ -182,11 +192,11 @@ func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	return nil
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
-	if rustCacheSize != 0 {
-		programs.ResizeWasmLruCache(rustCacheSize)
+func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *StylusTargetConfig) error {
+	if rustCacheCapacityMB != 0 {
+		programs.SetWasmLruCacheCapacity(arbmath.SaturatingUMul(uint64(rustCacheCapacityMB), 1024*1024))
 	}
-	if err := populateStylusTargetCache(targetConfig); err != nil {
+	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 	return nil
@@ -202,6 +212,16 @@ func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
 	s.recorder = recorder
 }
 
+func (s *ExecutionEngine) SetReorgEventsNotifier(reorgEventsNotifier chan struct{}) {
+	if s.Started() {
+		panic("trying to set reorg events notifier after start")
+	}
+	if s.reorgEventsNotifier != nil {
+		panic("trying to set reorg events notifier when already set")
+	}
+	s.reorgEventsNotifier = reorgEventsNotifier
+}
+
 func (s *ExecutionEngine) EnableReorgSequencing() {
 	if s.Started() {
 		panic("trying to enable reorg sequencing after start")
@@ -210,6 +230,16 @@ func (s *ExecutionEngine) EnableReorgSequencing() {
 		panic("trying to enable reorg sequencing when already set")
 	}
 	s.reorgSequencing = true
+}
+
+func (s *ExecutionEngine) DisableStylusCacheMetricsCollection() {
+	if s.Started() {
+		panic("trying to disable stylus cache metrics collection after start")
+	}
+	if s.disableStylusCacheMetricsCollection {
+		panic("trying to disable stylus cache metrics collection when already set")
+	}
+	s.disableStylusCacheMetricsCollection = true
 }
 
 func (s *ExecutionEngine) EnablePrefetchBlock() {
@@ -232,11 +262,18 @@ func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) 
 	s.consensus = consensus
 }
 
+func (s *ExecutionEngine) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
+	if s.consensus != nil {
+		return s.consensus.BlockMetadataAtCount(count)
+	}
+	return nil, errors.New("FullConsensusClient is not accessible to execution")
+}
+
 func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	if count == 0 {
 		return nil, errors.New("cannot reorg out genesis")
 	}
@@ -264,6 +301,13 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	err := s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.reorgEventsNotifier != nil {
+		select {
+		case s.reorgEventsNotifier <- struct{}{}:
+		default:
+		}
 	}
 
 	newMessagesResults := make([]*execution.MessageResult, 0, len(oldMessages))
@@ -399,7 +443,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 		}
 		hooks := arbos.NoopSequencingHooks()
 		hooks.DiscardInvalidTxsEarly = true
-		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, txes, hooks)
+		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, txes, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
@@ -436,17 +480,17 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 	}
 }
 
-func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
 	return s.sequencerWrapper(func() (*types.Block, error) {
 		hooks.TxErrors = nil
-		return s.sequenceTransactionsWithBlockMutex(header, txes, hooks)
+		return s.sequenceTransactionsWithBlockMutex(header, txes, hooks, timeboostedTxs)
 	})
 }
 
 // SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
 // CPU profiling enabled. If the block creation takes longer than 2 seconds, it
 // keeps both and prints out filenames in an error log line.
-func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
 	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
 	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
 		log.Error("Starting CPU profiling", "error", err)
@@ -455,7 +499,7 @@ func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L
 		log.Error("Starting tracing", "error", err)
 	}
 	start := time.Now()
-	res, err := s.SequenceTransactions(header, txes, hooks)
+	res, err := s.SequenceTransactions(header, txes, hooks, timeboostedTxs)
 	elapsed := time.Since(start)
 	pprof.StopCPUProfile()
 	trace.Stop()
@@ -481,7 +525,7 @@ func writeAndLog(pprof, trace *bytes.Buffer) {
 	log.Info("Transactions sequencing took longer than 2 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
-func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err
@@ -491,6 +535,19 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
+	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
+	if lastBlock == nil {
+		return nil, errors.New("can't find block for current header")
+	}
+	var witness *stateless.Witness
+	if s.bc.GetVMConfig().StatelessSelfValidation {
+		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc)
+		if err != nil {
+			return nil, err
+		}
+	}
+	statedb.StartPrefetcher("Sequencer", witness)
+	defer statedb.StopPrefetcher()
 
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
@@ -505,11 +562,13 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc.Config(),
 		hooks,
 		false,
+		core.MessageCommitMode,
 	)
 	if err != nil {
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 	if len(hooks.TxErrors) != len(txes) {
 		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
@@ -548,7 +607,8 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult)
+	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
+	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult, blockMetadata)
 	if err != nil {
 		return nil, err
 	}
@@ -562,6 +622,24 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	s.cacheL1PriceDataOfMsg(pos, receipts, block, false)
 
 	return block, nil
+}
+
+// blockMetadataFromBlock returns timeboosted byte array which says whether a transaction in the block was timeboosted
+// or not. The first byte of blockMetadata byte array is reserved to indicate the version,
+// starting from the second byte, (N)th bit would represent if (N)th tx is timeboosted or not, 1 means yes and 0 means no
+// blockMetadata[index / 8 + 1] & (1 << (index % 8)) != 0; where index = (N - 1), implies whether (N)th tx in a block is timeboosted
+// note that number of txs in a block will always lag behind (len(blockMetadata) - 1) * 8 but it wont lag more than a value of 7
+func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboostedTxs map[common.Hash]struct{}) common.BlockMetadata {
+	bits := make(common.BlockMetadata, 1+arbmath.DivCeil(uint64(len(block.Transactions())), 8))
+	if len(timeboostedTxs) == 0 {
+		return bits
+	}
+	for i, tx := range block.Transactions() {
+		if _, ok := timeboostedTxs[tx.Hash()]; ok {
+			bits[1+i/8] |= 1 << (i % 8)
+		}
+	}
+	return bits
 }
 
 func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
@@ -599,13 +677,14 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult)
+	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil))
 	if err != nil {
 		return nil, err
 	}
@@ -658,9 +737,20 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	statedb.StartPrefetcher("TransactionStreamer")
+	var witness *stateless.Witness
+	if s.bc.GetVMConfig().StatelessSelfValidation {
+		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	statedb.StartPrefetcher("TransactionStreamer", witness)
 	defer statedb.StopPrefetcher()
 
+	runMode := core.MessageCommitMode
+	if isMsgForPrefetch {
+		runMode = core.MessageReplayMode
+	}
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -669,6 +759,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		s.bc.Config(),
 		isMsgForPrefetch,
+		runMode,
 	)
 
 	return block, statedb, receipts, err
@@ -680,6 +771,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	for _, receipt := range receipts {
 		logs = append(logs, receipt.Logs...)
 	}
+	startTime := time.Now()
 	status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, duration)
 	if err != nil {
 		return err
@@ -687,6 +779,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
+	blockWriteToDbTimer.Update(time.Since(startTime))
 	baseFeeGauge.Update(block.BaseFee().Int64())
 	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
 	var blockGasused uint64
@@ -768,7 +861,8 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 			gasUsedForL1 += receipts[i].GasUsedForL1
 		}
 		for _, tx := range block.Transactions() {
-			callDataUnits += tx.CalldataUnits
+			_, cachedUnits := tx.GetRawCachedCalldataUnits()
+			callDataUnits += cachedUnits
 		}
 	}
 	l1GasCharged := gasUsedForL1 * block.BaseFee().Uint64()
@@ -856,8 +950,10 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return nil, err
 	}
+	blockCalcTime := time.Since(startTime)
+	blockExecutionTimer.Update(blockCalcTime)
 
-	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
+	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
 		return nil, err
 	}
@@ -883,7 +979,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 			timestamp = time.Unix(int64(timestampInt), 0)
 			timeUntilUpgrade = time.Until(timestamp)
 		}
-		maxSupportedVersion := params.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
+		maxSupportedVersion := chaininfo.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
 		logLevel := log.Warn
 		if timeUntilUpgrade < time.Hour*24 {
 			logLevel = log.Error
@@ -963,4 +1059,43 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			}
 		}
 	})
+	if !s.disableStylusCacheMetricsCollection {
+		// periodically update stylus cache metrics
+		s.LaunchThread(func(ctx context.Context) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Minute):
+					programs.UpdateWasmCacheMetrics()
+				}
+			}
+		})
+	}
+}
+
+func (s *ExecutionEngine) Maintenance(capLimit uint64) error {
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+	return s.bc.FlushTrieDB(common.StorageSize(capLimit))
+}
+
+func (s *ExecutionEngine) SetFinalized(finalizedBlockNumber uint64) error {
+	block := s.bc.GetBlockByNumber(finalizedBlockNumber)
+	if block == nil {
+		return errors.New("unable to get block by number")
+	}
+
+	s.bc.SetFinalized(block.Header())
+	return nil
+}
+
+func (s *ExecutionEngine) SetSafe(safeBlockNumber uint64) error {
+	block := s.bc.GetBlockByNumber(safeBlockNumber)
+	if block == nil {
+		return errors.New("unable to get block by number")
+	}
+
+	s.bc.SetSafe(block.Header())
+	return nil
 }

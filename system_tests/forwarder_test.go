@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+
 	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
@@ -170,7 +172,7 @@ func waitForSequencerLockout(ctx context.Context, node *arbnode.Node, duration t
 		case <-time.After(duration):
 			return fmt.Errorf("no sequencer was chosen")
 		default:
-			if c, err := node.SeqCoordinator.CurrentChosenSequencer(ctx); err == nil && c != "" {
+			if c, err := node.SeqCoordinator.RedisCoordinator().CurrentChosenSequencer(ctx); err == nil && c != "" {
 				return nil
 			}
 			time.Sleep(100 * time.Millisecond)

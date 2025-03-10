@@ -12,19 +12,35 @@ import (
 	"sync"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	flag "github.com/spf13/pflag"
 )
 
 // A regexp matching "execution reverted" errors returned from the parent chain RPC.
-var ExecutionRevertedRegexp = regexp.MustCompile(`(?i)execution reverted|VM execution error\.?`)
+var executionRevertedRegexp = regexp.MustCompile(`(?i)execution reverted|VM execution error\.?`)
+
+// IsExecutionReverted returns true if the error is an "execution reverted" error or if the error is a rpc.Error with ErrorCode 3.
+func IsExecutionReverted(err error) bool {
+	if executionRevertedRegexp.MatchString(err.Error()) {
+		return true
+	}
+	var rpcError rpc.Error
+	ok := errors.As(err, &rpcError)
+	if ok && rpcError.ErrorCode() == 3 {
+		return true
+	}
+	return false
+}
 
 type ArbSysInterface interface {
 	ArbBlockNumber(*bind.CallOpts) (*big.Int, error)
@@ -33,7 +49,7 @@ type ArbSysInterface interface {
 type HeaderReader struct {
 	stopwaiter.StopWaiter
 	config                ConfigFetcher
-	client                arbutil.L1Interface
+	client                *ethclient.Client
 	isParentChainArbitrum bool
 	arbSys                ArbSysInterface
 
@@ -120,7 +136,7 @@ var TestConfig = Config{
 	},
 }
 
-func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, arbSysPrecompile ArbSysInterface) (*HeaderReader, error) {
+func New(ctx context.Context, client *ethclient.Client, config ConfigFetcher, arbSysPrecompile ArbSysInterface) (*HeaderReader, error) {
 	isParentChainArbitrum := false
 	var arbSys ArbSysInterface
 	if arbSysPrecompile != nil {
@@ -522,7 +538,7 @@ func (s *HeaderReader) LatestFinalizedBlockNr(ctx context.Context) (uint64, erro
 	return header.Number.Uint64(), nil
 }
 
-func (s *HeaderReader) Client() arbutil.L1Interface {
+func (s *HeaderReader) Client() *ethclient.Client {
 	return s.client
 }
 

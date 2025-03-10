@@ -80,12 +80,16 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 	}
 }
 
-func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON) (uint64, error) {
+func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON, useBoldMachineOptional *bool) (uint64, error) {
 	input, err := server_api.ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
 	}
-	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	useBoldMachine := false
+	if useBoldMachineOptional != nil {
+		useBoldMachine = *useBoldMachineOptional
+	}
+	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input, useBoldMachine).Await(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -116,15 +120,6 @@ func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	a.CallIteratively(a.removeOldRuns)
-}
-
-func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *server_api.InputJSON, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
-	input, err := server_api.ValidationInputFromJson(jsonInput)
-	if err != nil {
-		return err
-	}
-	_, err = a.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(ctx)
-	return err
 }
 
 var errRunNotFound error = errors.New("run not found")
@@ -194,6 +189,14 @@ func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error 
 		return err
 	}
 	return nil
+}
+
+func (a *ExecServerAPI) CheckAlive(ctx context.Context, execid uint64) error {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return err
+	}
+	return run.CheckAlive(ctx)
 }
 
 func (a *ExecServerAPI) CloseExec(execid uint64) {

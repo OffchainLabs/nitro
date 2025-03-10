@@ -50,15 +50,13 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.21.x
+          go-version: 1.23.x
 
       - name: Install custom go-ethereum
         run: |
           cd /tmp
-          git clone --branch v1.13.8 --depth 1 https://github.com/ethereum/go-ethereum.git
+          git clone --branch v1.14.11 --depth 1 https://github.com/ethereum/go-ethereum.git
           cd go-ethereum
-          # Enable KZG point evaluation precompile early
-          sed -i 's#var PrecompiledContractsBerlin = map\[common.Address\]PrecompiledContract{#\0 common.BytesToAddress([]byte{0x0a}): \&kzgPointEvaluation{},#g' core/vm/contracts.go
           go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup nodejs
@@ -68,19 +66,21 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
-      - name: Install rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 'stable'
-          components: 'llvm-tools-preview, rustfmt, clippy'
-
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-08-06'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          toolchain: 'nightly-2025-02-14'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
+
+      - name: Install rust stable
+        id: install-rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.84.1'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
+          components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
@@ -167,11 +167,8 @@ jobs:
       - name: Run rust tests
         run: cargo test -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml
 
-      - name: Rustfmt
-        run: cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
-
-      - name: Rustfmt - langs/rust
-        run: cargo fmt --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
+      - name: Check stylus_bechmark
+        run: cargo check --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml
 
       - name: Make proofs from test cases
         run: make -j test-gen-proofs

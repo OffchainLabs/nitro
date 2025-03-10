@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -62,7 +63,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		builder.L1.TransferBalance(t, "Faucet", "Faucet", common.Big1, builder.L1Info)
 	}
 
-	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "before reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "before reorg")
 
 	parentBlock := builder.L1.L1Backend.BlockChain().GetBlockByNumber(batchReceipt.BlockNumber.Uint64() - 1)
 	err = builder.L1.L1Backend.BlockChain().ReorgToOldBlock(parentBlock)
@@ -107,5 +108,5 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		Fatal(t, "L2 block hash changed")
 	}
 
-	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after reorg")
 }
