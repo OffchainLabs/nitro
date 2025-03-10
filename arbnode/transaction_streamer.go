@@ -1327,6 +1327,9 @@ func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struc
 	return s.config().ExecuteMessageLoopDelay
 }
 
+// backfillTrackersForMissingBlockMetadata adds missingBlockMetadataInputFeedPrefix to block numbers whose blockMetadata status
+// isn't yet tracked. If a node is started with new value for trackBlockMetadataFrom that is lower than the current, then this
+// function adds the missing trackers so that bulk BlockMetadataFetcher can fill in the gaps.
 func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx context.Context) {
 	if s.trackBlockMetadataFrom == 0 {
 		return
