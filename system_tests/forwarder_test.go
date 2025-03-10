@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -134,16 +133,7 @@ func createSequencer(t *testing.T, builder *NodeBuilder, ipcPath string, redisUr
 // tmpPath returns file path with specified filename from temporary directory of the test.
 func tmpPath(t *testing.T, filename string) string {
 	t.Helper()
-	// create a unique, maximum 10 characters-long temporary directory {name} with path as $TMPDIR/{name}
-	tmpDir, err := os.MkdirTemp("", "")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() {
-		if err = os.RemoveAll(tmpDir); err != nil {
-			t.Errorf("Failed to cleanup temp dir: %v", err)
-		}
-	})
+	tmpDir := t.TempDir()
 	return filepath.Join(tmpDir, filename)
 }
 
