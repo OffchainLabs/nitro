@@ -926,7 +926,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 			return err
 		}
 		if numberOfDuplicates > 0 {
-			lastDelayedRead = messages[numberOfDuplicates].MessageWithMeta.DelayedMessagesRead
+			lastDelayedRead = messages[numberOfDuplicates-1].MessageWithMeta.DelayedMessagesRead
 			messages = messages[numberOfDuplicates:]
 			firstMsgIdx += arbutil.MessageIndex(numberOfDuplicates)
 		}
