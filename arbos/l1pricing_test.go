@@ -277,7 +277,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 		currentPricePerUnit, err := l1p.PricePerUnit()
 		Require(t, err)
 		feesToAdd := arbmath.BigMulByUint(currentPricePerUnit, unitsToAdd)
-		util.MintBalance(&l1PoolAddress, feesToAdd, evm, util.TracingBeforeEVM, "test")
+		util.MintBalance(&l1PoolAddress, feesToAdd, evm, util.TracingBeforeEVM, tracing.BalanceChangeUnspecified)
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
 			evm,
