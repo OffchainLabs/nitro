@@ -382,8 +382,10 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 		if !exists {
 			break
 		}
-		// Txs (current or queued) cannot use this function's context as it would lead to context canceled error later on, once the tx is queued and this function returns, hence we use es.GetContext()
-		queueCtx, _ := ctxWithTimeout(es.GetContext(), queueTimeout)
+		// Txs (current or buffered) cannot use this function's context as it would lead to context canceled error later on, once the tx is queued and this function returns, hence we
+		// use es.GetContext(). Txs sequenced this round shouldn't be processed by sequencer into next round, to enforce this, queueCtx has a timeout = min(TimeTilNextRound, queueTimeout)
+		timeout := min(es.roundTimingInfo.TimeTilNextRound(), queueTimeout)
+		queueCtx, _ := ctxWithTimeout(es.GetContext(), timeout)
 		if err := es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, nextMsg.Transaction, nextMsg.Options); err != nil {
 			log.Error("Error queuing expressLane transaction", "seqNum", nextMsg.SequenceNumber, "txHash", nextMsg.Transaction.Hash(), "err", err)
 			if nextMsg.SequenceNumber == msg.SequenceNumber {
