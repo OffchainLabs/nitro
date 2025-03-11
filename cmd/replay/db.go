@@ -25,6 +25,10 @@ func (db PreimageDb) Has(key []byte) (bool, error) {
 	return false, errors.New("preimage DB doesn't support Has")
 }
 
+func (db PreimageDb) DeleteRange(start, end []byte) error {
+	return errors.New("preimage DB doesn't support DeleteRange")
+}
+
 func (db PreimageDb) Get(key []byte) ([]byte, error) {
 	var hash [32]byte
 	copy(hash[:], key)

@@ -504,7 +504,7 @@ func ProduceBlockAdvanced(
 }
 
 // Also sets header.Root
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB, chainConfig *params.ChainConfig) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.StateDB, chainConfig *params.ChainConfig) {
 	if header != nil {
 		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			panic("cannot finalize blocks before genesis")
