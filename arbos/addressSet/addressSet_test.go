@@ -5,6 +5,7 @@ package addressSet
 
 import (
 	"fmt"
+	gomath "math"
 	"math/rand"
 	"testing"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/state"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -109,7 +109,7 @@ func TestAddressSet(t *testing.T) {
 	checkAllMembers(t, aset, possibleAddresses)
 
 	Require(t, aset.Add(addr1))
-	all, err := aset.AllMembers(math.MaxUint64)
+	all, err := aset.AllMembers(gomath.MaxUint64)
 	Require(t, err)
 	if len(all) != 2 {
 		Fail(t)

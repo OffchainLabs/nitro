@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	gomath "math"
 	"math/big"
 	"sort"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -191,7 +191,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 	parsedLogs := make([]*bridgegen.IBridgeMessageDelivered, 0, len(logs))
 	messageIds := make([]common.Hash, 0, len(logs))
 	inboxAddresses := make(map[common.Address]struct{})
-	minBlockNum := uint64(math.MaxUint64)
+	minBlockNum := uint64(gomath.MaxUint64)
 	maxBlockNum := uint64(0)
 	for _, ethLog := range logs {
 		if ethLog.BlockNumber < minBlockNum {

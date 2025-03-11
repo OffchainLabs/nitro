@@ -7,10 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	gomath "math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -66,7 +66,7 @@ func NewBlockChallengeBackend(
 		startMsgCount:          startMsgCount,
 		startGs:                startGs,
 		startPosition:          0,
-		endPosition:            math.MaxUint64,
+		endPosition:            gomath.MaxUint64,
 		endGs:                  validator.GoGlobalStateFromSolidity(initialState.EndState),
 		inboxTracker:           inboxTracker,
 		tooFarStartsAtPosition: uint64(endMsgCount - startMsgCount + 1),

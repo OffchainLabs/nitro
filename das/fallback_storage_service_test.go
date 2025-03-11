@@ -7,9 +7,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	gomath "math"
 	"testing"
-
-	"github.com/ethereum/go-ethereum/common/math"
 
 	"github.com/offchainlabs/nitro/das/dastree"
 )
@@ -24,10 +23,10 @@ func TestFallbackStorageService(t *testing.T) {
 	hash2 := dastree.Hash(val2)
 
 	primary := NewMemoryBackedStorageService(ctx)
-	err := primary.Put(ctx, val1, math.MaxUint64)
+	err := primary.Put(ctx, val1, gomath.MaxUint64)
 	Require(t, err)
 	fallback := NewMemoryBackedStorageService(ctx)
-	err = fallback.Put(ctx, val2, math.MaxUint64)
+	err = fallback.Put(ctx, val2, gomath.MaxUint64)
 	Require(t, err)
 
 	fss := NewFallbackStorageService(primary, fallback, fallback, 60*60, true, true)

@@ -6,10 +6,10 @@ package arbosState
 import (
 	"errors"
 	"fmt"
+	gomath "math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -274,7 +274,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(state.l1PricingState.SetLastSurplus(common.Big0, 1))
 		case params.ArbosVersion_3:
 			ensure(state.l1PricingState.SetPerBatchGasCost(0))
-			ensure(state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64))
+			ensure(state.l1PricingState.SetAmortizedCostCapBips(gomath.MaxUint64))
 		case params.ArbosVersion_4:
 			// no state changes needed
 		case params.ArbosVersion_5:
@@ -300,7 +300,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// but the correct value to disable the amortization cap is 0.
 			oldAmortizationCap, err := state.l1PricingState.AmortizedCostCapBips()
 			ensure(err)
-			if oldAmortizationCap == math.MaxUint64 {
+			if oldAmortizationCap == gomath.MaxUint64 {
 				ensure(state.l1PricingState.SetAmortizedCostCapBips(0))
 			}
 
