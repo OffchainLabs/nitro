@@ -9,6 +9,13 @@ replace github.com/ethereum/go-ethereum => ./go-ethereum
 replace github.com/offchainlabs/bold => ./bold
 
 require (
+	github.com/linxGnu/grocksdb v1.9.8
+	github.com/tenderly/blockchain-proto v0.0.0-20250221134230-cde60242f11e // indirect
+	github.com/tenderly/live-tracer-arbitrum v0.0.0-20250227231401-e89a14fd7bda // indirect
+	github.com/tenderly/live-tracing-store v0.0.0-20250221150020-c1952dbc255f // indirect
+)
+
+require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible
@@ -49,7 +56,7 @@ require (
 	github.com/redis/go-redis/v9 v9.6.1
 	github.com/rivo/tview v0.0.0-20240307173318-e804876934a1
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/wealdtech/go-merkletree v1.0.0
 	golang.org/x/crypto v0.31.0
@@ -89,7 +96,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240617180043-68d350f18fd4 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240624140628-dc46fd24d27d // indirect
 	google.golang.org/grpc v1.64.1 // indirect
-	google.golang.org/protobuf v1.34.2 // indirect
+	google.golang.org/protobuf v1.35.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

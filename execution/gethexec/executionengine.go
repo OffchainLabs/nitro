@@ -551,6 +551,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.MessageCommitMode,
+		nil,
 	)
 	if err != nil {
 		return nil, err
@@ -741,6 +742,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc.Config(),
 		isMsgForPrefetch,
 		runMode,
+		s.bc,
 	)
 
 	return block, statedb, receipts, err
@@ -918,14 +920,14 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	}
 
 	startTime := time.Now()
-	if s.prefetchBlock && msgForPrefetch != nil {
-		go func() {
-			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
-			if err != nil {
-				return
-			}
-		}()
-	}
+	//if s.prefetchBlock && msgForPrefetch != nil {
+	//	go func() {
+	//		_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
+	//		if err != nil {
+	//			return
+	//		}
+	//	}()
+	//}
 
 	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false)
 	if err != nil {

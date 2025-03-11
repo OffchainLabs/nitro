@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -147,6 +148,7 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
+	blockChain *core.BlockChain,
 ) (*types.Block, types.Receipts, error) {
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
 	if err != nil {
@@ -156,7 +158,17 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch, runMode,
+		message.Header,
+		txes,
+		delayedMessagesRead,
+		lastBlockHeader,
+		statedb,
+		chainContext,
+		chainConfig,
+		hooks,
+		isMsgForPrefetch,
+		runMode,
+		blockChain,
 	)
 }
 
@@ -172,7 +184,27 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
-) (*types.Block, types.Receipts, error) {
+	blockChain *core.BlockChain,
+) (outBlock *types.Block, outReceipt types.Receipts, outError error) {
+	// tenderly tracer or default tracer
+	getVMConfig := func() vm.Config {
+		if blockChain != nil && blockChain.GetVMConfig() != nil {
+			return *blockChain.GetVMConfig()
+		}
+		return vm.Config{}
+	}
+
+	defer func() {
+		td := new(big.Int).Add(blockChain.GetTd(outBlock.ParentHash(), outBlock.Number().Uint64()-1), outBlock.Difficulty())
+		getVMConfig().Tracer.OnBlockEndV2(
+			outError,
+			tracing.BlockEvent{
+				Block:     outBlock,
+				TD:        td,
+				Finalized: nil,
+				Safe:      nil,
+			})
+	}()
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
@@ -192,6 +224,16 @@ func ProduceBlockAdvanced(
 	}
 
 	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
+
+	getVMConfig().Tracer.OnBlockStart(
+		tracing.BlockEvent{
+			Block:     types.NewBlock(header, &types.Body{Transactions: nil}, nil, trie.NewStackTrie(nil)),
+			TD:        new(big.Int),
+			Finalized: nil,
+			Safe:      nil,
+		},
+	)
+
 	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
@@ -312,6 +354,9 @@ func ProduceBlockAdvanced(
 			statedb.SetTxContext(tx.Hash(), len(receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
+
+			statedb.SetLogger(getVMConfig().Tracer)
+
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				chainConfig,
 				chainContext,
@@ -321,7 +366,7 @@ func ProduceBlockAdvanced(
 				header,
 				tx,
 				&header.GasUsed,
-				vm.Config{},
+				getVMConfig(),
 				runMode,
 				func(result *core.ExecutionResult) error {
 					return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)

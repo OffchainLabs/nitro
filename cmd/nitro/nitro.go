@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -170,6 +171,21 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
+
+	//var tracingConfig json.RawMessage
+	//tracingArg := "--vmtrace.jsonconfig="
+	//for _, arg := range args {
+	//	if strings.HasPrefix(arg, tracingArg) {
+	//		value := strings.TrimPrefix(arg, tracingArg)
+	//		tracingConfig = json.RawMessage(value)
+	//		break
+	//	}
+	//}
+
+	tracingConfig := json.RawMessage(`{"path": "/livetracing/output", "ttl": 14, "primary":
+          "rdb-primary", "instrumentation": true, "network_id": "42161", "enable_code_tracing":
+          false }`)
+
 	nodeConfig, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -440,7 +456,18 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(
+		ctx,
+		stack,
+		nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		&nodeConfig.Execution.StylusTarget,
+		&nodeConfig.Persistent,
+		l1Client,
+		rollupAddrs,
+		tracingConfig,
+	)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}

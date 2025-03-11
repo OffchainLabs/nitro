@@ -292,7 +292,17 @@ func main() {
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
 		chainContext := WavmChainContext{}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, core.MessageReplayMode)
+		newBlock, _, err = arbos.ProduceBlock(
+			message.Message,
+			message.DelayedMessagesRead,
+			lastBlockHeader,
+			statedb,
+			chainContext,
+			chainConfig,
+			false,
+			core.MessageReplayMode,
+			nil, // todo: tenderly
+		)
 		if err != nil {
 			panic(err)
 		}

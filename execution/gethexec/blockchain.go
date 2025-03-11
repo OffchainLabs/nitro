@@ -1,6 +1,7 @@
 package gethexec
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -24,6 +25,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/statetransfer"
+
+	"github.com/tenderly/live-tracer-arbitrum/live"
 )
 
 type CachingConfig struct {
@@ -205,13 +208,25 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	return nil
 }
 
-func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, txLookupLimit uint64) (*core.BlockChain, error) {
+func GetBlockChain(
+	chainDb ethdb.Database,
+	cacheConfig *core.CacheConfig,
+	chainConfig *params.ChainConfig,
+	txLookupLimit uint64,
+	tracingConfig json.RawMessage,
+) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
 	}
 
+	tenderlyTracerHooks, err := live.NewTenderlyTracerHooks(tracingConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	vmConfig := vm.Config{
 		EnablePreimageRecording: false,
+		Tracer:                  tenderlyTracerHooks,
 	}
 
 	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
@@ -223,7 +238,7 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 		// When using path scheme, and the stored state trie is not empty,
 		// WriteOrTestGenBlock is not able to recover EmptyRootHash state trie node.
 		// In that case Nitro doesn't test genblock, but just returns the BlockChain.
-		return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit)
+		return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit, nil)
 	}
 
 	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, initMessage, accountsPerSync)
@@ -234,7 +249,7 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit)
+	return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit, nil)
 }
 
 // Don't preserve reorg'd out blocks
