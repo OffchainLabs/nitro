@@ -63,6 +63,8 @@ type expressLaneService struct {
 
 	roundInfoMutex sync.Mutex
 	roundInfo      *containers.LruCache[uint64, *expressLaneRoundInfo]
+
+	expressLaneTracker *expressLaneTracker
 }
 
 func newExpressLaneService(
@@ -111,6 +113,8 @@ pending:
 		}
 	}
 
+	expressLaneTracker := newExpressLaneTracker(*roundTimingInfo, seqConfig().MaxBlockSpeed, apiBackend, auctionContract, nil)
+
 	return &expressLaneService{
 		transactionPublisher: transactionPublisher,
 		seqConfig:            seqConfig,
@@ -122,6 +126,7 @@ pending:
 		auctionContractAddr:  auctionContractAddr,
 		redisCoordinator:     redisCoordinator,
 		roundInfo:            containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
+		expressLaneTracker:   expressLaneTracker,
 	}, nil
 }
 
@@ -156,8 +161,6 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 			}
 
 			round := es.roundTimingInfo.RoundNumber()
-			// TODO (BUG?) is there a race here where messages for a new round can come
-			// in before this tick has been processed?
 			log.Info(
 				"New express lane auction round",
 				"round", round,
@@ -169,135 +172,17 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 		}
 	})
 
-	es.LaunchThread(func(ctx context.Context) {
-		// Monitor for auction resolutions from the auction manager smart contract
-		// and set the express lane controller for the upcoming round accordingly.
-		log.Info("Monitoring express lane auction contract")
-
-		var fromBlock uint64
-		maxBlockSpeed := es.seqConfig().MaxBlockSpeed
-		latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
-		if err != nil {
-			log.Error("ExpressLaneService could not get the latest header", "err", err)
-		} else {
-			maxBlocksPerRound := es.roundTimingInfo.Round / maxBlockSpeed
-			fromBlock = latestBlock.Number.Uint64()
-			// #nosec G115
-			if fromBlock > uint64(maxBlocksPerRound) {
-				// #nosec G115
-				fromBlock -= uint64(maxBlocksPerRound)
-			}
-		}
-
-		ticker := time.NewTicker(maxBlockSpeed)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				newMaxBlockSpeed := es.seqConfig().MaxBlockSpeed
-				if newMaxBlockSpeed != maxBlockSpeed {
-					maxBlockSpeed = newMaxBlockSpeed
-					ticker.Reset(maxBlockSpeed)
-				}
-			}
-
-			latestBlock, err := es.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
-			if err != nil {
-				log.Error("ExpressLaneService could not get the latest header", "err", err)
-				continue
-			}
-			toBlock := latestBlock.Number.Uint64()
-			if fromBlock > toBlock {
-				continue
-			}
-			filterOpts := &bind.FilterOpts{
-				Context: ctx,
-				Start:   fromBlock,
-				End:     &toBlock,
-			}
-
-			it, err := es.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
-			if err != nil {
-				log.Error("Could not filter auction resolutions event", "error", err)
-				continue
-			}
-			for it.Next() {
-				timeSinceAuctionClose := es.roundTimingInfo.AuctionClosing - es.roundTimingInfo.TimeTilNextRound()
-				auctionResolutionLatency.Update(timeSinceAuctionClose.Nanoseconds())
-				log.Info(
-					"AuctionResolved: New express lane controller assigned",
-					"round", it.Event.Round,
-					"controller", it.Event.FirstPriceExpressLaneController,
-					"timeSinceAuctionClose", timeSinceAuctionClose,
-				)
-				es.roundControl.Store(it.Event.Round, it.Event.FirstPriceExpressLaneController)
-			}
-
-			// setExpressLaneIterator, err := es.auctionContract.FilterSetExpressLaneController(filterOpts, nil, nil, nil)
-			// if err != nil {
-			// 	log.Error("Could not filter express lane controller transfer event", "error", err)
-			// 	continue
-			// }
-			// for setExpressLaneIterator.Next() {
-			// 	if (setExpressLaneIterator.Event.PreviousExpressLaneController == common.Address{}) {
-			// 		// The ExpressLaneAuction contract emits both AuctionResolved and SetExpressLaneController
-			// 		// events when an auction is resolved. They contain redundant information so
-			// 		// the SetExpressLaneController event can be skipped if it's related to a new round, as
-			// 		// indicated by an empty PreviousExpressLaneController field (a new round has no
-			// 		// previous controller).
-			// 		// It is more explicit and thus clearer to use the AuctionResovled event only for the
-			// 		// new round setup logic and SetExpressLaneController event only for transfers, rather
-			// 		// than trying to overload everything onto SetExpressLaneController.
-			// 		continue
-			// 	}
-			// 	currentRound := es.roundTimingInfo.RoundNumber()
-			// 	round := setExpressLaneIterator.Event.Round
-			// 	if round < currentRound {
-			// 		log.Info("SetExpressLaneController event's round is lower than current round, not transferring control", "eventRound", round, "currentRound", currentRound)
-			// 		continue
-			// 	}
-			// 	roundController, ok := es.roundControl.Load(round)
-			// 	if !ok {
-			// 		log.Warn("Could not find round info for ExpressLaneConroller transfer event", "round", round)
-			// 		continue
-			// 	}
-			// 	if roundController != setExpressLaneIterator.Event.PreviousExpressLaneController {
-			// 		log.Warn("Previous ExpressLaneController in SetExpressLaneController event does not match Sequencer previous controller, continuing with transfer to new controller anyway",
-			// 			"round", round,
-			// 			"sequencerRoundController", roundController,
-			// 			"previous", setExpressLaneIterator.Event.PreviousExpressLaneController,
-			// 			"new", setExpressLaneIterator.Event.NewExpressLaneController)
-			// 	}
-			// 	if roundController == setExpressLaneIterator.Event.NewExpressLaneController {
-			// 		log.Warn("SetExpressLaneController: Previous and New ExpressLaneControllers are the same, not transferring control.",
-			// 			"round", round,
-			// 			"previous", roundController,
-			// 			"new", setExpressLaneIterator.Event.NewExpressLaneController)
-			// 		continue
-			// 	}
-			// 	es.roundControl.Store(round, setExpressLaneIterator.Event.NewExpressLaneController)
-			// 	if round == currentRound {
-			// 		es.roundInfoMutex.Lock()
-			// 		if es.roundInfo.Contains(round) {
-			// 			es.roundInfo.Add(round, &expressLaneRoundInfo{
-			// 				0,
-			// 				make(map[uint64]*msgAndResult),
-			// 			})
-			// 		}
-			// 		es.roundInfoMutex.Unlock()
-			// 	}
-			// }
-			fromBlock = toBlock + 1
-		}
-	})
+	es.expressLaneTracker.listener = es
+	es.expressLaneTracker.Start(ctxIn)
 }
 
 func (es *expressLaneService) StopAndWait() {
 	es.StopWaiter.StopAndWait()
 	if es.redisCoordinator != nil {
 		es.redisCoordinator.StopAndWait()
+	}
+	if es.expressLaneTracker != nil {
+		es.expressLaneTracker.StopAndWait()
 	}
 }
 
@@ -514,4 +399,8 @@ func (es *expressLaneService) syncFromRedis() {
 			}
 		})
 	}
+}
+
+func (es *expressLaneService) nextRound(round uint64, controller common.Address) {
+	es.roundControl.Store(round, controller)
 }
