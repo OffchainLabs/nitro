@@ -44,7 +44,7 @@ type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
 	chainConfig      *params.ChainConfig
-	exec             execution.ExecutionSequencer
+	exec             execution.ExecutionClient
 	execLastMsgCount arbutil.MessageIndex
 	validator        *staker.BlockValidator
 
@@ -102,9 +102,10 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func NewTransactionStreamer(
+	ctx context.Context,
 	db ethdb.Database,
 	chainConfig *params.ChainConfig,
-	exec execution.ExecutionSequencer,
+	exec execution.ExecutionClient,
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
@@ -125,7 +126,7 @@ func NewTransactionStreamer(
 		return nil, err
 	}
 	if config().TrackBlockMetadataFrom != 0 {
-		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom)
+		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -366,7 +367,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	messagesResults, err := s.exec.Reorg(count, newMessages, oldMessages)
+	messagesResults, err := s.exec.Reorg(count, newMessages, oldMessages).Await(s.GetContext())
 	if err != nil {
 		return err
 	}
@@ -524,7 +525,7 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 	if err != nil {
 		return 0, err
 	}
-	digestedHead, err := s.exec.HeadMessageNumber()
+	digestedHead, err := s.exec.HeadMessageNumber().Await(s.GetContext())
 	if err != nil {
 		return 0, err
 	}
@@ -710,7 +711,10 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, m
 
 	if messagesAreConfirmed {
 		// Trim confirmed messages from l1pricedataCache
-		s.exec.MarkFeedStart(pos + arbutil.MessageIndex(len(messages)))
+		_, err := s.exec.MarkFeedStart(pos + arbutil.MessageIndex(len(messages))).Await(s.GetContext())
+		if err != nil {
+			log.Warn("TransactionStreamer: failed to mark feed start", "pos", pos, "err", err)
+		}
 		s.reorgMutex.RLock()
 		dups, _, _, err := s.countDuplicateMessages(pos, messagesWithBlockInfo, nil)
 		s.reorgMutex.RUnlock()
@@ -1176,7 +1180,11 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	}
 	log.Info(FailedToGetMsgResultFromDB, "count", count)
 
-	msgResult, err := s.exec.ResultAtPos(pos)
+	ctx := context.Background()
+	if s.Started() {
+		ctx = s.GetContext()
+	}
+	msgResult, err := s.exec.ResultAtPos(pos).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1255,7 +1263,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 	s.execLastMsgCount = msgCount
-	pos, err := s.exec.HeadMessageNumber()
+	pos, err := s.exec.HeadMessageNumber().Await(ctx)
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)
 		return false
@@ -1278,7 +1286,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		}
 		msgForPrefetch = msg
 	}
-	msgResult, err := s.exec.DigestMessage(pos, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch)
+	msgResult, err := s.exec.DigestMessage(pos, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch).Await(ctx)
 	if err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {
@@ -1319,6 +1327,9 @@ func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struc
 	return s.config().ExecuteMessageLoopDelay
 }
 
+// backfillTrackersForMissingBlockMetadata adds missingBlockMetadataInputFeedPrefix to block numbers whose blockMetadata status
+// isn't yet tracked. If a node is started with new value for trackBlockMetadataFrom that is lower than the current, then this
+// function adds the missing trackers so that bulk BlockMetadataFetcher can fill in the gaps.
 func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx context.Context) {
 	if s.trackBlockMetadataFrom == 0 {
 		return

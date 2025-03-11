@@ -4,13 +4,13 @@
 package arbos
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -277,7 +277,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 		currentPricePerUnit, err := l1p.PricePerUnit()
 		Require(t, err)
 		feesToAdd := arbmath.BigMulByUint(currentPricePerUnit, unitsToAdd)
-		util.MintBalance(&l1PoolAddress, feesToAdd, evm, util.TracingBeforeEVM, "test")
+		util.MintBalance(&l1PoolAddress, feesToAdd, evm, util.TracingBeforeEVM, tracing.BalanceChangeUnspecified)
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
 			evm,

@@ -74,18 +74,19 @@ func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMs
 	}
 
 	msg := &core.Message{
-		From:              call.From,
-		To:                call.To,
-		Value:             big.NewInt(0),
-		GasLimit:          math.MaxUint64,
-		GasPrice:          big.NewInt(0),
-		GasFeeCap:         big.NewInt(0),
-		GasTipCap:         big.NewInt(0),
-		Data:              call.Data,
-		AccessList:        call.AccessList,
-		SkipAccountChecks: true,
-		TxRunMode:         core.MessageEthcallMode, // Indicate this is an eth_call
-		SkipL1Charging:    true,                    // Skip L1 data fees
+		From:             call.From,
+		To:               call.To,
+		Value:            big.NewInt(0),
+		GasLimit:         math.MaxUint64,
+		GasPrice:         big.NewInt(0),
+		GasFeeCap:        big.NewInt(0),
+		GasTipCap:        big.NewInt(0),
+		Data:             call.Data,
+		AccessList:       call.AccessList,
+		SkipNonceChecks:  true,
+		SkipFromEOACheck: true,
+		TxRunMode:        core.MessageEthcallMode, // Indicate this is an eth_call
+		SkipL1Charging:   true,                    // Skip L1 data fees
 	}
 
 	evm := a.apiBackend.GetEVM(ctx, msg, state, header, &vm.Config{NoBaseFee: true}, nil)
