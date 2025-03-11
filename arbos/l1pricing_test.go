@@ -4,7 +4,7 @@
 package arbos
 
 import (
-	gomath "math"
+	"math"
 	"math/big"
 	"testing"
 
@@ -47,7 +47,7 @@ func TestL1Pricing(t *testing.T) {
 			unitsPerSecond:          78,
 			fundsCollectedPerSecond: 7800,
 			fundsSpent:              3000,
-			amortizationCapBips:     gomath.MaxUint64,
+			amortizationCapBips:     math.MaxUint64,
 			l1BasefeeGwei:           10,
 		},
 		{
@@ -55,7 +55,7 @@ func TestL1Pricing(t *testing.T) {
 			unitsPerSecond:          78,
 			fundsCollectedPerSecond: 1313,
 			fundsSpent:              3000,
-			amortizationCapBips:     gomath.MaxUint64,
+			amortizationCapBips:     math.MaxUint64,
 			l1BasefeeGwei:           10,
 		},
 		{
@@ -63,7 +63,7 @@ func TestL1Pricing(t *testing.T) {
 			unitsPerSecond:          78,
 			fundsCollectedPerSecond: 31,
 			fundsSpent:              3000,
-			amortizationCapBips:     gomath.MaxUint64,
+			amortizationCapBips:     math.MaxUint64,
 			l1BasefeeGwei:           10,
 		},
 		{
@@ -149,7 +149,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	if evm.StateDB.GetBalance(rewardAddress).Sign() != 0 {
 		Fail(t)
 	}
-	posterAddrs, err := posterTable.AllPosters(gomath.MaxUint64)
+	posterAddrs, err := posterTable.AllPosters(math.MaxUint64)
 	Require(t, err)
 	if len(posterAddrs) != 1 {
 		Fail(t)

@@ -5,7 +5,7 @@ package addressSet
 
 import (
 	"fmt"
-	gomath "math"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -109,7 +109,7 @@ func TestAddressSet(t *testing.T) {
 	checkAllMembers(t, aset, possibleAddresses)
 
 	Require(t, aset.Add(addr1))
-	all, err := aset.AllMembers(gomath.MaxUint64)
+	all, err := aset.AllMembers(math.MaxUint64)
 	Require(t, err)
 	if len(all) != 2 {
 		Fail(t)

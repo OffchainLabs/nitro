@@ -8,7 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	gomath "math"
+	"math"
 	"math/big"
 	"sort"
 
@@ -191,7 +191,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 	parsedLogs := make([]*bridgegen.IBridgeMessageDelivered, 0, len(logs))
 	messageIds := make([]common.Hash, 0, len(logs))
 	inboxAddresses := make(map[common.Address]struct{})
-	minBlockNum := uint64(gomath.MaxUint64)
+	minBlockNum := uint64(math.MaxUint64)
 	maxBlockNum := uint64(0)
 	for _, ethLog := range logs {
 		if ethLog.BlockNumber < minBlockNum {
