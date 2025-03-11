@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -1270,18 +1271,18 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 }
 
 func (s *Sequencer) InitializeExpressLaneService(
-	apiBackend *arbitrum.APIBackend,
-	filterSystem *filters.FilterSystem,
+	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
 	auctionContractAddr common.Address,
 	auctioneerAddr common.Address,
+	roundTimingInfo *timeboost.RoundTimingInfo,
 	earlySubmissionGrace time.Duration,
 ) error {
 	els, err := newExpressLaneService(
 		s,
 		s.config,
-		apiBackend,
-		filterSystem,
+		auctionContract,
 		auctionContractAddr,
+		roundTimingInfo,
 		s.execEngine.bc,
 		earlySubmissionGrace,
 	)
@@ -1466,4 +1467,8 @@ func (s *Sequencer) StopAndWait() {
 		}
 		wg.Wait()
 	}
+}
+
+func (s *Sequencer) NextRound(round uint64, controller common.Address) {
+	s.expressLaneService.nextRound(round, controller)
 }

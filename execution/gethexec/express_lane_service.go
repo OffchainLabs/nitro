@@ -53,7 +53,6 @@ type expressLaneService struct {
 	transactionPublisher transactionPublisher
 	seqConfig            SequencerConfigFetcher
 	auctionContractAddr  common.Address
-	apiBackend           *arbitrum.APIBackend
 	roundTimingInfo      timeboost.RoundTimingInfo
 	earlySubmissionGrace time.Duration
 	chainConfig          *params.ChainConfig
@@ -67,17 +66,11 @@ type expressLaneService struct {
 	expressLaneTracker *expressLaneTracker
 }
 
-func newExpressLaneService(
-	transactionPublisher transactionPublisher,
-	seqConfig SequencerConfigFetcher,
+func NewExpressLaneAuctionFromInternalAPI(
 	apiBackend *arbitrum.APIBackend,
 	filterSystem *filters.FilterSystem,
 	auctionContractAddr common.Address,
-	bc *core.BlockChain,
-	earlySubmissionGrace time.Duration,
-) (*expressLaneService, error) {
-	chainConfig := bc.Config()
-
+) (*express_lane_auctiongen.ExpressLaneAuction, error) {
 	var contractBackend bind.ContractBackend = &contractAdapter{filters.NewFilterAPI(filterSystem), nil, apiBackend}
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, contractBackend)
@@ -85,6 +78,12 @@ func newExpressLaneService(
 		return nil, err
 	}
 
+	return auctionContract, nil
+}
+
+func GetRoundTimingInfo(
+	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
+) (*timeboost.RoundTimingInfo, error) {
 	retries := 0
 
 pending:
@@ -93,18 +92,28 @@ pending:
 		const maxRetries = 5
 		if errors.Is(err, bind.ErrNoCode) && retries < maxRetries {
 			wait := time.Millisecond * 250 * (1 << retries)
-			log.Info("ExpressLaneAuction contract not ready, will retry afer wait", "err", err, "auctionContractAddr", auctionContractAddr, "wait", wait, "maxRetries", maxRetries)
+			log.Info("ExpressLaneAuction contract not ready, will retry afer wait", "err", err, "wait", wait, "maxRetries", maxRetries)
 			retries++
 			time.Sleep(wait)
 			goto pending
 		}
 		return nil, err
 	}
-	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
-	if err != nil {
-		return nil, err
-	}
+	return timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
+}
 
+func newExpressLaneService(
+	transactionPublisher transactionPublisher,
+	seqConfig SequencerConfigFetcher,
+	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
+	auctionContractAddr common.Address,
+	roundTimingInfo *timeboost.RoundTimingInfo,
+	bc *core.BlockChain,
+	earlySubmissionGrace time.Duration,
+) (*expressLaneService, error) {
+	chainConfig := bc.Config()
+
+	var err error
 	var redisCoordinator *timeboost.RedisCoordinator
 	if seqConfig().Dangerous.Timeboost.RedisUrl != "" {
 		redisCoordinator, err = timeboost.NewRedisCoordinator(seqConfig().Dangerous.Timeboost.RedisUrl, roundTimingInfo.Round)
@@ -113,20 +122,16 @@ pending:
 		}
 	}
 
-	expressLaneTracker := newExpressLaneTracker(*roundTimingInfo, seqConfig().MaxBlockSpeed, apiBackend, auctionContract, nil)
-
 	return &expressLaneService{
 		transactionPublisher: transactionPublisher,
 		seqConfig:            seqConfig,
 		auctionContract:      auctionContract,
-		apiBackend:           apiBackend,
 		chainConfig:          chainConfig,
 		roundTimingInfo:      *roundTimingInfo,
 		earlySubmissionGrace: earlySubmissionGrace,
 		auctionContractAddr:  auctionContractAddr,
 		redisCoordinator:     redisCoordinator,
 		roundInfo:            containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
-		expressLaneTracker:   expressLaneTracker,
 	}, nil
 }
 
@@ -172,8 +177,6 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 		}
 	})
 
-	es.expressLaneTracker.listener = es
-	es.expressLaneTracker.Start(ctxIn)
 }
 
 func (es *expressLaneService) StopAndWait() {

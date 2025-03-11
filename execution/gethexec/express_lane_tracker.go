@@ -17,12 +17,12 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-type nextRoundListener interface {
-	nextRound(round uint64, controller common.Address)
+type RoundListener interface {
+	NextRound(round uint64, controller common.Address)
 }
 
-// expressLaneTracker knows what round it is
-type expressLaneTracker struct {
+// ExpressLaneTracker knows what round it is
+type ExpressLaneTracker struct {
 	stopwaiter.StopWaiter
 
 	roundTimingInfo timeboost.RoundTimingInfo
@@ -31,25 +31,27 @@ type expressLaneTracker struct {
 	apiBackend      *arbitrum.APIBackend
 	auctionContract *express_lane_auctiongen.ExpressLaneAuction
 
-	listener nextRoundListener
+	listeners []RoundListener
 }
 
-func newExpressLaneTracker(
+func (t *ExpressLaneTracker) AddRoundListener(l RoundListener) {
+	t.listeners = append(t.listeners, l)
+}
+
+func NewExpressLaneTracker(
 	roundTimingInfo timeboost.RoundTimingInfo,
 	pollInterval time.Duration,
 	apiBackend *arbitrum.APIBackend,
-	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
-	listener nextRoundListener) *expressLaneTracker {
-	return &expressLaneTracker{
+	auctionContract *express_lane_auctiongen.ExpressLaneAuction) *ExpressLaneTracker {
+	return &ExpressLaneTracker{
 		roundTimingInfo: roundTimingInfo,
 		pollInterval:    pollInterval,
 		apiBackend:      apiBackend,
 		auctionContract: auctionContract,
-		listener:        listener,
 	}
 }
 
-func (t *expressLaneTracker) Start(ctxIn context.Context) {
+func (t *ExpressLaneTracker) Start(ctxIn context.Context) {
 	t.StopWaiter.Start(ctxIn, t)
 
 	t.LaunchThread(func(ctx context.Context) {
@@ -82,7 +84,7 @@ func (t *expressLaneTracker) Start(ctxIn context.Context) {
 
 			latestBlock, err := t.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
 			if err != nil {
-				log.Error("expressLaneTracker could not get the latest header", "err", err)
+				log.Error("ExpressLaneTracker could not get the latest header", "err", err)
 				continue
 			}
 			toBlock := latestBlock.Number.Uint64()

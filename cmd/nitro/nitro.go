@@ -696,18 +696,46 @@ func mainImpl() int {
 	}
 
 	execNodeConfig := execNode.ConfigFetcher()
-	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Dangerous.Timeboost.Enable {
-		err := execNode.Sequencer.InitializeExpressLaneService(
+
+	if execNodeConfig.Sequencer.Dangerous.Timeboost.Enable {
+		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctionContractAddress)
+
+		auctionContract, err := gethexec.NewExpressLaneAuctionFromInternalAPI(
 			execNode.Backend.APIBackend(),
 			execNode.FilterSystem,
-			common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctionContractAddress),
-			common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
-			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
-		)
+			auctionContractAddr)
 		if err != nil {
-			log.Error("failed to create express lane service", "err", err)
+			fatalErrChan <- fmt.Errorf("error creating auction contract: %w", err)
 		}
-		execNode.Sequencer.StartExpressLaneService(ctx)
+
+		roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error getting RoundTimingInfo: %w", err)
+		}
+
+		expressLaneTracker := gethexec.NewExpressLaneTracker(
+			*roundTimingInfo,
+			execNodeConfig.Sequencer.MaxBlockSpeed,
+			execNode.Backend.APIBackend(),
+			auctionContract)
+
+		if execNodeConfig.Sequencer.Enable {
+			err := execNode.Sequencer.InitializeExpressLaneService(
+				auctionContract,
+				auctionContractAddr,
+				common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
+				roundTimingInfo,
+				execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
+			)
+			if err != nil {
+				log.Error("failed to create express lane service", "err", err)
+			}
+			execNode.Sequencer.StartExpressLaneService(ctx)
+
+			expressLaneTracker.AddRoundListener(execNode.Sequencer)
+		}
+
+		expressLaneTracker.Start(ctx)
 	}
 
 	err = nil
