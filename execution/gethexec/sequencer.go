@@ -128,7 +128,8 @@ type CaffNodeConfig struct {
 	EspressoTEEVerifierAddr string              `koanf:"espresso-tee-verifier-addr"`
 	// See how it is used in cmd/nitro/nitro.go
 	// search for "caff-node-config.forwarding"
-	Forwarding bool `koanf:"forwarding"`
+	Forwarding        bool `koanf:"forwarding"`
+	RecordPerformance bool `koanf:"record-performance"`
 }
 
 var DefaultCaffNodeConfig = CaffNodeConfig{
@@ -141,6 +142,7 @@ var DefaultCaffNodeConfig = CaffNodeConfig{
 	ParentChainNodeUrl:      "",
 	EspressoTEEVerifierAddr: "",
 	Forwarding:              true,
+	RecordPerformance:       false,
 }
 
 var DefaultSequencerConfig = SequencerConfig{
@@ -176,6 +178,7 @@ func CaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".parent-chain-node-url", DefaultCaffNodeConfig.ParentChainNodeUrl, "the parent chain url")
 	f.String(prefix+".espresso-tee-verifier-addr", "", "tee verifier address")
 	f.Bool(prefix+".forwarding", DefaultCaffNodeConfig.Forwarding, "forward transactions to the sequencer")
+	f.Bool(prefix+".record-performance", DefaultCaffNodeConfig.RecordPerformance, "record performance of the caff node")
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
