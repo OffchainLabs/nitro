@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -68,7 +69,7 @@ var cacheFullLogged atomic.Bool
 // NewGeth uses a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
-	statedb.SetNonce(account, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
+	statedb.SetNonce(account, 1, tracing.NonceChangeUnspecified) // setting the nonce ensures Geth won't treat ArbOS as empty
 	return &Storage{
 		account:    account,
 		db:         statedb,

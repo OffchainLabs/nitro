@@ -47,7 +47,7 @@ func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenar
 	return &TracingInfo{
 		Tracer:       evm.Config.Tracer,
 		Scenario:     scenario,
-		Contract:     vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.NewInt(0), 0),
+		Contract:     vm.NewContract(to, from, uint256.NewInt(0), 0, evm.JumpDests()),
 		Depth:        evm.Depth(),
 		storageCache: newStorageCache(),
 	}
@@ -89,7 +89,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 	tracer := info.Tracer
 	depth := info.Depth
 
-	contract := vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.MustFromBig(amount), gas)
+	contract := vm.NewContract(to, from, uint256.MustFromBig(amount), gas, info.Contract.Jumpdest())
 
 	scope := &vm.ScopeContext{
 		Memory: TracingMemoryFromBytes(input),
