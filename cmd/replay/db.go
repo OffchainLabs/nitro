@@ -25,6 +25,10 @@ func (db PreimageDb) Has(key []byte) (bool, error) {
 	return false, errors.New("preimage DB doesn't support Has")
 }
 
+func (db PreimageDb) DeleteRange(start, end []byte) error {
+	return errors.New("preimage DB doesn't support DeleteRange")
+}
+
 func (db PreimageDb) Get(key []byte) ([]byte, error) {
 	var hash [32]byte
 	copy(hash[:], key)
@@ -65,11 +69,6 @@ func (db PreimageDb) Stat() (string, error) {
 
 func (db PreimageDb) Compact(start []byte, limit []byte) error {
 	return nil
-}
-
-func (db PreimageDb) NewSnapshot() (ethdb.Snapshot, error) {
-	// This is fine as PreimageDb doesn't support mutation
-	return db, nil
 }
 
 func (db PreimageDb) Close() error {
