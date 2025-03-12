@@ -22,7 +22,7 @@ struct Args {
     #[arg(short, long)]
     json_inputs: PathBuf,
 
-    /// Path to a machine.wavm.br
+    /// Path to a machine .wavm.br
     #[arg(short, long)]
     binary: PathBuf,
 }
@@ -101,7 +101,7 @@ fn main() -> eyre::Result<()> {
             average(&step_times),
             step_size,
             num_iters,
-            total_end_time,
+            total_end_time
         );
         #[cfg(feature = "counters")]
         {
