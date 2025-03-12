@@ -313,15 +313,12 @@ func ProduceBlockAdvanced(
 
 			gasPool := gethGas
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
-				chainConfig,
-				chainContext,
-				&header.Coinbase,
+				evm,
 				&gasPool,
 				statedb,
 				header,
 				tx,
 				&header.GasUsed,
-				vm.Config{},
 				runMode,
 				func(result *core.ExecutionResult) error {
 					return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)

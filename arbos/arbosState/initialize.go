@@ -75,7 +75,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	// commit avoids keeping the entire state in memory while importing the state.
 	// At some time it was also used to avoid reprocessing the whole import in case of a crash.
 	commit := func() (common.Hash, error) {
-		root, err := statedb.Commit(chainConfig.ArbitrumChainParams.GenesisBlockNum, true)
+		root, err := statedb.Commit(chainConfig.ArbitrumChainParams.GenesisBlockNum, true, false)
 		if err != nil {
 			return common.Hash{}, err
 		}

@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -128,14 +127,13 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		if err != nil {
 			t.Error(err)
 		}
-		chainContext := &TestChainContext{}
 		header := &types.Header{
 			Number:     big.NewInt(1000),
 			Difficulty: big.NewInt(1000),
 		}
 		gasPool := core.GasPool(100000)
 		for _, tx := range txes {
-			_, _, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
+			_, _, err := core.ApplyTransaction(evm, &gasPool, statedb, header, tx, &header.GasUsed)
 			if err != nil {
 				Fail(t, err)
 			}

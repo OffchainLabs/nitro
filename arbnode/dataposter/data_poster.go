@@ -27,9 +27,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/txpool"
+	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -518,7 +517,11 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 	currentBlobFee := big.NewInt(0)
 	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
-		currentBlobFee = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+		var err error
+		currentBlobFee, err = p.client.BlobBaseFee(ctx)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get blob base fee: %w", err)
+		}
 	} else if numBlobs > 0 {
 		return nil, nil, nil, fmt.Errorf(
 			"latest parent chain block %v missing ExcessBlobGas or BlobGasUsed but blobs were specified in data poster transaction "+
@@ -868,7 +871,10 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	}
 	var currentBlobFee *big.Int
 	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
-		currentBlobFee = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+		currentBlobFee, err = p.client.BlobBaseFee(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	if arbmath.BigLessThan(newTx.FullTx.GasFeeCap(), latestHeader.BaseFee) {
@@ -1111,7 +1117,7 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 	}
 	logLevel := log.Error
 	isStorageRace := errors.Is(err, storage.ErrStorageRace)
-	isFutureReplacePending := strings.Contains(err.Error(), txpool.ErrFutureReplacePending.Error())
+	isFutureReplacePending := strings.Contains(err.Error(), legacypool.ErrFutureReplacePending.Error())
 	isNonceTooHigh := strings.Contains(err.Error(), core.ErrNonceTooHigh.Error())
 	if isStorageRace || isFutureReplacePending || isNonceTooHigh {
 		p.errorCount[nonce]++

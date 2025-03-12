@@ -24,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -698,7 +697,11 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			l1GasPrice := h.BaseFee.Uint64()
 			if h.BlobGasUsed != nil {
 				if h.ExcessBlobGas != nil {
-					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
+					blobFeePerByte, err := b.l1Reader.Client().BlobBaseFee(ctx)
+					if err != nil {
+						log.Error("Error getting blob fee per byte", "err", err)
+						continue
+					}
 					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 					blobFeeGauge.Update(blobFeePerByte.Int64())
@@ -1276,7 +1279,10 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 					if backlog == 0 ||
 						b.non4844BatchCount == 0 ||
 						b.non4844BatchCount > 16 {
-						blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+						blobFeePerByte, err := b.l1Reader.Client().BlobBaseFee(ctx)
+						if err != nil {
+							return false, err
+						}
 						blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 						blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 

@@ -20,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -1306,7 +1305,10 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	l1GasPrice := header.BaseFee.Uint64()
 	if header.BlobGasUsed != nil {
 		if header.ExcessBlobGas != nil {
-			blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*header.ExcessBlobGas, *header.BlobGasUsed))
+			blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
+			if err != nil {
+				return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
+			}
 			blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 			blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 			if l1GasPrice > blobFeePerByte.Uint64()/16 {

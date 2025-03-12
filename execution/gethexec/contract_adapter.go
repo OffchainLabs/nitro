@@ -89,7 +89,7 @@ func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMs
 		SkipL1Charging:   true,                    // Skip L1 data fees
 	}
 
-	evm := a.apiBackend.GetEVM(ctx, msg, state, header, &vm.Config{NoBaseFee: true}, nil)
+	evm := a.apiBackend.GetEVM(ctx, state, header, &vm.Config{NoBaseFee: true}, nil)
 	gp := new(core.GasPool).AddGas(math.MaxUint64)
 	result, err := core.ApplyMessage(evm, msg, gp)
 	if err != nil {
