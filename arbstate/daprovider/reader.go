@@ -29,8 +29,8 @@ type Reader interface {
 	) ([]byte, error)
 }
 
-// NewReaderForDAS is generally meant to be only used by nitro.
-// DA Providers should implement methods in the Reader interface independently
+// NewReaderForDAS creates a readerForDAS instance,
+// which provides data availability services (DAS) for Nitro.
 func NewReaderForDAS(dasReader DASReader, keysetFetcher DASKeysetFetcher) *readerForDAS {
 	return &readerForDAS{
 		dasReader:     dasReader,
@@ -58,8 +58,8 @@ func (d *readerForDAS) RecoverPayloadFromBatch(
 	return RecoverPayloadFromDasBatch(ctx, batchNum, sequencerMsg, d.dasReader, d.keysetFetcher, preimageRecorder, validateSeqMsg)
 }
 
-// NewReaderForBlobReader is generally meant to be only used by nitro.
-// DA Providers should implement methods in the Reader interface independently
+// NewReaderForBlobReader creates a readerForBlobReader instance,
+// which fetches data availability payloads using a BlobReader.
 func NewReaderForBlobReader(blobReader BlobReader) *readerForBlobReader {
 	return &readerForBlobReader{blobReader: blobReader}
 }
