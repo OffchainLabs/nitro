@@ -106,3 +106,29 @@ func padPow2(data []byte) ([]byte, error) {
 
 	return rs.ToByteArray(paddedDataFr, dataFrLenPow2*encoding.BYTES_PER_SYMBOL), nil
 }
+
+// removeZeroPadding32Bytes removes any prefix padded zero bytes from an assumed
+// 32 byte value
+func removeZeroPadding32Bytes(arr []byte) ([]byte, error) {
+	if len(arr) < 32 {
+		return nil, fmt.Errorf("expected value >= 32 bytes; got %d", len(arr))
+	}
+
+	// iterate over prefix bytes and verify only zero's are included
+	start := 0
+	for start < len(arr)-32 {
+		if arr[start] != 0x0 {
+			return nil, fmt.Errorf("expecting only 0x0 prefixes, got %d at index %d", byte(arr[start]), start)
+		}
+
+		start++
+	}
+
+	// Ensure we return exactly 32 bytes
+	end := start + 32
+	if end > len(arr) {
+		return nil, fmt.Errorf("unexpected error, computed range out of bounds")
+	}
+
+	return arr[start:end], nil
+}

@@ -7,6 +7,7 @@ import (
 	eigenda_common "github.com/Layr-Labs/eigenda/api/grpc/common"
 	"github.com/Layr-Labs/eigenda/core"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/Layr-Labs/eigenda/api/grpc/disperser"
 
@@ -16,7 +17,7 @@ import (
 
 // EigenDAV1Cert is an internal representation of the encoded cert commitment (i.e, disperser.BlobInfo)
 // read from EigenDA proxy. It is used for type compatibility with the Solidity V1 certificate.
-// This object is encoded into to txs submitted to the SequencerInbox.
+// This object is encoded into txs submitted to the SequencerInbox.
 type EigenDAV1Cert struct {
 	BlobVerificationProof cv_binding.BlobVerificationProof `json:"blobVerificationProof"`
 	BlobHeader            cv_binding.BlobHeader            `json:"blobHeader"`
@@ -33,11 +34,9 @@ func (e *EigenDAV1Cert) PreimageHash() (*common.Hash, error) {
 		return nil, err
 	}
 
-
 	// DataLength is the # of field elements for the blob
 	bytes = append(bytes, uint32ToBytes(e.BlobHeader.DataLength)...)
 	dataHash := crypto.Keccak256Hash(bytes)
-
 
 	return &dataHash, nil
 }
@@ -49,22 +48,22 @@ func (e *EigenDAV1Cert) SerializeCommitment() ([]byte, error) {
 }
 
 // Load loads the disperser.BlobInfo struct into the EigenDAV1Cert struct
-func (b *EigenDAV1Cert) Load(blobInfo *disperser.BlobInfo) {
+func (e *EigenDAV1Cert) Load(blobInfo *disperser.BlobInfo) {
 
 	x := blobInfo.GetBlobHeader().GetCommitment().GetX()
 	y := blobInfo.GetBlobHeader().GetCommitment().GetY()
 
-	b.BlobHeader = cv_binding.BlobHeader{}
+	e.BlobHeader = cv_binding.BlobHeader{}
 
-	b.BlobHeader.Commitment = cv_binding.BN254G1Point{
+	e.BlobHeader.Commitment = cv_binding.BN254G1Point{
 		X: new(big.Int).SetBytes(x),
 		Y: new(big.Int).SetBytes(y),
 	}
 
-	b.BlobHeader.DataLength = blobInfo.GetBlobHeader().GetDataLength()
+	e.BlobHeader.DataLength = blobInfo.GetBlobHeader().GetDataLength()
 
 	for _, quorumBlobParam := range blobInfo.GetBlobHeader().GetBlobQuorumParams() {
-		b.BlobHeader.QuorumBlobParams = append(b.BlobHeader.QuorumBlobParams, cv_binding.QuorumBlobParam{
+		e.BlobHeader.QuorumBlobParams = append(e.BlobHeader.QuorumBlobParams, cv_binding.QuorumBlobParam{
 			QuorumNumber:                    uint8(quorumBlobParam.QuorumNumber),
 			AdversaryThresholdPercentage:    uint8(quorumBlobParam.AdversaryThresholdPercentage),
 			ConfirmationThresholdPercentage: uint8(quorumBlobParam.ConfirmationThresholdPercentage),
@@ -75,35 +74,60 @@ func (b *EigenDAV1Cert) Load(blobInfo *disperser.BlobInfo) {
 	var signatoryRecordHash [32]byte
 	copy(signatoryRecordHash[:], blobInfo.GetBlobVerificationProof().GetBatchMetadata().GetSignatoryRecordHash())
 
-	b.BlobVerificationProof.BatchId = blobInfo.GetBlobVerificationProof().GetBatchId()
-	b.BlobVerificationProof.BlobIndex = blobInfo.GetBlobVerificationProof().GetBlobIndex()
-	b.BlobVerificationProof.BatchMetadata = cv_binding.BatchMetadata{
+	e.BlobVerificationProof.BatchId = blobInfo.GetBlobVerificationProof().GetBatchId()
+	e.BlobVerificationProof.BlobIndex = blobInfo.GetBlobVerificationProof().GetBlobIndex()
+	e.BlobVerificationProof.BatchMetadata = cv_binding.BatchMetadata{
 		BatchHeader:             cv_binding.BatchHeader{},
 		SignatoryRecordHash:     signatoryRecordHash,
 		ConfirmationBlockNumber: blobInfo.GetBlobVerificationProof().GetBatchMetadata().GetConfirmationBlockNumber(),
 	}
 
-	b.BlobVerificationProof.InclusionProof = blobInfo.GetBlobVerificationProof().GetInclusionProof()
-	b.BlobVerificationProof.QuorumIndices = blobInfo.GetBlobVerificationProof().GetQuorumIndexes()
+	e.BlobVerificationProof.InclusionProof = blobInfo.GetBlobVerificationProof().GetInclusionProof()
+	e.BlobVerificationProof.QuorumIndices = blobInfo.GetBlobVerificationProof().GetQuorumIndexes()
 
 	batchRootSlice := blobInfo.GetBlobVerificationProof().GetBatchMetadata().GetBatchHeader().GetBatchRoot()
 	var blobHeadersRoot [32]byte
 	copy(blobHeadersRoot[:], batchRootSlice)
-	b.BlobVerificationProof.BatchMetadata.BatchHeader.BlobHeadersRoot = blobHeadersRoot
+	e.BlobVerificationProof.BatchMetadata.BatchHeader.BlobHeadersRoot = blobHeadersRoot
 
-	b.BlobVerificationProof.BatchMetadata.BatchHeader.QuorumNumbers = blobInfo.GetBlobVerificationProof().GetBatchMetadata().GetBatchHeader().GetQuorumNumbers()
-	b.BlobVerificationProof.BatchMetadata.BatchHeader.SignedStakeForQuorums = blobInfo.GetBlobVerificationProof().GetBatchMetadata().GetBatchHeader().GetQuorumSignedPercentages()
-	b.BlobVerificationProof.BatchMetadata.BatchHeader.ReferenceBlockNumber = blobInfo.GetBlobVerificationProof().GetBatchMetadata().GetBatchHeader().GetReferenceBlockNumber()
+	e.BlobVerificationProof.BatchMetadata.BatchHeader.QuorumNumbers = blobInfo.GetBlobVerificationProof().GetBatchMetadata().GetBatchHeader().GetQuorumNumbers()
+	e.BlobVerificationProof.BatchMetadata.BatchHeader.SignedStakeForQuorums = blobInfo.GetBlobVerificationProof().GetBatchMetadata().GetBatchHeader().GetQuorumSignedPercentages()
+	e.BlobVerificationProof.BatchMetadata.BatchHeader.ReferenceBlockNumber = blobInfo.GetBlobVerificationProof().GetBatchMetadata().GetBatchHeader().GetReferenceBlockNumber()
 }
+
 /*
 Convert EigenDAV1Cert to DisperserBlobInfo struct for compatibility with proxy server expected type
 */
 func (e *EigenDAV1Cert) ToDisperserBlobInfo() (*disperser.BlobInfo, error) {
-	// Convert BlobHeader
+	xBytes := e.BlobHeader.Commitment.X.Bytes()
+	yBytes := e.BlobHeader.Commitment.Y.Bytes()
+
+	// Remove 0 byte padding (if applicable)
+	// Sometimes the big.Int --> bytes transformation would result in a byte array with an
+	// extra 0x0 prefixed byte which changes the cert representation returned from /put/
+	// on eigenda-proxy since the commitment coordinates returned from the disperser are always
+	// 32 bytes each. If the prefixes are kept then secondary storage lookups would fail on the proxy!
+
+	parsedX, err := removeZeroPadding32Bytes(xBytes)
+	if err != nil {
+		log.Error(`
+		failed to remove 0x0 bytes from v1 certificate commitment x field.
+		This cert may fail if referenced as lookup key for secondary storage targets on eigenda-proxy.
+	`)
+	}
+
+	parsedY, err := removeZeroPadding32Bytes(yBytes)
+	if err != nil {
+		log.Error(`
+		failed to remove 0x0 bytes from v1 certificate commitment y field.
+		This cert may fail if referenced as lookup key for secondary storage targets on eigenda-proxy.
+	`)
+	}
+
 	var disperserBlobHeader disperser.BlobHeader
 	commitment := &eigenda_common.G1Commitment{
-		X: e.BlobHeader.Commitment.X.Bytes(),
-		Y: e.BlobHeader.Commitment.Y.Bytes(),
+		X: parsedX,
+		Y: parsedY,
 	}
 	quorumParams := make([]*disperser.BlobQuorumParam, len(e.BlobHeader.QuorumBlobParams))
 	for i, qp := range e.BlobHeader.QuorumBlobParams {
@@ -123,26 +147,26 @@ func (e *EigenDAV1Cert) ToDisperserBlobInfo() (*disperser.BlobInfo, error) {
 	// Convert BlobVerificationProof
 	var disperserBlobVerificationProof disperser.BlobVerificationProof
 	var disperserBatchMetadata disperser.BatchMetadata
-		metadata := e.BlobVerificationProof.BatchMetadata
-		quorumNumbers := metadata.BatchHeader.QuorumNumbers
-		quorumSignedPercentages := metadata.BatchHeader.SignedStakeForQuorums
+	metadata := e.BlobVerificationProof.BatchMetadata
+	quorumNumbers := metadata.BatchHeader.QuorumNumbers
+	quorumSignedPercentages := metadata.BatchHeader.SignedStakeForQuorums
 
-		disperserBatchMetadata = disperser.BatchMetadata{
-			BatchHeader: &disperser.BatchHeader{
-				BatchRoot:               metadata.BatchHeader.BlobHeadersRoot[:],
-				QuorumNumbers:           quorumNumbers,
-				QuorumSignedPercentages: quorumSignedPercentages,
-				ReferenceBlockNumber:    metadata.BatchHeader.ReferenceBlockNumber,
-			},
-			BatchHeaderHash:         metadata.SignatoryRecordHash[:],
-			// assumed to always be 0x00
-			// see: https://github.com/Layr-Labs/eigenda/blob/545b7ebc4772e9d85b9863c334abe0512508c0df/disperser/batcher/batcher.go#L319
-			Fee:                     []byte{0x00},
-			SignatoryRecordHash:     metadata.SignatoryRecordHash[:],
-			ConfirmationBlockNumber: metadata.ConfirmationBlockNumber,
-		}
+	disperserBatchMetadata = disperser.BatchMetadata{
+		BatchHeader: &disperser.BatchHeader{
+			BatchRoot:               metadata.BatchHeader.BlobHeadersRoot[:],
+			QuorumNumbers:           quorumNumbers,
+			QuorumSignedPercentages: quorumSignedPercentages,
+			ReferenceBlockNumber:    metadata.BatchHeader.ReferenceBlockNumber,
+		},
+		BatchHeaderHash: metadata.SignatoryRecordHash[:],
+		// assumed to always be 0x00
+		// see: https://github.com/Layr-Labs/eigenda/blob/545b7ebc4772e9d85b9863c334abe0512508c0df/disperser/batcher/batcher.go#L319
+		Fee:                     []byte{0x00},
+		SignatoryRecordHash:     metadata.SignatoryRecordHash[:],
+		ConfirmationBlockNumber: metadata.ConfirmationBlockNumber,
+	}
 
-		disperserBlobVerificationProof = disperser.BlobVerificationProof{
+	disperserBlobVerificationProof = disperser.BlobVerificationProof{
 		BatchId:        e.BlobVerificationProof.BatchId,
 		BlobIndex:      e.BlobVerificationProof.BlobIndex,
 		BatchMetadata:  &disperserBatchMetadata,
@@ -150,7 +174,7 @@ func (e *EigenDAV1Cert) ToDisperserBlobInfo() (*disperser.BlobInfo, error) {
 		QuorumIndexes:  e.BlobVerificationProof.QuorumIndices,
 	}
 
-	// set batchHeaderHash - this value is critical for looking the blob against EigenDA disperser.
+	// set batchHeaderHash - this value is critical for looking up the blob against EigenDA disperser.
 	// It's lost when translating the BlobInfo --> EigenDAV1Cert and isn't persisted on-chain to
 	// reduce calldata sizes.
 
