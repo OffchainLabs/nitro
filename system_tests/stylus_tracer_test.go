@@ -50,7 +50,7 @@ func TestStylusTracer(t *testing.T) {
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
 	loadStoreArgs := multicallEmptyArgs()
-	loadStoreArgs = multicallAppendStore(loadStoreArgs, key, value, false)
+	loadStoreArgs = multicallAppendStore(loadStoreArgs, key, value, false, true)
 	loadStoreArgs = multicallAppendLoad(loadStoreArgs, key, false)
 	callArgs := argsForMulticall(vm.CALL, stylusMulticall, nil, []byte{0})
 	evmCall := argsForMulticall(vm.CALL, evmMulticall, nil, []byte{0})
