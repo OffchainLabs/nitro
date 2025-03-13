@@ -340,7 +340,6 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 }
 
 func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig *gethexec.CachingConfig, txCount int) {
-	t.Parallel()
 	maxRecreateStateDepth := int64(30 * 1000 * 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
