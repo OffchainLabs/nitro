@@ -22,7 +22,7 @@ type LruSetOpt[T comparable] func(*LruSet[T])
 func LruSetWithMetric[T comparable](name string) LruSetOpt[T] {
 	return func(s *LruSet[T]) {
 		gauge := metrics.NewRegisteredGauge("arb/validator/threadsafe_lru_set/"+name, nil)
-		s.gauge = &gauge
+		s.gauge = gauge
 	}
 }
 

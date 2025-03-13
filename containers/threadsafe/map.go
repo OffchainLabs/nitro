@@ -21,7 +21,7 @@ type MapOpt[K comparable, V any] func(*Map[K, V])
 func MapWithMetric[K comparable, V any](name string) MapOpt[K, V] {
 	return func(m *Map[K, V]) {
 		gauge := metrics.NewRegisteredGauge("arb/validator/threadsafe_map/"+name, nil)
-		m.gauge = &gauge
+		m.gauge = gauge
 	}
 }
 

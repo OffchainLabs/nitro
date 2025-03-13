@@ -21,7 +21,7 @@ type SetOpt[T comparable] func(*Set[T])
 func SetWithMetric[T comparable](name string) SetOpt[T] {
 	return func(s *Set[T]) {
 		gauge := metrics.NewRegisteredGauge("arb/validator/threadsafe_set/"+name, nil)
-		s.gauge = &gauge
+		s.gauge = gauge
 	}
 }
 

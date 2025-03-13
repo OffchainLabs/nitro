@@ -22,7 +22,7 @@ type LruMapOpt[K comparable, V any] func(*LruMap[K, V])
 func LruMapWithMetric[K comparable, V any](name string) LruMapOpt[K, V] {
 	return func(m *LruMap[K, V]) {
 		gauge := metrics.NewRegisteredGauge("arb/validator/threadsafe_lru_map/"+name, nil)
-		m.gauge = &gauge
+		m.gauge = gauge
 	}
 }
 
