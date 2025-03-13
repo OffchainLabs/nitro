@@ -19,8 +19,6 @@ import (
 const EXPRESS_LANE_ROUND_SEQUENCE_KEY_PREFIX string = "expressLane.roundSequence." // Only written by sequencer holding CHOSEN (seqCoordinator) key
 const EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX string = "expressLane.acceptedTx."       // Only written by sequencer holding CHOSEN (seqCoordinator) key
 
-const UpdateEventsChannelSize int = 500
-
 type roundSeqUpdateItem struct {
 	round    uint64
 	sequence uint64
@@ -36,7 +34,7 @@ type RedisCoordinator struct {
 	msgChan            chan *ExpressLaneSubmission
 }
 
-func NewRedisCoordinator(redisUrl string, roundTimingInfo *RoundTimingInfo) (*RedisCoordinator, error) {
+func NewRedisCoordinator(redisUrl string, roundTimingInfo *RoundTimingInfo, updateEventsChannelSize uint64) (*RedisCoordinator, error) {
 	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
 	if err != nil {
 		return nil, err
@@ -46,8 +44,8 @@ func NewRedisCoordinator(redisUrl string, roundTimingInfo *RoundTimingInfo) (*Re
 		roundTimingInfo:    roundTimingInfo,
 		client:             redisClient,
 		roundSeqMap:        containers.NewLruCache[uint64, uint64](4),
-		roundSeqUpdateChan: make(chan roundSeqUpdateItem, UpdateEventsChannelSize),
-		msgChan:            make(chan *ExpressLaneSubmission, UpdateEventsChannelSize),
+		roundSeqUpdateChan: make(chan roundSeqUpdateItem, updateEventsChannelSize),
+		msgChan:            make(chan *ExpressLaneSubmission, updateEventsChannelSize),
 	}, nil
 }
 

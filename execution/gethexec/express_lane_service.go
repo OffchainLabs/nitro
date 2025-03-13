@@ -100,7 +100,7 @@ pending:
 
 	var redisCoordinator *timeboost.RedisCoordinator
 	if seqConfig().Dangerous.Timeboost.RedisUrl != "" {
-		redisCoordinator, err = timeboost.NewRedisCoordinator(seqConfig().Dangerous.Timeboost.RedisUrl, roundTimingInfo)
+		redisCoordinator, err = timeboost.NewRedisCoordinator(seqConfig().Dangerous.Timeboost.RedisUrl, roundTimingInfo, seqConfig().Dangerous.Timeboost.RedisUpdateEventsChannelSize)
 		if err != nil {
 			return nil, fmt.Errorf("error initializing expressLaneService redis: %w", err)
 		}
@@ -305,12 +305,8 @@ func (es *expressLaneService) currentRoundHasController() bool {
 }
 
 // sequenceExpressLaneSubmission with the roundInfo lock held, validates sequence number and sender address fields of the message
-// adds the message to the transaction queue and waits for the response
-// If sequenceOnly is set, then we do not wait for the tx result
-func (es *expressLaneService) sequenceExpressLaneSubmission(
-	ctx context.Context,
-	msg *timeboost.ExpressLaneSubmission,
-) error {
+// adds the message to the sequencer transaction queue
+func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.ExpressLaneSubmission) error {
 	es.roundInfoMutex.Lock()
 	defer es.roundInfoMutex.Unlock()
 
@@ -471,7 +467,7 @@ func (es *expressLaneService) syncFromRedis() {
 	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, sequenceCount, sequenceCount+es.seqConfig().Dangerous.Timeboost.MaxFutureSequenceDistance)
 	log.Info("Attempting to sequence pending expressLane transactions from redis", "count", len(pendingMsgs))
 	for _, msg := range pendingMsgs {
-		if err := es.sequenceExpressLaneSubmission(es.GetContext(), msg); err != nil {
+		if err := es.sequenceExpressLaneSubmission(msg); err != nil {
 			log.Error("Untracked expressLaneSubmission returned an error while sequencing", "round", msg.Round, "seqNum", msg.SequenceNumber, "txHash", msg.Transaction.Hash(), "err", err)
 		}
 	}
