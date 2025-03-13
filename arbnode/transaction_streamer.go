@@ -43,10 +43,10 @@ import (
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
-	chainConfig                                     *params.ChainConfig
-	exec                                            execution.ExecutionClient
-	consensusHeadMsgIdxDuringLastExecuteNextMsgCall *arbutil.MessageIndex
-	validator                                       *staker.BlockValidator
+	chainConfig    *params.ChainConfig
+	exec           execution.ExecutionClient
+	prevHeadMsgIdx *arbutil.MessageIndex
+	validator      *staker.BlockValidator
 
 	db             ethdb.Database
 	fatalErrChan   chan<- error
@@ -1271,7 +1271,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 	}
 	defer s.reorgMutex.RUnlock()
 
-	consensusHeadMsgIdxDuringLastExecuteNextMsgCall := s.consensusHeadMsgIdxDuringLastExecuteNextMsgCall
+	prevHeadMsgIdx := s.prevHeadMsgIdx
 	consensusHeadMsgIdx, err := s.GetHeadMessageIndex()
 	if errors.Is(err, ErrNoMessages) {
 		return false
@@ -1279,7 +1279,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		log.Error("ExecuteNextMsg failed to get consensus head msg index", "err", err)
 		return false
 	}
-	s.consensusHeadMsgIdxDuringLastExecuteNextMsgCall = &consensusHeadMsgIdx
+	s.prevHeadMsgIdx = &consensusHeadMsgIdx
 
 	execHeadMsgIdx, err := s.exec.HeadMessageIndex().Await(ctx)
 	if err != nil {
@@ -1309,7 +1309,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 	msgResult, err := s.exec.DigestMessage(msgIdxToExecute, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch).Await(ctx)
 	if err != nil {
 		logger := log.Warn
-		if (consensusHeadMsgIdxDuringLastExecuteNextMsgCall == nil) || (*consensusHeadMsgIdxDuringLastExecuteNextMsgCall < consensusHeadMsgIdx) {
+		if (prevHeadMsgIdx == nil) || (*prevHeadMsgIdx < consensusHeadMsgIdx) {
 			logger = log.Debug
 		}
 		logger("ExecuteNextMsg failed to send message to execEngine", "err", err, "msgIdxToExecute", msgIdxToExecute)
