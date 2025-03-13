@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
@@ -344,9 +345,12 @@ func (v *L1Validator) generateNodeAction(
 				return nil, false, errors.New("batch not found on L1")
 			}
 		}
-		execResult, err := v.txStreamer.ResultAtCount(validatedCount)
-		if err != nil {
-			return nil, false, err
+		execResult := &execution.MessageResult{}
+		if validatedCount > 0 {
+			execResult, err = v.txStreamer.ResultAtMessageIndex(validatedCount - 1)
+			if err != nil {
+				return nil, false, err
+			}
 		}
 		_, gsPos, err := staker.GlobalStatePositionsAtCount(v.inboxTracker, validatedCount, batchNum)
 		if err != nil {

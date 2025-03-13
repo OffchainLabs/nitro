@@ -29,10 +29,10 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
-	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
-	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*MessageResult]
-	HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex]
-	ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
+	DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
+	Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*MessageResult]
+	HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex]
+	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
 	BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex]
 	SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
@@ -69,7 +69,7 @@ type ExecutionSequencer interface {
 
 // needed for batch poster
 type ExecutionBatchPoster interface {
-	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
+	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error)
 }
 
 // not implemented in execution, used as input
@@ -83,11 +83,11 @@ type ConsensusInfo interface {
 	Synced() bool
 	FullSyncProgressMap() map[string]interface{}
 	SyncTargetMessageCount() arbutil.MessageIndex
-	BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error)
+	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) (common.BlockMetadata, error)
 }
 
 type ConsensusSequencer interface {
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) error
+	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) error
 	ExpectChosenSequencer() error
 }
 

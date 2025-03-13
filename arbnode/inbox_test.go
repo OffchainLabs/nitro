@@ -81,12 +81,12 @@ func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbo
 	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages, oldMessages))
 }
 
-func (w *execClientWrapper) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageNumber())
+func (w *execClientWrapper) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageIndex())
 }
 
-func (w *execClientWrapper) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
-	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtPos(pos))
+func (w *execClientWrapper) ResultAtMessageIndex(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtMessageIndex(pos))
 }
 
 func (w *execClientWrapper) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
@@ -189,7 +189,10 @@ func TestTransactionStreamer(t *testing.T) {
 	for i := 1; i < 100; i++ {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
-			err := inbox.ReorgTo(blockStates[reorgTo].numMessages)
+			if blockStates[reorgTo].numMessages == 0 {
+				Fail(t, "invalid reorg target")
+			}
+			err := inbox.ReorgAt(blockStates[reorgTo].numMessages)
 			if err != nil {
 				Fail(t, err)
 			}

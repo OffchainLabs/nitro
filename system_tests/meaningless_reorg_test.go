@@ -37,11 +37,11 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		if i >= 500 {
 			Fatal(t, "Failed to read batch from L1")
 		}
-		msgNum, err := builder.L2.ExecNode.ExecEngine.HeadMessageNumber()
+		msgIdx, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
 		Require(t, err)
-		if msgNum == 1 {
+		if msgIdx == 1 {
 			break
-		} else if msgNum > 1 {
+		} else if msgIdx > 1 {
 			Fatal(t, "More than two batches in test?")
 		}
 		time.Sleep(10 * time.Millisecond)

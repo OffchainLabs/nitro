@@ -18,7 +18,7 @@ import (
 var ErrBlockMetadataApiBlocksLimitExceeded = errors.New("number of blocks requested for blockMetadata exceeded")
 
 type BlockMetadataFetcher interface {
-	BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error)
+	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) (common.BlockMetadata, error)
 	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
 	SetReorgEventsNotifier(reorgEventsNotifier chan struct{})
@@ -81,7 +81,7 @@ func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]
 			data, found = b.cache.Get(i)
 		}
 		if !found {
-			data, err = b.fetcher.BlockMetadataAtCount(i + 1)
+			data, err = b.fetcher.BlockMetadataAtMessageIndex(i)
 			if err != nil {
 				return nil, err
 			}

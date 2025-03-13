@@ -73,7 +73,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 
 func (s *SyncMonitor) Synced() bool {
 	if s.consensus.Synced() {
-		built, err := s.exec.HeadMessageNumber()
+		built, err := s.exec.HeadMessageIndex()
 		consensusSyncTarget := s.consensus.SyncTargetMessageCount()
 		if err == nil && built+1 >= consensusSyncTarget {
 			return true
@@ -91,9 +91,9 @@ func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetada
 	if blockNum < genesis { // Arbitrum classic block
 		return nil, nil
 	}
-	pos := arbutil.MessageIndex(blockNum - genesis)
+	msgIdx := arbutil.MessageIndex(blockNum - genesis)
 	if s.consensus != nil {
-		return s.consensus.BlockMetadataAtCount(pos + 1)
+		return s.consensus.BlockMetadataAtMessageIndex(msgIdx)
 	}
 	log.Debug("FullConsensusClient is not accessible to execution, BlockMetadataByNumber will return nil")
 	return nil, nil
