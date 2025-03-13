@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -36,6 +37,7 @@ import (
 func BuildBlock(
 	statedb *state.StateDB,
 	lastBlockHeader *types.Header,
+	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	inbox arbstate.InboxBackend,
 	seqBatch []byte,
@@ -67,7 +69,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainConfig, false, runMode,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, runMode,
 	)
 	return block, err
 }
@@ -117,6 +119,23 @@ func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMe
 		msg = &arbostypes.TestIncomingMessageWithRequestId
 	}
 	return msg, nil
+}
+
+// A chain context with no information
+type noopChainContext struct {
+	chainConfig *params.ChainConfig
+}
+
+func (c noopChainContext) Config() *params.ChainConfig {
+	return c.chainConfig
+}
+
+func (c noopChainContext) Engine() consensus.Engine {
+	return nil
+}
+
+func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
+	return nil
 }
 
 func FuzzStateTransition(f *testing.F) {
@@ -196,7 +215,7 @@ func FuzzStateTransition(f *testing.F) {
 		}
 		numberOfMessageRunModes := uint8(core.MessageReplayMode) + 1 // TODO update number of run modes when new mode is added
 		runMode := core.MessageRunMode(runModeSeed % numberOfMessageRunModes)
-		_, err = BuildBlock(statedb, genesis, chaininfo.ArbitrumOneChainConfig(), inbox, seqBatch, runMode)
+		_, err = BuildBlock(statedb, genesis, noopChainContext{chainConfig: chaininfo.ArbitrumOneChainConfig()}, chaininfo.ArbitrumOneChainConfig(), inbox, seqBatch, runMode)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.

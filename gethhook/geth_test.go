@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -24,11 +25,14 @@ import (
 )
 
 type TestChainContext struct {
+	chainConfig *params.ChainConfig
 }
 
 func (r *TestChainContext) Engine() consensus.Engine {
 	return arbos.Engine{}
 }
+
+func (r *TestChainContext) Config() *params.ChainConfig { return r.chainConfig }
 
 func (r *TestChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
 	return &types.Header{}
@@ -127,10 +131,13 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		if err != nil {
 			t.Error(err)
 		}
+		chainContext := &TestChainContext{chainConfig: testChainConfig}
 		header := &types.Header{
 			Number:     big.NewInt(1000),
 			Difficulty: big.NewInt(1000),
 		}
+		blockContext := core.NewEVMBlockContext(header, chainContext, nil)
+		evm := vm.NewEVM(blockContext, statedb, testChainConfig, vm.Config{})
 		gasPool := core.GasPool(100000)
 		for _, tx := range txes {
 			_, _, err := core.ApplyTransaction(evm, &gasPool, statedb, header, tx, &header.GasUsed)
