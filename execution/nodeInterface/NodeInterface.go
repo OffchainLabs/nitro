@@ -572,7 +572,7 @@ func (n NodeInterface) GasEstimateComponents(
 	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
 	args := n.messageArgs(evm, value, to, contractCreation, data)
 
-	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, nil, gasCap)
+	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, nil, nil, gasCap)
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}

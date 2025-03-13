@@ -237,7 +237,7 @@ func (s *BlocksReExecutor) dereferenceRoot(root common.Hash) {
 func (s *BlocksReExecutor) commitStateAndVerify(statedb *state.StateDB, expected common.Hash, blockNumber uint64) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	result, err := statedb.Commit(blockNumber, true)
+	result, err := statedb.Commit(blockNumber, true, false)
 	if err != nil {
 		return nil, arbitrum.NoopStateRelease, err
 	}

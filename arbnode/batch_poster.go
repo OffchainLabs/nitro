@@ -24,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -244,9 +243,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDapFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
-	MaxSize: 100000,
-	// Try to fill 3 blobs per batch
-	Max4844BatchSize:               blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)/2 - 2000,
+	MaxSize:                        100000,
 	PollInterval:                   time.Second * 10,
 	ErrorDelay:                     time.Second * 10,
 	MaxDelay:                       time.Hour,
@@ -686,7 +683,13 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
 
-	blobGasLimitGauge.Update(params.MaxBlobGasPerBlock)
+	maxBlobGasPerBlock, err := b.l1Reader.Client().MaxBlobGasPerBlock(ctx)
+	if err != nil {
+		log.Error("error getting max blob gas per block", "err", err)
+	} else {
+		// #nosec G115
+		blobGasLimitGauge.Update(int64(maxBlobGasPerBlock))
+	}
 	for {
 		select {
 		case h, ok := <-headerCh:
@@ -698,7 +701,11 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			l1GasPrice := h.BaseFee.Uint64()
 			if h.BlobGasUsed != nil {
 				if h.ExcessBlobGas != nil {
-					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
+					blobFeePerByte, err := b.l1Reader.Client().BlobBaseFee(ctx)
+					if err != nil {
+						log.Error("Error getting blob fee per byte", "err", err)
+						continue
+					}
 					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 					blobFeeGauge.Update(blobFeePerByte.Int64())
@@ -830,10 +837,20 @@ type buildingBatch struct {
 	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
 
-func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64, use4844 bool) *batchSegments {
-	maxSize := config.MaxSize
+func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool) (*batchSegments, error) {
+	maxSize := b.config().MaxSize
 	if use4844 {
-		maxSize = config.Max4844BatchSize
+		if b.config().Max4844BatchSize != 0 {
+			maxSize = b.config().Max4844BatchSize
+		} else {
+			maxBlobGasPerBlock, err := b.l1Reader.Client().MaxBlobGasPerBlock(ctx)
+			if err != nil {
+				return nil, err
+			}
+			// Try to fill 3 blobs per batch
+			// #nosec G115
+			maxSize = blobs.BlobEncodableData*(int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob)/2 - 2000
+		}
 	} else {
 		if maxSize <= 40 {
 			panic("Maximum batch size too small")
@@ -841,15 +858,15 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog ui
 		maxSize -= 40
 	}
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, maxSize*2))
-	compressionLevel := config.CompressionLevel
-	recompressionLevel := config.CompressionLevel
-	if backlog > 20 {
+	compressionLevel := b.config().CompressionLevel
+	recompressionLevel := b.config().CompressionLevel
+	if b.GetBacklogEstimate() > 20 {
 		compressionLevel = arbmath.MinInt(compressionLevel, brotli.DefaultCompression)
 	}
-	if backlog > 40 {
+	if b.GetBacklogEstimate() > 40 {
 		recompressionLevel = arbmath.MinInt(recompressionLevel, brotli.DefaultCompression)
 	}
-	if backlog > 60 {
+	if b.GetBacklogEstimate() > 60 {
 		compressionLevel = arbmath.MinInt(compressionLevel, 4)
 	}
 	if recompressionLevel < compressionLevel {
@@ -868,7 +885,7 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog ui
 		recompressionLevel: recompressionLevel,
 		rawSegments:        make([][]byte, 0, 128),
 		delayedMsg:         firstDelayed,
-	}
+	}, nil
 }
 
 func (s *batchSegments) recompressAll() error {
@@ -1276,7 +1293,10 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 					if backlog == 0 ||
 						b.non4844BatchCount == 0 ||
 						b.non4844BatchCount > 16 {
-						blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+						blobFeePerByte, err := b.l1Reader.Client().BlobBaseFee(ctx)
+						if err != nil {
+							return false, err
+						}
 						blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 						blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 
@@ -1309,8 +1329,12 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			}
 		}
 
+		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844)
+		if err != nil {
+			return false, err
+		}
 		b.building = &buildingBatch{
-			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.GetBacklogEstimate(), use4844),
+			segments:      segments,
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
 			use4844:       use4844,
@@ -1615,8 +1639,14 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if len(kzgBlobs)*params.BlobTxBlobGasPerBlob > params.MaxBlobGasPerBlock {
-		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
+	maxBlobGasPerBlock, err := b.l1Reader.Client().MaxBlobGasPerBlock(ctx)
+	if err != nil {
+		return false, err
+	}
+	// #nosec G115
+	if len(kzgBlobs)*params.BlobTxBlobGasPerBlob > int(maxBlobGasPerBlock) {
+		// #nosec G115
+		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
 	}
 	accessList := b.accessList(batchPosition.NextSeqNum, b.building.segments.delayedMsg)
 	// On restart, we may be trying to estimate gas for a batch whose successor has

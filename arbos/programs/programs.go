@@ -258,9 +258,6 @@ func (p Programs) CallProgram(
 	}
 
 	address := contract.Address()
-	if contract.CodeAddr != nil {
-		address = *contract.CodeAddr
-	}
 	var arbos_tag uint32
 	if runMode == core.MessageCommitMode {
 		arbos_tag = statedb.Database().WasmCacheTag()
@@ -451,7 +448,7 @@ func (p Programs) SetProgramCached(
 	}
 	if cache {
 		// Not passing in an address is supported pre-Verkle, as in Blockchain's ContractCodeWithPrefix method.
-		code, err := db.Database().ContractCode(common.Address{}, codeHash)
+		code, err := db.Reader().Code(common.Address{}, codeHash)
 		if err != nil {
 			return err
 		}

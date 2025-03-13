@@ -6,6 +6,7 @@ package arbtest
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"math"
 	"math/big"
 	"testing"
@@ -28,11 +29,14 @@ import (
 var skipCheck = []byte("skip")
 
 func checkOpcode(t *testing.T, result logger.ExecutionResult, index int, wantOp vm.OpCode, wantStack ...[]byte) {
-	CheckEqual(t, wantOp.String(), result.StructLogs[index].Op, "wrong opcode")
+	var structLog StructLogRes
+	err := json.Unmarshal(result.StructLogs[index], &structLog)
+	Require(t, err, "failed to unmarshal structure log")
+	CheckEqual(t, wantOp.String(), structLog.Op, "wrong opcode")
 	for i, wantBytes := range wantStack {
 		if !bytes.Equal(wantBytes, skipCheck) {
 			wantVal := uint256.NewInt(0).SetBytes(wantBytes).Hex()
-			logStack := *result.StructLogs[index].Stack
+			logStack := *structLog.Stack
 			// the stack is in reverse order in log
 			if i > len(logStack) {
 				Fatal(t, "missing values in log stack")
@@ -64,12 +68,15 @@ func sendAndTraceTransaction(
 
 	colors.PrintGrey("Call trace:")
 	colors.PrintGrey("i\tdepth\topcode\tstack")
-	for i, log := range result.StructLogs {
-		if log.Stack == nil {
+	for i := range result.StructLogs {
+		var structLog StructLogRes
+		err := json.Unmarshal(result.StructLogs[i], &structLog)
+		Require(t, err, "failed to unmarshal structure log")
+		if structLog.Stack == nil {
 			stack := []string{}
-			log.Stack = &stack
+			structLog.Stack = &stack
 		}
-		colors.PrintGrey(i, "\t", log.Depth, "\t", log.Op, "\t", *log.Stack)
+		colors.PrintGrey(i, "\t", structLog.Depth, "\t", structLog.Op, "\t", *structLog.Stack)
 		if i > 100 {
 			break
 		}

@@ -18,7 +18,7 @@ func RegisterAndPopulateMetrics(ctx context.Context, spawnInterval, maxDeviceCou
 		log.Warn("Iostat command not supported disabling corresponding metrics")
 		return
 	}
-	deviceMetrics := make(map[string]map[string]metrics.GaugeFloat64)
+	deviceMetrics := make(map[string]map[string]*metrics.GaugeFloat64)
 	statReceiver := make(chan DeviceStats)
 	go Run(ctx, spawnInterval, statReceiver)
 	for {
@@ -33,7 +33,7 @@ func RegisterAndPopulateMetrics(ctx context.Context, spawnInterval, maxDeviceCou
 				// Replace hyphens with underscores to avoid metric name issues
 				sanitizedDeviceName := strings.ReplaceAll(stat.DeviceName, "-", "_")
 				baseMetricName := fmt.Sprintf("iostat/%s/", sanitizedDeviceName)
-				deviceMetrics[stat.DeviceName] = make(map[string]metrics.GaugeFloat64)
+				deviceMetrics[stat.DeviceName] = make(map[string]*metrics.GaugeFloat64)
 				deviceMetrics[stat.DeviceName]["readspersecond"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"readspersecond", nil)
 				deviceMetrics[stat.DeviceName]["writespersecond"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"writespersecond", nil)
 				deviceMetrics[stat.DeviceName]["await"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"await", nil)

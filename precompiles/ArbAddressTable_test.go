@@ -184,7 +184,7 @@ func newMockEVMForTestingWithVersion(version *uint64) *vm.EVM {
 		GasLimit:    ^uint64(0),
 		Time:        0,
 	}
-	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+	evm := vm.NewEVM(context, statedb, chainConfig, vm.Config{})
 	evm.ProcessingHook = &arbos.TxProcessor{}
 	return evm
 }

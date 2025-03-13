@@ -312,16 +312,15 @@ func ProduceBlockAdvanced(
 			statedb.SetTxContext(tx.Hash(), len(receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
+			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
+			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
-				chainConfig,
-				chainContext,
-				&header.Coinbase,
+				evm,
 				&gasPool,
 				statedb,
 				header,
 				tx,
 				&header.GasUsed,
-				vm.Config{},
 				runMode,
 				func(result *core.ExecutionResult) error {
 					return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)

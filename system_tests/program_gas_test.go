@@ -3,6 +3,7 @@ package arbtest
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -545,8 +546,17 @@ func evmOpcodesGasUsage(ctx context.Context, rpcClient rpc.ClientInterface, tx *
 	}
 
 	gasUsage := map[vm.OpCode][]uint64{}
+	var structLogs []StructLogRes
 	for i := range result.StructLogs {
-		op := vm.StringToOp(result.StructLogs[i].Op)
+		var structLog StructLogRes
+		err := json.Unmarshal(result.StructLogs[i], &structLog)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal struct log: %w", err)
+		}
+		structLogs = append(structLogs, structLog)
+	}
+	for i := range structLogs {
+		op := vm.StringToOp(structLogs[i].Op)
 		gasUsed := uint64(0)
 		if op == vm.CALL || op == vm.STATICCALL || op == vm.DELEGATECALL || op == vm.CREATE || op == vm.CREATE2 {
 			// For the CALL* opcodes, the GasCost in the tracer represents the gas sent
@@ -565,10 +575,10 @@ func evmOpcodesGasUsage(ctx context.Context, rpcClient rpc.ClientInterface, tx *
 			// gas after the call returned.
 			var gasAfterCall uint64
 			var found bool
-			for j := i + 1; j < len(result.StructLogs); j++ {
-				if result.StructLogs[j].Depth == result.StructLogs[i].Depth {
+			for j := i + 1; j < len(structLogs); j++ {
+				if structLogs[j].Depth == structLogs[i].Depth {
 					// back to the original call
-					gasAfterCall = result.StructLogs[j].Gas + result.StructLogs[j].GasCost
+					gasAfterCall = structLogs[j].Gas + structLogs[j].GasCost
 					found = true
 					break
 				}
@@ -579,9 +589,9 @@ func evmOpcodesGasUsage(ctx context.Context, rpcClient rpc.ClientInterface, tx *
 			if i == 0 {
 				return nil, fmt.Errorf("malformed log: call is first opcode")
 			}
-			gasUsed = result.StructLogs[i-1].Gas - gasAfterCall
+			gasUsed = structLogs[i-1].Gas - gasAfterCall
 		} else {
-			gasUsed = result.StructLogs[i].GasCost
+			gasUsed = structLogs[i].GasCost
 		}
 		gasUsage[op] = append(gasUsage[op], gasUsed)
 	}
