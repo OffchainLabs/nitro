@@ -95,6 +95,7 @@ type TimeboostConfig struct {
 	ExpressLaneAdvantage         time.Duration `koanf:"express-lane-advantage"`
 	SequencerHTTPEndpoint        string        `koanf:"sequencer-http-endpoint"`
 	EarlySubmissionGrace         time.Duration `koanf:"early-submission-grace"`
+	QueueTimeout                 time.Duration `koanf:"queue-timeout"`
 	MaxFutureSequenceDistance    uint64        `koanf:"max-future-sequence-distance"`
 	RedisUrl                     string        `koanf:"redis-url"`
 	RedisUpdateEventsChannelSize uint64        `koanf:"redis-update-events-channel-size"`
@@ -107,6 +108,7 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	ExpressLaneAdvantage:         time.Millisecond * 200,
 	SequencerHTTPEndpoint:        "http://localhost:8547",
 	EarlySubmissionGrace:         time.Second * 2,
+	QueueTimeout:                 time.Second * 12,
 	MaxFutureSequenceDistance:    25,
 	RedisUrl:                     "unset",
 	RedisUpdateEventsChannelSize: 500,
@@ -214,6 +216,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
 	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 	f.Duration(prefix+".early-submission-grace", DefaultTimeboostConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
+	f.Duration(prefix+".queue-timeout", DefaultTimeboostConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Uint64(prefix+".max-future-sequence-distance", DefaultTimeboostConfig.MaxFutureSequenceDistance, "maximum allowed difference (in terms of sequence numbers) between a future express lane tx and the current sequence count of a round")
 	f.String(prefix+".redis-url", DefaultTimeboostConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
 	f.Uint64(prefix+".redis-update-events-channel-size", DefaultTimeboostConfig.RedisUpdateEventsChannelSize, "size of update events' buffered channels in timeboost redis coordinator")

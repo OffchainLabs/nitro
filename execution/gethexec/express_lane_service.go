@@ -371,7 +371,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 	}
 
 	var retErr error
-	queueTimeout := seqConfig.QueueTimeout
+	queueTimeout := seqConfig.Dangerous.Timeboost.QueueTimeout
 	for es.roundTimingInfo.RoundNumber() == msg.Round { // This check ensures that the controller for this round is not allowed to send transactions from msgBySequenceNumber map once the next round starts
 		// Get the next message in the sequence.
 		nextMsg, exists := roundInfo.msgBySequenceNumber[roundInfo.sequence]
