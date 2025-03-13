@@ -156,7 +156,6 @@ func (r *BlockRecorder) RecordBlockCreation(
 			msg.DelayedMessagesRead,
 			prevHeader,
 			recordingdb,
-			chaincontext,
 			chainConfig,
 			false,
 			core.MessageReplayMode,

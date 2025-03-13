@@ -402,7 +402,11 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		previousTxCumulativeWeight = arbmath.MaxInt(previousTxCumulativeWeight, confirmedWeight)
 		newCumulativeWeight := previousTxCumulativeWeight + thisWeight
 
-		weightDiff := arbmath.MinInt(newCumulativeWeight-confirmedWeight, (nextNonce-unconfirmedNonce)*params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)
+		maxBlobGasPerBlock, err := p.client.MaxBlobGasPerBlock(ctx)
+		if err != nil {
+			return err
+		}
+		weightDiff := arbmath.MinInt(newCumulativeWeight-confirmedWeight, (nextNonce-unconfirmedNonce)*maxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)
 		if weightDiff > cfg.MaxMempoolWeight {
 			return fmt.Errorf("%w: transaction nonce: %d, transaction cumulative weight: %d, unconfirmed nonce: %d, confirmed weight: %d, new mempool weight: %d, max mempool weight: %d", ErrExceedsMaxMempoolSize, nextNonce, newCumulativeWeight, unconfirmedNonce, confirmedWeight, weightDiff, cfg.MaxMempoolWeight)
 		}

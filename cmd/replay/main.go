@@ -13,7 +13,6 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -47,20 +46,6 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	err = rlp.DecodeBytes(enc, &header)
 	if err != nil {
 		panic(fmt.Errorf("Error parsing resolved block header: %w", err))
-	}
-	return header
-}
-
-type WavmChainContext struct{}
-
-func (c WavmChainContext) Engine() consensus.Engine {
-	return arbos.Engine{}
-}
-
-func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
-	header := getBlockHeaderByHash(hash)
-	if !header.Number.IsUint64() || header.Number.Uint64() != num {
-		panic(fmt.Sprintf("Retrieved wrong block number for header hash %v -- requested %v but got %v", hash, num, header.Number.String()))
 	}
 	return header
 }
@@ -292,8 +277,7 @@ func main() {
 
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
-		chainContext := WavmChainContext{}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, core.MessageReplayMode)
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainConfig, false, core.MessageReplayMode)
 		if err != nil {
 			panic(err)
 		}

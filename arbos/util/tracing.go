@@ -31,15 +31,6 @@ type TracingInfo struct {
 	storageCache *storageCache
 }
 
-// holds an address to satisfy core/vm's ContractRef() interface
-type addressHolder struct {
-	addr common.Address
-}
-
-func (a addressHolder) Address() common.Address {
-	return a.addr
-}
-
 func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenario) *TracingInfo {
 	if evm.Config.Tracer == nil {
 		return nil
