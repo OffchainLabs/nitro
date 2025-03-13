@@ -89,25 +89,27 @@ type DangerousConfig struct {
 }
 
 type TimeboostConfig struct {
-	Enable                    bool          `koanf:"enable"`
-	AuctionContractAddress    string        `koanf:"auction-contract-address"`
-	AuctioneerAddress         string        `koanf:"auctioneer-address"`
-	ExpressLaneAdvantage      time.Duration `koanf:"express-lane-advantage"`
-	SequencerHTTPEndpoint     string        `koanf:"sequencer-http-endpoint"`
-	EarlySubmissionGrace      time.Duration `koanf:"early-submission-grace"`
-	MaxFutureSequenceDistance uint64        `koanf:"max-future-sequence-distance"`
-	RedisUrl                  string        `koanf:"redis-url"`
+	Enable                       bool          `koanf:"enable"`
+	AuctionContractAddress       string        `koanf:"auction-contract-address"`
+	AuctioneerAddress            string        `koanf:"auctioneer-address"`
+	ExpressLaneAdvantage         time.Duration `koanf:"express-lane-advantage"`
+	SequencerHTTPEndpoint        string        `koanf:"sequencer-http-endpoint"`
+	EarlySubmissionGrace         time.Duration `koanf:"early-submission-grace"`
+	MaxFutureSequenceDistance    uint64        `koanf:"max-future-sequence-distance"`
+	RedisUrl                     string        `koanf:"redis-url"`
+	RedisUpdateEventsChannelSize uint64        `koanf:"redis-update-events-channel-size"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
-	Enable:                    false,
-	AuctionContractAddress:    "",
-	AuctioneerAddress:         "",
-	ExpressLaneAdvantage:      time.Millisecond * 200,
-	SequencerHTTPEndpoint:     "http://localhost:8547",
-	EarlySubmissionGrace:      time.Second * 2,
-	MaxFutureSequenceDistance: 25,
-	RedisUrl:                  "unset",
+	Enable:                       false,
+	AuctionContractAddress:       "",
+	AuctioneerAddress:            "",
+	ExpressLaneAdvantage:         time.Millisecond * 200,
+	SequencerHTTPEndpoint:        "http://localhost:8547",
+	EarlySubmissionGrace:         time.Second * 2,
+	MaxFutureSequenceDistance:    25,
+	RedisUrl:                     "unset",
+	RedisUpdateEventsChannelSize: 500,
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -214,6 +216,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".early-submission-grace", DefaultTimeboostConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
 	f.Uint64(prefix+".max-future-sequence-distance", DefaultTimeboostConfig.MaxFutureSequenceDistance, "maximum allowed difference (in terms of sequence numbers) between a future express lane tx and the current sequence count of a round")
 	f.String(prefix+".redis-url", DefaultTimeboostConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
+	f.Uint64(prefix+".redis-update-events-channel-size", DefaultTimeboostConfig.RedisUpdateEventsChannelSize, "size of update events' buffered channels in timeboost redis coordinator")
 }
 
 func DangerousAddOptions(prefix string, f *flag.FlagSet) {
@@ -609,13 +612,12 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
 
-	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg)
+	return s.expressLaneService.sequenceExpressLaneSubmission(msg)
 }
 
-func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error) {
-	if err := s.publishTransactionToQueue(queueCtx, tx, options, resultChan, true); err != nil {
-		resultChan <- err
-	}
+func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	resultChan := make(chan error, 1)
+	return s.publishTransactionToQueue(queueCtx, tx, options, resultChan, true)
 }
 
 func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error, isExpressLaneController bool) error {
@@ -1412,6 +1414,24 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
+type TxSource int
+
+const (
+	RetryQueue TxSource = iota + 1
+	NonceFailures
+	TxQueue
+	TimeboostAuctionResolutionTxQueue
+)
+
+var txSources = []string{"unknown", "retryQueue", "nonceFailures", "txQueue", "timeboostAuctionResolutionTxQueue"}
+
+func (s TxSource) String() string {
+	if int(s) > len(txSources) || s < 0 {
+		return txSources[0]
+	}
+	return txSources[s]
+}
+
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
 	if s.config().Dangerous.Timeboost.Enable && s.expressLaneService != nil {
@@ -1435,22 +1455,22 @@ func (s *Sequencer) StopAndWait() {
 	emptyqueues:
 		for {
 			var item txQueueItem
-			source := ""
+			var source TxSource
 			if s.txRetryQueue.Len() > 0 {
 				item = s.txRetryQueue.Pop()
-				source = "retryQueue"
+				source = RetryQueue
 			} else if s.nonceFailures.Len() > 0 {
 				_, failure, _ := s.nonceFailures.GetOldest()
 				failure.revived = true
 				item = failure.queueItem
-				source = "nonceFailures"
+				source = NonceFailures
 				s.nonceFailures.RemoveOldest()
 			} else {
 				select {
 				case item = <-s.txQueue:
-					source = "txQueue"
+					source = TxQueue
 				case item = <-s.timeboostAuctionResolutionTxQueue:
-					source = "timeboostAuctionResolutionTxQueue"
+					source = TimeboostAuctionResolutionTxQueue
 				default:
 					break emptyqueues
 				}
@@ -1458,9 +1478,14 @@ func (s *Sequencer) StopAndWait() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				err := forwarder.PublishTransaction(item.ctx, item.tx, item.options)
+				var err error
+				if source == TimeboostAuctionResolutionTxQueue {
+					err = forwarder.PublishAuctionResolutionTransaction(item.ctx, item.tx)
+				} else {
+					err = forwarder.PublishTransaction(item.ctx, item.tx, item.options)
+				}
 				if err != nil {
-					log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
+					log.Warn("failed to forward transaction while shutting down", "source", source.String(), "err", err)
 				}
 			}()
 		}
