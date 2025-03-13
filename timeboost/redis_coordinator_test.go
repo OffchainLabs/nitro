@@ -13,7 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
-func TestRedisSeqCoordinatorAtomic(t *testing.T) {
+func TestTimeboostRedisCoordinator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -22,7 +22,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		Offset: time.Now(),
 		Round:  time.Second * 5,
 	}
-	redisCoordinator, err := NewRedisCoordinator(redisUrl, timingInfo)
+	redisCoordinator, err := NewRedisCoordinator(redisUrl, timingInfo, 50)
 	if err != nil {
 		t.Fatalf("error initializing redis coordinator: %v", err)
 	}

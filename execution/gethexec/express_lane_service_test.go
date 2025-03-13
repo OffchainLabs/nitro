@@ -299,7 +299,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 	els.transactionPublisher = stubPublisher
 
 	msg := buildValidSubmissionWithSeqAndTx(t, 0, 0, emptyTx)
-	err := els.sequenceExpressLaneSubmission(ctx, msg)
+	err := els.sequenceExpressLaneSubmission(msg)
 	require.ErrorIs(t, err, timeboost.ErrSequenceNumberTooLow)
 }
 
@@ -314,7 +314,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
 	}
 	var err error
-	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo)
+	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo, 50)
 	require.NoError(t, err)
 	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*timeboost.ExpressLaneSubmission)})
@@ -329,11 +329,11 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	wg.Add(2) // We expect only one of the two txs below to return with an error here
 	var err1, err2 error
 	go func(w *sync.WaitGroup) {
-		err1 = els.sequenceExpressLaneSubmission(ctx, msg1)
+		err1 = els.sequenceExpressLaneSubmission(msg1)
 		wg.Done()
 	}(&wg)
 	go func(w *sync.WaitGroup) {
-		err2 = els.sequenceExpressLaneSubmission(ctx, msg2)
+		err2 = els.sequenceExpressLaneSubmission(msg2)
 		wg.Done()
 	}(&wg)
 	wg.Wait()
@@ -359,7 +359,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
 	}
 	var err error
-	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo)
+	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo, 50)
 	require.NoError(t, err)
 	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*timeboost.ExpressLaneSubmission)})
@@ -381,7 +381,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	wg.Add(5)
 	for _, msg := range messages {
 		go func(w *sync.WaitGroup) {
-			err := els.sequenceExpressLaneSubmission(ctx, msg)
+			err := els.sequenceExpressLaneSubmission(msg)
 			require.NoError(t, err)
 			w.Done()
 		}(&wg)
@@ -397,7 +397,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	els.roundInfoMutex.Unlock()
 
 	// 4 & 5 should be able to get in after 3 so we add a delta of 2
-	err = els.sequenceExpressLaneSubmission(ctx, buildValidSubmissionWithSeqAndTx(t, 0, 3, emptyTx))
+	err = els.sequenceExpressLaneSubmission(buildValidSubmissionWithSeqAndTx(t, 0, 3, emptyTx))
 	require.NoError(t, err)
 	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
 	els.roundInfoMutex.Lock()
@@ -418,7 +418,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
 	}
 	var err error
-	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo)
+	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo, 50)
 	require.NoError(t, err)
 	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*timeboost.ExpressLaneSubmission)})
@@ -435,10 +435,10 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	}
 	for _, msg := range messages {
 		if msg.Transaction.Hash() != emptyTx.Hash() {
-			err := els.sequenceExpressLaneSubmission(ctx, msg)
+			err := els.sequenceExpressLaneSubmission(msg)
 			require.ErrorContains(t, err, "oops, bad tx")
 		} else {
-			err := els.sequenceExpressLaneSubmission(ctx, msg)
+			err := els.sequenceExpressLaneSubmission(msg)
 			require.NoError(t, err)
 		}
 	}
@@ -459,7 +459,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
 	}
 	var err error
-	els1.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo)
+	els1.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo, 50)
 	require.NoError(t, err)
 	els1.redisCoordinator.Start(ctx)
 
@@ -481,7 +481,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	wg.Add(4)
 	for _, msg := range messages {
 		go func(w *sync.WaitGroup) {
-			_ = els1.sequenceExpressLaneSubmission(ctx, msg)
+			_ = els1.sequenceExpressLaneSubmission(msg)
 			w.Done()
 		}(&wg)
 	}
@@ -497,7 +497,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
 	}
-	els2.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo)
+	els2.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo, 50)
 	require.NoError(t, err)
 	els2.redisCoordinator.Start(ctx)
 
@@ -522,7 +522,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	}
 	els2.roundInfoMutex.Unlock()
 
-	err = els2.sequenceExpressLaneSubmission(ctx, buildValidSubmissionWithSeqAndTx(t, 0, 2, emptyTx)) // Send an unblocking tx
+	err = els2.sequenceExpressLaneSubmission(buildValidSubmissionWithSeqAndTx(t, 0, 2, emptyTx)) // Send an unblocking tx
 	require.NoError(t, err)
 
 	time.Sleep(time.Second) // wait for future seq num txs to be processed
