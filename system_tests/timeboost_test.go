@@ -20,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
@@ -553,12 +552,11 @@ func TestExpressLaneTransactionHandling(t *testing.T) {
 		if failErr == nil {
 			t.Fatal("incorrect express lane tx didn't fail upon submission")
 		}
-		if !strings.Contains(failErr.Error(), timeboost.ErrAcceptedTxFailed.Error()) || // Should be an ErrAcceptedTxFailed error that would consume sequence number
-			!strings.Contains(failErr.Error(), reason) {
+		if !strings.Contains(failErr.Error(), reason) {
 			t.Fatalf("unexpected error string returned: %s", failErr.Error())
 		}
 	}
-	checkFailErr(core.ErrNonceTooHigh.Error())
+	checkFailErr("context deadline exceeded") // tx will be rejected with nonce too high error so wont appear in a block
 
 	wg.Add(1)
 	go func(w *sync.WaitGroup) {
@@ -567,7 +565,7 @@ func TestExpressLaneTransactionHandling(t *testing.T) {
 	}(&wg)
 	wg.Wait()
 
-	checkFailErr("Transaction sequencing hit timeout")
+	checkFailErr("context deadline exceeded")
 }
 
 func dbKey(prefix []byte, pos uint64) []byte {
@@ -1160,11 +1158,11 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_Timeboo
 		To:        &ownerAddr,
 		Gas:       seqInfo.TransferGas,
 		Value:     big.NewInt(1e12),
-		Nonce:     1,
+		Nonce:     2,
 		GasFeeCap: aliceTx.GasFeeCap(),
 		Data:      nil,
 	}
-	charlie1 := seqInfo.SignTxAs("Charlie", txData)
+	charlie2 := seqInfo.SignTxAs("Charlie", txData)
 	txData = &types.DynamicFeeTx{
 		To:        &ownerAddr,
 		Gas:       seqInfo.TransferGas,
@@ -1174,21 +1172,23 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_Timeboo
 		Data:      nil,
 	}
 	charlie0 := seqInfo.SignTxAs("Charlie", txData)
+
+	// Send the express lane txs with nonces out of order, 0 and 2 so that nonce reordering logic in sequencer doesn't resequence them correctly
 	var err2 error
 	go func(w *sync.WaitGroup) {
 		defer w.Done()
 		time.Sleep(time.Millisecond * 10)
-		// Send the express lane txs with nonces out of order
-		err2 = expressLaneClient.SendTransaction(ctx, charlie1)
-		err = expressLaneClient.SendTransaction(ctx, charlie0)
-		Require(t, err)
+		err2 = expressLaneClient.SendTransactionWithSequence(ctx, charlie2, 0)
 	}(&wg)
+	time.Sleep(time.Millisecond * 50)
+	err = expressLaneClient.SendTransactionWithSequence(ctx, charlie0, 1)
+	Require(t, err)
 	wg.Wait()
 	if err2 == nil {
-		t.Fatal("Charlie should not be able to send tx with nonce 1")
+		t.Fatal("Charlie should not be able to send tx with nonce 2")
 	}
-	if !strings.Contains(err2.Error(), timeboost.ErrAcceptedTxFailed.Error()) {
-		t.Fatal("Charlie's first tx should've consumed a sequence number as it was initially accepted")
+	if !strings.Contains(err2.Error(), "context deadline exceeded") {
+		t.Fatal("Charlie's first tx should've consumed a sequence number and rejected thus not appear in a block leading to context deadline exceeded from EnsureTxSucceeded")
 	}
 	// After round is done, verify that Charlie beats Alice in the final sequence, and that the emitted txs
 	// for Charlie are correct.
@@ -1394,10 +1394,11 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
 	builderSeq.execConfig.Sequencer.Dangerous.Timeboost = gethexec.TimeboostConfig{
-		Enable:                    false, // We need to start without timeboost initially to create the auction contract
-		ExpressLaneAdvantage:      time.Second * 5,
-		RedisUrl:                  expressLaneRedisURL,
-		MaxFutureSequenceDistance: 1500, // Required for TestExpressLaneTransactionHandlingComplex
+		Enable:                       false, // We need to start without timeboost initially to create the auction contract
+		ExpressLaneAdvantage:         time.Second * 5,
+		RedisUrl:                     expressLaneRedisURL,
+		MaxFutureSequenceDistance:    1500, // Required for TestExpressLaneTransactionHandlingComplex
+		RedisUpdateEventsChannelSize: 50,
 	}
 	builderSeq.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	cleanupSeq := builderSeq.Build(t)
@@ -1761,6 +1762,7 @@ type expressLaneClient struct {
 	roundTimingInfo     timeboost.RoundTimingInfo
 	auctionContractAddr common.Address
 	client              *rpc.Client
+	ethClient           *ethclient.Client
 	sequence            uint64
 }
 
@@ -1777,6 +1779,7 @@ func newExpressLaneClient(
 		roundTimingInfo:     roundTimingInfo,
 		auctionContractAddr: auctionContractAddr,
 		client:              client,
+		ethClient:           ethclient.NewClient(client),
 		sequence:            0,
 	}
 }
@@ -1815,14 +1818,15 @@ func (elc *expressLaneClient) SendTransactionWithSequence(ctx context.Context, t
 	if _, err := promise.Await(ctx); err != nil {
 		return err
 	}
-	return nil
+	_, err = EnsureTxSucceeded(ctx, elc.ethClient, transaction)
+	return err
 }
 
 func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) error {
 	elc.Lock()
 	defer elc.Unlock()
 	err := elc.SendTransactionWithSequence(ctx, transaction, elc.sequence)
-	if err == nil || strings.Contains(err.Error(), timeboost.ErrAcceptedTxFailed.Error()) {
+	if err == nil {
 		elc.sequence += 1
 	}
 	return err
