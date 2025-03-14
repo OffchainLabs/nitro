@@ -95,10 +95,10 @@ type TimeboostConfig struct {
 	ExpressLaneAdvantage         time.Duration `koanf:"express-lane-advantage"`
 	SequencerHTTPEndpoint        string        `koanf:"sequencer-http-endpoint"`
 	EarlySubmissionGrace         time.Duration `koanf:"early-submission-grace"`
-	QueueTimeout                 time.Duration `koanf:"queue-timeout"`
 	MaxFutureSequenceDistance    uint64        `koanf:"max-future-sequence-distance"`
 	RedisUrl                     string        `koanf:"redis-url"`
 	RedisUpdateEventsChannelSize uint64        `koanf:"redis-update-events-channel-size"`
+	QueueTimeoutInBlocks         uint64        `koanf:"queue-timeout-in-blocks"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
@@ -108,10 +108,10 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	ExpressLaneAdvantage:         time.Millisecond * 200,
 	SequencerHTTPEndpoint:        "http://localhost:8547",
 	EarlySubmissionGrace:         time.Second * 2,
-	QueueTimeout:                 time.Second * 12,
 	MaxFutureSequenceDistance:    25,
 	RedisUrl:                     "unset",
 	RedisUpdateEventsChannelSize: 500,
+	QueueTimeoutInBlocks:         5,
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -216,10 +216,10 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
 	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 	f.Duration(prefix+".early-submission-grace", DefaultTimeboostConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
-	f.Duration(prefix+".queue-timeout", DefaultTimeboostConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Uint64(prefix+".max-future-sequence-distance", DefaultTimeboostConfig.MaxFutureSequenceDistance, "maximum allowed difference (in terms of sequence numbers) between a future express lane tx and the current sequence count of a round")
 	f.String(prefix+".redis-url", DefaultTimeboostConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
 	f.Uint64(prefix+".redis-update-events-channel-size", DefaultTimeboostConfig.RedisUpdateEventsChannelSize, "size of update events' buffered channels in timeboost redis coordinator")
+	f.Uint64(prefix+".queue-timeout-in-blocks", DefaultTimeboostConfig.QueueTimeoutInBlocks, "maximum amount of time transaction can wait in queue until this many amount of blocks are produced from whence it was added to the queue")
 }
 
 func DangerousAddOptions(prefix string, f *flag.FlagSet) {
@@ -235,6 +235,7 @@ type txQueueItem struct {
 	ctx             context.Context
 	firstAppearance time.Time
 	isTimeboosted   bool
+	blockStamp      uint64 // block number at which timeboosted tx was added to the txQueue
 }
 
 func (i *txQueueItem) returnResult(err error) {
@@ -666,6 +667,11 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		}
 	}
 
+	var blockStamp uint64
+	if isExpressLaneController && config.Dangerous.Timeboost.QueueTimeoutInBlocks > 0 {
+		blockStamp = s.execEngine.bc.CurrentBlock().Number.Uint64()
+	}
+
 	queueItem := txQueueItem{
 		tx,
 		len(txBytes),
@@ -675,6 +681,7 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		queueCtx,
 		time.Now(),
 		isExpressLaneController,
+		blockStamp,
 	}
 	select {
 	case s.txQueue <- queueItem:
@@ -1013,6 +1020,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 
 	config := s.config()
+	lastBlock := s.execEngine.bc.CurrentBlock()
 
 	// Clear out old nonceFailures
 	s.nonceFailures.Resize(config.NonceFailureCacheSize)
@@ -1092,6 +1100,22 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if queueItem.txSize > config.MaxTxDataSize {
 			// This tx is too large
 			queueItem.returnResult(txpool.ErrOversizedData)
+			continue
+		}
+		if queueItem.isTimeboosted &&
+			queueItem.blockStamp != 0 &&
+			lastBlock.Number.Uint64() >= queueItem.blockStamp+config.Dangerous.Timeboost.QueueTimeoutInBlocks {
+			queueItem.returnResult(fmt.Errorf(
+				"timeboosted tx: %s has hit block based timeout. currentBlockNum: %d, blockStamp: %d, blockExpiry: %d",
+				queueItem.tx.Hash(),
+				lastBlock.Number.Uint64()+1,
+				queueItem.blockStamp,
+				queueItem.blockStamp+config.Dangerous.Timeboost.QueueTimeoutInBlocks,
+			))
+			continue
+		}
+		if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), lastBlock.BaseFee) {
+			queueItem.returnResult(fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, queueItem.tx.GasFeeCap(), lastBlock.BaseFee))
 			continue
 		}
 		if totalBlockSize+queueItem.txSize > config.MaxTxDataSize {
