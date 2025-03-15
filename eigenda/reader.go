@@ -94,14 +94,14 @@ func ParseSequencerMsg(abiEncodedCert []byte) (*EigenDAV1Cert, error) {
 	}
 
 	// decode to EigenDAV1Cert
-	var blobInfo EigenDAV1Cert
-	err = json.Unmarshal(b, &blobInfo)
+	var cert EigenDAV1Cert
+	err = json.Unmarshal(b, &cert)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return &blobInfo, nil
+	return &cert, nil
 
 }
 
