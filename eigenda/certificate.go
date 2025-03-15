@@ -114,6 +114,7 @@ func (e *EigenDAV1Cert) ToDisperserBlobInfo() (*disperser.BlobInfo, error) {
 		failed to remove 0x0 bytes from v1 certificate commitment x field.
 		This cert may fail if referenced as lookup key for secondary storage targets on eigenda-proxy.
 	`)
+		parsedX = xBytes
 	}
 
 	parsedY, err := removeZeroPadding32Bytes(yBytes)
@@ -122,6 +123,7 @@ func (e *EigenDAV1Cert) ToDisperserBlobInfo() (*disperser.BlobInfo, error) {
 		failed to remove 0x0 bytes from v1 certificate commitment y field.
 		This cert may fail if referenced as lookup key for secondary storage targets on eigenda-proxy.
 	`)
+		parsedY = yBytes
 	}
 
 	var disperserBlobHeader disperser.BlobHeader
