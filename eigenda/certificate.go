@@ -102,27 +102,27 @@ func (e *EigenDAV1Cert) ToDisperserBlobInfo() (*disperser.BlobInfo, error) {
 	xBytes := e.BlobHeader.Commitment.X.Bytes()
 	yBytes := e.BlobHeader.Commitment.Y.Bytes()
 
-	// Remove 0 byte padding (if applicable)
+	// Remove 0x0 byte padding or add (if applicable)
 	// Sometimes the big.Int --> bytes transformation would result in a byte array with an
-	// extra 0x0 prefixed byte which changes the cert representation returned from /put/
+	// extra or missing 0x0 prefix byte which changes the cert representation returned from /put/
 	// on eigenda-proxy since the commitment coordinates returned from the disperser are always
 	// 32 bytes each. If the prefixes are kept then secondary storage lookups would fail on the proxy!
 
-	parsedX, err := removeZeroPadding32Bytes(xBytes)
+	parsedX, err := stripZeroPrefixAndEnsure32Bytes(xBytes)
 	if err != nil {
 		log.Error(`
 		failed to remove 0x0 bytes from v1 certificate commitment x field.
 		This cert may fail if referenced as lookup key for secondary storage targets on eigenda-proxy.
-	`)
+	`, "error", err)
 		parsedX = xBytes
 	}
 
-	parsedY, err := removeZeroPadding32Bytes(yBytes)
+	parsedY, err := stripZeroPrefixAndEnsure32Bytes(yBytes)
 	if err != nil {
 		log.Error(`
 		failed to remove 0x0 bytes from v1 certificate commitment y field.
 		This cert may fail if referenced as lookup key for secondary storage targets on eigenda-proxy.
-	`)
+	`, "error", err)
 		parsedY = yBytes
 	}
 

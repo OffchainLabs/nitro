@@ -23,14 +23,14 @@ func Test_EncodeDecodeBlob(t *testing.T) {
 	}
 }
 
-func Test_RemoveZeroPadding32Bytes(t *testing.T) {
+func Test_StripZeroPrefixAndEnsure32Bytes(t *testing.T) {
 	testArr := make([]byte, 32)
 	for i := range 32 {
 		testArr[i] = byte(i)
 	}
 
 	// 1 - do nothing
-	out1, err := removeZeroPadding32Bytes(testArr)
+	out1, err := stripZeroPrefixAndEnsure32Bytes(testArr)
 	if err != nil {
 		t.Fatalf("failed to sanitize bytes to field element: %v", testArr)
 	}
@@ -42,7 +42,7 @@ func Test_RemoveZeroPadding32Bytes(t *testing.T) {
 	// 2 - add padding and ensure its been removed
 	testArr = append([]byte{0x0, 0x0, 0x0}, testArr...)
 
-	out2, err := removeZeroPadding32Bytes(testArr)
+	out2, err := stripZeroPrefixAndEnsure32Bytes(testArr)
 
 	if !bytes.Equal(out1, out2) {
 		t.Fatalf("not equal; in %v, out %v", out1, out2)
@@ -52,15 +52,19 @@ func Test_RemoveZeroPadding32Bytes(t *testing.T) {
 
 	testArr = append([]byte{0x69}, testArr...)
 
-	_, err = removeZeroPadding32Bytes(testArr)
+	_, err = stripZeroPrefixAndEnsure32Bytes(testArr)
 	if err == nil {
 		t.Fatalf("expected error: %v", err)
 	}
 
-	// 4 - ensure error when input too small
+	// 4 - ensure padding when input too small
 
-	_, err = removeZeroPadding32Bytes([]byte{0x42})
-	if err == nil {
+	out3, err := stripZeroPrefixAndEnsure32Bytes([]byte{0x42})
+	if err != nil {
 		t.Fatalf("expected error: %v", err)
+	}
+
+	if out3[31] != 0x42 {
+		t.Fatalf("expected 0x42 as last value in 32 byte arr")
 	}
 }
