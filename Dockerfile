@@ -208,7 +208,7 @@ RUN apt-get update && apt-get install -y unzip wget curl
 WORKDIR /workspace/machines
 
 # Download WAVM machines
-# no fetch since these replay artifacts are only used for backwards compatibility for Arbitrum One and Nova
+# no fetch since these replay artifacts are only used for backwards compatibility for vanilla Arbitrum One and Nova
 COPY ./scripts/download-machine.sh .
 COPY ./scripts/download-machine-eigenda.sh .
 #RUN ./download-machine.sh consensus-v1-rc1 0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41
@@ -233,6 +233,7 @@ COPY ./scripts/download-machine-eigenda.sh .
 # RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
 RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
 RUN ./download-machine-eigenda.sh consensus-eigenda-v32 0x951009942c00b5bd0abec233174fe33fadf7cd5013d17b042f9b28b3b00b469c
+RUN ./download-machine-eigenda.sh consensus-eigenda-v32.1 0x04a297cdd13254c4c6c26388915d416286daf22f3a20e3ebee10400a3129dd17
 
 FROM golang:1.23.1-bookworm AS node-builder
 WORKDIR /workspace
