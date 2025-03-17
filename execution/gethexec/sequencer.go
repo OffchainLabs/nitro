@@ -1105,13 +1105,14 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if queueItem.isTimeboosted &&
 			queueItem.blockStamp != 0 &&
 			lastBlock.Number.Uint64() >= queueItem.blockStamp+config.Dangerous.Timeboost.QueueTimeoutInBlocks {
-			queueItem.returnResult(fmt.Errorf(
-				"timeboosted tx: %s has hit block based timeout. currentBlockNum: %d, blockStamp: %d, blockExpiry: %d",
+			err := fmt.Errorf("timeboosted tx: %s has hit block based timeout. currentBlockNum: %d, blockStamp: %d, blockExpiry: %d",
 				queueItem.tx.Hash(),
 				lastBlock.Number.Uint64()+1,
 				queueItem.blockStamp,
 				queueItem.blockStamp+config.Dangerous.Timeboost.QueueTimeoutInBlocks,
-			))
+			)
+			queueItem.returnResult(err) // this isnt read by anyone, so we a log a debug line
+			log.Debug("Error sequencing timeboost tx", "err", err)
 			continue
 		}
 		if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), lastBlock.BaseFee) {
