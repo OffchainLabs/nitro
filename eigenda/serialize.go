@@ -107,11 +107,13 @@ func padPow2(data []byte) ([]byte, error) {
 	return rs.ToByteArray(paddedDataFr, dataFrLenPow2*encoding.BYTES_PER_SYMBOL), nil
 }
 
-// removeZeroPadding32Bytes removes any prefix padded zero bytes from an assumed
-// 32 byte value
-func removeZeroPadding32Bytes(arr []byte) ([]byte, error) {
+// stripZeroPrefixAndEnsure32Bytes removes any prefix padded zero bytes from an assumed
+// 32 byte value and pads zero prefix bytes if value size < 32
+func stripZeroPrefixAndEnsure32Bytes(arr []byte) ([]byte, error) {
 	if len(arr) < 32 {
-		return nil, fmt.Errorf("expected value >= 32 bytes; got %d", len(arr))
+		// pad zeros to preserve value at exactly 32 bytes
+		zeroBuffer := make([]byte, 32 - len(arr))
+		return append(zeroBuffer, arr...), nil
 	}
 
 	// iterate over prefix bytes and verify only zero's are included
