@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/execution/nethexec"
 	"io"
 	"math/big"
 	"net/http"
@@ -570,7 +571,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 	return chainDb, l2BlockChain, nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, targetConfig *gethexec.StylusTargetConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, targetConfig *gethexec.StylusTargetConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, nethRpcClient *nethexec.NethRpcClient, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, config.Persistent.Ancient, "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
@@ -838,7 +839,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					return chainDb, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
-			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
+			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig), "hex", hex.EncodeToString(parsedInitMessage.SerializedChainConfig))
 		} else {
 			serializedChainConfig, err := json.Marshal(chainConfig)
 			if err != nil {
@@ -857,6 +858,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
 			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
 		}
+
+		// Trigger genesis block building at Nethermind
+		_ = nethRpcClient.DigestInitMessage(ctx, parsedInitMessage.InitialL1BaseFee, parsedInitMessage.SerializedChainConfig)
+
 		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/callstack"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -30,6 +31,7 @@ func (db PreimageDb) DeleteRange(start, end []byte) error {
 }
 
 func (db PreimageDb) Get(key []byte) ([]byte, error) {
+	callstack.LogCallStack("")
 	var hash [32]byte
 	copy(hash[:], key)
 	if len(key) == 32 {

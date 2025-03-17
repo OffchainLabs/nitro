@@ -5,6 +5,7 @@ package gethhook
 
 import (
 	"errors"
+	"github.com/offchainlabs/nitro/callstack"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core"
@@ -46,6 +47,7 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 }
 
 func init() {
+	callstack.LogCallStack("")
 	core.ReadyEVMForL2 = func(evm *vm.EVM, msg *core.Message) {
 		if evm.ChainConfig().IsArbitrum() {
 			evm.ProcessingHook = arbos.NewTxProcessor(evm, msg)

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/execution/nethexec"
 	"io"
 	"math/big"
 	"os"
@@ -422,7 +423,6 @@ func mainImpl() int {
 			log.Warn("failed to check if node is compatible with on-chain WASM module root", "err", err)
 		}
 	}
-
 	traceConfig := nodeConfig.Execution.VmTrace
 	var tracer *tracing.Hooks
 	if traceConfig.TracerName != "" {
@@ -434,7 +434,13 @@ func mainImpl() int {
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	nethRpcClient, err := nethexec.NewNethRpcClient()
+	if err != nil {
+		log.Crit("failed to create neth-rpc client", "err", err)
+		return 1
+	}
+
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, nethRpcClient, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -518,7 +524,7 @@ func mainImpl() int {
 		}
 	}
 
-	execNode, err := gethexec.CreateExecutionNode(
+	gethNode, err := gethexec.CreateExecutionNode(
 		ctx,
 		stack,
 		chainDb,
@@ -535,6 +541,8 @@ func mainImpl() int {
 	if err != nil {
 		log.Error("failed to create machine locator: %w", err)
 	}
+
+	execNode := nethexec.NewNodeWrapper(gethNode, nethRpcClient)
 
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(
 		ctx,

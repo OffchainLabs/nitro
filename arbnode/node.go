@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/execution/nethexec"
 	"math/big"
 	"os"
 	"path"
@@ -1306,10 +1307,20 @@ func CreateNodeFullExecutionClient(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	execClient, ok := n.ExecutionClient.(*gethexec.ExecutionNode)
-	if !ok {
+	//execClient, ok := n.ExecutionClient.(*gethexec.ExecutionNode)
+	//if !ok {
+	//	execClient = nil
+	//}
+	var execClient *gethexec.ExecutionNode
+	switch ec := n.ExecutionClient.(type) {
+	case *gethexec.ExecutionNode:
+		execClient = ec
+	case *nethexec.NodeWrapper:
+		execClient = ec.ExecutionNode
+	default:
 		execClient = nil
 	}
+
 	if execClient != nil {
 		err := execClient.Initialize(ctx)
 		if err != nil {

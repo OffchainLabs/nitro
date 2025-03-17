@@ -8,6 +8,8 @@ replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 replace github.com/offchainlabs/bold => ./bold
 
+replace github.com/offchainlabs/nitro/callstack => ./callstack
+
 require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -44,6 +46,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/offchainlabs/bold v0.0.3-0.20250313062923-4b76649f2abc
+	github.com/offchainlabs/nitro/callstack v0.0.0-00010101000000-000000000000
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff/v3 v3.0.1
 	github.com/redis/go-redis/v9 v9.6.3

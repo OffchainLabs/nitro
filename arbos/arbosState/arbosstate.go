@@ -6,6 +6,7 @@ package arbosState
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/log"
 	"math"
 	"math/big"
 
@@ -185,6 +186,7 @@ var (
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
 
 func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
+	log.Info("===================== ENTER InitializeArbosState")
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -264,6 +266,9 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 			return nil, err
 		}
 	}
+
+	log.Info("===================== EXIT  InitializeArbosState")
+
 	return aState, nil
 }
 

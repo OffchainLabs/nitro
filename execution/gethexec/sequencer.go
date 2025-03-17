@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/callstack"
 	"math"
 	"math/big"
 	"runtime/debug"
@@ -668,6 +669,8 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
 		}
 	}
+
+	callstack.LogCallStack("")
 
 	var blockStamp uint64
 	if isExpressLaneController && config.Timeboost.QueueTimeoutInBlocks > 0 {

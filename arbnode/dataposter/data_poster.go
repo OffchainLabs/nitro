@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/callstack"
 	"math"
 	"math/big"
 	"net/http"
@@ -944,6 +945,8 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 			log.Debug("DataPoster will send previously unsent batch tx", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantTxCount", reorgResistantTxCount)
 		}
 	}
+
+	callstack.LogCallStack("")
 
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
 		isAlreadyKnown := rpcclient.IsAlreadyKnownError(err)

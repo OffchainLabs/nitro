@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/callstack"
 	"io"
 	"math/big"
+	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -18,7 +21,35 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
+var msgCounter uint64
+
 func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (types.Transactions, error) {
+	txs, err := parseL2Transactions(msg, chainId)
+	if err != nil {
+		log.Error("Failed to parse L2 transactions", "error", err)
+		return nil, err
+	}
+
+	atomic.AddUint64(&msgCounter, 1)
+	dump := make(map[string]string)
+	dump["$index"] = strconv.FormatUint(atomic.LoadUint64(&msgCounter), 10)
+	ignoredFields := []string{"L2msg", "signer"}
+	whitelistedMethods := []string{"Type", "Time", "Hash", "Size", "GetInner"}
+	callstack.FillMapWithStructFields(dump, msg, "msg", ignoredFields, whitelistedMethods)
+
+	// Log each transaction
+	for i, tx := range txs {
+		callstack.FillMapWithStructFields(dump, tx, fmt.Sprintf("tx[%d]", i), ignoredFields, whitelistedMethods)
+	}
+
+	callstack.PrintPrettyJson(dump)
+
+	return txs, err
+}
+
+func parseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (types.Transactions, error) {
+	callstack.LogCallStack("")
+
 	if len(msg.L2msg) > arbostypes.MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")

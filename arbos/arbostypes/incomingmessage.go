@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/callstack"
 	"io"
 	"math/big"
 
@@ -272,6 +273,7 @@ var TestInitMessage = &ParsedInitMessage{
 
 // ParseInitMessage returns the chain id on success
 func (msg *L1IncomingMessage) ParseInitMessage() (*ParsedInitMessage, error) {
+	callstack.LogCallStack("")
 	if msg.Header.Kind != L1MessageType_Initialize {
 		return nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
 	}
@@ -310,6 +312,8 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*ParsedInitMessage, error) {
 }
 
 func ParseBatchPostingReportMessageFields(rd io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
+	callstack.LogCallStack("")
+
 	batchTimestamp, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, common.Address{}, common.Hash{}, 0, nil, 0, err

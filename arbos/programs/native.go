@@ -22,6 +22,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/callstack"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -304,6 +305,8 @@ func callProgram(
 	memoryModel *MemoryModel,
 	arbos_tag uint32,
 ) ([]byte, error) {
+	callstack.LogCallStack("")
+
 	db := interpreter.Evm().StateDB
 	debug := stylusParams.DebugMode
 

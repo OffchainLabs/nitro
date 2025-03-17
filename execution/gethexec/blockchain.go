@@ -3,6 +3,11 @@ package gethexec
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/triedb"
+	"os"
+	"strings"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -162,6 +167,25 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 		return err
 	}
 
+	arbosAccountAddress := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
+
+	log.Info("Address 0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF hash", crypto.Keccak256Hash(arbosAccountAddress.Bytes()).String())
+
+	log.Info("Precompiles hashes")
+	for addr, _ := range arbosState.PrecompileMinArbOSVersions {
+		log.Info("Address 0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF hash", crypto.Keccak256Hash(addr.Bytes()).String())
+	}
+
+	triedbConfig := cacheConfig.TriedbConfig()
+	triedbConfig.Preimages = false
+	stateDatabase := state.NewDatabase(triedb.NewDatabase(chainDb, triedbConfig), nil)
+
+	statedb, _ := state.New(stateRoot, stateDatabase)
+	arbosAccountStorageRoot := statedb.GetStorageRoot(arbosAccountAddress)
+
+	log.Info("ArbOS account storage root from StateDB", "root", arbosAccountStorageRoot.String())
+	log.Info("Genesis block state root", stateRoot.String())
+
 	genBlock := arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig)
 	blockHash := genBlock.Hash()
 
@@ -178,6 +202,11 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 		return fmt.Errorf("database contains data inconsistent with initialization: database has genesis hash %v but we built genesis hash %v", storedGenHash, blockHash)
 	} else {
 		log.Info("recreated existing genesis block", "number", blockNumber, "hash", blockHash)
+	}
+
+	exitAfterGenesis, exists := os.LookupEnv("PR_EXIT_AFTER_GENESIS")
+	if exists && strings.ToUpper(exitAfterGenesis) == "TRUE" {
+		panic("GENESIS BLOCK IS BUILT: " + blockHash.String())
 	}
 
 	return nil

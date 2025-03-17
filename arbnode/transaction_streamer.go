@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/callstack"
 	"math/big"
 	"reflect"
 	"strings"
@@ -296,6 +297,8 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 	}
 	var oldMessages []*arbostypes.MessageWithMetadata
 
+	callstack.LogCallStack("")
+
 	currentHeadMsgIdx, err := s.GetHeadMessageIndex()
 	if err != nil {
 		return err
@@ -562,6 +565,7 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 }
 
 func (s *TransactionStreamer) AddMessages(firstMsgIdx arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, blockMetadataArr []common.BlockMetadata) error {
+	callstack.LogCallStack("")
 	return s.AddMessagesAndEndBatch(firstMsgIdx, messagesAreConfirmed, messages, blockMetadataArr, nil)
 }
 
@@ -720,6 +724,8 @@ func endBatch(batch ethdb.Batch) error {
 }
 
 func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, blockMetadataArr []common.BlockMetadata, batch ethdb.Batch) error {
+	callstack.LogCallStack("")
+
 	messagesWithBlockInfo := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(messages))
 	for _, message := range messages {
 		messagesWithBlockInfo = append(messagesWithBlockInfo, arbostypes.MessageWithMetadataAndBlockInfo{
