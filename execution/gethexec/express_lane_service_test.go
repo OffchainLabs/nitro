@@ -367,6 +367,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
+
 	messages := []*timeboost.ExpressLaneSubmission{
 		buildValidSubmissionWithSeqAndTx(t, 0, 10, types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), []byte{1})),
 		buildValidSubmissionWithSeqAndTx(t, 0, 5, emptyTx),
@@ -425,6 +426,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
+
 	messages := []*timeboost.ExpressLaneSubmission{
 		buildValidSubmissionWithSeqAndTx(t, 0, 1, emptyTx),
 		buildValidSubmissionWithSeqAndTx(t, 0, 2, types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), []byte{1})),
@@ -440,6 +442,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 			require.NoError(t, err)
 		}
 	}
+
 	// One tx out of the four should have failed, so we should have only published 3.
 	// Since sequence number 2 failed after submission stage, that nonce is used up
 	require.Equal(t, 3, len(stubPublisher.publishedTxOrder))
@@ -465,6 +468,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	els1.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	stubPublisher1 := makeStubPublisher(els1)
 	els1.transactionPublisher = stubPublisher1
+
 	messages := []*timeboost.ExpressLaneSubmission{
 		buildValidSubmissionWithSeqAndTx(t, 0, 1, emptyTx),
 		buildValidSubmissionWithSeqAndTx(t, 0, 3, emptyTx),
