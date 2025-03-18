@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -51,6 +52,88 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tmpDir := t.TempDir()
+
+	numTxs, blockBasedTimeout := uint64(10), uint64(5)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, withForwardingSeq, blockBasedTimeout)
+	seqClient, seqInfo := builderSeq.L2.Client, builderSeq.L2Info
+	defer cleanupSeq()
+	defer cleanupForwarder()
+	seqInfo.GenerateAccount("User2")
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
+	Require(t, err)
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
+	Require(t, err)
+
+	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Bob", "Alice", bobBidderClient, aliceBidderClient, roundDuration)
+	time.Sleep(roundTimingInfo.TimeTilNextRound())
+
+	chainId, err := seqClient.ChainID(ctx)
+	Require(t, err)
+
+	// Prepare a client that can submit txs to the sequencer via the express lane.
+	bobPriv := seqInfo.Accounts["Bob"].PrivateKey
+	forwardingSeqDial, err := rpc.Dial(forwarder.ConsensusNode.Stack.HTTPEndpoint())
+	Require(t, err)
+	expressLaneClient := newExpressLaneClient(
+		bobPriv,
+		chainId,
+		*roundTimingInfo,
+		auctionContractAddr,
+		forwardingSeqDial,
+	)
+	expressLaneClient.Start(ctx)
+
+	size := 80 * 1024 // 80 KB
+	data := make([]byte, size)
+	_, err = rand.Read(data)
+	Require(t, err)
+
+	var txs types.Transactions
+	for i := uint64(0); i < numTxs; i++ {
+		txs = append(txs, seqInfo.PrepareTx("Owner", "User2", 700000000, big.NewInt(1e8), data)) // this tx should consume one block
+	}
+	// Buffer future sequence numbered txs
+	for seq := uint64(1); seq < numTxs; seq++ {
+		Require(t, expressLaneClient.QueueTransactionWithSequence(ctx, txs[seq], seq))
+	}
+	// Send tx with seq=0 that releases all the buffered txs and wait for the block to be produced
+	Require(t, expressLaneClient.QueueTransactionWithSequence(ctx, txs[0], 0))
+	rec, err := builderSeq.L2.EnsureTxSucceeded(txs[0])
+	Require(t, err)
+	firstBlockNum := rec.BlockNumber.Uint64()
+	t.Logf("tx: 0 was sequenced in block: %d", firstBlockNum)
+
+	// Verify that QueueTimeoutInBlocks config option is respected
+	for i := uint64(1); i < numTxs; i++ {
+		rec, err := builderSeq.L2.EnsureTxSucceeded(txs[i])
+		if err == nil {
+			if i >= blockBasedTimeout {
+				t.Fatalf("more txs sequenced than allowed. sequencedCount: %d, allowed: %d", i+1, blockBasedTimeout)
+			}
+			t.Logf("tx: %d was sequenced in block: %d", i, rec.BlockNumber)
+			if rec.BlockNumber.Uint64() != firstBlockNum+i {
+				t.Fatalf("tx: %d sequenced in unexpected block: %d, expected to be sequenced in block: %d", i, rec.BlockNumber, firstBlockNum+i)
+			}
+		} else {
+			// There's a possibility that all the EL txs might get stale blockStamp by 1, in that case we conservatively
+			// check if at least blockBasedTimeout-1 txs have been sequenced successfully
+			if i < blockBasedTimeout-1 {
+				t.Fatalf("lesser than expected txs were sequenced. sequencedCount: %d, minimumRequired: %d", i, blockBasedTimeout-1)
+			}
+			t.Logf("tx: %d was not sequenced into a block", i)
+		}
+	}
+}
+
 func TestAuctionResolutionDuringATie(t *testing.T) {
 	testAuctionResolutionDuringATie(t, false)
 }
@@ -67,7 +150,7 @@ func testAuctionResolutionDuringATie(t *testing.T, multiRuns bool) {
 
 	tmpDir := t.TempDir()
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, _, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, _, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0, 0)
 	_, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
@@ -176,7 +259,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 
 	tmpDir := t.TempDir()
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, withForwardingSeq)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, withForwardingSeq, 0)
 	seqB, seqClientB, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	seqA := forwarder.ConsensusNode
 	if !dueToCrash {
@@ -305,7 +388,7 @@ func TestForwardingExpressLaneTxs(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, withForwardingSeq)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, forwarder, cleanupForwarder := setupExpressLaneAuction(t, tmpDir, ctx, withForwardingSeq, 0)
 	seqClient, seqInfo := builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 	defer cleanupForwarder()
@@ -346,7 +429,7 @@ func TestExpressLaneTransactionHandlingComplex(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0, 0)
 	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
@@ -439,7 +522,7 @@ func TestExpressLaneTransactionHandling(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0, 0)
 	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
@@ -1054,7 +1137,7 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 
 	tmpDir := t.TempDir()
 
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, _, _ := setupExpressLaneAuction(t, tmpDir, ctx, 0, 0)
 	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 
@@ -1095,7 +1178,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_Timeboo
 	defer cancel()
 
 	tmpDir := t.TempDir()
-	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, feedListener, cleanupFeedListener := setupExpressLaneAuction(t, tmpDir, ctx, withFeedListener)
+	auctionContractAddr, aliceBidderClient, bobBidderClient, roundDuration, builderSeq, cleanupSeq, feedListener, cleanupFeedListener := setupExpressLaneAuction(t, tmpDir, ctx, withFeedListener, 0)
 	seq, seqClient, seqInfo := builderSeq.L2.ConsensusNode, builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 	defer cleanupFeedListener()
@@ -1374,6 +1457,7 @@ func setupExpressLaneAuction(
 	dbDirPath string,
 	ctx context.Context,
 	extraNodeTy extraNodeType,
+	queueTimeoutInBlocks uint64,
 ) (common.Address, *timeboost.BidderClient, *timeboost.BidderClient, time.Duration, *NodeBuilder, func(), *TestClient, func()) {
 	seqPort := getRandomPort(t)
 	forwarderPort := getRandomPort(t)
@@ -1399,6 +1483,7 @@ func setupExpressLaneAuction(
 		RedisUrl:                     expressLaneRedisURL,
 		MaxFutureSequenceDistance:    1500, // Required for TestExpressLaneTransactionHandlingComplex
 		RedisUpdateEventsChannelSize: 50,
+		QueueTimeoutInBlocks:         queueTimeoutInBlocks,
 	}
 	builderSeq.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	cleanupSeq := builderSeq.Build(t)
@@ -1788,7 +1873,7 @@ func (elc *expressLaneClient) Start(ctxIn context.Context) {
 	elc.StopWaiter.Start(ctxIn, elc)
 }
 
-func (elc *expressLaneClient) SendTransactionWithSequence(ctx context.Context, transaction *types.Transaction, seq uint64) error {
+func (elc *expressLaneClient) QueueTransactionWithSequence(ctx context.Context, transaction *types.Transaction, seq uint64) error {
 	encodedTx, err := transaction.MarshalBinary()
 	if err != nil {
 		return err
@@ -1818,8 +1903,17 @@ func (elc *expressLaneClient) SendTransactionWithSequence(ctx context.Context, t
 	if _, err := promise.Await(ctx); err != nil {
 		return err
 	}
-	_, err = EnsureTxSucceeded(ctx, elc.ethClient, transaction)
-	return err
+	return nil
+}
+
+func (elc *expressLaneClient) SendTransactionWithSequence(ctx context.Context, transaction *types.Transaction, seq uint64) error {
+	if err := elc.QueueTransactionWithSequence(ctx, transaction, seq); err != nil {
+		return err
+	}
+	if _, err := EnsureTxSucceeded(ctx, elc.ethClient, transaction); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) error {
