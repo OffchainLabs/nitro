@@ -290,7 +290,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 
 		// Check if we agree with the last posted batch to the inbox.
-		result, err := l2node.TxStreamer.ResultAtCount(totalMessageCount)
+		result, err := l2node.TxStreamer.ResultAtMessageIndex(totalMessageCount - 1)
 		Require(t, err)
 		_ = result
 
