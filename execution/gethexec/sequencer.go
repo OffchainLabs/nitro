@@ -1111,7 +1111,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 				queueItem.blockStamp,
 				queueItem.blockStamp+config.Dangerous.Timeboost.QueueTimeoutInBlocks,
 			)
-			queueItem.returnResult(err) // this isnt read by anyone, so we a log a debug line
+			queueItem.returnResult(err) // this isnt read by anyone, so we log a debug line
 			log.Debug("Error sequencing timeboost tx", "err", err)
 			continue
 		}
