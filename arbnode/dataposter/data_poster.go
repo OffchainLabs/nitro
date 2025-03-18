@@ -46,6 +46,7 @@ import (
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -81,6 +82,7 @@ type DataPoster struct {
 	extraBacklog      func() uint64
 	parentChainID     *big.Int
 	parentChainID256  *uint256.Int
+	parentChain       *parent.ParentChain
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -167,6 +169,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		maxFeeCapExpression: expression,
 		extraBacklog:        opts.ExtraBacklog,
 		parentChainID:       opts.ParentChainID,
+		parentChain:         &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.HeaderReader},
 	}
 	var overflow bool
 	dp.parentChainID256, overflow = uint256.FromBig(opts.ParentChainID)
@@ -402,7 +405,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		previousTxCumulativeWeight = arbmath.MaxInt(previousTxCumulativeWeight, confirmedWeight)
 		newCumulativeWeight := previousTxCumulativeWeight + thisWeight
 
-		maxBlobGasPerBlock, err := p.client.MaxBlobGasPerBlock(ctx)
+		maxBlobGasPerBlock, err := p.parentChain.MaxBlobGasPerBlock(ctx, nil)
 		if err != nil {
 			return err
 		}
@@ -522,7 +525,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	currentBlobFee := big.NewInt(0)
 	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
 		var err error
-		currentBlobFee, err = p.client.BlobBaseFee(ctx)
+		currentBlobFee, err = p.parentChain.BlobFeePerByte(ctx, latestHeader)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to get blob base fee: %w", err)
 		}
@@ -875,7 +878,7 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	}
 	var currentBlobFee *big.Int
 	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
-		currentBlobFee, err = p.client.BlobBaseFee(ctx)
+		currentBlobFee, err = p.parentChain.BlobFeePerByte(ctx, latestHeader)
 		if err != nil {
 			return err
 		}

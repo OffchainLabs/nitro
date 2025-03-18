@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -121,7 +122,8 @@ type BatchPoster struct {
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
 
-	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
+	accessList  func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
+	parentChain *parent.ParentChain
 }
 
 type l1BlockBound int
@@ -243,7 +245,11 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDapFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
-	MaxSize:                        100000,
+	MaxSize: 100000,
+	// The Max4844BatchSize should be calculated from the values from L1 chain configs
+	// using the eip4844 utility package from go-ethereum.
+	// The default value of 0 causes the batch poster to use the value from go-ethereum.
+	Max4844BatchSize:               0,
 	PollInterval:                   time.Second * 10,
 	ErrorDelay:                     time.Second * 10,
 	MaxDelay:                       time.Hour,
@@ -355,6 +361,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		dapWriter:          opts.DAPWriter,
 		redisLock:          redisLock,
 		dapReaders:         opts.DAPReaders,
+		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -683,13 +690,13 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
 
-	maxBlobGasPerBlock, err := b.l1Reader.Client().MaxBlobGasPerBlock(ctx)
+	results, err := b.parentChain.MaxBlobGasPerBlock(ctx, nil)
 	if err != nil {
-		log.Error("error getting max blob gas per block", "err", err)
-	} else {
-		// #nosec G115
-		blobGasLimitGauge.Update(int64(maxBlobGasPerBlock))
+		log.Error("Error getting max blob gas per block", "err", err)
 	}
+	// #nosec G115
+	blobGasLimitGauge.Update(int64(results))
+
 	for {
 		select {
 		case h, ok := <-headerCh:
@@ -701,7 +708,7 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			l1GasPrice := h.BaseFee.Uint64()
 			if h.BlobGasUsed != nil {
 				if h.ExcessBlobGas != nil {
-					blobFeePerByte, err := b.l1Reader.Client().BlobBaseFee(ctx)
+					blobFeePerByte, err := b.parentChain.BlobFeePerByte(ctx, h)
 					if err != nil {
 						log.Error("Error getting blob fee per byte", "err", err)
 						continue
@@ -843,7 +850,7 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		if b.config().Max4844BatchSize != 0 {
 			maxSize = b.config().Max4844BatchSize
 		} else {
-			maxBlobGasPerBlock, err := b.l1Reader.Client().MaxBlobGasPerBlock(ctx)
+			maxBlobGasPerBlock, err := b.parentChain.MaxBlobGasPerBlock(ctx, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -1293,7 +1300,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 					if backlog == 0 ||
 						b.non4844BatchCount == 0 ||
 						b.non4844BatchCount > 16 {
-						blobFeePerByte, err := b.l1Reader.Client().BlobBaseFee(ctx)
+						blobFeePerByte, err := b.parentChain.BlobFeePerByte(ctx, latestHeader)
 						if err != nil {
 							return false, err
 						}
@@ -1639,7 +1646,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	maxBlobGasPerBlock, err := b.l1Reader.Client().MaxBlobGasPerBlock(ctx)
+	maxBlobGasPerBlock, err := b.parentChain.MaxBlobGasPerBlock(ctx, latestHeader)
 	if err != nil {
 		return false, err
 	}
