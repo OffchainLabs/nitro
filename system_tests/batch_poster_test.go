@@ -493,8 +493,8 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	Require(t, err)
 	isUsingEIP7623, err := builder.L2.ConsensusNode.BatchPoster.ParentChainIsUsingEIP7623(ctx, latestHeader)
 	Require(t, err)
-	if isUsingEIP7623 {
-		t.Fatal("L2's parent chain should not be using EIP-7623")
+	if !isUsingEIP7623 {
+		t.Fatal("L2's parent chain should be using EIP-7623")
 	}
 
 	// Build L3
