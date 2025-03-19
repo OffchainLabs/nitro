@@ -144,10 +144,10 @@ func ProduceBlock(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
-	chainConfig *params.ChainConfig,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
 ) (*types.Block, types.Receipts, error) {
+	chainConfig := chainContext.Config()
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
@@ -156,7 +156,7 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch, runMode,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runMode,
 	)
 }
 
@@ -168,7 +168,6 @@ func ProduceBlockAdvanced(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
-	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
@@ -190,6 +189,8 @@ func ProduceBlockAdvanced(
 		l1BlockNumber: l1Header.BlockNumber,
 		l1Timestamp:   l1Header.Timestamp,
 	}
+
+	chainConfig := chainContext.Config()
 
 	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
