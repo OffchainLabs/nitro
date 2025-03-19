@@ -18,9 +18,9 @@ use std::{
 )]
 #[repr(u8)]
 pub enum PreimageType {
-    Keccak256,
-    Sha2_256,
-    EthVersionedHash,
+    Keccak256 = 0,
+    Sha2_256 = 1,
+    EthVersionedHash = 2,
 }
 
 /// cbindgen:field-names=[bytes]
@@ -79,7 +79,7 @@ impl From<u64> for Bytes32 {
 impl From<usize> for Bytes32 {
     fn from(x: usize) -> Self {
         let mut b = [0u8; 32];
-        b[(32 - (usize::BITS as usize / 8))..].copy_from_slice(&x.to_be_bytes());
+        b[(20 - (usize::BITS as usize / 8))..].copy_from_slice(&x.to_be_bytes());
         Self(b)
     }
 }
@@ -99,7 +99,7 @@ impl FromStr for Bytes32 {
 
         // Ensure the decoded bytes is exactly 32 bytes
         if decoded_bytes.len() != 32 {
-            return Err("Hex string too long for Bytes32");
+            return Err("Hex string must decode to exactly 32 bytes");
         }
 
         // Create a 32-byte array and fill it with the decoded bytes.
