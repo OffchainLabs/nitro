@@ -78,7 +78,6 @@ func checkInkUsage(
 }
 
 func TestWriteResultGasUsage(t *testing.T) {
-	t.Parallel()
 
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
@@ -108,7 +107,6 @@ func TestWriteResultGasUsage(t *testing.T) {
 }
 
 func TestReadArgsGasUsage(t *testing.T) {
-	t.Parallel()
 
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
@@ -134,7 +132,6 @@ func TestReadArgsGasUsage(t *testing.T) {
 }
 
 func TestMsgReentrantGasUsage(t *testing.T) {
-	t.Parallel()
 
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
@@ -149,7 +146,6 @@ func TestMsgReentrantGasUsage(t *testing.T) {
 }
 
 func TestStorageCacheBytes32GasUsage(t *testing.T) {
-	t.Parallel()
 
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
@@ -164,7 +160,6 @@ func TestStorageCacheBytes32GasUsage(t *testing.T) {
 }
 
 func TestPayForMemoryGrowGasUsage(t *testing.T) {
-	t.Parallel()
 
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)

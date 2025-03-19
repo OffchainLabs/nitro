@@ -264,7 +264,6 @@ func setupArbOwnerAndArbGasInfo(
 }
 
 func TestL1BaseFeeEstimateInertia(t *testing.T) {
-	t.Parallel()
 
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
@@ -284,7 +283,6 @@ func TestL1BaseFeeEstimateInertia(t *testing.T) {
 
 // Similar to TestL1BaseFeeEstimateInertia, but now using a different setter from ArbOwner
 func TestL1PricingInertia(t *testing.T) {
-	t.Parallel()
 
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
@@ -303,7 +301,6 @@ func TestL1PricingInertia(t *testing.T) {
 }
 
 func TestL1PricingRewardRate(t *testing.T) {
-	t.Parallel()
 
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
@@ -322,7 +319,6 @@ func TestL1PricingRewardRate(t *testing.T) {
 }
 
 func TestL1PricingRewardRecipient(t *testing.T) {
-	t.Parallel()
 
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
@@ -341,7 +337,6 @@ func TestL1PricingRewardRecipient(t *testing.T) {
 }
 
 func TestL2GasPricingInertia(t *testing.T) {
-	t.Parallel()
 
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
@@ -360,7 +355,6 @@ func TestL2GasPricingInertia(t *testing.T) {
 }
 
 func TestL2GasBacklogTolerance(t *testing.T) {
-	t.Parallel()
 
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
@@ -379,7 +373,6 @@ func TestL2GasBacklogTolerance(t *testing.T) {
 }
 
 func TestPerBatchGasCharge(t *testing.T) {
-	t.Parallel()
 
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
@@ -398,7 +391,6 @@ func TestPerBatchGasCharge(t *testing.T) {
 }
 
 func TestL1PricingEquilibrationUnits(t *testing.T) {
-	t.Parallel()
 
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
@@ -417,7 +409,6 @@ func TestL1PricingEquilibrationUnits(t *testing.T) {
 }
 
 func TestGasAccountingParams(t *testing.T) {
-	t.Parallel()
 
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
@@ -450,7 +441,6 @@ func TestGasAccountingParams(t *testing.T) {
 }
 
 func TestCurrentTxL1GasFees(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -506,7 +496,6 @@ func TestGetBrotliCompressionLevel(t *testing.T) {
 }
 
 func TestArbStatistics(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -531,7 +520,6 @@ func TestArbStatistics(t *testing.T) {
 }
 
 func TestArbFunctionTable(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -567,7 +555,6 @@ func TestArbFunctionTable(t *testing.T) {
 }
 
 func TestArbAggregatorBaseFee(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -595,7 +582,6 @@ func TestArbAggregatorBaseFee(t *testing.T) {
 }
 
 func TestFeeAccounts(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -637,7 +623,6 @@ func TestFeeAccounts(t *testing.T) {
 }
 
 func TestChainOwners(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -712,7 +697,6 @@ func TestChainOwners(t *testing.T) {
 }
 
 func TestArbAggregatorBatchPosters(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -761,7 +745,6 @@ func TestArbAggregatorBatchPosters(t *testing.T) {
 }
 
 func TestArbAggregatorGetPreferredAggregator(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
