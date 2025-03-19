@@ -370,8 +370,8 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	stack, err := node.New(stackConfig)
-	Require(t, err)
 	defer stack.Close()
+	Require(t, err)
 
 	nodeConfig := NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme

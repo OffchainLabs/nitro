@@ -65,7 +65,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	defer func() {
 		err = errors.Join(err, stateDatabase.TrieDB().Close())
 	}()
-	statedb, err := state.New(common.Hash{}, stateDatabase)
+	statedb, err := state.New(types.EmptyRootHash, stateDatabase)
 	if err != nil {
 		panic("failed to init empty statedb :" + err.Error())
 	}
