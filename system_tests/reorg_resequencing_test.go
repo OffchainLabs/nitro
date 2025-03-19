@@ -36,7 +36,7 @@ func TestReorgResequencing(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	startMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	startHeadMsgIdx, err := builder.L2.ConsensusNode.TxStreamer.GetHeadMessageIndex()
 	Require(t, err)
 
 	builder.L2Info.GenerateAccount("Intermediate")
@@ -62,16 +62,16 @@ func TestReorgResequencing(t *testing.T) {
 	}
 	verifyBalances("before reorg")
 
-	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startMsgCount)
+	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(startHeadMsgIdx + 1)
 	Require(t, err)
 
-	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
 	Require(t, err)
 
 	verifyBalances("after empty reorg")
 	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after empty reorg")
 
-	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startMsgCount - 1)
+	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startHeadMsgIdx)
 	Require(t, err)
 	delayedIndexHash := common.BigToHash(big.NewInt(int64(prevMessage.DelayedMessagesRead)))
 	newMessage := &arbostypes.L1IncomingMessage{
@@ -85,13 +85,14 @@ func TestReorgResequencing(t *testing.T) {
 		},
 		L2msg: append(builder.L2Info.GetAddress("User4").Bytes(), arbmath.Uint64ToU256Bytes(params.Ether)...),
 	}
-	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadata{{
+	nextHeadMsgIdx := startHeadMsgIdx + 1
+	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(nextHeadMsgIdx, true, []arbostypes.MessageWithMetadata{{
 		Message:             newMessage,
 		DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
 	}}, nil)
 	Require(t, err)
 
-	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
 	Require(t, err)
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
@@ -99,10 +100,10 @@ func TestReorgResequencing(t *testing.T) {
 	verifyBalances("after reorg with new deposit")
 	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after reorg with new deposit")
 
-	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startMsgCount)
+	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(startHeadMsgIdx + 1)
 	Require(t, err)
 
-	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
 	Require(t, err)
 
 	verifyBalances("after second empty reorg")
