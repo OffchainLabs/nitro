@@ -12,7 +12,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 #[derive(ValueEnum, Copy, Clone, PartialEq, Eq, Debug)]
-#[clap(rename_all = "PascalCase")]
+#[value_enum(rename_all = "PascalCase")]
 pub enum Scenario {
     I32Add,
     I32And,
