@@ -368,7 +368,9 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		return nil, err
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
-		return &(opts.Config().DataPoster)
+		dpCfg := opts.Config().DataPoster
+		dpCfg.Post4844Blobs = opts.Config().Post4844Blobs
+		return &dpCfg
 	}
 	b.dataPoster, err = dataposter.NewDataPoster(ctx,
 		&dataposter.DataPosterOpts{
@@ -690,12 +692,14 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
 
-	results, err := b.parentChain.MaxBlobGasPerBlock(ctx, nil)
-	if err != nil {
-		log.Error("Error getting max blob gas per block", "err", err)
+	if b.config().Post4844Blobs {
+		results, err := b.parentChain.MaxBlobGasPerBlock(ctx, nil)
+		if err != nil {
+			log.Error("Error getting max blob gas per block", "err", err)
+		}
+		// #nosec G115
+		blobGasLimitGauge.Update(int64(results))
 	}
-	// #nosec G115
-	blobGasLimitGauge.Update(int64(results))
 
 	for {
 		select {
@@ -706,7 +710,7 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			}
 			baseFeeGauge.Update(h.BaseFee.Int64())
 			l1GasPrice := h.BaseFee.Uint64()
-			if h.BlobGasUsed != nil {
+			if b.config().Post4844Blobs && h.BlobGasUsed != nil {
 				if h.ExcessBlobGas != nil {
 					blobFeePerByte, err := b.parentChain.BlobFeePerByte(ctx, h)
 					if err != nil {
@@ -1646,14 +1650,16 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	maxBlobGasPerBlock, err := b.parentChain.MaxBlobGasPerBlock(ctx, latestHeader)
-	if err != nil {
-		return false, err
-	}
-	// #nosec G115
-	if len(kzgBlobs)*params.BlobTxBlobGasPerBlob > int(maxBlobGasPerBlock) {
+	if len(kzgBlobs) > 0 {
+		maxBlobGasPerBlock, err := b.parentChain.MaxBlobGasPerBlock(ctx, latestHeader)
+		if err != nil {
+			return false, err
+		}
 		// #nosec G115
-		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
+		if len(kzgBlobs)*params.BlobTxBlobGasPerBlob > int(maxBlobGasPerBlock) {
+			// #nosec G115
+			return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
+		}
 	}
 	accessList := b.accessList(batchPosition.NextSeqNum, b.building.segments.delayedMsg)
 	// On restart, we may be trying to estimate gas for a batch whose successor has
