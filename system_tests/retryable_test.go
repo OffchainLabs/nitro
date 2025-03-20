@@ -649,33 +649,6 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 	colors.PrintBlue("Excess Gas       ", excessGasLimit)
 	colors.PrintBlue("Excess Wei       ", excessWei)
 	colors.PrintMint("Fee Refund       ", refundFunds)
-	//	expectedRefunds := arbmath.BigMul(arbmath.BigAdd(excessWei, maxSubmissionFee), bigCount)
-	//	if !arbmath.BigEquals(refundFunds, expectedRefunds) {
-	//		Fatal(t, fmt.Sprintf("Fee Refund Address expected to recieve funds: %d, got: %d", expectedRefunds, refundFunds))
-	//	}
-
-	// the faucet must pay for both the gas used and the call value supplied
-	// expectedGasChange := arbmath.BigMul(gasFeeCap, retryableGas)
-	// expectedGasChange = arbmath.BigSub(expectedGasChange, userTxOpts.Value) // the user is credited this
-	// expectedGasChange = arbmath.BigAdd(expectedGasChange, maxSubmissionFee)
-	// expectedGasChange = arbmath.BigAdd(expectedGasChange, retryableL2CallValue)
-
-	// if !arbmath.BigEquals(fundsBeforeSubmit, arbmath.BigAdd(fundsAfterSubmit, expectedGasChange)) {
-	// 	diff := arbmath.BigSub(fundsBeforeSubmit, fundsAfterSubmit)
-	// 	colors.PrintRed("Expected ", expectedGasChange)
-	// 	colors.PrintRed("Observed ", diff)
-	// 	colors.PrintRed("Off by   ", arbmath.BigSub(expectedGasChange, diff))
-	// 	Fatal(t, "Supplied gas was improperly deducted\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
-	// }
-
-	// arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
-	// Require(t, err)
-	// minimumBaseFee, err := arbGasInfo.GetMinimumGasPrice(&bind.CallOpts{Context: ctx})
-	// Require(t, err)
-
-	// expectedFee := arbmath.BigMulByUint(l2BaseFee, usefulGas)
-	// expectedInfraFee := arbmath.BigMulByUint(minimumBaseFee, usefulGas)
-	// expectedNetworkFee := arbmath.BigSub(expectedFee, expectedInfraFee)
 
 	infraFee := arbmath.BigSub(infraBalanceAfter, infraBalanceBefore)
 	networkFee := arbmath.BigSub(networkBalanceAfter, networkBalanceBefore)
@@ -684,13 +657,6 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 	colors.PrintMint("paid infra fee:      ", infraFee)
 	colors.PrintMint("paid network fee:    ", networkFee)
 	colors.PrintMint("paid fee:            ", fee)
-
-	// if !arbmath.BigEquals(infraFee, expectedInfraFee) {
-	// 	Fatal(t, "Unexpected infra fee paid, want:", expectedInfraFee, "have:", infraFee)
-	// }
-	// if !arbmath.BigEquals(networkFee, expectedNetworkFee) {
-	// 	Fatal(t, "Unexpected network fee paid, want:", expectedNetworkFee, "have:", networkFee)
-	// }
 
 	validateBlockRange(t, []uint64{receipt.BlockNumber.Uint64()}, true, builder)
 }
