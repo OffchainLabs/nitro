@@ -1526,6 +1526,6 @@ func (n *Node) ExpectChosenSequencer() error {
 	return n.TxStreamer.ExpectChosenSequencer()
 }
 
-func (n *Node) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
-	return n.TxStreamer.BlockMetadataAtCount(count)
+func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
+	return n.TxStreamer.BlockMetadataAtMessageIndex(msgIdx)
 }

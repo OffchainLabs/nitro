@@ -131,7 +131,7 @@ func (s *Storage) Get(key common.Hash) (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	if info := s.burner.TracingInfo(); info != nil {
-		info.RecordStorageGet(key)
+		info.RecordStorageGet(s.mapAddress(key))
 	}
 	return s.GetFree(key), nil
 }
@@ -168,7 +168,7 @@ func (s *Storage) Set(key common.Hash, value common.Hash) error {
 		return err
 	}
 	if info := s.burner.TracingInfo(); info != nil {
-		info.RecordStorageSet(key, value)
+		info.RecordStorageSet(s.mapAddress(key), value)
 	}
 	s.db.SetState(s.account, s.mapAddress(key), value)
 	return nil
