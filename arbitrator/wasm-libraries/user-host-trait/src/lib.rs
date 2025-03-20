@@ -193,11 +193,17 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`SSTORE`]: https://www.evm.codes/#55
     fn storage_flush_cache(&mut self, clear: bool) -> Result<(), Self::Err> {
+        println!("flushing storage cache, clear: {}", clear);
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
         self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
+        println!("flushing storage cache, afer buy_ink: {}", clear);
 
         let gas_left = self.gas_left()?;
+        let u64_gas_left = gas_left.0;
+        println!("flushing storage cache, afer gas_left, u64_gas_left: {}", u64_gas_left);
         let gas_cost = self.evm_api().flush_storage_cache(clear, gas_left)?;
+        let u64_gas_cost = gas_cost.0;
+        println!("flushing storage cache, afer flush_storage_cache, u64_gas_cost: {}", u64_gas_cost);
         if self.evm_data().arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
             self.buy_gas(gas_cost)?;
         }

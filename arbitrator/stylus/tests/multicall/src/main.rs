@@ -21,15 +21,15 @@ use wee_alloc::WeeAlloc;
 static ALLOC: WeeAlloc = WeeAlloc::INIT;
 
 sol!{
-    event Called(address addr, uint8 count, bool success, bytes return_data);
+    event Called(address addr, uint32 count, bool success, bytes return_data);
     event Storage(bytes32 slot, bytes32 data, bool write);
 }
 
 #[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut input = input.as_slice();
-    let count = input[0];
-    input = &input[1..];
+    let count = u32::from_be_bytes(input[..4].try_into().unwrap());
+    input = &input[4..];
 
     // combined output of all calls
     let mut output = vec![];
@@ -79,7 +79,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
                     (false, vec![])
                 },
             };
-        
+
             if !return_data.is_empty() {
                 console!("Contract {addr} returned {} bytes", return_data.len());
             }
@@ -93,12 +93,14 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             curr = &curr[32..];
             let data;
             let write;
-            if kind & 0x7 == 0 {
+            if kind & 0x7 == 0 || kind & 0x7 == 0x2 {
                 console!("writing slot {}", curr.len());
                 data = B256::try_from(&curr[..32]).unwrap();
                 write = true;
                 unsafe { StorageCache::set_word(slot.into(), data.into()) };
-                StorageCache::flush();
+                // if kind & 0x7 == 0x2 {
+                //     StorageCache::flush();
+                // }
             } else if kind & 0x7 == 1{
                 console!("reading slot");
                 write = false;
