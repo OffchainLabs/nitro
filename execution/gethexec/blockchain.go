@@ -3,7 +3,6 @@ package gethexec
 import (
 	"errors"
 	"fmt"
-	"math/big"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -131,7 +130,6 @@ func (c *CachingConfig) Validate() error {
 func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
-	prevDifficulty := big.NewInt(0)
 	blockNumber, err := initData.GetNextBlockNumber()
 	if err != nil {
 		return err
@@ -159,7 +157,12 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 
 	if storedGenHash == EmptyHash {
 		// chainDb did not have genesis block. Initialize it.
-		core.WriteHeadBlock(chainDb, genBlock, prevDifficulty)
+		batch := chainDb.NewBatch()
+		core.WriteHeadBlock(batch, genBlock)
+		err = batch.Write()
+		if err != nil {
+			return err
+		}
 		log.Info("wrote genesis block", "number", blockNumber, "hash", blockHash)
 	} else if storedGenHash != blockHash {
 		return fmt.Errorf("database contains data inconsistent with initialization: database has genesis hash %v but we built genesis hash %v", storedGenHash, blockHash)

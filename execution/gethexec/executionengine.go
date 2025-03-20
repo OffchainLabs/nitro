@@ -561,7 +561,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		lastBlockHeader,
 		statedb,
 		s.bc,
-		s.bc.Config(),
 		hooks,
 		false,
 		core.MessageCommitMode,
@@ -759,7 +758,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		currentHeader,
 		statedb,
 		s.bc,
-		s.bc.Config(),
 		isMsgForPrefetch,
 		runMode,
 	)
