@@ -436,7 +436,7 @@ fn main() -> Result<()> {
             func_vector.sort_by(|a, b| b.1.total_cycles.cmp(&a.1.total_cycles));
             let mut printed = 0;
             for (&(module_num, func), profile) in func_vector {
-                let (name, module_name) = format_pc(module_num, func);
+                let (module_name, name) = format_pc(module_num, func);
                 let percent =
                     (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64);
                 println!(
