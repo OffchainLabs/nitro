@@ -480,9 +480,7 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, true).
-		WithArbOSVersion(11) // ArbOS 11 doesn't use EIP-7623
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
 	// Build L1 and L2
 	cleanupL1AndL2 := builder.Build(t)
@@ -501,7 +499,7 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	cleanupL3FirstNode := builder.BuildL3OnL2(t)
 	defer cleanupL3FirstNode()
 
-	// Check if L3's parent chain is using EIP-7623
+	// Check if L3's parent chain is not using EIP-7623
 	latestHeader, err = builder.L3.ConsensusNode.L1Reader.LastHeader(ctx)
 	Require(t, err)
 	isUsingEIP7623, err = builder.L3.ConsensusNode.BatchPoster.ParentChainIsUsingEIP7623(ctx, latestHeader)

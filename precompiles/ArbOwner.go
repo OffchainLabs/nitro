@@ -360,9 +360,3 @@ func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 	c.State.Features().SetCalldataPriceIncrease(enable)
 	return nil
 }
-
-// IsCalldataPriceIncreaseEnabled checks if the increased calldata price feature
-// (EIP-7623) is enabled
-func (con ArbOwner) IsCalldataPriceIncreaseEnabled(c ctx, _ mech) (bool, error) {
-	return c.State.Features().IsIncreasedCalldataPriceEnabled(), nil
-}

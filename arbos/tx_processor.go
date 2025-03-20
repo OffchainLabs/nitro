@@ -779,3 +779,7 @@ func (p *TxProcessor) MsgIsNonMutating() bool {
 	mode := p.msg.TxRunMode
 	return mode == core.MessageGasEstimationMode || mode == core.MessageEthcallMode
 }
+
+func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
+	return p.state.ArbOSVersion() >= params.ArbosVersion_40 && p.state.Features().IsIncreasedCalldataPriceEnabled()
+}

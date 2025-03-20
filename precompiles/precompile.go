@@ -636,7 +636,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	}
 
 	ArbOwner.methodsByName["SetCalldataPriceIncrease"].arbosVersion = params.ArbosVersion_40
-	ArbOwner.methodsByName["IsCalldataPriceIncreaseEnabled"].arbosVersion = params.ArbosVersion_40
+	ArbOwnerPublic.methodsByName["IsCalldataPriceIncreaseEnabled"].arbosVersion = params.ArbosVersion_40
 
 	return contracts
 }
