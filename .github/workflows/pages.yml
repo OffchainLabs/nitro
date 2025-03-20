@@ -17,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          fetch-depth: 1000  # make sure to fetch the old commit we diff against
+          fetch-depth: 1000  # Ensure history is fetched for Forkdiff comparison
 
       - name: Build forkdiff
         uses: "docker://protolambda/forkdiff:0.1.0"
@@ -27,14 +27,15 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Build with Jekyll
-        uses: actions/jekyll-build-pages@v1
-        with:
-            source: ./
-            destination: ./_site
+      - name: Move index.html to _site
+        run: |
+          mkdir -p _site
+          mv index.html _site/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site  # Upload only the _site directory containing index.html
 
   deploy:
     environment:

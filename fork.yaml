@@ -5,7 +5,7 @@ footer: |  # define the footer with markdown
 base:
   name: OffchainLabs/nitro
   url: https://github.com/OffchainLabs/nitro
-  hash: d81324daee7340281ee61c0f5db5231ec1d88eea
+  hash: bdc2fd23dcf42b783c51e84acd3b01a973b78a34
 fork:
   name: Layr-Labs/nitro
   url: https://github.com/Layr-Labs/nitro
@@ -40,6 +40,7 @@ def:
             globs:
               - "Dockerfile"
               - ".github/workflows/docker-upload.yml"
+              - ".github/actions/docker-image/action.yml"
               - "scripts/download-machine-eigenda.sh"
 
       - title: "EigenDA package"
@@ -84,22 +85,22 @@ def:
               - "eigenda/serialize.go"
               - "eigenda/serialize_test.go"
 
-
-          - title: "Certificate translations"
+          - title: "EigenDA certificate"
             description: |
-              Certificates read from the `SequencerInbox` don't include all necessary metadata for properly referencing the batch via proxy since 
-              some fields are left out during inbox submission (i.e, `batchHeaderHash`) to reduce calldata sizes. These functions provide translation 
-              to convert a certificate read from the inbox into one understood by the proxy service.
+              Introduce a structured `EigenDAV1Cert` type which wraps [EigenDACertVerifier](https://github.com/Layr-Labs/eigenda/blob/d6339ebb7cd12ec7483fc5c31c1b12bc97d3401c/contracts/src/core/EigenDACertVerifier.sol)
+              go binding types for seamless compatibility with `addSequencerL2BatchFromEigenDA` inbox method. Also provides transformation functions
+              to convert into/from the `BlobStatusInfo` struct returned by eigenda-proxy.
 
             globs:
-              - "eigenda/types.go"
+              - "eigenda/certificate.go"
   
       - title: "Fraud Proving"
         sub:
           - title: "EigenDA preimage opcode"
             description: | 
               Extended core interpreter logic to target EigenDA `READPREIMAGE` opcode when serializing machine state proofs.
-              Also extended go -> wavm compilation logic to support routing for the new opcode type.
+              Also extended wasm -> wavm transpilation logic to support routing into the new opcode type.
+
             globs:
               - "arbitrator/arbutil/src/types.rs"
               - "arbitrator/jit/src/wavmio.rs"
@@ -137,16 +138,15 @@ def:
           - title: "E2E challenge tests"
             description: |
               Extended E2E challenge tests to ensure honest resolution of a `READINBOXMESSAGE` challenge for an
-              EigenDA certificate where each validator has alternative views of the canonical sequencer inbox state.
+              EigenDA certificate where each validator has alternative views of the sequencer inbox state.
             globs:
               - "system_tests/full_challenge_test.go"
               - "system_tests/full_challenge_mock_test.go"
               - "system_tests/full_challenge_impl_test.go"
 
-      - title: "Batch posting & derivation from EigenDA"
+      - title: "Batch posting & derivation via EigenDA"
         description: |
-          Added the ability to post batches to EigenDA and trustlessly derive them using the respective
-          certificate posted via the parent chain `SequencerInbox` contract.
+          Added the ability to post batches to EigenDA and derive them from the inbox.
         sub:
           - title: "Config Ingestion"
             description: |
@@ -167,16 +167,15 @@ def:
 
           - title: "Inbox Reading (Batch Derivation)"
             description: |
-              Added EigenDA-specific batch posting logic to the Arbitrum Nitro batch poster. This includes utilizing the 
-              new `addSequencerL2BatchFromEigenDA` entrypoint in the `SequencerInbox` contract for submitting certificate txs
-              as well as an optional `failover` mechanism for automatic fallback to native Arbitrum DA (i.e, AnyTrust, 4844, calldata) 
-              in the event of EigenDA service unavailability.
+              Transforms a sequencer inbox transaction to extract the inputted rlp encoded EigenDA certificate that was check-pointed 
+              against the onchain accumulator.
             globs:
               - "arbnode/sequencer_inbox.go"
-              - 
 
           - title: "Integration Tests"
-            description:
+            description: |
+              Added tests to assert the correctness batch posting/derivation when using EigenDA. Also test failover circumstances to ensure
+              batch poster can fallback to native Arbitrum DA with no impacts to safe/final head syncing.
             globs:
               - "system_tests/eigenda_test.go"
 
@@ -198,3 +197,4 @@ ignore:
   - "arbitrator/prover/src/main.rs"
   - "arbitrator/jit/src/test.rs"
   - "validator/server_jit/jit_machine.go"
+  - fork.yaml
