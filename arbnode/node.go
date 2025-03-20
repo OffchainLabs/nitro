@@ -46,6 +46,7 @@ import (
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -1498,34 +1499,41 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error) {
-	return n.InboxTracker.FindInboxBatchContainingMessage(message)
+func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[execution.InboxBatch] {
+	batchNum, found, err := n.InboxTracker.FindInboxBatchContainingMessage(message)
+	inboxBatch := execution.InboxBatch{
+		BatchNum: batchNum,
+		Found:    found,
+	}
+	return containers.NewReadyPromise(inboxBatch, err)
 }
 
-func (n *Node) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
-	return n.InboxTracker.GetBatchParentChainBlock(seqNum)
+func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(n.InboxTracker.GetBatchParentChainBlock(seqNum))
 }
 
-func (n *Node) FullSyncProgressMap() map[string]interface{} {
-	return n.SyncMonitor.FullSyncProgressMap()
+func (n *Node) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
+	return containers.NewReadyPromise(n.SyncMonitor.FullSyncProgressMap(), nil)
 }
 
-func (n *Node) Synced() bool {
-	return n.SyncMonitor.Synced()
+func (n *Node) Synced() containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(n.SyncMonitor.Synced(), nil)
 }
 
-func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
-	return n.SyncMonitor.SyncTargetMessageCount()
+func (n *Node) SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(n.SyncMonitor.SyncTargetMessageCount(), nil)
 }
 
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) error {
-	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
+	err := n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
+	return containers.NewReadyPromise(struct{}{}, err)
 }
 
-func (n *Node) ExpectChosenSequencer() error {
-	return n.TxStreamer.ExpectChosenSequencer()
+func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
+	err := n.TxStreamer.ExpectChosenSequencer()
+	return containers.NewReadyPromise(struct{}{}, err)
 }
 
-func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
-	return n.TxStreamer.BlockMetadataAtMessageIndex(msgIdx)
+func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata] {
+	return containers.NewReadyPromise(n.TxStreamer.BlockMetadataAtMessageIndex(msgIdx))
 }

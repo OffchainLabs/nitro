@@ -87,7 +87,8 @@ func (n NodeInterface) msgNumToInboxBatch(msgIndex arbutil.MessageIndex) (uint64
 	if fetcher == nil {
 		return 0, false, errors.New("batch fetcher not set")
 	}
-	return fetcher.FindInboxBatchContainingMessage(msgIndex)
+	inboxBatch, err := fetcher.FindInboxBatchContainingMessage(msgIndex).Await(n.context)
+	return inboxBatch.BatchNum, inboxBatch.Found, err
 }
 
 func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
@@ -133,7 +134,7 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if !found {
 		return 0, nil
 	}
-	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum)
+	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum).Await(n.context)
 	if err != nil {
 		return 0, err
 	}

@@ -42,10 +42,19 @@ func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonit
 	}
 }
 
-func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
-	res := s.consensus.FullSyncProgressMap()
+func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
+	res, err := s.consensus.FullSyncProgressMap().Await(ctx)
+	if err != nil {
+		res = make(map[string]interface{})
+		res["fullSyncProgressMapError"] = err
+	}
 
-	res["consensusSyncTarget"] = s.consensus.SyncTargetMessageCount()
+	consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
+	if err != nil {
+		res["consensusSyncTargetError"] = err
+	} else {
+		res["consensusSyncTarget"] = consensusSyncTarget
+	}
 
 	header, err := s.exec.getCurrentHeader()
 	if err != nil {
@@ -64,18 +73,33 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	return res
 }
 
-func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
-	if s.Synced() {
+func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{} {
+	if s.Synced(ctx) {
 		return make(map[string]interface{})
 	}
-	return s.FullSyncProgressMap()
+	return s.FullSyncProgressMap(ctx)
 }
 
-func (s *SyncMonitor) Synced() bool {
-	if s.consensus.Synced() {
+func (s *SyncMonitor) Synced(ctx context.Context) bool {
+	synced, err := s.consensus.Synced().Await(ctx)
+	if err != nil {
+		log.Error("Error checking if consensus is synced", "err", err)
+		return false
+	}
+	if synced {
 		built, err := s.exec.HeadMessageIndex()
-		consensusSyncTarget := s.consensus.SyncTargetMessageCount()
-		if err == nil && built+1 >= consensusSyncTarget {
+		if err != nil {
+			log.Error("Error getting head message index", "err", err)
+			return false
+		}
+
+		consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
+		if err != nil {
+			log.Error("Error getting consensus sync target", "err", err)
+			return false
+		}
+
+		if built+1 >= consensusSyncTarget {
 			return true
 		}
 	}
@@ -86,14 +110,14 @@ func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
 	s.consensus = consensus
 }
 
-func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetadata, error) {
+func (s *SyncMonitor) BlockMetadataByNumber(ctx context.Context, blockNum uint64) (common.BlockMetadata, error) {
 	genesis := s.exec.GetGenesisBlockNumber()
 	if blockNum < genesis { // Arbitrum classic block
 		return nil, nil
 	}
 	msgIdx := arbutil.MessageIndex(blockNum - genesis)
 	if s.consensus != nil {
-		return s.consensus.BlockMetadataAtMessageIndex(msgIdx)
+		return s.consensus.BlockMetadataAtMessageIndex(msgIdx).Await(ctx)
 	}
 	log.Debug("FullConsensusClient is not accessible to execution, BlockMetadataByNumber will return nil")
 	return nil, nil

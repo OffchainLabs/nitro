@@ -63,9 +63,11 @@ func (w *execClientWrapper) Maintenance() containers.PromiseInterface[struct{}] 
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) Synced() bool { w.t.Error("not supported"); return false }
-
-func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
+func (w *execClientWrapper) Synced(ctx context.Context) bool {
+	w.t.Error("not supported")
+	return false
+}
+func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
 	w.t.Error("not supported")
 	return nil
 }

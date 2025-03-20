@@ -684,7 +684,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	for msgToRead < readUntil && localMsgCount >= remoteFinalizedMsgCount {
 		var resString string
 		resString, msgReadErr = client.Get(ctx, redisutil.MessageKeyFor(msgToRead)).Result()
-		if msgReadErr != nil && c.sequencer.Synced() {
+		if msgReadErr != nil && c.sequencer.Synced(ctx) {
 			log.Warn("coordinator failed reading message", "pos", msgToRead, "err", msgReadErr)
 			break
 		}
@@ -760,9 +760,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	}
 
 	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and execution processed every message that consensus had 1 second ago
-	synced := c.sequencer.Synced()
+	synced := c.sequencer.Synced(ctx)
 	if !synced {
-		syncProgress := c.sequencer.FullSyncProgressMap()
+		syncProgress := c.sequencer.FullSyncProgressMap(ctx)
 		var detailsList []interface{}
 		for key, value := range syncProgress {
 			detailsList = append(detailsList, key, value)
@@ -1077,7 +1077,7 @@ func (c *SeqCoordinator) SeekLockout(ctx context.Context) {
 	defer c.wantsLockoutMutex.Unlock()
 	c.avoidLockout--
 	log.Info("seeking lockout", "myUrl", c.config.Url())
-	if c.sequencer.Synced() {
+	if c.sequencer.Synced(ctx) {
 		// Even if this errors we still internally marked ourselves as wanting the lockout
 		err := c.wantsLockoutUpdateWithMutex(ctx, c.RedisCoordinator().Client)
 		if err != nil {
