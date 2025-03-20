@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/features"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
@@ -52,6 +53,7 @@ type ArbosState struct {
 	chainOwners            *addressSet.AddressSet
 	sendMerkle             *merkleAccumulator.MerkleAccumulator
 	programs               *programs.Programs
+	features               *features.Features
 	blockhashes            *blockhash.Blockhashes
 	chainId                storage.StorageBackedBigInt
 	chainConfig            storage.StorageBackedBytes
@@ -86,6 +88,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
 		programs.Open(backingStorage.OpenSubStorage(programsSubspace)),
+		features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenCachedSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
 		backingStorage.OpenStorageBackedBytes(chainConfigSubspace),
@@ -168,6 +171,7 @@ var (
 	blockhashesSubspace  SubspaceID = []byte{6}
 	chainConfigSubspace  SubspaceID = []byte{7}
 	programsSubspace     SubspaceID = []byte{8}
+	featuresSubspace     SubspaceID = []byte{9}
 )
 
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
@@ -440,6 +444,10 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 
 func (state *ArbosState) Programs() *programs.Programs {
 	return state.programs
+}
+
+func (state *ArbosState) Features() *features.Features {
+	return state.features
 }
 
 func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {

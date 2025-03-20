@@ -77,6 +77,28 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	checkAddressTable(arbState, input.AddressTableContents, t)
 	checkRetryables(arbState, input.RetryableData, t)
 	checkAccounts(stateDb, arbState, input.Accounts, t)
+	checkFeatures(t, arbState)
+}
+
+func checkFeatures(t *testing.T, arbState *ArbosState) {
+	t.Helper()
+	want := false
+	got := arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
+	arbState.Features().SetCalldataPriceIncrease(true)
+	want = true
+	got = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
+	arbState.Features().SetCalldataPriceIncrease(false)
+	want = false
+	got = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
 }
 
 func pseudorandomRetryableInitForTesting(prand *testhelpers.PseudoRandomDataSource) statetransfer.InitializationDataForRetryable {
