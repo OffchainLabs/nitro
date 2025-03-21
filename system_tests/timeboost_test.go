@@ -134,11 +134,11 @@ func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
 	}
 }
 
-func TestAuctionResolutionDuringATie(t *testing.T) {
+func TestTimeboostAuctionResolutionDuringATie(t *testing.T) {
 	testAuctionResolutionDuringATie(t, false)
 }
 
-func TestAuctionResolutionDuringATieMultipleRuns(t *testing.T) {
+func TestTimeboostAuctionResolutionDuringATieMultipleRuns(t *testing.T) {
 	t.Skip("This test is skipped in CI as it might probably take too long to complete")
 	testAuctionResolutionDuringATie(t, true)
 }
@@ -244,11 +244,11 @@ func testAuctionResolutionDuringATie(t *testing.T, multiRuns bool) {
 	}
 }
 
-func TestExpressLaneTxsHandlingDuringSequencerSwapDueToPriorities(t *testing.T) {
+func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToPriorities(t *testing.T) {
 	testTxsHandlingDuringSequencerSwap(t, false)
 }
 
-func TestExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerCrashing(t *testing.T) {
+func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerCrashing(t *testing.T) {
 	testTxsHandlingDuringSequencerSwap(t, true)
 }
 
@@ -381,7 +381,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	}
 }
 
-func TestForwardingExpressLaneTxs(t *testing.T) {
+func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -422,7 +422,7 @@ func TestForwardingExpressLaneTxs(t *testing.T) {
 	verifyControllerAdvantage(t, ctx, seqClient, expressLaneClient, seqInfo, "Bob", "Alice")
 }
 
-func TestExpressLaneTransactionHandlingComplex(t *testing.T) {
+func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -515,7 +515,7 @@ func TestExpressLaneTransactionHandlingComplex(t *testing.T) {
 	t.Logf("%d of the total %d bob's pending txs were accepted", s+1, len(bobExpressLaneTxs))
 }
 
-func TestExpressLaneTransactionHandling(t *testing.T) {
+func TestTimeboostExpressLaneTransactionHandling(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1130,7 +1130,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 // 	verifyControllerChange(winnerRound, aliceOpts.From, bobOpts.From)     // Alice transfers control to Bob before the round begins
 // }
 
-func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
+func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1170,7 +1170,7 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	verifyControllerAdvantage(t, ctx, seqClient, expressLaneClient, seqInfo, "Bob", "Alice")
 }
 
-func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrect(t *testing.T) {
+func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrect(t *testing.T) {
 	t.Parallel()
 
 	logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
@@ -1664,17 +1664,40 @@ func setupExpressLaneAuction(
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
 	builderSeq.execConfig.Sequencer.Dangerous.Timeboost.Enable = true
-	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(builderSeq.L2.ExecNode.Backend.APIBackend(), builderSeq.L2.ExecNode.FilterSystem, proxyAddr, seqInfo.GetAddress("AuctionContract"), gethexec.DefaultTimeboostConfig.EarlySubmissionGrace)
+	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
+
+	expressLaneTracker := gethexec.NewExpressLaneTracker(
+		*roundTimingInfo,
+		builderSeq.execConfig.Sequencer.MaxBlockSpeed,
+		builderSeq.L2.ExecNode.Backend.APIBackend(),
+		auctionContract,
+		proxyAddr,
+		builderSeq.chainConfig,
+		builderSeq.execConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
+	)
+
+	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(
+		auctioneerAddr,
+		roundTimingInfo,
+		expressLaneTracker)
+	Require(t, err)
+	builderSeq.L2.ExecNode.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
 	builderSeq.L2.ExecNode.Sequencer.StartExpressLaneService(ctx)
 	t.Log("Started express lane service in sequencer")
 
 	if extraNodeTy == withForwardingSeq {
-		err = extraNode.ExecNode.Sequencer.InitializeExpressLaneService(extraNode.ExecNode.Backend.APIBackend(), extraNode.ExecNode.FilterSystem, proxyAddr, seqInfo.GetAddress("AuctionContract"), gethexec.DefaultTimeboostConfig.EarlySubmissionGrace)
+		err = extraNode.ExecNode.Sequencer.InitializeExpressLaneService(
+			auctioneerAddr,
+			roundTimingInfo,
+			expressLaneTracker)
 		Require(t, err)
+		extraNode.ExecNode.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
 		extraNode.ExecNode.Sequencer.StartExpressLaneService(ctx)
 		t.Log("Started express lane service in forwarder sequencer")
 	}
+
+	expressLaneTracker.Start(ctx)
 
 	// Set up an autonomous auction contract service that runs in the background in this test.
 	redisURL := redisutil.CreateTestRedis(ctx, t)
@@ -1789,9 +1812,9 @@ func setupExpressLaneAuction(
 	t.Logf("Alice and Bob are now deposited into the autonomous auction contract, waiting %v for bidding round..., timestamp %v", waitTime, time.Now())
 	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	Require(t, err)
-	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
+	roundTimingInfo2, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
 	Require(t, err)
-	time.Sleep(roundTimingInfo.TimeTilNextRound())
+	time.Sleep(roundTimingInfo2.TimeTilNextRound())
 	t.Logf("Reached the bidding round at %v", time.Now())
 	time.Sleep(time.Second * 5)
 	return proxyAddr, alice, bob, roundDuration, builderSeq, cleanupSeq, extraNode, cleanupExtraNode

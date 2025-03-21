@@ -53,7 +53,7 @@ func defaultTestRoundTimingInfo(offset time.Time) timeboost.RoundTimingInfo {
 func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	tests := []struct {
 		name        string
-		es          *expressLaneService
+		t           *ExpressLaneTracker
 		sub         *timeboost.ExpressLaneSubmission
 		expectedErr error
 		controller  common.Address
@@ -62,13 +62,13 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 		{
 			name:        "nil msg",
 			sub:         nil,
-			es:          &expressLaneService{},
+			t:           &ExpressLaneTracker{},
 			expectedErr: timeboost.ErrMalformedData,
 		},
 		{
 			name:        "nil tx",
 			sub:         &timeboost.ExpressLaneSubmission{},
-			es:          &expressLaneService{},
+			t:           &ExpressLaneTracker{},
 			expectedErr: timeboost.ErrMalformedData,
 		},
 		{
@@ -76,12 +76,12 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			sub: &timeboost.ExpressLaneSubmission{
 				Transaction: &types.Transaction{},
 			},
-			es:          &expressLaneService{},
+			t:           &ExpressLaneTracker{},
 			expectedErr: timeboost.ErrMalformedData,
 		},
 		{
 			name: "wrong chain id",
-			es: &expressLaneService{
+			t: &ExpressLaneTracker{
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
@@ -95,7 +95,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 		},
 		{
 			name: "wrong auction contract",
-			es: &expressLaneService{
+			t: &ExpressLaneTracker{
 				auctionContractAddr: common.Address{'a'},
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
@@ -111,7 +111,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 		},
 		{
 			name: "bad round number",
-			es: &expressLaneService{
+			t: &ExpressLaneTracker{
 				auctionContractAddr: common.Address{'a'},
 				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
@@ -130,7 +130,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 		},
 		{
 			name: "malformed signature",
-			es: &expressLaneService{
+			t: &ExpressLaneTracker{
 				auctionContractAddr: common.Address{'a'},
 				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
@@ -150,21 +150,21 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 		},
 		{
 			name: "wrong signature",
-			es: &expressLaneService{
+			t: &ExpressLaneTracker{
 				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
 				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundInfo: containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 			},
 			controller:  common.Address{'b'},
 			sub:         buildInvalidSignatureSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6")),
 			expectedErr: timeboost.ErrNotExpressLaneController,
 		},
+
 		{
 			name: "no onchain controller",
-			es: &expressLaneService{
+			t: &ExpressLaneTracker{
 				auctionContractAddr: common.Address{'a'},
 				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
@@ -181,13 +181,12 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 		},
 		{
 			name: "not express lane controller",
-			es: &expressLaneService{
+			t: &ExpressLaneTracker{
 				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
 				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				roundInfo: containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 			},
 			controller:  common.Address{'b'},
 			sub:         buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0),
@@ -195,7 +194,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 		},
 		{
 			name: "OK",
-			es: &expressLaneService{
+			t: &ExpressLaneTracker{
 				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
 				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
 				chainConfig: &params.ChainConfig{
@@ -211,13 +210,10 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	for _, _tt := range tests {
 		tt := _tt
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.es.roundInfo != nil {
-				tt.es.roundInfo.Add(0, &expressLaneRoundInfo{})
-			}
 			if tt.sub != nil && !errors.Is(tt.expectedErr, timeboost.ErrNoOnchainController) {
-				tt.es.roundControl.Store(tt.sub.Round, tt.controller)
+				tt.t.roundControl.Store(tt.sub.Round, tt.controller)
 			}
-			err := tt.es.validateExpressLaneTx(tt.sub)
+			err := tt.t.ValidateExpressLaneTx(tt.sub)
 			if tt.valid {
 				require.NoError(t, err)
 				return
@@ -229,7 +225,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 
 func Test_expressLaneService_validateExpressLaneTx_gracePeriod(t *testing.T) {
 	auctionContractAddr := common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6")
-	es := &expressLaneService{
+	tr := &ExpressLaneTracker{
 		auctionContractAddr: auctionContractAddr,
 		roundTimingInfo: timeboost.RoundTimingInfo{
 			Offset:         time.Now(),
@@ -241,26 +237,26 @@ func Test_expressLaneService_validateExpressLaneTx_gracePeriod(t *testing.T) {
 			ChainID: big.NewInt(1),
 		},
 	}
-	es.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	es.roundControl.Store(1, crypto.PubkeyToAddress(testPriv2.PublicKey))
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
+	tr.roundControl.Store(1, crypto.PubkeyToAddress(testPriv2.PublicKey))
 
 	sub1 := buildValidSubmission(t, auctionContractAddr, testPriv, 0)
-	err := es.validateExpressLaneTx(sub1)
+	err := tr.ValidateExpressLaneTx(sub1)
 	require.NoError(t, err)
 
 	// Send req for next round
 	sub2 := buildValidSubmission(t, auctionContractAddr, testPriv2, 1)
-	err = es.validateExpressLaneTx(sub2)
+	err = tr.ValidateExpressLaneTx(sub2)
 	require.ErrorIs(t, err, timeboost.ErrBadRoundNumber)
 
 	// Sleep til 2 seconds before grace
 	time.Sleep(time.Second * 6)
-	err = es.validateExpressLaneTx(sub2)
+	err = tr.ValidateExpressLaneTx(sub2)
 	require.ErrorIs(t, err, timeboost.ErrBadRoundNumber)
 
 	// Send req for next round within grace period
 	time.Sleep(time.Second * 2)
-	err = es.validateExpressLaneTx(sub2)
+	err = tr.ValidateExpressLaneTx(sub2)
 	require.NoError(t, err)
 }
 
@@ -289,12 +285,14 @@ func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context,
 func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	tr := &ExpressLaneTracker{}
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els := &expressLaneService{
 		roundInfo: containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
+		tracker:   tr,
 	}
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*timeboost.ExpressLaneSubmission)})
 	els.StopWaiter.Start(ctx, els)
-	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
@@ -308,10 +306,13 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	defer cancel()
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
+	tr := &ExpressLaneTracker{}
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		tracker:         tr,
 	}
 	var err error
 	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo, 50)
@@ -319,7 +320,6 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*timeboost.ExpressLaneSubmission)})
 	els.StopWaiter.Start(ctx, els)
-	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
@@ -353,10 +353,13 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	defer cancel()
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
+	tr := &ExpressLaneTracker{}
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		tracker:         tr,
 	}
 	var err error
 	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo, 50)
@@ -364,7 +367,6 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*timeboost.ExpressLaneSubmission)})
 	els.StopWaiter.Start(ctx, els)
-	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
@@ -412,10 +414,13 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	defer cancel()
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
+	tr := &ExpressLaneTracker{}
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
+		tracker:         tr,
 	}
 	var err error
 	els.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo, 50)
@@ -423,7 +428,6 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	els.redisCoordinator.Start(ctx)
 	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*timeboost.ExpressLaneSubmission)})
 	els.StopWaiter.Start(ctx, els)
-	els.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
 
@@ -453,10 +457,13 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	defer cancel()
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
+	tr := &ExpressLaneTracker{}
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els1 := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		tracker:         tr,
 	}
 	var err error
 	els1.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo, 50)
@@ -465,7 +472,6 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 
 	els1.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*timeboost.ExpressLaneSubmission)})
 	els1.StopWaiter.Start(ctx, els1)
-	els1.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	stubPublisher1 := makeStubPublisher(els1)
 	els1.transactionPublisher = stubPublisher1
 
@@ -492,17 +498,19 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 
 	time.Sleep(time.Second) // wait for parallel redis update threads to complete
 
+	tr2 := &ExpressLaneTracker{}
+	tr2.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els2 := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		tracker:         tr2,
 	}
 	els2.redisCoordinator, err = timeboost.NewRedisCoordinator(redisUrl, &timingInfo, 50)
 	require.NoError(t, err)
 	els2.redisCoordinator.Start(ctx)
 
 	els2.StopWaiter.Start(ctx, els1)
-	els2.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	stubPublisher2 := makeStubPublisher(els2)
 	els2.transactionPublisher = stubPublisher2
 
@@ -591,21 +599,19 @@ func TestIsWithinAuctionCloseWindow(t *testing.T) {
 func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 	b.StopTimer()
 	addr := crypto.PubkeyToAddress(testPriv.PublicKey)
-	es := &expressLaneService{
+	tr := &ExpressLaneTracker{
 		auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
 		roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
-		roundInfo:           containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		chainConfig: &params.ChainConfig{
 			ChainID: big.NewInt(1),
 		},
 	}
-	es.roundControl.Store(0, addr)
-	es.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*timeboost.ExpressLaneSubmission)})
+	tr.roundControl.Store(0, addr)
 
 	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0)
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		err := es.validateExpressLaneTx(sub)
+		err := tr.ValidateExpressLaneTx(sub)
 		require.NoError(b, err)
 	}
 }
