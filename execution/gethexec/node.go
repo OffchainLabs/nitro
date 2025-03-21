@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -510,4 +511,52 @@ func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
 func (n *ExecutionNode) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
 	err := n.SyncMonitor.SetFinalityData(ctx, finalityData)
 	return containers.NewReadyPromise(struct{}{}, err)
+}
+
+func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *params.ChainConfig) error {
+	execNodeConfig := n.ConfigFetcher()
+	if execNodeConfig.Sequencer.Dangerous.Timeboost.Enable {
+		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctionContractAddress)
+
+		auctionContract, err := NewExpressLaneAuctionFromInternalAPI(
+			n.Backend.APIBackend(),
+			n.FilterSystem,
+			auctionContractAddr)
+		if err != nil {
+			return err
+		}
+
+		roundTimingInfo, err := GetRoundTimingInfo(auctionContract)
+		if err != nil {
+			return err
+		}
+
+		expressLaneTracker := NewExpressLaneTracker(
+			*roundTimingInfo,
+			execNodeConfig.Sequencer.MaxBlockSpeed,
+			n.Backend.APIBackend(),
+			auctionContract,
+			auctionContractAddr,
+			chainConfig,
+			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
+		)
+
+		n.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
+
+		if execNodeConfig.Sequencer.Enable {
+			err := n.Sequencer.InitializeExpressLaneService(
+				common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
+				roundTimingInfo,
+				expressLaneTracker,
+			)
+			if err != nil {
+				log.Error("failed to create express lane service", "err", err)
+			}
+			n.Sequencer.StartExpressLaneService(ctx)
+		}
+
+		expressLaneTracker.Start(ctx)
+	}
+
+	return nil
 }

@@ -1667,22 +1667,6 @@ func setupExpressLaneAuction(
 	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
 
-	/*
-		auctionContract, err := gethexec.NewExpressLaneAuctionFromInternalAPI(
-			builderSeq.L2.ExecNode.Backend.APIBackend(),
-			builderSeq.L2.ExecNode.FilterSystem,
-			seqInfo.GetAddress("AuctionContract"),
-		)
-		if err != nil {
-			fatalErrChan <- fmt.Errorf("error creating auction contract: %w", err)
-		}
-
-		roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
-		if err != nil {
-			fatalErrChan <- fmt.Errorf("error getting RoundTimingInfo: %w", err)
-		}
-	*/
-
 	expressLaneTracker := gethexec.NewExpressLaneTracker(
 		*roundTimingInfo,
 		builderSeq.execConfig.Sequencer.MaxBlockSpeed,

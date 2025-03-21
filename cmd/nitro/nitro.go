@@ -695,49 +695,9 @@ func mainImpl() int {
 		}
 	}
 
-	execNodeConfig := execNode.ConfigFetcher()
-
-	if execNodeConfig.Sequencer.Dangerous.Timeboost.Enable {
-		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctionContractAddress)
-
-		auctionContract, err := gethexec.NewExpressLaneAuctionFromInternalAPI(
-			execNode.Backend.APIBackend(),
-			execNode.FilterSystem,
-			auctionContractAddr)
-		if err != nil {
-			fatalErrChan <- fmt.Errorf("error creating auction contract: %w", err)
-		}
-
-		roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
-		if err != nil {
-			fatalErrChan <- fmt.Errorf("error getting RoundTimingInfo: %w", err)
-		}
-
-		expressLaneTracker := gethexec.NewExpressLaneTracker(
-			*roundTimingInfo,
-			execNodeConfig.Sequencer.MaxBlockSpeed,
-			execNode.Backend.APIBackend(),
-			auctionContract,
-			auctionContractAddr,
-			chainInfo.ChainConfig,
-			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
-		)
-
-		execNode.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
-
-		if execNodeConfig.Sequencer.Enable {
-			err := execNode.Sequencer.InitializeExpressLaneService(
-				common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
-				roundTimingInfo,
-				expressLaneTracker,
-			)
-			if err != nil {
-				log.Error("failed to create express lane service", "err", err)
-			}
-			execNode.Sequencer.StartExpressLaneService(ctx)
-		}
-
-		expressLaneTracker.Start(ctx)
+	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
+	if err != nil {
+		fatalErrChan <- fmt.Errorf("error intializing timeboost: %w", err)
 	}
 
 	err = nil
