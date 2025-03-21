@@ -723,6 +723,8 @@ func mainImpl() int {
 			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
 		)
 
+		execNode.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
+
 		if execNodeConfig.Sequencer.Enable {
 			err := execNode.Sequencer.InitializeExpressLaneService(
 				common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),

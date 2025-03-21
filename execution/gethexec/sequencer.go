@@ -555,7 +555,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		return errors.New("transaction has no recipient")
 	}
 	if *tx.To() != s.expressLaneService.AuctionContractAddr() {
-		return errors.New("transaction recipient is not the auction contract")
+		return fmt.Errorf("transaction recipient %#x is not the auction contract %#x", *tx.To(), s.expressLaneService.AuctionContractAddr())
 	}
 	signer := types.LatestSigner(s.execEngine.bc.Config())
 	sender, err := types.Sender(signer, tx)

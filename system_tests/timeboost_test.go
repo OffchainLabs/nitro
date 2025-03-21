@@ -1688,25 +1688,27 @@ func setupExpressLaneAuction(
 		builderSeq.execConfig.Sequencer.MaxBlockSpeed,
 		builderSeq.L2.ExecNode.Backend.APIBackend(),
 		auctionContract,
-		auctionContractAddr,
+		proxyAddr,
 		builderSeq.chainConfig,
 		builderSeq.execConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
 	)
 
 	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(
-		proxyAddr,
+		auctioneerAddr,
 		roundTimingInfo,
 		expressLaneTracker)
 	Require(t, err)
+	builderSeq.L2.ExecNode.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
 	builderSeq.L2.ExecNode.Sequencer.StartExpressLaneService(ctx)
 	t.Log("Started express lane service in sequencer")
 
 	if extraNodeTy == withForwardingSeq {
 		err = extraNode.ExecNode.Sequencer.InitializeExpressLaneService(
-			proxyAddr,
+			auctioneerAddr,
 			roundTimingInfo,
 			expressLaneTracker)
 		Require(t, err)
+		extraNode.ExecNode.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
 		extraNode.ExecNode.Sequencer.StartExpressLaneService(ctx)
 		t.Log("Started express lane service in forwarder sequencer")
 	}

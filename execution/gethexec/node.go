@@ -173,6 +173,7 @@ type ExecutionNode struct {
 	ExecEngine               *ExecutionEngine
 	Recorder                 *BlockRecorder
 	Sequencer                *Sequencer // either nil or same as TxPublisher
+	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
 	ExpressLaneService       *expressLaneService
 	ConfigFetcher            ConfigFetcher
@@ -237,7 +238,8 @@ func CreateExecutionNode(
 
 	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher().TxPreChecker }
 
-	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
+	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
+	txPublisher = txPreChecker
 	arbInterface, err := NewArbInterface(l2BlockChain, txPublisher)
 	if err != nil {
 		return nil, err
@@ -327,6 +329,7 @@ func CreateExecutionNode(
 		ExecEngine:               execEngine,
 		Recorder:                 recorder,
 		Sequencer:                sequencer,
+		TxPreChecker:             txPreChecker,
 		TxPublisher:              txPublisher,
 		ConfigFetcher:            configFetcher,
 		SyncMonitor:              syncMon,

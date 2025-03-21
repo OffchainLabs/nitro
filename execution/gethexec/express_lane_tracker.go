@@ -182,7 +182,7 @@ func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSub
 		return errors.Wrapf(timeboost.ErrWrongChainId, "express lane tx chain ID %d does not match current chain ID %d", msg.ChainId, t.chainConfig.ChainID)
 	}
 	if msg.AuctionContractAddress != t.auctionContractAddr {
-		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %s does not match sequencer auction contract address %s", msg.AuctionContractAddress, t.auctionContractAddr)
+		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %#x does not match sequencer auction contract address %#x", msg.AuctionContractAddress, t.auctionContractAddr)
 	}
 
 	currentRound := t.roundTimingInfo.RoundNumber()
