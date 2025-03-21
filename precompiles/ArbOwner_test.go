@@ -171,6 +171,21 @@ func TestArbOwner(t *testing.T) {
 	if l2BaseFee.Cmp(retrievedL2BaseFee) != 0 {
 		Fail(t, "Expected", l2BaseFee, "got", retrievedL2BaseFee)
 	}
+
+	pubPrec := &ArbOwnerPublic{}
+
+	cdpi, err := pubPrec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
+	Require(t, err)
+	if cdpi {
+		Fail(t)
+	}
+	err = prec.SetCalldataPriceIncrease(callCtx, evm, true)
+	Require(t, err)
+	cdpi, err = pubPrec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
+	Require(t, err)
+	if !cdpi {
+		Fail(t)
+	}
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {

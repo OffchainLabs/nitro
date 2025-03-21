@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-	glog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -338,7 +337,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 
 			data, err := dataInputs.PackValues(dataValues)
 			if err != nil {
-				glog.Error(fmt.Sprintf(
+				log.Error(fmt.Sprintf(
 					"Could not pack values for event %s's GasCost\nerror %s", name, err,
 				))
 				return []reflect.Value{reflect.ValueOf(0), reflect.ValueOf(err)}
@@ -387,7 +386,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 
 			data, err := dataInputs.PackValues(dataValues)
 			if err != nil {
-				glog.Error(fmt.Sprintf(
+				log.Error(fmt.Sprintf(
 					"Couldn't pack values for event %s\nnargs %s\nvalues %s\ntopics %s\nerror %s",
 					name, args, dataValues, topicValues, err,
 				))
@@ -403,7 +402,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 				packable := []interface{}{topicValues[i]}
 				bytes, err := abi.Arguments{input}.PackValues(packable)
 				if err != nil {
-					glog.Error(fmt.Sprintf(
+					log.Error(fmt.Sprintf(
 						"Packing error for event %s\nargs %s\nvalues %s\ntopics %s\nerror %s",
 						name, args, dataValues, topicValues, err,
 					))
@@ -480,7 +479,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 
 			data, err := capturedSolErr.Inputs.PackValues(dataValues)
 			if err != nil {
-				glog.Error(fmt.Sprintf(
+				log.Error(fmt.Sprintf(
 					"Couldn't pack values for error %s\nnargs %s\nvalues %s\nerror %s",
 					name, args, dataValues, err,
 				))
@@ -539,7 +538,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	eventCtx := func(gasLimit uint64, err error) *Context {
 		if err != nil {
-			glog.Error("call to event's GasCost field failed", "err", err)
+			log.Error("call to event's GasCost field failed", "err", err)
 		}
 		return &Context{
 			gasSupplied: gasLimit,
@@ -635,6 +634,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 		arbosState.PrecompileMinArbOSVersions[precompile.address] = precompile.arbosVersion
 	}
 
+	ArbOwner.methodsByName["SetCalldataPriceIncrease"].arbosVersion = params.ArbosVersion_40
+	ArbOwnerPublic.methodsByName["IsCalldataPriceIncreaseEnabled"].arbosVersion = params.ArbosVersion_40
+
 	return contracts
 }
 
@@ -729,10 +731,10 @@ func (p *Precompile) Call(
 	case *arbos.TxProcessor:
 		callerCtx.txProcessor = txProcessor
 	case *vm.DefaultTxProcessor:
-		glog.Error("processing hook not set")
+		log.Error("processing hook not set")
 		return nil, 0, vm.ErrExecutionReverted
 	default:
-		glog.Error("unknown processing hook")
+		log.Error("unknown processing hook")
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
