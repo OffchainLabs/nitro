@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
@@ -58,7 +57,7 @@ type expressLaneService struct {
 	roundInfoMutex sync.Mutex
 	roundInfo      *containers.LruCache[uint64, *expressLaneRoundInfo]
 
-	expressLaneTracker *expressLaneTracker
+	expressLaneTracker *ExpressLaneTracker
 }
 
 func NewExpressLaneAuctionFromInternalAPI(

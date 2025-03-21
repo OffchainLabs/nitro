@@ -1664,13 +1664,26 @@ func setupExpressLaneAuction(
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
 	builderSeq.execConfig.Sequencer.Dangerous.Timeboost.Enable = true
-	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(builderSeq.L2.ExecNode.Backend.APIBackend(), builderSeq.L2.ExecNode.FilterSystem, proxyAddr, seqInfo.GetAddress("AuctionContract"), gethexec.DefaultTimeboostConfig.EarlySubmissionGrace)
+	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
+	Require(t, err)
+
+	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(
+		auctionContract,
+		seqInfo.GetAddress("AuctionContract"),
+		proxyAddr,
+		roundTimingInfo,
+		gethexec.DefaultTimeboostConfig.EarlySubmissionGrace)
 	Require(t, err)
 	builderSeq.L2.ExecNode.Sequencer.StartExpressLaneService(ctx)
 	t.Log("Started express lane service in sequencer")
 
 	if extraNodeTy == withForwardingSeq {
-		err = extraNode.ExecNode.Sequencer.InitializeExpressLaneService(extraNode.ExecNode.Backend.APIBackend(), extraNode.ExecNode.FilterSystem, proxyAddr, seqInfo.GetAddress("AuctionContract"), gethexec.DefaultTimeboostConfig.EarlySubmissionGrace)
+		err = extraNode.ExecNode.Sequencer.InitializeExpressLaneService(
+			auctionContract,
+			seqInfo.GetAddress("AuctionContract"),
+			proxyAddr,
+			roundTimingInfo,
+			gethexec.DefaultTimeboostConfig.EarlySubmissionGrace)
 		Require(t, err)
 		extraNode.ExecNode.Sequencer.StartExpressLaneService(ctx)
 		t.Log("Started express lane service in forwarder sequencer")
@@ -1789,9 +1802,9 @@ func setupExpressLaneAuction(
 	t.Logf("Alice and Bob are now deposited into the autonomous auction contract, waiting %v for bidding round..., timestamp %v", waitTime, time.Now())
 	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	Require(t, err)
-	roundTimingInfo, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
+	roundTimingInfo2, err := timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
 	Require(t, err)
-	time.Sleep(roundTimingInfo.TimeTilNextRound())
+	time.Sleep(roundTimingInfo2.TimeTilNextRound())
 	t.Logf("Reached the bidding round at %v", time.Now())
 	time.Sleep(time.Second * 5)
 	return proxyAddr, alice, bob, roundDuration, builderSeq, cleanupSeq, extraNode, cleanupExtraNode

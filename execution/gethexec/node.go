@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sort"
 	"sync/atomic"
-	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -508,28 +507,4 @@ func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
 func (n *ExecutionNode) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
 	err := n.SyncMonitor.SetFinalityData(ctx, finalityData)
 	return containers.NewReadyPromise(struct{}{}, err)
-}
-
-func (n *ExecutionNode) InitializeExpressLaneService(
-	apiBackend *arbitrum.APIBackend,
-	filterSystem *filters.FilterSystem,
-	auctionContractAddr common.Address,
-	auctioneerAddr common.Address,
-	earlySubmissionGrace time.Duration,
-) error {
-	els, err := newExpressLaneService(
-		n.Sequencer, // TODO Why can't we use TxPublisher here? The interfaces are incompatible
-		n.Sequencer.config,
-		apiBackend,
-		filterSystem,
-		auctionContractAddr,
-		n.ExecEngine.bc,
-		earlySubmissionGrace,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create express lane service. auctionContractAddr: %v err: %w", auctionContractAddr, err)
-	}
-	//	s.auctioneerAddr = auctioneerAddr // For auction resolution validation
-	n.ExpressLaneService = els
-	return nil
 }
