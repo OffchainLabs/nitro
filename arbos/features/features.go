@@ -22,34 +22,36 @@ type Features struct {
 
 // SetIncreasedCalldataPriceIncrease sets the increased calldata price feature
 // on or off depending on the value of enabled.
-func (f *Features) SetCalldataPriceIncrease(enabled bool) {
-	f.setBit(increasedCalldata, enabled)
+func (f *Features) SetCalldataPriceIncrease(enabled bool) error {
+	return f.setBit(increasedCalldata, enabled)
 }
 
 // IsIncreasedCalldataPriceEnabled returns true if the increased calldata price
 // feature is enabled.
-func (f *Features) IsIncreasedCalldataPriceEnabled() bool {
+func (f *Features) IsIncreasedCalldataPriceEnabled() (bool, error) {
 	return f.isSet(increasedCalldata)
 }
 
-func (f *Features) setBit(index int, enabled bool) {
+func (f *Features) setBit(index int, enabled bool) error {
 	bit := uint(1)
 	if !enabled {
 		bit = 0
 	}
 	// Features cannot be uninitialized.
-	bi, _ := f.features.Get()
-	bi.SetBit(bi, index, bit)
-	// This won't underflow or overflow. Panic if it does.
-	if err := f.features.SetChecked(bi); err != nil {
-		panic(err)
+	bi, err := f.features.Get()
+	if err != nil {
+		return err
 	}
+	bi.SetBit(bi, index, bit)
+	return f.features.SetChecked(bi)
 }
 
-func (f *Features) isSet(index int) bool {
-	// Features cannot be uninitialized.
-	bi, _ := f.features.Get()
-	return bi.Bit(index) == 1
+func (f *Features) isSet(index int) (bool, error) {
+	bi, err := f.features.Get()
+	if err != nil {
+		return false, err
+	}
+	return bi.Bit(index) == 1, nil
 }
 
 func Open(sto *storage.Storage) *Features {

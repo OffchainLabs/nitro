@@ -83,19 +83,30 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 func checkFeatures(t *testing.T, arbState *ArbosState) {
 	t.Helper()
 	want := false
-	got := arbState.Features().IsIncreasedCalldataPriceEnabled()
+	got, err := arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
 	if got != want {
 		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
 	}
 	arbState.Features().SetCalldataPriceIncrease(true)
 	want = true
-	got = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	got, err = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
 	if got != want {
 		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
 	}
-	arbState.Features().SetCalldataPriceIncrease(false)
+	if err = arbState.Features().SetCalldataPriceIncrease(false); err != nil {
+		t.Error(err)
+	}
 	want = false
-	got = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	got, err = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
 	if got != want {
 		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
 	}

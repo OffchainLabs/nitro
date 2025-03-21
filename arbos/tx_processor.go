@@ -781,5 +781,13 @@ func (p *TxProcessor) MsgIsNonMutating() bool {
 }
 
 func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
-	return p.state.ArbOSVersion() >= params.ArbosVersion_40 && p.state.Features().IsIncreasedCalldataPriceEnabled()
+	if p.state.ArbOSVersion() < params.ArbosVersion_40 {
+		return false
+	}
+	enabled, err := p.state.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		log.Error("failed to check if increased calldata pricing is enabled", "err", err)
+		return false
+	}
+	return enabled
 }
