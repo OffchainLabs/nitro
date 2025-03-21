@@ -90,7 +90,9 @@ func checkFeatures(t *testing.T, arbState *ArbosState) {
 	if got != want {
 		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
 	}
-	arbState.Features().SetCalldataPriceIncrease(true)
+	if err = arbState.Features().SetCalldataPriceIncrease(true); err != nil {
+		t.Error(err)
+	}
 	want = true
 	got, err = arbState.Features().IsIncreasedCalldataPriceEnabled()
 	if err != nil {
