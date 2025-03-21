@@ -61,6 +61,7 @@ func TestReorgResequencing(t *testing.T) {
 
 	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startHeadMsgIdx)
 	Require(t, err)
+	// #nosec G115
 	delayedIndexHash := common.BigToHash(big.NewInt(int64(prevMessage.DelayedMessagesRead)))
 	newMessage := &arbostypes.L1IncomingMessage{
 		Header: &arbostypes.L1IncomingMessageHeader{
