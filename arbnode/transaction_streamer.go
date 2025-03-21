@@ -1038,15 +1038,24 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 		//
 		// This retry lock with timeout mechanism is a workaround to avoid deadlocks,
 		// but enabling some reorg resequencing scenarios.
-		lockTick := time.Tick(50 * time.Millisecond)
-		lockTimeout := time.After(time.Second)
+
+		if s.insertionMutex.TryLock() {
+			return true
+		}
+		lockTick := time.Tick(5 * time.Millisecond)
+		lockTimeout := time.After(50 * time.Millisecond)
 		for {
 			select {
 			case <-lockTimeout:
 				return false
-			case <-lockTick:
-				if s.insertionMutex.TryLock() {
-					return true
+			default:
+				select {
+				case <-lockTimeout:
+					return false
+				case <-lockTick:
+					if s.insertionMutex.TryLock() {
+						return true
+					}
 				}
 			}
 		}
