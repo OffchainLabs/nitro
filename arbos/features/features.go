@@ -40,8 +40,10 @@ func (f *Features) setBit(index int, enabled bool) {
 	// Features cannot be uninitialized.
 	bi, _ := f.features.Get()
 	bi.SetBit(bi, index, bit)
-	// This won't underflow or overflow. Not checking error.
-	f.features.SetChecked(bi)
+	// This won't underflow or overflow. Panic if it does.
+	if err := f.features.SetChecked(bi); err != nil {
+		panic(err)
+	}
 }
 
 func (f *Features) isSet(index int) bool {

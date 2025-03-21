@@ -172,14 +172,16 @@ func TestArbOwner(t *testing.T) {
 		Fail(t, "Expected", l2BaseFee, "got", retrievedL2BaseFee)
 	}
 
-	cdpi, err := prec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
+	pubPrec := &ArbOwnerPublic{}
+
+	cdpi, err := pubPrec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
 	Require(t, err)
 	if cdpi {
 		Fail(t)
 	}
 	err = prec.SetCalldataPriceIncrease(callCtx, evm, true)
 	Require(t, err)
-	cdpi, err = prec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
+	cdpi, err = pubPrec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
 	Require(t, err)
 	if !cdpi {
 		Fail(t)
