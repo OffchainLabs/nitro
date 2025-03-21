@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
@@ -46,18 +45,13 @@ type expressLaneService struct {
 	stopwaiter.StopWaiter
 	transactionPublisher transactionPublisher
 	seqConfig            SequencerConfigFetcher
-	auctionContractAddr  common.Address
 	roundTimingInfo      timeboost.RoundTimingInfo
-	earlySubmissionGrace time.Duration
-	chainConfig          *params.ChainConfig
-	auctionContract      *express_lane_auctiongen.ExpressLaneAuction
 	redisCoordinator     *timeboost.RedisCoordinator
-	roundControl         containers.SyncMap[uint64, common.Address] // thread safe
 
 	roundInfoMutex sync.Mutex
 	roundInfo      *containers.LruCache[uint64, *expressLaneRoundInfo]
 
-	expressLaneTracker *ExpressLaneTracker
+	tracker *ExpressLaneTracker
 }
 
 func NewExpressLaneAuctionFromInternalAPI(
@@ -99,14 +93,10 @@ pending:
 func newExpressLaneService(
 	transactionPublisher transactionPublisher,
 	seqConfig SequencerConfigFetcher,
-	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
-	auctionContractAddr common.Address,
 	roundTimingInfo *timeboost.RoundTimingInfo,
 	bc *core.BlockChain,
-	earlySubmissionGrace time.Duration,
+	expressLaneTracker *ExpressLaneTracker,
 ) (*expressLaneService, error) {
-	chainConfig := bc.Config()
-
 	var err error
 	var redisCoordinator *timeboost.RedisCoordinator
 	if seqConfig().Dangerous.Timeboost.RedisUrl != "" {
@@ -119,13 +109,10 @@ func newExpressLaneService(
 	return &expressLaneService{
 		transactionPublisher: transactionPublisher,
 		seqConfig:            seqConfig,
-		auctionContract:      auctionContract,
-		chainConfig:          chainConfig,
 		roundTimingInfo:      *roundTimingInfo,
-		earlySubmissionGrace: earlySubmissionGrace,
-		auctionContractAddr:  auctionContractAddr,
 		redisCoordinator:     redisCoordinator,
 		roundInfo:            containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
+		tracker:              expressLaneTracker,
 	}, nil
 }
 
@@ -135,42 +122,6 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 	if es.redisCoordinator != nil {
 		es.redisCoordinator.Start(ctxIn)
 	}
-
-	es.LaunchThread(func(ctx context.Context) {
-		// Log every new express lane auction round.
-		log.Info("Watching for new express lane rounds")
-
-		// Wait until the next round starts
-		waitTime := es.roundTimingInfo.TimeTilNextRound()
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(waitTime):
-		}
-
-		// First tick happened, now set up regular ticks
-		ticker := time.NewTicker(es.roundTimingInfo.Round)
-		defer ticker.Stop()
-		for {
-			var t time.Time
-			select {
-			case <-ctx.Done():
-				return
-			case t = <-ticker.C:
-			}
-
-			round := es.roundTimingInfo.RoundNumber()
-			log.Info(
-				"New express lane auction round",
-				"round", round,
-				"timestamp", t,
-			)
-
-			// Cleanup previous round controller data
-			es.roundControl.Delete(round - 1)
-		}
-	})
-
 }
 
 func (es *expressLaneService) StopAndWait() {
@@ -178,17 +129,9 @@ func (es *expressLaneService) StopAndWait() {
 	if es.redisCoordinator != nil {
 		es.redisCoordinator.StopAndWait()
 	}
-	if es.expressLaneTracker != nil {
-		es.expressLaneTracker.StopAndWait()
+	if es.tracker != nil {
+		es.tracker.StopAndWait()
 	}
-}
-
-func (es *expressLaneService) currentRoundHasController() bool {
-	controller, ok := es.roundControl.Load(es.roundTimingInfo.RoundNumber())
-	if !ok {
-		return false
-	}
-	return controller != (common.Address{})
 }
 
 // sequenceExpressLaneSubmission with the roundInfo lock held, validates sequence number and sender address fields of the message
@@ -198,9 +141,9 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 	defer es.roundInfoMutex.Unlock()
 
 	// Below code block isn't a repetition, it prevents stale messages to be accepted during control transfer within or after the round ends!
-	controller, ok := es.roundControl.Load(msg.Round)
-	if !ok {
-		return timeboost.ErrNoOnchainController
+	controller, err := es.tracker.RoundController(msg.Round)
+	if err != nil {
+		return err
 	}
 	sender, err := msg.Sender() // Doesn't recompute sender address
 	if err != nil {
@@ -290,45 +233,6 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 	return retErr
 }
 
-// validateExpressLaneTx checks for the correctness of all fields of msg
-func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
-	if msg == nil || msg.Transaction == nil || msg.Signature == nil {
-		return timeboost.ErrMalformedData
-	}
-	if msg.ChainId.Cmp(es.chainConfig.ChainID) != 0 {
-		return errors.Wrapf(timeboost.ErrWrongChainId, "express lane tx chain ID %d does not match current chain ID %d", msg.ChainId, es.chainConfig.ChainID)
-	}
-	if msg.AuctionContractAddress != es.auctionContractAddr {
-		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %s does not match sequencer auction contract address %s", msg.AuctionContractAddress, es.auctionContractAddr)
-	}
-
-	currentRound := es.roundTimingInfo.RoundNumber()
-	if msg.Round != currentRound {
-		timeTilNextRound := es.roundTimingInfo.TimeTilNextRound()
-		// We allow txs to come in for the next round if it is close enough to that round,
-		// but we sleep until the round starts.
-		if msg.Round == currentRound+1 && timeTilNextRound <= es.earlySubmissionGrace {
-			time.Sleep(timeTilNextRound)
-		} else {
-			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
-		}
-	}
-
-	controller, ok := es.roundControl.Load(msg.Round)
-	if !ok {
-		return timeboost.ErrNoOnchainController
-	}
-	// Extract sender address and cache it to be later used by sequenceExpressLaneSubmission
-	sender, err := msg.Sender()
-	if err != nil {
-		return err
-	}
-	if sender != controller {
-		return timeboost.ErrNotExpressLaneController
-	}
-	return nil
-}
-
 func (es *expressLaneService) syncFromRedis() {
 	if es.redisCoordinator == nil {
 		return
@@ -362,6 +266,18 @@ func (es *expressLaneService) syncFromRedis() {
 	}
 }
 
-func (es *expressLaneService) nextRound(round uint64, controller common.Address) {
-	es.roundControl.Store(round, controller)
+func (es *expressLaneService) currentRoundHasController() bool {
+	controller, err := es.tracker.RoundController(es.roundTimingInfo.RoundNumber())
+	if err != nil {
+		return false
+	}
+	return controller != (common.Address{})
+}
+
+func (es *expressLaneService) AuctionContractAddr() common.Address {
+	return es.tracker.AuctionContractAddr()
+}
+
+func (es *expressLaneService) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
+	return es.tracker.ValidateExpressLaneTx(msg)
 }

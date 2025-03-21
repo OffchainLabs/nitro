@@ -35,7 +35,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -555,7 +554,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if tx.To() == nil {
 		return errors.New("transaction has no recipient")
 	}
-	if *tx.To() != s.expressLaneService.auctionContractAddr {
+	if *tx.To() != s.expressLaneService.AuctionContractAddr() {
 		return errors.New("transaction recipient is not the auction contract")
 	}
 	signer := types.LatestSigner(s.execEngine.bc.Config())
@@ -603,7 +602,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	if s.expressLaneService == nil {
 		return errors.New("express lane service not enabled")
 	}
-	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
+	if err := s.expressLaneService.ValidateExpressLaneTx(msg); err != nil {
 		return err
 	}
 
@@ -1299,23 +1298,19 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 }
 
 func (s *Sequencer) InitializeExpressLaneService(
-	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
-	auctionContractAddr common.Address,
 	auctioneerAddr common.Address,
 	roundTimingInfo *timeboost.RoundTimingInfo,
-	earlySubmissionGrace time.Duration,
+	expressLaneTracker *ExpressLaneTracker,
 ) error {
 	els, err := newExpressLaneService(
 		s,
 		s.config,
-		auctionContract,
-		auctionContractAddr,
 		roundTimingInfo,
 		s.execEngine.bc,
-		earlySubmissionGrace,
+		expressLaneTracker,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create express lane service. auctionContractAddr: %v err: %w", auctionContractAddr, err)
+		return fmt.Errorf("failed to create express lane service. err: %w", err)
 	}
 	s.auctioneerAddr = auctioneerAddr
 	s.expressLaneService = els
@@ -1521,8 +1516,4 @@ func (s *Sequencer) StopAndWait() {
 		}
 		wg.Wait()
 	}
-}
-
-func (s *Sequencer) NextRound(round uint64, controller common.Address) {
-	s.expressLaneService.nextRound(round, controller)
 }

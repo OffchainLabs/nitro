@@ -717,22 +717,22 @@ func mainImpl() int {
 			*roundTimingInfo,
 			execNodeConfig.Sequencer.MaxBlockSpeed,
 			execNode.Backend.APIBackend(),
-			auctionContract)
+			auctionContract,
+			auctionContractAddr,
+			chainInfo.ChainConfig,
+			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
+		)
 
 		if execNodeConfig.Sequencer.Enable {
 			err := execNode.Sequencer.InitializeExpressLaneService(
-				auctionContract,
-				auctionContractAddr,
 				common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
 				roundTimingInfo,
-				execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
+				expressLaneTracker,
 			)
 			if err != nil {
 				log.Error("failed to create express lane service", "err", err)
 			}
 			execNode.Sequencer.StartExpressLaneService(ctx)
-
-			expressLaneTracker.AddRoundListener(execNode.Sequencer)
 		}
 
 		expressLaneTracker.Start(ctx)
