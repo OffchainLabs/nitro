@@ -530,7 +530,7 @@ func (n NodeInterface) GasEstimateL1Component(
 	if !ok {
 		return 0, nil, nil, errors.New("failed to cast to stateDB")
 	}
-	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, sdb, core.MessageEthcallMode)
+	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, sdb, core.MessageEthcallMode, true, true)
 
 	pricing := c.State.L1PricingState()
 	l1BaseFeeEstimate, err := pricing.PricePerUnit()
@@ -572,7 +572,7 @@ func (n NodeInterface) GasEstimateComponents(
 	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
 	args := n.messageArgs(evm, value, to, contractCreation, data)
 
-	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, nil, gasCap)
+	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, nil, nil, gasCap)
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
@@ -590,7 +590,7 @@ func (n NodeInterface) GasEstimateComponents(
 	if !ok {
 		return 0, 0, nil, nil, errors.New("failed to cast to stateDB")
 	}
-	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, sdb, core.MessageGasEstimationMode)
+	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, sdb, core.MessageGasEstimationMode, true, true)
 	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
 	if err != nil {
 		return 0, 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)

@@ -51,7 +51,6 @@ func init() {
 }
 
 type BoldConfig struct {
-	Enable   bool   `koanf:"enable"`
 	Strategy string `koanf:"strategy"`
 	// How often to post assertions onchain.
 	AssertionPostingInterval time.Duration `koanf:"assertion-posting-interval"`
@@ -125,7 +124,6 @@ var DefaultStateProviderConfig = StateProviderConfig{
 }
 
 var DefaultBoldConfig = BoldConfig{
-	Enable:                              false,
 	Strategy:                            "Watchtower",
 	AssertionPostingInterval:            time.Minute * 15,
 	AssertionScanningInterval:           time.Minute,
@@ -155,7 +153,6 @@ var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
 }
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
 	f.String(prefix+".strategy", DefaultBoldConfig.Strategy, "define the bold validator staker strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.String(prefix+".rpc-block-number", DefaultBoldConfig.RPCBlockNumber, "define the block number to use for reading data onchain, either latest, safe, or finalized")
 	f.Int64(prefix+".max-get-log-blocks", DefaultBoldConfig.MaxGetLogBlocks, "maximum size for chunk of blocks when using get logs rpc")
@@ -566,7 +563,7 @@ func newBOLDChallengeManager(
 func readBoldAssertionCreationInfo(
 	ctx context.Context,
 	rollup *boldrollup.RollupUserLogic,
-	client bind.ContractFilterer,
+	client protocol.ChainBackend,
 	rollupAddress common.Address,
 	assertionHash common.Hash,
 ) (*protocol.AssertionCreatedInfo, error) {
@@ -616,6 +613,10 @@ func readBoldAssertionCreationInfo(
 		return nil, err
 	}
 	afterState := parsedLog.Assertion.AfterState
+	creationL1Block, err := arbutil.CorrespondingL1BlockNumber(ctx, client, ethLog.BlockNumber)
+	if err != nil {
+		return nil, err
+	}
 	return &protocol.AssertionCreatedInfo{
 		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
 		RequiredStake:       parsedLog.RequiredStake,
@@ -628,6 +629,7 @@ func readBoldAssertionCreationInfo(
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
 		TransactionHash:     ethLog.TxHash,
-		CreationBlock:       ethLog.BlockNumber,
+		CreationParentBlock: ethLog.BlockNumber,
+		CreationL1Block:     creationL1Block,
 	}, nil
 }
