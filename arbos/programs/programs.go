@@ -110,7 +110,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVers
 		// already activated and up to date
 		return 0, codeHash, common.Hash{}, nil, false, ProgramUpToDateError()
 	}
-	wasm, err := getWasm(statedb, address)
+	wasm, err := getWasm(statedb, address, params.MaxWasmSize)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
@@ -290,12 +290,12 @@ func evmMemoryCost(size uint64) uint64 {
 	return linearCost + squareCost
 }
 
-func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
+func getWasm(statedb vm.StateDB, program common.Address, maxWasmSize uint32) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
-	return getWasmFromContractCode(prefixedWasm)
+	return getWasmFromContractCode(prefixedWasm, maxWasmSize)
 }
 
-func getWasmFromContractCode(prefixedWasm []byte) ([]byte, error) {
+func getWasmFromContractCode(prefixedWasm []byte, maxWasmSize uint32) ([]byte, error) {
 	if prefixedWasm == nil {
 		return nil, ProgramNotWasmError()
 	}
@@ -313,7 +313,7 @@ func getWasmFromContractCode(prefixedWasm []byte) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported dictionary %v", dictByte)
 	}
-	return arbcompress.DecompressWithDictionary(wasm, MaxWasmSize, dict)
+	return arbcompress.DecompressWithDictionary(wasm, int(maxWasmSize), dict)
 }
 
 // Gets a program entry, which may be expired or not yet activated.

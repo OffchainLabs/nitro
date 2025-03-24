@@ -171,6 +171,26 @@ func TestArbOwner(t *testing.T) {
 	if l2BaseFee.Cmp(retrievedL2BaseFee) != 0 {
 		Fail(t, "Expected", l2BaseFee, "got", retrievedL2BaseFee)
 	}
+
+	params, err := state.Programs().Params()
+	Require(t, err)
+	maxWasmSize := params.MaxWasmSize
+	want := 128 * 1024 // Initial maxWasmSize
+	if maxWasmSize != uint32(want) {
+		Fail(t, "Got", maxWasmSize, "want", want)
+	}
+
+	want = 256 * 1024
+	params.MaxWasmSize = uint32(want)
+	if err := params.Save(); err != nil {
+		Fail(t, err)
+	}
+	params, err = state.Programs().Params()
+	Require(t, err)
+	maxWasmSize = params.MaxWasmSize
+	if maxWasmSize != uint32(want) {
+		Fail(t, "Got", maxWasmSize, "want", want)
+	}
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
