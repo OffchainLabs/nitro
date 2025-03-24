@@ -615,7 +615,7 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 	if diffIsClose(gas1, gas2, 14, 18) {
 		// targetDiff is 16
 		parentChainIsUsingEIP7623 = false
-	} else if diffIsClose(gas1, gas2, 36, 40) {
+	} else if diffIsClose(gas1, gas2, 36, 44) {
 		// targetDiff is 40
 		parentChainIsUsingEIP7623 = true
 	} else {
