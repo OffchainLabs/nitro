@@ -57,10 +57,7 @@ type Number interface {
 
 // MinInt the minimum of two ints
 func MinInt[T Number](value, ceiling T) T {
-	if value > ceiling {
-		return ceiling
-	}
-	return value
+	return min(value, ceiling)
 }
 
 // MaxInt the maximum of one or more ints
