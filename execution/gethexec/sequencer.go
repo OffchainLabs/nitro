@@ -108,7 +108,7 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	ExpressLaneAdvantage:         time.Millisecond * 200,
 	SequencerHTTPEndpoint:        "http://localhost:8547",
 	EarlySubmissionGrace:         time.Second * 2,
-	MaxFutureSequenceDistance:    25,
+	MaxFutureSequenceDistance:    1000,
 	RedisUrl:                     "unset",
 	RedisUpdateEventsChannelSize: 500,
 	QueueTimeoutInBlocks:         5,
