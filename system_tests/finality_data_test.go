@@ -91,6 +91,32 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	}
 }
 
+func checksFinalityData(
+	t *testing.T,
+	scenario string,
+	ctx context.Context,
+	testClient *TestClient,
+	expectedFinalizedBlock uint64,
+	expectedSafeBlock uint64,
+) {
+	finalBlock, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+	Require(t, err)
+	if finalBlock == nil {
+		t.Fatalf("finalBlock should not be nil, scenario: %v", scenario)
+	}
+	if finalBlock.NumberU64() != expectedFinalizedBlock {
+		t.Fatalf("finalBlock is %d, but expected %d, scenario: %v", finalBlock.NumberU64(), expectedFinalizedBlock, scenario)
+	}
+	safeBlock, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+	Require(t, err)
+	if safeBlock == nil {
+		t.Fatalf("safeBlock should not be nil, scenario: %v", scenario)
+	}
+	if safeBlock.NumberU64() != expectedSafeBlock {
+		t.Fatalf("safeBlock is %d, but expected %d, scenario: %v", safeBlock.NumberU64(), expectedSafeBlock, scenario)
+	}
+}
+
 func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	t.Parallel()
 
@@ -101,7 +127,7 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
-	// In that way we can control in this test which finality data is pushed to from Consentus to Execution by calling SyncMonitor.SetFinalityData.
+	// In that way we can control in this test which finality data is pushed to Execution by calling SyncMonitor.SetFinalityData.
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
 	builder.execConfig.SyncMonitor.SafeBlockWaitForBlockValidator = true
 	builder.execConfig.SyncMonitor.FinalizedBlockWaitForBlockValidator = true
@@ -125,47 +151,19 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 		ValidatedMsgCount: &validatedMsgCount,
 	}
 
-	// wait for block validator is set to true in first node
 	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &finalityData)
 	Require(t, err)
-	finalBlock, err := builder.L2.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
-	Require(t, err)
-	if finalBlock == nil {
-		t.Fatalf("finalBlock should not be nil")
-	}
 	validatedBlockNumber, err := builder.L2.ExecNode.MessageIndexToBlockNumber(validatedMsgCount - 1).Await(ctx)
 	Require(t, err)
-	if finalBlock.NumberU64() != validatedBlockNumber {
-		t.Fatalf("finalBlock is not correct")
-	}
-	safeBlock, err := builder.L2.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
-	Require(t, err)
-	if safeBlock == nil {
-		t.Fatalf("safeBlock should not be nil")
-	}
-	if safeBlock.NumberU64() != validatedBlockNumber {
-		t.Fatalf("safeBlock is not correct")
-	}
 
-	// wait for block validator is no set to true in second node
+	// wait for block validator is set to true in second node
+	checksFinalityData(t, "first node", ctx, builder.L2, validatedBlockNumber, validatedBlockNumber)
+
 	err = testClient2ndNode.ExecNode.SyncMonitor.SetFinalityData(ctx, &finalityData)
 	Require(t, err)
-	finalBlock, err = testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
-	Require(t, err)
-	if finalBlock == nil {
-		t.Fatalf("finalBlock should not be nil")
-	}
-	if finalBlock.NumberU64() != uint64(finalityData.FinalizedMsgCount-1) {
-		t.Fatalf("finalBlock is not correct")
-	}
-	safeBlock, err = testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
-	Require(t, err)
-	if safeBlock == nil {
-		t.Fatalf("safeBlock should not be nil")
-	}
-	if safeBlock.NumberU64() != uint64(finalityData.SafeMsgCount-1) {
-		t.Fatalf("safeBlock is not correct")
-	}
+
+	// wait for block validator is no set to true in second node
+	checksFinalityData(t, "2nd node", ctx, testClient2ndNode, uint64(finalityData.FinalizedMsgCount-1), uint64(finalityData.SafeMsgCount-1))
 
 	// if validatedMsgCount is nil, error should be returned if waitForBlockValidator is set to true
 	finalityData.ValidatedMsgCount = nil
@@ -246,4 +244,48 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	if safeBlock.NumberU64() == 0 {
 		t.Fatalf("safeBlock is not correct")
 	}
+}
+
+func TestFinalityAfterReorg(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// The procedure that periodically pushes finality data, from consensus to execution,
+	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
+	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
+	// In that way we can control in this test which finality data is pushed to Execution by calling SyncMonitor.SetFinalityData.
+	builder.nodeConfig.ParentChainReader.UseFinalityData = false
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	nodeConfig2ndNode := arbnode.ConfigDefaultL1NonSequencerTest()
+	execConfig2ndNode := ExecConfigDefaultTest(t)
+	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2ndNode, execConfig: execConfig2ndNode})
+	defer cleanup2ndNode()
+
+	// Creates at least 20 L2 blocks
+	builder.L2Info.GenerateAccount("User2")
+	generateBlocks(t, ctx, builder, testClient2ndNode, 20)
+
+	finalityData := arbutil.FinalityData{
+		FinalizedMsgCount: 10,
+		SafeMsgCount:      15,
+	}
+
+	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &finalityData)
+	Require(t, err)
+
+	checksFinalityData(t, "before reorg", ctx, builder.L2, uint64(finalityData.FinalizedMsgCount)-1, uint64(finalityData.SafeMsgCount)-1)
+
+	reorgAt := arbutil.MessageIndex(6)
+	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(reorgAt)
+	Require(t, err)
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
+	Require(t, err)
+
+	checksFinalityData(t, "after reorg", ctx, builder.L2, uint64(reorgAt)-1, uint64(reorgAt)-1)
 }
