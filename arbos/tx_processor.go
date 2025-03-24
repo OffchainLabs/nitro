@@ -112,7 +112,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 
 	var tracingInfo *util.TracingInfo
 	if interpreter.Config().Tracer != nil {
-		caller := contract.CallerAddress
+		caller := contract.Caller()
 		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, acting, util.TracingDuringEVM)
 	}
 
