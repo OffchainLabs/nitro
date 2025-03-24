@@ -66,7 +66,11 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 
 	// manually set finalized block
 	finalizedBlock := uint64(10)
-	err = builder.L2.ExecNode.ExecEngine.SetFinalized(finalizedBlock)
+	block := builder.L2.ExecNode.Backend.BlockChain().GetBlockByNumber(finalizedBlock)
+	if block == nil {
+		t.Fatalf("unable to get block by number")
+	}
+	builder.L2.ExecNode.Backend.BlockChain().SetFinalized(block.Header())
 	Require(t, err)
 
 	// Wait for freeze operation to be executed
