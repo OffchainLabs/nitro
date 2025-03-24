@@ -6,6 +6,7 @@ package confighelpers
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"reflect"
 	"strings"
@@ -299,9 +300,7 @@ func DumpConfig(k *koanf.Koanf, extraOverrideFields map[string]interface{}) erro
 	overrideFields := map[string]interface{}{"conf.dump": false}
 
 	// Don't keep printing configuration file
-	for k, v := range extraOverrideFields {
-		overrideFields[k] = v
-	}
+	maps.Copy(overrideFields, extraOverrideFields)
 
 	err := k.Load(confmap.Provider(overrideFields, "."), nil)
 	if err != nil {

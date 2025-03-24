@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -354,9 +355,7 @@ func copyPreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]b
 		if dest[piType] == nil {
 			dest[piType] = make(map[common.Hash][]byte, len(piMap))
 		}
-		for hash, preimage := range piMap {
-			dest[piType][hash] = preimage
-		}
+		maps.Copy(dest[piType], piMap)
 	}
 }
 
