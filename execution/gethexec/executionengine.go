@@ -299,6 +299,17 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 		return nil, nil
 	}
 
+	currentSafeBlock := s.bc.CurrentSafeBlock()
+	if currentSafeBlock != nil && lastBlockToKeep.Number().Cmp(currentSafeBlock.Number) < 0 {
+		log.Warn("reorg target block is below safe block", "lastBlockNumToKeep", lastBlockNumToKeep, "currentSafeBlock", currentSafeBlock.Number)
+		s.bc.SetSafe(lastBlockToKeep.Header())
+	}
+	currentFinalBlock := s.bc.CurrentFinalBlock()
+	if currentFinalBlock != nil && lastBlockToKeep.Number().Cmp(currentFinalBlock.Number) < 0 {
+		log.Warn("reorg target block is below final block", "lastBlockNumToKeep", lastBlockNumToKeep, "currentFinalBlock", currentFinalBlock.Number)
+		s.bc.SetFinalized(lastBlockToKeep.Header())
+	}
+
 	tag := s.bc.StateCache().WasmCacheTag()
 	// reorg Rust-side VM state
 	C.stylus_reorg_vm(C.uint64_t(lastBlockNumToKeep), C.uint32_t(tag))
@@ -1091,6 +1102,7 @@ func (s *ExecutionEngine) Maintenance(capLimit uint64) error {
 	return s.bc.FlushTrieDB(common.StorageSize(capLimit))
 }
 
+// TODO: rm
 func (s *ExecutionEngine) SetFinalized(finalizedBlockNumber uint64) error {
 	block := s.bc.GetBlockByNumber(finalizedBlockNumber)
 	if block == nil {
@@ -1101,6 +1113,7 @@ func (s *ExecutionEngine) SetFinalized(finalizedBlockNumber uint64) error {
 	return nil
 }
 
+// TODO: rm
 func (s *ExecutionEngine) SetSafe(safeBlockNumber uint64) error {
 	block := s.bc.GetBlockByNumber(safeBlockNumber)
 	if block == nil {

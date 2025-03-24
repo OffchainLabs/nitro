@@ -145,6 +145,9 @@ func (s *SyncMonitor) getFinalityBlock(
 }
 
 func (s *SyncMonitor) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
+	s.exec.createBlocksMutex.Lock()
+	defer s.exec.createBlocksMutex.Unlock()
+
 	finalizedBlock, err := s.getFinalityBlock(
 		s.config.FinalizedBlockWaitForBlockValidator,
 		finalityData.ValidatedMsgCount,
