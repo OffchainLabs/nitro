@@ -64,6 +64,7 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 			}
 		} else {
 			exceedsMaxMempoolSizeEphemeralErrorHandler.Reset()
+			gasEstimationEphemeralErrorHandler.Reset()
 		}
 
 		select {

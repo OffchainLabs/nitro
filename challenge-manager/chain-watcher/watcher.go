@@ -256,6 +256,11 @@ func (w *Watcher) Start(ctx context.Context) {
 				log.Error("Could not get latest header", "err", err)
 				continue
 			}
+			// AssertionChain's rpcHeadBlockNumber is set to finalized and this might occur due to l1 backends of load balancer
+			// not being in consensus wrt finalized. In which case we ignore and continue
+			if fromBlock > toBlock {
+				continue
+			}
 			if fromBlock == toBlock {
 				w.initialSyncCompleted.Store(true)
 				continue
@@ -912,6 +917,7 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 			}
 
 			exceedsMaxMempoolSizeEphemeralErrorHandler.Reset()
+			gasEstimationEphemeralErrorHandler.Reset()
 
 			if confirmed {
 				assertionConfirmedCounter.Inc(1)

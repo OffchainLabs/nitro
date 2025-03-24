@@ -108,6 +108,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			}
 
 			exceedsMaxMempoolSizeEphemeralErrorHandler.Reset()
+			gasEstimationEphemeralErrorHandler.Reset()
 
 			if confirmed {
 				assertionConfirmedCounter.Inc(1)
