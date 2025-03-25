@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -61,8 +63,9 @@ func TxPreCheckerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type TxPreChecker struct {
 	TransactionPublisher
-	bc     *core.BlockChain
-	config TxPreCheckerConfigFetcher
+	bc                 *core.BlockChain
+	config             TxPreCheckerConfigFetcher
+	expressLaneTracker *ExpressLaneTracker
 }
 
 func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) *TxPreChecker {
@@ -230,6 +233,15 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if msg == nil || msg.Transaction == nil {
 		return timeboost.ErrMalformedData
 	}
+	if c.expressLaneTracker == nil {
+		log.Error("ExpressLaneTracker not properly initialized in TxPreChecker, rejecting transaction.", "msg", msg)
+		return errors.New("express lane server misconfiguration")
+	}
+	err := c.expressLaneTracker.ValidateExpressLaneTx(msg)
+	if err != nil {
+		return err
+	}
+
 	block := c.bc.CurrentBlock()
 	statedb, err := c.bc.StateAt(block.Root)
 	if err != nil {
@@ -261,4 +273,8 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 		return err
 	}
 	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
+}
+
+func (c *TxPreChecker) SetExpressLaneTracker(tracker *ExpressLaneTracker) {
+	c.expressLaneTracker = tracker
 }
