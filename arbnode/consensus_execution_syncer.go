@@ -70,7 +70,7 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 	scenario string,
 ) (*arbutil.FinalityData, error) {
 	if errors.Is(errMsgCount, headerreader.ErrBlockNumberNotSupported) {
-		log.Info("Finality not supported, not pushing finality data to execution")
+		log.Debug("Finality not supported, not pushing finality data to execution")
 		return nil, errMsgCount
 	} else if errMsgCount != nil {
 		log.Error("Error getting finality msg count", "scenario", scenario, "err", errMsgCount)
