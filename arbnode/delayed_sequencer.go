@@ -58,7 +58,7 @@ var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              false,
 	FinalizeDistance:    20,
 	RequireFullFinality: false,
-	UseMergeFinality:    false,
+	UseMergeFinality:    true,
 	RescanInterval:      time.Second,
 }
 
