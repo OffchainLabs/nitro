@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -148,30 +149,46 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	builder.L2Info.GenerateAccount("User2")
 	generateBlocks(t, ctx, builder, testClient2ndNode, 20)
 
-	validatedMsgCount := arbutil.MessageIndex(7)
-	finalityData := arbutil.FinalityData{
-		FinalizedMsgCount: 10,
-		SafeMsgCount:      15,
-		ValidatedMsgCount: &validatedMsgCount,
+	safeMsgIdx := arbutil.MessageIndex(14)
+	safeMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(safeMsgIdx).Await(ctx)
+	Require(t, err)
+	safeFinalityData := arbutil.FinalityData{
+		MsgIdx:    safeMsgIdx,
+		BlockHash: safeMsgResult.BlockHash,
 	}
 
-	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &finalityData)
+	finalizedMsgIdx := arbutil.MessageIndex(9)
+	finalizedMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(finalizedMsgIdx).Await(ctx)
 	Require(t, err)
-	validatedBlockNumber, err := builder.L2.ExecNode.MessageIndexToBlockNumber(validatedMsgCount - 1).Await(ctx)
+	finalizedFinalityData := arbutil.FinalityData{
+		MsgIdx:    finalizedMsgIdx,
+		BlockHash: finalizedMsgResult.BlockHash,
+	}
+
+	validatedMsgIdx := arbutil.MessageIndex(6)
+	validatedMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(finalizedMsgIdx).Await(ctx)
+	Require(t, err)
+	validatedFinalityData := arbutil.FinalityData{
+		MsgIdx:    validatedMsgIdx,
+		BlockHash: validatedMsgResult.BlockHash,
+	}
+
+	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, &validatedFinalityData)
+	Require(t, err)
+	validatedBlockNumber, err := builder.L2.ExecNode.MessageIndexToBlockNumber(validatedMsgIdx).Await(ctx)
 	Require(t, err)
 
 	// wait for block validator is set to true in second node
 	checksFinalityData(t, "first node", ctx, builder.L2, validatedBlockNumber, validatedBlockNumber)
 
-	err = testClient2ndNode.ExecNode.SyncMonitor.SetFinalityData(ctx, &finalityData)
+	err = testClient2ndNode.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, &validatedFinalityData)
 	Require(t, err)
 
 	// wait for block validator is no set to true in second node
-	checksFinalityData(t, "2nd node", ctx, testClient2ndNode, uint64(finalityData.FinalizedMsgCount-1), uint64(finalityData.SafeMsgCount-1))
+	checksFinalityData(t, "2nd node", ctx, testClient2ndNode, uint64(finalizedMsgIdx), uint64(safeMsgIdx))
 
-	// if validatedMsgCount is nil, error should be returned if waitForBlockValidator is set to true
-	finalityData.ValidatedMsgCount = nil
-	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &finalityData)
+	// if validatedFinalityData is nil, error should be returned if waitForBlockValidator is set to true
+	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, nil)
 	if err == nil {
 		t.Fatalf("err should not be nil")
 	}
@@ -275,15 +292,26 @@ func TestFinalityAfterReorg(t *testing.T) {
 	builder.L2Info.GenerateAccount("User2")
 	generateBlocks(t, ctx, builder, testClient2ndNode, 20)
 
-	finalityData := arbutil.FinalityData{
-		FinalizedMsgCount: 10,
-		SafeMsgCount:      15,
+	safeMsgIdx := arbutil.MessageIndex(14)
+	safeMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(safeMsgIdx).Await(ctx)
+	Require(t, err)
+	safeFinalityData := arbutil.FinalityData{
+		MsgIdx:    safeMsgIdx,
+		BlockHash: safeMsgResult.BlockHash,
 	}
 
-	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &finalityData)
+	finalizedMsgIdx := arbutil.MessageIndex(9)
+	finalizedMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(finalizedMsgIdx).Await(ctx)
+	Require(t, err)
+	finalizedFinalityData := arbutil.FinalityData{
+		MsgIdx:    finalizedMsgIdx,
+		BlockHash: finalizedMsgResult.BlockHash,
+	}
+
+	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, nil)
 	Require(t, err)
 
-	checksFinalityData(t, "before reorg", ctx, builder.L2, uint64(finalityData.FinalizedMsgCount)-1, uint64(finalityData.SafeMsgCount)-1)
+	checksFinalityData(t, "before reorg", ctx, builder.L2, uint64(finalizedFinalityData.MsgIdx), uint64(safeFinalityData.MsgIdx))
 
 	reorgAt := arbutil.MessageIndex(6)
 	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(reorgAt)
@@ -292,4 +320,50 @@ func TestFinalityAfterReorg(t *testing.T) {
 	Require(t, err)
 
 	checksFinalityData(t, "after reorg", ctx, builder.L2, uint64(reorgAt)-1, uint64(reorgAt)-1)
+}
+
+func TestSetFinalityBlockHashMismatch(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// The procedure that periodically pushes finality data, from consensus to execution,
+	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
+	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
+	// In that way we can control in this test which finality data is pushed to Execution by calling SyncMonitor.SetFinalityData.
+	builder.nodeConfig.ParentChainReader.UseFinalityData = false
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	nodeConfig2ndNode := arbnode.ConfigDefaultL1NonSequencerTest()
+	execConfig2ndNode := ExecConfigDefaultTest(t)
+	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2ndNode, execConfig: execConfig2ndNode})
+	defer cleanup2ndNode()
+
+	// Creates at least 20 L2 blocks
+	builder.L2Info.GenerateAccount("User2")
+	generateBlocks(t, ctx, builder, testClient2ndNode, 20)
+
+	safeMsgIdx := arbutil.MessageIndex(14)
+	safeFinalityData := arbutil.FinalityData{
+		MsgIdx:    safeMsgIdx,
+		BlockHash: common.Hash{},
+	}
+
+	finalizedMsgIdx := arbutil.MessageIndex(9)
+	finalizedFinalityData := arbutil.FinalityData{
+		MsgIdx:    finalizedMsgIdx,
+		BlockHash: common.Hash{},
+	}
+
+	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, nil)
+	if err == nil {
+		t.Fatalf("err should not be nil")
+	}
+	if err.Error() != "finality block hash mismatch" {
+		t.Fatalf("err is not correct")
+	}
 }
