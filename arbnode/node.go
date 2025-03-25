@@ -1407,6 +1407,9 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
+	if n.ConsensusExecutionSyncer != nil {
+		n.ConsensusExecutionSyncer.StopAndWait()
+	}
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()
 	}
