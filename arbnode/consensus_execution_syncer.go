@@ -63,8 +63,6 @@ func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 	c.CallIteratively(c.pushFinalityDataFromConsensusToExecution)
 }
 
-// TODO: add Stop?
-
 func (c *ConsensusExecutionSyncer) getFinalityData(
 	ctx context.Context,
 	msgCount arbutil.MessageIndex,
