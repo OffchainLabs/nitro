@@ -125,33 +125,42 @@ func (s *SyncMonitor) BlockMetadataByNumber(ctx context.Context, blockNum uint64
 
 func (s *SyncMonitor) getFinalityBlock(
 	waitForBlockValidator bool,
-	validatedMsgCount *arbutil.MessageIndex,
-	finalityMsgCount arbutil.MessageIndex,
+	validatedFinalityData *arbutil.FinalityData,
+	finalityFinalityData *arbutil.FinalityData,
 ) (*types.Block, error) {
+	finalityMsgIdx := finalityFinalityData.MsgIdx
 	if waitForBlockValidator {
-		if validatedMsgCount == nil {
+		if validatedFinalityData == nil {
 			return nil, errors.New("block validator not set")
 		}
-		if finalityMsgCount > *validatedMsgCount {
-			finalityMsgCount = *validatedMsgCount
+		if finalityFinalityData.MsgIdx > validatedFinalityData.MsgIdx {
+			finalityMsgIdx = validatedFinalityData.MsgIdx
 		}
 	}
-	finalityBlockNumber := s.exec.MessageIndexToBlockNumber(finalityMsgCount - 1)
+	finalityBlockNumber := s.exec.MessageIndexToBlockNumber(finalityMsgIdx)
 	finalityBlock := s.exec.bc.GetBlockByNumber(finalityBlockNumber)
 	if finalityBlock == nil {
 		return nil, errors.New("unable to get block by number")
 	}
+	if finalityBlock.Hash() != finalityFinalityData.BlockHash {
+		return nil, errors.New("finality block hash mismatch")
+	}
 	return finalityBlock, nil
 }
 
-func (s *SyncMonitor) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) error {
+func (s *SyncMonitor) SetFinalityData(
+	ctx context.Context,
+	safeFinalityData *arbutil.FinalityData,
+	finalizedFinalityData *arbutil.FinalityData,
+	validatedFinalityData *arbutil.FinalityData,
+) error {
 	s.exec.createBlocksMutex.Lock()
 	defer s.exec.createBlocksMutex.Unlock()
 
 	finalizedBlock, err := s.getFinalityBlock(
 		s.config.FinalizedBlockWaitForBlockValidator,
-		finalityData.ValidatedMsgCount,
-		finalityData.FinalizedMsgCount,
+		validatedFinalityData,
+		finalizedFinalityData,
 	)
 	if err != nil {
 		return err
@@ -160,8 +169,8 @@ func (s *SyncMonitor) SetFinalityData(ctx context.Context, finalityData *arbutil
 
 	safeBlock, err := s.getFinalityBlock(
 		s.config.SafeBlockWaitForBlockValidator,
-		finalityData.ValidatedMsgCount,
-		finalityData.SafeMsgCount,
+		validatedFinalityData,
+		safeFinalityData,
 	)
 	if err != nil {
 		return err
