@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -48,7 +49,7 @@ type StakerInfo struct {
 }
 
 type RollupWatcher struct {
-	*rollupgen.RollupUserLogic
+	*rollup_legacy_gen.RollupUserLogic
 	address             common.Address
 	fromBlock           *big.Int
 	client              RollupWatcherL1Interface
@@ -64,7 +65,7 @@ type RollupWatcherL1Interface interface {
 }
 
 func NewRollupWatcher(address common.Address, client RollupWatcherL1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
-	con, err := rollupgen.NewRollupUserLogic(address, client)
+	con, err := rollup_legacy_gen.NewRollupUserLogic(address, client)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +142,7 @@ func (r *RollupWatcher) Client() RollupWatcherL1Interface {
 	return r.client
 }
 
-func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUserLogicRollupInitialized, error) {
+func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollup_legacy_gen.RollupUserLogicRollupInitialized, error) {
 	var query = ethereum.FilterQuery{
 		FromBlock: r.fromBlock,
 		ToBlock:   r.fromBlock,
@@ -198,7 +199,7 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 		NodeNum:                  parsedLog.NodeNum,
 		L1BlockProposed:          l1BlockProposed,
 		ParentChainBlockProposed: ethLog.BlockNumber,
-		Assertion:                NewAssertionFromSolidity(parsedLog.Assertion),
+		Assertion:                NewAssertionFromLegacySolidity(parsedLog.Assertion),
 		InboxMaxCount:            parsedLog.InboxMaxCount,
 		AfterInboxBatchAcc:       parsedLog.AfterInboxBatchAcc,
 		NodeHash:                 parsedLog.NodeHash,
@@ -268,7 +269,7 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 			NodeNum:                  parsedLog.NodeNum,
 			L1BlockProposed:          l1BlockProposed,
 			ParentChainBlockProposed: ethLog.BlockNumber,
-			Assertion:                NewAssertionFromSolidity(parsedLog.Assertion),
+			Assertion:                NewAssertionFromLegacySolidity(parsedLog.Assertion),
 			InboxMaxCount:            parsedLog.InboxMaxCount,
 			AfterInboxBatchAcc:       parsedLog.AfterInboxBatchAcc,
 			NodeHash:                 lastHash,

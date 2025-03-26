@@ -19,7 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -47,7 +47,7 @@ const (
 type L1Validator struct {
 	rollup         *staker.RollupWatcher
 	rollupAddress  common.Address
-	validatorUtils *rollupgen.ValidatorUtils
+	validatorUtils *rollup_legacy_gen.ValidatorUtils
 	client         *ethclient.Client
 	builder        *txbuilder.Builder
 	wallet         ValidatorWalletInterface
@@ -77,7 +77,7 @@ func NewL1Validator(
 	if err != nil {
 		return nil, err
 	}
-	validatorUtils, err := rollupgen.NewValidatorUtils(
+	validatorUtils, err := rollup_legacy_gen.NewValidatorUtils(
 		validatorUtilsAddress,
 		client,
 	)

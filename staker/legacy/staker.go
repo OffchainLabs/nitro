@@ -1038,7 +1038,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 
 		// We'll return early if we already have a stake
 		if info.StakeExists {
-			_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsSolidityStruct(), action.hash, action.prevInboxMaxCount)
+			_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsLegacySolidityStruct(), action.hash, action.prevInboxMaxCount)
 			if err != nil {
 				return fmt.Errorf("error staking on new node: %w", err)
 			}
@@ -1052,7 +1052,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		}
 		_, err = s.rollup.NewStakeOnNewNode(
 			s.builder.AuthWithAmount(ctx, stakeAmount),
-			action.assertion.AsSolidityStruct(),
+			action.assertion.AsLegacySolidityStruct(),
 			action.hash,
 			action.prevInboxMaxCount,
 		)

@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/proxiesgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -148,7 +149,7 @@ func TestFastConfirmation(t *testing.T) {
 	defer cleanupBuilder()
 	defer cleanupBackgroundTx()
 
-	rollup, err := rollupgen.NewRollupAdminLogic(builder.L2.ConsensusNode.DeployInfo.Rollup, builder.L1.Client)
+	rollup, err := rollup_legacy_gen.NewRollupAdminLogic(builder.L2.ConsensusNode.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 	latestConfirmBeforeAct, err := rollup.LatestConfirmed(&bind.CallOpts{})
 	Require(t, err)
@@ -388,12 +389,12 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	builder.L1.TransferBalance(t, "Faucet", "ValidatorB", balance, builder.L1Info)
 	l1authB := builder.L1Info.GetDefaultTransactOpts("ValidatorB", ctx)
 
-	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
+	rollup, err := rollup_legacy_gen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 
 	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err, "unable to bind upgrade executor")
-	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	rollupABI, err := abi.JSON(strings.NewReader(rollup_legacy_gen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
 	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
