@@ -191,6 +191,21 @@ func TestArbOwner(t *testing.T) {
 	if maxWasmSize != uint32(want) {
 		Fail(t, "Got", maxWasmSize, "want", want)
 	}
+
+	pubPrec := &ArbOwnerPublic{}
+
+	cdpi, err := pubPrec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
+	Require(t, err)
+	if cdpi {
+		Fail(t)
+	}
+	err = prec.SetCalldataPriceIncrease(callCtx, evm, true)
+	Require(t, err)
+	cdpi, err = pubPrec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
+	Require(t, err)
+	if !cdpi {
+		Fail(t)
+	}
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
