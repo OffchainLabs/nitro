@@ -105,8 +105,9 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 	}
 
 	var validatedFinalityData *arbutil.FinalityData
+	var validatedMsgCount arbutil.MessageIndex
 	if c.blockValidator != nil {
-		validatedMsgCount := c.blockValidator.GetValidated()
+		validatedMsgCount = c.blockValidator.GetValidated()
 		validatedFinalityData, err = c.getFinalityData(ctx, validatedMsgCount, nil, "validated")
 		if err != nil {
 			return c.config().SyncInterval
@@ -117,10 +118,6 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 	if err != nil {
 		log.Error("Error pushing finality data from consensus to execution", "err", err)
 	} else {
-		var validatedMsgCount arbutil.MessageIndex
-		if validatedFinalityData != nil {
-			validatedMsgCount = validatedFinalityData.MsgIdx
-		}
 		log.Debug("Pushed finality data from consensus to execution", "SafeMsgCount", safeMsgCount, "FinalizedMsgCount", finalizedMsgCount, "ValidatedMsgCount", validatedMsgCount)
 	}
 
