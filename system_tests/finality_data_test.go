@@ -104,13 +104,13 @@ func checksFinalityData(
 	expectedFinalizedBlockNumber uint64,
 	expectedSafeBlockNumber uint64,
 ) {
-	finalBlock, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+	finalizedBlock, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
 	Require(t, err)
-	if finalBlock == nil {
-		t.Fatalf("finalBlock should not be nil, scenario: %v", scenario)
+	if finalizedBlock == nil {
+		t.Fatalf("finalizedBlock should not be nil, scenario: %v", scenario)
 	}
-	if finalBlock.NumberU64() != expectedFinalizedBlockNumber {
-		t.Fatalf("finalBlock is %d, but expected %d, scenario: %v", finalBlock.NumberU64(), expectedFinalizedBlockNumber, scenario)
+	if finalizedBlock.NumberU64() != expectedFinalizedBlockNumber {
+		t.Fatalf("finalizedBlock is %d, but expected %d, scenario: %v", finalizedBlock.NumberU64(), expectedFinalizedBlockNumber, scenario)
 	}
 	safeBlock, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
 	Require(t, err)
