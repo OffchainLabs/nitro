@@ -66,12 +66,12 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	}
 
 	// manually set finalized block
-	finalizedBlock := uint64(10)
-	block := builder.L2.ExecNode.Backend.BlockChain().GetBlockByNumber(finalizedBlock)
-	if block == nil {
+	finalizedBlockNumber := uint64(10)
+	finalizedBlock := builder.L2.ExecNode.Backend.BlockChain().GetBlockByNumber(finalizedBlockNumber)
+	if finalizedBlock == nil {
 		t.Fatalf("unable to get block by number")
 	}
-	builder.L2.ExecNode.Backend.BlockChain().SetFinalized(block.Header())
+	builder.L2.ExecNode.Backend.BlockChain().SetFinalized(finalizedBlock.Header())
 	Require(t, err)
 
 	// Wait for freeze operation to be executed
@@ -80,8 +80,8 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	ancients, err = builder.L2.ExecNode.ChainDB.Ancients()
 	Require(t, err)
 	// ancients must be finalizedBlock+1 since only blocks in [0, finalizedBlock] must be included in ancients.
-	if ancients != finalizedBlock+1 {
-		t.Fatalf("Ancients should be %d, but got %d", finalizedBlock+1, ancients)
+	if ancients != finalizedBlockNumber+1 {
+		t.Fatalf("Ancients should be %d, but got %d", finalizedBlockNumber+1, ancients)
 	}
 
 	hasAncient, err := builder.L2.ExecNode.ChainDB.HasAncient(rawdb.ChainFreezerHeaderTable, 8)
