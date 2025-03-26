@@ -35,3 +35,6 @@
 [submodule "safe-smart-account"]
 	path = safe-smart-account
 	url = https://github.com/safe-global/safe-smart-account.git
+[submodule "go-ethereum"]
+	path = go-ethereum
+	url = https://github.com/Tenderly/arb-go-ethereum.git
