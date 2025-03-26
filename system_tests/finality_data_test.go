@@ -101,9 +101,14 @@ func checksFinalityData(
 	scenario string,
 	ctx context.Context,
 	testClient *TestClient,
-	expectedFinalizedBlockNumber uint64,
-	expectedSafeBlockNumber uint64,
+	expectedFinalizedMsgIdx arbutil.MessageIndex,
+	expectedSafeMsgIdx arbutil.MessageIndex,
 ) {
+	expectedFinalizedBlockNumber, err := testClient.ExecNode.MessageIndexToBlockNumber(expectedFinalizedMsgIdx).Await(ctx)
+	Require(t, err)
+	expectedSafeBlockNumber, err := testClient.ExecNode.MessageIndexToBlockNumber(expectedSafeMsgIdx).Await(ctx)
+	Require(t, err)
+
 	finalizedBlock, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
 	Require(t, err)
 	if finalizedBlock == nil {
@@ -175,17 +180,15 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 
 	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, &validatedFinalityData)
 	Require(t, err)
-	validatedBlockNumber, err := builder.L2.ExecNode.MessageIndexToBlockNumber(validatedMsgIdx).Await(ctx)
-	Require(t, err)
 
 	// wait for block validator is set to true in second node
-	checksFinalityData(t, "first node", ctx, builder.L2, validatedBlockNumber, validatedBlockNumber)
+	checksFinalityData(t, "first node", ctx, builder.L2, validatedMsgIdx, validatedMsgIdx)
 
 	err = testClient2ndNode.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, &validatedFinalityData)
 	Require(t, err)
 
 	// wait for block validator is no set to true in second node
-	checksFinalityData(t, "2nd node", ctx, testClient2ndNode, uint64(finalizedMsgIdx), uint64(safeMsgIdx))
+	checksFinalityData(t, "2nd node", ctx, testClient2ndNode, finalizedMsgIdx, safeMsgIdx)
 
 	// if validatedFinalityData is nil, error should be returned if waitForBlockValidator is set to true
 	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, nil)
@@ -311,7 +314,7 @@ func TestFinalityAfterReorg(t *testing.T) {
 	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, nil)
 	Require(t, err)
 
-	checksFinalityData(t, "before reorg", ctx, builder.L2, uint64(finalizedFinalityData.MsgIdx), uint64(safeFinalityData.MsgIdx))
+	checksFinalityData(t, "before reorg", ctx, builder.L2, finalizedFinalityData.MsgIdx, safeFinalityData.MsgIdx)
 
 	reorgAt := arbutil.MessageIndex(6)
 	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(reorgAt)
@@ -319,7 +322,7 @@ func TestFinalityAfterReorg(t *testing.T) {
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
 	Require(t, err)
 
-	checksFinalityData(t, "after reorg", ctx, builder.L2, uint64(reorgAt)-1, uint64(reorgAt)-1)
+	checksFinalityData(t, "after reorg", ctx, builder.L2, reorgAt-1, reorgAt-1)
 }
 
 func TestSetFinalityBlockHashMismatch(t *testing.T) {
