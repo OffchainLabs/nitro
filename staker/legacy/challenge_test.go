@@ -22,25 +22,25 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
-	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/osp_legacy_gen"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
 func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend) common.Address {
-	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
+	osp0, _, _, err := osp_legacy_gen.DeployOneStepProver0(auth, client)
 	Require(t, err)
 
-	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
+	ospMem, _, _, err := osp_legacy_gen.DeployOneStepProverMemory(auth, client)
 	Require(t, err)
 
-	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
+	ospMath, _, _, err := osp_legacy_gen.DeployOneStepProverMath(auth, client)
 	Require(t, err)
 
-	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
+	ospHostIo, _, _, err := osp_legacy_gen.DeployOneStepProverHostIo(auth, client)
 	Require(t, err)
 
-	ospEntry, _, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
+	ospEntry, _, _, err := osp_legacy_gen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
 	Require(t, err)
 	return ospEntry
 }
