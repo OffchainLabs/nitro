@@ -47,37 +47,34 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-packages=$(go list ./...)
-for package in $packages; do
-  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=2 --no-color=false --"
+# Build a single command to run all packages in parallel
+cmd="stdbuf -oL gotestsum --format short-verbose --no-color=false --rerun-fails=2 --packages=\"./...\" --"
 
-  if [ "$timeout" != "" ]; then
-    cmd="$cmd -timeout $timeout"
-  fi
+if [ "$timeout" != "" ]; then
+  cmd="$cmd -timeout $timeout"
+fi
+if [ "$tags" != "" ]; then
+  cmd="$cmd -tags=$tags"
+fi
+if [ "$run" != "" ]; then
+  cmd="$cmd -run=$run"
+fi
+if [ "$race" == true ]; then
+  cmd="$cmd -race"
+fi
+if [ "$cover" == true ]; then
+  cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
+fi
 
-  if [ "$tags" != "" ]; then
-    cmd="$cmd -tags=$tags"
-  fi
+# Add additional parallel flags
+cmd="$cmd -p=16 -parallel=16"
 
-  if [ "$run" != "" ]; then
-    cmd="$cmd -run=$run"
-  fi
+cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
 
-  if [ "$race" == true ]; then
-    cmd="$cmd -race"
-  fi
+echo ""
+echo "Running tests for all packages in parallel"
+echo "$cmd"
 
-  if [ "$cover" == true ]; then
-    cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
-  fi
-
-  cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
-
-  echo ""
-  echo running tests for "$package"
-  echo "$cmd"
-
-  if ! eval "$cmd"; then
-    exit 1
-  fi
-done
+if ! eval "$cmd"; then
+  exit 1
+fi
