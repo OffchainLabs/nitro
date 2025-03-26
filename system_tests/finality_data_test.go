@@ -166,7 +166,7 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	}
 
 	validatedMsgIdx := arbutil.MessageIndex(6)
-	validatedMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(finalizedMsgIdx).Await(ctx)
+	validatedMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(validatedMsgIdx).Await(ctx)
 	Require(t, err)
 	validatedFinalityData := arbutil.FinalityData{
 		MsgIdx:    validatedMsgIdx,
