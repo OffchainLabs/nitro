@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race, challenge, stylus, long]
+        test-mode: [defaults, pathdb, race, challenge, stylus, long]
 
     steps:
       - name: Checkout
@@ -145,7 +145,7 @@ jobs:
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
 
       - name: run tests without race detection and path state scheme
-        if: matrix.test-mode == 'defaults'
+        if: matrix.test-mode == 'pathdb'
         env:
           TEST_STATE_SCHEME: path
         run: |
