@@ -3,6 +3,7 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	flag "github.com/spf13/pflag"
 
@@ -142,10 +143,16 @@ func (s *SyncMonitor) getFinalityBlock(
 	finalityBlockNumber := s.exec.MessageIndexToBlockNumber(finalityMsgIdx)
 	finalityBlock := s.exec.bc.GetBlockByNumber(finalityBlockNumber)
 	if finalityBlock == nil {
-		return nil, errors.New("unable to get block by number")
+		return nil, errors.New("unable to get block by number, number=" + fmt.Sprint(finalityBlockNumber))
 	}
 	if finalityBlock.Hash() != finalityBlockHash {
-		return nil, errors.New("finality block hash mismatch")
+		errorMsg := fmt.Sprintf(
+			"finality block hash mismatch, blockNumber=%v, block hash provided by consensus=%v, block hash from execution=%v",
+			finalityBlockNumber,
+			finalityBlockHash,
+			finalityBlock.Hash(),
+		)
+		return nil, errors.New(errorMsg)
 	}
 	return finalityBlock, nil
 }
