@@ -220,6 +220,11 @@ RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c24
 RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
 RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
 
+
+
+
+
+
 FROM golang:1.23.1-bookworm AS node-builder
 WORKDIR /workspace
 ARG version=""
@@ -228,14 +233,40 @@ ARG modified=""
 ENV NITRO_VERSION=$version
 ENV NITRO_DATETIME=$datetime
 ENV NITRO_MODIFIED=$modified
+
+# Installing wabt (WebAssembly Binary Toolkit)
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libsnappy-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libgflags-dev \
+    liblz4-dev \
+    libzstd-dev \
+    librocksdb-dev \
+    git \
+    wget
+
+# Instrall RocksDB
+RUN git clone --depth 1 --branch v9.10.0 https://github.com/facebook/rocksdb.git && \
+    cd rocksdb && \
+    CXXFLAGS="-mno-avx512f -O2 -march=x86-64 -mtune=generic" make static_lib
+
+
+# Copy Go modules
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 COPY bold/go.mod bold/go.sum bold/
 RUN go mod download
+#RUN go get github.com/linxGnu/grocksdb@v1.9.8
+
+# Copy source code and other necessary files
 COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
 COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
@@ -245,9 +276,16 @@ COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
 COPY --from=prover-export / target/
+
+# Prepare target directory and copy Nitro tag file
 RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
+
+# Build Nitro with make, ignoring timestamps
+RUN export CGO_CFLAGS=-I/workspace/rocksdb/include && \
+    export CGO_LDFLAGS="-w -L/workspace/rocksdb/ -lrocksdb -lbz2" && \
+    NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
+#RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM node-builder AS fuzz-builder
 RUN mkdir fuzzers/
@@ -272,6 +310,20 @@ COPY --from=machine-versions /workspace/machines /home/user/target/machines
 COPY ./scripts/validate-wasm-module-root.sh .
 RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover
 USER root
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libsnappy-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libgflags-dev \
+    liblz4-dev \
+    libzstd-dev \
+    librocksdb-dev \
+    git \
+    wget
+
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
@@ -298,6 +350,8 @@ FROM nitro-node-slim AS nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
 COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
 RUN rm -rf /workspace/target/legacy-machines/latest

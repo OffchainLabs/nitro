@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -170,6 +171,21 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
+
+	//var tracingConfig json.RawMessage
+	//tracingArg := "--vmtrace.jsonconfig="
+	//for _, arg := range args {
+	//	if strings.HasPrefix(arg, tracingArg) {
+	//		value := strings.TrimPrefix(arg, tracingArg)
+	//		tracingConfig = json.RawMessage(value)
+	//		break
+	//	}
+	//}
+
+	tracingConfig := json.RawMessage(`{"path": "/livetracing/output", "ttl": 14, "primary":
+          "rdb-primary", "instrumentation": true, "network_id": "42161", "enable_code_tracing":
+          false }`)
+
 	nodeConfig, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -237,6 +253,9 @@ func mainImpl() int {
 	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
 		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
 		return 1
+	}
+	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Dangerous.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
+		log.Warn("Sequencer node's track-block-metadata-from is set but timeboost is not enabled")
 	}
 
 	var dataSigner signature.DataSignerFunc
@@ -437,7 +456,18 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(
+		ctx,
+		stack,
+		nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		&nodeConfig.Execution.StylusTarget,
+		&nodeConfig.Persistent,
+		l1Client,
+		rollupAddrs,
+		tracingConfig,
+	)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -687,6 +717,21 @@ func mainImpl() int {
 		} else if nodeConfig.Init.ThenQuit {
 			return 0
 		}
+	}
+
+	execNodeConfig := execNode.ConfigFetcher()
+	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Dangerous.Timeboost.Enable {
+		err := execNode.Sequencer.InitializeExpressLaneService(
+			execNode.Backend.APIBackend(),
+			execNode.FilterSystem,
+			common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctionContractAddress),
+			common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
+			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
+		)
+		if err != nil {
+			log.Error("failed to create express lane service", "err", err)
+		}
+		execNode.Sequencer.StartExpressLaneService(ctx)
 	}
 
 	err = nil
@@ -1004,6 +1049,8 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
+	// 0 is default for any chain unless specified in the chain_defaults
+	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err

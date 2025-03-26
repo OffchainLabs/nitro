@@ -541,7 +541,18 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 	return chainDb, l2BlockChain, nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, targetConfig *gethexec.StylusTargetConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(
+	ctx context.Context,
+	stack *node.Node,
+	config *NodeConfig,
+	chainId *big.Int,
+	cacheConfig *core.CacheConfig,
+	targetConfig *gethexec.StylusTargetConfig,
+	persistentConfig *conf.PersistentConfig,
+	l1Client *ethclient.Client,
+	rollupAddrs chaininfo.RollupAddresses,
+	tracingConfig json.RawMessage,
+) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, config.Persistent.Ancient, "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
@@ -575,7 +586,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
-				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
+				l2BlockChain, err := gethexec.GetBlockChain(
+					chainDb,
+					cacheConfig,
+					chainConfig,
+					config.Execution.TxLookupLimit,
+					tracingConfig,
+				)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -726,7 +743,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
+		l2BlockChain, err = gethexec.GetBlockChain(
+			chainDb,
+			cacheConfig,
+			chainConfig,
+			config.Execution.TxLookupLimit,
+			tracingConfig,
+		)
 		if err != nil {
 			return chainDb, nil, err
 		}
