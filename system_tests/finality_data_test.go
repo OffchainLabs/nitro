@@ -6,6 +6,7 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -366,7 +367,7 @@ func TestSetFinalityBlockHashMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatalf("err should not be nil")
 	}
-	if err.Error() != "finality block hash mismatch" {
+	if !strings.HasPrefix(err.Error(), "finality block hash mismatch") {
 		t.Fatalf("err is not correct")
 	}
 }
