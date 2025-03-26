@@ -129,12 +129,14 @@ func (s *SyncMonitor) getFinalityBlock(
 	finalityFinalityData *arbutil.FinalityData,
 ) (*types.Block, error) {
 	finalityMsgIdx := finalityFinalityData.MsgIdx
+	finalityBlockHash := finalityFinalityData.BlockHash
 	if waitForBlockValidator {
 		if validatedFinalityData == nil {
 			return nil, errors.New("block validator not set")
 		}
 		if finalityFinalityData.MsgIdx > validatedFinalityData.MsgIdx {
 			finalityMsgIdx = validatedFinalityData.MsgIdx
+			finalityBlockHash = validatedFinalityData.BlockHash
 		}
 	}
 	finalityBlockNumber := s.exec.MessageIndexToBlockNumber(finalityMsgIdx)
@@ -142,7 +144,7 @@ func (s *SyncMonitor) getFinalityBlock(
 	if finalityBlock == nil {
 		return nil, errors.New("unable to get block by number")
 	}
-	if finalityBlock.Hash() != finalityFinalityData.BlockHash {
+	if finalityBlock.Hash() != finalityBlockHash {
 		return nil, errors.New("finality block hash mismatch")
 	}
 	return finalityBlock, nil
