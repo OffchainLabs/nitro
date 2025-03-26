@@ -77,6 +77,41 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	checkAddressTable(arbState, input.AddressTableContents, t)
 	checkRetryables(arbState, input.RetryableData, t)
 	checkAccounts(stateDb, arbState, input.Accounts, t)
+	checkFeatures(t, arbState)
+}
+
+func checkFeatures(t *testing.T, arbState *ArbosState) {
+	t.Helper()
+	want := false
+	got, err := arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
+	if err = arbState.Features().SetCalldataPriceIncrease(true); err != nil {
+		t.Error(err)
+	}
+	want = true
+	got, err = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
+	if err = arbState.Features().SetCalldataPriceIncrease(false); err != nil {
+		t.Error(err)
+	}
+	want = false
+	got, err = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
 }
 
 func pseudorandomRetryableInitForTesting(prand *testhelpers.PseudoRandomDataSource) statetransfer.InitializationDataForRetryable {
