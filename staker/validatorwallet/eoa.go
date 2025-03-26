@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
@@ -24,7 +24,7 @@ type EOA struct {
 	auth                    *bind.TransactOpts
 	client                  *ethclient.Client
 	rollupAddress           common.Address
-	challengeManager        *challengegen.ChallengeManager
+	challengeManager        *challenge_legacy_gen.ChallengeManager
 	challengeManagerAddress common.Address
 	dataPoster              *dataposter.DataPoster
 	getExtraGas             func() uint64
@@ -50,7 +50,7 @@ func (w *EOA) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	w.challengeManager, err = challengegen.NewChallengeManager(w.challengeManagerAddress, w.client)
+	w.challengeManager, err = challenge_legacy_gen.NewChallengeManager(w.challengeManagerAddress, w.client)
 	return err
 }
 

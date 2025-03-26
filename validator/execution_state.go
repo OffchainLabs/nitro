@@ -8,8 +8,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
@@ -57,8 +57,8 @@ func (s GoGlobalState) Hash() common.Hash {
 	return crypto.Keccak256Hash(data)
 }
 
-func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
-	return challengegen.GlobalState{
+func (s GoGlobalState) AsSolidityStruct() challengeV2gen.GlobalState {
+	return challengeV2gen.GlobalState{
 		Bytes32Vals: [2][32]byte{s.BlockHash, s.SendRoot},
 		U64Vals:     [2]uint64{s.Batch, s.PosInBatch},
 	}
@@ -73,7 +73,7 @@ func (s GoGlobalState) AsLegacySolidityStruct() challenge_legacy_gen.GlobalState
 
 func NewExecutionStateFromSolidity(eth rollupgen.ExecutionState) *ExecutionState {
 	return &ExecutionState{
-		GlobalState:   GoGlobalStateFromSolidity(challengegen.GlobalState(eth.GlobalState)),
+		GlobalState:   GoGlobalStateFromSolidity(challengeV2gen.GlobalState(eth.GlobalState)),
 		MachineStatus: MachineStatus(eth.MachineStatus),
 	}
 }
@@ -85,7 +85,7 @@ func NewExecutionStateFromLegacySolidity(eth rollup_legacy_gen.ExecutionState) *
 	}
 }
 
-func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
+func GoGlobalStateFromSolidity(gs challengeV2gen.GlobalState) GoGlobalState {
 	return GoGlobalState{
 		BlockHash:  gs.Bytes32Vals[0],
 		SendRoot:   gs.Bytes32Vals[1],

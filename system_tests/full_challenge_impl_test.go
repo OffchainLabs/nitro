@@ -27,7 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/yulgen"
@@ -81,7 +81,7 @@ func CreateChallenge(
 	asserter common.Address,
 	challenger common.Address,
 ) (*mocks_legacy_gen.MockResultReceiver, common.Address) {
-	challengeManagerLogic, tx, _, err := challengegen.DeployChallengeManager(auth, client)
+	challengeManagerLogic, tx, _, err := challenge_legacy_gen.DeployChallengeManager(auth, client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
@@ -89,7 +89,7 @@ func CreateChallenge(
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
-	challengeManager, err := challengegen.NewChallengeManager(challengeManagerAddr, client)
+	challengeManager, err := challenge_legacy_gen.NewChallengeManager(challengeManagerAddr, client)
 	Require(t, err)
 
 	resultReceiverAddr, _, resultReceiver, err := mocks_legacy_gen.DeployMockResultReceiver(auth, client, challengeManagerAddr)

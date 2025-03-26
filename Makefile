@@ -279,6 +279,7 @@ clean:
 	rm -rf arbitrator/wasm-testsuite/tests
 	rm -rf $(output_root)
 	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
+	rm -f contracts-legacy/test/prover/proofs/*.json contracts-legacy/test/prover/spec-proofs/*.json
 	rm -rf arbitrator/target
 	rm -rf arbitrator/wasm-libraries/target
 	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
@@ -289,6 +290,7 @@ clean:
 	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
 	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
+	@rm -rf contracts-legacy/build contracts-legacy/cache
 	@rm -f .make/*
 
 .PHONY: docker
@@ -593,6 +595,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	yarn --cwd contracts build
 	yarn --cwd contracts build:forge:yul
 	yarn --cwd contracts-legacy build
+	yarn --cwd contracts-legacy build:forge:yul
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make

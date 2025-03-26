@@ -88,6 +88,7 @@ COPY ./util ./util
 COPY ./wavmio ./wavmio
 COPY ./zeroheavy ./zeroheavy
 COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
+COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
 COPY ./safe-smart-account ./safe-smart-account
@@ -98,8 +99,7 @@ COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
 COPY --from=contracts-builder workspace/contracts/build/contracts/src/precompiles/ contracts/build/contracts/src/precompiles/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/
-COPY --from=contracts-builder workspace/contracts-legacy/build/contracts-legacy/src/precompiles/ contracts-legacy/build/contracts-legacy/src/precompiles/
-COPY --from=contracts-builder workspace/contracts-legacy/node_modules/@offchainlabs/upgrade-executor/build/contracts-legacy/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts-legacy/
+COPY --from=contracts-builder workspace/contracts-legacy/build/contracts/src/precompiles/ contracts-legacy/build/contracts/src/precompiles/
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
@@ -252,7 +252,6 @@ COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
 COPY --from=contracts-builder workspace/contracts-legacy/build/ contracts-legacy/build/
 COPY --from=contracts-builder workspace/contracts-legacy/out/ contracts-legacy/out/
-COPY --from=contracts-builder workspace/contracts-legacy/node_modules/@offchainlabs/upgrade-executor/build/contracts-legacy/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts-legacy/node_modules/@offchainlabs/upgrade-executor/build/contracts-legacy/src/UpgradeExecutor.sol/
 COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-account/build/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
