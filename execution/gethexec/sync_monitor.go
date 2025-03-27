@@ -100,11 +100,15 @@ func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetada
 	return nil, nil
 }
 
-func (s *SyncMonitor) getFinalityBlock(
+func (s *SyncMonitor) getFinalityBlockHeader(
 	waitForBlockValidator bool,
 	validatedFinalityData *arbutil.FinalityData,
 	finalityFinalityData *arbutil.FinalityData,
-) (*types.Block, error) {
+) (*types.Header, error) {
+	if finalityFinalityData == nil {
+		return nil, nil
+	}
+
 	finalityMsgIdx := finalityFinalityData.MsgIdx
 	finalityBlockHash := finalityFinalityData.BlockHash
 	if waitForBlockValidator {
@@ -116,6 +120,7 @@ func (s *SyncMonitor) getFinalityBlock(
 			finalityBlockHash = validatedFinalityData.BlockHash
 		}
 	}
+
 	finalityBlockNumber := s.exec.MessageIndexToBlockNumber(finalityMsgIdx)
 	finalityBlock := s.exec.bc.GetBlockByNumber(finalityBlockNumber)
 	if finalityBlock == nil {
@@ -130,7 +135,7 @@ func (s *SyncMonitor) getFinalityBlock(
 		)
 		return nil, errors.New(errorMsg)
 	}
-	return finalityBlock, nil
+	return finalityBlock.Header(), nil
 }
 
 func (s *SyncMonitor) SetFinalityData(
@@ -142,7 +147,7 @@ func (s *SyncMonitor) SetFinalityData(
 	s.exec.createBlocksMutex.Lock()
 	defer s.exec.createBlocksMutex.Unlock()
 
-	finalizedBlock, err := s.getFinalityBlock(
+	finalizedBlockHeader, err := s.getFinalityBlockHeader(
 		s.config.FinalizedBlockWaitForBlockValidator,
 		validatedFinalityData,
 		finalizedFinalityData,
@@ -150,9 +155,9 @@ func (s *SyncMonitor) SetFinalityData(
 	if err != nil {
 		return err
 	}
-	s.exec.bc.SetFinalized(finalizedBlock.Header())
+	s.exec.bc.SetFinalized(finalizedBlockHeader)
 
-	safeBlock, err := s.getFinalityBlock(
+	safeBlockHeader, err := s.getFinalityBlockHeader(
 		s.config.SafeBlockWaitForBlockValidator,
 		validatedFinalityData,
 		safeFinalityData,
@@ -160,7 +165,7 @@ func (s *SyncMonitor) SetFinalityData(
 	if err != nil {
 		return err
 	}
-	s.exec.bc.SetSafe(safeBlock.Header())
+	s.exec.bc.SetSafe(safeBlockHeader)
 
 	return nil
 }
