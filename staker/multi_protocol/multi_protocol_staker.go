@@ -10,8 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/bridge_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
@@ -34,7 +34,7 @@ $$$$$$$/   $$$$$$/  $$$$$$$$/ $$$$$$$/
 
 type MultiProtocolStaker struct {
 	stopwaiter.StopWaiter
-	bridge                  *bridgegen.IBridge
+	bridge                  *bridge_legacy_gen.IBridge
 	oldStaker               *legacystaker.Staker
 	boldStaker              *boldstaker.BOLDStaker
 	legacyConfig            legacystaker.L1ValidatorConfigFetcher
@@ -87,7 +87,7 @@ func NewMultiProtocolStaker(
 	if err != nil {
 		return nil, err
 	}
-	bridge, err := bridgegen.NewIBridge(bridgeAddress, l1Reader.Client())
+	bridge, err := bridge_legacy_gen.NewIBridge(bridgeAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
 	}

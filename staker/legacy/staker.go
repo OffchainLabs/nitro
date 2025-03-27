@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -403,7 +403,7 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 	}
 	walletAddress := *s.wallet.Address()
 	client := s.l1Reader.Client()
-	rollup, err := rollupgen.NewRollupUserLogic(s.rollupAddress, client)
+	rollup, err := rollup_legacy_gen.NewRollupUserLogic(s.rollupAddress, client)
 	if err != nil {
 		return err
 	}

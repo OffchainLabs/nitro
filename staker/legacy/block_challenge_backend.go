@@ -41,7 +41,7 @@ func NewBlockChallengeBackend(
 	streamer staker.TransactionStreamerInterface,
 	inboxTracker staker.InboxTrackerInterface,
 ) (*BlockChallengeBackend, error) {
-	startGs := validator.GoGlobalStateFromLegacySolidity(initialState.StartState)
+	startGs := validator.GoGlobalStateFromLegacyChallengeSolidity(initialState.StartState)
 
 	var startMsgCount arbutil.MessageIndex
 	if startGs.Batch > 0 {
@@ -68,7 +68,7 @@ func NewBlockChallengeBackend(
 		startGs:                startGs,
 		startPosition:          0,
 		endPosition:            math.MaxUint64,
-		endGs:                  validator.GoGlobalStateFromLegacySolidity(initialState.EndState),
+		endGs:                  validator.GoGlobalStateFromLegacyChallengeSolidity(initialState.EndState),
 		inboxTracker:           inboxTracker,
 		tooFarStartsAtPosition: uint64(endMsgCount - startMsgCount + 1),
 	}, nil

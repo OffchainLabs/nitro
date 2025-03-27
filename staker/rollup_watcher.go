@@ -23,7 +23,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
@@ -32,7 +31,7 @@ var nodeCreatedID common.Hash
 var challengeCreatedID common.Hash
 
 func init() {
-	parsedRollup, err := rollupgen.RollupUserLogicMetaData.GetAbi()
+	parsedRollup, err := rollup_legacy_gen.RollupUserLogicMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}

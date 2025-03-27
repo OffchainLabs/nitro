@@ -14,7 +14,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 )
 
 // EOA is a ValidatorWallet that uses an Externally Owned Account to sign transactions.
@@ -41,7 +41,7 @@ func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1C
 }
 
 func (w *EOA) Initialize(ctx context.Context) error {
-	rollup, err := rollupgen.NewRollupUserLogic(w.rollupAddress, w.client)
+	rollup, err := rollup_legacy_gen.NewRollupUserLogic(w.rollupAddress, w.client)
 	if err != nil {
 		return err
 	}

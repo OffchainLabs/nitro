@@ -29,14 +29,13 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/bridge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/proxiesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executor_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
@@ -89,13 +88,13 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 	Require(t, err)
 	merkleState, err := arbSys.SendMerkleTreeState(&bind.CallOpts{})
 	Require(t, err, "could not get merkle root")
-	bridgeBinding, err := bridgegen.NewBridge(builder.L1Info.GetAddress("Bridge"), builder.L1.Client)
+	bridgeBinding, err := bridge_legacy_gen.NewBridge(builder.L1Info.GetAddress("Bridge"), builder.L1.Client)
 	Require(t, err)
 	outboxAddress, err := bridgeBinding.AllowedOutboxList(&bind.CallOpts{}, big.NewInt(0))
 	Require(t, err)
-	outboxBinding, err := bridgegen.NewOutbox(outboxAddress, builder.L1.Client)
+	outboxBinding, err := bridge_legacy_gen.NewOutbox(outboxAddress, builder.L1.Client)
 	Require(t, err)
-	ouboxAbi, err := bridgegen.AbsOutboxMetaData.GetAbi()
+	ouboxAbi, err := bridge_legacy_gen.AbsOutboxMetaData.GetAbi()
 	Require(t, err, "failed to get abi")
 	outBoxTransactionExecutedTopic := ouboxAbi.Events["OutBoxTransactionExecuted"].ID
 	// Check logs for withdraw event
@@ -206,9 +205,9 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	builder.L1.TransferBalance(t, "Faucet", "Validator", balance, builder.L1Info)
 	l1auth := builder.L1Info.GetDefaultTransactOpts("Validator", ctx)
 
-	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2node.DeployInfo.UpgradeExecutor, builder.L1.Client)
+	upgradeExecutor, err := upgrade_executor_legacy_gen.NewUpgradeExecutor(l2node.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err, "unable to bind upgrade executor")
-	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	rollupABI, err := abi.JSON(strings.NewReader(rollup_legacy_gen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
 	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
@@ -392,7 +391,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	rollup, err := rollup_legacy_gen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 
-	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
+	upgradeExecutor, err := upgrade_executor_legacy_gen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err, "unable to bind upgrade executor")
 	rollupABI, err := abi.JSON(strings.NewReader(rollup_legacy_gen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")

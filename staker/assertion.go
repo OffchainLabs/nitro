@@ -87,7 +87,7 @@ func (n *NodeInfo) MachineStatuses() [2]uint8 {
 
 func (n *NodeInfo) GlobalStates() [2]rollup_legacy_gen.GlobalState {
 	return [2]rollup_legacy_gen.GlobalState{
-		rollup_legacy_gen.GlobalState(n.Assertion.BeforeState.GlobalState.AsSolidityStruct()),
-		rollup_legacy_gen.GlobalState(n.Assertion.AfterState.GlobalState.AsSolidityStruct()),
+		n.Assertion.BeforeState.GlobalState.AsLegacySolidityStruct(),
+		n.Assertion.AfterState.GlobalState.AsLegacySolidityStruct(),
 	}
 }
