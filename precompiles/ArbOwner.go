@@ -353,3 +353,9 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 	}
 	return c.State.SetChainConfig(serializedChainConfig)
 }
+
+// SetCalldataPriceIncrease sets the increased calldata price feature on or off
+// (EIP-7623)
+func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
+	return c.State.Features().SetCalldataPriceIncrease(enable)
+}
