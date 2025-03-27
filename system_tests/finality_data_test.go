@@ -252,6 +252,12 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	ensureFinalizedBlockDoesNotExist(builder.L2, "first node after generating blocks")
 	ensureSafeBlockDoesNotExist(builder.L2, "first node after generating blocks")
 
+	// if nil is passed finality data should not be set
+	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, nil, nil, nil)
+	Require(t, err)
+	ensureFinalizedBlockDoesNotExist(builder.L2, "first node after generating blocks and setting finality data to nil")
+	ensureSafeBlockDoesNotExist(builder.L2, "first node after generating blocks and setting finality data to nil")
+
 	// finality data usage is enabled in second node, so finality data should be set in second node
 	finalBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
 	Require(t, err)

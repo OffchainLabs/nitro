@@ -77,6 +77,9 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 		return nil, errMsgCount
 	}
 
+	if msgCount == 0 {
+		return nil, nil
+	}
 	msgIdx := msgCount - 1
 	msgResult, err := c.txStreamer.ResultAtMessageIndex(msgIdx)
 	if err != nil {
