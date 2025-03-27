@@ -199,7 +199,7 @@ func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error)
 }
 
 type createNodeAction struct {
-	assertion         *staker.Assertion
+	assertion         *Assertion
 	prevInboxMaxCount *big.Int
 	hash              common.Hash
 }
@@ -507,7 +507,7 @@ func (v *L1Validator) createNewNodeAction(
 		hasSiblingByte[0] = 1
 	}
 	assertionNumBlocks := uint64(validatedCount - startCount)
-	assertion := &staker.Assertion{
+	assertion := &Assertion{
 		BeforeState: startState,
 		AfterState: &validator.ExecutionState{
 			GlobalState:   validatedGS,
