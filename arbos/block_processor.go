@@ -193,7 +193,8 @@ func ProduceBlockAdvanced(
 	chainConfig := chainContext.Config()
 
 	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
-	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
+
+	signer := types.VersionedArbitrumSigner(chainConfig, header.Number, header.Time, arbState.ArbOSVersion())
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := arbState.L2PricingState().PerBlockGasLimit()
