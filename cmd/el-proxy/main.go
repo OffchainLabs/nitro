@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,14 +18,19 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -60,16 +67,65 @@ func startMetrics(cfg *ExpressLaneProxyConfig) error {
 
 type ExpressLaneProxy struct {
 	stopwaiter.StopWaiter
-	config *ExpressLaneProxyConfig
+	config              *ExpressLaneProxyConfig
+	roundTimingInfo     timeboost.RoundTimingInfo
+	auctionContractAddr common.Address
+	expressLaneTracker  *gethexec.ExpressLaneTracker
+
+	lastRoundNumber    uint64
+	nextSequenceNumber uint64
+}
+
+type EthClientAdapter struct {
+	inner *ethclient.Client
+}
+
+func (a *EthClientAdapter) HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error) {
+	return a.inner.HeaderByNumber(ctx, big.NewInt((int64)(number)))
 }
 
 func NewExpressLaneProxy(
 	ctx context.Context,
 	config *ExpressLaneProxyConfig,
 	stack *node.Node,
-) *ExpressLaneProxy {
+) (*ExpressLaneProxy, error) {
+	client, err := GetClientFromURL(ctx, config.ExpressLaneURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	arbClient := &EthClientAdapter{ethclient.NewClient(client)}
+
+	if len(config.AuctionContractAddress) > 0 && !common.IsHexAddress(config.AuctionContractAddress) {
+		return nil, fmt.Errorf("invalid auction-contract-address \"%v\"", c.AuctionContractAddress)
+	}
+	auctionContractAddr := common.HexToAddress(config.AuctionContractAddress)
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, arbClient)
+	if err != nil {
+		return nil, err
+	}
+
+	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
+	if err != nil {
+		return nil, err
+	}
+
+	expressLaneTracker := gethexec.NewExpressLaneTracker(
+		*roundTimingInfo,
+		time.Millisecond*250,
+		arbClient,
+		auctionContract,
+		auctionContractAddr,
+		&params.ChainConfig{ChainID: big.NewInt(config.ChainId)},
+		0,
+	)
+
 	elProxy := &ExpressLaneProxy{
-		config: config,
+		config:              config,
+		roundTimingInfo:     *roundTimingInfo,
+		auctionContractAddr: auctionContractAddr,
+		expressLaneTracker:  expressLaneTracker,
+		lastRoundNumber:     math.MaxUint64,
+		nextSequenceNumber:  0,
 	}
 
 	elAPIs := []rpc.API{{
@@ -80,7 +136,17 @@ func NewExpressLaneProxy(
 	}}
 
 	stack.RegisterAPIs(elAPIs)
-	return elProxy
+	return elProxy, nil
+}
+
+func (p *ExpressLaneProxy) Start(ctx context.Context) {
+	p.StopWaiterSafe.Start(ctx, p)
+	p.expressLaneTracker.Start(ctx)
+}
+
+func (p *ExpressLaneProxy) StopAndWait() {
+	p.StopWaiterSafe.StopAndWait()
+	p.expressLaneTracker.StopAndWait()
 }
 
 var ErrorInternalConnectionError = errors.New("internal connection error")
@@ -117,8 +183,19 @@ func GetClientFromURL(ctx context.Context, rawUrl string, transport *http.Transp
 }
 
 func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (common.Hash, error) {
+	roundNumber := p.roundTimingInfo.RoundNumber()
+	if roundNumber != p.lastRoundNumber {
+		p.nextSequenceNumber = 0
+	}
 
-	wrapper := timeboost.JsonExpressLaneSubmission{}
+	wrapper := timeboost.JsonExpressLaneSubmission{
+		ChainId:                (*hexutil.Big)(big.NewInt(p.config.ChainId)),
+		Round:                  (hexutil.Uint64)(roundNumber),
+		AuctionContractAddress: p.auctionContractAddr,
+		Transaction:            input,
+		SequenceNumber:         (hexutil.Uint64)(p.nextSequenceNumber),
+		Signature:              []byte{},
+	}
 
 	client, err := GetClientFromURL(ctx, p.config.ExpressLaneURL, nil)
 	if err != nil {
@@ -126,6 +203,11 @@ func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil
 	}
 
 	err = client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", &wrapper)
+	if err == nil {
+		// Immediately rejected EL txs don't consume sequence numbers.
+		p.nextSequenceNumber++
+	}
+
 	return common.Hash{}, err
 }
 
@@ -192,22 +274,27 @@ func mainImpl() int {
 
 	fatalErrChan := make(chan error, 10)
 
-	// TODO start any proxy stuff here
 	log.Info("Running Arbitrum Express Lane Proxy", "revision", vcsRevision, "vcs.time", vcsTime)
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
 		log.Crit("failed to initialize geth stack", "err", err)
 	}
-	proxy := NewExpressLaneProxy(ctx, expressLaneProxyConfig, stack)
-	_ = proxy
-	err = stack.Start()
+	proxy, err := NewExpressLaneProxy(ctx, expressLaneProxyConfig, stack)
 	if err != nil {
 		log.Error("error", "err", err)
 		return 1
 	}
 
+	err = stack.Start()
+	if err != nil {
+		log.Error("error", "err", err)
+		return 1
+	}
 	defer stack.Close()
+
+	proxy.Start(ctx)
+	defer proxy.StopAndWait()
 
 	liveNodeConfig.Start(ctx)
 	defer liveNodeConfig.StopAndWait()

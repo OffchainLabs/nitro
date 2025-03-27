@@ -17,7 +17,9 @@ import (
 )
 
 type ExpressLaneProxyConfig struct {
-	ExpressLaneURL string `koanf:"express-lane-url"`
+	ExpressLaneURL         string `koanf:"express-lane-url"`
+	ChainId                int64  `koanf:"chain-id"`
+	AuctionContractAddress string `koanf:"auction-contract-address"`
 
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
@@ -57,22 +59,28 @@ var IPCConfigDefault = genericconf.IPCConfig{
 }
 
 var ExpressLaneProxyConfigDefault = ExpressLaneProxyConfig{
-	ExpressLaneURL: "http://localhost:8547",
-	Conf:           genericconf.ConfConfigDefault,
-	LogLevel:       "INFO",
-	LogType:        "plaintext",
-	HTTP:           HTTPConfigDefault,
-	WS:             WSConfigDefault,
-	IPC:            IPCConfigDefault,
-	Metrics:        false,
-	MetricsServer:  genericconf.MetricsServerConfigDefault,
-	PProf:          false,
-	Persistent:     conf.PersistentConfigDefault,
-	PprofCfg:       genericconf.PProfDefault,
+	ExpressLaneURL:         "http://localhost:8547",
+	ChainId:                412346, // nitro-testnode chainid
+	AuctionContractAddress: "",
+
+	Conf:          genericconf.ConfConfigDefault,
+	LogLevel:      "INFO",
+	LogType:       "plaintext",
+	HTTP:          HTTPConfigDefault,
+	WS:            WSConfigDefault,
+	IPC:           IPCConfigDefault,
+	Metrics:       false,
+	MetricsServer: genericconf.MetricsServerConfigDefault,
+	PProf:         false,
+	Persistent:    conf.PersistentConfigDefault,
+	PprofCfg:      genericconf.PProfDefault,
 }
 
 func ExpressLaneProxyConfigAddOptions(f *flag.FlagSet) {
 	f.String("express-lane-url", ExpressLaneProxyConfigDefault.ExpressLaneURL, "URL to proxy to. It should expose the RPC method timeboost_sendExpressLaneTransaction")
+	f.Int64("chain-id", ExpressLaneProxyConfigDefault.ChainId, "Chain ID of the chain being proxied to")
+	f.String("auction-contract-address", ExpressLaneProxyConfigDefault.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
+
 	conf.PersistentConfigAddOptions("persistent", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 	f.String("log-level", ExpressLaneProxyConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
