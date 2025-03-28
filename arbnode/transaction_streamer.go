@@ -240,17 +240,26 @@ func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) e
 	return s.ReorgAtAndEndBatch(s.db.NewBatch(), firstMsgIdxReorged)
 }
 
-func (s *TransactionStreamer) ReorgAtAndEndBatch(batch ethdb.Batch, firstMsgIdxReorged arbutil.MessageIndex) error {
+func (s *TransactionStreamer) reorgAtAndEndBatchImpl(batch ethdb.Batch, firstMsgIdxReorged arbutil.MessageIndex) ([]*arbostypes.MessageWithMetadata, error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	err := s.addMessagesAndReorg(batch, firstMsgIdxReorged, nil)
+	oldMessages, err := s.addMessagesAndReorg(batch, firstMsgIdxReorged, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = batch.Write()
 	if err != nil {
+		return nil, err
+	}
+	return oldMessages, nil
+}
+
+func (s *TransactionStreamer) ReorgAtAndEndBatch(batch ethdb.Batch, firstMsgIdxReorged arbutil.MessageIndex) error {
+	oldMessages, err := s.reorgAtAndEndBatchImpl(batch, firstMsgIdxReorged)
+	if err != nil {
 		return err
 	}
+	s.exec.ResequenceReorgedMessages(oldMessages)
 	return nil
 }
 
@@ -307,19 +316,19 @@ func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, star
 
 // The insertion mutex must be held. This acquires the reorg mutex.
 // Note: oldMessages will be empty if reorgHook is nil
-func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) error {
+func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) ([]*arbostypes.MessageWithMetadata, error) {
 	if msgIdxOfFirstMsgToAdd == 0 {
-		return errors.New("cannot reorg out init message")
+		return nil, errors.New("cannot reorg out init message")
 	}
 	lastDelayedMsgIdx, err := s.getPrevPrevDelayedRead(msgIdxOfFirstMsgToAdd)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var oldMessages []*arbostypes.MessageWithMetadata
 
 	currentHeadMsgIdx, err := s.GetHeadMessageIndex()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	config := s.config()
@@ -403,9 +412,9 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	messagesResults, err := s.exec.Reorg(msgIdxOfFirstMsgToAdd, newMessages, oldMessages).Await(s.GetContext())
+	messagesResults, err := s.exec.Reorg(msgIdxOfFirstMsgToAdd, newMessages).Await(s.GetContext())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	messagesWithComputedBlockHash := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(messagesResults))
@@ -421,29 +430,29 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 	if s.validator != nil {
 		err = s.validator.Reorg(s.GetContext(), msgIdxOfFirstMsgToAdd)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	err = deleteStartingAt(s.db, batch, messageResultPrefix, uint64ToKey(uint64(msgIdxOfFirstMsgToAdd)))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = deleteStartingAt(s.db, batch, blockHashInputFeedPrefix, uint64ToKey(uint64(msgIdxOfFirstMsgToAdd)))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = deleteStartingAt(s.db, batch, blockMetadataInputFeedPrefix, uint64ToKey(uint64(msgIdxOfFirstMsgToAdd)))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = deleteStartingAt(s.db, batch, missingBlockMetadataInputFeedPrefix, uint64ToKey(uint64(msgIdxOfFirstMsgToAdd)))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(msgIdxOfFirstMsgToAdd)))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for i := 0; i < len(messagesResults); i++ {
@@ -451,11 +460,11 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 		msgIdx := msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)
 		err = s.storeResult(msgIdx, *messagesResults[i], batch)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return setMessageCount(batch, msgIdxOfFirstMsgToAdd)
+	return oldMessages, setMessageCount(batch, msgIdxOfFirstMsgToAdd)
 }
 
 func setMessageCount(batch ethdb.KeyValueWriter, count arbutil.MessageIndex) error {
@@ -627,19 +636,19 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 	return arbutil.MessageIndex(firstMsgIdx + uint64(len(s.broadcasterQueuedMessages)))
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
+func (s *TransactionStreamer) addBroadcastMessagesImpl(feedMessages []*message.BroadcastFeedMessage) ([]*arbostypes.MessageWithMetadata, error) {
 	if len(feedMessages) == 0 {
-		return nil
+		return nil, nil
 	}
 	broadcastFirstMsgIdx := feedMessages[0].SequenceNumber
 	var messages []arbostypes.MessageWithMetadataAndBlockInfo
 	expectedMsgIdx := broadcastFirstMsgIdx
 	for _, feedMessage := range feedMessages {
 		if expectedMsgIdx != feedMessage.SequenceNumber {
-			return fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, expectedMsgIdx)
+			return nil, fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, expectedMsgIdx)
 		}
 		if feedMessage.Message.Message == nil || feedMessage.Message.Message.Header == nil {
-			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
+			return nil, fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
 		}
 		msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: feedMessage.Message,
@@ -660,7 +669,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 	// Messages from feed are not confirmed, so confirmedMessageCount is 0 and confirmedReorg can be ignored
 	numberOfDuplicates, feedReorg, oldMsg, err := s.countDuplicateMessages(broadcastFirstMsgIdx, messages, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	messages = messages[numberOfDuplicates:]
 	broadcastFirstMsgIdx += arbutil.MessageIndex(numberOfDuplicates)
@@ -669,7 +678,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 	}
 	if len(messages) == 0 {
 		// No new messages received
-		return nil
+		return nil, nil
 	}
 
 	if len(s.broadcasterQueuedMessages) == 0 || (feedReorg && !s.broadcasterQueuedMessagesActiveReorg) {
@@ -709,25 +718,34 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 
 	if s.broadcasterQueuedMessagesActiveReorg || len(s.broadcasterQueuedMessages) == 0 {
 		// Broadcaster never triggered reorg or no messages to add
-		return nil
+		return nil, nil
 	}
 
 	if broadcastFirstMsgIdx > 0 {
 		_, err := s.GetMessage(broadcastFirstMsgIdx - 1)
 		if err != nil {
 			if !rawdb.IsDbErrNotFound(err) {
-				return err
+				return nil, err
 			}
 			// Message before current message doesn't exist in database, so don't add current messages yet
-			return nil
+			return nil, nil
 		}
 	}
 
-	err = s.addMessagesAndEndBatchImpl(broadcastFirstMsgIdx, false, nil, nil)
+	oldMessages, err := s.addMessagesAndEndBatchImpl(broadcastFirstMsgIdx, false, nil, nil)
 	if err != nil {
-		return fmt.Errorf("error adding pending broadcaster messages: %w", err)
+		return nil, fmt.Errorf("error adding pending broadcaster messages: %w", err)
 	}
 
+	return oldMessages, nil
+}
+
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
+	oldMessages, err := s.addBroadcastMessagesImpl(feedMessages)
+	if err != nil {
+		return err
+	}
+	s.exec.ResequenceReorgedMessages(oldMessages)
 	return nil
 }
 
@@ -805,10 +823,19 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 		// 1: were previously in feed. We saved work
 		// 2: are new (syncing). We wasted very little work.
 	}
-	s.insertionMutex.Lock()
-	defer s.insertionMutex.Unlock()
 
-	return s.addMessagesAndEndBatchImpl(firstMsgIdx, messagesAreConfirmed, messagesWithBlockInfo, batch)
+	addMessagesAndEndBatch := func() ([]*arbostypes.MessageWithMetadata, error) {
+		s.insertionMutex.Lock()
+		defer s.insertionMutex.Unlock()
+
+		return s.addMessagesAndEndBatchImpl(firstMsgIdx, messagesAreConfirmed, messagesWithBlockInfo, batch)
+	}
+	oldMessages, err := addMessagesAndEndBatch()
+	if err != nil {
+		return err
+	}
+	s.exec.ResequenceReorgedMessages(oldMessages)
+	return nil
 }
 
 func (s *TransactionStreamer) getPrevPrevDelayedRead(msgIdx arbutil.MessageIndex) (uint64, error) {
@@ -927,7 +954,7 @@ func (s *TransactionStreamer) logReorg(msgIdx arbutil.MessageIndex, dbMsg *arbos
 
 }
 
-func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
+func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) ([]*arbostypes.MessageWithMetadata, error) {
 	var confirmedReorg bool
 	var oldMsg *arbostypes.MessageWithMetadata
 	var lastDelayedRead uint64
@@ -942,7 +969,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 		var err error
 		numberOfDuplicates, confirmedReorg, oldMsg, err = s.countDuplicateMessages(firstMsgIdx, messages, &batch)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if numberOfDuplicates > 0 {
 			lastDelayedRead = messages[numberOfDuplicates-1].MessageWithMeta.DelayedMessagesRead
@@ -981,7 +1008,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 		var err error
 		numberOfDuplicates, feedReorg, oldMsg, err = s.countDuplicateMessages(firstMsgIdx, messages, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if numberOfDuplicates > 0 {
 			lastDelayedRead = messages[numberOfDuplicates-1].MessageWithMeta.DelayedMessagesRead
@@ -996,14 +1023,14 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 	if feedReorg {
 		// Never allow feed to reorg confirmed messages
 		// Note that any remaining messages must be feed messages, so we're done here
-		return endBatch(batch)
+		return nil, endBatch(batch)
 	}
 
 	if lastDelayedRead == 0 {
 		var err error
 		lastDelayedRead, err = s.getPrevPrevDelayedRead(firstMsgIdx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -1013,32 +1040,34 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 		msgIdx := firstMsgIdx + arbutil.MessageIndex(i)
 		diff := msg.MessageWithMeta.DelayedMessagesRead - lastDelayedRead
 		if diff != 0 && diff != 1 {
-			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", lastDelayedRead, msg.MessageWithMeta.DelayedMessagesRead, msgIdx)
+			return nil, fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", lastDelayedRead, msg.MessageWithMeta.DelayedMessagesRead, msgIdx)
 		}
 		lastDelayedRead = msg.MessageWithMeta.DelayedMessagesRead
 		if msg.MessageWithMeta.Message == nil {
-			return fmt.Errorf("attempted to insert nil message at index %v", msgIdx)
+			return nil, fmt.Errorf("attempted to insert nil message at index %v", msgIdx)
 		}
 	}
 
+	var oldMessages []*arbostypes.MessageWithMetadata
 	if confirmedReorg {
 		reorgBatch := s.db.NewBatch()
-		err := s.addMessagesAndReorg(reorgBatch, firstMsgIdx, messages)
+		var err error
+		oldMessages, err = s.addMessagesAndReorg(reorgBatch, firstMsgIdx, messages)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		err = reorgBatch.Write()
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if len(messages) == 0 {
-		return endBatch(batch)
+		return oldMessages, endBatch(batch)
 	}
 
 	err := s.writeMessages(firstMsgIdx, messages, batch)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if clearQueueOnSuccess {
@@ -1054,7 +1083,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 		s.broadcasterQueuedMessagesActiveReorg = false
 	}
 
-	return nil
+	return oldMessages, nil
 }
 
 // The caller must hold the insertionMutex
