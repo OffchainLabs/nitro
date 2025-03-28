@@ -450,7 +450,6 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
 	}
 	s.Pause()
-	execEngine.EnableReorgSequencing()
 	return s, nil
 }
 
