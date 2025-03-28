@@ -146,6 +146,7 @@ func mainImpl() int {
 		log.Error("error starting validator node", "err", err)
 		return 1
 	}
+	defer valNode.Stop()
 	err = stack.Start()
 	if err != nil {
 		fatalErrChan <- fmt.Errorf("error starting stack: %w", err)

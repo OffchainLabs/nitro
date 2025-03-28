@@ -1140,10 +1140,10 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	err = valnode.Start(ctx)
 	Require(t, err)
 
-	go func() {
-		<-ctx.Done()
+	t.Cleanup(func() {
 		stack.Close()
-	}()
+		valnode.Stop()
+	})
 
 	return valnode, stack
 }
