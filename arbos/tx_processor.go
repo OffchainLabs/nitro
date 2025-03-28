@@ -112,7 +112,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 
 	var tracingInfo *util.TracingInfo
 	if interpreter.Config().Tracer != nil {
-		caller := contract.CallerAddress
+		caller := contract.Caller()
 		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, acting, util.TracingDuringEVM)
 	}
 
@@ -778,4 +778,16 @@ func (p *TxProcessor) MsgIsNonMutating() bool {
 	}
 	mode := p.msg.TxRunMode
 	return mode == core.MessageGasEstimationMode || mode == core.MessageEthcallMode
+}
+
+func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
+	if p.state.ArbOSVersion() < params.ArbosVersion_40 {
+		return false
+	}
+	enabled, err := p.state.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		log.Error("failed to check if increased calldata pricing is enabled", "err", err)
+		return false
+	}
+	return enabled
 }

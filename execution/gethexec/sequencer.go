@@ -20,13 +20,11 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -108,7 +106,7 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	ExpressLaneAdvantage:         time.Millisecond * 200,
 	SequencerHTTPEndpoint:        "http://localhost:8547",
 	EarlySubmissionGrace:         time.Second * 2,
-	MaxFutureSequenceDistance:    25,
+	MaxFutureSequenceDistance:    1000,
 	RedisUrl:                     "unset",
 	RedisUpdateEventsChannelSize: 500,
 	QueueTimeoutInBlocks:         5,
@@ -556,8 +554,8 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if tx.To() == nil {
 		return errors.New("transaction has no recipient")
 	}
-	if *tx.To() != s.expressLaneService.auctionContractAddr {
-		return errors.New("transaction recipient is not the auction contract")
+	if *tx.To() != s.expressLaneService.AuctionContractAddr() {
+		return fmt.Errorf("transaction recipient %#x is not the auction contract %#x", *tx.To(), s.expressLaneService.AuctionContractAddr())
 	}
 	signer := types.LatestSigner(s.execEngine.bc.Config())
 	sender, err := types.Sender(signer, tx)
@@ -604,7 +602,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	if s.expressLaneService == nil {
 		return errors.New("express lane service not enabled")
 	}
-	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
+	if err := s.expressLaneService.ValidateExpressLaneTx(msg); err != nil {
 		return err
 	}
 
@@ -746,7 +744,8 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	if pauseChan != nil {
 		return nil
 	}
-	return s.execEngine.consensus.ExpectChosenSequencer()
+	_, err := s.execEngine.consensus.ExpectChosenSequencer().Await(ctx)
+	return err
 }
 
 func (s *Sequencer) ForwardTarget() string {
@@ -1300,23 +1299,19 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 }
 
 func (s *Sequencer) InitializeExpressLaneService(
-	apiBackend *arbitrum.APIBackend,
-	filterSystem *filters.FilterSystem,
-	auctionContractAddr common.Address,
 	auctioneerAddr common.Address,
-	earlySubmissionGrace time.Duration,
+	roundTimingInfo *timeboost.RoundTimingInfo,
+	expressLaneTracker *ExpressLaneTracker,
 ) error {
 	els, err := newExpressLaneService(
 		s,
 		s.config,
-		apiBackend,
-		filterSystem,
-		auctionContractAddr,
+		roundTimingInfo,
 		s.execEngine.bc,
-		earlySubmissionGrace,
+		expressLaneTracker,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create express lane service. auctionContractAddr: %v err: %w", auctionContractAddr, err)
+		return fmt.Errorf("failed to create express lane service. err: %w", err)
 	}
 	s.auctioneerAddr = auctioneerAddr
 	s.expressLaneService = els
@@ -1336,7 +1331,10 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	l1GasPrice := header.BaseFee.Uint64()
 	if header.BlobGasUsed != nil {
 		if header.ExcessBlobGas != nil {
-			blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*header.ExcessBlobGas, *header.BlobGasUsed))
+			blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
+			if err != nil {
+				return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
+			}
 			blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 			blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 			if l1GasPrice > blobFeePerByte.Uint64()/16 {

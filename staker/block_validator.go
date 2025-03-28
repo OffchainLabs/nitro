@@ -344,7 +344,7 @@ func NewBlockValidator(
 	return ret, nil
 }
 
-func atomicStorePos(addr *atomic.Uint64, val arbutil.MessageIndex, metr metrics.Gauge) {
+func atomicStorePos(addr *atomic.Uint64, val arbutil.MessageIndex, metr *metrics.Gauge) {
 	addr.Store(uint64(val))
 	// #nosec G115
 	metr.Update(int64(val))
