@@ -50,7 +50,8 @@ type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
 	chainConfig    *params.ChainConfig
-	exec           execution.ExecutionClient
+	execClient     execution.ExecutionClient
+	execSequencer  execution.ExecutionSequencer
 	prevHeadMsgIdx *arbutil.MessageIndex
 	validator      *staker.BlockValidator
 
@@ -120,14 +121,16 @@ func NewTransactionStreamer(
 	ctx context.Context,
 	db ethdb.Database,
 	chainConfig *params.ChainConfig,
-	exec execution.ExecutionClient,
+	execClient execution.ExecutionClient,
+	execSequencer execution.ExecutionSequencer,
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
 	snapSyncConfig *SnapSyncConfig,
 ) (*TransactionStreamer, error) {
 	streamer := &TransactionStreamer{
-		exec:               exec,
+		execClient:         execClient,
+		execSequencer:      execSequencer,
 		chainConfig:        chainConfig,
 		db:                 db,
 		newMessageNotifier: make(chan struct{}, 1),
@@ -141,7 +144,7 @@ func NewTransactionStreamer(
 		return nil, err
 	}
 	if config().TrackBlockMetadataFrom != 0 {
-		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
+		trackBlockMetadataFrom, err := execClient.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -259,7 +262,9 @@ func (s *TransactionStreamer) ReorgAtAndEndBatch(batch ethdb.Batch, firstMsgIdxR
 	if err != nil {
 		return err
 	}
-	s.exec.ResequenceReorgedMessages(oldMessages)
+	if s.execSequencer != nil {
+		s.execSequencer.ResequenceReorgedMessages(oldMessages)
+	}
 	return nil
 }
 
@@ -412,7 +417,7 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	messagesResults, err := s.exec.Reorg(msgIdxOfFirstMsgToAdd, newMessages).Await(s.GetContext())
+	messagesResults, err := s.execClient.Reorg(msgIdxOfFirstMsgToAdd, newMessages).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -607,7 +612,7 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 	if err != nil {
 		return 0, err
 	}
-	digestedHead, err := s.exec.HeadMessageIndex().Await(s.GetContext())
+	digestedHead, err := s.execClient.HeadMessageIndex().Await(s.GetContext())
 	if err != nil {
 		return 0, err
 	}
@@ -745,7 +750,9 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 	if err != nil {
 		return err
 	}
-	s.exec.ResequenceReorgedMessages(oldMessages)
+	if s.execSequencer != nil {
+		s.execSequencer.ResequenceReorgedMessages(oldMessages)
+	}
 	return nil
 }
 
@@ -804,7 +811,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 
 	if messagesAreConfirmed {
 		// Trim confirmed messages from l1pricedataCache
-		_, err := s.exec.MarkFeedStart(firstMsgIdx + arbutil.MessageIndex(len(messages))).Await(s.GetContext())
+		_, err := s.execClient.MarkFeedStart(firstMsgIdx + arbutil.MessageIndex(len(messages))).Await(s.GetContext())
 		if err != nil {
 			log.Warn("TransactionStreamer: failed to mark feed start", "firstMsgIdx", firstMsgIdx, "err", err)
 		}
@@ -834,7 +841,9 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 	if err != nil {
 		return err
 	}
-	s.exec.ResequenceReorgedMessages(oldMessages)
+	if s.execSequencer != nil {
+		s.execSequencer.ResequenceReorgedMessages(oldMessages)
+	}
 	return nil
 }
 
@@ -1344,7 +1353,7 @@ func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) 
 	if s.Started() {
 		ctx = s.GetContext()
 	}
-	msgResult, err := s.exec.ResultAtMessageIndex(msgIdx).Await(ctx)
+	msgResult, err := s.execClient.ResultAtMessageIndex(msgIdx).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1432,7 +1441,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 	}
 	s.prevHeadMsgIdx = &consensusHeadMsgIdx
 
-	execHeadMsgIdx, err := s.exec.HeadMessageIndex().Await(ctx)
+	execHeadMsgIdx, err := s.execClient.HeadMessageIndex().Await(ctx)
 	if err != nil {
 		log.Error("ExecuteNextMsg failed to get exec engine head message index", "err", err)
 		return false
@@ -1458,7 +1467,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		}
 		msgForPrefetch = msg
 	}
-	msgResult, err := s.exec.DigestMessage(msgIdxToExecute, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch).Await(ctx)
+	msgResult, err := s.execClient.DigestMessage(msgIdxToExecute, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch).Await(ctx)
 	if err != nil {
 		logger := log.Warn
 		if (prevHeadMsgIdx == nil) || (*prevHeadMsgIdx < consensusHeadMsgIdx) {

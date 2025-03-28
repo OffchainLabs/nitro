@@ -97,8 +97,6 @@ type ExecutionEngine struct {
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
-	reorgSequencing bool
-
 	disableStylusCacheMetricsCollection bool
 
 	prefetchBlock bool
@@ -228,16 +226,6 @@ func (s *ExecutionEngine) SetReorgEventsNotifier(reorgEventsNotifier chan struct
 		panic("trying to set reorg events notifier when already set")
 	}
 	s.reorgEventsNotifier = reorgEventsNotifier
-}
-
-func (s *ExecutionEngine) EnableReorgSequencing() {
-	if s.Started() {
-		panic("trying to enable reorg sequencing after start")
-	}
-	if s.reorgSequencing {
-		panic("trying to enable reorg sequencing when already set")
-	}
-	s.reorgSequencing = true
 }
 
 func (s *ExecutionEngine) DisableStylusCacheMetricsCollection() {
@@ -374,10 +362,6 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 }
 
 func (s *ExecutionEngine) ResequenceReorgedMessages(messages []*arbostypes.MessageWithMetadata) {
-	if !s.reorgSequencing {
-		return
-	}
-
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 
