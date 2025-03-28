@@ -3,8 +3,9 @@
 
 package arbutil
 
+import "github.com/ethereum/go-ethereum/common"
+
 type FinalityData struct {
-	FinalizedMsgCount MessageIndex
-	SafeMsgCount      MessageIndex
-	ValidatedMsgCount *MessageIndex
+	MsgIdx    MessageIndex
+	BlockHash common.Hash
 }

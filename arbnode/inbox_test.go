@@ -71,7 +71,12 @@ func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]
 	w.t.Error("not supported")
 	return nil
 }
-func (w *execClientWrapper) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
+func (w *execClientWrapper) SetFinalityData(
+	ctx context.Context,
+	safeFinalityData *arbutil.FinalityData,
+	finalizedFinalityData *arbutil.FinalityData,
+	validatedFinalityData *arbutil.FinalityData,
+) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
