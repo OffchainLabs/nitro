@@ -52,7 +52,6 @@ type ExecutionClient interface {
 
 	DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
 	Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*MessageResult]
-	ResequenceReorgedMessages(oldMessages []*arbostypes.MessageWithMetadata)
 	HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex]
 	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
@@ -88,6 +87,7 @@ type ExecutionSequencer interface {
 	Activate()
 	ForwardTo(url string) error
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
+	ResequenceReorgedMessages(oldMessages []*arbostypes.MessageWithMetadata)
 	NextDelayedMessageNumber() (uint64, error)
 	Synced(ctx context.Context) bool
 	FullSyncProgressMap(ctx context.Context) map[string]interface{}
