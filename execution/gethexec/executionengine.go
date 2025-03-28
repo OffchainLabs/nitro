@@ -84,7 +84,6 @@ type ExecutionEngine struct {
 	consensus execution.FullConsensusClient
 	recorder  *BlockRecorder
 
-	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
 
 	newBlockNotifier    chan struct{}
@@ -116,7 +115,6 @@ func NewL1PriceData() *L1PriceData {
 func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
 		bc:                bc,
-		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier:  make(chan struct{}, 1),
 		cachedL1PriceData: NewL1PriceData(),
 		syncTillBlock:     syncTillBlock,
@@ -267,20 +265,14 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) ([]*execution.MessageResult, error) {
 	if msgIdxOfFirstMsgToAdd == 0 {
 		return nil, errors.New("cannot reorg out genesis")
 	}
 
 	s.createBlocksMutex.Lock()
-	resequencing := false
-	defer func() {
-		// if we are resequencing old messages - don't release the lock
-		// lock will be released by thread listening to resequenceChan
-		if !resequencing {
-			s.createBlocksMutex.Unlock()
-		}
-	}()
+	defer s.createBlocksMutex.Unlock()
+
 	lastBlockNumToKeep := s.MessageIndexToBlockNumber(msgIdxOfFirstMsgToAdd - 1)
 	// We can safely cast lastBlockNumToKeep to a uint64 as it comes from MessageIndexToBlockNumber
 	lastBlockToKeep := s.bc.GetBlockByNumber(uint64(lastBlockNumToKeep))
@@ -331,10 +323,6 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 	}
 	if s.recorder != nil {
 		s.recorder.ReorgTo(lastBlockToKeep.Header())
-	}
-	if len(oldMessages) > 0 {
-		s.resequenceChan <- oldMessages
-		resequencing = true
 	}
 	return newMessagesResults, nil
 }
@@ -404,11 +392,13 @@ func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Tran
 	}, nil
 }
 
-// The caller must hold the createBlocksMutex
-func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.MessageWithMetadata) {
+func (s *ExecutionEngine) ResequenceReorgedMessages(messages []*arbostypes.MessageWithMetadata) {
 	if !s.reorgSequencing {
 		return
 	}
+
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
 
 	log.Info("Trying to resequence messages", "number", len(messages))
 	lastBlockHeader, err := s.getCurrentHeader()
@@ -1026,21 +1016,6 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 
 func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
-	s.LaunchThread(func(ctx context.Context) {
-		for {
-			if s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock {
-				log.Info("stopping block creation in execution engine", "syncTillBlock", s.syncTillBlock)
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case resequence := <-s.resequenceChan:
-				s.resequenceReorgedMessages(resequence)
-				s.createBlocksMutex.Unlock()
-			}
-		}
-	})
 	s.LaunchThread(func(ctx context.Context) {
 		var lastBlock *types.Block
 		for {
