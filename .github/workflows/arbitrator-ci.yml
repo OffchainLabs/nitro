@@ -181,7 +181,8 @@ jobs:
       - name: Run proof validation tests
         run: |
           npm install --global yarn
-          cd contracts
+          cd contracts-legacy
+          cp -r ../contracts/test/prover/proofs/* ./test/prover/proofs
           yarn install
           yarn build
           yarn build:forge:yul

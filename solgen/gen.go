@@ -73,6 +73,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	filePathsInternal, err := filepath.Glob(filepath.Join(parent, "contracts-legacy", "build", "contracts", "src", "*", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	filePathsSafeSmartAccount, err := filepath.Glob(filepath.Join(parent, "safe-smart-account", "build", "artifacts", "contracts", "*", "*.sol", "*.json"))
 	if err != nil {
 		log.Fatal(err)
@@ -82,6 +87,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	filePaths = append(filePaths, filePathsInternal...)
 	filePaths = append(filePaths, filePathsSafeSmartAccount...)
 	filePaths = append(filePaths, filePathsSafeSmartAccountOuter...)
 
@@ -96,6 +102,11 @@ func main() {
 		dir, _ = filepath.Split(dir[:len(dir)-1])
 		_, module := filepath.Split(dir[:len(dir)-1])
 		module = strings.ReplaceAll(module, "-", "_")
+
+		if strings.Contains(path, "contracts-legacy") {
+			module += "_legacy_"
+		}
+
 		module += "gen"
 
 		name := file[:len(file)-5]
@@ -163,6 +174,27 @@ func main() {
 		if modInfo == nil {
 			modInfo = &moduleInfo{}
 			modules["upgrade_executorgen"] = modInfo
+		}
+		modInfo.addArtifact(artifact)
+	}
+
+	// add upgrade executor module which is not compiled locally, but imported from 'nitro-contracts' depedencies
+	upgExecutorLegacyPath := filepath.Join(parent, "contracts-legacy", "node_modules", "@offchainlabs", "upgrade-executor", "build", "contracts", "src", "UpgradeExecutor.sol", "UpgradeExecutor.json")
+	_, err = os.Stat(upgExecutorLegacyPath)
+	if !os.IsNotExist(err) {
+		data, err := os.ReadFile(upgExecutorLegacyPath)
+		if err != nil {
+			// log.Fatal(string(output))
+			log.Fatal("could not read", upgExecutorLegacyPath, "for contract", "UpgradeExecutor", err)
+		}
+		artifact := HardHatArtifact{}
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			log.Fatal("failed to parse contract", "UpgradeExecutor", err)
+		}
+		modInfo := modules["upgrade_executor_legacy_gen"]
+		if modInfo == nil {
+			modInfo = &moduleInfo{}
+			modules["upgrade_executor_legacy_gen"] = modInfo
 		}
 		modInfo.addArtifact(artifact)
 	}

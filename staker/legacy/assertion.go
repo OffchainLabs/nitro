@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package staker
+package legacystaker
 
 import (
 	"math/big"
@@ -9,23 +9,23 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 )
 
-func NewAssertionFromSolidity(assertion rollupgen.Assertion) *Assertion {
+func NewAssertionFromLegacySolidity(assertion rollup_legacy_gen.Assertion) *Assertion {
 	return &Assertion{
-		BeforeState: validator.NewExecutionStateFromSolidity(assertion.BeforeState),
-		AfterState:  validator.NewExecutionStateFromSolidity(assertion.AfterState),
+		BeforeState: validator.NewExecutionStateFromLegacySolidity(assertion.BeforeState),
+		AfterState:  validator.NewExecutionStateFromLegacySolidity(assertion.AfterState),
 		NumBlocks:   assertion.NumBlocks,
 	}
 }
 
-func (a *Assertion) AsSolidityStruct() rollupgen.Assertion {
-	return rollupgen.Assertion{
-		BeforeState: a.BeforeState.AsSolidityStruct(),
-		AfterState:  a.AfterState.AsSolidityStruct(),
+func (a *Assertion) AsLegacySolidityStruct() rollup_legacy_gen.Assertion {
+	return rollup_legacy_gen.Assertion{
+		BeforeState: a.BeforeState.AsLegacySolidityStruct(),
+		AfterState:  a.AfterState.AsLegacySolidityStruct(),
 		NumBlocks:   a.NumBlocks,
 	}
 }
@@ -85,9 +85,9 @@ func (n *NodeInfo) MachineStatuses() [2]uint8 {
 	}
 }
 
-func (n *NodeInfo) GlobalStates() [2]rollupgen.GlobalState {
-	return [2]rollupgen.GlobalState{
-		rollupgen.GlobalState(n.Assertion.BeforeState.GlobalState.AsSolidityStruct()),
-		rollupgen.GlobalState(n.Assertion.AfterState.GlobalState.AsSolidityStruct()),
+func (n *NodeInfo) GlobalStates() [2]rollup_legacy_gen.GlobalState {
+	return [2]rollup_legacy_gen.GlobalState{
+		n.Assertion.BeforeState.GlobalState.AsLegacySolidityStruct(),
+		n.Assertion.AfterState.GlobalState.AsLegacySolidityStruct(),
 	}
 }

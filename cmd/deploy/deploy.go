@@ -20,10 +20,10 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/deploy"
 	deploycode "github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -179,14 +179,14 @@ func main() {
 	defer l1Reader.StopAndWait()
 
 	nativeToken := common.HexToAddress(*nativeTokenAddressString)
-	deployedAddresses, err := deploycode.DeployOnParentChain(
+	deployedAddresses, err := deploycode.DeployLegacyOnParentChain(
 		ctx,
 		l1Reader,
 		l1TransactionOpts,
 		batchPosters,
 		batchPosterManagerAddress,
 		*authorizevalidators,
-		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
+		deploy.GenerateLegacyRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 		nativeToken,
 		maxDataSize,
 		true,
