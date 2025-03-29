@@ -42,7 +42,7 @@ func (f *Features) setBit(index int, enabled bool) error {
 	if err != nil {
 		return err
 	}
-	bi.SetBit(bi, index, bit)
+	bi = bi.SetBit(bi, index, bit)
 	return f.features.SetChecked(bi)
 }
 
