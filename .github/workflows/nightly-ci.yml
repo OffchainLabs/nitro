@@ -40,7 +40,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt update && sudo apt install -y wabt gotestsum
 
-        - name: Setup nodejs
+      - name: Setup nodejs
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/setup-node@v3
         with:
@@ -226,9 +226,6 @@ jobs:
         run: |
           echo "No changes detected in bold/legacy/** - skipping challenge tests"
           exit 0  # Success exit code to pass the job
-
-      # All remaining steps should have the condition 
-      # "if: steps.changed-files.outputs.any_changed == 'true'"
       
       - name: Install dependencies
         if: steps.changed-files.outputs.any_changed == 'true'
