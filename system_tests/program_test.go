@@ -1848,12 +1848,12 @@ func multicallEmptyArgs() []byte {
 	return []byte{0} // number of actions
 }
 
-func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool, flush bool) []byte {
+func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool, notFlush bool) []byte {
 	var action byte = 0x10
 	if emitLog {
 		action |= 0x08
 	}
-	if flush {
+	if notFlush {
 		action |= 0x02
 	}
 	args[0] += 1
@@ -2672,7 +2672,7 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 		for i := 0; i < numberOfStores; i++ {
 			key := testhelpers.RandomHash()
 			val := testhelpers.RandomHash()
-			args = multicallAppendStore(args, key, val, false, false)
+			args = multicallAppendStore(args, key, val, false, true)
 		}
 		return args
 	}
