@@ -24,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -37,6 +36,7 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -97,7 +97,7 @@ type BatchPoster struct {
 	l1Reader           *headerreader.HeaderReader
 	inbox              *InboxTracker
 	streamer           *TransactionStreamer
-	arbOSVersionGetter execution.FullExecutionClient
+	arbOSVersionGetter execution.ExecutionBatchPoster
 	config             BatchPosterConfigFetcher
 	seqInbox           *bridgegen.SequencerInbox
 	syncMonitor        *SyncMonitor
@@ -122,7 +122,8 @@ type BatchPoster struct {
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
 
-	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
+	accessList  func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
+	parentChain *parent.ParentChain
 }
 
 type l1BlockBound int
@@ -245,8 +246,10 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	DisableDapFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxSize: 100000,
-	// Try to fill 3 blobs per batch
-	Max4844BatchSize:               blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)/2 - 2000,
+	// The Max4844BatchSize should be calculated from the values from L1 chain configs
+	// using the eip4844 utility package from go-ethereum.
+	// The default value of 0 causes the batch poster to use the value from go-ethereum.
+	Max4844BatchSize:               0,
 	PollInterval:                   time.Second * 10,
 	ErrorDelay:                     time.Second * 10,
 	MaxDelay:                       time.Hour,
@@ -307,7 +310,7 @@ type BatchPosterOpts struct {
 	L1Reader      *headerreader.HeaderReader
 	Inbox         *InboxTracker
 	Streamer      *TransactionStreamer
-	VersionGetter execution.FullExecutionClient
+	VersionGetter execution.ExecutionBatchPoster
 	SyncMonitor   *SyncMonitor
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses
@@ -358,13 +361,16 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		dapWriter:          opts.DAPWriter,
 		redisLock:          redisLock,
 		dapReaders:         opts.DAPReaders,
+		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
 		return nil, err
 	}
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
-		return &(opts.Config().DataPoster)
+		dpCfg := opts.Config().DataPoster
+		dpCfg.Post4844Blobs = opts.Config().Post4844Blobs
+		return &dpCfg
 	}
 	b.dataPoster, err = dataposter.NewDataPoster(ctx,
 		&dataposter.DataPosterOpts{
@@ -524,6 +530,100 @@ type txInfo struct {
 	Accesses  *types.AccessList `json:"accessList,omitempty"`
 }
 
+func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeader *types.Header) (bool, error) {
+	// Before EIP-7623 tx.gasUsed is defined as:
+	// tx.gasUsed = (
+	//     21000
+	//     + STANDARD_TOKEN_COST * tokens_in_calldata
+	//     + execution_gas_used
+	//     + isContractCreation * (32000 + INITCODE_WORD_COST * words(calldata))
+	// )
+	//
+	// With EIP-7623 tx.gasUsed is defined as:
+	// tx.gasUsed = (
+	//     21000
+	//     +
+	//     max(
+	//         STANDARD_TOKEN_COST * tokens_in_calldata
+	//         + execution_gas_used
+	//         + isContractCreation * (32000 + INITCODE_WORD_COST * words(calldata)),
+	//         TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata
+	//     )
+	// )
+	//
+	// STANDARD_TOKEN_COST = 4
+	// TOTAL_COST_FLOOR_PER_TOKEN = 10
+	//
+	// To infer whether the parent chain is using EIP-7623 we estimate gas usage of two parent chain native token transfer transactions,
+	// that then have equal execution_gas_used.
+	// Also, in both transactions isContractCreation is zero, and tokens_in_calldata is big enough so
+	// (TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata > STANDARD_TOKEN_COST * tokens_in_calldata + execution_gas_used).
+	// Also, the used calldatas only have non-zero bytes, so tokens_in_calldata is defined as length(calldata) * 4.
+	//
+	// The difference between the transactions is:
+	// length(calldata_tx_2) == length(calldata_tx_1) + 1
+	//
+	// So, if parent chain is not running EIP-7623:
+	// tx_2.gasUsed - tx_1.gasUsed =
+	// STANDARD_TOKEN_COST * 4 * (length(calldata_tx_2) - length(calldata_tx_1)) =
+	// 16
+	//
+	// And if the parent chain is running EIP-7623:
+	// tx_2.gasUsed - tx_1.gasUsed =
+	// TOTAL_COST_FLOOR_PER_TOKEN * 4 * (length(calldata_tx_2) - length(calldata_tx_1)) =
+	// 40
+
+	rpcClient := b.l1Reader.Client()
+	config := b.config()
+	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
+	to := b.dataPoster.Sender()
+
+	data := []byte{}
+	for i := 0; i < 100_000; i++ {
+		data = append(data, 1)
+	}
+
+	gas1, err := estimateGas(rpcClient.Client(), ctx, estimateGasParams{
+		From:         b.dataPoster.Sender(),
+		To:           &to,
+		Data:         data,
+		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	data = append(data, 1)
+	gas2, err := estimateGas(rpcClient.Client(), ctx, estimateGasParams{
+		From:         b.dataPoster.Sender(),
+		To:           &to,
+		Data:         data,
+		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	// Takes into consideration that eth_estimateGas is an approximation.
+	// As an example, go-ethereum can only return an estimate that is equal
+	// or bigger than the true estimate, and currently defines the allowed error ratio as 0.015
+	var parentChainIsUsingEIP7623 bool
+	diffIsClose := func(gas1, gas2, lowerTargetDiff, upperTargetDiff uint64) bool {
+		diff := gas2 - gas1
+		return diff >= lowerTargetDiff && diff <= upperTargetDiff
+	}
+	if diffIsClose(gas1, gas2, 14, 18) {
+		// targetDiff is 16
+		parentChainIsUsingEIP7623 = false
+	} else if diffIsClose(gas1, gas2, 36, 44) {
+		// targetDiff is 40
+		parentChainIsUsingEIP7623 = true
+	} else {
+		return false, fmt.Errorf("unexpected gas difference, gas1: %d, gas2: %d", gas1, gas2)
+	}
+	return parentChainIsUsingEIP7623, nil
+}
+
 // getTxsInfoByBlock fetches all the transactions inside block of id 'number' using json rpc
 // and returns an array of txInfo which has fields that are necessary in checking for batch reverts
 func (b *BatchPoster) getTxsInfoByBlock(ctx context.Context, number int64) ([]txInfo, error) {
@@ -592,7 +692,15 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
 
-	blobGasLimitGauge.Update(params.MaxBlobGasPerBlock)
+	if b.config().Post4844Blobs {
+		results, err := b.parentChain.MaxBlobGasPerBlock(ctx, nil)
+		if err != nil {
+			log.Error("Error getting max blob gas per block", "err", err)
+		}
+		// #nosec G115
+		blobGasLimitGauge.Update(int64(results))
+	}
+
 	for {
 		select {
 		case h, ok := <-headerCh:
@@ -602,9 +710,13 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			}
 			baseFeeGauge.Update(h.BaseFee.Int64())
 			l1GasPrice := h.BaseFee.Uint64()
-			if h.BlobGasUsed != nil {
+			if b.config().Post4844Blobs && h.BlobGasUsed != nil {
 				if h.ExcessBlobGas != nil {
-					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
+					blobFeePerByte, err := b.parentChain.BlobFeePerByte(ctx, h)
+					if err != nil {
+						log.Error("Error getting blob fee per byte", "err", err)
+						continue
+					}
 					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 					blobFeeGauge.Update(blobFeePerByte.Int64())
@@ -736,10 +848,20 @@ type buildingBatch struct {
 	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
 
-func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64, use4844 bool) *batchSegments {
-	maxSize := config.MaxSize
+func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool) (*batchSegments, error) {
+	maxSize := b.config().MaxSize
 	if use4844 {
-		maxSize = config.Max4844BatchSize
+		if b.config().Max4844BatchSize != 0 {
+			maxSize = b.config().Max4844BatchSize
+		} else {
+			maxBlobGasPerBlock, err := b.parentChain.MaxBlobGasPerBlock(ctx, nil)
+			if err != nil {
+				return nil, err
+			}
+			// Try to fill 3 blobs per batch
+			// #nosec G115
+			maxSize = blobs.BlobEncodableData*(int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob)/2 - 2000
+		}
 	} else {
 		if maxSize <= 40 {
 			panic("Maximum batch size too small")
@@ -747,15 +869,15 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog ui
 		maxSize -= 40
 	}
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, maxSize*2))
-	compressionLevel := config.CompressionLevel
-	recompressionLevel := config.CompressionLevel
-	if backlog > 20 {
+	compressionLevel := b.config().CompressionLevel
+	recompressionLevel := b.config().CompressionLevel
+	if b.GetBacklogEstimate() > 20 {
 		compressionLevel = arbmath.MinInt(compressionLevel, brotli.DefaultCompression)
 	}
-	if backlog > 40 {
+	if b.GetBacklogEstimate() > 40 {
 		recompressionLevel = arbmath.MinInt(recompressionLevel, brotli.DefaultCompression)
 	}
-	if backlog > 60 {
+	if b.GetBacklogEstimate() > 60 {
 		compressionLevel = arbmath.MinInt(compressionLevel, 4)
 	}
 	if recompressionLevel < compressionLevel {
@@ -774,7 +896,7 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog ui
 		recompressionLevel: recompressionLevel,
 		rawSegments:        make([][]byte, 0, 128),
 		delayedMsg:         firstDelayed,
-	}
+	}, nil
 }
 
 func (s *batchSegments) recompressAll() error {
@@ -800,10 +922,18 @@ func (s *batchSegments) recompressAll() error {
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
+		log.Info("Batch full: max decompressed length exceeded",
+			"current", s.totalUncompressedSize,
+			"max", arbstate.MaxDecompressedLen,
+			"isHeader", isHeader)
 		return true, nil
 	}
 	// we've reached the max number of segments
 	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+		log.Info("Batch overflow: max segments exceeded",
+			"segments", len(s.rawSegments),
+			"max", arbstate.MaxSegmentsPerSequencerMessage,
+			"isHeader", isHeader)
 		return true, nil
 	}
 	// there is room, no need to flush
@@ -821,6 +951,10 @@ func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	s.lastCompressedSize = s.compressedBuffer.Len()
 	s.newUncompressedSize = 0
 	if s.lastCompressedSize >= s.sizeLimit {
+		log.Info("Batch overflow: compressed size limit exceeded",
+			"compressedSize", s.lastCompressedSize,
+			"limit", s.sizeLimit,
+			"isHeader", isHeader)
 		return true, nil
 	}
 	return false, nil
@@ -1125,7 +1259,7 @@ const ethPosBlockTime = 12 * time.Second
 
 var errAttemptLockFailed = errors.New("failed to acquire lock; either another batch poster posted a batch or this node fell behind")
 
-func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
+func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error) {
 	if b.batchReverted.Load() {
 		return false, fmt.Errorf("batch was reverted, not posting any more batches")
 	}
@@ -1153,7 +1287,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		var use4844 bool
 		config := b.config()
 		if config.Post4844Blobs && b.dapWriter == nil && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
-			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageNumber(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1)))
+			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1)))
 			if err != nil {
 				return false, err
 			}
@@ -1170,19 +1304,48 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 					if backlog == 0 ||
 						b.non4844BatchCount == 0 ||
 						b.non4844BatchCount > 16 {
-						blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+						blobFeePerByte, err := b.parentChain.BlobFeePerByte(ctx, latestHeader)
+						if err != nil {
+							return false, err
+						}
 						blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 						blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 
-						calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
+						// STANDARD_TOKEN_COST = 4
+						// TOTAL_COST_FLOOR_PER_TOKEN = 10
+						//
+						// The following analysis is applied for transactions unrelated to contract creation.
+						//
+						// Before EIP-7623, gas used related to calldata is defined as
+						// STANDARD_TOKEN_COST * (zero_bytes_in_calldata + nonzero_bytes_in_calldata * 4).
+						// Considering the worst case scenario regarding gas used per calldata byte,
+						// in which calldata only has non-zero bytes, each calldata byte will consume STANDARD_TOKEN * 4, which is 16 gas.
+						//
+						// With EIP-7623, considering the worst case scenario regarding gas used per calldata byte,
+						// in which calldata is also composed only of non-zero bytes,
+						// and that (TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata > STANDARD_TOKEN_COST * tokens_in_calldata + execution_gas_used),
+						// each calldata byte will consume TOTAL_COST_FLOOR_PER_TOKEN * 4, which is 40 gas.
+						calldataFeePerByteMultiplier := uint64(16)
+						parentChainIsUsingEIP7623, err := b.ParentChainIsUsingEIP7623(ctx, latestHeader)
+						if err != nil {
+							log.Error("ParentChainIsUsingEIP7623 failed", "err", err)
+						} else if parentChainIsUsingEIP7623 {
+							calldataFeePerByteMultiplier = uint64(40)
+						}
+
+						calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, calldataFeePerByteMultiplier)
 						use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
 					}
 				}
 			}
 		}
 
+		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844)
+		if err != nil {
+			return false, err
+		}
 		b.building = &buildingBatch{
-			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.GetBacklogEstimate(), use4844),
+			segments:      segments,
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
 			use4844:       use4844,
@@ -1487,8 +1650,16 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if len(kzgBlobs)*params.BlobTxBlobGasPerBlob > params.MaxBlobGasPerBlock {
-		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
+	if len(kzgBlobs) > 0 {
+		maxBlobGasPerBlock, err := b.parentChain.MaxBlobGasPerBlock(ctx, latestHeader)
+		if err != nil {
+			return false, err
+		}
+		// #nosec G115
+		if len(kzgBlobs)*params.BlobTxBlobGasPerBlob > int(maxBlobGasPerBlock) {
+			// #nosec G115
+			return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
+		}
 	}
 	accessList := b.accessList(batchPosition.NextSeqNum, b.building.segments.delayedMsg)
 	// On restart, we may be trying to estimate gas for a batch whose successor has
@@ -1684,7 +1855,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			resetAllEphemeralErrs()
 			return b.config().PollInterval
 		}
-		posted, err := b.maybePostSequencerBatch(ctx)
+		posted, err := b.MaybePostSequencerBatch(ctx)
 		if err == nil {
 			resetAllEphemeralErrs()
 		}

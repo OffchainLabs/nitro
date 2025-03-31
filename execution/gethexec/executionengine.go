@@ -262,9 +262,9 @@ func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) 
 	s.consensus = consensus
 }
 
-func (s *ExecutionEngine) BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error) {
+func (s *ExecutionEngine) BlockMetadataAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
 	if s.consensus != nil {
-		return s.consensus.BlockMetadataAtCount(count)
+		return s.consensus.BlockMetadataAtMessageIndex(msgIdx).Await(ctx)
 	}
 	return nil, errors.New("FullConsensusClient is not accessible to execution")
 }
@@ -273,10 +273,11 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
-	if count == 0 {
+func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+	if msgIdxOfFirstMsgToAdd == 0 {
 		return nil, errors.New("cannot reorg out genesis")
 	}
+
 	s.createBlocksMutex.Lock()
 	resequencing := false
 	defer func() {
@@ -286,19 +287,19 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 			s.createBlocksMutex.Unlock()
 		}
 	}()
-	blockNum := s.MessageIndexToBlockNumber(count - 1)
-	// We can safely cast blockNum to a uint64 as it comes from MessageCountToBlockNumber
-	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
-	if targetBlock == nil {
-		log.Warn("reorg target block not found", "block", blockNum)
+	lastBlockNumToKeep := s.MessageIndexToBlockNumber(msgIdxOfFirstMsgToAdd - 1)
+	// We can safely cast lastBlockNumToKeep to a uint64 as it comes from MessageIndexToBlockNumber
+	lastBlockToKeep := s.bc.GetBlockByNumber(uint64(lastBlockNumToKeep))
+	if lastBlockToKeep == nil {
+		log.Warn("reorg target block not found", "block", lastBlockNumToKeep)
 		return nil, nil
 	}
 
 	tag := s.bc.StateCache().WasmCacheTag()
 	// reorg Rust-side VM state
-	C.stylus_reorg_vm(C.uint64_t(blockNum), C.uint32_t(tag))
+	C.stylus_reorg_vm(C.uint64_t(lastBlockNumToKeep), C.uint32_t(tag))
 
-	err := s.bc.ReorgToOldBlock(targetBlock)
+	err := s.bc.ReorgToOldBlock(lastBlockToKeep)
 	if err != nil {
 		return nil, err
 	}
@@ -310,20 +311,21 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		}
 	}
 
-	newMessagesResults := make([]*execution.MessageResult, 0, len(oldMessages))
+	newMessagesResults := make([]*execution.MessageResult, 0, len(newMessages))
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
 		if i < len(newMessages)-1 {
 			msgForPrefetch = &newMessages[i].MessageWithMeta
 		}
-		msgResult, err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i].MessageWithMeta, msgForPrefetch)
+		nextMsgIdx := msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)
+		msgResult, err := s.digestMessageWithBlockMutex(nextMsgIdx, &newMessages[i].MessageWithMeta, msgForPrefetch)
 		if err != nil {
 			return nil, err
 		}
 		newMessagesResults = append(newMessagesResults, msgResult)
 	}
 	if s.recorder != nil {
-		s.recorder.ReorgTo(targetBlock.Header())
+		s.recorder.ReorgTo(lastBlockToKeep.Header())
 	}
 	if len(oldMessages) > 0 {
 		s.resequenceChan <- oldMessages
@@ -340,7 +342,7 @@ func (s *ExecutionEngine) getCurrentHeader() (*types.Header, error) {
 	return currentBlock, nil
 }
 
-func (s *ExecutionEngine) HeadMessageNumber() (arbutil.MessageIndex, error) {
+func (s *ExecutionEngine) HeadMessageIndex() (arbutil.MessageIndex, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return 0, err
@@ -348,10 +350,10 @@ func (s *ExecutionEngine) HeadMessageNumber() (arbutil.MessageIndex, error) {
 	return s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
 }
 
-func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
+func (s *ExecutionEngine) HeadMessageIndexSync(t *testing.T) (arbutil.MessageIndex, error) {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
-	return s.HeadMessageNumber()
+	return s.HeadMessageIndex()
 }
 
 func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
@@ -410,7 +412,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 		return
 	}
 
-	nextDelayedSeqNum := lastBlockHeader.Nonce.Uint64()
+	nextDelayedMsgIdx := lastBlockHeader.Nonce.Uint64()
 
 	for _, msg := range messages {
 		// Check if the message is non-nil just to be safe
@@ -419,16 +421,16 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 		}
 		header := msg.Message.Header
 		if header.RequestId != nil {
-			delayedSeqNum := header.RequestId.Big().Uint64()
-			if delayedSeqNum != nextDelayedSeqNum {
-				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedSeqNum, "found", delayedSeqNum)
+			delayedMsgIdx := header.RequestId.Big().Uint64()
+			if delayedMsgIdx != nextDelayedMsgIdx {
+				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedMsgIdx, "found", delayedMsgIdx)
 				continue
 			}
-			_, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedSeqNum)
+			_, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedMsgIdx)
 			if err != nil {
 				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
 			}
-			nextDelayedSeqNum += 1
+			nextDelayedMsgIdx += 1
 			continue
 		}
 		if header.Kind != arbostypes.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
@@ -462,7 +464,7 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 		}
 		// We got SequencerInsertLockTaken
 		// option 1: there was a race, we are no longer main sequencer
-		chosenErr := s.consensus.ExpectChosenSequencer()
+		_, chosenErr := s.consensus.ExpectChosenSequencer().Await(s.GetContext())
 		if chosenErr != nil {
 			return nil, chosenErr
 		}
@@ -540,8 +542,8 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, errors.New("can't find block for current header")
 	}
 	var witness *stateless.Witness
-	if s.bc.GetVMConfig().EnableWitnessCollection {
-		witness, err = stateless.NewWitness(s.bc, lastBlock)
+	if s.bc.GetVMConfig().StatelessSelfValidation {
+		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc)
 		if err != nil {
 			return nil, err
 		}
@@ -559,7 +561,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		lastBlockHeader,
 		statedb,
 		s.bc,
-		s.bc.Config(),
 		hooks,
 		false,
 		core.MessageCommitMode,
@@ -593,7 +594,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	pos, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
+	msgIdx, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
@@ -608,7 +609,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
-	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult, blockMetadata)
+	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -619,7 +620,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-	s.cacheL1PriceDataOfMsg(pos, receipts, block, false)
+	s.cacheL1PriceDataOfMsg(msgIdx, receipts, block, false)
 
 	return block, nil
 }
@@ -642,33 +643,33 @@ func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboosted
 	return bits
 }
 
-func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
+func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) error {
 	_, err := s.sequencerWrapper(func() (*types.Block, error) {
-		return s.sequenceDelayedMessageWithBlockMutex(message, delayedSeqNum)
+		return s.sequenceDelayedMessageWithBlockMutex(message, delayedMsgIdx)
 	})
 	return err
 }
 
-func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*types.Block, error) {
+func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*types.Block, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err
 	}
 
-	expectedDelayed := currentHeader.Nonce.Uint64()
+	expectedDelayedMsgIdx := currentHeader.Nonce.Uint64()
 
-	pos, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64() + 1)
+	msgIdx, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
 
-	if expectedDelayed != delayedSeqNum {
-		return nil, fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedSeqNum, expectedDelayed)
+	if expectedDelayedMsgIdx != delayedMsgIdx {
+		return nil, fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedMsgIdx, expectedDelayedMsgIdx)
 	}
 
 	messageWithMeta := arbostypes.MessageWithMetadata{
 		Message:             message,
-		DelayedMessagesRead: delayedSeqNum + 1,
+		DelayedMessagesRead: delayedMsgIdx + 1,
 	}
 
 	startTime := time.Now()
@@ -684,7 +685,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil))
+	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil)).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -693,9 +694,9 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	if err != nil {
 		return nil, err
 	}
-	s.cacheL1PriceDataOfMsg(pos, receipts, block, true)
+	s.cacheL1PriceDataOfMsg(msgIdx, receipts, block, true)
 
-	log.Info("ExecutionEngine: Added DelayedMessages", "pos", pos, "delayed", delayedSeqNum, "block-header", block.Header())
+	log.Info("ExecutionEngine: Added DelayedMessages", "msgIdx", msgIdx, "delayedMsgIdx", delayedMsgIdx, "block-header", block.Header())
 
 	return block, nil
 }
@@ -712,8 +713,8 @@ func (s *ExecutionEngine) BlockNumberToMessageIndex(blockNum uint64) (arbutil.Me
 	return arbutil.MessageIndex(blockNum - genesis), nil
 }
 
-func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
-	return uint64(messageNum) + s.GetGenesisBlockNumber()
+func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex) uint64 {
+	return uint64(msgIdx) + s.GetGenesisBlockNumber()
 }
 
 // must hold createBlockMutex
@@ -738,8 +739,8 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, err
 	}
 	var witness *stateless.Witness
-	if s.bc.GetVMConfig().EnableWitnessCollection {
-		witness, err = stateless.NewWitness(s.bc, currentBlock)
+	if s.bc.GetVMConfig().StatelessSelfValidation {
+		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -757,7 +758,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		currentHeader,
 		statedb,
 		s.bc,
-		s.bc.Config(),
 		isMsgForPrefetch,
 		runMode,
 	)
@@ -805,8 +805,8 @@ func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.Mes
 	}, nil
 }
 
-func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
-	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
+func (s *ExecutionEngine) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error) {
+	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(msgIdx)))
 }
 
 func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
@@ -848,7 +848,7 @@ func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
 	return surplus.Int64(), nil
 }
 
-func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, receipts types.Receipts, block *types.Block, blockBuiltUsingDelayedMessage bool) {
+func (s *ExecutionEngine) cacheL1PriceDataOfMsg(msgIdx arbutil.MessageIndex, receipts types.Receipts, block *types.Block, blockBuiltUsingDelayedMessage bool) {
 	var gasUsedForL1 uint64
 	var callDataUnits uint64
 	if !blockBuiltUsingDelayedMessage {
@@ -871,8 +871,8 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 	defer s.cachedL1PriceData.mutex.Unlock()
 
 	resetCache := func() {
-		s.cachedL1PriceData.startOfL1PriceDataCache = seqNum
-		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
+		s.cachedL1PriceData.startOfL1PriceDataCache = msgIdx
+		s.cachedL1PriceData.endOfL1PriceDataCache = msgIdx
 		s.cachedL1PriceData.msgToL1PriceData = []L1PriceDataOfMsg{{
 			callDataUnits:            callDataUnits,
 			cummulativeCallDataUnits: callDataUnits,
@@ -888,11 +888,11 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 		resetCache()
 		return
 	}
-	if seqNum != s.cachedL1PriceData.endOfL1PriceDataCache+1 {
-		if seqNum > s.cachedL1PriceData.endOfL1PriceDataCache+1 {
+	if msgIdx != s.cachedL1PriceData.endOfL1PriceDataCache+1 {
+		if msgIdx > s.cachedL1PriceData.endOfL1PriceDataCache+1 {
 			log.Info("message position higher then current end of l1 price data cache, resetting cache to this message")
 			resetCache()
-		} else if seqNum < s.cachedL1PriceData.startOfL1PriceDataCache {
+		} else if msgIdx < s.cachedL1PriceData.startOfL1PriceDataCache {
 			log.Info("message position lower than start of l1 price data cache, ignoring")
 		} else {
 			log.Info("message position already seen in l1 price data cache, ignoring")
@@ -906,7 +906,7 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 			l1GasCharged:             l1GasCharged,
 			cummulativeL1GasCharged:  cummulativeL1GasCharged + l1GasCharged,
 		})
-		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
+		s.cachedL1PriceData.endOfL1PriceDataCache = msgIdx
 	}
 }
 
@@ -915,25 +915,25 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 // in parallel, creates a block by executing msgForPrefetch (msg+1) against the latest state
 // but does not store the block.
 // This helps in filling the cache, so that the next block creation is faster.
-func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
+func (s *ExecutionEngine) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	if !s.createBlocksMutex.TryLock() {
 		return nil, errors.New("createBlock mutex held")
 	}
 	defer s.createBlocksMutex.Unlock()
-	return s.digestMessageWithBlockMutex(num, msg, msgForPrefetch)
+	return s.digestMessageWithBlockMutex(msgIdx, msg, msgForPrefetch)
 }
 
-func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
+func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err
 	}
-	curMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
+	curMsgIdx, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
 	if err != nil {
 		return nil, err
 	}
-	if curMsg+1 != num {
-		return nil, fmt.Errorf("wrong message number in digest got %d expected %d", num, curMsg+1)
+	if curMsgIdx+1 != msgIdxToDigest {
+		return nil, fmt.Errorf("wrong message number in digest got %d expected %d", msgIdxToDigest, curMsgIdx+1)
 	}
 
 	startTime := time.Now()
@@ -957,7 +957,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return nil, err
 	}
-	s.cacheL1PriceDataOfMsg(num, receipts, block, false)
+	s.cacheL1PriceDataOfMsg(msgIdxToDigest, receipts, block, false)
 
 	if time.Now().After(s.nextScheduledVersionCheck) {
 		s.nextScheduledVersionCheck = time.Now().Add(time.Minute)
@@ -995,7 +995,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 		}
 	}
 
-	sharedmetrics.UpdateSequenceNumberInBlockGauge(num)
+	sharedmetrics.UpdateSequenceNumberInBlockGauge(msgIdxToDigest)
 	s.latestBlockMutex.Lock()
 	s.latestBlock = block
 	s.latestBlockMutex.Unlock()
@@ -1011,10 +1011,10 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	return msgResult, nil
 }
 
-func (s *ExecutionEngine) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
-	block := s.bc.GetBlockByNumber(s.MessageIndexToBlockNumber(messageNum))
+func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error) {
+	block := s.bc.GetBlockByNumber(s.MessageIndexToBlockNumber(msgIdx))
 	if block == nil {
-		return 0, fmt.Errorf("couldn't find block for message number %d", messageNum)
+		return 0, fmt.Errorf("couldn't find block for message index %d", msgIdx)
 	}
 	extra := types.DeserializeHeaderExtraInformation(block.Header())
 	return extra.ArbOSFormatVersion, nil
