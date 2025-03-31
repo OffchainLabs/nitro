@@ -1846,7 +1846,6 @@ func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inn
 
 func multicallEmptyArgs() []byte {
 	return binary.BigEndian.AppendUint32([]byte{}, 0) // number of actions
-	// return []byte{0} // number of actions
 }
 
 func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
@@ -1860,7 +1859,6 @@ func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []b
 	args[1] = count_args[1]
 	args[2] = count_args[2]
 	args[3] = count_args[3]
-	log.Error("mycount", "count", count, "count_args", count_args)
 	args = binary.BigEndian.AppendUint32(args, 1+64) // length
 	args = append(args, action)
 	args = append(args, key.Bytes()...)
