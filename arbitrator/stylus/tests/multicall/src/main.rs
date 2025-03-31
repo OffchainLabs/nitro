@@ -93,11 +93,14 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             curr = &curr[32..];
             let data;
             let write;
-            if kind & 0x7 == 0 {
+            if kind & 0x7 == 0 || kind & 0x7 == 0x2 {
                 console!("writing slot {}", curr.len());
                 data = B256::try_from(&curr[..32]).unwrap();
                 write = true;
                 unsafe { StorageCache::set_word(slot.into(), data.into()) };
+                if kind & 0x7 == 0x2 {
+                    StorageCache::flush();
+                }
             } else if kind & 0x7 == 1{
                 console!("reading slot");
                 write = false;

@@ -1848,10 +1848,13 @@ func multicallEmptyArgs() []byte {
 	return []byte{0} // number of actions
 }
 
-func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
+func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool, flush bool) []byte {
 	var action byte = 0x10
 	if emitLog {
 		action |= 0x08
+	}
+	if flush {
+		action |= 0x12
 	}
 	args[0] += 1
 	args = binary.BigEndian.AppendUint32(args, 1+64) // length
@@ -2621,7 +2624,7 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 	})
 }
 
-func TestOutOfGasInStorageFlush(t *testing.T) {
+func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 	jit := false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -2669,7 +2672,7 @@ func TestOutOfGasInStorageFlush(t *testing.T) {
 		for i := 0; i < numberOfStores; i++ {
 			key := testhelpers.RandomHash()
 			val := testhelpers.RandomHash()
-			args = multicallAppendStore(args, key, val, false)
+			args = multicallAppendStore(args, key, val, false, false)
 		}
 		return args
 	}
