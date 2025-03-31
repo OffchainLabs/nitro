@@ -171,6 +171,7 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
+	log.Info("Starting Arbitrum Nitro node", "args", args)
 
 	//var tracingConfig json.RawMessage
 	//tracingArg := "--vmtrace.jsonconfig="
@@ -182,9 +183,7 @@ func mainImpl() int {
 	//	}
 	//}
 
-	tracingConfig := json.RawMessage(`{"path": "/livetracing/output", "ttl": 14, "primary":
-          "rdb-primary", "instrumentation": true, "network_id": "42161", "enable_code_tracing":
-          false }`)
+	tracingConfig := json.RawMessage(`{"path": "/livetracing/output", "ttl": 14, "primary": "rdb-primary", "instrumentation": true, "network_id": "42161" }`)
 
 	nodeConfig, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
