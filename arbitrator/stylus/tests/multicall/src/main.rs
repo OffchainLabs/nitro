@@ -21,15 +21,15 @@ use wee_alloc::WeeAlloc;
 static ALLOC: WeeAlloc = WeeAlloc::INIT;
 
 sol!{
-    event Called(address addr, uint32 count, bool success, bytes return_data);
+    event Called(address addr, uint8 count, bool success, bytes return_data);
     event Storage(bytes32 slot, bytes32 data, bool write);
 }
 
 #[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let mut input = input.as_slice();
-    let count = u32::from_be_bytes(input[..4].try_into().unwrap());
-    input = &input[4..];
+    let count = input[0];
+    input = &input[1..];
 
     // combined output of all calls
     let mut output = vec![];

@@ -1845,7 +1845,7 @@ func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inn
 }
 
 func multicallEmptyArgs() []byte {
-	return binary.BigEndian.AppendUint32([]byte{}, 0) // number of actions
+	return []byte{0} // number of actions
 }
 
 func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
@@ -1853,12 +1853,7 @@ func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []b
 	if emitLog {
 		action |= 0x08
 	}
-	count := binary.BigEndian.Uint32(args[:4]) + 1
-	count_args := binary.BigEndian.AppendUint32([]byte{}, count)
-	args[0] = count_args[0]
-	args[1] = count_args[1]
-	args[2] = count_args[2]
-	args[3] = count_args[3]
+	args[0] += 1
 	args = binary.BigEndian.AppendUint32(args, 1+64) // length
 	args = append(args, action)
 	args = append(args, key.Bytes()...)
@@ -2626,7 +2621,7 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 	})
 }
 
-func TestOutOfGasInStorageCacheFlush(t *testing.T) {
+func TestOutOfGasInStorageFlush(t *testing.T) {
 	jit := false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -2680,8 +2675,8 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 	}
 
 	// Successful transaction to multicall
-	args := argsMulticall(400)
-	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(14000000), nil, args)
+	args := argsMulticall(50)
+	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(2210000), nil, args)
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
@@ -2697,8 +2692,8 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 
 	// Failed transaction to multicall.
 	// The transaction will fail during storage flush.
-	args = argsMulticall(1_000)
-	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(14000000), nil, args)
+	args = argsMulticall(200)
+	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(2210000), nil, args)
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
