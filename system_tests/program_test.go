@@ -1854,7 +1854,7 @@ func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool, flu
 		action |= 0x08
 	}
 	if flush {
-		action |= 0x12
+		action |= 0x02
 	}
 	args[0] += 1
 	args = binary.BigEndian.AppendUint32(args, 1+64) // length
