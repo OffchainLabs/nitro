@@ -59,8 +59,8 @@ require (
 require (
 	github.com/linxGnu/grocksdb v1.9.8
 	github.com/tenderly/blockchain-proto v0.0.0-20250228135058-ddb8142d9cfa // indirect
-    github.com/tenderly/live-tracer-arbitrum v0.0.0-20250326134144-13c427a017a7 // indirect
-    github.com/tenderly/live-tracing-store v0.0.0-20250325123316-a225a36bcc3b // indirect
+	github.com/tenderly/live-tracing-store v0.0.0-20250331095025-d8ebd7991b2d // indirect
+	github.com/tenderly/live-tracer-arbitrum v0.0.0-20250331142741-56785b78e4f8 // indirect
 )
 
 require (
