@@ -1556,6 +1556,20 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) er
 			if err != nil {
 				return nil, err
 			}
+			if pos > 1 {
+				prevMsg, err := s.GetMessage(pos - 1)
+				if err != nil {
+					return nil, err
+				}
+				if prevMsg.DelayedMessagesRead+1 == msg.DelayedMessagesRead {
+					// This message is a delayed message, and it should not be included
+					// in the hotshot payload. The caff node is supposed to fetch the delayed message
+					// from L1.
+					// setting `msg.Message` to `nil` will cause a rlp decode/encode error
+					// so we set `L2msg` to an empty byte slice instead
+					msg.Message.L2msg = []byte{}
+				}
+			}
 			b, err := rlp.EncodeToBytes(msg)
 			if err != nil {
 				return nil, err

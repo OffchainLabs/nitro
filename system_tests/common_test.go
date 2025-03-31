@@ -652,9 +652,12 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	return func() { b.L2.cleanup() }
 }
 
-func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T) func() {
+func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T, existing *NodeBuilder) func() {
 	b.L2 = NewTestClient(b.ctx)
 	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+
+	l1Client := existing.L1.Client
+	deployInfo := existing.addresses
 
 	var chainDb ethdb.Database
 	var arbDb ethdb.Database
@@ -671,7 +674,7 @@ func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T) func() {
 	fatalErrChan := make(chan error, 10)
 	b.L2.ConsensusNode, err = arbnode.CreateNode(
 		b.ctx, b.L2.Stack, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(),
-		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil)
+		l1Client, deployInfo, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil)
 	Require(t, err)
 
 	err = b.L2.ConsensusNode.Start(b.ctx)

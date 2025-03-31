@@ -23,23 +23,21 @@ func createCaffNode(ctx context.Context, t *testing.T, existing *NodeBuilder) (*
 	nodeConfig.Sequencer = false
 	nodeConfig.Dangerous.NoSequencerCoordinator = true
 	execConfig.Sequencer.Enable = false
-	execConfig.Sequencer.EnableCaffNode = true
 	execConfig.ForwardingTarget = existing.l2StackConfig.IPCPath
 	execConfig.SecondaryForwardingTarget = []string{}
-	execConfig.Sequencer.CaffNodeConfig.Namespace = builder.chainConfig.ChainID.Uint64()
-	execConfig.Sequencer.CaffNodeConfig.NextHotshotBlock = 1
-	execConfig.Sequencer.CaffNodeConfig.ParentChainNodeUrl = "http://0.0.0.0:8545"
-	execConfig.Sequencer.CaffNodeConfig.EspressoTEEVerifierAddr = existing.L1Info.GetAddress("EspressoTEEVerifierMock").Hex()
-	execConfig.Sequencer.CaffNodeConfig.ParentChainReader.Enable = true
-	execConfig.Sequencer.CaffNodeConfig.ParentChainReader.UseFinalityData = true
-	execConfig.Sequencer.CaffNodeConfig.RecordPerformance = true
-	// for testing, we can use the same hotshot url for both
-	execConfig.Sequencer.CaffNodeConfig.HotShotUrls = []string{hotShotUrl, hotShotUrl, hotShotUrl, hotShotUrl}
-	execConfig.Sequencer.CaffNodeConfig.RetryTime = time.Second * 1
-	execConfig.Sequencer.CaffNodeConfig.HotshotPollingInterval = time.Millisecond * 100
-	nodeConfig.ParentChainReader.Enable = false
+	nodeConfig.EspressoCaffNode.Enable = true
+	nodeConfig.EspressoCaffNode.Namespace = builder.chainConfig.ChainID.Uint64()
+	nodeConfig.EspressoCaffNode.NextHotshotBlock = 1
+	nodeConfig.EspressoCaffNode.EspressoTEEVerifierAddr = existing.L1Info.GetAddress("EspressoTEEVerifierMock").Hex()
 
-	cleanup := builder.BuildEspressoCaffNode(t)
+	// for testing, we can use the same hotshot url for both
+	nodeConfig.EspressoCaffNode.HotShotUrls = []string{hotShotUrl, hotShotUrl, hotShotUrl, hotShotUrl}
+	nodeConfig.EspressoCaffNode.RetryTime = time.Second * 1
+	nodeConfig.EspressoCaffNode.HotshotPollingInterval = time.Millisecond * 100
+
+	nodeConfig.ParentChainReader.Enable = true
+
+	cleanup := builder.BuildEspressoCaffNode(t, existing)
 	return builder.L2, cleanup
 }
 
@@ -94,6 +92,7 @@ func TestEspressoCaffNode(t *testing.T) {
 	err = waitForWith(ctx, 10*time.Minute, 10*time.Second, func() bool {
 		balance1 := builderCaffNode.GetBalance(t, builder.L2Info.GetAddress("User14"))
 		balance2 := builderCaffNode.GetBalance(t, builder.L2Info.GetAddress("User15"))
+		log.Info("waiting for balance", "account", "User14", "balance", balance1, "account", "User15", "balance", balance2)
 		return balance1.Cmp(transferAmount) > 0 && balance2.Cmp(transferAmount) > 0
 	})
 	Require(t, err)

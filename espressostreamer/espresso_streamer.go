@@ -12,6 +12,7 @@ import (
 	"github.com/ccoveille/go-safecast"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -37,6 +38,15 @@ type EspressoClientInterface interface {
 	FetchHeaderByHeight(ctx context.Context, blockHeight uint64) (espressoTypes.HeaderImpl, error)
 }
 
+type EspressoStreamerInterface interface {
+	Start(ctx context.Context) error
+	Next() (*MessageWithMetadataAndPos, error)
+	Reset(currentMessagePos uint64, currentHostshotBlock uint64)
+	RecordTimeDurationBetweenHotshotAndCurrentBlock(nextHotshotBlock uint64, blockProductionTime time.Time)
+	StoreHotshotBlock(db ethdb.Database, nextHotshotBlock uint64) error
+	ReadNextHotshotBlockFromDb(db ethdb.Database) (uint64, error)
+}
+
 type MessageWithMetadataAndPos struct {
 	MessageWithMeta arbostypes.MessageWithMetadata
 	Pos             uint64
@@ -54,7 +64,8 @@ type EspressoStreamer struct {
 	messageWithMetadataAndPos     []*MessageWithMetadataAndPos
 	espressoTEEVerifierCaller     EspressoTEEVerifierInterface
 
-	PerfRecorder *PerfRecorder
+	PerfRecorder    *PerfRecorder
+	batchPosterAddr common.Address
 
 	messageMutex sync.Mutex
 }
@@ -67,6 +78,7 @@ func NewEspressoStreamer(
 	espressoTEEVerifierCaller EspressoTEEVerifierInterface,
 	espressoClientInterface EspressoClientInterface,
 	recordPerformance bool,
+	batchPosterAddr common.Address,
 ) *EspressoStreamer {
 
 	var PerfRecorder *PerfRecorder
@@ -82,6 +94,7 @@ func NewEspressoStreamer(
 		namespace:                     namespace,
 		espressoTEEVerifierCaller:     espressoTEEVerifierCaller,
 		PerfRecorder:                  PerfRecorder,
+		batchPosterAddr:               batchPosterAddr,
 	}
 }
 
@@ -134,18 +147,20 @@ func (s *EspressoStreamer) parseEspressoTransaction(tx espressoTypes.Bytes) ([]*
 		log.Warn("failed to parse hotshot payload", "err", err)
 		return nil, err
 	}
-	// if attestation verification fails, we should skip this message
+	// if attestation verification fails, we should skip this transaction
 	// Parse the messages
 	if len(userDataHash) != 32 {
 		log.Warn("user data hash is not 32 bytes")
 		return nil, fmt.Errorf("user data hash is not 32 bytes")
 	}
+
 	userDataHashArr := [32]byte(userDataHash)
 	err = s.verifyAttestationQuote(attestation, userDataHashArr)
 	if err != nil {
 		log.Warn("failed to verify attestation quote", "err", err)
 		return nil, err
 	}
+
 	result := []*MessageWithMetadataAndPos{}
 
 	for i, message := range messages {
