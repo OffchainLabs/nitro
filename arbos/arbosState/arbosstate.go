@@ -339,7 +339,12 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case params.ArbosVersion_40:
-			// no change state needed
+			// The MaxWasmSize was a constant before arbos version 40, and can
+			// be read as a parameter after arbos version 40.
+			params, err := state.Programs().Params()
+			ensure(err)
+			ensure(params.UpgradeToVersion(3))
+			ensure(params.Save())
 
 		default:
 			return fmt.Errorf(

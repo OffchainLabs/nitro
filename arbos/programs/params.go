@@ -83,7 +83,7 @@ func (p Programs) Params() (*StylusParams, error) {
 	}
 
 	// order matters!
-	return &StylusParams{
+	params := &StylusParams{
 		backingStorage:   sto,
 		Version:          am.BytesToUint16(take(2)),
 		InkPrice:         am.BytesToUint24(take(3)),
@@ -99,8 +99,13 @@ func (p Programs) Params() (*StylusParams, error) {
 		ExpiryDays:       am.BytesToUint16(take(2)),
 		KeepaliveDays:    am.BytesToUint16(take(2)),
 		BlockCacheSize:   am.BytesToUint16(take(2)),
-		MaxWasmSize:      am.BytesToUint32(take(4)),
-	}, nil
+	}
+	if params.Version >= 3 {
+		params.MaxWasmSize = am.BytesToUint32(take(4))
+	} else {
+		params.MaxWasmSize = initialMaxWasmSize
+	}
+	return params, nil
 }
 
 // Writes the params to permanent storage.
@@ -125,8 +130,10 @@ func (p *StylusParams) Save() error {
 		am.Uint16ToBytes(p.ExpiryDays),
 		am.Uint16ToBytes(p.KeepaliveDays),
 		am.Uint16ToBytes(p.BlockCacheSize),
-		am.Uint32ToBytes(p.MaxWasmSize),
 	)
+	if p.Version >= 3 {
+		data = append(data, am.Uint32ToBytes(p.MaxWasmSize)...)
+	}
 
 	slot := uint64(0)
 	for len(data) != 0 {
@@ -145,15 +152,24 @@ func (p *StylusParams) Save() error {
 }
 
 func (p *StylusParams) UpgradeToVersion(version uint16) error {
-	if version != 2 {
-		return fmt.Errorf("dest version not supported for upgrade")
+	switch version {
+	case 2:
+		if p.Version != 1 {
+			return fmt.Errorf("unexpected upgrade from %d to %d", p.Version, version)
+		}
+		p.Version = 2
+		p.MinInitGas = v2MinInitGas
+		return nil
+	case 3:
+		if p.Version != 2 {
+			return fmt.Errorf("unexpected upgrade from %d to %d", p.Version, version)
+		}
+		p.Version = 3
+		p.MaxWasmSize = initialMaxWasmSize
+		return nil
+	default:
+		return fmt.Errorf("unsupported upgrade to %d. Only 2 and 3 are supported.", version)
 	}
-	if p.Version != 1 {
-		return fmt.Errorf("existing version not supported for upgrade")
-	}
-	p.Version = 2
-	p.MinInitGas = v2MinInitGas
-	return nil
 }
 
 func initStylusParams(sto *storage.Storage) {
@@ -173,7 +189,6 @@ func initStylusParams(sto *storage.Storage) {
 		ExpiryDays:       initialExpiryDays,
 		KeepaliveDays:    initialKeepaliveDays,
 		BlockCacheSize:   initialRecentCacheSize,
-		MaxWasmSize:      initialMaxWasmSize,
 	}
 	_ = params.Save()
 }
