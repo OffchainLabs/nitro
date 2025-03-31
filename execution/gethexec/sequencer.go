@@ -26,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -556,8 +555,8 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if tx.To() == nil {
 		return errors.New("transaction has no recipient")
 	}
-	if *tx.To() != s.expressLaneService.auctionContractAddr {
-		return errors.New("transaction recipient is not the auction contract")
+	if *tx.To() != s.expressLaneService.AuctionContractAddr() {
+		return fmt.Errorf("transaction recipient %#x is not the auction contract %#x", *tx.To(), s.expressLaneService.AuctionContractAddr())
 	}
 	signer := types.LatestSigner(s.execEngine.bc.Config())
 	sender, err := types.Sender(signer, tx)
@@ -604,7 +603,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	if s.expressLaneService == nil {
 		return errors.New("express lane service not enabled")
 	}
-	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
+	if err := s.expressLaneService.ValidateExpressLaneTx(msg); err != nil {
 		return err
 	}
 
@@ -1300,23 +1299,19 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 }
 
 func (s *Sequencer) InitializeExpressLaneService(
-	apiBackend *arbitrum.APIBackend,
-	filterSystem *filters.FilterSystem,
-	auctionContractAddr common.Address,
 	auctioneerAddr common.Address,
-	earlySubmissionGrace time.Duration,
+	roundTimingInfo *timeboost.RoundTimingInfo,
+	expressLaneTracker *ExpressLaneTracker,
 ) error {
 	els, err := newExpressLaneService(
 		s,
 		s.config,
-		apiBackend,
-		filterSystem,
-		auctionContractAddr,
+		roundTimingInfo,
 		s.execEngine.bc,
-		earlySubmissionGrace,
+		expressLaneTracker,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create express lane service. auctionContractAddr: %v err: %w", auctionContractAddr, err)
+		return fmt.Errorf("failed to create express lane service. err: %w", err)
 	}
 	s.auctioneerAddr = auctioneerAddr
 	s.expressLaneService = els
