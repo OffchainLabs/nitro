@@ -165,25 +165,33 @@ func startMetrics(cfg *NodeConfig) error {
 	return nil
 }
 
+// filterTenderlyArgs filters out the tenderly args from the command line arguments and extracts the tracing config.
+func filterTenderlyArgs(args []string) ([]string, json.RawMessage) {
+	tracingArg := "--vmtrace.jsonconfig"
+	var tracingConfig json.RawMessage
+	var filteredArgs []string
+
+	for _, arg := range args {
+		if strings.HasPrefix(arg, tracingArg+"=") {
+			value := strings.TrimPrefix(arg, tracingArg+"=")
+			tracingConfig = json.RawMessage(value)
+		} else {
+			filteredArgs = append(filteredArgs, arg)
+		}
+	}
+
+	return filteredArgs, tracingConfig
+}
+
 // Returns the exit code
 func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
 	args := os.Args[1:]
-	log.Info("Starting Arbitrum Nitro node", "args", args)
 
-	//var tracingConfig json.RawMessage
-	//tracingArg := "--vmtrace.jsonconfig="
-	//for _, arg := range args {
-	//	if strings.HasPrefix(arg, tracingArg) {
-	//		value := strings.TrimPrefix(arg, tracingArg)
-	//		tracingConfig = json.RawMessage(value)
-	//		break
-	//	}
-	//}
-
-	tracingConfig := json.RawMessage(`{"path": "/livetracing/output", "ttl": 14, "primary": "rdb-primary", "instrumentation": true, "network_id": "42161" }`)
+	// Replace the original args with the filtered ones where tenderly args are removed
+	args, tracingConfig := filterTenderlyArgs(args)
 
 	nodeConfig, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
