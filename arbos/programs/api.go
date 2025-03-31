@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -75,7 +74,6 @@ func newApiClosures(
 		return db.GetState(actingAddress, key), cost
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
-		i := 0
 		for len(data) > 0 {
 			key := common.BytesToHash(data[:32])
 			value := common.BytesToHash(data[32:64])
@@ -86,8 +84,6 @@ func newApiClosures(
 			}
 
 			cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
-			log.Error("setTrieSlots", "key", key, "value", value, "cost", cost, "gasLeft", *gasLeft, "i", i)
-			i += 1
 			if cost > *gasLeft {
 				*gasLeft = 0
 				return OutOfGas

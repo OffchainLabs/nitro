@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -26,13 +25,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -45,7 +42,6 @@ import (
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -1853,11 +1849,8 @@ func multicallEmptyArgs() []byte {
 	// return []byte{0} // number of actions
 }
 
-func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool, flush bool) []byte {
+func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
 	var action byte = 0x10
-	if flush {
-		action = 0x12
-	}
 	if emitLog {
 		action |= 0x08
 	}
@@ -2635,7 +2628,7 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 	})
 }
 
-func TestOutOfGasInCacheFlush(t *testing.T) {
+func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 	jit := false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -2644,9 +2637,9 @@ func TestOutOfGasInCacheFlush(t *testing.T) {
 	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: arbnode.ConfigDefaultL1NonSequencerTest()})
 	defer cleanup2ndNode()
 
+	// Sets l1 data gas to zero
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
-
 	tx, err := arbOwner.SetL1BaseFeeEstimateInertia(&auth, 0)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
@@ -2676,80 +2669,73 @@ func TestOutOfGasInCacheFlush(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// checks l1 data gas is zero
-	var data []byte
-	for i := 0; i < 10_000; i++ {
-		data = append(data, 1)
-	}
-	builder.L2Info.GenerateAccount("User2")
-	tx = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), data)
-	err = builder.L2.Client.SendTransaction(ctx, tx)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	if receipt.GasUsedForL1 != 0 {
-		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
-	}
-	Require(t, err)
-	receipt, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
-	Require(t, err)
-	if receipt.GasUsedForL1 != 0 {
-		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
-	}
-	log.Error("blockNumber", "blockNumber", receipt.BlockNumber)
-
 	multiAddr := deployWasm(t, ctx, auth, builder.L2.Client, rustFile("multicall"))
-	args := multicallEmptyArgs()
-	for i := 0; i < 1_000; i++ {
-		key := testhelpers.RandomHash()
-		val := testhelpers.RandomHash()
-		log.Error("multicall", "key", key, "val", val, "i", i)
-		args = multicallAppendStore(args, key, val, false, false)
+
+	argsMulticall := func(numberOfStores int) []byte {
+		args := multicallEmptyArgs()
+		for i := 0; i < numberOfStores; i++ {
+			key := testhelpers.RandomHash()
+			val := testhelpers.RandomHash()
+			args = multicallAppendStore(args, key, val, false)
+		}
+		return args
 	}
 
-	// fails during storage flush
+	// Successful transaction to multicall
+	args := argsMulticall(400)
 	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(14000000), nil, args)
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
-	receipt, err = WaitForTx(ctx, builder.L2.Client, tx.Hash(), time.Second*5)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-	if receipt.Status == types.ReceiptStatusSuccessful && tx.ChainId().Cmp(simulatedChainID) == 0 {
-		for {
-			safeBlock, err := builder.L2.Client.HeaderByNumber(ctx, big.NewInt(int64(rpc.SafeBlockNumber)))
-			Require(t, err)
-			if safeBlock.Number.Cmp(receipt.BlockNumber) >= 0 {
-				break
-			}
-			select {
-			case <-time.After(headerreader.TestConfig.Dangerous.WaitForTxApprovalSafePoll):
-			case <-ctx.Done():
-				Require(t, ctx.Err())
-			}
-		}
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
 	}
-	log.Error("receipt", "receipt.GasUsed", receipt.GasUsed, "receipt.GasUsedForL1", receipt.GasUsedForL1)
+	receipt, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
+	Require(t, err)
 	if receipt.GasUsedForL1 != 0 {
 		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
 	}
 
-	// logs trace
-	js := `{
-            "hostio": function(info) { this.names.push(info.name); },
-            "result": function() { return this.names; },
-            "fault":  function() { return this.names; },
-            names: []
-        }`
-	var trace json.RawMessage
-	traceConfig := &tracers.TraceConfig{
-		Tracer: &js,
+	// Failed transaction to multicall.
+	// The transaction will fail during storage flush.
+	args = argsMulticall(1_000)
+	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(14000000), nil, args)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
+	if err == nil || err.Error() != fmt.Sprintf("out of gas for tx hash %v", tx.Hash().String()) {
+		t.Fatalf("expected out of gas error, got %v", err)
 	}
-	rpc := builder.L2.Client.Client()
-	err = rpc.CallContext(ctx, &trace, "debug_traceTransaction", tx.Hash(), traceConfig)
-	Require(t, err)
-	log.Error("flush_trace", "trace", string(trace))
-
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
 	receipt, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
-	log.Error("receipt", "receipt.GasUsed", receipt.GasUsed, "receipt.GasUsedForL1", receipt.GasUsedForL1)
+	Require(t, err)
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+	blockNumberFailedTx := receipt.BlockNumber
+
+	wasmModuleRoot := currentRootModule(t)
+
+	// validation of previous block succeeds
+	_, _, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
+		ctx,
+		arbutil.MessageIndex(blockNumberFailedTx.Uint64()-1),
+		false,
+		wasmModuleRoot,
+	)
 	Require(t, err)
 
-	validateBlocks(t, 1, jit, builder)
+	// validation of block with failed transaction fails
+	_, _, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
+		ctx,
+		arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
+		false,
+		wasmModuleRoot,
+	)
+	if err == nil || !strings.Contains(err.Error(), "machine execution failed with error: missing requested preimage for hash") {
+		t.Fatalf("expected validation error, got %v", err)
+	}
 }

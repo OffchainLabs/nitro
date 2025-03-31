@@ -445,7 +445,7 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	args := multicallEmptyArgs()
 	// We have to load first; otherwise, Stylus optimize-out the load after a store.
 	args = multicallAppendLoad(args, key, true)
-	args = multicallAppendStore(args, key, value, true, true)
+	args = multicallAppendStore(args, key, value, true)
 
 	// Trace recursive call in wasm
 	wasmMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
