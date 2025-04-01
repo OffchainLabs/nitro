@@ -53,7 +53,7 @@ func TestDelayInboxLong(t *testing.T) {
 		}
 
 		// adding multiple messages in the same Add with local=true to get them in the same L1 block
-		errs := builder.L1.L1Backend.TxPool().Add(l1Txs, true, false)
+		errs := builder.L1.L1Backend.TxPool().Add(l1Txs, false)
 		for _, err := range errs {
 			Require(t, err)
 		}
