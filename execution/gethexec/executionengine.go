@@ -404,7 +404,7 @@ func (s *ExecutionEngine) ResequenceReorgedMessages(messages []*arbostypes.Messa
 				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedMsgIdx, "found", delayedMsgIdx)
 				continue
 			}
-			_, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedMsgIdx)
+			_, _, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedMsgIdx)
 			if err != nil {
 				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
 			}
@@ -423,7 +423,7 @@ func (s *ExecutionEngine) ResequenceReorgedMessages(messages []*arbostypes.Messa
 		}
 		hooks := arbos.NoopSequencingHooks()
 		hooks.DiscardInvalidTxsEarly = true
-		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, txes, hooks, nil)
+		_, _, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, txes, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
@@ -431,20 +431,20 @@ func (s *ExecutionEngine) ResequenceReorgedMessages(messages []*arbostypes.Messa
 	}
 }
 
-func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, error)) (*types.Block, error) {
+func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*execution.SequencedMsg, *types.Block, error)) (*execution.SequencedMsg, *types.Block, error) {
 	attempts := 0
 	for {
 		s.createBlocksMutex.Lock()
-		block, err := sequencerFunc()
+		sequencedMsg, block, err := sequencerFunc()
 		s.createBlocksMutex.Unlock()
 		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
-			return block, err
+			return sequencedMsg, block, err
 		}
 		// We got SequencerInsertLockTaken
 		// option 1: there was a race, we are no longer main sequencer
 		_, chosenErr := s.consensus.ExpectChosenSequencer().Await(s.GetContext())
 		if chosenErr != nil {
-			return nil, chosenErr
+			return nil, nil, chosenErr
 		}
 		// option 2: we are in a test without very orderly sequencer coordination
 		if !s.bc.Config().ArbitrumChainParams.AllowDebugPrecompiles {
@@ -454,14 +454,14 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 		// options 2/3 fail after too many attempts
 		attempts++
 		if attempts > 20 {
-			return nil, err
+			return nil, nil, err
 		}
 		<-time.After(time.Millisecond * 100)
 	}
 }
 
-func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
-	return s.sequencerWrapper(func() (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*execution.SequencedMsg, *types.Block, error) {
+	return s.sequencerWrapper(func() (*execution.SequencedMsg, *types.Block, error) {
 		hooks.TxErrors = nil
 		return s.sequenceTransactionsWithBlockMutex(header, txes, hooks, timeboostedTxs)
 	})
@@ -470,7 +470,7 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 // SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
 // CPU profiling enabled. If the block creation takes longer than 2 seconds, it
 // keeps both and prints out filenames in an error log line.
-func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*execution.SequencedMsg, *types.Block, error) {
 	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
 	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
 		log.Error("Starting CPU profiling", "error", err)
@@ -479,15 +479,14 @@ func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L
 		log.Error("Starting tracing", "error", err)
 	}
 	start := time.Now()
-	res, err := s.SequenceTransactions(header, txes, hooks, timeboostedTxs)
+	sequencedMsg, res, err := s.SequenceTransactions(header, txes, hooks, timeboostedTxs)
 	elapsed := time.Since(start)
 	pprof.StopCPUProfile()
 	trace.Stop()
 	if elapsed > 2*time.Second {
 		writeAndLog(pprofBuf, traceBuf)
-		return res, err
 	}
-	return res, err
+	return sequencedMsg, res, err
 }
 
 func writeAndLog(pprof, trace *bytes.Buffer) {
@@ -505,25 +504,25 @@ func writeAndLog(pprof, trace *bytes.Buffer) {
 	log.Info("Transactions sequencing took longer than 2 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
-func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
+func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*execution.SequencedMsg, *types.Block, error) {
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
-		return nil, errors.New("can't find block for current header")
+		return nil, nil, errors.New("can't find block for current header")
 	}
 	var witness *stateless.Witness
 	if s.bc.GetVMConfig().StatelessSelfValidation {
 		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	statedb.StartPrefetcher("Sequencer", witness)
@@ -544,16 +543,16 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		core.MessageCommitMode,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	blockCalcTime := time.Since(startTime)
 	blockExecutionTimer.Update(blockCalcTime)
 	if len(hooks.TxErrors) != len(txes) {
-		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
+		return nil, nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
 
 	if len(receipts) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	allTxsErrored := true
@@ -564,17 +563,17 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		}
 	}
 	if allTxsErrored {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	msg, err := MessageFromTxes(header, txes, hooks.TxErrors)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	msgIdx, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	msgWithMeta := arbostypes.MessageWithMetadata{
@@ -583,24 +582,32 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
+
+	sequencedMsg := &execution.SequencedMsg{
+		MsgIdx:        msgIdx,
+		MsgWithMeta:   msgWithMeta,
+		MsgResult:     *msgResult,
+		BlockMetadata: blockMetadata,
+	}
+
 	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata).Await(s.GetContext())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Only write the block after we've written the messages, so if the node dies in the middle of this,
 	// it will naturally recover on startup by regenerating the missing block.
 	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s.cacheL1PriceDataOfMsg(msgIdx, receipts, block, false)
 
-	return block, nil
+	return sequencedMsg, block, nil
 }
 
 // blockMetadataFromBlock returns timeboosted byte array which says whether a transaction in the block was timeboosted
@@ -622,30 +629,30 @@ func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboosted
 }
 
 func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) error {
-	_, err := s.sequencerWrapper(func() (*types.Block, error) {
+	_, _, err := s.sequencerWrapper(func() (*execution.SequencedMsg, *types.Block, error) {
 		return s.sequenceDelayedMessageWithBlockMutex(message, delayedMsgIdx)
 	})
 	return err
 }
 
-func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*types.Block, error) {
+func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, *types.Block, error) {
 	if s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock {
-		return nil, ExecutionEngineBlockCreationStopped
+		return nil, nil, ExecutionEngineBlockCreationStopped
 	}
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	expectedDelayedMsgIdx := currentHeader.Nonce.Uint64()
 
 	msgIdx, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64() + 1)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if expectedDelayedMsgIdx != delayedMsgIdx {
-		return nil, fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedMsgIdx, expectedDelayedMsgIdx)
+		return nil, nil, fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedMsgIdx, expectedDelayedMsgIdx)
 	}
 
 	messageWithMeta := arbostypes.MessageWithMetadata{
@@ -656,30 +663,37 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	startTime := time.Now()
 	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	blockCalcTime := time.Since(startTime)
 	blockExecutionTimer.Update(blockCalcTime)
 
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	sequencedMsg := &execution.SequencedMsg{
+		MsgIdx:        msgIdx,
+		MsgWithMeta:   messageWithMeta,
+		MsgResult:     *msgResult,
+		BlockMetadata: s.blockMetadataFromBlock(block, nil),
 	}
 
 	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil)).Await(s.GetContext())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s.cacheL1PriceDataOfMsg(msgIdx, receipts, block, true)
 
 	log.Info("ExecutionEngine: Added DelayedMessages", "msgIdx", msgIdx, "delayedMsgIdx", delayedMsgIdx, "block-header", block.Header())
 
-	return block, nil
+	return sequencedMsg, block, nil
 }
 
 func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
