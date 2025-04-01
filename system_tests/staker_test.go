@@ -32,7 +32,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
@@ -142,7 +141,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err, "unable to bind upgrade executor")
-	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	rollupABI, err := abi.JSON(strings.NewReader(rollup_legacy_gen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
 	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))

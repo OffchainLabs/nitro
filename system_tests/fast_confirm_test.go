@@ -35,7 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/proxiesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
-	"github.com/offchainlabs/nitro/solgen/go/upgrade_executor_legacy_gen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
@@ -205,7 +205,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	builder.L1.TransferBalance(t, "Faucet", "Validator", balance, builder.L1Info)
 	l1auth := builder.L1Info.GetDefaultTransactOpts("Validator", ctx)
 
-	upgradeExecutor, err := upgrade_executor_legacy_gen.NewUpgradeExecutor(l2node.DeployInfo.UpgradeExecutor, builder.L1.Client)
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2node.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err, "unable to bind upgrade executor")
 	rollupABI, err := abi.JSON(strings.NewReader(rollup_legacy_gen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
@@ -391,7 +391,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	rollup, err := rollup_legacy_gen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 
-	upgradeExecutor, err := upgrade_executor_legacy_gen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err, "unable to bind upgrade executor")
 	rollupABI, err := abi.JSON(strings.NewReader(rollup_legacy_gen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
