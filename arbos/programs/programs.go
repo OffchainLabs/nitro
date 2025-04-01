@@ -25,7 +25,7 @@ import (
 )
 
 type Programs struct {
-	arbosVersion   uint64
+	ArbosVersion   uint64
 	backingStorage *storage.Storage
 	programs       *storage.Storage
 	moduleHashes   *storage.Storage
@@ -69,7 +69,7 @@ func Initialize(arbosVersion uint64, sto *storage.Storage) {
 
 func Open(arbosVersion uint64, sto *storage.Storage) *Programs {
 	return &Programs{
-		arbosVersion:   arbosVersion,
+		ArbosVersion:   arbosVersion,
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(programDataKey),
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
@@ -120,7 +120,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit := am.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
 
-	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, p.arbosVersion, debugMode, burner)
+	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, p.ArbosVersion, debugMode, burner)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -266,7 +266,7 @@ func (p Programs) CallProgram(
 
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runModeToString(runMode)), nil).Inc(1)
 	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
-	if len(ret) > 0 && p.arbosVersion >= gethParams.ArbosVersion_40 {
+	if len(ret) > 0 && p.ArbosVersion >= gethParams.ArbosVersion_40 {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {

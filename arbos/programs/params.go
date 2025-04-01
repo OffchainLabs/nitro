@@ -86,7 +86,7 @@ func (p Programs) Params() (*StylusParams, error) {
 	// order matters!
 	stylusParams := &StylusParams{
 		backingStorage:   sto,
-		arbosVersion:     p.arbosVersion,
+		arbosVersion:     p.ArbosVersion,
 		Version:          am.BytesToUint16(take(2)),
 		InkPrice:         am.BytesToUint24(take(3)),
 		MaxStackDepth:    am.BytesToUint32(take(4)),
@@ -102,7 +102,7 @@ func (p Programs) Params() (*StylusParams, error) {
 		KeepaliveDays:    am.BytesToUint16(take(2)),
 		BlockCacheSize:   am.BytesToUint16(take(2)),
 	}
-	if p.arbosVersion >= params.ArbosVersion_40 {
+	if p.ArbosVersion >= params.ArbosVersion_40 {
 		stylusParams.MaxWasmSize = am.BytesToUint32(take(4))
 	} else {
 		stylusParams.MaxWasmSize = initialMaxWasmSize

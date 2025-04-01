@@ -362,6 +362,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		}
 
 		state.arbosVersion = nextArbosVersion
+		state.programs.ArbosVersion = nextArbosVersion
 	}
 
 	if firstTime && upgradeTo >= params.ArbosVersion_6 {
