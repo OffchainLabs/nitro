@@ -86,6 +86,7 @@ type ExecutionSequencer interface {
 	Pause()
 	Activate()
 	ForwardTo(url string) error
+	Sequence(ctx context.Context) time.Duration
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	ResequenceReorgedMessages(oldMessages []*arbostypes.MessageWithMetadata)
 	NextDelayedMessageNumber() (uint64, error)
