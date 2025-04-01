@@ -1,6 +1,9 @@
 name: Merge Checks
 
 on:
+  # Using pull_request_target for security. If we had used pull_request, then it
+  # would be possible for malicious actors to create Pull Requests which would
+  # trigger workflows that they could have modified locally to extract secrets.
   pull_request_target:
     branches: [ master ]
     types: [synchronize, opened, reopened]
@@ -25,7 +28,8 @@ jobs:
         run: |
           status_state="pending"
           declare -Ar exceptions=(
-            [contracts]=origin/v2-main
+            [contracts]=origin/deploy
+            [contracts-legacy]=origin/v2-main
             [nitro-testnode]=origin/master
             [bold]=origin/main
             [arbitrator/langs/c]=origin/vm-storage-cache
