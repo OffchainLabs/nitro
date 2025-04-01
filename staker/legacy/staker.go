@@ -426,7 +426,6 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 		fastConfirmer,
 		s.builder,
 		s.wallet,
-		cfg.GasRefunder(),
 		s.l1Reader,
 	)
 	if err != nil {

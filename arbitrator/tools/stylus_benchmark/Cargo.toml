@@ -14,3 +14,4 @@ stylus = { path = "../../stylus/", default-features = false }
 clap = { version = "4.4.8", features = ["derive"] }
 strum = "0.26"
 strum_macros = "0.26"
+rand = "0.8.5"

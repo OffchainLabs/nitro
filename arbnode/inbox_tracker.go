@@ -304,13 +304,18 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 			return fmt.Errorf("error getting message %v: %w", seqNum, err)
 		}
 
-		msgResult, err := t.txStreamer.ResultAtCount(seqNum + 1)
+		msgResult, err := t.txStreamer.ResultAtMessageIndex(seqNum)
 		var blockHash *common.Hash
 		if err == nil {
 			blockHash = &msgResult.BlockHash
 		}
 
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum, blockHash)
+		blockMetadata, err := t.txStreamer.BlockMetadataAtMessageIndex(seqNum)
+		if err != nil {
+			log.Warn("Error getting blockMetadata byte array from tx streamer", "err", err)
+		}
+
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum, blockHash, blockMetadata)
 		if err != nil {
 			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
 		}
@@ -604,15 +609,15 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firs
 	if err := t.deleteBatchMetadataStartingAt(batch, count); err != nil {
 		return err
 	}
-	var prevMesssageCount arbutil.MessageIndex
+	var prevMessageCount arbutil.MessageIndex
 	if count > 0 {
-		prevMesssageCount, err = t.GetBatchMessageCount(count - 1)
+		prevMessageCount, err = t.GetBatchMessageCount(count - 1)
 		if err != nil {
 			return err
 		}
 	}
 	// Writes batch
-	return t.txStreamer.ReorgToAndEndBatch(batch, prevMesssageCount)
+	return t.txStreamer.ReorgAtAndEndBatch(batch, prevMessageCount)
 }
 
 type multiplexerBackend struct {
@@ -848,7 +853,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	}
 
 	// This also writes the batch
-	err = t.txStreamer.AddMessagesAndEndBatch(prevbatchmeta.MessageCount, true, messages, dbBatch)
+	err = t.txStreamer.AddMessagesAndEndBatch(prevbatchmeta.MessageCount, true, messages, nil, dbBatch)
 	if err != nil {
 		return err
 	}
@@ -934,5 +939,5 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 		return err
 	}
 	log.Info("InboxTracker", "SequencerBatchCount", count)
-	return t.txStreamer.ReorgToAndEndBatch(dbBatch, prevBatchMeta.MessageCount)
+	return t.txStreamer.ReorgAtAndEndBatch(dbBatch, prevBatchMeta.MessageCount)
 }
