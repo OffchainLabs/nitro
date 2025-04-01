@@ -254,7 +254,7 @@ func ProduceBlockAdvanced(
 		var sender common.Address
 		var dataGas uint64 = 0
 		preTxHeaderGasUsed := header.GasUsed
-		signer := types.VersionedArbitrumSigner(chainConfig, header.Number, header.Time, arbState.ArbOSVersion())
+		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbState.ArbOSVersion())
 		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {

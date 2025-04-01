@@ -917,7 +917,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 	}
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
-	signer := types.VersionedArbitrumSigner(bc.Config(), nextHeaderNumber, latestHeader.Time, arbosVersion)
+	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time, arbosVersion)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
 	var nextQueueItem *txQueueItem
 	var queueItemsIdx int

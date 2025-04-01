@@ -127,7 +127,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
 		return types.ErrTxTypeNotSupported
 	}
-	sender, err := types.Sender(types.VersionedArbitrumSigner(chainConfig, header.Number, header.Time, arbos.ArbOSVersion()), tx)
+	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number, header.Time, arbos.ArbOSVersion()), tx)
 	if err != nil {
 		return err
 	}
