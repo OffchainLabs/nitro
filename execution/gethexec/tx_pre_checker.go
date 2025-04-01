@@ -5,21 +5,26 @@ package gethexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	flag "github.com/spf13/pflag"
 )
 
 var (
@@ -43,7 +48,7 @@ type TxPreCheckerConfig struct {
 type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
 
 var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
-	Strictness:             TxPreCheckerStrictnessNone,
+	Strictness:             TxPreCheckerStrictnessLikelyCompatible,
 	RequiredStateAge:       2,
 	RequiredStateMaxBlocks: 4,
 }
@@ -58,8 +63,9 @@ func TxPreCheckerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type TxPreChecker struct {
 	TransactionPublisher
-	bc     *core.BlockChain
-	config TxPreCheckerConfigFetcher
+	bc                 *core.BlockChain
+	config             TxPreCheckerConfigFetcher
+	expressLaneTracker *ExpressLaneTracker
 }
 
 func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) *TxPreChecker {
@@ -140,7 +146,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	extraInfo := types.DeserializeHeaderExtraInformation(header)
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
 	if err != nil {
 		return err
 	}
@@ -161,6 +167,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			oldHeader := header
 			blocksTraversed := uint(0)
 			// find a block that's old enough
+			// #nosec G115
 			for now-int64(oldHeader.Time) < config.RequiredStateAge &&
 				(config.RequiredStateMaxBlocks <= 0 || blocksTraversed < config.RequiredStateMaxBlocks) &&
 				oldHeader.Number.Uint64() > 0 {
@@ -220,4 +227,54 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 		return err
 	}
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
+}
+
+func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	if msg == nil || msg.Transaction == nil {
+		return timeboost.ErrMalformedData
+	}
+	if c.expressLaneTracker == nil {
+		log.Error("ExpressLaneTracker not properly initialized in TxPreChecker, rejecting transaction.", "msg", msg)
+		return errors.New("express lane server misconfiguration")
+	}
+	err := c.expressLaneTracker.ValidateExpressLaneTx(msg)
+	if err != nil {
+		return err
+	}
+
+	block := c.bc.CurrentBlock()
+	statedb, err := c.bc.StateAt(block.Root)
+	if err != nil {
+		return err
+	}
+	arbos, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return err
+	}
+	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, msg.Transaction, msg.Options, c.config())
+	if err != nil {
+		return err
+	}
+	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
+}
+
+func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	block := c.bc.CurrentBlock()
+	statedb, err := c.bc.StateAt(block.Root)
+	if err != nil {
+		return err
+	}
+	arbos, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return err
+	}
+	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, tx, nil, c.config())
+	if err != nil {
+		return err
+	}
+	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
+}
+
+func (c *TxPreChecker) SetExpressLaneTracker(tracker *ExpressLaneTracker) {
+	c.expressLaneTracker = tracker
 }

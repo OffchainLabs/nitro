@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
@@ -38,7 +39,7 @@ func main() {
 func startMetrics(cfg *ValidationNodeConfig) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
-	if cfg.Metrics && !metrics.Enabled {
+	if cfg.Metrics && !metrics.Enabled() {
 		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
 	}
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
@@ -66,6 +67,8 @@ func mainImpl() int {
 	}
 	stackConf := DefaultValidationNodeStackConfig
 	stackConf.DataDir = "" // ephemeral
+	stackConf.HTTPBodyLimit = math.MaxInt
+	stackConf.WSReadLimit = math.MaxInt64
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
@@ -143,6 +146,7 @@ func mainImpl() int {
 		log.Error("error starting validator node", "err", err)
 		return 1
 	}
+	defer valNode.Stop()
 	err = stack.Start()
 	if err != nil {
 		fatalErrChan <- fmt.Errorf("error starting stack: %w", err)

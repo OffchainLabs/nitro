@@ -9,22 +9,21 @@ import (
 	"math/big"
 
 	"github.com/holiman/uint256"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
-
-	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/util/arbmath"
-
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos/retryables"
-
-	"github.com/offchainlabs/nitro/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	glog "github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var arbosAddress = types.ArbosAddress
@@ -113,7 +112,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 
 	var tracingInfo *util.TracingInfo
 	if interpreter.Config().Tracer != nil {
-		caller := contract.CallerAddress
+		caller := contract.Caller()
 		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, acting, util.TracingDuringEVM)
 	}
 
@@ -123,7 +122,6 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 	return p.state.Programs().CallProgram(
 		scope,
 		p.evm.StateDB,
-		p.state.ArbOSVersion(),
 		interpreter,
 		tracingInfo,
 		input,
@@ -153,13 +151,17 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 		evm.IncrementDepth() // fake a call
 		from := p.msg.From
-		tracer.CaptureStart(evm, from, *p.msg.To, false, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+		if tracer.OnEnter != nil {
+			tracer.OnEnter(evm.Depth(), byte(vm.CALL), from, *p.msg.To, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+		}
 
 		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingDuringEVM)
 		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 
 		return func() {
-			tracer.CaptureEnd(nil, p.state.Burner.Burned(), nil)
+			if tracer.OnExit != nil {
+				tracer.OnExit(evm.Depth(), nil, p.state.Burner.Burned(), nil, false)
+			}
 			evm.DecrementDepth() // fake the return to the first faked call
 
 			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingAfterEVM)
@@ -175,7 +177,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if to == nil {
 			return true, 0, errors.New("eth deposit has no To address"), nil
 		}
-		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, "deposit")
+		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
 		defer (startTracer())()
 		// We intentionally use the variant here that doesn't do tracing,
 		// because this transfer is represented as the outer eth transaction.
@@ -203,10 +205,10 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// mint funds with the deposit, then charge fees later
 		availableRefund := new(big.Int).Set(tx.DepositValue)
 		takeFunds(availableRefund, tx.RetryValue)
-		util.MintBalance(&tx.From, tx.DepositValue, evm, scenario, "deposit")
+		util.MintBalance(&tx.From, tx.DepositValue, evm, scenario, tracing.BalanceIncreaseDeposit)
 
-		transfer := func(from, to *common.Address, amount *big.Int) error {
-			return util.TransferBalance(from, to, amount, evm, scenario, "during evm execution")
+		transfer := func(from, to *common.Address, amount *big.Int, reason tracing.BalanceChangeReason) error {
+			return util.TransferBalance(from, to, amount, evm, scenario, reason)
 		}
 
 		// check that the user has enough balance to pay for the max submission fee
@@ -230,7 +232,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// collect the submission fee
-		if err := transfer(&tx.From, &networkFeeAccount, submissionFee); err != nil {
+		if err := transfer(&tx.From, &networkFeeAccount, submissionFee, tracing.BalanceChangeDuringEVMExecution); err != nil {
 			// should be impossible as we just checked that they have enough balance for the max submission fee,
 			// and we also checked that the max submission fee is at least the actual submission fee
 			glog.Error("failed to transfer submissionFee", "err", err)
@@ -240,24 +242,24 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// refund excess submission fee
 		submissionFeeRefund := takeFunds(availableRefund, arbmath.BigSub(tx.MaxSubmissionFee, submissionFee))
-		if err := transfer(&tx.From, &tx.FeeRefundAddr, submissionFeeRefund); err != nil {
+		if err := transfer(&tx.From, &tx.FeeRefundAddr, submissionFeeRefund, tracing.BalanceChangeDuringEVMExecution); err != nil {
 			// should never happen as from's balance should be at least availableRefund at this point
 			glog.Error("failed to transfer submissionFeeRefund", "err", err)
 		}
 
 		// move the callvalue into escrow
-		if callValueErr := transfer(&tx.From, &escrow, tx.RetryValue); callValueErr != nil {
+		if callValueErr := transfer(&tx.From, &escrow, tx.RetryValue, tracing.BalanceChangeDuringEVMExecution); callValueErr != nil {
 			// The sender doesn't have enough balance to pay for the retryable's callvalue.
 			// Since we can't create the retryable, we should refund the submission fee.
 			// First, we give the submission fee back to the transaction sender:
-			if err := transfer(&networkFeeAccount, &tx.From, submissionFee); err != nil {
+			if err := transfer(&networkFeeAccount, &tx.From, submissionFee, tracing.BalanceChangeDuringEVMExecution); err != nil {
 				glog.Error("failed to refund submissionFee", "err", err)
 			}
 			// Then, as limited by availableRefund, we attempt to move the refund to the fee refund address.
 			// If the deposit value was lower than the submission fee, only some (or none) of the submission fee may be moved.
 			// In that case, any amount up to the deposit value will be refunded to the fee refund address,
 			// with the rest remaining in the transaction sender's address (as that's where the funds were pulled from).
-			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee); err != nil {
+			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee, tracing.BalanceChangeDuringEVMExecution); err != nil {
 				glog.Error("failed to refund withheldSubmissionFee", "err", err)
 			}
 			return true, 0, callValueErr, nil
@@ -295,7 +297,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			// or the specified gas limit is below the minimum transaction gas cost.
 			// Either way, attempt to refund the gas costs, since we're not doing the auto-redeem.
 			gasCostRefund := takeFunds(availableRefund, maxGasCost)
-			if err := transfer(&tx.From, &tx.FeeRefundAddr, gasCostRefund); err != nil {
+			if err := transfer(&tx.From, &tx.FeeRefundAddr, gasCostRefund, tracing.BalanceChangeDuringEVMExecution); err != nil {
 				// should never happen as from's balance should be at least availableRefund at this point
 				glog.Error("failed to transfer gasCostRefund", "err", err)
 			}
@@ -305,7 +307,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// pay for the retryable's gas and update the pools
 		gascost := arbmath.BigMulByUint(effectiveBaseFee, usergas)
 		networkCost := gascost
-		if p.state.ArbOSVersion() >= 11 {
+		if p.state.ArbOSVersion() >= params.ArbosVersion_11 {
 			infraFeeAccount, err := p.state.InfraFeeAccount()
 			p.state.Restrict(err)
 			if infraFeeAccount != (common.Address{}) {
@@ -314,14 +316,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 				infraFee := arbmath.BigMin(minBaseFee, effectiveBaseFee)
 				infraCost := arbmath.BigMulByUint(infraFee, usergas)
 				infraCost = takeFunds(networkCost, infraCost)
-				if err := transfer(&tx.From, &infraFeeAccount, infraCost); err != nil {
+				if err := transfer(&tx.From, &infraFeeAccount, infraCost, tracing.BalanceChangeDuringEVMExecution); err != nil {
 					glog.Error("failed to transfer gas cost to infrastructure fee account", "err", err)
 					return true, 0, nil, ticketId.Bytes()
 				}
 			}
 		}
 		if arbmath.BigGreaterThan(networkCost, common.Big0) {
-			if err := transfer(&tx.From, &networkFeeAccount, networkCost); err != nil {
+			if err := transfer(&tx.From, &networkFeeAccount, networkCost, tracing.BalanceChangeDuringEVMExecution); err != nil {
 				// should be impossible because we just checked the tx.From balance
 				glog.Error("failed to transfer gas cost to network fee account", "err", err)
 				return true, 0, nil, ticketId.Bytes()
@@ -335,7 +337,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			gasPriceRefund.SetInt64(0)
 		}
 		gasPriceRefund = takeFunds(availableRefund, gasPriceRefund)
-		if err := transfer(&tx.From, &tx.FeeRefundAddr, gasPriceRefund); err != nil {
+		if err := transfer(&tx.From, &tx.FeeRefundAddr, gasPriceRefund, tracing.BalanceChangeDuringEVMExecution); err != nil {
 			glog.Error("failed to transfer gasPriceRefund", "err", err)
 		}
 		availableRefund.Add(availableRefund, withheldGasFunds)
@@ -386,13 +388,13 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
 		scenario := util.TracingBeforeEVM
-		if err := util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario, "escrow"); err != nil {
+		if err := util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario, tracing.BalanceChangeEscrowTransfer); err != nil {
 			return true, 0, err, nil
 		}
 
 		// The redeemer has pre-paid for this tx's gas
 		prepaid := arbmath.BigMulByUint(evm.Context.BaseFee, tx.Gas)
-		util.MintBalance(&tx.From, prepaid, evm, scenario, "prepaid")
+		util.MintBalance(&tx.From, prepaid, evm, scenario, tracing.BalanceIncreasePrepaid)
 		ticketId := tx.TicketId
 		refundTo := tx.RefundTo
 		p.CurrentRetryable = &ticketId
@@ -523,35 +525,49 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 		// undo Geth's refund to the From address
 		gasRefund := arbmath.BigMulByUint(effectiveBaseFee, gasLeft)
-		err := util.BurnBalance(&inner.From, gasRefund, p.evm, scenario, "undoRefund")
+		err := util.BurnBalance(&inner.From, gasRefund, p.evm, scenario, tracing.BalanceDecreaseUndoRefund)
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
 		}
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
-		refund := func(refundFrom common.Address, amount *big.Int) {
+		refund := func(refundFrom common.Address, amount *big.Int, reason tracing.BalanceChangeReason) {
 			const errLog = "fee address doesn't have enough funds to give user refund"
+
+			logMissingRefund := func(err error) {
+				if !errors.Is(err, vm.ErrInsufficientBalance) {
+					log.Error("unexpected error refunding balance", "err", err, "feeAddress", refundFrom)
+					return
+				}
+				logLevel := log.Error
+				isContract := p.evm.StateDB.GetCodeSize(refundFrom) > 0
+				if isContract {
+					// It's expected that the balance might not still be in this address if it's a contract.
+					logLevel = log.Debug
+				}
+				logLevel(errLog, "err", err, "feeAddress", refundFrom)
+			}
 
 			// Refund funds to the fee refund address without overdrafting the L1 deposit.
 			toRefundAddr := takeFunds(maxRefund, amount)
-			err = util.TransferBalance(&refundFrom, &inner.RefundTo, toRefundAddr, p.evm, scenario, "refund")
+			err = util.TransferBalance(&refundFrom, &inner.RefundTo, toRefundAddr, p.evm, scenario, reason)
 			if err != nil {
 				// Normally the network fee address should be holding any collected fees.
 				// However, in theory, they could've been transferred out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
-				log.Error(errLog, "err", err, "feeAddress", refundFrom)
+				logMissingRefund(err)
 			}
 			// Any extra refund can't be given to the fee refund address if it didn't come from the L1 deposit.
 			// Instead, give the refund to the retryable from address.
-			err = util.TransferBalance(&refundFrom, &inner.From, arbmath.BigSub(amount, toRefundAddr), p.evm, scenario, "refund")
+			err = util.TransferBalance(&refundFrom, &inner.From, arbmath.BigSub(amount, toRefundAddr), p.evm, scenario, reason)
 			if err != nil {
-				log.Error(errLog, "err", err, "feeAddress", refundFrom)
+				logMissingRefund(err)
 			}
 		}
 
 		if success {
 			// If successful, refund the submission fee.
-			refund(networkFeeAccount, inner.SubmissionFeeRefund)
+			refund(networkFeeAccount, inner.SubmissionFeeRefund, tracing.BalanceChangeTransferNetworkRefund)
 		} else {
 			// The submission fee is still taken from the L1 deposit earlier, even if it's not refunded.
 			takeFunds(maxRefund, inner.SubmissionFeeRefund)
@@ -560,7 +576,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		takeFunds(maxRefund, arbmath.BigMulByUint(effectiveBaseFee, gasUsed))
 		// Refund any unused gas, without overdrafting the L1 deposit.
 		networkRefund := gasRefund
-		if p.state.ArbOSVersion() >= 11 {
+		if p.state.ArbOSVersion() >= params.ArbosVersion_11 {
 			infraFeeAccount, err := p.state.InfraFeeAccount()
 			p.state.Restrict(err)
 			if infraFeeAccount != (common.Address{}) {
@@ -570,10 +586,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 				infraFee := arbmath.BigMin(minBaseFee, effectiveBaseFee)
 				infraRefund := arbmath.BigMulByUint(infraFee, gasLeft)
 				infraRefund = takeFunds(networkRefund, infraRefund)
-				refund(infraFeeAccount, infraRefund)
+				refund(infraFeeAccount, infraRefund, tracing.BalanceChangeTransferInfraRefund)
 			}
 		}
-		refund(networkFeeAccount, networkRefund)
+		refund(networkFeeAccount, networkRefund, tracing.BalanceChangeTransferNetworkRefund)
 
 		if success {
 			// we don't want to charge for this
@@ -583,7 +599,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		} else {
 			// return the Callvalue to escrow
 			escrow := retryables.RetryableEscrowAddress(inner.TicketId)
-			err := util.TransferBalance(&inner.From, &escrow, inner.Value, p.evm, scenario, "escrow")
+			err := util.TransferBalance(&inner.From, &escrow, inner.Value, p.evm, scenario, tracing.BalanceChangeEscrowTransfer)
 			if err != nil {
 				// should be impossible because geth credited the inner.Value to inner.From before the transaction
 				// and the transaction reverted
@@ -612,8 +628,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		computeCost = totalCost
 	}
 
-	purpose := "feeCollection"
-	if p.state.ArbOSVersion() > 4 {
+	if p.state.ArbOSVersion() > params.ArbosVersion_4 {
 		infraFeeAccount, err := p.state.InfraFeeAccount()
 		p.state.Restrict(err)
 		if infraFeeAccount != (common.Address{}) {
@@ -622,19 +637,19 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			infraFee := arbmath.BigMin(minBaseFee, basefee)
 			computeGas := arbmath.SaturatingUSub(gasUsed, p.posterGas)
 			infraComputeCost := arbmath.BigMulByUint(infraFee, computeGas)
-			util.MintBalance(&infraFeeAccount, infraComputeCost, p.evm, scenario, purpose)
+			util.MintBalance(&infraFeeAccount, infraComputeCost, p.evm, scenario, tracing.BalanceIncreaseInfraFee)
 			computeCost = arbmath.BigSub(computeCost, infraComputeCost)
 		}
 	}
 	if arbmath.BigGreaterThan(computeCost, common.Big0) {
-		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, purpose)
+		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, tracing.BalanceIncreaseNetworkFee)
 	}
 	posterFeeDestination := l1pricing.L1PricerFundsPoolAddress
-	if p.state.ArbOSVersion() < 2 {
+	if p.state.ArbOSVersion() < params.ArbosVersion_2 {
 		posterFeeDestination = p.evm.Context.Coinbase
 	}
-	util.MintBalance(&posterFeeDestination, p.PosterFee, p.evm, scenario, purpose)
-	if p.state.ArbOSVersion() >= 10 {
+	util.MintBalance(&posterFeeDestination, p.PosterFee, p.evm, scenario, tracing.BalanceIncreaseL1PosterFee)
+	if p.state.ArbOSVersion() >= params.ArbosVersion_10 {
 		if _, err := p.state.L1PricingState().AddToL1FeesAvailable(p.PosterFee); err != nil {
 			log.Error("failed to update L1FeesAvailable: ", "err", err)
 		}
@@ -732,13 +747,13 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 
 func (p *TxProcessor) DropTip() bool {
 	version := p.state.ArbOSVersion()
-	return version != 9 || p.delayedInbox
+	return version != params.ArbosVersion_9 || p.delayedInbox
 }
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 	gasPrice := p.evm.GasPrice
 	version := p.state.ArbOSVersion()
-	if version != 9 {
+	if version != params.ArbosVersion_9 {
 		// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
 		gasPrice = p.evm.Context.BaseFee
 	}
@@ -746,7 +761,7 @@ func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 }
 
 func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
-	if p.state.ArbOSVersion() >= 3 {
+	if p.state.ArbOSVersion() >= params.ArbosVersion_3 {
 		return p.GetPaidGasPrice()
 	}
 	return evm.GasPrice
@@ -762,4 +777,16 @@ func (p *TxProcessor) MsgIsNonMutating() bool {
 	}
 	mode := p.msg.TxRunMode
 	return mode == core.MessageGasEstimationMode || mode == core.MessageEthcallMode
+}
+
+func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
+	if p.state.ArbOSVersion() < params.ArbosVersion_40 {
+		return false
+	}
+	enabled, err := p.state.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		log.Error("failed to check if increased calldata pricing is enabled", "err", err)
+		return false
+	}
+	return enabled
 }

@@ -9,9 +9,11 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -145,7 +147,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 	escrowAddress := RetryableEscrowAddress(id)
 	beneficiaryAddress := common.BytesToAddress(beneficiary[:])
 	amount := evm.StateDB.GetBalance(escrowAddress)
-	err = util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount.ToBig(), evm, scenario, "escrow")
+	err = util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount.ToBig(), evm, scenario, tracing.BalanceChangeEscrowTransfer)
 	if err != nil {
 		return false, err
 	}
@@ -367,5 +369,7 @@ func RetryableEscrowAddress(ticketId common.Hash) common.Address {
 }
 
 func RetryableSubmissionFee(calldataLengthInBytes int, l1BaseFee *big.Int) *big.Int {
-	return arbmath.BigMulByUint(l1BaseFee, uint64(1400+6*calldataLengthInBytes))
+	// This can't overflow because calldataLengthInBytes would need to be 3 exabytes
+	// #nosec G115
+	return arbmath.BigMulByUint(l1BaseFee, 1400+6*uint64(calldataLengthInBytes))
 }

@@ -20,15 +20,19 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 type TestChainContext struct {
+	chainConfig *params.ChainConfig
 }
 
 func (r *TestChainContext) Engine() consensus.Engine {
 	return arbos.Engine{}
 }
+
+func (r *TestChainContext) Config() *params.ChainConfig { return r.chainConfig }
 
 func (r *TestChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
 	return &types.Header{}
@@ -49,7 +53,7 @@ var testChainConfig = &params.ChainConfig{
 	MuirGlacierBlock:    big.NewInt(0),
 	BerlinBlock:         big.NewInt(0),
 	LondonBlock:         big.NewInt(0),
-	ArbitrumChainParams: params.ArbitrumDevTestParams(),
+	ArbitrumChainParams: chaininfo.ArbitrumDevTestParams(),
 }
 
 func TestEthDepositMessage(t *testing.T) {
@@ -127,14 +131,16 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		if err != nil {
 			t.Error(err)
 		}
-		chainContext := &TestChainContext{}
+		chainContext := &TestChainContext{chainConfig: testChainConfig}
 		header := &types.Header{
 			Number:     big.NewInt(1000),
 			Difficulty: big.NewInt(1000),
 		}
+		blockContext := core.NewEVMBlockContext(header, chainContext, nil)
+		evm := vm.NewEVM(blockContext, statedb, testChainConfig, vm.Config{})
 		gasPool := core.GasPool(100000)
 		for _, tx := range txes {
-			_, _, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
+			_, _, err := core.ApplyTransaction(evm, &gasPool, statedb, header, tx, &header.GasUsed)
 			if err != nil {
 				Fail(t, err)
 			}

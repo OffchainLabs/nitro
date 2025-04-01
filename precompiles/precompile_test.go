@@ -5,17 +5,14 @@ package precompiles
 
 import (
 	"fmt"
-	"io"
 	"math/big"
-	"os"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/storage"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -91,6 +88,7 @@ func TestEvents(t *testing.T) {
 		if log.Address != debugContractAddr {
 			Fail(t, "address mismatch:", log.Address, "vs", debugContractAddr)
 		}
+		// #nosec G115
 		if log.BlockNumber != uint64(blockNumber) {
 			Fail(t, "block number mismatch:", log.BlockNumber, "vs", blockNumber)
 		}
@@ -170,6 +168,7 @@ func TestEventCosts(t *testing.T) {
 		offsetBytes := 32
 		storeBytes := sizeBytes + offsetBytes + len(bytes)
 		storeBytes = storeBytes + 31 - (storeBytes+31)%32 // round up to a multiple of 32
+		// #nosec G115
 		storeCost := uint64(storeBytes) * params.LogDataGas
 
 		expected[i] = baseCost + addrCost + hashCost + storeCost
@@ -181,20 +180,15 @@ func TestEventCosts(t *testing.T) {
 }
 
 func TestPrecompilesPerArbosVersion(t *testing.T) {
-	// Set up a logger in case log.Crit is called by Precompiles()
-	glogger := log.NewGlogHandler(
-		log.NewTerminalHandler(io.Writer(os.Stderr), false))
-	glogger.Verbosity(log.LevelWarn)
-	log.SetDefault(log.NewLogger(glogger))
-
 	expectedNewMethodsPerArbosVersion := map[uint64]int{
-		0:  89,
-		5:  3,
-		10: 2,
-		11: 4,
-		20: 8,
-		30: 38,
-		31: 1,
+		0:                      89,
+		params.ArbosVersion_5:  3,
+		params.ArbosVersion_10: 2,
+		params.ArbosVersion_11: 4,
+		params.ArbosVersion_20: 8,
+		params.ArbosVersion_30: 38,
+		params.ArbosVersion_31: 1,
+		params.ArbosVersion_40: 3,
 	}
 
 	precompiles := Precompiles()

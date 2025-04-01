@@ -7,6 +7,7 @@ import (
 	"context"
 	crypto "crypto/rand"
 	"io"
+	"log/slog"
 	"math/big"
 	"math/rand"
 	"os"
@@ -17,12 +18,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/util/colors"
-	"golang.org/x/exp/slog"
 )
 
 // Fail a test should an error occur
-func RequireImpl(t *testing.T, err error, printables ...interface{}) {
+func RequireImpl(t testing.TB, err error, printables ...interface{}) {
 	t.Helper()
 	if err != nil {
 		t.Log(string(debug.Stack()))
@@ -65,6 +66,7 @@ func RandomCallValue(limit int64) *big.Int {
 
 // Computes a psuedo-random uint64 on the interval [min, max]
 func RandomUint32(min, max uint32) uint32 {
+	//#nosec G115
 	return uint32(RandomUint64(uint64(min), uint64(max)))
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
@@ -85,7 +87,8 @@ func (n NodeInterface) msgNumToInboxBatch(msgIndex arbutil.MessageIndex) (uint64
 	if fetcher == nil {
 		return 0, false, errors.New("batch fetcher not set")
 	}
-	return fetcher.FindInboxBatchContainingMessage(msgIndex)
+	inboxBatch, err := fetcher.FindInboxBatchContainingMessage(msgIndex).Await(n.context)
+	return inboxBatch.BatchNum, inboxBatch.Found, err
 }
 
 func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
@@ -131,7 +134,7 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if !found {
 		return 0, nil
 	}
-	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum)
+	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum).Await(n.context)
 	if err != nil {
 		return 0, err
 	}
@@ -234,6 +237,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	}
 
 	balanced := size == arbmath.NextPowerOf2(size)/2
+	// #nosec G115
 	treeLevels := int(arbmath.Log2ceil(size)) // the # of levels in the tree
 	proofLevels := treeLevels - 1             // the # of levels where a hash is needed (all but root)
 	walkLevels := treeLevels                  // the # of levels we need to consider when building walks
@@ -249,6 +253,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	place := leaf                             // where we are in the tree
 	for level := 0; level < walkLevels; level++ {
 		sibling := place ^ which
+		// #nosec G115
 		position := merkletree.NewLevelAndLeaf(uint64(level), sibling)
 
 		if sibling < size {
@@ -272,6 +277,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 				total += power    // The leaf for a given partial is the sum of the powers
 				leaf := total - 1 // of 2 preceding it. It's 1 less since we count from 0
 
+				// #nosec G115
 				partial := merkletree.NewLevelAndLeaf(uint64(level), leaf)
 
 				query = append(query, partial)
@@ -297,6 +303,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 		mid := (lo + hi) / 2
 
+		// #nosec G115
 		block, err := n.backend.BlockByNumber(n.context, rpc.BlockNumber(mid))
 		if err != nil {
 			searchErr = err
@@ -399,12 +406,13 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 	if !balanced {
 		// This tree isn't balanced, so we'll need to use the partials to recover the missing info.
-		// To do this, we'll walk the boundry of what's known, computing hashes along the way
+		// To do this, we'll walk the boundary of what's known, computing hashes along the way
 
 		step := *minPartialPlace
 		step.Leaf += 1 << step.Level // we start on the min partial's zero-hash sibling
 		known[step] = hash0
 
+		// #nosec G115
 		for step.Level < uint64(treeLevels) {
 
 			curr, ok := known[step]
@@ -516,10 +524,14 @@ func (n NodeInterface) GasEstimateL1Component(
 	args.Gas = (*hexutil.Uint64)(&randomGas)
 
 	// We set the run mode to eth_call mode here because we want an exact estimate, not a padded estimate
-	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB), core.MessageEthcallMode)
-	if err != nil {
+	if err := args.CallDefaults(randomGas, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
 		return 0, nil, nil, err
 	}
+	sdb, ok := evm.StateDB.(*state.StateDB)
+	if !ok {
+		return 0, nil, nil, errors.New("failed to cast to stateDB")
+	}
+	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, sdb, core.MessageEthcallMode, true, true)
 
 	pricing := c.State.L1PricingState()
 	l1BaseFeeEstimate, err := pricing.PricePerUnit()
@@ -561,7 +573,7 @@ func (n NodeInterface) GasEstimateComponents(
 	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
 	args := n.messageArgs(evm, value, to, contractCreation, data)
 
-	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, nil, gasCap)
+	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, nil, nil, gasCap)
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
@@ -572,10 +584,14 @@ func (n NodeInterface) GasEstimateComponents(
 	// Setting the gas currently doesn't affect the PosterDataCost,
 	// but we do it anyways for accuracy with potential future changes.
 	args.Gas = &totalRaw
-	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB), core.MessageGasEstimationMode)
-	if err != nil {
+	if err := args.CallDefaults(gasCap, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
 		return 0, 0, nil, nil, err
 	}
+	sdb, ok := evm.StateDB.(*state.StateDB)
+	if !ok {
+		return 0, 0, nil, nil, errors.New("failed to cast to stateDB")
+	}
+	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, sdb, core.MessageGasEstimationMode, true, true)
 	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
 	if err != nil {
 		return 0, 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
@@ -643,6 +659,10 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 // L2BlockRangeForL1 fetches the L1 block number of a given l2 block number.
 // c ctx and evm mech arguments are not used but supplied to match the precompile function type in NodeInterface contract
 func (n NodeInterface) BlockL1Num(c ctx, evm mech, l2BlockNum uint64) (uint64, error) {
+	if l2BlockNum > math.MaxInt64 {
+		return 0, fmt.Errorf("requested l2 block number %d out of range for int64", l2BlockNum)
+	}
+	// #nosec G115
 	blockHeader, err := n.backend.HeaderByNumber(n.context, rpc.BlockNumber(l2BlockNum))
 	if err != nil {
 		return 0, err

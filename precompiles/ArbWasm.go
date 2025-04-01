@@ -5,6 +5,10 @@ package precompiles
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/vm"
+	gethparams "github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -79,11 +83,11 @@ func (con ArbWasm) payActivationDataFee(c ctx, evm mech, value, dataFee huge) er
 	repay := arbmath.BigSub(value, dataFee)
 
 	// transfer the fee to the network account, and the rest back to the user
-	err = util.TransferBalance(&con.Address, &network, dataFee, evm, scenario, "activate")
+	err = util.TransferBalance(&con.Address, &network, dataFee, evm, scenario, tracing.BalanceChangeTransferActivationFee)
 	if err != nil {
 		return err
 	}
-	return util.TransferBalance(&con.Address, &c.caller, repay, evm, scenario, "reimburse")
+	return util.TransferBalance(&con.Address, &c.caller, repay, evm, scenario, tracing.BalanceChangeTransferActivationReimburse)
 }
 
 // Gets the latest stylus version
@@ -133,6 +137,9 @@ func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint64, uint64, error) {
 	params, err := c.State.Programs().Params()
 	init := uint64(params.MinInitGas) * programs.MinInitGasUnits
 	cached := uint64(params.MinCachedInitGas) * programs.MinCachedGasUnits
+	if c.State.ArbOSVersion() < gethparams.ArbosVersion_StylusChargingFixes {
+		return 0, 0, vm.ErrExecutionReverted
+	}
 	return init, cached, err
 }
 

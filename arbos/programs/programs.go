@@ -13,7 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	gethParams "github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -23,6 +25,7 @@ import (
 )
 
 type Programs struct {
+	ArbosVersion   uint64
 	backingStorage *storage.Storage
 	programs       *storage.Storage
 	moduleHashes   *storage.Storage
@@ -58,14 +61,15 @@ var ProgramExpiredError func(age uint64) error
 var ProgramUpToDateError func() error
 var ProgramKeepaliveTooSoon func(age uint64) error
 
-func Initialize(sto *storage.Storage) {
-	initStylusParams(sto.OpenSubStorage(paramsKey))
+func Initialize(arbosVersion uint64, sto *storage.Storage) {
+	initStylusParams(arbosVersion, sto.OpenSubStorage(paramsKey))
 	initDataPricer(sto.OpenSubStorage(dataPricerKey))
 	_ = addressSet.Initialize(sto.OpenCachedSubStorage(cacheManagersKey))
 }
 
-func Open(sto *storage.Storage) *Programs {
+func Open(arbosVersion uint64, sto *storage.Storage) *Programs {
 	return &Programs{
+		ArbosVersion:   arbosVersion,
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(programDataKey),
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
@@ -108,7 +112,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 		// already activated and up to date
 		return 0, codeHash, common.Hash{}, nil, false, ProgramUpToDateError()
 	}
-	wasm, err := getWasm(statedb, address)
+	wasm, err := getWasm(statedb, address, params.MaxWasmSize)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
@@ -116,7 +120,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit := am.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
 
-	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, debugMode, burner)
+	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, p.ArbosVersion, debugMode, burner)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -127,6 +131,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 		if err != nil {
 			return 0, codeHash, common.Hash{}, nil, true, err
 		}
+
 		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runMode, expired)
 	}
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
@@ -161,15 +166,29 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
 
+func runModeToString(runMode core.MessageRunMode) string {
+	switch runMode {
+	case core.MessageCommitMode:
+		return "commit_runmode"
+	case core.MessageGasEstimationMode:
+		return "gas_estimation_runmode"
+	case core.MessageEthcallMode:
+		return "eth_call_runmode"
+	case core.MessageReplayMode:
+		return "replay_runmode"
+	default:
+		return "unknown_runmode"
+	}
+}
+
 func (p Programs) CallProgram(
 	scope *vm.ScopeContext,
 	statedb vm.StateDB,
-	arbosVersion uint64,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	reentrant bool,
-	runmode core.MessageRunMode,
+	runMode core.MessageRunMode,
 ) ([]byte, error) {
 	evm := interpreter.Evm()
 	contract := scope.Contract
@@ -215,13 +234,13 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.PageLimit, evm.Context.Time, debugMode, program)
+	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program)
 	if err != nil {
-		log.Crit("failed to get local wasm for activated program", "program", contract.Address())
-		return nil, err
+		panic("failed to get local wasm for activated program: " + contract.Address().Hex())
 	}
 
 	evmData := &EvmData{
+		arbosVersion:    evm.Context.ArbOSVersion,
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
 		chainId:         evm.ChainConfig().ChainID.Uint64(),
 		blockCoinbase:   evm.Context.Coinbase,
@@ -240,24 +259,27 @@ func (p Programs) CallProgram(
 	}
 
 	address := contract.Address()
-	if contract.CodeAddr != nil {
-		address = *contract.CodeAddr
-	}
 	var arbos_tag uint32
-	if runmode == core.MessageCommitMode {
+	if runMode == core.MessageCommitMode {
 		arbos_tag = statedb.Database().WasmCacheTag()
 	}
+
+	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runModeToString(runMode)), nil).Inc(1)
 	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
-	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
+	if len(ret) > 0 && p.ArbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
 			contract.Gas = 0
+			// #nosec G115
+			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runModeToString(runMode)), nil).Inc(int64(startingGas))
 			return nil, vm.ErrOutOfGas
 		}
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
 	}
+	// #nosec G115
+	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runModeToString(runMode)), nil).Inc(int64(startingGas - contract.Gas))
 	return ret, err
 }
 
@@ -269,12 +291,12 @@ func evmMemoryCost(size uint64) uint64 {
 	return linearCost + squareCost
 }
 
-func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
+func getWasm(statedb vm.StateDB, program common.Address, maxWasmSize uint32) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
-	return getWasmFromContractCode(prefixedWasm)
+	return getWasmFromContractCode(prefixedWasm, maxWasmSize)
 }
 
-func getWasmFromContractCode(prefixedWasm []byte) ([]byte, error) {
+func getWasmFromContractCode(prefixedWasm []byte, maxWasmSize uint32) ([]byte, error) {
 	if prefixedWasm == nil {
 		return nil, ProgramNotWasmError()
 	}
@@ -292,7 +314,7 @@ func getWasmFromContractCode(prefixedWasm []byte) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported dictionary %v", dictByte)
 	}
-	return arbcompress.DecompressWithDictionary(wasm, MaxWasmSize, dict)
+	return arbcompress.DecompressWithDictionary(wasm, int(maxWasmSize), dict)
 }
 
 // Gets a program entry, which may be expired or not yet activated.
@@ -427,7 +449,7 @@ func (p Programs) SetProgramCached(
 	}
 	if cache {
 		// Not passing in an address is supported pre-Verkle, as in Blockchain's ContractCodeWithPrefix method.
-		code, err := db.Database().ContractCode(common.Address{}, codeHash)
+		code, err := db.Reader().Code(common.Address{}, codeHash)
 		if err != nil {
 			return err
 		}
@@ -517,6 +539,7 @@ func (p Programs) progParams(version uint16, debug bool, params *StylusParams) *
 }
 
 type EvmData struct {
+	arbosVersion    uint64
 	blockBasefee    common.Hash
 	chainId         uint64
 	blockCoinbase   common.Address

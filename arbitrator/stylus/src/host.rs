@@ -5,8 +5,9 @@
 
 use crate::env::{Escape, HostioInfo, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::{
+    benchmark::Benchmark,
     evm::{
-        api::{DataReader, EvmApi},
+        api::{DataReader, EvmApi, Gas, Ink},
         EvmData,
     },
     Color,
@@ -21,7 +22,7 @@ use std::{
 use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
 
-impl<'a, DR, A> UserHost<DR> for HostioInfo<'a, DR, A>
+impl<DR, A> UserHost<DR> for HostioInfo<'_, DR, A>
 where
     DR: DataReader,
     A: EvmApi<DR>,
@@ -44,6 +45,10 @@ where
 
     fn evm_data(&self) -> &EvmData {
         &self.evm_data
+    }
+
+    fn benchmark(&mut self) -> &mut Benchmark {
+        &mut self.env.benchmark
     }
 
     fn evm_return_data_len(&mut self) -> &mut u32 {
@@ -82,7 +87,7 @@ where
         println!("{} {text}", "Stylus says:".yellow());
     }
 
-    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], end_ink: u64) {
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], end_ink: Ink) {
         let start_ink = self.start_ink;
         self.evm_api
             .capture_hostio(name, args, outs, start_ink, end_ink);
@@ -168,7 +173,7 @@ pub(crate) fn call_contract<D: DataReader, E: EvmApi<D>>(
 ) -> Result<u8, Escape> {
     hostio!(
         env,
-        call_contract(contract, data, data_len, value, gas, ret_len)
+        call_contract(contract, data, data_len, value, Gas(gas), ret_len)
     )
 }
 
@@ -182,7 +187,7 @@ pub(crate) fn delegate_call_contract<D: DataReader, E: EvmApi<D>>(
 ) -> Result<u8, Escape> {
     hostio!(
         env,
-        delegate_call_contract(contract, data, data_len, gas, ret_len)
+        delegate_call_contract(contract, data, data_len, Gas(gas), ret_len)
     )
 }
 
@@ -196,7 +201,7 @@ pub(crate) fn static_call_contract<D: DataReader, E: EvmApi<D>>(
 ) -> Result<u8, Escape> {
     hostio!(
         env,
-        static_call_contract(contract, data, data_len, gas, ret_len)
+        static_call_contract(contract, data, data_len, Gas(gas), ret_len)
     )
 }
 
@@ -334,13 +339,13 @@ pub(crate) fn contract_address<D: DataReader, E: EvmApi<D>>(
 pub(crate) fn evm_gas_left<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
 ) -> Result<u64, Escape> {
-    hostio!(env, evm_gas_left())
+    hostio!(env, evm_gas_left()).map(|g| g.0)
 }
 
 pub(crate) fn evm_ink_left<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
 ) -> Result<u64, Escape> {
-    hostio!(env, evm_ink_left())
+    hostio!(env, evm_ink_left()).map(|i| i.0)
 }
 
 pub(crate) fn math_div<D: DataReader, E: EvmApi<D>>(
@@ -464,3 +469,13 @@ pub(crate) fn console_tee<D: DataReader, E: EvmApi<D>, T: Into<Value> + Copy>(
 }
 
 pub(crate) fn null_host<D: DataReader, E: EvmApi<D>>(_: WasmEnvMut<D, E>) {}
+
+pub(crate) fn start_benchmark<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> MaybeEscape {
+    hostio!(env, start_benchmark())
+}
+
+pub(crate) fn end_benchmark<D: DataReader, E: EvmApi<D>>(mut env: WasmEnvMut<D, E>) -> MaybeEscape {
+    hostio!(env, end_benchmark())
+}

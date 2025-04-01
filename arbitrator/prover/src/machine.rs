@@ -371,13 +371,16 @@ impl Module {
         for import in &bin.imports {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];
-            let (forward, import_name) = match import.name.strip_prefix(Module::FORWARDING_PREFIX) {
-                Some(name) => (true, name),
-                None => (false, import.name),
-            };
+            // allow_hostapi is only set for system modules like the
+            // forwarder. We restrict stripping the prefix for user modules.
+            let (forward, import_name) =
+                if allow_hostapi && import.name.starts_with(Self::FORWARDING_PREFIX) {
+                    (true, &import.name[Self::FORWARDING_PREFIX.len()..])
+                } else {
+                    (false, import.name)
+                };
 
-            let mut qualified_name = format!("{module}__{import_name}");
-            qualified_name = qualified_name.replace(&['/', '.', '-'] as &[char], "_");
+            let qualified_name = format!("{module}__{import_name}");
 
             let func = if let Some(import) = available_imports.get(&qualified_name) {
                 let call = match forward {
@@ -1562,6 +1565,36 @@ impl Machine {
         Ok(mach)
     }
 
+    // new_finished returns a Machine in the Finished state at step 0.
+    //
+    // This allows the Mahine to be set up to model the final state of the
+    // machine at the end of the execution of a block.
+    pub fn new_finished(gs: GlobalState) -> Machine {
+        Machine {
+            steps: 0,
+            status: MachineStatus::Finished,
+            global_state: gs,
+            // The machine is in the Finished state, so nothing else really matters.
+            // values_stacks and frame_stacks cannot be empty for proof serialization,
+            // but everything else can just be entirely blank.
+            thread_state: ThreadState::Main,
+            value_stacks: vec![Vec::new()],
+            frame_stacks: vec![Vec::new()],
+            internal_stack: Default::default(),
+            modules: Default::default(),
+            modules_merkle: Default::default(),
+            pc: Default::default(),
+            stdio_output: Default::default(),
+            inbox_contents: Default::default(),
+            first_too_far: Default::default(),
+            preimage_resolver: PreimageResolverWrapper::new(Arc::new(|_, _, _| None)),
+            stylus_modules: Default::default(),
+            initial_hash: Default::default(),
+            context: Default::default(),
+            debug_info: Default::default(),
+        }
+    }
+
     pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let mut modules: Vec<Module> = {
             let compressed = std::fs::read(wavm_binary)?;
@@ -1813,7 +1846,12 @@ impl Machine {
     }
 
     #[cfg(feature = "native")]
-    pub fn call_user_func(&mut self, func: &str, args: Vec<Value>, ink: u64) -> Result<Vec<Value>> {
+    pub fn call_user_func(
+        &mut self,
+        func: &str,
+        args: Vec<Value>,
+        ink: arbutil::evm::api::Ink,
+    ) -> Result<Vec<Value>> {
         self.set_ink(ink);
         self.call_function("user", func, args)
     }
@@ -2858,6 +2896,15 @@ impl Machine {
 
         let mod_merkle = self.get_modules_merkle();
         out!(mod_merkle.root());
+
+        if self.is_halted() {
+            // If the machine is halted, instead of serializing the module,
+            // serialize the global state and return.
+            // This is for the "kickstart" BoLD proof, but it's backwards compatible
+            // with the old OSP behavior which reads no further.
+            out!(self.global_state.serialize());
+            return data;
+        }
 
         // End machine serialization, serialize module
 

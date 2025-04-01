@@ -7,7 +7,7 @@
 package programs
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
@@ -22,13 +22,15 @@ void handleReqWrap(usize api, u32 req_type, RustSlice *data, u64 *out_cost, GoSl
 }
 */
 import "C"
+
 import (
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -67,11 +69,11 @@ func newApi(
 func getApi(id usize) NativeApi {
 	any, ok := apiObjects.Load(uintptr(id))
 	if !ok {
-		log.Crit("failed to load stylus Go API", "id", id)
+		panic("failed to load stylus Go API id: " + strconv.Itoa(int(id)))
 	}
 	api, ok := any.(NativeApi)
 	if !ok {
-		log.Crit("wrong type for stylus Go API", "id", id)
+		panic("wrong type for stylus Go API id: " + strconv.Itoa(int(id)))
 	}
 	return api
 }

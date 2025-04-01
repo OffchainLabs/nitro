@@ -9,17 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 func TestOpenNonexistentRetryable(t *testing.T) {
@@ -38,6 +38,7 @@ func TestRetryableLifecycle(t *testing.T) {
 	retryableState := state.RetryableState()
 
 	lifetime := uint64(retryables.RetryableLifetimeSeconds)
+	// #nosec G115
 	timestampAtCreation := uint64(rand.Int63n(1 << 16))
 	timeoutAtCreation := timestampAtCreation + lifetime
 	currentTime := timeoutAtCreation
@@ -50,13 +51,14 @@ func TestRetryableLifecycle(t *testing.T) {
 	}
 	proveReapingDoesNothing := func() {
 		stateCheck(t, statedb, false, "reaping had an effect", func() {
-			evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+			evm := vm.NewEVM(vm.BlockContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 			Require(t, retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM))
 		})
 	}
 	checkQueueSize := func(expected int, message string) {
 		timeoutQueueSize, err := retryableState.TimeoutQueue.Size()
 		Require(t, err)
+		// #nosec G115
 		if timeoutQueueSize != uint64(expected) {
 			Fail(t, currentTime, message, timeoutQueueSize)
 		}
@@ -106,7 +108,7 @@ func TestRetryableLifecycle(t *testing.T) {
 	for range ids {
 		// check that our reap pricing is reflective of the true cost
 		gasBefore := burner.Burned()
-		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+		evm := vm.NewEVM(vm.BlockContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 		Require(t, retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM))
 		gasBurnedToReap := burner.Burned() - gasBefore
 		if gasBurnedToReap != retryables.RetryableReapPrice {
@@ -128,7 +130,7 @@ func TestRetryableLifecycle(t *testing.T) {
 		}
 
 		gasBefore := burner.Burned()
-		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+		evm := vm.NewEVM(vm.BlockContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 		Require(t, retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM))
 		gasBurnedToReapAndDelete := burner.Burned() - gasBefore
 		if gasBurnedToReapAndDelete <= retryables.RetryableReapPrice {
@@ -167,13 +169,14 @@ func TestRetryableCleanup(t *testing.T) {
 	callvalue := big.NewInt(0)
 	calldata := testhelpers.RandomizeSlice(make([]byte, rand.Intn(1<<12)))
 
+	// #nosec G115
 	timeout := uint64(rand.Int63n(1 << 16))
 	timestamp := 2 * timeout
 
 	stateCheck(t, statedb, false, "state has changed", func() {
 		_, err := retryableState.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
 		Require(t, err)
-		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+		evm := vm.NewEVM(vm.BlockContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 		Require(t, retryableState.TryToReapOneRetryable(timestamp, evm, util.TracingDuringEVM))
 		cleared, err := retryableState.TimeoutQueue.Shift()
 		Require(t, err)

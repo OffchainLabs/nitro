@@ -20,12 +20,12 @@ jobs:
       redis:
         image: redis
         ports:
-            - 6379:6379
+          - 6379:6379
 
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race, challenge, stylus, long]
+        test-mode: [defaults, pathdb, challenge, stylus]
 
     steps:
       - name: Checkout
@@ -46,7 +46,7 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.21.x
+          go-version: 1.23.x
 
       - name: Install wasm-ld
         run: |
@@ -55,26 +55,28 @@ jobs:
 
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
+        id: install-rust
         with:
-          targets: 'wasm32-unknown-unknown, wasm32-wasi'
+          toolchain: '1.84.1'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
+          components: 'llvm-tools-preview, rustfmt, clippy'
+
+      - name: Install rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        id: install-rust-nightly
+        with:
+          toolchain: 'nightly-2025-02-14'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
+          components: 'rust-src, rustfmt, clippy'
+
+      - name: Set STYLUS_NIGHTLY_VER environment variable
+        run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-
-      - name: Install rust nightly
-        uses: actions-rs/toolchain@v1
-        id: install-rust-nightly
-        with:
-          profile: minimal
-          toolchain: "nightly"
-
-      - name: Install rust wasm targets
-        run: rustup target add wasm32-wasi wasm32-unknown-unknown
-
-      - name: Install nightly wasm targets
-        run: |
-          rustup component add rust-src --toolchain nightly
-          rustup target add wasm32-unknown-unknown --toolchain nightly
+        
+      - name: Install cbindgen
+        run: cargo install --force cbindgen
 
       - name: Cache Build Products
         uses: actions/cache@v3
@@ -89,12 +91,12 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/registry/
-            ~/.cargo/git/
+            ~/.cargo/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
-            arbitrator/wasm-libraries/soft-float/SoftFloat/build
+            arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
+            /home/runner/.rustup/toolchains/
           key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
           restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
@@ -140,98 +142,60 @@ jobs:
           echo "TMPDIR=$(pwd)/target/tmp/deadbeefbee" >> "$GITHUB_ENV"
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
 
       - name: run tests without race detection and path state scheme
-        if: matrix.test-mode == 'defaults'
+        if: matrix.test-mode == 'pathdb'
         env:
           TEST_STATE_SCHEME: path
         run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 20m -tags=cionly > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+          echo "Running tests with Path Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m --cover
 
       - name: run tests without race detection and hash state scheme
         if: matrix.test-mode == 'defaults'
         env:
           TEST_STATE_SCHEME: hash
         run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 20m -tags=cionly; then
-              exit 1
-            fi
-          done
-
-      - name: run tests with race detection and path state scheme
-        if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: path
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -timeout 30m > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
-
-      - name: run tests with race detection and hash state scheme
-        if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: hash
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -timeout 30m; then
-              exit 1
-            fi
-          done
+          echo "Running tests with Hash Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: |
+          echo "Running redis tests" >> full.log
+          TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+      
+      - name: create block input json file
+        if: matrix.test-mode == 'defaults'
+        run: |
+          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target" --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
+      
+      - name: run arbitrator prover on block input json
+        if: matrix.test-mode == 'defaults'
+        run: |
+          make build-prover-bin
+          target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/TestProgramStorage/block_inputs.json"
+      
+      - name: run jit prover on block input json
+        if: matrix.test-mode == 'defaults'
+        run: |
+          make build-jit
+          if [ -n "$(target/bin/jit --binary target/machines/latest/replay.wasm --cranelift --json-inputs='${{ github.workspace }}/target/TestProgramStorage/block_inputs.json')" ]; then
+            echo "Error: Command produced output."
+            exit 1
+          fi
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --timeout 60m --cover
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramArbitrator" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
-
-      - name: run long stylus tests
-        if: matrix.test-mode == 'long'
-        run: |
-          packages=`go list ./...`
-          for package in $packages; do
-            echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramLong" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
-              exit 1
-            fi
-          done
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log

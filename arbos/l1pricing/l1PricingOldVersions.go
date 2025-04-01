@@ -8,7 +8,10 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -23,7 +26,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 	l1Basefee *big.Int,
 	scenario util.TracingScenario,
 ) error {
-	if arbosVersion < 2 {
+	if arbosVersion < params.ArbosVersion_2 {
 		return ps._preVersion2_UpdateForBatchPosterSpending(statedb, evm, updateTime, currentTime, batchPoster, weiSpent, scenario)
 	}
 
@@ -68,7 +71,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 	}
 
 	// impose cap on amortized cost, if there is one
-	if arbosVersion >= 3 {
+	if arbosVersion >= params.ArbosVersion_3 {
 		amortizedCostCapBips, err := ps.AmortizedCostCapBips()
 		if err != nil {
 			return err
@@ -118,7 +121,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		return err
 	}
 	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -140,7 +143,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 			return err
 		}
 		err = util.TransferBalance(
-			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 		)
 		if err != nil {
 			return err
@@ -297,7 +300,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 		return err
 	}
 	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -328,7 +331,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 				return err
 			}
 			err = util.TransferBalance(
-				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 			)
 			if err != nil {
 				return err

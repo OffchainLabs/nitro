@@ -11,16 +11,16 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/util"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util"
 )
 
 var simulatedChainID = big.NewInt(1337)
@@ -29,6 +29,20 @@ type AccountInfo struct {
 	Address    common.Address
 	PrivateKey *ecdsa.PrivateKey
 	Nonce      atomic.Uint64
+}
+
+type StructLogRes struct {
+	Pc            uint64             `json:"pc"`
+	Op            string             `json:"op"`
+	Gas           uint64             `json:"gas"`
+	GasCost       uint64             `json:"gasCost"`
+	Depth         int                `json:"depth"`
+	Error         string             `json:"error"`
+	Stack         *[]string          `json:"stack"`
+	ReturnData    string             `json:"returnData"`
+	Memory        *[]string          `json:"memory"`
+	Storage       *map[string]string `json:"storage"`
+	RefundCounter uint64             `json:"refund"`
 }
 
 type BlockchainTestInfo struct {
@@ -223,6 +237,7 @@ func (b *BlockchainTestInfo) PrepareTxTo(
 	txData := &types.DynamicFeeTx{
 		To:        to,
 		Gas:       gas,
+		GasTipCap: new(big.Int).Set(b.GasPrice),
 		GasFeeCap: new(big.Int).Set(b.GasPrice),
 		Value:     value,
 		Nonce:     txNonce,

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -22,6 +23,7 @@ func initializedMerkleAccumulatorForTesting() *merkleAccumulator.MerkleAccumulat
 func TestProofForNext(t *testing.T) {
 	leaves := make([]common.Hash, 13)
 	for i := range leaves {
+		// #nosec G115
 		leaves[i] = pseudorandomForTesting(uint64(i))
 	}
 

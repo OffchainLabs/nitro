@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -21,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -67,7 +69,7 @@ var cacheFullLogged atomic.Bool
 // NewGeth uses a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
-	statedb.SetNonce(account, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
+	statedb.SetNonce(account, 1, tracing.NonceChangeUnspecified) // setting the nonce ensures Geth won't treat ArbOS as empty
 	return &Storage{
 		account:    account,
 		db:         statedb,
@@ -91,8 +93,8 @@ func NewMemoryBackedStateDB() vm.StateDB {
 	if env.GetTestStateScheme() == rawdb.HashScheme {
 		trieConfig = &triedb.Config{Preimages: false, HashDB: hashdb.Defaults}
 	}
-	db := state.NewDatabaseWithConfig(raw, trieConfig)
-	statedb, err := state.New(common.Hash{}, db, nil)
+	db := state.NewDatabase(triedb.NewDatabase(raw, trieConfig), nil)
+	statedb, err := state.New(common.Hash{}, db)
 	if err != nil {
 		panic("failed to init empty statedb")
 	}
@@ -129,7 +131,7 @@ func (s *Storage) Get(key common.Hash) (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	if info := s.burner.TracingInfo(); info != nil {
-		info.RecordStorageGet(key)
+		info.RecordStorageGet(s.mapAddress(key))
 	}
 	return s.GetFree(key), nil
 }
@@ -156,11 +158,6 @@ func (s *Storage) GetUint64ByUint64(key uint64) (uint64, error) {
 	return s.GetUint64(util.UintToHash(key))
 }
 
-func (s *Storage) GetUint32(key common.Hash) (uint32, error) {
-	value, err := s.Get(key)
-	return uint32(value.Big().Uint64()), err
-}
-
 func (s *Storage) Set(key common.Hash, value common.Hash) error {
 	if s.burner.ReadOnly() {
 		log.Error("Read-only burner attempted to mutate state", "key", key, "value", value)
@@ -171,7 +168,7 @@ func (s *Storage) Set(key common.Hash, value common.Hash) error {
 		return err
 	}
 	if info := s.burner.TracingInfo(); info != nil {
-		info.RecordStorageSet(key, value)
+		info.RecordStorageSet(s.mapAddress(key), value)
 	}
 	s.db.SetState(s.account, s.mapAddress(key), value)
 	return nil
@@ -327,11 +324,11 @@ func (s *Storage) Burner() burn.Burner {
 }
 
 func (s *Storage) Keccak(data ...[]byte) ([]byte, error) {
-	byteCount := 0
+	var byteCount uint64
 	for _, part := range data {
-		byteCount += len(part)
+		byteCount += uint64(len(part))
 	}
-	cost := 30 + 6*arbmath.WordsForBytes(uint64(byteCount))
+	cost := 30 + 6*arbmath.WordsForBytes(byteCount)
 	if err := s.burner.Burn(cost); err != nil {
 		return nil, err
 	}
@@ -420,10 +417,12 @@ func (sbu *StorageBackedInt64) Get() (int64, error) {
 	if !raw.Big().IsUint64() {
 		panic("invalid value found in StorageBackedInt64 storage")
 	}
+	// #nosec G115
 	return int64(raw.Big().Uint64()), err // see implementation note above
 }
 
 func (sbu *StorageBackedInt64) Set(value int64) error {
+	// #nosec G115
 	return sbu.StorageSlot.Set(util.UintToHash(uint64(value))) // see implementation note above
 }
 
@@ -460,7 +459,7 @@ func (sbu *StorageBackedUBips) Get() (arbmath.UBips, error) {
 }
 
 func (sbu *StorageBackedUBips) Set(bips arbmath.UBips) error {
-	return sbu.backing.Set(bips.Uint64())
+	return sbu.backing.Set(uint64(bips))
 }
 
 type StorageBackedUint16 struct {
@@ -477,6 +476,7 @@ func (sbu *StorageBackedUint16) Get() (uint16, error) {
 	if !big.IsUint64() || big.Uint64() > math.MaxUint16 {
 		panic("expected uint16 compatible value in storage")
 	}
+	// #nosec G115
 	return uint16(big.Uint64()), err
 }
 
@@ -517,6 +517,7 @@ func (sbu *StorageBackedUint32) Get() (uint32, error) {
 	if !big.IsUint64() || big.Uint64() > math.MaxUint32 {
 		panic("expected uint32 compatible value in storage")
 	}
+	// #nosec G115
 	return uint32(big.Uint64()), err
 }
 

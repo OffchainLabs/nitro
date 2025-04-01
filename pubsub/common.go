@@ -2,11 +2,20 @@ package pubsub
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/go-redis/redis/v8"
 )
+
+// Make sure to never start the key with stream name, as we use patterns like "--check-streams=streamname-*"
+// to scrape stream with redis export.
+// https://github.com/oliver006/redis_exporter/blob/71dbe37fb14a4ae2537c1790a239dc1e568ffba5/main.go#L68
+func ResultKeyFor(streamName, id string) string {
+	return fmt.Sprintf("result-key:%s.%s", streamName, id)
+}
 
 // CreateStream tries to create stream with given name, if it already exists
 // does not return an error.
