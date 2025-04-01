@@ -2,22 +2,15 @@ name: Nightly CI
 run-name: Nightly CI tests triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
-  # workflow_dispatch:
-  # merge_group:
-  # pull_request:
-  # push:
-  #   branches:
-  #     - master
-  # schedule:
-  #   # Run at 00:00 AM UTC
-  #   - cron: '0 0 * * *'
   workflow_dispatch:
   merge_group:
   pull_request:
   push:
     branches:
       - master
-      - develop
+  schedule:
+    # Run at 00:00 AM UTC
+    - cron: '0 0 * * *'
 
 jobs:
   # Only run on schedule AND main branch
@@ -36,7 +29,7 @@ jobs:
       matrix:
         test-mode: [race, legacychallenge, long]
 
-    # if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
     
     steps:
       - name: Checkout
@@ -363,16 +356,16 @@ jobs:
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  # notify-on-failure:
-  #   name: Notify Slack on failure
-  #   needs: [tests-scheduled, tests-pr]
-  #   runs-on: ubuntu-latest
-  #   if: ${{ failure() && (github.event_name == 'schedule' || github.event_name == 'push') }}
-  #   steps:
-  #     - name: Send Slack notification
-  #       uses: slackapi/slack-github-action@v2.0.0
-  #       with:
-  #         channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
-  #         slack-message: "⚠️ Nightly CI job failed! ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-  #       env:
-  #         SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+  notify-on-failure:
+    name: Notify Slack on failure
+    needs: [tests-scheduled, tests-pr]
+    runs-on: ubuntu-latest
+    if: ${{ failure() && (github.event_name == 'schedule' || github.event_name == 'push') }}
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-message: "⚠️ Nightly CI job failed! ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
