@@ -18,6 +18,13 @@ type MaintenanceStatus struct {
 	IsRunning bool `json:"isRunning"`
 }
 
+type SequencedMsg struct {
+	MsgIdx        arbutil.MessageIndex
+	MsgWithMeta   arbostypes.MessageWithMetadata
+	MsgResult     MessageResult
+	BlockMetadata common.BlockMetadata
+}
+
 type MessageResult struct {
 	BlockHash common.Hash
 	SendRoot  common.Hash
@@ -86,7 +93,7 @@ type ExecutionSequencer interface {
 	Pause()
 	Activate()
 	ForwardTo(url string) error
-	Sequence(ctx context.Context) time.Duration
+	Sequence(ctx context.Context) (*SequencedMsg, time.Duration)
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	ResequenceReorgedMessages(oldMessages []*arbostypes.MessageWithMetadata)
 	NextDelayedMessageNumber() (uint64, error)

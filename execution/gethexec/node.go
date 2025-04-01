@@ -481,7 +481,7 @@ func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []
 func (n *ExecutionNode) ResequenceReorgedMessages(oldMessages []*arbostypes.MessageWithMetadata) {
 	n.ExecEngine.ResequenceReorgedMessages(oldMessages)
 }
-func (n *ExecutionNode) Sequence(ctx context.Context) time.Duration {
+func (n *ExecutionNode) Sequence(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
 	return n.Sequencer.Sequence(ctx)
 }
 func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
