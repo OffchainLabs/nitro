@@ -289,7 +289,7 @@ func (con ArbOwner) SetWasmBlockCacheSize(c ctx, _ mech, count uint16) error {
 
 // SetMaxWasmSize sets the maximum size the wasm code can be in bytes after
 // decompression.
-func (con ArbOwner) SetMaxWasmSize(c ctx, _ mech, maxWasmSize uint32) error {
+func (con ArbOwner) SetWasmMaxSize(c ctx, _ mech, maxWasmSize uint32) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err

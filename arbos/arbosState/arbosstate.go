@@ -87,7 +87,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
-		programs.Open(backingStorage.OpenSubStorage(programsSubspace)),
+		programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
 		features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenCachedSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
@@ -324,7 +324,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case params.ArbosVersion_30:
-			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
+			programs.Initialize(nextArbosVersion, state.backingStorage.OpenSubStorage(programsSubspace))
 
 		case params.ArbosVersion_31:
 			params, err := state.Programs().Params()
@@ -343,7 +343,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// be read as a parameter after arbos version 40.
 			params, err := state.Programs().Params()
 			ensure(err)
-			ensure(params.UpgradeToVersion(3))
+			ensure(params.UpgradeToArbosVersion(nextArbosVersion))
 			ensure(params.Save())
 
 		default:

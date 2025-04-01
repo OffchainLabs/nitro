@@ -41,6 +41,7 @@ const CostScalarPercent = 2  // 2% for each unit
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
 type StylusParams struct {
 	backingStorage   *storage.Storage
+	arbosVersion     uint64 // not stored
 	Version          uint16 // must only be changed during ArbOS upgrades
 	InkPrice         uint24
 	MaxStackDepth    uint32
@@ -83,8 +84,9 @@ func (p Programs) Params() (*StylusParams, error) {
 	}
 
 	// order matters!
-	params := &StylusParams{
+	stylusParams := &StylusParams{
 		backingStorage:   sto,
+		arbosVersion:     p.arbosVersion,
 		Version:          am.BytesToUint16(take(2)),
 		InkPrice:         am.BytesToUint24(take(3)),
 		MaxStackDepth:    am.BytesToUint32(take(4)),
@@ -100,12 +102,12 @@ func (p Programs) Params() (*StylusParams, error) {
 		KeepaliveDays:    am.BytesToUint16(take(2)),
 		BlockCacheSize:   am.BytesToUint16(take(2)),
 	}
-	if params.Version >= 3 {
-		params.MaxWasmSize = am.BytesToUint32(take(4))
+	if p.arbosVersion >= params.ArbosVersion_40 {
+		stylusParams.MaxWasmSize = am.BytesToUint32(take(4))
 	} else {
-		params.MaxWasmSize = initialMaxWasmSize
+		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
-	return params, nil
+	return stylusParams, nil
 }
 
 // Writes the params to permanent storage.
@@ -131,7 +133,7 @@ func (p *StylusParams) Save() error {
 		am.Uint16ToBytes(p.KeepaliveDays),
 		am.Uint16ToBytes(p.BlockCacheSize),
 	)
-	if p.Version >= 3 {
+	if p.arbosVersion >= params.ArbosVersion_40 {
 		data = append(data, am.Uint32ToBytes(p.MaxWasmSize)...)
 	}
 
@@ -160,21 +162,29 @@ func (p *StylusParams) UpgradeToVersion(version uint16) error {
 		p.Version = 2
 		p.MinInitGas = v2MinInitGas
 		return nil
-	case 3:
-		if p.Version != 2 {
-			return fmt.Errorf("unexpected upgrade from %d to %d", p.Version, version)
-		}
-		p.Version = 3
-		p.MaxWasmSize = initialMaxWasmSize
-		return nil
 	default:
-		return fmt.Errorf("unsupported upgrade to %d. Only 2 and 3 are supported.", version)
+		return fmt.Errorf("unsupported upgrade to %d. Only 2 is supported", version)
 	}
 }
 
-func initStylusParams(sto *storage.Storage) {
-	params := &StylusParams{
+func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
+	if newArbosVersion == params.ArbosVersion_40 {
+		if p.arbosVersion >= params.ArbosVersion_40 {
+			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)
+		}
+		if p.Version != 2 {
+			return fmt.Errorf("unexpected arbosVersion upgrade to %d while stylus version %d", newArbosVersion, p.Version)
+		}
+		p.MaxWasmSize = initialMaxWasmSize
+	}
+	p.arbosVersion = newArbosVersion
+	return nil
+}
+
+func initStylusParams(arbosVersion uint64, sto *storage.Storage) {
+	stylusParams := &StylusParams{
 		backingStorage:   sto,
+		arbosVersion:     arbosVersion,
 		Version:          1,
 		InkPrice:         initialInkPrice,
 		MaxStackDepth:    initialStackDepth,
@@ -190,5 +200,8 @@ func initStylusParams(sto *storage.Storage) {
 		KeepaliveDays:    initialKeepaliveDays,
 		BlockCacheSize:   initialRecentCacheSize,
 	}
-	_ = params.Save()
+	if arbosVersion >= params.ArbosVersion_40 {
+		stylusParams.MaxWasmSize = initialMaxWasmSize
+	}
+	_ = stylusParams.Save()
 }

@@ -25,6 +25,7 @@ import (
 )
 
 type Programs struct {
+	arbosVersion   uint64
 	backingStorage *storage.Storage
 	programs       *storage.Storage
 	moduleHashes   *storage.Storage
@@ -60,14 +61,15 @@ var ProgramExpiredError func(age uint64) error
 var ProgramUpToDateError func() error
 var ProgramKeepaliveTooSoon func(age uint64) error
 
-func Initialize(sto *storage.Storage) {
-	initStylusParams(sto.OpenSubStorage(paramsKey))
+func Initialize(arbosVersion uint64, sto *storage.Storage) {
+	initStylusParams(arbosVersion, sto.OpenSubStorage(paramsKey))
 	initDataPricer(sto.OpenSubStorage(dataPricerKey))
 	_ = addressSet.Initialize(sto.OpenCachedSubStorage(cacheManagersKey))
 }
 
-func Open(sto *storage.Storage) *Programs {
+func Open(arbosVersion uint64, sto *storage.Storage) *Programs {
 	return &Programs{
+		arbosVersion:   arbosVersion,
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(programDataKey),
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
@@ -84,7 +86,7 @@ func (p Programs) CacheManagers() *addressSet.AddressSet {
 	return p.cacheManagers
 }
 
-func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVersion uint64, runMode core.MessageRunMode, debugMode bool) (
+func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode core.MessageRunMode, debugMode bool) (
 	uint16, common.Hash, common.Hash, *big.Int, bool, error,
 ) {
 	statedb := evm.StateDB
@@ -118,7 +120,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, arbosVers
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit := am.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
 
-	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, arbosVersion, debugMode, burner)
+	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, p.arbosVersion, debugMode, burner)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -182,7 +184,6 @@ func runModeToString(runMode core.MessageRunMode) string {
 func (p Programs) CallProgram(
 	scope *vm.ScopeContext,
 	statedb vm.StateDB,
-	arbosVersion uint64,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
@@ -233,7 +234,7 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.PageLimit, evm.Context.Time, debugMode, program)
+	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program)
 	if err != nil {
 		panic("failed to get local wasm for activated program: " + contract.Address().Hex())
 	}
@@ -265,7 +266,7 @@ func (p Programs) CallProgram(
 
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runModeToString(runMode)), nil).Inc(1)
 	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
-	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
+	if len(ret) > 0 && p.arbosVersion >= gethParams.ArbosVersion_40 {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
