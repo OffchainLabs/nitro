@@ -36,13 +36,12 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 	debug := evm.ChainConfig().DebugMode()
 	runMode := c.txProcessor.RunMode()
 	programs := c.State.Programs()
-	arbosVersion := c.State.ArbOSVersion()
 
 	// charge a fixed cost up front to begin activation
 	if err := c.Burn(1659168); err != nil {
 		return 0, nil, err
 	}
-	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, arbosVersion, runMode, debug)
+	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, runMode, debug)
 	if takeAllGas {
 		_ = c.BurnOut()
 	}
