@@ -122,7 +122,6 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 	return p.state.Programs().CallProgram(
 		scope,
 		p.evm.StateDB,
-		p.state.ArbOSVersion(),
 		interpreter,
 		tracingInfo,
 		input,
