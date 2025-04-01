@@ -259,7 +259,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			// If the deposit value was lower than the submission fee, only some (or none) of the submission fee may be moved.
 			// In that case, any amount up to the deposit value will be refunded to the fee refund address,
 			// with the rest remaining in the transaction sender's address (as that's where the funds were pulled from).
-			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee, tracing.BalanceChangeTransferNetworkRefund); err != nil {
+			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee, tracing.BalanceChangeTransferRetryableExcessRefund); err != nil {
 				glog.Error("failed to refund withheldSubmissionFee", "err", err)
 			}
 			return true, 0, callValueErr, nil
