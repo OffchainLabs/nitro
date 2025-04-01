@@ -1657,17 +1657,17 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		})
 	}
 
-	s.CallIteratively(func(ctx context.Context) time.Duration {
-		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
-		if s.createBlock(ctx) {
-			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
-			return time.Until(nextBlock)
-		}
-		// If we didn't make a block, try again immediately.
-		return 0
-	})
-
 	return nil
+}
+
+func (s *Sequencer) Sequence(ctx context.Context) time.Duration {
+	nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
+	if s.createBlock(ctx) {
+		// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
+		return time.Until(nextBlock)
+	}
+	// If we didn't make a block, try again immediately.
+	return 0
 }
 
 type TxSource int
