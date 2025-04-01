@@ -31,5 +31,6 @@ func (s *SequencerTrigger) Start(ctx_in context.Context) {
 }
 
 func (s *SequencerTrigger) triggerSequencing(ctx context.Context) time.Duration {
-	return s.execSequencer.Sequence(ctx)
+	_, nextSequenceCall := s.execSequencer.Sequence(ctx)
+	return nextSequenceCall
 }
