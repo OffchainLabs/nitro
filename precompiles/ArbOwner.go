@@ -287,6 +287,17 @@ func (con ArbOwner) SetWasmBlockCacheSize(c ctx, _ mech, count uint16) error {
 	return params.Save()
 }
 
+// SetMaxWasmSize sets the maximum size the wasm code can be in bytes after
+// decompression.
+func (con ArbOwner) SetWasmMaxSize(c ctx, _ mech, maxWasmSize uint32) error {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.MaxWasmSize = maxWasmSize
+	return params.Save()
+}
+
 // Adds account as a wasm cache manager
 func (con ArbOwner) AddWasmCacheManager(c ctx, _ mech, manager addr) error {
 	return c.State.Programs().CacheManagers().Add(manager)
@@ -352,4 +363,10 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 		}
 	}
 	return c.State.SetChainConfig(serializedChainConfig)
+}
+
+// SetCalldataPriceIncrease sets the increased calldata price feature on or off
+// (EIP-7623)
+func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
+	return c.State.Features().SetCalldataPriceIncrease(enable)
 }

@@ -23,7 +23,7 @@ import (
 )
 
 // Fail a test should an error occur
-func RequireImpl(t *testing.T, err error, printables ...interface{}) {
+func RequireImpl(t testing.TB, err error, printables ...interface{}) {
 	t.Helper()
 	if err != nil {
 		t.Log(string(debug.Stack()))
