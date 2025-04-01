@@ -3,6 +3,7 @@
 
 use crate::{ARGS, EVER_PAGES, EVM_DATA, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{
+    benchmark::Benchmark,
     evm::{
         api::{EvmApi, Gas, Ink, VecReader},
         user::UserOutcomeKind,
@@ -28,6 +29,7 @@ impl From<MemoryBoundsError> for eyre::ErrReport {
 /// Mock type representing a `user_host::Program`
 pub struct Program {
     evm_api: MockEvmApi,
+    benchmark: Benchmark,
 }
 
 #[allow(clippy::unit_arg)]
@@ -50,6 +52,10 @@ impl UserHost<VecReader> for Program {
 
     fn evm_data(&self) -> &EvmData {
         &EVM_DATA
+    }
+
+    fn benchmark(&mut self) -> &mut Benchmark {
+        &mut self.benchmark
     }
 
     fn evm_return_data_len(&mut self) -> &mut u32 {
@@ -91,6 +97,7 @@ impl Program {
     pub fn current() -> Self {
         Self {
             evm_api: MockEvmApi,
+            benchmark: Benchmark::default(),
         }
     }
 
@@ -189,7 +196,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         unimplemented!()
     }
 
-    fn account_code(&mut self, _address: Bytes20, _gas_left: Gas) -> (VecReader, Gas) {
+    fn account_code(&mut self, _arbos_version: u64, _address: Bytes20, _gas_left: Gas) -> (VecReader, Gas) {
         unimplemented!()
     }
 

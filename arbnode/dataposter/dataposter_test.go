@@ -3,12 +3,14 @@ package dataposter
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
 	"github.com/Knetic/govaluate"
+	"github.com/google/go-cmp/cmp"
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -17,26 +19,11 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/google/go-cmp/cmp"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
-
-func signerTestCfg(addr common.Address, url string) (*ExternalSignerCfg, error) {
-	cp, err := externalsignertest.CertPaths()
-	if err != nil {
-		return nil, fmt.Errorf("getting certificates path: %w", err)
-	}
-	return &ExternalSignerCfg{
-		Address:          common.Bytes2Hex(addr.Bytes()),
-		URL:              url,
-		Method:           externalsignertest.SignerMethod,
-		RootCA:           cp.ServerCert,
-		ClientCert:       cp.ClientCert,
-		ClientPrivateKey: cp.ClientKey,
-	}, nil
-}
 
 var (
 	blobTx = types.NewTx(
@@ -78,7 +65,7 @@ func TestExternalSigner(t *testing.T) {
 			return
 		}
 	}()
-	signerCfg, err := signerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := ExternalSignerTestCfg(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting signer test config: %v", err)
 	}
@@ -222,6 +209,11 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 			From: common.Address{},
 		},
 		maxFeeCapExpression: expression,
+		parentChainID:       big.NewInt(1337),
+		parentChain: &parent.ParentChain{
+			ChainID:  big.NewInt(1337),
+			L1Reader: nil,
+		},
 	}
 
 	ctx := context.Background()
@@ -353,6 +345,11 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 			From: common.Address{},
 		},
 		maxFeeCapExpression: expression,
+		parentChainID:       big.NewInt(1337),
+		parentChain: &parent.ParentChain{
+			ChainID:  big.NewInt(1337),
+			L1Reader: nil,
+		},
 	}
 
 	ctx := context.Background()

@@ -11,21 +11,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/validator"
-
-	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/rpcclient"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
-
-	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/offchainlabs/nitro/validator/server_common"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api"
+	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 type ValidationClient struct {
@@ -155,10 +153,14 @@ func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) 
 	}
 }
 
-func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
+func (c *ExecutionClient) CreateExecutionRun(
+	wasmModuleRoot common.Hash,
+	input *validator.ValidationInput,
+	useBoldMachine bool,
+) containers.PromiseInterface[validator.ExecutionRun] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input))
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), useBoldMachine)
 		if err != nil {
 			return nil, err
 		}
@@ -194,6 +196,10 @@ func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
 		log.Error("execution run keepalive failed", "err", err)
 	}
 	return time.Minute // TODO: configurable
+}
+
+func (r *ExecutionClientRun) CheckAlive(ctx context.Context) error {
+	return r.client.client.CallContext(ctx, nil, server_api.Namespace+"_checkAlive", r.id)
 }
 
 func (r *ExecutionClientRun) Start(ctx_in context.Context) {

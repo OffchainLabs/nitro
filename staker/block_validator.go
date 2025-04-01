@@ -16,14 +16,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -31,7 +35,6 @@ import (
 	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/spf13/pflag"
 )
 
 var (
@@ -94,7 +97,8 @@ type BlockValidator struct {
 	pendingWasmModuleRoot common.Hash
 
 	// for testing only
-	testingProgressMadeChan chan struct{}
+	testingProgressMadeChan  chan struct{}
+	testingProgressMadeMutex sync.Mutex
 
 	// For troubleshooting failed validations
 	validationInputsWriter *inputs.Writer
@@ -312,7 +316,7 @@ func NewBlockValidator(
 	}
 	// genesis block is impossible to validate unless genesis state is empty
 	if ret.lastValidGS.Batch == 0 && ret.legacyValidInfo == nil {
-		genesis, err := streamer.ResultAtCount(1)
+		genesis, err := streamer.ResultAtMessageIndex(0)
 		if err != nil {
 			return nil, err
 		}
@@ -340,7 +344,7 @@ func NewBlockValidator(
 	return ret, nil
 }
 
-func atomicStorePos(addr *atomic.Uint64, val arbutil.MessageIndex, metr metrics.Gauge) {
+func atomicStorePos(addr *atomic.Uint64, val arbutil.MessageIndex, metr *metrics.Gauge) {
 	addr.Store(uint64(val))
 	// #nosec G115
 	metr.Update(int64(val))
@@ -486,9 +490,12 @@ func GlobalStateToMsgCount(tracker InboxTrackerInterface, streamer TransactionSt
 	if processed < count {
 		return false, 0, nil
 	}
-	res, err := streamer.ResultAtCount(count)
-	if err != nil {
-		return false, 0, err
+	res := &execution.MessageResult{}
+	if count > 0 {
+		res, err = streamer.ResultAtMessageIndex(count - 1)
+		if err != nil {
+			return false, 0, err
+		}
 	}
 	if res.BlockHash != gs.BlockHash || res.SendRoot != gs.SendRoot {
 		return false, 0, fmt.Errorf("%w: count %d hash %v expected %v, sendroot %v expected %v", ErrGlobalStateNotInChain, count, gs.BlockHash, res.BlockHash, gs.SendRoot, res.SendRoot)
@@ -586,7 +593,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	if err != nil {
 		return false, err
 	}
-	endRes, err := v.streamer.ResultAtCount(pos + 1)
+	endRes, err := v.streamer.ResultAtMessageIndex(pos)
 	if err != nil {
 		return false, err
 	}
@@ -860,9 +867,12 @@ validationsLoop:
 			v.validations.Delete(pos)
 			nonBlockingTrigger(v.createNodesChan)
 			nonBlockingTrigger(v.sendRecordChan)
+			v.testingProgressMadeMutex.Lock()
 			if v.testingProgressMadeChan != nil {
 				nonBlockingTrigger(v.testingProgressMadeChan)
 			}
+			v.testingProgressMadeMutex.Unlock()
+
 			log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
 			continue
 		}
@@ -1098,7 +1108,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		v.possiblyFatal(err)
 		return err
 	}
-	res, err := v.streamer.ResultAtCount(count)
+	res, err := v.streamer.ResultAtMessageIndex(count - 1)
 	if err != nil {
 		v.possiblyFatal(err)
 		return err
@@ -1115,7 +1125,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		}
 		v.validations.Delete(iPos)
 	}
-	v.nextCreateStartGS = buildGlobalState(*res, endPosition)
+	v.nextCreateStartGS = BuildGlobalState(*res, endPosition)
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	v.nextCreateBatchReread = true
 	v.prevBatchCache = make(map[uint64][]byte)
@@ -1243,10 +1253,15 @@ func (v *BlockValidator) checkLegacyValid() error {
 		log.Warn("legacy valid message count ahead of db", "current", processedCount, "required", msgCount)
 		return nil
 	}
-	result, err := v.streamer.ResultAtCount(msgCount)
-	if err != nil {
-		return err
+
+	result := &execution.MessageResult{}
+	if msgCount > 0 {
+		result, err = v.streamer.ResultAtMessageIndex(msgCount - 1)
+		if err != nil {
+			return err
+		}
 	}
+
 	if result.BlockHash != v.legacyValidInfo.BlockHash {
 		log.Error("legacy validated blockHash does not fit chain", "info.BlockHash", v.legacyValidInfo.BlockHash, "chain", result.BlockHash, "count", msgCount)
 		return fmt.Errorf("legacy validated blockHash does not fit chain")
@@ -1372,7 +1387,9 @@ func (v *BlockValidator) StopAndWait() {
 // WaitForPos can only be used from One thread
 func (v *BlockValidator) WaitForPos(t *testing.T, ctx context.Context, pos arbutil.MessageIndex, timeout time.Duration) bool {
 	triggerchan := make(chan struct{})
+	v.testingProgressMadeMutex.Lock()
 	v.testingProgressMadeChan = triggerchan
+	v.testingProgressMadeMutex.Unlock()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	lastLoop := false

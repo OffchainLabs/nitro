@@ -9,17 +9,20 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/holiman/uint256"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -114,7 +117,7 @@ func TestArbOwner(t *testing.T) {
 		Fail(t, avail)
 	}
 	deposited := big.NewInt(1000000)
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(deposited))
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(deposited), tracing.BalanceChangeUnspecified)
 	avail, err = gasInfo.GetL1FeesAvailable(callCtx, evm)
 	Require(t, err)
 	if avail.Sign() != 0 {
@@ -151,6 +154,58 @@ func TestArbOwner(t *testing.T) {
 	if avail.Cmp(deposited) != 0 {
 		Fail(t, avail, deposited)
 	}
+
+	err = prec.SetNetworkFeeAccount(callCtx, evm, addr1)
+	Require(t, err)
+	retrievedNetworkFeeAccount, err := prec.GetNetworkFeeAccount(callCtx, evm)
+	Require(t, err)
+	if retrievedNetworkFeeAccount.Cmp(addr1) != 0 {
+		Fail(t, "Expected", addr1, "got", retrievedNetworkFeeAccount)
+	}
+
+	l2BaseFee := big.NewInt(123)
+	err = prec.SetL2BaseFee(callCtx, evm, l2BaseFee)
+	Require(t, err)
+	retrievedL2BaseFee, err := state.L2PricingState().BaseFeeWei()
+	Require(t, err)
+	if l2BaseFee.Cmp(retrievedL2BaseFee) != 0 {
+		Fail(t, "Expected", l2BaseFee, "got", retrievedL2BaseFee)
+	}
+
+	params, err := state.Programs().Params()
+	Require(t, err)
+	maxWasmSize := params.MaxWasmSize
+	want := 128 * 1024 // Initial maxWasmSize
+	if maxWasmSize != uint32(want) {
+		Fail(t, "Got", maxWasmSize, "want", want)
+	}
+
+	want = 256 * 1024
+	params.MaxWasmSize = uint32(want)
+	if err := params.Save(); err != nil {
+		Fail(t, err)
+	}
+	params, err = state.Programs().Params()
+	Require(t, err)
+	maxWasmSize = params.MaxWasmSize
+	if maxWasmSize != uint32(want) {
+		Fail(t, "Got", maxWasmSize, "want", want)
+	}
+
+	pubPrec := &ArbOwnerPublic{}
+
+	cdpi, err := pubPrec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
+	Require(t, err)
+	if cdpi {
+		Fail(t)
+	}
+	err = prec.SetCalldataPriceIncrease(callCtx, evm, true)
+	Require(t, err)
+	cdpi, err = pubPrec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
+	Require(t, err)
+	if !cdpi {
+		Fail(t)
+	}
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
@@ -163,7 +218,7 @@ func TestArbOwnerSetChainConfig(t *testing.T) {
 	prec := &ArbOwner{}
 	callCtx := testContext(caller, evm)
 
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams.AllowDebugPrecompiles = false
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
@@ -199,7 +254,7 @@ func TestArbInfraFeeAccount(t *testing.T) {
 	err = prec.SetInfraFeeAccount(callCtx, evm, newAddr) // this should be a no-op (because ArbOS version 0)
 	Require(t, err)
 
-	version5 := uint64(5)
+	version5 := params.ArbosVersion_5
 	evm = newMockEVMForTestingWithVersion(&version5)
 	callCtx = testContext(caller, evm)
 	prec = &ArbOwner{}

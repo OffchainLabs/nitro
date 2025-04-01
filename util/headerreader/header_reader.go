@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -19,13 +21,26 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	flag "github.com/spf13/pflag"
 )
 
 // A regexp matching "execution reverted" errors returned from the parent chain RPC.
-var ExecutionRevertedRegexp = regexp.MustCompile(`(?i)execution reverted|VM execution error\.?`)
+var executionRevertedRegexp = regexp.MustCompile(`(?i)execution reverted|VM execution error\.?`)
+
+// IsExecutionReverted returns true if the error is an "execution reverted" error or if the error is a rpc.Error with ErrorCode 3.
+func IsExecutionReverted(err error) bool {
+	if executionRevertedRegexp.MatchString(err.Error()) {
+		return true
+	}
+	var rpcError rpc.Error
+	ok := errors.As(err, &rpcError)
+	if ok && rpcError.ErrorCode() == 3 {
+		return true
+	}
+	return false
+}
 
 type ArbSysInterface interface {
 	ArbBlockNumber(*bind.CallOpts) (*big.Int, error)

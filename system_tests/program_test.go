@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -58,6 +59,12 @@ func TestProgramKeccak(t *testing.T) {
 			builder.WithExtraArchs(allWasmTargets)
 		})
 	})
+
+	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
+		keccakTest(t, true, func(builder *NodeBuilder) {
+			builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+		})
+	})
 }
 
 func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
@@ -68,7 +75,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
 	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
@@ -81,7 +88,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 			Fatal(t, "activate should have failed with ProgramUpToDate", err)
 		}
 	})
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	if programAddress == otherAddressSameCode {
 		Fatal(t, "expected to deploy at two separate program addresses")
@@ -163,6 +170,11 @@ func TestProgramActivateTwice(t *testing.T) {
 			builder.WithExtraArchs(allWasmTargets)
 		})
 	})
+	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
+		testActivateTwice(t, true, func(builder *NodeBuilder) {
+			builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+		})
+	})
 }
 
 func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
@@ -194,7 +206,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	preimage := []byte("it's time to du-du-du-du d-d-d-d-d-d-d de-duplicate")
 
@@ -219,7 +231,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	// Calling the contract pre-activation should fail.
 	checkReverts()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// mechanisms for creating calldata
 	activateProgram, _ := util.NewCallParser(pgen.ArbWasmABI, "activateProgram")
@@ -242,7 +254,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	// Ensure the revert also reverted keccak's activation
 	checkReverts()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// Activate keccak program A, then call into B, which should succeed due to being the same codehash
 	args = argsForMulticall(vm.CALL, types.ArbWasmAddress, oneEth, pack(activateProgram(keccakA)))
@@ -250,7 +262,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, oneEth, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 2)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 2)
 
 	validateBlocks(t, 7, jit, builder)
 }
@@ -535,6 +547,16 @@ func testCalls(t *testing.T, jit bool) {
 	defer cleanup()
 	callsAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
+	// checks that ArbInfo.GetCode works properly
+	codeFromFile, _ := readWasmFile(t, rustFile("multicall"))
+	arbInfo, err := pgen.NewArbInfo(types.ArbInfoAddress, l2client)
+	Require(t, err)
+	codeFromArbInfo, err := arbInfo.GetCode(nil, callsAddr)
+	Require(t, err)
+	if !bytes.Equal(codeFromFile, codeFromArbInfo) {
+		t.Fatal("ArbInfo.GetCode returned wrong code")
+	}
+
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
@@ -712,6 +734,13 @@ func testCalls(t *testing.T, jit bool) {
 	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, value, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	balance := GetBalance(t, ctx, l2client, eoa)
+	if !arbmath.BigEquals(balance, value) {
+		Fatal(t, balance, value)
+	}
+
+	// checks that ArbInfo.GetBalance works properly
+	balance, err = arbInfo.GetBalance(nil, eoa)
+	Require(t, err)
 	if !arbmath.BigEquals(balance, value) {
 		Fatal(t, balance, value)
 	}
@@ -983,6 +1012,31 @@ func testCreate(t *testing.T, jit bool) {
 	validateBlockRange(t, blocks, jit, builder)
 }
 
+func TestProgramInfiniteLoopShouldCauseErrOutOfGas(t *testing.T) {
+	t.Parallel()
+	testInfiniteLoopCausesErrOutOfGas(t, true)
+	testInfiniteLoopCausesErrOutOfGas(t, false)
+}
+
+func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	userWasm := deployWasm(t, ctx, auth, l2client, "../arbitrator/prover/test-cases/user.wat")
+	// Passing input of size 4 invokes $infinite_loop function that calls the infinite loop
+	tx := l2info.PrepareTxTo("Owner", &userWasm, 1000000, nil, make([]byte, 4))
+	Require(t, l2client.SendTransaction(ctx, tx))
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	if !strings.Contains(err.Error(), vm.ErrOutOfGas.Error()) {
+		t.Fatalf("transaction should have failed with out of gas error but instead failed with: %v", err)
+	}
+
+	validateBlocks(t, receipt.BlockNumber.Uint64(), jit, builder)
+}
+
 func TestProgramMemory(t *testing.T) {
 	t.Parallel()
 	testMemory(t, true)
@@ -1240,6 +1294,140 @@ func testSdkStorage(t *testing.T, jit bool) {
 	receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
 	rustCost = receipt.GasUsedForL2()
 	check()
+}
+
+func TestStylusPrecompileMethodsSimple(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	arbDebug, err := pgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	Require(t, err)
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, builder.L2.Client)
+	Require(t, err)
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	ownerAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	ensure(arbDebug.BecomeChainOwner(&ownerAuth))
+
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
+	programAddress := deployContract(t, ctx, ownerAuth, builder.L2.Client, wasm)
+
+	activateAuth := ownerAuth
+	activateAuth.Value = oneEth
+	ensure(arbWasm.ActivateProgram(&activateAuth, programAddress))
+
+	expectedExpiryDays := uint16(1)
+	ensure(arbOwner.SetWasmExpiryDays(&ownerAuth, expectedExpiryDays))
+	ed, err := arbWasm.ExpiryDays(nil)
+	Require(t, err)
+	if ed != expectedExpiryDays {
+		t.Errorf("ExpiryDays from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ed, expectedExpiryDays)
+	}
+	ptl, err := arbWasm.ProgramTimeLeft(nil, programAddress)
+	Require(t, err)
+	expectedExpirySeconds := (uint64(expectedExpiryDays) * 24 * 3600)
+	// ProgramTimeLeft returns time in seconds to expiry and the current ExpiryDays is set to 1 day
+	// We expect the lag of 3600 seconds to exist because program.activatedAt uses hoursSinceArbitrum that
+	// rounds down (the current time since ArbitrumStartTime in hours)/3600
+	if expectedExpirySeconds-ptl > 3600 {
+		t.Errorf("ProgramTimeLeft from arbWasm precompile returned value lesser than expected. %d <= want <= %d, have: %d", expectedExpirySeconds-3600, expectedExpirySeconds, ptl)
+	}
+
+	ensure(arbOwner.SetWasmBlockCacheSize(&ownerAuth, 100))
+	bcs, err := arbWasm.BlockCacheSize(nil)
+	Require(t, err)
+	if bcs != 100 {
+		t.Errorf("BlockCacheSize from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", bcs, 100)
+	}
+
+	ensure(arbOwner.SetWasmFreePages(&ownerAuth, 3))
+	fp, err := arbWasm.FreePages(nil)
+	Require(t, err)
+	if fp != 3 {
+		t.Errorf("FreePages from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", fp, 3)
+	}
+
+	ensure(arbOwner.SetWasmInitCostScalar(&ownerAuth, uint64(4)))
+	ics, err := arbWasm.InitCostScalar(nil)
+	Require(t, err)
+	if ics != uint64(4) {
+		t.Errorf("InitCostScalar from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ics, 4)
+	}
+
+	ensure(arbOwner.SetInkPrice(&ownerAuth, uint32(5)))
+	ip, err := arbWasm.InkPrice(nil)
+	Require(t, err)
+	if ip != uint32(5) {
+		t.Errorf("InkPrice from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ip, 5)
+	}
+
+	ensure(arbOwner.SetWasmKeepaliveDays(&ownerAuth, 0))
+	kad, err := arbWasm.KeepaliveDays(nil)
+	Require(t, err)
+	if kad != 0 {
+		t.Errorf("KeepaliveDays from arbWasm precompile didnt match the value set by arbowner. have: %d, want: 0", kad)
+	}
+
+	ensure(arbOwner.SetWasmMaxStackDepth(&ownerAuth, uint32(6)))
+	msd, err := arbWasm.MaxStackDepth(nil)
+	Require(t, err)
+	if msd != uint32(6) {
+		t.Errorf("MaxStackDepth from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", msd, 6)
+	}
+
+	// Setting low values of gas and cached parameters ensures when MinInitGas is called on ArbWasm precompile,
+	// the returned values would be programs.MinInitGasUnits and programs.MinCachedGasUnits
+	ensure(arbOwner.SetWasmMinInitGas(&ownerAuth, 1, 1))
+	mig, err := arbWasm.MinInitGas(nil)
+	Require(t, err)
+	if mig.Gas != programs.MinInitGasUnits {
+		t.Errorf("MinInitGas from arbWasm precompile didnt match the Gas value set by arbowner. have: %d, want: %d", mig.Gas, programs.MinInitGasUnits)
+	}
+	if mig.Cached != programs.MinCachedGasUnits {
+		t.Errorf("MinInitGas from arbWasm precompile didnt match the Cached value set by arbowner. have: %d, want: %d", mig.Cached, programs.MinCachedGasUnits)
+	}
+
+	ensure(arbOwner.SetWasmPageGas(&ownerAuth, 7))
+	pg, err := arbWasm.PageGas(nil)
+	Require(t, err)
+	if pg != 7 {
+		t.Errorf("PageGas from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", pg, 7)
+	}
+
+	ensure(arbOwner.SetWasmPageLimit(&ownerAuth, 8))
+	pl, err := arbWasm.PageLimit(nil)
+	Require(t, err)
+	if pl != 8 {
+		t.Errorf("PageLimit from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", pl, 8)
+	}
+
+	// pageramp currently is initialPageRamp = 620674314 value in programs package
+	_, err = arbWasm.PageRamp(nil)
+	Require(t, err)
+
+	codehash := crypto.Keccak256Hash(wasm)
+	cas, err := arbWasm.CodehashAsmSize(nil, codehash)
+	Require(t, err)
+	if cas == 0 {
+		t.Error("CodehashAsmSize from arbWasm precompile returned 0 value")
+	}
+	// Since ArbOwner has set wasm KeepaliveDays to 0, it enables us to do this, though this shouldn't have any effect
+	codehashKeepaliveAuth := ownerAuth
+	codehashKeepaliveAuth.Value = oneEth
+	ensure(arbWasm.CodehashKeepalive(&codehashKeepaliveAuth, codehash))
 }
 
 func TestProgramActivationLogs(t *testing.T) {
@@ -1711,7 +1899,7 @@ func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 		Require(t, err)
 		meta, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageNumber()
+		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
 		Require(t, err)
 		return msgExecuted+1 >= msgCount && meta.MessageCount >= msgCount
 	})
@@ -1906,7 +2094,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	storeMap, err := createMapFromDb(wasmDb)
 	Require(t, err)
 
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	// close nodeB
 	cleanupB()
 
@@ -1963,7 +2151,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 		}
 	}
 
-	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	cleanupB()
 }
 
@@ -1990,25 +2178,43 @@ func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
 	return modules
 }
 
-func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []string, numModules int) {
+func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []ethdb.WasmTarget, numModules int) {
+	t.Helper()
 	modules := readModuleHashes(t, wasmDb)
 	if len(modules) != numModules {
 		t.Fatalf("Unexpected number of module hashes found in wasm store, want: %d, have: %d", numModules, len(modules))
 	}
-	for _, module := range modules {
-		for _, target := range targets {
-			wasmTarget := ethdb.WasmTarget(target)
-			if !rawdb.IsSupportedWasmTarget(wasmTarget) {
-				t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
-			}
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
-					}
-				}()
-				_ = rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+	readAsm := func(module common.Hash, target string) []byte {
+		wasmTarget := ethdb.WasmTarget(target)
+		if !rawdb.IsSupportedWasmTarget(wasmTarget) {
+			t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
+		}
+		return func() []byte {
+			t.Helper()
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
+				}
 			}()
+			return rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+		}()
+	}
+	for _, module := range modules {
+		for _, target := range allWasmTargets {
+			var expected bool
+			for _, expectedTarget := range expectedTargets {
+				if ethdb.WasmTarget(target) == expectedTarget {
+					expected = true
+					break
+				}
+			}
+			asm := readAsm(module, target)
+			if expected && len(asm) == 0 {
+				t.Fatalf("Missing asm for target: %v, module: %v", target, module)
+			}
+			if !expected && len(asm) > 0 {
+				t.Fatalf("Found asm for target: %v, module: %v, expected targets: %v", target, module, expectedTargets)
+			}
 		}
 	}
 }

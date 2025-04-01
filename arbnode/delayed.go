@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -334,7 +334,11 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		if err != nil {
 			return nil, nil, err
 		}
-		return parsedLog.MessageNum, args["messageData"].([]byte), nil
+		dataBytes, ok := args["messageData"].([]byte)
+		if !ok {
+			return nil, nil, errors.New("messageData not a byte array")
+		}
+		return parsedLog.MessageNum, dataBytes, nil
 	default:
 		return nil, nil, errors.New("unexpected log type")
 	}

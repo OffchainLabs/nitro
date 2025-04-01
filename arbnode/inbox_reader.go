@@ -13,10 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -27,7 +28,6 @@ import (
 type InboxReaderConfig struct {
 	DelayBlocks         uint64        `koanf:"delay-blocks" reload:"hot"`
 	CheckDelay          time.Duration `koanf:"check-delay" reload:"hot"`
-	HardReorg           bool          `koanf:"hard-reorg" reload:"hot"`
 	MinBlocksToRead     uint64        `koanf:"min-blocks-to-read" reload:"hot"`
 	DefaultBlocksToRead uint64        `koanf:"default-blocks-to-read" reload:"hot"`
 	TargetMessagesRead  uint64        `koanf:"target-messages-read" reload:"hot"`
@@ -51,7 +51,6 @@ func (c *InboxReaderConfig) Validate() error {
 func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
 	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "the maximum time to wait between inbox checks (if not enough new blocks are found)")
-	f.Bool(prefix+".hard-reorg", DefaultInboxReaderConfig.HardReorg, "erase future transactions in addition to overwriting existing ones on reorg")
 	f.Uint64(prefix+".min-blocks-to-read", DefaultInboxReaderConfig.MinBlocksToRead, "the minimum number of blocks to read at once (when caught up lowers load on L1)")
 	f.Uint64(prefix+".default-blocks-to-read", DefaultInboxReaderConfig.DefaultBlocksToRead, "the default number of blocks to read at once (will vary based on traffic by default)")
 	f.Uint64(prefix+".target-messages-read", DefaultInboxReaderConfig.TargetMessagesRead, "if adjust-blocks-to-read is enabled, the target number of messages to read at once")
@@ -62,7 +61,6 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultInboxReaderConfig = InboxReaderConfig{
 	DelayBlocks:         0,
 	CheckDelay:          time.Minute,
-	HardReorg:           false,
 	MinBlocksToRead:     1,
 	DefaultBlocksToRead: 100,
 	TargetMessagesRead:  500,
@@ -73,7 +71,6 @@ var DefaultInboxReaderConfig = InboxReaderConfig{
 var TestInboxReaderConfig = InboxReaderConfig{
 	DelayBlocks:         0,
 	CheckDelay:          time.Millisecond * 10,
-	HardReorg:           false,
 	MinBlocksToRead:     1,
 	DefaultBlocksToRead: 100,
 	TargetMessagesRead:  500,
@@ -229,6 +226,26 @@ func (r *InboxReader) CaughtUp() chan struct{} {
 	return r.caughtUpChan
 }
 
+type lazyHashLogging struct {
+	f func() common.Hash
+}
+
+func (l lazyHashLogging) String() string {
+	return l.f().String()
+}
+
+func (l lazyHashLogging) TerminalString() string {
+	return l.f().TerminalString()
+}
+
+func (l lazyHashLogging) MarshalText() ([]byte, error) {
+	return l.f().MarshalText()
+}
+
+func (l lazyHashLogging) Format(s fmt.State, c rune) {
+	l.f().Format(s, c)
+}
+
 func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	readMode := r.config().ReadMode
 	from, err := r.getNextBlockToRead(ctx)
@@ -334,11 +351,12 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				return err
 			}
 			if ourLatestDelayedCount < checkingDelayedCount {
+				log.Debug("Expecting to find delayed messages", "checkingDelayedCount", checkingDelayedCount, "ourLatestDelayedCount", ourLatestDelayedCount, "currentHeight", currentHeight)
 				checkingDelayedCount = ourLatestDelayedCount
 				missingDelayed = true
 			} else if ourLatestDelayedCount > checkingDelayedCount {
 				log.Info("backwards reorg of delayed messages", "from", ourLatestDelayedCount, "to", checkingDelayedCount)
-				err = r.tracker.ReorgDelayedTo(checkingDelayedCount, config.HardReorg)
+				err = r.tracker.ReorgDelayedTo(checkingDelayedCount)
 				if err != nil {
 					return err
 				}
@@ -354,6 +372,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					return err
 				}
 				if dbDelayedAcc != l1DelayedAcc {
+					log.Debug("Latest delayed accumulator mismatch", "delayedSeqNum", checkingDelayedSeqNum, "dbDelayedAcc", dbDelayedAcc, "l1DelayedAcc", l1DelayedAcc)
 					reorgingDelayed = true
 				}
 			}
@@ -371,13 +390,9 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				return err
 			}
 			if ourLatestBatchCount < checkingBatchCount {
+				log.Debug("Expecting to find sequencer batches", "checkingBatchCount", checkingBatchCount, "ourLatestBatchCount", ourLatestBatchCount, "currentHeight", currentHeight)
 				checkingBatchCount = ourLatestBatchCount
 				missingSequencer = true
-			} else if ourLatestBatchCount > checkingBatchCount && config.HardReorg {
-				err = r.tracker.ReorgBatchesTo(checkingBatchCount)
-				if err != nil {
-					return err
-				}
 			}
 			if checkingBatchCount > 0 {
 				checkingBatchSeqNum := checkingBatchCount - 1
@@ -390,6 +405,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					return err
 				}
 				if dbBatchAcc != l1BatchAcc {
+					log.Debug("Latest sequencer batch accumulator mismatch", "batchSeqNum", checkingBatchSeqNum, "dbBatchAcc", dbBatchAcc, "l1BatchAcc", l1BatchAcc)
 					reorgingSequencer = true
 				}
 			}
@@ -432,6 +448,15 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			if to.Cmp(currentHeight) > 0 {
 				to.Set(currentHeight)
 			}
+			log.Debug(
+				"Looking up messages",
+				"from", from.String(),
+				"to", to.String(),
+				"missingDelayed", missingDelayed,
+				"missingSequencer", missingSequencer,
+				"reorgingDelayed", reorgingDelayed,
+				"reorgingSequencer", reorgingSequencer,
+			)
 			sequencerBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, from, to)
 			if err != nil {
 				return err
@@ -457,6 +482,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			if len(sequencerBatches) > 0 {
 				missingSequencer = false
 				reorgingSequencer = false
+				var havePrevAcc common.Hash
 				firstBatch := sequencerBatches[0]
 				if firstBatch.SequenceNumber > 0 {
 					haveAcc, err := r.tracker.GetBatchAcc(firstBatch.SequenceNumber - 1)
@@ -467,7 +493,10 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					} else if haveAcc != firstBatch.BeforeInboxAcc {
 						reorgingSequencer = true
 					}
+					havePrevAcc = haveAcc
 				}
+				readLastAcc := sequencerBatches[len(sequencerBatches)-1].AfterInboxAcc
+				var duplicateBatches int
 				if !reorgingSequencer {
 					// Skip any batches we already have in the database
 					for len(sequencerBatches) > 0 {
@@ -482,6 +511,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 						} else if haveAcc == batch.AfterInboxAcc {
 							// Skip this batch, as we already have it in the database
 							sequencerBatches = sequencerBatches[1:]
+							duplicateBatches++
 						} else {
 							// The first batch AfterInboxAcc matches, but this batch doesn't,
 							// so we'll successfully reorg it when we hit the addMessages
@@ -489,7 +519,18 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 						}
 					}
 				}
+				log.Debug(
+					"Found sequencer batches",
+					"firstSequenceNumber", firstBatch.SequenceNumber,
+					"newBatchesCount", len(sequencerBatches),
+					"duplicateBatches", duplicateBatches,
+					"reorgingSequencer", reorgingSequencer,
+					"readBeforeAcc", firstBatch.BeforeInboxAcc,
+					"haveBeforeAcc", havePrevAcc,
+					"readLastAcc", readLastAcc,
+				)
 			} else if missingSequencer && to.Cmp(currentHeight) >= 0 {
+				log.Debug("Didn't find expected sequencer batches", "from", from, "to", to, "currentHeight", currentHeight)
 				// We were missing sequencer batches but didn't find any.
 				// This must mean that the sequencer batches are in the past.
 				reorgingSequencer = true
@@ -504,6 +545,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				if err != nil {
 					return err
 				}
+				var havePrevAcc common.Hash
 				if beforeCount > 0 {
 					haveAcc, err := r.tracker.GetDelayedAcc(beforeCount - 1)
 					if errors.Is(err, AccumulatorNotFoundErr) {
@@ -513,14 +555,27 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					} else if haveAcc != beforeAcc {
 						reorgingDelayed = true
 					}
+					havePrevAcc = haveAcc
 				}
+				log.Debug(
+					"Found delayed messages",
+					"firstSequenceNumber", beforeCount,
+					"count", len(delayedMessages),
+					"reorgingDelayed", reorgingDelayed,
+					"readBeforeAcc", beforeAcc,
+					"haveBeforeAcc", havePrevAcc,
+					"readLastAcc", lazyHashLogging{func() common.Hash {
+						// Only compute this if we need to log it, as it's somewhat expensive
+						return delayedMessages[len(delayedMessages)-1].AfterInboxAcc()
+					}},
+				)
 			} else if missingDelayed && to.Cmp(currentHeight) >= 0 {
+				log.Debug("Didn't find expected delayed messages", "from", from, "to", to, "currentHeight", currentHeight)
 				// We were missing delayed messages but didn't find any.
 				// This must mean that the delayed messages are in the past.
 				reorgingDelayed = true
 			}
 
-			log.Trace("looking up messages", "from", from.String(), "to", to.String(), "missingDelayed", missingDelayed, "missingSequencer", missingSequencer, "reorgingDelayed", reorgingDelayed, "reorgingSequencer", reorgingSequencer)
 			if !reorgingDelayed && !reorgingSequencer && (len(delayedMessages) != 0 || len(sequencerBatches) != 0) {
 				delayedMismatch, err := r.addMessages(ctx, sequencerBatches, delayedMessages)
 				if err != nil {
@@ -535,14 +590,6 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					storeSeenBatchCount()
 				}
 			}
-			if reorgingDelayed || reorgingSequencer {
-				from, err = r.getPrevBlockForReorg(from)
-				if err != nil {
-					return err
-				}
-			} else {
-				from = arbmath.BigAddByUint(to, 1)
-			}
 			// #nosec G115
 			haveMessages := uint64(len(delayedMessages) + len(sequencerBatches))
 			if haveMessages <= (config.TargetMessagesRead / 2) {
@@ -556,6 +603,14 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			} else if blocksToFetch > config.MaxBlocksToRead {
 				blocksToFetch = config.MaxBlocksToRead
 			}
+			if reorgingDelayed || reorgingSequencer {
+				from, err = r.getPrevBlockForReorg(from, blocksToFetch)
+				if err != nil {
+					return err
+				}
+			} else {
+				from = arbmath.BigAddByUint(to, 1)
+			}
 		}
 
 		if !readAnyBatches {
@@ -566,7 +621,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	err := r.tracker.AddDelayedMessages(delayedMessages, r.config().HardReorg)
+	err := r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
 	}
@@ -579,11 +634,11 @@ func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*Seque
 	return false, nil
 }
 
-func (r *InboxReader) getPrevBlockForReorg(from *big.Int) (*big.Int, error) {
+func (r *InboxReader) getPrevBlockForReorg(from *big.Int, maxBlocksBackwards uint64) (*big.Int, error) {
 	if from.Cmp(r.firstMessageBlock) <= 0 {
 		return nil, errors.New("can't get older messages")
 	}
-	newFrom := arbmath.BigSub(from, big.NewInt(10))
+	newFrom := arbmath.BigSub(from, new(big.Int).SetUint64(maxBlocksBackwards))
 	if newFrom.Cmp(r.firstMessageBlock) < 0 {
 		newFrom = new(big.Int).Set(r.firstMessageBlock)
 	}

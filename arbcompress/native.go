@@ -12,6 +12,7 @@ package arbcompress
 #include "arbitrator.h"
 */
 import "C"
+
 import (
 	"errors"
 	"fmt"
@@ -66,7 +67,7 @@ func DecompressWithDictionary(input []byte, maxSize int, dictionary Dictionary) 
 		return nil, fmt.Errorf("failed decompression: %d", status)
 	}
 	if *outbuf.len > usize(maxSize) {
-		return nil, fmt.Errorf("failed decompression: result too large: %d", *outbuf.len)
+		return nil, fmt.Errorf("failed decompression: result too large: %d, wanted: < %d", *outbuf.len, maxSize)
 	}
 	output = output[:*outbuf.len]
 	return output, nil

@@ -4,21 +4,24 @@
 package arbos
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/holiman/uint256"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/arbmath"
-
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos/burn"
 )
 
 type l1PricingTest struct {
@@ -172,7 +175,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	// create some fake collection
 	balanceAdded := new(big.Int).SetUint64(testParams.fundsCollectedPerSecond * 3)
 	unitsAdded := testParams.unitsPerSecond * 3
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(balanceAdded))
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(balanceAdded), tracing.BalanceChangeUnspecified)
 	err = l1p.SetL1FeesAvailable(balanceAdded)
 	Require(t, err)
 	err = l1p.SetUnitsSinceUpdate(unitsAdded)
@@ -274,7 +277,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 		currentPricePerUnit, err := l1p.PricePerUnit()
 		Require(t, err)
 		feesToAdd := arbmath.BigMulByUint(currentPricePerUnit, unitsToAdd)
-		util.MintBalance(&l1PoolAddress, feesToAdd, evm, util.TracingBeforeEVM, "test")
+		util.MintBalance(&l1PoolAddress, feesToAdd, evm, util.TracingBeforeEVM, tracing.BalanceChangeUnspecified)
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
 			evm,
@@ -315,14 +318,14 @@ func _withinOnePercent(v1, v2 *big.Int) bool {
 }
 
 func newMockEVMForTesting() *vm.EVM {
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	_, statedb := arbosState.NewArbosMemoryBackedArbOSState()
 	context := vm.BlockContext{
 		BlockNumber: big.NewInt(0),
 		GasLimit:    ^uint64(0),
 		Time:        0,
 	}
-	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+	evm := vm.NewEVM(context, statedb, chainConfig, vm.Config{})
 	evm.ProcessingHook = &TxProcessor{}
 	return evm
 }

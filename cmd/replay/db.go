@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -22,6 +23,10 @@ func (db PreimageDb) Has(key []byte) (bool, error) {
 		return false, nil
 	}
 	return false, errors.New("preimage DB doesn't support Has")
+}
+
+func (db PreimageDb) DeleteRange(start, end []byte) error {
+	return errors.New("preimage DB doesn't support DeleteRange")
 }
 
 func (db PreimageDb) Get(key []byte) ([]byte, error) {
@@ -58,17 +63,12 @@ func (db PreimageDb) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 	return ErrorIterator{}
 }
 
-func (db PreimageDb) Stat(property string) (string, error) {
+func (db PreimageDb) Stat() (string, error) {
 	return "", errors.New("preimage DB doesn't support Stat")
 }
 
 func (db PreimageDb) Compact(start []byte, limit []byte) error {
 	return nil
-}
-
-func (db PreimageDb) NewSnapshot() (ethdb.Snapshot, error) {
-	// This is fine as PreimageDb doesn't support mutation
-	return db, nil
 }
 
 func (db PreimageDb) Close() error {

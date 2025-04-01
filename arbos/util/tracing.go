@@ -7,10 +7,12 @@ import (
 	"encoding/binary"
 	"math/big"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/holiman/uint256"
 )
 
 type TracingScenario uint64
@@ -22,20 +24,11 @@ const (
 )
 
 type TracingInfo struct {
-	Tracer       vm.EVMLogger
+	Tracer       *tracing.Hooks
 	Scenario     TracingScenario
 	Contract     *vm.Contract
 	Depth        int
 	storageCache *storageCache
-}
-
-// holds an address to satisfy core/vm's ContractRef() interface
-type addressHolder struct {
-	addr common.Address
-}
-
-func (a addressHolder) Address() common.Address {
-	return a.addr
 }
 
 func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenario) *TracingInfo {
@@ -45,7 +38,7 @@ func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenar
 	return &TracingInfo{
 		Tracer:       evm.Config.Tracer,
 		Scenario:     scenario,
-		Contract:     vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.NewInt(0), 0),
+		Contract:     vm.NewContract(to, from, uint256.NewInt(0), 0, evm.JumpDests()),
 		Depth:        evm.Depth(),
 		storageCache: newStorageCache(),
 	}
@@ -59,8 +52,10 @@ func (info *TracingInfo) RecordStorageGet(key common.Hash) {
 			Stack:    TracingStackFromArgs(HashToUint256(key)),
 			Contract: info.Contract,
 		}
-		tracer.CaptureState(0, vm.SLOAD, 0, 0, scope, []byte{}, info.Depth, nil)
-	} else {
+		if tracer.OnOpcode != nil {
+			tracer.OnOpcode(0, byte(vm.SLOAD), 0, 0, scope, []byte{}, info.Depth, nil)
+		}
+	} else if tracer.CaptureArbitrumStorageGet != nil {
 		tracer.CaptureArbitrumStorageGet(key, info.Depth, info.Scenario == TracingBeforeEVM)
 	}
 }
@@ -73,8 +68,10 @@ func (info *TracingInfo) RecordStorageSet(key, value common.Hash) {
 			Stack:    TracingStackFromArgs(HashToUint256(key), HashToUint256(value)),
 			Contract: info.Contract,
 		}
-		tracer.CaptureState(0, vm.SSTORE, 0, 0, scope, []byte{}, info.Depth, nil)
-	} else {
+		if tracer.OnOpcode != nil {
+			tracer.OnOpcode(0, byte(vm.SSTORE), 0, 0, scope, []byte{}, info.Depth, nil)
+		}
+	} else if tracer.CaptureArbitrumStorageSet != nil {
 		tracer.CaptureArbitrumStorageSet(key, value, info.Depth, info.Scenario == TracingBeforeEVM)
 	}
 }
@@ -83,7 +80,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 	tracer := info.Tracer
 	depth := info.Depth
 
-	contract := vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.MustFromBig(amount), gas)
+	contract := vm.NewContract(to, from, uint256.MustFromBig(amount), gas, info.Contract.Jumpdest())
 
 	scope := &vm.ScopeContext{
 		Memory: TracingMemoryFromBytes(input),
@@ -98,8 +95,12 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 		),
 		Contract: contract,
 	}
-	tracer.CaptureState(0, vm.CALL, 0, 0, scope, []byte{}, depth, nil)
-	tracer.CaptureEnter(vm.INVALID, from, to, input, 0, amount)
+	if tracer.OnOpcode != nil {
+		tracer.OnOpcode(0, byte(vm.CALL), 0, 0, scope, []byte{}, depth, nil)
+	}
+	if tracer.OnEnter != nil {
+		tracer.OnEnter(depth, byte(vm.CALL), from, to, input, gas, amount)
+	}
 
 	retScope := &vm.ScopeContext{
 		Memory: vm.NewMemory(),
@@ -109,8 +110,12 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 		),
 		Contract: contract,
 	}
-	tracer.CaptureState(0, vm.RETURN, 0, 0, retScope, []byte{}, depth+1, nil)
-	tracer.CaptureExit(nil, 0, nil)
+	if tracer.OnOpcode != nil {
+		tracer.OnOpcode(0, byte(vm.RETURN), 0, 0, retScope, []byte{}, depth+1, nil)
+	}
+	if tracer.OnExit != nil {
+		tracer.OnExit(depth, nil, 0, nil, false)
+	}
 
 	popScope := &vm.ScopeContext{
 		Memory: vm.NewMemory(),
@@ -119,7 +124,9 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 		),
 		Contract: contract,
 	}
-	tracer.CaptureState(0, vm.POP, 0, 0, popScope, []byte{}, depth, nil)
+	if tracer.OnOpcode != nil {
+		tracer.OnOpcode(0, byte(vm.POP), 0, 0, popScope, []byte{}, depth, nil)
+	}
 }
 
 func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte, startInk, endInk uint64) {
@@ -533,7 +540,9 @@ func (info *TracingInfo) captureState(op vm.OpCode, gas uint64, cost uint64, mem
 		Stack:    TracingStackFromArgs(stack...),
 		Contract: info.Contract,
 	}
-	info.Tracer.CaptureState(0, op, gas, cost, scope, []byte{}, info.Depth, nil)
+	if info.Tracer.OnOpcode != nil {
+		info.Tracer.OnOpcode(0, byte(op), gas, cost, scope, []byte{}, info.Depth, nil)
+	}
 }
 
 func lenToBytes(data []byte) []byte {

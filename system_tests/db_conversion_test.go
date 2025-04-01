@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
+
 	"github.com/offchainlabs/nitro/cmd/dbconv/dbconv"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -20,6 +21,7 @@ func TestDatabaseConversion(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.useFreezer = false
 	builder.l2StackConfig.DBEngine = "leveldb"
 	builder.l2StackConfig.Name = "testl2"
 	// currently only HashScheme supports archive mode

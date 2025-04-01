@@ -6,33 +6,22 @@ package das
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io"
-	"math"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsConfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
-	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/util/pretty"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
-	flag "github.com/spf13/pflag"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/s3client"
 )
-
-type S3Uploader interface {
-	Upload(ctx context.Context, input *s3.PutObjectInput, opts ...func(*manager.Uploader)) (*manager.UploadOutput, error)
-}
-
-type S3Downloader interface {
-	Download(ctx context.Context, w io.WriterAt, input *s3.GetObjectInput, options ...func(*manager.Downloader)) (n int64, err error)
-}
 
 type S3StorageServiceConfig struct {
 	Enable              bool   `koanf:"enable"`
@@ -53,70 +42,50 @@ func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".object-prefix", DefaultS3StorageServiceConfig.ObjectPrefix, "prefix to add to S3 objects")
 	f.String(prefix+".region", DefaultS3StorageServiceConfig.Region, "S3 region")
 	f.String(prefix+".secret-key", DefaultS3StorageServiceConfig.SecretKey, "S3 secret key")
-	f.Bool(prefix+".discard-after-timeout", DefaultS3StorageServiceConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
+	f.Bool(prefix+".discard-after-timeout", DefaultS3StorageServiceConfig.DiscardAfterTimeout, "this config option is deprecated")
 }
 
 type S3StorageService struct {
-	client              *s3.Client
+	client              s3client.FullClient
 	bucket              string
 	objectPrefix        string
-	uploader            S3Uploader
-	downloader          S3Downloader
 	discardAfterTimeout bool
 }
 
 func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) {
-	client, err := buildS3Client(config.AccessKey, config.SecretKey, config.Region)
+	client, err := s3client.NewS3FullClient(config.AccessKey, config.SecretKey, config.Region)
 	if err != nil {
 		return nil, err
+	}
+	if config.DiscardAfterTimeout {
+		return nil, errors.New("s3-storage.discard-after-timeout is depreciated and no longer accepted. Expiration for objects uploaded to S3 bucket can be set by adding lifecycle configuration rule to a bucket")
 	}
 	return &S3StorageService{
 		client:              client,
 		bucket:              config.Bucket,
 		objectPrefix:        config.ObjectPrefix,
-		uploader:            manager.NewUploader(client),
-		downloader:          manager.NewDownloader(client),
 		discardAfterTimeout: config.DiscardAfterTimeout,
 	}, nil
-}
-
-func buildS3Client(accessKey, secretKey, region string) (*s3.Client, error) {
-	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(), awsConfig.WithRegion(region), func(options *awsConfig.LoadOptions) error {
-		// remain backward compatible with accessKey and secretKey credentials provided via cli flags
-		if accessKey != "" && secretKey != "" {
-			options.Credentials = credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return s3.NewFromConfig(cfg), nil
 }
 
 func (s3s *S3StorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
 	log.Trace("das.S3StorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s3s)
 
 	buf := manager.NewWriteAtBuffer([]byte{})
-	_, err := s3s.downloader.Download(ctx, buf, &s3.GetObjectInput{
+	_, err := s3s.client.Download(ctx, buf, &s3.GetObjectInput{
 		Bucket: aws.String(s3s.bucket),
 		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(key)),
 	})
 	return buf.Bytes(), err
 }
 
-func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	logPut("das.S3StorageService.Store", value, timeout, s3s)
+func (s3s *S3StorageService) Put(ctx context.Context, value []byte, _ uint64) error {
+	logPut("das.S3StorageService.Store", value, 0, s3s)
 	putObjectInput := s3.PutObjectInput{
 		Bucket: aws.String(s3s.bucket),
 		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(dastree.Hash(value))),
 		Body:   bytes.NewReader(value)}
-	if s3s.discardAfterTimeout && timeout <= math.MaxInt64 {
-		// #nosec G115
-		expires := time.Unix(int64(timeout), 0)
-		putObjectInput.Expires = &expires
-	}
-	_, err := s3s.uploader.Upload(ctx, &putObjectInput)
+	_, err := s3s.client.Upload(ctx, &putObjectInput)
 	if err != nil {
 		log.Error("das.S3StorageService.Store", "err", err)
 	}
@@ -132,9 +101,9 @@ func (s3s *S3StorageService) Close(ctx context.Context) error {
 }
 
 func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
-	if s3s.discardAfterTimeout {
-		return daprovider.DiscardAfterDataTimeout, nil
-	}
+	// Expiration of data uploaded to S3 bucket is handled directly via LifeCycle configuration of the bucket. Users can choose to add a
+	// Lifecycle configuration rule with an expiration action that causes objects with a specific prefix to expire certain days after creation.
+	// ref=https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html
 	return daprovider.KeepForever, nil
 }
 
@@ -143,6 +112,6 @@ func (s3s *S3StorageService) String() string {
 }
 
 func (s3s *S3StorageService) HealthCheck(ctx context.Context) error {
-	_, err := s3s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s3s.bucket)})
+	_, err := s3s.client.Client().HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s3s.bucket)})
 	return err
 }
