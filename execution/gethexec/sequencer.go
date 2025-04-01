@@ -1266,6 +1266,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 					continue
 				case <-ctx.Done():
 					return false
+				default:
+					// Doesn't block if there is no transaction to process
+					return true
 				}
 			}
 		} else {
