@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -60,11 +61,11 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
 	triedbConfig := cacheConfig.TriedbConfig()
 	triedbConfig.Preimages = false
-	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
+	stateDatabase := state.NewDatabase(triedb.NewDatabase(db, triedbConfig), nil)
 	defer func() {
 		err = errors.Join(err, stateDatabase.TrieDB().Close())
 	}()
-	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
+	statedb, err := state.New(types.EmptyRootHash, stateDatabase)
 	if err != nil {
 		panic("failed to init empty statedb :" + err.Error())
 	}
@@ -74,7 +75,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	// commit avoids keeping the entire state in memory while importing the state.
 	// At some time it was also used to avoid reprocessing the whole import in case of a crash.
 	commit := func() (common.Hash, error) {
-		root, err := statedb.Commit(chainConfig.ArbitrumChainParams.GenesisBlockNum, true)
+		root, err := statedb.Commit(chainConfig.ArbitrumChainParams.GenesisBlockNum, true, false)
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -86,7 +87,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 				return common.Hash{}, err
 			}
 		}
-		statedb, err = state.New(root, stateDatabase, nil)
+		statedb, err = state.New(root, stateDatabase)
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -173,7 +174,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 			return common.Hash{}, err
 		}
 		statedb.SetBalance(account.Addr, uint256.MustFromBig(account.EthBalance), tracing.BalanceChangeUnspecified)
-		statedb.SetNonce(account.Addr, account.Nonce)
+		statedb.SetNonce(account.Addr, account.Nonce, tracing.NonceChangeUnspecified)
 		if account.ContractInfo != nil {
 			statedb.SetCode(account.Addr, account.ContractInfo.Code)
 			for k, v := range account.ContractInfo.ContractStorage {
