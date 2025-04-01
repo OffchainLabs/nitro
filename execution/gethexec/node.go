@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sort"
 	"sync/atomic"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -429,6 +430,9 @@ func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []
 }
 func (n *ExecutionNode) ResequenceReorgedMessages(oldMessages []*arbostypes.MessageWithMetadata) {
 	n.ExecEngine.ResequenceReorgedMessages(oldMessages)
+}
+func (n *ExecutionNode) Sequence(ctx context.Context) time.Duration {
+	return n.Sequencer.Sequence(ctx)
 }
 func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
 	return containers.NewReadyPromise(n.ExecEngine.HeadMessageIndex())
