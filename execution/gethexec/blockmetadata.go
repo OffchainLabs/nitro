@@ -18,7 +18,7 @@ import (
 var ErrBlockMetadataApiBlocksLimitExceeded = errors.New("number of blocks requested for blockMetadata exceeded")
 
 type BlockMetadataFetcher interface {
-	BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error)
+	BlockMetadataAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (common.BlockMetadata, error)
 	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
 	SetReorgEventsNotifier(reorgEventsNotifier chan struct{})
@@ -54,7 +54,7 @@ func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetch
 
 // Fetch won't include block numbers for whom consensus (arbDB) doesn't have blockMetadata, it stores recently fetched blockMetadata into an LRU
 // which is cleared in the events of reorg in order to provide accurate blockMetadata
-func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]NumberAndBlockMetadata, error) {
+func (b *BulkBlockMetadataFetcher) Fetch(ctx context.Context, fromBlock, toBlock rpc.BlockNumber) ([]NumberAndBlockMetadata, error) {
 	fromBlock, _ = b.bc.ClipToPostNitroGenesis(fromBlock)
 	toBlock, _ = b.bc.ClipToPostNitroGenesis(toBlock)
 	// #nosec G115
@@ -81,7 +81,7 @@ func (b *BulkBlockMetadataFetcher) Fetch(fromBlock, toBlock rpc.BlockNumber) ([]
 			data, found = b.cache.Get(i)
 		}
 		if !found {
-			data, err = b.fetcher.BlockMetadataAtCount(i + 1)
+			data, err = b.fetcher.BlockMetadataAtMessageIndex(ctx, i)
 			if err != nil {
 				return nil, err
 			}

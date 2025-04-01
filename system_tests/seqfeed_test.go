@@ -153,30 +153,29 @@ func compareAllMsgResultsFromConsensusAndExecution(
 	testClient *TestClient,
 	testScenario string,
 ) *execution.MessageResult {
-	execHeadMsgNum, err := testClient.ExecNode.HeadMessageNumber().Await(context.Background())
+	execHeadMsgIdx, err := testClient.ExecNode.HeadMessageIndex().Await(context.Background())
 	Require(t, err)
-	consensusMsgCount, err := testClient.ConsensusNode.TxStreamer.GetMessageCount()
+	consensusHeadMsgIdx, err := testClient.ConsensusNode.TxStreamer.GetHeadMessageIndex()
 	Require(t, err)
-	if consensusMsgCount != execHeadMsgNum+1 {
+	if consensusHeadMsgIdx != execHeadMsgIdx {
 		t.Fatal(
-			"consensusMsgCount", consensusMsgCount, "is different than (execHeadMsgNum + 1)", execHeadMsgNum,
+			"consensusHeadMsgIdx", consensusHeadMsgIdx, "is different than execHeadMsgIdx", execHeadMsgIdx,
 			"testScenario:", testScenario,
 		)
 	}
 
 	var lastResult *execution.MessageResult
-	for msgCount := arbutil.MessageIndex(1); msgCount <= consensusMsgCount; msgCount++ {
-		pos := msgCount - 1
-		resultExec, err := testClient.ExecNode.ResultAtPos(arbutil.MessageIndex(pos)).Await(ctx)
+	for msgIdx := arbutil.MessageIndex(0); msgIdx <= consensusHeadMsgIdx; msgIdx++ {
+		resultExec, err := testClient.ExecNode.ResultAtMessageIndex(arbutil.MessageIndex(msgIdx)).Await(ctx)
 		Require(t, err)
 
-		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(msgCount)
+		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtMessageIndex(arbutil.MessageIndex(msgIdx))
 		Require(t, err)
 
 		if !reflect.DeepEqual(resultExec, resultConsensus) {
 			t.Fatal(
 				"resultExec", resultExec, "is different than resultConsensus", resultConsensus,
-				"pos:", pos,
+				"msgIdx:", msgIdx,
 				"testScenario:", testScenario,
 			)
 		}
@@ -303,18 +302,18 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	}
 
 	// Since NodeB is not a sequencer, it will produce blocks through Consensus.
-	// So it is expected that Consensus.ResultAtCount will not rely on Execution to retrieve results.
-	// However, since count 1 is related to genesis, and Execution is initialized through InitializeArbosInDatabase and not through Consensus,
-	// first call to Consensus.ResultAtCount with count equals to 1 will fall back to Execution.
-	// Not necessarily the first call to Consensus.ResultAtCount with count equals to 1 will happen through compareMsgResultFromConsensusAndExecution,
+	// So it is expected that Consensus.ResultAtMessageIndex will not rely on Execution to retrieve results.
+	// However, since msgIdx 0 is related to genesis, and Execution is initialized through InitializeArbosInDatabase and not through Consensus,
+	// first call to Consensus.ResultAtMessageIndex with msgIdx equals to 0 will fall back to Execution.
+	// Not necessarily the first call to Consensus.ResultAtMessageIndex with msgIdx equals to 0 will happen through compareMsgResultFromConsensusAndExecution,
 	// so we don't test this here.
-	consensusMsgCount, err := testClientB.ConsensusNode.TxStreamer.GetMessageCount()
+	consensusHeadMsgIdx, err := testClientB.ConsensusNode.TxStreamer.GetHeadMessageIndex()
 	Require(t, err)
-	if consensusMsgCount != 2 {
-		t.Fatal("consensusMsgCount is different than 2")
+	if consensusHeadMsgIdx != 1 {
+		t.Fatal("consensusHeadMsgIdx is different than 1")
 	}
 	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
-	_, err = testClientB.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(2))
+	_, err = testClientB.ConsensusNode.TxStreamer.ResultAtMessageIndex(arbutil.MessageIndex(1))
 	Require(t, err)
 	if logHandler.WasLogged(arbnode.FailedToGetMsgResultFromDB) {
 		t.Fatal("Consensus relied on execution database to return the result")

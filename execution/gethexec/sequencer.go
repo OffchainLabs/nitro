@@ -20,13 +20,11 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -98,6 +96,7 @@ type TimeboostConfig struct {
 	MaxFutureSequenceDistance    uint64        `koanf:"max-future-sequence-distance"`
 	RedisUrl                     string        `koanf:"redis-url"`
 	RedisUpdateEventsChannelSize uint64        `koanf:"redis-update-events-channel-size"`
+	QueueTimeoutInBlocks         uint64        `koanf:"queue-timeout-in-blocks"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
@@ -107,9 +106,10 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	ExpressLaneAdvantage:         time.Millisecond * 200,
 	SequencerHTTPEndpoint:        "http://localhost:8547",
 	EarlySubmissionGrace:         time.Second * 2,
-	MaxFutureSequenceDistance:    25,
+	MaxFutureSequenceDistance:    1000,
 	RedisUrl:                     "unset",
 	RedisUpdateEventsChannelSize: 500,
+	QueueTimeoutInBlocks:         5,
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -217,6 +217,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".max-future-sequence-distance", DefaultTimeboostConfig.MaxFutureSequenceDistance, "maximum allowed difference (in terms of sequence numbers) between a future express lane tx and the current sequence count of a round")
 	f.String(prefix+".redis-url", DefaultTimeboostConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
 	f.Uint64(prefix+".redis-update-events-channel-size", DefaultTimeboostConfig.RedisUpdateEventsChannelSize, "size of update events' buffered channels in timeboost redis coordinator")
+	f.Uint64(prefix+".queue-timeout-in-blocks", DefaultTimeboostConfig.QueueTimeoutInBlocks, "maximum amount of time (measured in blocks) that Express Lane transactions can wait in the sequencer's queue")
 }
 
 func DangerousAddOptions(prefix string, f *flag.FlagSet) {
@@ -232,6 +233,7 @@ type txQueueItem struct {
 	ctx             context.Context
 	firstAppearance time.Time
 	isTimeboosted   bool
+	blockStamp      uint64 // block number at which timeboosted tx was added to the txQueue
 }
 
 func (i *txQueueItem) returnResult(err error) {
@@ -552,8 +554,8 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if tx.To() == nil {
 		return errors.New("transaction has no recipient")
 	}
-	if *tx.To() != s.expressLaneService.auctionContractAddr {
-		return errors.New("transaction recipient is not the auction contract")
+	if *tx.To() != s.expressLaneService.AuctionContractAddr() {
+		return fmt.Errorf("transaction recipient %#x is not the auction contract %#x", *tx.To(), s.expressLaneService.AuctionContractAddr())
 	}
 	signer := types.LatestSigner(s.execEngine.bc.Config())
 	sender, err := types.Sender(signer, tx)
@@ -600,7 +602,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	if s.expressLaneService == nil {
 		return errors.New("express lane service not enabled")
 	}
-	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
+	if err := s.expressLaneService.ValidateExpressLaneTx(msg); err != nil {
 		return err
 	}
 
@@ -663,6 +665,11 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		}
 	}
 
+	var blockStamp uint64
+	if isExpressLaneController && config.Dangerous.Timeboost.QueueTimeoutInBlocks > 0 {
+		blockStamp = s.execEngine.bc.CurrentBlock().Number.Uint64()
+	}
+
 	queueItem := txQueueItem{
 		tx,
 		len(txBytes),
@@ -672,6 +679,7 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		queueCtx,
 		time.Now(),
 		isExpressLaneController,
+		blockStamp,
 	}
 	select {
 	case s.txQueue <- queueItem:
@@ -736,7 +744,8 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	if pauseChan != nil {
 		return nil
 	}
-	return s.execEngine.consensus.ExpectChosenSequencer()
+	_, err := s.execEngine.consensus.ExpectChosenSequencer().Await(ctx)
+	return err
 }
 
 func (s *Sequencer) ForwardTarget() string {
@@ -1010,6 +1019,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 
 	config := s.config()
+	lastBlock := s.execEngine.bc.CurrentBlock()
 
 	// Clear out old nonceFailures
 	s.nonceFailures.Resize(config.NonceFailureCacheSize)
@@ -1089,6 +1099,23 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if queueItem.txSize > config.MaxTxDataSize {
 			// This tx is too large
 			queueItem.returnResult(txpool.ErrOversizedData)
+			continue
+		}
+		if queueItem.isTimeboosted &&
+			queueItem.blockStamp != 0 &&
+			lastBlock.Number.Uint64() >= queueItem.blockStamp+config.Dangerous.Timeboost.QueueTimeoutInBlocks {
+			err := fmt.Errorf("timeboosted tx: %s has hit block based timeout. currentBlockNum: %d, blockStamp: %d, blockExpiry: %d",
+				queueItem.tx.Hash(),
+				lastBlock.Number.Uint64()+1,
+				queueItem.blockStamp,
+				queueItem.blockStamp+config.Dangerous.Timeboost.QueueTimeoutInBlocks,
+			)
+			queueItem.returnResult(err) // this isnt read by anyone, so we log a debug line
+			log.Debug("Error sequencing timeboost tx", "err", err)
+			continue
+		}
+		if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), lastBlock.BaseFee) {
+			queueItem.returnResult(fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, queueItem.tx.GasFeeCap(), lastBlock.BaseFee))
 			continue
 		}
 		if totalBlockSize+queueItem.txSize > config.MaxTxDataSize {
@@ -1272,23 +1299,19 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 }
 
 func (s *Sequencer) InitializeExpressLaneService(
-	apiBackend *arbitrum.APIBackend,
-	filterSystem *filters.FilterSystem,
-	auctionContractAddr common.Address,
 	auctioneerAddr common.Address,
-	earlySubmissionGrace time.Duration,
+	roundTimingInfo *timeboost.RoundTimingInfo,
+	expressLaneTracker *ExpressLaneTracker,
 ) error {
 	els, err := newExpressLaneService(
 		s,
 		s.config,
-		apiBackend,
-		filterSystem,
-		auctionContractAddr,
+		roundTimingInfo,
 		s.execEngine.bc,
-		earlySubmissionGrace,
+		expressLaneTracker,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create express lane service. auctionContractAddr: %v err: %w", auctionContractAddr, err)
+		return fmt.Errorf("failed to create express lane service. err: %w", err)
 	}
 	s.auctioneerAddr = auctioneerAddr
 	s.expressLaneService = els
@@ -1308,7 +1331,10 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	l1GasPrice := header.BaseFee.Uint64()
 	if header.BlobGasUsed != nil {
 		if header.ExcessBlobGas != nil {
-			blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*header.ExcessBlobGas, *header.BlobGasUsed))
+			blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
+			if err != nil {
+				return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
+			}
 			blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 			blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 			if l1GasPrice > blobFeePerByte.Uint64()/16 {

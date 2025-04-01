@@ -530,6 +530,46 @@ func TestArbStatistics(t *testing.T) {
 	}
 }
 
+func TestArbosFeatures(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
+	Require(t, err)
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+
+	// check that the feature is disabled by default
+	isCDPIEnabled, err := arbOwnerPublic.IsCalldataPriceIncreaseEnabled(callOpts)
+	Require(t, err)
+	if isCDPIEnabled {
+		Fatal(t, "expected calldata price increase to be disabled")
+	}
+
+	// enable the feature
+	tx, err := arbOwner.SetCalldataPriceIncrease(&auth, true)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// check that the feature is enabled
+	isCDPIEnabled, err = arbOwnerPublic.IsCalldataPriceIncreaseEnabled(callOpts)
+	Require(t, err)
+	if !isCDPIEnabled {
+		Fatal(t, "expected calldata price increase to be enabled")
+	}
+}
+
 func TestArbFunctionTable(t *testing.T) {
 	t.Parallel()
 

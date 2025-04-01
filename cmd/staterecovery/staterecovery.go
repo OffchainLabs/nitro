@@ -70,7 +70,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 			if err != nil {
 				return fmt.Errorf("processing block %d failed: %w", current, err)
 			}
-			root, err := previousState.Commit(current, bc.Config().IsEIP158(currentBlock.Number()))
+			root, err := previousState.Commit(current, bc.Config().IsEIP158(currentBlock.Number()), false)
 			if err != nil {
 				return fmt.Errorf("StateDB commit failed, number %d root %v: %w", current, currentBlock.Root(), err)
 			}
