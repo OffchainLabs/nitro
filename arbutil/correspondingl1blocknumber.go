@@ -25,9 +25,10 @@ type ParentHeaderFetcher interface {
 
 func CorrespondingL1BlockNumber(ctx context.Context, client ParentHeaderFetcher, parentBlockNumber uint64) (uint64, error) {
 	// #nosec G115
-	header, err := client.HeaderByNumber(ctx, big.NewInt(int64(parentBlockNumber)))
+	bigNum := new(big.Int).SetUint64(parentBlockNumber)
+	header, err := client.HeaderByNumber(ctx, bigNum)
 	if err != nil {
-		return 0, fmt.Errorf("error getting L1 block number %d header : %w", parentBlockNumber, err)
+		return 0, fmt.Errorf("error getting L1 block number %d header: %w", parentBlockNumber, err)
 	}
 	return ParentHeaderToL1BlockNumber(header), nil
 }
