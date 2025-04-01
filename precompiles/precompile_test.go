@@ -180,7 +180,9 @@ func TestEventCosts(t *testing.T) {
 }
 
 func TestPrecompilesPerArbosVersion(t *testing.T) {
-	expectedNewMethodsPerArbosVersion := map[uint64]int{
+	// Each new precompile contract and each method on new or existing precompile
+	// contracts should be counted.
+	expectedNewEntriesPerArbosVersion := map[uint64]int{
 		0:                      98,
 		params.ArbosVersion_5:  3,
 		params.ArbosVersion_10: 2,
@@ -192,10 +194,11 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 	}
 
 	precompiles := Precompiles()
-	newMethodsPerArbosVersion := make(map[uint64]int)
+	newEntriesPerArbosVersion := make(map[uint64]int)
 	for _, precompile := range precompiles {
 		innerPrecompile := precompile.Precompile()
-		newMethodsPerArbosVersion[innerPrecompile.arbosVersion]++
+		// This counts newly-added precompile contracts
+		newEntriesPerArbosVersion[innerPrecompile.arbosVersion]++
 		_, isDebug := precompile.(*DebugPrecompile)
 		if isDebug {
 			// Debug methods are disabled on production chains
@@ -203,17 +206,18 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 		}
 		for _, method := range innerPrecompile.methods {
 			version := arbmath.MaxInt(method.arbosVersion, innerPrecompile.arbosVersion)
-			newMethodsPerArbosVersion[version]++
+			// This counts new methods on existing or new precompile contracts.
+			newEntriesPerArbosVersion[version]++
 		}
 	}
 
-	if len(expectedNewMethodsPerArbosVersion) != len(newMethodsPerArbosVersion) {
-		t.Errorf("expected %v ArbOS versions with new precompile methods but got %v", len(expectedNewMethodsPerArbosVersion), len(newMethodsPerArbosVersion))
+	if len(expectedNewEntriesPerArbosVersion) != len(newEntriesPerArbosVersion) {
+		t.Errorf("expected %v ArbOS versions with new precompile methods but got %v", len(expectedNewEntriesPerArbosVersion), len(newEntriesPerArbosVersion))
 	}
-	for version, count := range newMethodsPerArbosVersion {
+	for version, count := range newEntriesPerArbosVersion {
 		fmt.Printf("got %v version count %v\n", version, count)
-		if expectedNewMethodsPerArbosVersion[version] != count {
-			t.Errorf("expected %v new precompile methods for ArbOS version %v but got %v", expectedNewMethodsPerArbosVersion[version], version, count)
+		if expectedNewEntriesPerArbosVersion[version] != count {
+			t.Errorf("expected %v new precompile methods for ArbOS version %v but got %v", expectedNewEntriesPerArbosVersion[version], version, count)
 		}
 	}
 }
