@@ -22,8 +22,22 @@ import (
 
 // DelayBufferConfig originates from the sequencer inbox contract.
 type DelayBufferConfig struct {
-	Enabled   bool
-	Threshold uint64
+	Enabled         bool
+	Threshold       uint64
+	PrevBlockNumber uint64
+	BufferBlocks    uint64
+	Max             uint64
+}
+
+func (d *DelayBufferConfig) isUpdatable(blockNumber uint64) bool {
+	// if synced, the buffer can't be depleted
+	// if full, the buffer can't be replenished
+	// if neither synced nor full, the buffer updatable (depletable / replenishable)
+	return !d.isSynced(blockNumber) || d.BufferBlocks < d.Max
+}
+
+func (d *DelayBufferConfig) isSynced(blockNumber uint64) bool {
+	return blockNumber-d.PrevBlockNumber <= d.Threshold
 }
 
 // GetDelayBufferConfig gets the delay buffer config from the sequencer inbox contract.
@@ -34,7 +48,7 @@ func GetDelayBufferConfig(ctx context.Context, sequencerInbox *bridgegen.Sequenc
 	callOpts := bind.CallOpts{Context: ctx}
 	enabled, err := sequencerInbox.IsDelayBufferable(&callOpts)
 	if err != nil {
-		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		if headerreader.IsExecutionReverted(err) {
 			return &DelayBufferConfig{Enabled: false}, nil
 		}
 		return nil, fmt.Errorf("retrieve SequencerInbox.isDelayBufferable: %w", err)
@@ -47,8 +61,11 @@ func GetDelayBufferConfig(ctx context.Context, sequencerInbox *bridgegen.Sequenc
 		return nil, fmt.Errorf("retrieve SequencerInbox.buffer: %w", err)
 	}
 	config := &DelayBufferConfig{
-		Enabled:   true,
-		Threshold: bufferData.Threshold,
+		Enabled:         true,
+		Threshold:       bufferData.Threshold,
+		PrevBlockNumber: bufferData.PrevBlockNumber,
+		BufferBlocks:    bufferData.BufferBlocks,
+		Max:             bufferData.Max,
 	}
 	return config, nil
 }

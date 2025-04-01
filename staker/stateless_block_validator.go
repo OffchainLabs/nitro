@@ -59,8 +59,8 @@ type InboxTrackerInterface interface {
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
 	GetProcessedMessageCount() (arbutil.MessageIndex, error)
-	GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
-	ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error)
+	GetMessage(msgIdx arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
+	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error)
 	PauseReorgs()
 	ResumeReorgs()
 	ChainConfig() *params.ChainConfig
@@ -428,22 +428,24 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	result, err := v.streamer.ResultAtCount(pos + 1)
+	result, err := v.streamer.ResultAtMessageIndex(pos)
 	if err != nil {
 		return nil, err
 	}
 	var prevDelayed uint64
+	prevResult := &execution.MessageResult{}
 	if pos > 0 {
 		prev, err := v.streamer.GetMessage(pos - 1)
 		if err != nil {
 			return nil, err
 		}
 		prevDelayed = prev.DelayedMessagesRead
+		prevResult, err = v.streamer.ResultAtMessageIndex(pos - 1)
+		if err != nil {
+			return nil, err
+		}
 	}
-	prevResult, err := v.streamer.ResultAtCount(pos)
-	if err != nil {
-		return nil, err
-	}
+
 	startPos, endPos, err := v.GlobalStatePositionsAtCount(pos + 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed calculating position for validation: %w", err)

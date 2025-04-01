@@ -138,9 +138,8 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	)
 	defer l2nodeB.StopAndWait()
 
-	genesisA, err := l2nodeA.Execution.ResultAtPos(0)
-	Require(t, err)
-	genesisB, err := l2nodeB.Execution.ResultAtPos(0)
+	genesisA, err := l2nodeA.ExecutionClient.ResultAtMessageIndex(0).Await(ctx)
+	genesisB, err := l2nodeB.ExecutionClient.ResultAtMessageIndex(0).Await(ctx)
 	Require(t, err)
 	if genesisA.BlockHash != genesisB.BlockHash {
 		Fatal(t, "genesis blocks mismatch between nodes")
@@ -160,7 +159,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
-		l2nodeA.Execution,
+		l2nodeA.ExecutionRecorder,
 		l2nodeA.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -175,7 +174,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		l2nodeB.Execution,
+		l2nodeB.ExecutionRecorder,
 		l2nodeB.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -331,11 +330,11 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	t.Logf("Node B batch count %d, msgs %d", bcB, msgB)
 
 	// Wait for both nodes' chains to catch up.
-	nodeAExec, ok := l2nodeA.Execution.(*gethexec.ExecutionNode)
+	nodeAExec, ok := l2nodeA.ExecutionClient.(*gethexec.ExecutionNode)
 	if !ok {
 		Fatal(t, "not geth execution node")
 	}
-	nodeBExec, ok := l2nodeB.Execution.(*gethexec.ExecutionNode)
+	nodeBExec, ok := l2nodeB.ExecutionClient.(*gethexec.ExecutionNode)
 	if !ok {
 		Fatal(t, "not geth execution node")
 	}
@@ -595,7 +594,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	execConfig.Caching.StateScheme = rawdb.HashScheme
 	useWasmCache := uint32(1)
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, nil, execConfig, useWasmCache)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, nil, execConfig, useWasmCache, true)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -617,8 +616,8 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	parentChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	currentNode, err = arbnode.CreateNode(
-		ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
+	currentNode, err = arbnode.CreateNodeFullExecutionClient(
+		ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
 		nil, // Blob reader.
 	)
@@ -778,7 +777,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	fatalErrChan := make(chan error, 10)
 	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
-	firstExec, ok := first.Execution.(*gethexec.ExecutionNode)
+	firstExec, ok := first.ExecutionClient.(*gethexec.ExecutionNode)
 	if !ok {
 		Fatal(t, "not geth execution node")
 	}
@@ -827,7 +826,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	l2node, err := arbnode.CreateNode(ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */)
+	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */)
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack)

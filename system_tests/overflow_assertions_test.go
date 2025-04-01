@@ -94,7 +94,7 @@ func TestOverflowAssertions(t *testing.T) {
 		l2node.InboxReader,
 		l2node.InboxTracker,
 		l2node.TxStreamer,
-		l2node.Execution,
+		l2node.ExecutionRecorder,
 		l2node.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -173,7 +173,7 @@ func TestOverflowAssertions(t *testing.T) {
 	t.Logf("Node batch count %d, msgs %d", bc, msgs)
 
 	// Wait for the node to catch up.
-	nodeExec, ok := l2node.Execution.(*gethexec.ExecutionNode)
+	nodeExec, ok := l2node.ExecutionClient.(*gethexec.ExecutionNode)
 	if !ok {
 		Fatal(t, "not geth execution node")
 	}
@@ -282,12 +282,12 @@ func TestOverflowAssertions(t *testing.T) {
 				assertionHash := protocol.AssertionHash{Hash: it.Event.AssertionHash}
 				creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, assertionHash)
 				Require(t, err)
-				t.Logf("Created assertion in block: %d", creationInfo.CreationBlock)
+				t.Logf("Created assertion in block: %d", creationInfo.CreationL1Block)
 				newState := protocol.GoGlobalStateFromSolidity(creationInfo.AfterState.GlobalState)
 				t.Logf("NewState PosInBatch: %d", newState.PosInBatch)
 				inboxMax := creationInfo.InboxMaxCount.Uint64()
 				t.Logf("InboxMax: %d", inboxMax)
-				blocks := creationInfo.CreationBlock - lastAssertionBlock
+				blocks := creationInfo.CreationL1Block - lastAssertionBlock
 				// PosInBatch == 0 && inboxMax > lastInboxMax means it is NOT an overflow assertion.
 				if newState.PosInBatch == 0 && inboxMax > lastInboxMax {
 					if expectedAssertions[0] == overflow {
@@ -304,7 +304,7 @@ func TestOverflowAssertions(t *testing.T) {
 						t.Errorf("overflow assertions should not have %d blocks between them. Got: %d", mab64, blocks)
 					}
 				}
-				lastAssertionBlock = creationInfo.CreationBlock
+				lastAssertionBlock = creationInfo.CreationL1Block
 				lastInboxMax = inboxMax
 				expectedAssertions = expectedAssertions[1:]
 			}

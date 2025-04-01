@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -68,7 +69,7 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	stateroot, err := InitializeArbosInDatabase(raw, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
 	triedbConfig := cacheConfig.TriedbConfig()
-	stateDb, err := state.New(stateroot, state.NewDatabaseWithConfig(raw, triedbConfig), nil)
+	stateDb, err := state.New(stateroot, state.NewDatabase(triedb.NewDatabase(raw, triedbConfig), nil))
 	Require(t, err)
 
 	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
@@ -76,6 +77,41 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	checkAddressTable(arbState, input.AddressTableContents, t)
 	checkRetryables(arbState, input.RetryableData, t)
 	checkAccounts(stateDb, arbState, input.Accounts, t)
+	checkFeatures(t, arbState)
+}
+
+func checkFeatures(t *testing.T, arbState *ArbosState) {
+	t.Helper()
+	want := false
+	got, err := arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
+	if err = arbState.Features().SetCalldataPriceIncrease(true); err != nil {
+		t.Error(err)
+	}
+	want = true
+	got, err = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
+	if err = arbState.Features().SetCalldataPriceIncrease(false); err != nil {
+		t.Error(err)
+	}
+	want = false
+	got, err = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
 }
 
 func pseudorandomRetryableInitForTesting(prand *testhelpers.PseudoRandomDataSource) statetransfer.InitializationDataForRetryable {

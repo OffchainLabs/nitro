@@ -1,5 +1,9 @@
 version: 0.2
 
+env:
+  exported-variables:
+    - IMAGE_TAG
+
 phases:
   pre_build:
     commands:

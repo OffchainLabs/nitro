@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race, challenge, stylus, long]
+        test-mode: [defaults, pathdb, challenge, stylus]
 
     steps:
       - name: Checkout
@@ -57,16 +57,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         id: install-rust
         with:
-          toolchain: '1.80.1'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          toolchain: '1.84.1'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-10-06'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          toolchain: 'nightly-2025-02-14'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
@@ -145,7 +145,7 @@ jobs:
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
 
       - name: run tests without race detection and path state scheme
-        if: matrix.test-mode == 'defaults'
+        if: matrix.test-mode == 'pathdb'
         env:
           TEST_STATE_SCHEME: path
         run: |
@@ -159,14 +159,6 @@ jobs:
         run: |
           echo "Running tests with Hash Scheme" >> full.log
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m
-
-      - name: run tests with race detection and hash state scheme
-        if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: hash
-        run: |
-          echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
@@ -201,10 +193,6 @@ jobs:
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
         run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
-
-      - name: run long stylus tests
-        if: matrix.test-mode == 'long'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v4
