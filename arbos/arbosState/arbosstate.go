@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/features"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
@@ -52,6 +53,7 @@ type ArbosState struct {
 	chainOwners            *addressSet.AddressSet
 	sendMerkle             *merkleAccumulator.MerkleAccumulator
 	programs               *programs.Programs
+	features               *features.Features
 	blockhashes            *blockhash.Blockhashes
 	chainId                storage.StorageBackedBigInt
 	chainConfig            storage.StorageBackedBytes
@@ -85,7 +87,8 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
-		programs.Open(backingStorage.OpenSubStorage(programsSubspace)),
+		programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
+		features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenCachedSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
 		backingStorage.OpenStorageBackedBytes(chainConfigSubspace),
@@ -168,6 +171,7 @@ var (
 	blockhashesSubspace  SubspaceID = []byte{6}
 	chainConfigSubspace  SubspaceID = []byte{7}
 	programsSubspace     SubspaceID = []byte{8}
+	featuresSubspace     SubspaceID = []byte{9}
 )
 
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
@@ -320,7 +324,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case params.ArbosVersion_30:
-			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
+			programs.Initialize(nextArbosVersion, state.backingStorage.OpenSubStorage(programsSubspace))
 
 		case params.ArbosVersion_31:
 			params, err := state.Programs().Params()
@@ -330,6 +334,17 @@ func (state *ArbosState) UpgradeArbosVersion(
 
 		case params.ArbosVersion_32:
 			// no change state needed
+
+		case 33, 34, 35, 36, 37, 38, 39:
+			// these versions are left to Orbit chains for custom upgrades.
+
+		case params.ArbosVersion_40:
+			// The MaxWasmSize was a constant before arbos version 40, and can
+			// be read as a parameter after arbos version 40.
+			params, err := state.Programs().Params()
+			ensure(err)
+			ensure(params.UpgradeToArbosVersion(nextArbosVersion))
+			ensure(params.Save())
 
 		default:
 			return fmt.Errorf(
@@ -347,6 +362,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		}
 
 		state.arbosVersion = nextArbosVersion
+		state.programs.ArbosVersion = nextArbosVersion
 	}
 
 	if firstTime && upgradeTo >= params.ArbosVersion_6 {
@@ -440,6 +456,10 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 
 func (state *ArbosState) Programs() *programs.Programs {
 	return state.programs
+}
+
+func (state *ArbosState) Features() *features.Features {
+	return state.features
 }
 
 func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {

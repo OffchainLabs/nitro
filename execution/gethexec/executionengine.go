@@ -262,9 +262,9 @@ func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) 
 	s.consensus = consensus
 }
 
-func (s *ExecutionEngine) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
+func (s *ExecutionEngine) BlockMetadataAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
 	if s.consensus != nil {
-		return s.consensus.BlockMetadataAtMessageIndex(msgIdx)
+		return s.consensus.BlockMetadataAtMessageIndex(msgIdx).Await(ctx)
 	}
 	return nil, errors.New("FullConsensusClient is not accessible to execution")
 }
@@ -311,7 +311,7 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 		}
 	}
 
-	newMessagesResults := make([]*execution.MessageResult, 0, len(oldMessages))
+	newMessagesResults := make([]*execution.MessageResult, 0, len(newMessages))
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
 		if i < len(newMessages)-1 {
@@ -464,7 +464,7 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 		}
 		// We got SequencerInsertLockTaken
 		// option 1: there was a race, we are no longer main sequencer
-		chosenErr := s.consensus.ExpectChosenSequencer()
+		_, chosenErr := s.consensus.ExpectChosenSequencer().Await(s.GetContext())
 		if chosenErr != nil {
 			return nil, chosenErr
 		}
@@ -609,7 +609,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
-	err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata)
+	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -685,7 +685,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil))
+	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil)).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}

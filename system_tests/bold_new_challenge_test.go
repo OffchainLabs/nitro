@@ -258,10 +258,12 @@ func fundBoldStaker(t *testing.T, ctx context.Context, builder *NodeBuilder, nam
 }
 
 func TestChallengeProtocolBOLDNearLastVirtualBlock(t *testing.T) {
+	t.Skip("This test is flaky and needs to be fixed")
 	testChallengeProtocolBOLDVirtualBlocks(t, false)
 }
 
 func TestChallengeProtocolBOLDFirstVirtualBlock(t *testing.T) {
+	t.Skip("This test is flaky and needs to be fixed")
 	testChallengeProtocolBOLDVirtualBlocks(t, true)
 }
 

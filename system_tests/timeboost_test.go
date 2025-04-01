@@ -1663,7 +1663,6 @@ func setupExpressLaneAuction(
 
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
-	builderSeq.execConfig.Sequencer.Dangerous.Timeboost.Enable = true
 	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
 
@@ -1698,6 +1697,7 @@ func setupExpressLaneAuction(
 	}
 
 	expressLaneTracker.Start(ctx)
+	builderSeq.execConfig.Sequencer.Dangerous.Timeboost.Enable = true // Prevents race in sequencer where expressLaneService is read inside publishTransactionToQueue
 
 	// Set up an autonomous auction contract service that runs in the background in this test.
 	redisURL := redisutil.CreateTestRedis(ctx, t)
