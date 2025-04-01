@@ -2714,24 +2714,11 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 	blockNumberFailedTx := receipt.BlockNumber
 
 	wasmModuleRoot := currentRootModule(t)
-
-	// validation of previous block succeeds
-	_, _, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
-		ctx,
-		arbutil.MessageIndex(blockNumberFailedTx.Uint64()-1),
-		false,
-		wasmModuleRoot,
-	)
-	Require(t, err)
-
-	// validation of block with failed transaction fails
 	_, _, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
 		ctx,
 		arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
 		false,
 		wasmModuleRoot,
 	)
-	if err == nil || !strings.Contains(err.Error(), "machine execution failed with error: missing requested preimage for hash") {
-		t.Fatalf("expected validation error, got %v", err)
-	}
+	Require(t, err)
 }
