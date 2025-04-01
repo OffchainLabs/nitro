@@ -357,7 +357,7 @@ func NewBlockValidator(
 		if err != nil {
 			return nil, err
 		}
-		res, err := streamer.ResultAtCount(messageCount)
+		res, err := streamer.ResultAtMessageIndex(messageCount)
 		if err != nil {
 			return nil, err
 		}
