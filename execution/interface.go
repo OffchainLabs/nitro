@@ -95,6 +95,7 @@ type ExecutionSequencer interface {
 	ForwardTo(url string) error
 	Sequence(ctx context.Context) (*SequencedMsg, time.Duration)
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*SequencedMsg, error)
+	AppendLastSequencedBlock(blockHash common.Hash) error
 	ResequenceReorgedMessages(oldMessages []*arbostypes.MessageWithMetadata)
 	NextDelayedMessageNumber() (uint64, error)
 	Synced(ctx context.Context) bool

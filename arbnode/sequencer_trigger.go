@@ -40,6 +40,12 @@ func (s *SequencerTrigger) triggerSequencing(ctx context.Context) time.Duration 
 		err := s.txStreamer.WriteSequencedMsg(sequencedMsg)
 		if err != nil {
 			log.Error("Error writing sequenced message", "err", err)
+			return nextSequenceCall
+		}
+
+		err = s.execSequencer.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
+		if err != nil {
+			log.Error("Error appending last sequenced block", "err", err)
 		}
 	}
 	return nextSequenceCall

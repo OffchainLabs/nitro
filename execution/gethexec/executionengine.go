@@ -81,6 +81,14 @@ type L1PriceData struct {
 	msgToL1PriceData        []L1PriceDataOfMsg
 }
 
+type lastSequencedBlockInfo struct {
+	block         *types.Block
+	receipts      types.Receipts
+	statedb       *state.StateDB
+	blockCalcTime time.Duration
+	msgIdx        arbutil.MessageIndex
+}
+
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
@@ -90,10 +98,11 @@ type ExecutionEngine struct {
 
 	createBlocksMutex sync.Mutex
 
-	newBlockNotifier    chan struct{}
-	reorgEventsNotifier chan struct{}
-	latestBlockMutex    sync.Mutex
-	latestBlock         *types.Block
+	newBlockNotifier       chan struct{}
+	reorgEventsNotifier    chan struct{}
+	latestBlockMutex       sync.Mutex
+	latestBlock            *types.Block
+	lastSequencedBlockInfo *lastSequencedBlockInfo
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
@@ -488,6 +497,37 @@ func writeAndLog(pprof, trace *bytes.Buffer) {
 	log.Info("Transactions sequencing took longer than 2 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
+func (s *ExecutionEngine) AppendLastSequencedBlock(blockHash common.Hash) error {
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+
+	if s.lastSequencedBlockInfo == nil {
+		return errors.New("no last sequenced block info")
+	}
+	if s.lastSequencedBlockInfo.block.Hash() != blockHash {
+		return fmt.Errorf("block hash mismatch: expected %v vs but %v was provided", s.lastSequencedBlockInfo.block.Hash(), blockHash)
+	}
+
+	err := s.appendBlock(
+		s.lastSequencedBlockInfo.block,
+		s.lastSequencedBlockInfo.statedb,
+		s.lastSequencedBlockInfo.receipts,
+		s.lastSequencedBlockInfo.blockCalcTime,
+	)
+	if err != nil {
+		return err
+	}
+	s.cacheL1PriceDataOfMsg(
+		s.lastSequencedBlockInfo.msgIdx,
+		s.lastSequencedBlockInfo.block,
+		false,
+	)
+
+	s.lastSequencedBlockInfo.statedb.StopPrefetcher()
+
+	return nil
+}
+
 func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*execution.SequencedMsg, *types.Block, error) {
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
@@ -569,22 +609,21 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, err
 	}
 
-	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
+	s.lastSequencedBlockInfo = &lastSequencedBlockInfo{
+		block:         block,
+		receipts:      receipts,
+		statedb:       statedb,
+		blockCalcTime: blockCalcTime,
+		msgIdx:        msgIdx,
+	}
 
+	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
 	sequencedMsg := &execution.SequencedMsg{
 		MsgIdx:        msgIdx,
 		MsgWithMeta:   msgWithMeta,
 		MsgResult:     *msgResult,
 		BlockMetadata: blockMetadata,
 	}
-
-	// Only write the block after we've written the messages, so if the node dies in the middle of this,
-	// it will naturally recover on startup by regenerating the missing block.
-	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
-	if err != nil {
-		return nil, nil, err
-	}
-	s.cacheL1PriceDataOfMsg(msgIdx, block, false)
 
 	return sequencedMsg, block, nil
 }
@@ -652,20 +691,20 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, nil, err
 	}
 
+	s.lastSequencedBlockInfo = &lastSequencedBlockInfo{
+		block:         block,
+		receipts:      receipts,
+		statedb:       statedb,
+		blockCalcTime: blockCalcTime,
+		msgIdx:        msgIdx,
+	}
+
 	sequencedMsg := &execution.SequencedMsg{
 		MsgIdx:        msgIdx,
 		MsgWithMeta:   messageWithMeta,
 		MsgResult:     *msgResult,
 		BlockMetadata: s.blockMetadataFromBlock(block, nil),
 	}
-
-	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
-	if err != nil {
-		return nil, nil, err
-	}
-	s.cacheL1PriceDataOfMsg(msgIdx, block, true)
-
-	log.Info("ExecutionEngine: Added DelayedMessages", "msgIdx", msgIdx, "delayedMsgIdx", delayedMsgIdx, "block-header", block.Header())
 
 	return sequencedMsg, block, nil
 }
