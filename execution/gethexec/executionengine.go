@@ -311,7 +311,7 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 		}
 	}
 
-	newMessagesResults := make([]*execution.MessageResult, 0, len(oldMessages))
+	newMessagesResults := make([]*execution.MessageResult, 0, len(newMessages))
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
 		if i < len(newMessages)-1 {
