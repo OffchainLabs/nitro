@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"math/rand"
@@ -21,12 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
-)
-
-var (
-	seedFlag    = flag.String("seed", "", "Seed for random number generator")
-	runsFlag    = flag.String("runs", "", "Number of runs for test")
-	loggingFlag = flag.String("logging", "", "Enable logging")
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
@@ -248,25 +242,25 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 }
 
 func initTest(t *testing.T) int {
-	flag.Parse()
+	testhelpers.ParseFlag()
 	t.Parallel()
 	seed := time.Now().UnixNano()
-	if len(*seedFlag) > 0 {
+	if len(*testhelpers.SeedFlag) > 0 {
 		var err error
-		intSeed, err := strconv.Atoi(*seedFlag)
+		intSeed, err := strconv.Atoi(*testhelpers.SeedFlag)
 		Require(t, err, "Failed to parse string")
 		seed = int64(intSeed)
 	}
 	rand.Seed(seed)
 
 	runs := 2 ^ 32
-	if len(*runsFlag) > 0 {
+	if len(*testhelpers.RunsFlag) > 0 {
 		var err error
-		runs, err = strconv.Atoi(*runsFlag)
+		runs, err = strconv.Atoi(*testhelpers.RunsFlag)
 		Require(t, err, "Failed to parse string")
 	}
 
-	if len(*loggingFlag) > 0 {
+	if len(*testhelpers.LoggingFlag) > 0 {
 		enableLogging()
 	}
 

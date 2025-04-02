@@ -4,23 +4,19 @@
 package env
 
 import (
-	"flag"
-
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
-)
 
-var (
-	stateSchemeFlag = flag.String("test_state_scheme", "", "State scheme to use for tests")
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 // There are two CI steps, one to run tests using the path state scheme, and one to run tests using the hash state scheme.
 // An environment variable controls that behavior.
 func GetTestStateScheme() string {
-	flag.Parse()
+	testhelpers.ParseFlag()
 	stateScheme := rawdb.HashScheme
-	if *stateSchemeFlag == rawdb.PathScheme || *stateSchemeFlag == rawdb.HashScheme {
-		stateScheme = *stateSchemeFlag
+	if *testhelpers.StateSchemeFlag == rawdb.PathScheme || *testhelpers.StateSchemeFlag == rawdb.HashScheme {
+		stateScheme = *testhelpers.StateSchemeFlag
 	}
 	log.Debug("test state scheme", "testStateScheme", stateScheme)
 	return stateScheme
