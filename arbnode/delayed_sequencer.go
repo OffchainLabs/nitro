@@ -197,7 +197,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		}
 		for i, msg := range messages {
 			// #nosec G115
-			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
+			_, err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
 			if err != nil {
 				return err
 			}

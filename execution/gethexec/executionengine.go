@@ -612,11 +612,11 @@ func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboosted
 	return bits
 }
 
-func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) error {
-	_, _, err := s.sequencerWrapper(func() (*execution.SequencedMsg, *types.Block, error) {
+func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, error) {
+	sequencedMsg, _, err := s.sequencerWrapper(func() (*execution.SequencedMsg, *types.Block, error) {
 		return s.sequenceDelayedMessageWithBlockMutex(message, delayedMsgIdx)
 	})
-	return err
+	return sequencedMsg, err
 }
 
 func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, *types.Block, error) {
