@@ -33,7 +33,7 @@ struct ForceSync<T>(T);
 unsafe impl<T> Sync for ForceSync<T> {}
 
 lazy_static! {
-    /// Memoizes dictionary preperation.
+    /// Memoizes dictionary preparation.
     static ref STYLUS_PROGRAM_DICT: ForceSync<*const EncoderPreparedDictionary> =
         ForceSync(unsafe {
             let data = Dictionary::StylusProgram.slice().unwrap();
