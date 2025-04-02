@@ -1,6 +1,9 @@
 package testflag
 
-import "flag"
+import (
+	"flag"
+	"sync"
+)
 
 var (
 	StateSchemeFlag                               = flag.String("test_state_scheme", "", "State scheme to use for tests")
@@ -15,9 +18,12 @@ var (
 	RunsFlag                                      = flag.String("runs", "", "Number of runs for test")
 	LoggingFlag                                   = flag.String("logging", "", "Enable logging")
 	CompileFlag                                   = flag.String("test_compile", "", "[STORE|LOAD] to allow store/load in compile test")
+	flagLock                                      = sync.Mutex{}
 )
 
 // ParseFlag function ensures that all the flags are declared in testhelpers package first before calling flag.Parse.
 func ParseFlag() {
+	flagLock.Lock()
+	defer flagLock.Unlock()
 	flag.Parse()
 }
