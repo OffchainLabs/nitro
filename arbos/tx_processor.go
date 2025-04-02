@@ -430,7 +430,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
-	tipReceipient, _ := p.state.NetworkFeeAccount()
+	tipRecipient, _ := p.state.NetworkFeeAccount()
 	var basefee *big.Int
 	if p.evm.Context.BaseFeeInBlock != nil {
 		basefee = p.evm.Context.BaseFeeInBlock
@@ -467,7 +467,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return tipReceipient, core.ErrIntrinsicGas
+		return tipRecipient, core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
@@ -480,7 +480,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 			*gasRemaining = gasAvailable
 		}
 	}
-	return tipReceipient, nil
+	return tipRecipient, nil
 }
 
 func (p *TxProcessor) RunMode() core.MessageRunMode {
