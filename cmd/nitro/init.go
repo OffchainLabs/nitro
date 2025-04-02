@@ -575,7 +575,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
-				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
+				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node.VMTrace, config.Execution.TxLookupLimit)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -726,7 +726,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
+		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node.VMTrace, config.Execution.TxLookupLimit)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -825,7 +825,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
 			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
 		}
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
+
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, &config.Node.VMTrace, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}

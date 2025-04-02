@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -156,11 +157,19 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runMode,
+		message.Header,
+		txes,
+		delayedMessagesRead,
+		lastBlockHeader,
+		statedb,
+		chainContext,
+		hooks,
+		isMsgForPrefetch,
+		runMode,
+		nil,
 	)
 }
 
-// A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
 	l1Header *arbostypes.L1IncomingMessageHeader,
 	txes types.Transactions,
@@ -171,6 +180,7 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
+	liveTracingHooks *tracing.Hooks,
 ) (*types.Block, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -314,7 +324,9 @@ func ProduceBlockAdvanced(
 
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
-			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
+
+			tracingStateDB := state.NewHookedState(statedb, liveTracingHooks)
+			evm := vm.NewEVM(blockContext, tracingStateDB, chainConfig, vm.Config{Tracer: liveTracingHooks})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
 				&gasPool,
