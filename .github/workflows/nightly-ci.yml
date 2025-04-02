@@ -1,0 +1,377 @@
+name: Nightly CI
+run-name: Nightly CI tests triggered from @${{ github.actor }} of ${{ github.head_ref }}
+
+on:
+  workflow_dispatch:
+  merge_group:
+  pull_request:
+  push:
+    branches:
+      - master
+  schedule:
+    # Run at 00:00 AM UTC
+    - cron: '0 0 * * *'
+
+jobs:
+  # Only run on schedule AND main branch
+  challenge-tests-scheduled:
+    name: Challenge tests (scheduled)
+    runs-on: ubuntu-8
+
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+
+    strategy:
+      fail-fast: false
+      matrix:
+        test-mode: [race, legacychallenge, long]
+
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          
+      - name: Install dependencies
+        run: sudo apt update && sudo apt install -y wabt gotestsum
+
+      - name: Setup nodejs
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'yarn'
+          cache-dependency-path: '**/yarn.lock'
+
+      - name: Install go
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.23.x
+
+      - name: Install wasm-ld
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y lld-14
+          sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+
+      - name: Install rust stable
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        id: install-rust
+        with:
+          toolchain: '1.84.1'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
+          components: 'llvm-tools-preview, rustfmt, clippy'
+
+      - name: Install rust nightly
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: dtolnay/rust-toolchain@nightly
+        id: install-rust-nightly
+        with:
+          toolchain: 'nightly-2025-02-14'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
+          components: 'rust-src, rustfmt, clippy'
+
+      - name: Set STYLUS_NIGHTLY_VER environment variable
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Install Foundry
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: foundry-rs/foundry-toolchain@v1
+        
+      - name: Install cbindgen
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: cargo install --force cbindgen
+
+      - name: Cache Build Products
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.test-mode }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Cache Rust Build Products
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/
+            arbitrator/target/
+            arbitrator/wasm-libraries/target/
+            arbitrator/wasm-libraries/soft-float/
+            target/etc/initial-machine-cache/
+            /home/runner/.rustup/toolchains/
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
+          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
+
+      - name: Cache cbrotli
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/cache@v3
+        id: cache-cbrotli
+        with:
+          path: |
+            target/include/brotli/
+            target/lib-wasm/
+            target/lib/libbrotlicommon-static.a
+            target/lib/libbrotlienc-static.a
+            target/lib/libbrotlidec-static.a
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-${{ matrix.test-mode }}
+          restore-keys: ${{ runner.os }}-brotli-
+
+      - name: Build cbrotli-local
+        if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
+        run: ./scripts/build-brotli.sh -l
+
+      - name: Build cbrotli-wasm in docker
+        if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
+        run: ./scripts/build-brotli.sh -w -d
+
+      - name: Build
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: make build test-go-deps -j
+
+      - name: Build all lint dependencies
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: make -j build-node-deps
+
+      - name: Lint
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          skip-pkg-cache: true
+          
+      - name: Custom Lint
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          go run ./linters ./...
+
+      - name: Set environment variables
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          mkdir -p target/tmp/deadbeefbee
+          echo "TMPDIR=$(pwd)/target/tmp/deadbeefbee" >> "$GITHUB_ENV"
+          echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
+          echo "GOGC=80" >> "$GITHUB_ENV"
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
+
+      - name: run tests with race detection and hash state scheme
+        if: matrix.test-mode == 'race'
+        env:
+          TEST_STATE_SCHEME: hash
+        run: |
+          echo "Running tests with Hash Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m
+
+      - name: run challenge tests
+        if: matrix.test-mode == 'legacychallenge'
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest --run TestChallenge --timeout 60m --cover
+
+      - name: run long stylus tests
+        if: matrix.test-mode == 'long'
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
+
+      - name: Archive detailed run log
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.test-mode }}-full.log
+          path: full.log
+
+      - name: Upload coverage to Codecov
+        if: steps.changed-files.outputs.any_changed == 'true' && matrix.test-mode == 'defaults'
+        uses: codecov/codecov-action@v2
+        with:
+          fail_ci_if_error: false
+          files: ./coverage.txt,./coverage-redis.txt
+          verbose: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+
+  # Only run this job if files in bold/legacy/ are modified
+  challenge-tests-pr:
+    name: Challenge tests (PR modified files)
+    runs-on: ubuntu-8
+    if: github.event_name == 'pull_request'
+    
+    permissions:
+      pull-requests: read
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          
+      - name: Check changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v46
+        with:
+          files: bold/legacy/**
+          
+      # Add conditional execution for all subsequent steps
+      - name: Skip tests if no relevant files changed
+        id: check-skip
+        if: steps.changed-files.outputs.any_changed != 'true'
+        run: |
+          echo "No changes detected in bold/legacy/** - skipping challenge tests"
+          exit 0  # Success exit code to pass the job
+      
+      - name: Install dependencies
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: sudo apt update && sudo apt install -y wabt gotestsum
+
+      - name: Setup nodejs
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'yarn'
+          cache-dependency-path: '**/yarn.lock'
+
+      - name: Install go
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.23.x
+
+      - name: Install wasm-ld
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y lld-14
+          sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+
+      - name: Install rust stable
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        id: install-rust
+        with:
+          toolchain: '1.84.1'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
+          components: 'llvm-tools-preview, rustfmt, clippy'
+
+      - name: Install rust nightly
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: dtolnay/rust-toolchain@nightly
+        id: install-rust-nightly
+        with:
+          toolchain: 'nightly-2025-02-14'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
+          components: 'rust-src, rustfmt, clippy'
+
+      - name: Set STYLUS_NIGHTLY_VER environment variable
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Install Foundry
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: foundry-rs/foundry-toolchain@v1
+        
+      - name: Install cbindgen
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: cargo install --force cbindgen
+
+      - name: Cache Build Products
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.test-mode }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Cache Rust Build Products
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/
+            arbitrator/target/
+            arbitrator/wasm-libraries/target/
+            arbitrator/wasm-libraries/soft-float/
+            target/etc/initial-machine-cache/
+            /home/runner/.rustup/toolchains/
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
+          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
+
+      - name: Cache cbrotli
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/cache@v3
+        id: cache-cbrotli
+        with:
+          path: |
+            target/include/brotli/
+            target/lib-wasm/
+            target/lib/libbrotlicommon-static.a
+            target/lib/libbrotlienc-static.a
+            target/lib/libbrotlidec-static.a
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-${{ matrix.test-mode }}
+          restore-keys: ${{ runner.os }}-brotli-
+
+      - name: Build cbrotli-local
+        if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
+        run: ./scripts/build-brotli.sh -l
+
+      - name: Build cbrotli-wasm in docker
+        if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
+        run: ./scripts/build-brotli.sh -w -d
+
+      - name: Build
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: make build test-go-deps -j
+
+      - name: Build all lint dependencies
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: make -j build-node-deps
+
+      - name: Lint
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          skip-pkg-cache: true
+          
+      - name: Custom Lint
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          go run ./linters ./...
+
+      - name: Set environment variables
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          mkdir -p target/tmp/deadbeefbee
+          echo "TMPDIR=$(pwd)/target/tmp/deadbeefbee" >> "$GITHUB_ENV"
+          echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
+          echo "GOGC=80" >> "$GITHUB_ENV"
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
+
+      - name: run challenge tests
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest --run TestChallenge --timeout 60m --cover
+
+      - name: Archive detailed run log
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.test-mode }}-full.log
+          path: full.log
+
+      - name: Upload coverage to Codecov
+        if: steps.changed-files.outputs.any_changed == 'true' && matrix.test-mode == 'defaults'
+        uses: codecov/codecov-action@v2
+        with:
+          fail_ci_if_error: false
+          files: ./coverage.txt,./coverage-redis.txt
+          verbose: false
+          token: ${{ secrets.CODECOV_TOKEN }}

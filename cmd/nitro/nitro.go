@@ -672,6 +672,7 @@ func mainImpl() int {
 			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
 		} else {
 			log.Info("validation node started")
+			defer valNode.Stop()
 		}
 	}
 	if err == nil {
