@@ -159,6 +159,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 			chaincontext,
 			false,
 			core.MessageReplayMode,
+			nil,
 		)
 		if err != nil {
 			return nil, err
