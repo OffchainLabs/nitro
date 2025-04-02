@@ -1570,9 +1570,9 @@ func setupExpressLaneAuction(
 	// Calculate the number of seconds until the next minute
 	// and the next timestamp that is a multiple of a minute.
 	now := time.Now()
-	roundDuration := time.Minute
+	roundDuration := 30 * time.Second
 	// Correctly calculate the remaining time until the next minute
-	waitTime := roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())*time.Nanosecond
+	waitTime := roundDuration - time.Duration(now.Second()%int(roundDuration.Seconds()))*time.Second - time.Duration(now.Nanosecond())*time.Nanosecond
 	// Get the current Unix timestamp at the start of the minute
 	initialTimestamp := big.NewInt(now.Add(waitTime).Unix())
 	initialTimestampUnix := time.Unix(initialTimestamp.Int64(), 0)
@@ -1595,9 +1595,9 @@ func setupExpressLaneAuction(
 	auctioneerAddr := seqInfo.GetDefaultTransactOpts("AuctionContract", ctx).From
 	beneficiary := auctioneerAddr
 	biddingToken := erc20Addr
-	bidRoundSeconds := uint64(60)
-	auctionClosingSeconds := uint64(15)
-	reserveSubmissionSeconds := uint64(15)
+	bidRoundSeconds := uint64(30)
+	auctionClosingSeconds := uint64(7)
+	reserveSubmissionSeconds := uint64(7)
 	minReservePrice := big.NewInt(1) // 1 wei.
 	roleAdmin := auctioneerAddr
 	tx, err = auctionContract.Initialize(
@@ -1816,7 +1816,7 @@ func setupExpressLaneAuction(
 	Require(t, err)
 	time.Sleep(roundTimingInfo2.TimeTilNextRound())
 	t.Logf("Reached the bidding round at %v", time.Now())
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second)
 	return proxyAddr, alice, bob, roundDuration, builderSeq, cleanupSeq, extraNode, cleanupExtraNode
 }
 
