@@ -203,9 +203,15 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			if err != nil {
 				return err
 			}
-			err = d.txStreamer.WriteSequencedMsg(sequencedMsg)
-			if err != nil {
-				return err
+			if sequencedMsg != nil {
+				err = d.txStreamer.WriteSequencedMsg(sequencedMsg)
+				if err != nil {
+					return err
+				}
+				err = d.exec.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
