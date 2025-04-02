@@ -80,6 +80,7 @@ type Config struct {
 	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
 	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
 	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
+	VMTrace                  arbostypes.VMTraceConfig       `koanf:"vmtrace" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -153,6 +154,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
+	VMTraceConfigAddOptions(prefix+".vmtrace", f)
 }
 
 var ConfigDefault = Config{
@@ -176,6 +178,7 @@ var ConfigDefault = Config{
 	BlockMetadataFetcher:     DefaultBlockMetadataFetcherConfig,
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
+	VMTrace:                  DefaultVMTraceConfig,
 	SnapSyncTest:             DefaultSnapSyncConfig,
 }
 
@@ -225,6 +228,21 @@ func ConfigDefaultL2Test() *Config {
 	config.Bold.MinimumGapToParentAssertion = 0
 
 	return &config
+}
+
+var DefaultVMTraceConfig = arbostypes.VMTraceConfig{
+	TracerName: "",
+	JSONConfig: "{}",
+}
+
+var TestVMTraceConfig = arbostypes.VMTraceConfig{
+	TracerName: "",
+	JSONConfig: "{}",
+}
+
+func VMTraceConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".tracername", DefaultVMTraceConfig.TracerName, "Name of tracer which should record internal VM operations (costly)")
+	f.String(prefix+".jsonconfig", DefaultVMTraceConfig.JSONConfig, "Tracer configuration (JSON)")
 }
 
 type DangerousConfig struct {
