@@ -370,59 +370,54 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 	return currentHeader.Nonce.Uint64(), nil
 }
 
-func (s *ExecutionEngine) ResequenceReorgedMessages(messages []*arbostypes.MessageWithMetadata) {
+func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, bool) {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 
-	log.Info("Trying to resequence messages", "number", len(messages))
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
 		log.Error("block header not found during resequence", "err", err)
-		return
+		return nil, false
 	}
 
 	nextDelayedMsgIdx := lastBlockHeader.Nonce.Uint64()
 
-	for _, msg := range messages {
-		// Check if the message is non-nil just to be safe
-		if msg == nil || msg.Message == nil || msg.Message.Header == nil {
-			continue
-		}
-		header := msg.Message.Header
-		if header.RequestId != nil {
-			delayedMsgIdx := header.RequestId.Big().Uint64()
-			if delayedMsgIdx != nextDelayedMsgIdx {
-				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedMsgIdx, "found", delayedMsgIdx)
-				continue
-			}
-			_, _, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedMsgIdx)
-			if err != nil {
-				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
-			}
-			nextDelayedMsgIdx += 1
-			continue
-		}
-		if header.Kind != arbostypes.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
-			// This shouldn't exist?
-			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
-			continue
-		}
-		lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
-		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, lastArbosVersion)
-		if err != nil {
-			log.Warn("failed to parse sequencer message found from reorg", "err", err)
-			continue
-		}
-		hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
-		_, block, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
-		if err != nil {
-			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
-			return
-		}
-		if block != nil {
-			lastBlockHeader = block.Header()
-		}
+	// Check if the message is non-nil just to be safe
+	if msg == nil || msg.Message == nil || msg.Message.Header == nil {
+		return nil, true
 	}
+	header := msg.Message.Header
+	if header.RequestId != nil {
+		delayedMsgIdx := header.RequestId.Big().Uint64()
+		if delayedMsgIdx != nextDelayedMsgIdx {
+			log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedMsgIdx, "found", delayedMsgIdx)
+			return nil, true
+		}
+		sequencedMsg, _, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedMsgIdx)
+		if err != nil {
+			log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
+			return nil, true
+		}
+		return sequencedMsg, true
+	}
+	if header.Kind != arbostypes.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
+		// This shouldn't exist?
+		log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
+		return nil, true
+	}
+	lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
+	txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, lastArbosVersion)
+	if err != nil {
+		log.Warn("failed to parse sequencer message found from reorg", "err", err)
+		return nil, true
+	}
+	hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
+	sequencedMsg, _, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
+	if err != nil {
+		log.Error("failed to re-sequence old user message removed by reorg", "err", err)
+		return nil, false
+	}
+	return sequencedMsg, true
 }
 
 func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*execution.SequencedMsg, *types.Block, error)) (*execution.SequencedMsg, *types.Block, error) {

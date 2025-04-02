@@ -99,8 +99,8 @@ func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbo
 	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages))
 }
 
-func (w *execClientWrapper) ResequenceReorgedMessages(oldMessages []*arbostypes.MessageWithMetadata) {
-	w.ExecutionEngine.ResequenceReorgedMessages(oldMessages)
+func (w *execClientWrapper) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, bool) {
+	return w.ExecutionEngine.ResequenceReorgedMessage(msg)
 }
 
 func (w *execClientWrapper) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {

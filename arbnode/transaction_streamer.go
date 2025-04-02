@@ -257,14 +257,36 @@ func (s *TransactionStreamer) reorgAtAndEndBatchImpl(batch ethdb.Batch, firstMsg
 	return oldMessages, nil
 }
 
+func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.MessageWithMetadata) {
+	if s.execSequencer != nil {
+		for _, msg := range msgs {
+			sequencedMsg, sequenceNextMsg := s.execSequencer.ResequenceReorgedMessage(msg)
+
+			err := s.WriteSequencedMsg(sequencedMsg)
+			if err != nil {
+				log.Error("failed to write reorged message", "msg", sequencedMsg, "err", err)
+				return
+			}
+
+			err = s.execSequencer.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
+			if err != nil {
+				log.Error("failed to append last sequenced block", "msg", sequencedMsg, "err", err)
+				return
+			}
+
+			if !sequenceNextMsg {
+				return
+			}
+		}
+	}
+}
+
 func (s *TransactionStreamer) ReorgAtAndEndBatch(batch ethdb.Batch, firstMsgIdxReorged arbutil.MessageIndex) error {
 	oldMessages, err := s.reorgAtAndEndBatchImpl(batch, firstMsgIdxReorged)
 	if err != nil {
 		return err
 	}
-	if s.execSequencer != nil {
-		s.execSequencer.ResequenceReorgedMessages(oldMessages)
-	}
+	s.resequenceReorgedMessages(oldMessages)
 	return nil
 }
 
@@ -750,9 +772,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 	if err != nil {
 		return err
 	}
-	if s.execSequencer != nil {
-		s.execSequencer.ResequenceReorgedMessages(oldMessages)
-	}
+	s.resequenceReorgedMessages(oldMessages)
 	return nil
 }
 
@@ -841,9 +861,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 	if err != nil {
 		return err
 	}
-	if s.execSequencer != nil {
-		s.execSequencer.ResequenceReorgedMessages(oldMessages)
-	}
+	s.resequenceReorgedMessages(oldMessages)
 	return nil
 }
 
