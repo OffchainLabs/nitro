@@ -139,7 +139,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		return common.Hash{}, err
 	}
 
-	log.Info("addresss table import complete")
+	log.Info("address table import complete")
 
 	retryableReader, err := initData.GetRetryableDataReader()
 	if err != nil {
