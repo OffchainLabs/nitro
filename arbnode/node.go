@@ -30,7 +30,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -983,6 +982,7 @@ func getBatchPoster(
 func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
 	inboxReader *InboxReader,
+	txStreamer *TransactionStreamer,
 	exec execution.ExecutionSequencer,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
@@ -992,7 +992,7 @@ func getDelayedSequencer(
 	}
 
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer }, txStreamer)
 	if err != nil {
 		return nil, err
 	}
@@ -1001,11 +1001,12 @@ func getDelayedSequencer(
 
 func getSequencerTrigger(
 	execSequencer execution.ExecutionSequencer,
+	txStreamer *TransactionStreamer,
 ) *SequencerTrigger {
 	if execSequencer == nil {
 		return nil
 	}
-	return NewSequencerTrigger(execSequencer)
+	return NewSequencerTrigger(execSequencer, txStreamer)
 }
 
 func getNodeParentChainReaderDisabled(
@@ -1139,7 +1140,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	sequencerTrigger := getSequencerTrigger(executionSequencer)
+	sequencerTrigger := getSequencerTrigger(executionSequencer, txStreamer)
 
 	if !config.ParentChainReader.Enable {
 		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher, sequencerTrigger), nil
@@ -1180,7 +1181,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, executionSequencer, configFetcher, coordinator)
+	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, txStreamer, executionSequencer, configFetcher, coordinator)
 	if err != nil {
 		return nil, err
 	}
@@ -1583,11 +1584,6 @@ func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) con
 
 func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
 	return containers.NewReadyPromise(n.InboxTracker.GetBatchParentChainBlock(seqNum))
-}
-
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
-	err := n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
-	return containers.NewReadyPromise(struct{}{}, err)
 }
 
 func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
