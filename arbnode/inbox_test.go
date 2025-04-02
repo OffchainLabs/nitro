@@ -43,7 +43,7 @@ func (w *execClientWrapper) Activate() { w.t.Error("not supported") }
 
 func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
 
-func (w *execClientWrapper) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
+func (w *execClientWrapper) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*execution.SequencedMsg, error) {
 	return w.ExecutionEngine.SequenceDelayedMessage(message, delayedSeqNum)
 }
 
