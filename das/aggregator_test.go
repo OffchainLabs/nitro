@@ -248,9 +248,9 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 }
 
 func initTest(t *testing.T) int {
+	flag.Parse()
 	t.Parallel()
 	seed := time.Now().UnixNano()
-	flag.Parse()
 	if len(*seedFlag) > 0 {
 		var err error
 		intSeed, err := strconv.Atoi(*seedFlag)
