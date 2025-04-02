@@ -1570,7 +1570,7 @@ func setupExpressLaneAuction(
 	// Calculate the number of seconds until the next minute
 	// and the next timestamp that is a multiple of a minute.
 	now := time.Now()
-	roundDuration := 30 * time.Second
+	roundDuration := 20 * time.Second
 	// Correctly calculate the remaining time until the next minute
 	waitTime := roundDuration - time.Duration(now.Second()%int(roundDuration.Seconds()))*time.Second - time.Duration(now.Nanosecond())*time.Nanosecond
 	// Get the current Unix timestamp at the start of the minute
@@ -1595,9 +1595,9 @@ func setupExpressLaneAuction(
 	auctioneerAddr := seqInfo.GetDefaultTransactOpts("AuctionContract", ctx).From
 	beneficiary := auctioneerAddr
 	biddingToken := erc20Addr
-	bidRoundSeconds := uint64(30)
-	auctionClosingSeconds := uint64(7)
-	reserveSubmissionSeconds := uint64(7)
+	bidRoundSeconds := uint64(20)
+	auctionClosingSeconds := uint64(5)
+	reserveSubmissionSeconds := uint64(5)
 	minReservePrice := big.NewInt(1) // 1 wei.
 	roleAdmin := auctioneerAddr
 	tx, err = auctionContract.Initialize(
