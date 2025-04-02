@@ -11,14 +11,15 @@ import (
 	"github.com/alicebob/miniredis/v2"
 
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 // CreateTestRedis Provides external redis url, this is only done with -test_redis flag,
 // else creates a new miniredis and returns its url.
 func CreateTestRedis(ctx context.Context, t testing.TB) string {
-	testhelpers.ParseFlag()
-	if *testhelpers.RedisFlag != "" {
-		return *testhelpers.RedisFlag
+	testflag.ParseFlag()
+	if *testflag.RedisFlag != "" {
+		return *testflag.RedisFlag
 	}
 	redisServer, err := miniredis.Run()
 	testhelpers.RequireImpl(t, err)

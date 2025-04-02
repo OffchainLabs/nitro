@@ -79,6 +79,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -1809,11 +1810,11 @@ func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
 }
 
 func TestMain(m *testing.M) {
-	testhelpers.ParseFlag()
-	if *testhelpers.LogLevelFlag != "" {
-		logLevel, err := strconv.ParseInt(*testhelpers.LogLevelFlag, 10, 32)
+	testflag.ParseFlag()
+	if *testflag.LogLevelFlag != "" {
+		logLevel, err := strconv.ParseInt(*testflag.LogLevelFlag, 10, 32)
 		if err != nil || logLevel > int64(log.LevelCrit) {
-			log.Warn("-test_loglevel exists but out of bound, ignoring", "logLevel", *testhelpers.LogLevelFlag, "max", log.LvlTrace)
+			log.Warn("-test_loglevel exists but out of bound, ignoring", "logLevel", *testflag.LogLevelFlag, "max", log.LvlTrace)
 		}
 		glogger := log.NewGlogHandler(
 			log.NewTerminalHandler(io.Writer(os.Stderr), false))
@@ -1848,8 +1849,8 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 // This can be used as an input to the arbitrator prover to validate a block.
 func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ethdb.WasmTarget) {
 	t.Helper()
-	testhelpers.ParseFlag()
-	if !*testhelpers.RecordBlockInputsEnable {
+	testflag.ParseFlag()
+	if !*testflag.RecordBlockInputsEnable {
 		return
 	}
 	ctx := builder.ctx
@@ -1865,13 +1866,13 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...et
 		}
 	}
 	var options []inputs.WriterOption
-	options = append(options, inputs.WithTimestampDirEnabled(*testhelpers.RecordBlockInputsWithTimestampDirEnabled))
-	options = append(options, inputs.WithBlockIdInFileNameEnabled(*testhelpers.RecordBlockInputsWithBlockIdInFileNameEnabled))
-	if *testhelpers.RecordBlockInputsWithBaseDir != "" {
-		options = append(options, inputs.WithBaseDir(*testhelpers.RecordBlockInputsWithBaseDir))
+	options = append(options, inputs.WithTimestampDirEnabled(*testflag.RecordBlockInputsWithTimestampDirEnabled))
+	options = append(options, inputs.WithBlockIdInFileNameEnabled(*testflag.RecordBlockInputsWithBlockIdInFileNameEnabled))
+	if *testflag.RecordBlockInputsWithBaseDir != "" {
+		options = append(options, inputs.WithBaseDir(*testflag.RecordBlockInputsWithBaseDir))
 	}
-	if *testhelpers.RecordBlockInputsWithSlug != "" {
-		options = append(options, inputs.WithSlug(*testhelpers.RecordBlockInputsWithSlug))
+	if *testflag.RecordBlockInputsWithSlug != "" {
+		options = append(options, inputs.WithSlug(*testflag.RecordBlockInputsWithSlug))
 	} else {
 		options = append(options, inputs.WithSlug(t.Name()))
 	}

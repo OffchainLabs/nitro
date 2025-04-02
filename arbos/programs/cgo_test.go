@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/offchainlabs/nitro/util/testhelpers"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func TestConstants(t *testing.T) {
@@ -27,16 +27,16 @@ func TestConstants(t *testing.T) {
 // * copy target/testdata to the other machine
 // * run test with -test_compile=LOAD on the other machine
 func TestCompileArch(t *testing.T) {
-	testhelpers.ParseFlag()
-	if *testhelpers.CompileFlag == "" {
+	testflag.ParseFlag()
+	if *testflag.CompileFlag == "" {
 		fmt.Print("use -test_compile=[STORE|LOAD] to allow store/load in compile test")
 	}
-	store := strings.Contains(*testhelpers.CompileFlag, "STORE")
+	store := strings.Contains(*testflag.CompileFlag, "STORE")
 	err := testCompileArch(store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if store || strings.Contains(*testhelpers.CompileFlag, "LOAD") {
+	if store || strings.Contains(*testflag.CompileFlag, "LOAD") {
 		err = testCompileLoad()
 		if err != nil {
 			t.Fatal(err)
