@@ -578,11 +578,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		BlockMetadata: blockMetadata,
 	}
 
-	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata).Await(s.GetContext())
-	if err != nil {
-		return nil, nil, err
-	}
-
 	// Only write the block after we've written the messages, so if the node dies in the middle of this,
 	// it will naturally recover on startup by regenerating the missing block.
 	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
@@ -662,11 +657,6 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		MsgWithMeta:   messageWithMeta,
 		MsgResult:     *msgResult,
 		BlockMetadata: s.blockMetadataFromBlock(block, nil),
-	}
-
-	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil)).Await(s.GetContext())
-	if err != nil {
-		return nil, nil, err
 	}
 
 	err = s.appendBlock(block, statedb, receipts, blockCalcTime)

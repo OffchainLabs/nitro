@@ -151,7 +151,7 @@ func NewTransactionStreamer(
 		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
 	}
 	if config().SyncTillBlock != 0 {
-		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
+		syncTillMessage, err := execClient.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1105,63 +1105,10 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	return nil
 }
 
-func (s *TransactionStreamer) WriteMessageFromSequencer(
-	msgIdx arbutil.MessageIndex,
-	msgWithMeta arbostypes.MessageWithMetadata,
-	msgResult execution.MessageResult,
-	blockMetadata common.BlockMetadata,
-) error {
+func (s *TransactionStreamer) WriteSequencedMsg(sequencedMsg *execution.SequencedMsg) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
 	}
-
-	lock := func() bool {
-		// Considering current Nitro's Consensus <-> Execution circular dependency design,
-		// there are some scenarios in which using s.insertionMutex.Lock() here would cause a deadlock.
-		// As an example, considering t(i) as times, and that t(i) occurs before t(i+1):
-		// t(1): Consensus identifies a Reorg and locks insertionMutex in ReorgAtAndEndBatch
-		// t(2): Execution sequences a message and locks createBlockMutex
-		// t(3): Consensus calls Execution.Reorg, which waits until createBlockMutex is available
-		// t(4): Execution calls Consensus.WriteMessageFromSequencer, which waits until insertionMutex is available
-		// t(3) and t(4) define a deadlock.
-		//
-		// In the other hand, a simple s.insertionMutex.TryLock() can cause some issues when resequencing reorgs, such as:
-		// 1. TransactionStreamer, holding insertionMutex lock, calls ExecutionEngine, which then adds old messages to a channel.
-		// After that, and before releasing the lock, TransactionStreamer does more computations.
-		// 2. Asynchronously, ExecutionEngine reads from this channel and calls TransactionStreamer,
-		// which expects that insertionMutex is free in order to succeed.
-		// If step 1 is still executing when Execution calls TransactionStreamer in step 2 then s.insertionMutex.TryLock() will fail.
-		//
-		// This retry lock with timeout mechanism is a workaround to avoid deadlocks,
-		// but enabling some reorg resequencing scenarios.
-
-		if s.insertionMutex.TryLock() {
-			return true
-		}
-		lockTicker := time.NewTicker(5 * time.Millisecond)
-		defer lockTicker.Stop()
-		lockTimeout := time.NewTimer(50 * time.Millisecond)
-		defer lockTimeout.Stop()
-		for {
-			select {
-			case <-lockTimeout.C:
-				return false
-			default:
-				select {
-				case <-lockTimeout.C:
-					return false
-				case <-lockTicker.C:
-					if s.insertionMutex.TryLock() {
-						return true
-					}
-				}
-			}
-		}
-	}
-	if !lock() {
-		return execution.ErrSequencerInsertLockTaken
-	}
-	defer s.insertionMutex.Unlock()
 
 	headMsgIdx, err := s.GetHeadMessageIndex()
 	expectedMsgIdx := headMsgIdx + 1
@@ -1171,29 +1118,29 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 		return err
 	}
 
-	if msgIdx != expectedMsgIdx {
-		return fmt.Errorf("wrong msgIdx got %d expected %d", msgIdx, expectedMsgIdx)
+	if sequencedMsg.MsgIdx != expectedMsgIdx {
+		return fmt.Errorf("wrong msgIdx got %d expected %d", sequencedMsg.MsgIdx, expectedMsgIdx)
 	}
 
 	if s.coordinator != nil {
-		if err := s.coordinator.SequencingMessage(msgIdx, &msgWithMeta, blockMetadata); err != nil {
+		if err := s.coordinator.SequencingMessage(sequencedMsg.MsgIdx, &sequencedMsg.MsgWithMeta, sequencedMsg.BlockMetadata); err != nil {
 			return err
 		}
 	}
 
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: msgWithMeta,
-		BlockHash:       &msgResult.BlockHash,
-		BlockMetadata:   blockMetadata,
+		MessageWithMeta: sequencedMsg.MsgWithMeta,
+		BlockHash:       &sequencedMsg.MsgResult.BlockHash,
+		BlockMetadata:   sequencedMsg.BlockMetadata,
 	}
 
-	if err := s.writeMessages(msgIdx, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, nil); err != nil {
+	if err := s.writeMessages(sequencedMsg.MsgIdx, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, nil); err != nil {
 		return err
 	}
-	if s.trackBlockMetadataFrom == 0 || msgIdx < s.trackBlockMetadataFrom {
+	if s.trackBlockMetadataFrom == 0 || sequencedMsg.MsgIdx < s.trackBlockMetadataFrom {
 		msgWithBlockInfo.BlockMetadata = nil
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, sequencedMsg.MsgIdx)
 
 	return nil
 }

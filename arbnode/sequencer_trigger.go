@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -15,13 +16,16 @@ type SequencerTrigger struct {
 	stopwaiter.StopWaiter
 
 	execSequencer execution.ExecutionSequencer
+	txStreamer    *TransactionStreamer
 }
 
 func NewSequencerTrigger(
 	execSequencer execution.ExecutionSequencer,
+	txStreamer *TransactionStreamer,
 ) *SequencerTrigger {
 	return &SequencerTrigger{
 		execSequencer: execSequencer,
+		txStreamer:    txStreamer,
 	}
 }
 
@@ -31,6 +35,12 @@ func (s *SequencerTrigger) Start(ctx_in context.Context) {
 }
 
 func (s *SequencerTrigger) triggerSequencing(ctx context.Context) time.Duration {
-	_, nextSequenceCall := s.execSequencer.Sequence(ctx)
+	sequencedMsg, nextSequenceCall := s.execSequencer.Sequence(ctx)
+	if sequencedMsg != nil {
+		err := s.txStreamer.WriteSequencedMsg(sequencedMsg)
+		if err != nil {
+			log.Error("Error writing sequenced message", "err", err)
+		}
+	}
 	return nextSequenceCall
 }
