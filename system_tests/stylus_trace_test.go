@@ -62,6 +62,8 @@ func sendAndTraceTransaction(
 	tx := l2info.PrepareTxTo("Owner", &program, l2info.TransferGas, value, data)
 	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 
 	var result logger.ExecutionResult
 	err = rpcClient.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), nil)
