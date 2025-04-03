@@ -149,11 +149,9 @@ jobs:
 
       - name: run tests with race detection and hash state scheme
         if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: hash
         run: |
           echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m --test_state_scheme hash
 
       - name: run challenge tests
         if: matrix.test-mode == 'legacychallenge'

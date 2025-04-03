@@ -10,6 +10,7 @@ check_missing_value() {
 timeout=""
 tags=""
 run=""
+test_state_scheme=""
 race=false
 cover=false
 while [[ $# -gt 0 ]]; do
@@ -32,6 +33,12 @@ while [[ $# -gt 0 ]]; do
       run=$1
       shift
       ;;
+    --test_state_scheme)
+      shift
+      check_missing_value $# "$1" "--test_state_scheme"
+      test_state_scheme=$1
+      shift
+      ;;
     --race)
       race=true
       shift
@@ -49,7 +56,7 @@ done
 
 packages=$(go list ./...)
 for package in $packages; do
-  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=2 --no-color=false --"
+  cmd="stdbuf -oL gotestsum --format short-verbose --no-color=false -- \"$package\""
 
   if [ "$timeout" != "" ]; then
     cmd="$cmd -timeout $timeout"
@@ -70,6 +77,10 @@ for package in $packages; do
   if [ "$cover" == true ]; then
     cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
   fi
+
+  if [ "$test_state_scheme" != "" ]; then
+      cmd="$cmd -- --test_state_scheme=$test_state_scheme"
+    fi
 
   cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
 
