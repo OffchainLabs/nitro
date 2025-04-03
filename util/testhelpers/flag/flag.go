@@ -3,7 +3,6 @@ package testflag
 import (
 	"flag"
 	"log"
-	"sync"
 )
 
 var (
@@ -20,15 +19,10 @@ var (
 	RunsFlag                                      = fs.String("runs", "", "Number of runs for test")
 	LoggingFlag                                   = fs.String("logging", "", "Enable logging")
 	CompileFlag                                   = fs.String("test_compile", "", "[STORE|LOAD] to allow store/load in compile test")
-	flagLock                                      = sync.Mutex{}
 )
 
-func ParseFlag() {
-	flagLock.Lock()
-	defer flagLock.Unlock()
-	if !fs.Parsed() {
-		if err := fs.Parse(flag.Args()); err != nil {
-			log.Fatal("Error parsing flags", "error", err)
-		}
+func init() {
+	if err := fs.Parse(flag.Args()); err != nil {
+		log.Fatal("Error parsing flags", "error", err)
 	}
 }
