@@ -80,6 +80,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -166,23 +167,6 @@ func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transactio
 	return EnsureTxSucceededWithTimeout(tc.ctx, tc.Client, transaction, timeout)
 }
 
-var TestCachingConfig = gethexec.CachingConfig{
-	Archive:                             false,
-	BlockCount:                          128,
-	BlockAge:                            30 * time.Minute,
-	TrieTimeLimit:                       time.Hour,
-	TrieDirtyCache:                      1024,
-	TrieCleanCache:                      600,
-	SnapshotCache:                       400,
-	DatabaseCache:                       2048,
-	SnapshotRestoreGasLimit:             300_000_000_000,
-	MaxNumberOfBlocksToSkipStateSaving:  0,
-	MaxAmountOfGasToSkipStateSaving:     0,
-	StylusLRUCacheCapacity:              0,
-	DisableStylusCacheMetricsCollection: true,
-	StateScheme:                         env.GetTestStateScheme(),
-}
-
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
@@ -212,7 +196,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 
 func ExecConfigDefaultNonSequencerTest(t *testing.T) *gethexec.Config {
 	config := gethexec.ConfigDefault
-	config.Caching = TestCachingConfig
+	config.Caching.StateScheme = env.GetTestStateScheme()
 	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
@@ -226,7 +210,7 @@ func ExecConfigDefaultNonSequencerTest(t *testing.T) *gethexec.Config {
 
 func ExecConfigDefaultTest(t *testing.T) *gethexec.Config {
 	config := gethexec.ConfigDefault
-	config.Caching = TestCachingConfig
+	config.Caching.StateScheme = env.GetTestStateScheme()
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
@@ -1827,11 +1811,11 @@ func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
 }
 
 func TestMain(m *testing.M) {
-	logLevelEnv := os.Getenv("TEST_LOGLEVEL")
-	if logLevelEnv != "" {
-		logLevel, err := strconv.ParseInt(logLevelEnv, 10, 32)
+	flag.Parse()
+	if *testflag.LogLevelFlag != "" {
+		logLevel, err := strconv.ParseInt(*testflag.LogLevelFlag, 10, 32)
 		if err != nil || logLevel > int64(log.LevelCrit) {
-			log.Warn("TEST_LOGLEVEL exists but out of bound, ignoring", "logLevel", logLevelEnv, "max", log.LvlTrace)
+			log.Warn("-test_loglevel exists but out of bound, ignoring", "logLevel", *testflag.LogLevelFlag, "max", log.LvlTrace)
 		}
 		glogger := log.NewGlogHandler(
 			log.NewTerminalHandler(io.Writer(os.Stderr), false))
@@ -1861,21 +1845,12 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 	}
 }
 
-var (
-	recordBlockInputsEnable                       = flag.Bool("recordBlockInputs.enable", true, "Whether to record block inputs as a json file")
-	recordBlockInputsWithSlug                     = flag.String("recordBlockInputs.WithSlug", "", "Slug directory for validationInputsWriter")
-	recordBlockInputsWithBaseDir                  = flag.String("recordBlockInputs.WithBaseDir", "", "Base directory for validationInputsWriter")
-	recordBlockInputsWithTimestampDirEnabled      = flag.Bool("recordBlockInputs.WithTimestampDirEnabled", true, "Whether to add timestamp directory while recording block inputs")
-	recordBlockInputsWithBlockIdInFileNameEnabled = flag.Bool("recordBlockInputs.WithBlockIdInFileNameEnabled", true, "Whether to record block inputs using test specific block_id")
-)
-
 // recordBlock writes a json file with all of the data needed to validate a block.
 //
 // This can be used as an input to the arbitrator prover to validate a block.
 func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ethdb.WasmTarget) {
 	t.Helper()
-	flag.Parse()
-	if !*recordBlockInputsEnable {
+	if !*testflag.RecordBlockInputsEnable {
 		return
 	}
 	ctx := builder.ctx
@@ -1891,13 +1866,13 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...et
 		}
 	}
 	var options []inputs.WriterOption
-	options = append(options, inputs.WithTimestampDirEnabled(*recordBlockInputsWithTimestampDirEnabled))
-	options = append(options, inputs.WithBlockIdInFileNameEnabled(*recordBlockInputsWithBlockIdInFileNameEnabled))
-	if *recordBlockInputsWithBaseDir != "" {
-		options = append(options, inputs.WithBaseDir(*recordBlockInputsWithBaseDir))
+	options = append(options, inputs.WithTimestampDirEnabled(*testflag.RecordBlockInputsWithTimestampDirEnabled))
+	options = append(options, inputs.WithBlockIdInFileNameEnabled(*testflag.RecordBlockInputsWithBlockIdInFileNameEnabled))
+	if *testflag.RecordBlockInputsWithBaseDir != "" {
+		options = append(options, inputs.WithBaseDir(*testflag.RecordBlockInputsWithBaseDir))
 	}
-	if *recordBlockInputsWithSlug != "" {
-		options = append(options, inputs.WithSlug(*recordBlockInputsWithSlug))
+	if *testflag.RecordBlockInputsWithSlug != "" {
+		options = append(options, inputs.WithSlug(*testflag.RecordBlockInputsWithSlug))
 	} else {
 		options = append(options, inputs.WithSlug(t.Name()))
 	}
