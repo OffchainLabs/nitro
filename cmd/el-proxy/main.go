@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -28,10 +31,12 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -71,17 +76,18 @@ type ExpressLaneProxy struct {
 	roundTimingInfo     timeboost.RoundTimingInfo
 	auctionContractAddr common.Address
 	expressLaneTracker  *gethexec.ExpressLaneTracker
+	dataSignerFunc      signature.DataSignerFunc
 
 	lastRoundNumber    uint64
-	nextSequenceNumber uint64
+	nextSequenceNumber atomic.Uint64
 }
 
-type EthClientAdapter struct {
-	inner *ethclient.Client
+type HeaderProviderAdapter struct {
+	*ethclient.Client
 }
 
-func (a *EthClientAdapter) HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error) {
-	return a.inner.HeaderByNumber(ctx, big.NewInt((int64)(number)))
+func (a *HeaderProviderAdapter) HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error) {
+	return a.Client.HeaderByNumber(ctx, big.NewInt((int64)(number)))
 }
 
 func NewExpressLaneProxy(
@@ -93,10 +99,10 @@ func NewExpressLaneProxy(
 	if err != nil {
 		return nil, err
 	}
-	arbClient := &EthClientAdapter{ethclient.NewClient(client)}
+	arbClient := ethclient.NewClient(client)
 
-	if len(config.AuctionContractAddress) > 0 && !common.IsHexAddress(config.AuctionContractAddress) {
-		return nil, fmt.Errorf("invalid auction-contract-address \"%v\"", c.AuctionContractAddress)
+	if !common.IsHexAddress(config.AuctionContractAddress) {
+		return nil, fmt.Errorf("invalid auction-contract-address \"%v\"", config.AuctionContractAddress)
 	}
 	auctionContractAddr := common.HexToAddress(config.AuctionContractAddress)
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, arbClient)
@@ -112,20 +118,25 @@ func NewExpressLaneProxy(
 	expressLaneTracker := gethexec.NewExpressLaneTracker(
 		*roundTimingInfo,
 		time.Millisecond*250,
-		arbClient,
+		&HeaderProviderAdapter{arbClient},
 		auctionContract,
 		auctionContractAddr,
 		&params.ChainConfig{ChainID: big.NewInt(config.ChainId)},
 		0,
 	)
 
+	_, dataSignerFunc, err := util.OpenWallet("el-proxy", &config.Wallet, big.NewInt(config.ChainId))
+	if err != nil {
+		return nil, fmt.Errorf("error opening wallet: %w", err)
+	}
+
 	elProxy := &ExpressLaneProxy{
 		config:              config,
 		roundTimingInfo:     *roundTimingInfo,
 		auctionContractAddr: auctionContractAddr,
 		expressLaneTracker:  expressLaneTracker,
+		dataSignerFunc:      dataSignerFunc,
 		lastRoundNumber:     math.MaxUint64,
-		nextSequenceNumber:  0,
 	}
 
 	elAPIs := []rpc.API{{
@@ -182,10 +193,27 @@ func GetClientFromURL(ctx context.Context, rawUrl string, transport *http.Transp
 	return rpcClient, nil
 }
 
+func (p *ExpressLaneProxy) buildSignature(data []byte) ([]byte, error) {
+	prefixedData := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(data))), data...))
+	signature, err := p.dataSignerFunc(prefixedData)
+	if err != nil {
+		return nil, err
+	}
+	return signature, nil
+}
+
 func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (common.Hash, error) {
 	roundNumber := p.roundTimingInfo.RoundNumber()
 	if roundNumber != p.lastRoundNumber {
-		p.nextSequenceNumber = 0
+		p.nextSequenceNumber.Store(0)
+	}
+
+	var nextSeqNumber uint64
+	for {
+		nextSeqNumber = p.nextSequenceNumber.Load()
+		if swapped := p.nextSequenceNumber.CompareAndSwap(nextSeqNumber, nextSeqNumber+1); swapped {
+			break
+		}
 	}
 
 	wrapper := timeboost.JsonExpressLaneSubmission{
@@ -193,22 +221,77 @@ func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil
 		Round:                  (hexutil.Uint64)(roundNumber),
 		AuctionContractAddress: p.auctionContractAddr,
 		Transaction:            input,
-		SequenceNumber:         (hexutil.Uint64)(p.nextSequenceNumber),
-		Signature:              []byte{},
+		SequenceNumber:         (hexutil.Uint64)(nextSeqNumber),
+		Signature:              []byte{}, // It is set below
 	}
+	goWrapper, err := timeboost.JsonSubmissionToGo(&wrapper)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("Error converting submission: %w", err)
+	}
+	signableMsg, err := goWrapper.ToMessageBytes()
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("Error serializing signable msg: %w", err)
+	}
+	sig, err := p.buildSignature(signableMsg)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("Error signing msg: %w", err)
+	}
+	wrapper.Signature = sig
 
 	client, err := GetClientFromURL(ctx, p.config.ExpressLaneURL, nil)
 	if err != nil {
-		return common.Hash{}, err
+		return common.Hash{}, fmt.Errorf("Error getting client: %w", err)
 	}
 
 	err = client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", &wrapper)
-	if err == nil {
+	if err != nil {
 		// Immediately rejected EL txs don't consume sequence numbers.
-		p.nextSequenceNumber++
+		// TODO We need to be more clever about how we track rejected txs so we don't end up with gaps in the
+		// event of parallel txs.
+		p.nextSequenceNumber.Store(nextSeqNumber)
+		return common.Hash{}, fmt.Errorf("Error forwarding msg: %w", err)
 	}
 
 	return common.Hash{}, err
+}
+
+//// We need to proxy some other methods for tools like cast to use when building txs.
+
+func (p *ExpressLaneProxy) ChainId(_ context.Context) hexutil.Uint64 {
+	chainId := p.config.ChainId
+	return (hexutil.Uint64)(chainId)
+}
+
+func (p *ExpressLaneProxy) GetTransactionCount(ctx context.Context, address common.Address, blockNumOrHash rpc.BlockNumberOrHash) (hexutil.Uint64, error) {
+	client, err := GetClientFromURL(ctx, p.config.ExpressLaneURL, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	var result hexutil.Uint64
+	err = client.CallContext(ctx, &result, "eth_getTransactionCount", address, blockNumOrHash)
+	return result, err
+}
+
+func (p *ExpressLaneProxy) FeeHistory(ctx context.Context, blockCount hexutil.Uint64, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (json.RawMessage, error) {
+	var result json.RawMessage
+
+	client, err := GetClientFromURL(ctx, p.config.ExpressLaneURL, nil)
+	if err != nil {
+		return result, err
+	}
+
+	err = client.CallContext(ctx, &result, "eth_feeHistory", blockCount, lastBlock, rewardPercentiles)
+	return result, err
+}
+
+func (p *ExpressLaneProxy) BlockNumber(ctx context.Context) (uint64, error) {
+	client, err := GetClientFromURL(ctx, p.config.ExpressLaneURL, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	return ethclient.NewClient(client).BlockNumber(ctx)
 }
 
 func mainImpl() int {
@@ -339,10 +422,8 @@ func parseExpressLaneProxyArgs(ctx context.Context, args []string) (*ExpressLane
 	// Don't print wallet passwords
 	if cfg.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"l1.wallet.password":        "",
-			"l1.wallet.private-key":     "",
-			"l2.dev-wallet.password":    "",
-			"l2.dev-wallet.private-key": "",
+			"wallet.password":    "",
+			"wallet.private-key": "",
 		})
 		if err != nil {
 			return nil, err
