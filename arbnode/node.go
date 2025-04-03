@@ -1274,7 +1274,6 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}
 	}
-	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
@@ -1397,6 +1396,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
 	}
+	// Also make sure to call initialize on the sync monitor after the inbox reader, tx streamer, and block validator are started.
+	// Else sync might call inbox reader or tx streamer before they are started, and it will lead to panic.
+	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	n.SyncMonitor.Start(ctx)
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)
