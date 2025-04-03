@@ -240,7 +240,7 @@ test-go-stylus: test-go-deps
 
 .PHONY: test-go-redis
 test-go-redis: test-go-deps
-	TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/...
+	gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/... -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
 .PHONY: test-gen-proofs
