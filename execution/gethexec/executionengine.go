@@ -81,7 +81,7 @@ type L1PriceData struct {
 	msgToL1PriceData        []L1PriceDataOfMsg
 }
 
-type lastSequencedBlockInfo struct {
+type sequencedBlockInfo struct {
 	block         *types.Block
 	receipts      types.Receipts
 	statedb       *state.StateDB
@@ -102,7 +102,7 @@ type ExecutionEngine struct {
 	reorgEventsNotifier    chan struct{}
 	latestBlockMutex       sync.Mutex
 	latestBlock            *types.Block
-	lastSequencedBlockInfo *lastSequencedBlockInfo
+	lastSequencedBlockInfo *sequencedBlockInfo
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
@@ -608,7 +608,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, err
 	}
 
-	s.lastSequencedBlockInfo = &lastSequencedBlockInfo{
+	s.lastSequencedBlockInfo = &sequencedBlockInfo{
 		block:         block,
 		receipts:      receipts,
 		statedb:       statedb,
@@ -690,7 +690,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, nil, err
 	}
 
-	s.lastSequencedBlockInfo = &lastSequencedBlockInfo{
+	s.lastSequencedBlockInfo = &sequencedBlockInfo{
 		block:         block,
 		receipts:      receipts,
 		statedb:       statedb,
