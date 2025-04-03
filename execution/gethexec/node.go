@@ -482,6 +482,10 @@ func (n *ExecutionNode) ResequenceReorgedMessage(msg *arbostypes.MessageWithMeta
 	return n.ExecEngine.ResequenceReorgedMessage(msg)
 }
 func (n *ExecutionNode) Sequence(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
+	if n.Sequencer == nil {
+		log.Debug("Not sequencing, sequencer is nil")
+		return nil, time.Millisecond * 100
+	}
 	return n.Sequencer.Sequence(ctx)
 }
 func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
