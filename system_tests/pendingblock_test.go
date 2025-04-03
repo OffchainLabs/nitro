@@ -42,7 +42,9 @@ func TestPendingBlockArbBlockHashReturnsLatest(t *testing.T) {
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 
-	_, _, pendingBlk, err := mocksgen.DeployPendingBlkTimeAndNrAdvanceCheck(&auth, builder.L2.Client)
+	_, tx, pendingBlk, err := mocksgen.DeployPendingBlkTimeAndNrAdvanceCheck(&auth, builder.L2.Client)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	header, err := builder.L2.Client.HeaderByNumber(ctx, nil)
