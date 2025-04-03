@@ -72,6 +72,7 @@ type BoldConfig struct {
 	DelegatedStaking                    DelegatedStakingConfig `koanf:"delegated-staking"`
 	RPCBlockNumber                      string                 `koanf:"rpc-block-number"`
 	EnableFastConfirmation              bool                   `koanf:"enable-fast-confirmation"`
+	ParentChainBlockTime                time.Duration          `koanf:"parent-chain-block-time"`
 	// How long to wait since parent assertion was created to post a new assertion
 	MinimumGapToParentAssertion time.Duration `koanf:"minimum-gap-to-parent-assertion"`
 	strategy                    legacystaker.StakerStrategy
@@ -140,6 +141,7 @@ var DefaultBoldConfig = BoldConfig{
 	AutoDeposit:                         true,
 	AutoIncreaseAllowance:               true,
 	DelegatedStaking:                    DefaultDelegatedStakingConfig,
+	ParentChainBlockTime:                time.Second * 12,
 	RPCBlockNumber:                      "finalized",
 	EnableFastConfirmation:              false,
 	MaxGetLogBlocks:                     5000,
@@ -161,6 +163,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
 	f.Duration(prefix+".minimum-gap-to-parent-assertion", DefaultBoldConfig.MinimumGapToParentAssertion, "minimum duration to wait since the parent assertion was created to post a new assertion")
 	f.Duration(prefix+".check-staker-switch-interval", DefaultBoldConfig.CheckStakerSwitchInterval, "how often to check if staker can switch to bold")
+	f.Duration(prefix+".parent-chain-block-time", DefaultBoldConfig.ParentChainBlockTime, "the average block time of the parent chain where assertions are posted")
 	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
 	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
@@ -422,6 +425,7 @@ func newBOLDChallengeManager(
 	}
 	assertionChainOpts := []solimpl.Opt{
 		solimpl.WithRpcHeadBlockNumber(config.blockNum),
+		solimpl.WithParentChainBlockCreationTime(config.ParentChainBlockTime),
 	}
 	if config.DelegatedStaking.Enable && config.DelegatedStaking.CustomWithdrawalAddress != "" {
 		withdrawalAddr := common.HexToAddress(config.DelegatedStaking.CustomWithdrawalAddress)
@@ -528,6 +532,7 @@ func newBOLDChallengeManager(
 		challengemanager.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
 		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 		challengemanager.StackWithHeaderProvider(l1Reader),
+		challengemanager.StackWithAverageBlockCreationTime(config.ParentChainBlockTime),
 		challengemanager.StackWithSyncMaxGetLogBlocks(config.MaxGetLogBlocks),
 	}
 	if config.API {
