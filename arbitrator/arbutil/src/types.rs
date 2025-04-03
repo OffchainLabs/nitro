@@ -292,6 +292,18 @@ mod test {
     }
 
     #[test]
+    fn test_bytes32_from_usize() {
+        let val: usize = 0x12345678;
+        let b = Bytes32::from(val);
+
+        let mut expected = [0u8; 32];
+        expected[(20 - (usize::BITS as usize / 8))..].copy_from_slice(&val.to_be_bytes());
+
+        assert_eq!(b.0, expected);
+    }
+
+    
+    #[test]
     fn test_from_str_short() {
         // Short hex string
         let b = Bytes32::from_str("0x12345678").unwrap();
