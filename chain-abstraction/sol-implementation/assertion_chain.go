@@ -167,6 +167,14 @@ func WithFastConfirmation() Opt {
 	}
 }
 
+// WithParentChainBlockCreationTime sets the average time for block creation of the chain where
+// assertions are posted to and fetched from.
+func WithParentChainBlockCreationTime(d time.Duration) Opt {
+	return func(a *AssertionChain) {
+		a.averageTimeForBlockCreation = d
+	}
+}
+
 // NewAssertionChain instantiates an assertion chain
 // instance from a chain backend and provided options.
 func NewAssertionChain(
