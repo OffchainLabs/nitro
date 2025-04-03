@@ -138,24 +138,21 @@ func (c *SequencerConfig) Validate() error {
 	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
 		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
 	}
-	return c.Dangerous.Timeboost.Validate()
-}
-
-func (c *TimeboostConfig) Validate() error {
-	if !c.Enable {
-		return nil
-	}
-	if c.RedisUrl == DefaultTimeboostConfig.RedisUrl {
-		return errors.New("timeboost is enabled but no redis-url was set")
-	}
-	if len(c.AuctionContractAddress) > 0 && !common.IsHexAddress(c.AuctionContractAddress) {
-		return fmt.Errorf("invalid timeboost.auction-contract-address \"%v\"", c.AuctionContractAddress)
-	}
-	if len(c.AuctioneerAddress) > 0 && !common.IsHexAddress(c.AuctioneerAddress) {
-		return fmt.Errorf("invalid timeboost.auctioneer-address \"%v\"", c.AuctioneerAddress)
-	}
-	if c.MaxFutureSequenceDistance == 0 {
-		return errors.New("timeboost max-future-sequence-distance option cannot be zero, it should be set to a positive value")
+	if c.Dangerous.Timeboost.Enable {
+		if c.Enable {
+			if c.Dangerous.Timeboost.RedisUrl == DefaultTimeboostConfig.RedisUrl {
+				return errors.New("timeboost is enabled but no redis-url was set")
+			}
+			if c.Dangerous.Timeboost.MaxFutureSequenceDistance == 0 {
+				return errors.New("timeboost max-future-sequence-distance option cannot be zero, it should be set to a positive value")
+			}
+		}
+		if len(c.Dangerous.Timeboost.AuctionContractAddress) > 0 && !common.IsHexAddress(c.Dangerous.Timeboost.AuctionContractAddress) {
+			return fmt.Errorf("invalid timeboost.auction-contract-address \"%v\"", c.Dangerous.Timeboost.AuctionContractAddress)
+		}
+		if len(c.Dangerous.Timeboost.AuctioneerAddress) > 0 && !common.IsHexAddress(c.Dangerous.Timeboost.AuctioneerAddress) {
+			return fmt.Errorf("invalid timeboost.auctioneer-address \"%v\"", c.Dangerous.Timeboost.AuctioneerAddress)
+		}
 	}
 	return nil
 }
