@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sync"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -34,7 +33,6 @@ type DelayedSequencer struct {
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock *uint64
-	mutex                    sync.Mutex
 	config                   DelayedSequencerConfigFetcher
 }
 
@@ -102,8 +100,8 @@ func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *typ
 }
 
 func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
+	d.txStreamer.insertionMutex.Lock()
+	defer d.txStreamer.insertionMutex.Unlock()
 
 	config := d.config()
 	if !config.Enable {
