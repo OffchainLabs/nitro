@@ -388,9 +388,13 @@ func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Tran
 	}, nil
 }
 
+func (s *ExecutionEngine) blockCreationStopped() bool {
+	return s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock
+}
+
 func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, bool) {
-	if s.syncTillBlock > 0 && s.latestBlock.NumberU64() >= s.syncTillBlock {
-		log.Debug("skipping resequencing reorged message since block creation is stopped")
+	if s.blockCreationStopped() {
+		log.Debug(ExecutionEngineBlockCreationStopped.Error())
 		return nil, false
 	}
 	s.createBlocksMutex.Lock()
@@ -672,7 +676,7 @@ func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingM
 }
 
 func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, *types.Block, error) {
-	if s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock {
+	if s.blockCreationStopped() {
 		return nil, nil, ExecutionEngineBlockCreationStopped
 	}
 	currentHeader, err := s.getCurrentHeader()
