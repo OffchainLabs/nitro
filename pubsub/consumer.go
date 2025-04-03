@@ -240,13 +240,9 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID s
 }
 
 func (c *Consumer[Request, Response]) SetError(ctx context.Context, messageID string, error string) error {
-	resp, err := json.Marshal(error)
-	if err != nil {
-		return fmt.Errorf("marshaling result: %w", err)
-	}
 	errorKey := ErrorKeyFor(c.StreamName(), messageID)
 	log.Debug("consumer: setting error", "cid", c.id, "msgIdInStream", messageID, "errorKeyInRedis", errorKey)
-	acquired, err := c.client.SetNX(ctx, errorKey, resp, c.cfg.ResponseEntryTimeout).Result()
+	acquired, err := c.client.SetNX(ctx, errorKey, error, c.cfg.ResponseEntryTimeout).Result()
 	if !acquired && err == nil {
 		err = AlreadySetError
 	}
