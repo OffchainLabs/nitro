@@ -1401,14 +1401,14 @@ func deployOnParentChain(
 			DeployedAt:             boldAddresses.DeployedAt,
 		}
 	} else {
-		addresses, err = deploy.DeployOnParentChain(
+		addresses, err = deploy.DeployLegacyOnParentChain(
 			ctx,
 			parentChainReader,
 			&parentChainTransactionOpts,
 			[]common.Address{parentChainInfo.GetAddress("Sequencer")},
 			parentChainInfo.GetAddress("RollupOwner"),
 			0,
-			arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+			deploy.GenerateLegacyRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 			nativeToken,
 			maxDataSize,
 			chainSupportsBlobs,
