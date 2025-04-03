@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -403,7 +403,7 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 	}
 	walletAddress := *s.wallet.Address()
 	client := s.l1Reader.Client()
-	rollup, err := rollupgen.NewRollupUserLogic(s.rollupAddress, client)
+	rollup, err := rollup_legacy_gen.NewRollupUserLogic(s.rollupAddress, client)
 	if err != nil {
 		return err
 	}
@@ -727,7 +727,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 	callOpts := s.getCallOpts(ctx)
 	s.builder.ClearTransactions()
-	var rawInfo *staker.StakerInfo
+	var rawInfo *StakerInfo
 	walletAddressOrZero := s.wallet.AddressOrZero()
 	if walletAddressOrZero != (common.Address{}) {
 		var err error
@@ -963,7 +963,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	return s.builder.ExecuteTransactions(ctx)
 }
 
-func (s *Staker) handleConflict(ctx context.Context, info *staker.StakerInfo) error {
+func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 	if info.CurrentChallenge == nil {
 		s.activeChallenge = nil
 		return nil
@@ -1038,7 +1038,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 
 		// We'll return early if we already have a stake
 		if info.StakeExists {
-			_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsSolidityStruct(), action.hash, action.prevInboxMaxCount)
+			_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsLegacySolidityStruct(), action.hash, action.prevInboxMaxCount)
 			if err != nil {
 				return fmt.Errorf("error staking on new node: %w", err)
 			}
@@ -1052,7 +1052,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		}
 		_, err = s.rollup.NewStakeOnNewNode(
 			s.builder.AuthWithAmount(ctx, stakeAmount),
-			action.assertion.AsSolidityStruct(),
+			action.assertion.AsLegacySolidityStruct(),
 			action.hash,
 			action.prevInboxMaxCount,
 		)
@@ -1111,7 +1111,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 	}
 }
 
-func (s *Staker) createConflict(ctx context.Context, info *staker.StakerInfo) error {
+func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 	if info.CurrentChallenge != nil {
 		return nil
 	}
@@ -1196,7 +1196,7 @@ func (s *Staker) Strategy() StakerStrategy {
 	return s.config().StrategyType()
 }
 
-func (s *Staker) Rollup() *staker.RollupWatcher {
+func (s *Staker) Rollup() *RollupWatcher {
 	return s.rollup
 }
 

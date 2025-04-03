@@ -50,7 +50,7 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return nil
 	}
 
-	wasm, err := getWasmFromContractCode(code)
+	wasm, err := getWasmFromContractCode(code, progParams.MaxWasmSize)
 	if err != nil {
 		log.Error("Failed to reactivate program while rebuilding wasm store: getWasmFromContractCode", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
