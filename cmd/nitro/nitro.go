@@ -464,7 +464,7 @@ func mainImpl() int {
 	}
 
 	fatalErrChan := make(chan error, 10)
-	quitNodeChan := make(chan string, 10)
+	quitNodeChan := make(chan string)
 
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		if !nodeConfig.Init.ThenQuit {
@@ -725,7 +725,7 @@ func mainImpl() int {
 	}
 
 	if quitNodeMsg != "" {
-		log.Info("quitting node", "msg", quitNodeMsg)
+		log.Info("shutting down node", "msg", quitNodeMsg)
 	}
 	return 0
 }
