@@ -27,7 +27,6 @@ func TestConstants(t *testing.T) {
 // * copy target/testdata to the other machine
 // * run test with -test_compile=LOAD on the other machine
 func TestCompileArch(t *testing.T) {
-	testflag.ParseFlag()
 	if *testflag.CompileFlag == "" {
 		fmt.Print("use -test_compile=[STORE|LOAD] to allow store/load in compile test")
 	}

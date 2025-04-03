@@ -1810,7 +1810,6 @@ func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
 }
 
 func TestMain(m *testing.M) {
-	testflag.ParseFlag()
 	if *testflag.LogLevelFlag != "" {
 		logLevel, err := strconv.ParseInt(*testflag.LogLevelFlag, 10, 32)
 		if err != nil || logLevel > int64(log.LevelCrit) {
@@ -1849,7 +1848,6 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 // This can be used as an input to the arbitrator prover to validate a block.
 func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ethdb.WasmTarget) {
 	t.Helper()
-	testflag.ParseFlag()
 	if !*testflag.RecordBlockInputsEnable {
 		return
 	}

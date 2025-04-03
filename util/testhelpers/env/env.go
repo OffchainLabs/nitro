@@ -13,7 +13,6 @@ import (
 // There are two CI steps, one to run tests using the path state scheme, and one to run tests using the hash state scheme.
 // An environment variable controls that behavior.
 func GetTestStateScheme() string {
-	testflag.ParseFlag()
 	stateScheme := rawdb.HashScheme
 	if *testflag.StateSchemeFlag == rawdb.PathScheme || *testflag.StateSchemeFlag == rawdb.HashScheme {
 		stateScheme = *testflag.StateSchemeFlag
