@@ -400,6 +400,10 @@ func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Tran
 }
 
 func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, bool) {
+	if s.syncTillBlock > 0 && s.latestBlock.NumberU64() >= s.syncTillBlock {
+		log.Debug("skipping resequencing reorged message since block creation is stopped")
+		return nil, false
+	}
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 
