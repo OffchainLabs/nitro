@@ -44,8 +44,13 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            build-essential cmake lld-14 libudev-dev
+            build-essential lld-14 libudev-dev
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.31.6'
 
       - name: Install go
         uses: actions/setup-go@v4
