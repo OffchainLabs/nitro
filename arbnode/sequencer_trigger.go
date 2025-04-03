@@ -35,6 +35,9 @@ func (s *SequencerTrigger) Start(ctx_in context.Context) {
 }
 
 func (s *SequencerTrigger) triggerSequencing(ctx context.Context) time.Duration {
+	s.txStreamer.insertionMutex.Lock()
+	defer s.txStreamer.insertionMutex.Unlock()
+
 	sequencedMsg, nextSequenceCall := s.execSequencer.Sequence(ctx)
 	if sequencedMsg != nil {
 		err := s.txStreamer.WriteSequencedMsg(sequencedMsg)
