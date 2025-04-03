@@ -88,7 +88,7 @@ func init() {
 				return msg, nil, nil
 			}
 
-			evm := backend.GetEVM(ctx, msg, statedb, header, &vm.Config{NoBaseFee: true}, blockCtx)
+			evm := backend.GetEVM(ctx, statedb, header, &vm.Config{NoBaseFee: true}, blockCtx)
 			go func() {
 				<-ctx.Done()
 				evm.Cancel()

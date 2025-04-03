@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -278,9 +279,9 @@ func (ps *L1PricingState) TransferFromL1FeesAvailable(
 	amount *big.Int,
 	evm *vm.EVM,
 	scenario util.TracingScenario,
-	purpose string,
+	reason tracing.BalanceChangeReason,
 ) (*big.Int, error) {
-	if err := util.TransferBalance(&L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, purpose); err != nil {
+	if err := util.TransferBalance(&L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, reason); err != nil {
 		return nil, err
 	}
 	old, err := ps.L1FeesAvailable()
@@ -407,7 +408,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		return err
 	}
 	l1FeesAvailable, err = ps.TransferFromL1FeesAvailable(
-		payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+		payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -428,7 +429,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 			return err
 		}
 		l1FeesAvailable, err = ps.TransferFromL1FeesAvailable(
-			addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+			addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 		)
 		if err != nil {
 			return err

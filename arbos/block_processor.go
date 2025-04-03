@@ -144,10 +144,10 @@ func ProduceBlock(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
-	chainConfig *params.ChainConfig,
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
 ) (*types.Block, types.Receipts, error) {
+	chainConfig := chainContext.Config()
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
@@ -156,7 +156,7 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch, runCtx,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx,
 	)
 }
 
@@ -168,7 +168,6 @@ func ProduceBlockAdvanced(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
-	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
@@ -191,8 +190,9 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   l1Header.Timestamp,
 	}
 
+	chainConfig := chainContext.Config()
+
 	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
-	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := arbState.L2PricingState().PerBlockGasLimit()
@@ -254,6 +254,7 @@ func ProduceBlockAdvanced(
 		var sender common.Address
 		var dataGas uint64 = 0
 		preTxHeaderGasUsed := header.GasUsed
+		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbState.ArbOSVersion())
 		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {
@@ -312,16 +313,15 @@ func ProduceBlockAdvanced(
 			statedb.SetTxContext(tx.Hash(), len(receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
+			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
+			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
-				chainConfig,
-				chainContext,
-				&header.Coinbase,
+				evm,
 				&gasPool,
 				statedb,
 				header,
 				tx,
 				&header.GasUsed,
-				vm.Config{},
 				runCtx,
 				func(result *core.ExecutionResult) error {
 					return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
@@ -504,7 +504,7 @@ func ProduceBlockAdvanced(
 }
 
 // Also sets header.Root
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB, chainConfig *params.ChainConfig) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.StateDB, chainConfig *params.ChainConfig) {
 	if header != nil {
 		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			panic("cannot finalize blocks before genesis")

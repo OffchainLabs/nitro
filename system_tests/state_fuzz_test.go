@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
@@ -68,7 +69,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, runCtx,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx,
 	)
 	return block, err
 }
@@ -121,7 +122,13 @@ func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMe
 }
 
 // A chain context with no information
-type noopChainContext struct{}
+type noopChainContext struct {
+	chainConfig *params.ChainConfig
+}
+
+func (c noopChainContext) Config() *params.ChainConfig {
+	return c.chainConfig
+}
 
 func (c noopChainContext) Engine() consensus.Engine {
 	return nil
@@ -162,7 +169,7 @@ func FuzzStateTransition(f *testing.F) {
 			panic(err)
 		}
 		trieDBConfig := cacheConfig.TriedbConfig()
-		statedb, err := state.New(stateRoot, state.NewDatabaseWithConfig(chainDb, trieDBConfig), nil)
+		statedb, err := state.New(stateRoot, state.NewDatabase(triedb.NewDatabase(chainDb, trieDBConfig), nil))
 		if err != nil {
 			panic(err)
 		}
@@ -220,7 +227,7 @@ func FuzzStateTransition(f *testing.F) {
 		case 4:
 			runCtx = core.NewMessageGasEstimationContext()
 		}
-		_, err = BuildBlock(statedb, genesis, noopChainContext{}, chaininfo.ArbitrumOneChainConfig(), inbox, seqBatch, runCtx)
+		_, err = BuildBlock(statedb, genesis, noopChainContext{chainConfig: chaininfo.ArbitrumOneChainConfig()}, chaininfo.ArbitrumOneChainConfig(), inbox, seqBatch, runCtx)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.

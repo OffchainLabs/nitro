@@ -30,11 +30,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	defer cancel()
 	testSetup := setupAuctionTest(t, ctx)
 	redisURL := redisutil.CreateTestRedis(ctx, t)
-	tmpDir, err := os.MkdirTemp("", "*")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
+	tmpDir := t.TempDir()
 	jwtFilePath := filepath.Join(tmpDir, "jwt.key")
 	jwtSecret := common.BytesToHash([]byte("jwt"))
 	require.NoError(t, os.WriteFile(jwtFilePath, []byte(hexutil.Encode(jwtSecret[:])), 0600))

@@ -148,7 +148,7 @@ func main() {
 func startMetrics(cfg *NodeConfig) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
-	if cfg.Metrics && !metrics.Enabled {
+	if cfg.Metrics && !metrics.Enabled() {
 		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
 	}
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
@@ -531,15 +531,19 @@ func mainImpl() int {
 		l2BlockChain,
 		l1Client,
 		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 	)
 	if err != nil {
 		log.Error("failed to create execution node", "err", err)
 		return 1
 	}
 
-	currentNode, err := arbnode.CreateNode(
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(
 		ctx,
 		stack,
+		execNode,
+		execNode,
+		execNode,
 		execNode,
 		arbDb,
 		&NodeConfigFetcher{liveNodeConfig},
@@ -570,7 +574,7 @@ func mainImpl() int {
 		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
 		if err == nil {
 			seqInboxMaxDataSize = int(res.Int64())
-		} else if !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		} else if !headerreader.IsExecutionReverted(err) {
 			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
 			return 1
 		}
@@ -669,6 +673,7 @@ func mainImpl() int {
 			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
 		} else {
 			log.Info("validation node started")
+			defer valNode.Stop()
 		}
 	}
 	if err == nil {
@@ -692,19 +697,9 @@ func mainImpl() int {
 		}
 	}
 
-	execNodeConfig := execNode.ConfigFetcher()
-	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Dangerous.Timeboost.Enable {
-		err := execNode.Sequencer.InitializeExpressLaneService(
-			execNode.Backend.APIBackend(),
-			execNode.FilterSystem,
-			common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctionContractAddress),
-			common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
-			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
-		)
-		if err != nil {
-			log.Error("failed to create express lane service", "err", err)
-		}
-		execNode.Sequencer.StartExpressLaneService(ctx)
+	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
+	if err != nil {
+		fatalErrChan <- fmt.Errorf("error intializing timeboost: %w", err)
 	}
 
 	err = nil

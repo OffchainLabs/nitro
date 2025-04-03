@@ -10,8 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/staker"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
@@ -137,19 +137,22 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 		log.Info("Starting pre-BOLD staker")
 		m.oldStaker.Start(ctxIn)
 		stakerSwitchInterval := m.boldConfig.CheckStakerSwitchInterval
-		m.CallIteratively(func(ctx context.Context) time.Duration {
-			switchedToBoldProtocol, err := m.checkAndSwitchToBoldStaker(ctxIn)
-			if err != nil {
-				log.Warn("staker: error in checking switch to bold staker", "err", err)
-				return stakerSwitchInterval
+		m.LaunchThread(func(ctx context.Context) {
+			ticker := time.NewTicker(stakerSwitchInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+
+				if err := m.checkAndSwitchToBoldStaker(ctxIn); err != nil {
+					log.Warn("Staker: error in checking and switching to bold staker", "err", err)
+					continue
+				}
+				return
 			}
-			if switchedToBoldProtocol {
-				log.Info("Detected BOLD protocol upgrade, stopping old staker and starting BOLD staker")
-				// Ready to stop the old staker.
-				m.oldStaker.StopOnly()
-				m.StopOnly()
-			}
-			return stakerSwitchInterval
 		})
 	}
 }
@@ -166,9 +169,6 @@ func (m *MultiProtocolStaker) StopAndWait() {
 
 func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Address, error) {
 	var addr common.Address
-	if !m.boldConfig.Enable {
-		return false, addr, nil
-	}
 	callOpts := m.getCallOpts(ctx)
 	rollupAddress, err := m.bridge.Rollup(callOpts)
 	if err != nil {
@@ -179,7 +179,7 @@ func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Ad
 		return false, addr, err
 	}
 	_, err = userLogic.ChallengeGracePeriodBlocks(callOpts)
-	if err != nil && !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+	if err != nil && !headerreader.IsExecutionReverted(err) {
 		// Unexpected error, perhaps an L1 issue?
 		return false, addr, err
 	}
@@ -187,22 +187,27 @@ func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Ad
 	return err == nil, rollupAddress, nil
 }
 
-func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
+func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) error {
 	shouldSwitch, rollupAddress, err := m.isBoldActive(ctx)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if !shouldSwitch {
-		return false, nil
+		log.Info("Bold is not yet active on-chain, will retry switching later")
+		return nil
 	}
 	if err := m.setupBoldStaker(ctx, rollupAddress); err != nil {
-		return false, err
+		return err
 	}
 	if err = m.boldStaker.Initialize(ctx); err != nil {
-		return false, err
+		return err
 	}
+	log.Info("Detected BOLD protocol upgrade, stopping old staker and starting BOLD staker")
 	m.boldStaker.Start(ctx)
-	return true, nil
+	// Ready to stop the old staker.
+	m.oldStaker.StopOnly()
+	m.StopOnly()
+	return nil
 }
 
 func (m *MultiProtocolStaker) getCallOpts(ctx context.Context) *bind.CallOpts {

@@ -143,7 +143,7 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 	}
 	blocksReExecutor := &BlocksReExecutor{
 		config:             c,
-		db:                 state.NewDatabaseWithConfig(ethDb, &trieConfig),
+		db:                 state.NewDatabase(triedb.NewDatabase(ethDb, &trieConfig), nil),
 		blockchain:         blockchain,
 		currentBlock:       end,
 		startBlock:         start,
@@ -154,7 +154,7 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 	blocksReExecutor.stateFor = func(header *types.Header) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
 		blocksReExecutor.mutex.Lock()
 		defer blocksReExecutor.mutex.Unlock()
-		sdb, err := state.New(header.Root, blocksReExecutor.db, nil)
+		sdb, err := state.New(header.Root, blocksReExecutor.db)
 		if err == nil {
 			_ = blocksReExecutor.db.TrieDB().Reference(header.Root, common.Hash{}) // Will be dereferenced later in advanceStateUpToBlock
 			return sdb, func() { blocksReExecutor.dereferenceRoot(header.Root) }, nil
@@ -237,14 +237,14 @@ func (s *BlocksReExecutor) dereferenceRoot(root common.Hash) {
 func (s *BlocksReExecutor) commitStateAndVerify(statedb *state.StateDB, expected common.Hash, blockNumber uint64) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	result, err := statedb.Commit(blockNumber, true)
+	result, err := statedb.Commit(blockNumber, true, false)
 	if err != nil {
 		return nil, arbitrum.NoopStateRelease, err
 	}
 	if result != expected {
 		return nil, arbitrum.NoopStateRelease, fmt.Errorf("bad root hash expected: %v got: %v", expected, result)
 	}
-	sdb, err := state.New(result, s.db, nil)
+	sdb, err := state.New(result, s.db)
 	if err == nil {
 		_ = s.db.TrieDB().Reference(result, common.Hash{})
 		return sdb, func() { s.dereferenceRoot(result) }, nil
