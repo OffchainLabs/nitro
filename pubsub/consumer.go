@@ -36,7 +36,7 @@ var TestConsumerConfig = ConsumerConfig{
 	IdletimeToAutoclaim:  30 * time.Millisecond,
 }
 
-var AlreadySetError = errors.New("redis key already set")
+var ErrAlreadySet = errors.New("redis key already set")
 
 func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".response-entry-timeout", DefaultConsumerConfig.ResponseEntryTimeout, "timeout for response entry")
@@ -224,7 +224,7 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID s
 	log.Debug("consumer: setting result", "cid", c.id, "msgIdInStream", messageID, "resultKeyInRedis", resultKey)
 	acquired, err := c.client.SetNX(ctx, resultKey, resp, c.cfg.ResponseEntryTimeout).Result()
 	if !acquired && err == nil {
-		err = AlreadySetError
+		err = ErrAlreadySet
 	}
 	if err != nil {
 		return fmt.Errorf("setting result for message with message-id in stream: %v, error: %w", messageID, err)
@@ -244,7 +244,7 @@ func (c *Consumer[Request, Response]) SetError(ctx context.Context, messageID st
 	log.Debug("consumer: setting error", "cid", c.id, "msgIdInStream", messageID, "errorKeyInRedis", errorKey)
 	acquired, err := c.client.SetNX(ctx, errorKey, error, c.cfg.ResponseEntryTimeout).Result()
 	if !acquired && err == nil {
-		err = AlreadySetError
+		err = ErrAlreadySet
 	}
 	if err != nil {
 		return fmt.Errorf("setting error for message with message-id in stream: %v, error: %w", messageID, err)
