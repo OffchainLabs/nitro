@@ -368,6 +368,9 @@ func NewBlockValidator(
 			}
 		}
 		startPos, _, err := statelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
+		if err != nil {
+			return nil, err
+		}
 		gs := BuildGlobalState(*res, startPos)
 		err = ret.writeLastValidated(gs, nil)
 		if err != nil {
