@@ -243,20 +243,6 @@ func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) e
 	return s.ReorgAtAndEndBatch(s.db.NewBatch(), firstMsgIdxReorged)
 }
 
-func (s *TransactionStreamer) reorgAtAndEndBatchImpl(batch ethdb.Batch, firstMsgIdxReorged arbutil.MessageIndex) ([]*arbostypes.MessageWithMetadata, error) {
-	s.insertionMutex.Lock()
-	defer s.insertionMutex.Unlock()
-	oldMessages, err := s.addMessagesAndReorg(batch, firstMsgIdxReorged, nil)
-	if err != nil {
-		return nil, err
-	}
-	err = batch.Write()
-	if err != nil {
-		return nil, err
-	}
-	return oldMessages, nil
-}
-
 func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.MessageWithMetadata) {
 	if s.execSequencer != nil {
 		for _, msg := range msgs {
@@ -282,7 +268,14 @@ func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.Messa
 }
 
 func (s *TransactionStreamer) ReorgAtAndEndBatch(batch ethdb.Batch, firstMsgIdxReorged arbutil.MessageIndex) error {
-	oldMessages, err := s.reorgAtAndEndBatchImpl(batch, firstMsgIdxReorged)
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+
+	oldMessages, err := s.addMessagesAndReorg(batch, firstMsgIdxReorged, nil)
+	if err != nil {
+		return err
+	}
+	err = batch.Write()
 	if err != nil {
 		return err
 	}
