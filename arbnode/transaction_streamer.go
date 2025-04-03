@@ -609,19 +609,19 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 	return arbutil.MessageIndex(firstMsgIdx + uint64(len(s.broadcasterQueuedMessages)))
 }
 
-func (s *TransactionStreamer) addBroadcastMessagesImpl(feedMessages []*m.BroadcastFeedMessage) ([]*arbostypes.MessageWithMetadata, error) {
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
-		return nil, nil
+		return nil
 	}
 	broadcastFirstMsgIdx := feedMessages[0].SequenceNumber
 	var messages []arbostypes.MessageWithMetadataAndBlockInfo
 	expectedMsgIdx := broadcastFirstMsgIdx
 	for _, feedMessage := range feedMessages {
 		if expectedMsgIdx != feedMessage.SequenceNumber {
-			return nil, fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, expectedMsgIdx)
+			return fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, expectedMsgIdx)
 		}
 		if feedMessage.Message.Message == nil || feedMessage.Message.Message.Header == nil {
-			return nil, fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
+			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
 		}
 		msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: feedMessage.Message,
@@ -642,7 +642,7 @@ func (s *TransactionStreamer) addBroadcastMessagesImpl(feedMessages []*m.Broadca
 	// Messages from feed are not confirmed, so confirmedMessageCount is 0 and confirmedReorg can be ignored
 	numberOfDuplicates, feedReorg, oldMsg, err := s.countDuplicateMessages(broadcastFirstMsgIdx, messages, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	messages = messages[numberOfDuplicates:]
 	broadcastFirstMsgIdx += arbutil.MessageIndex(numberOfDuplicates)
@@ -651,7 +651,7 @@ func (s *TransactionStreamer) addBroadcastMessagesImpl(feedMessages []*m.Broadca
 	}
 	if len(messages) == 0 {
 		// No new messages received
-		return nil, nil
+		return nil
 	}
 
 	if len(s.broadcasterQueuedMessages) == 0 || (feedReorg && !s.broadcasterQueuedMessagesActiveReorg) {
@@ -691,34 +691,27 @@ func (s *TransactionStreamer) addBroadcastMessagesImpl(feedMessages []*m.Broadca
 
 	if s.broadcasterQueuedMessagesActiveReorg || len(s.broadcasterQueuedMessages) == 0 {
 		// Broadcaster never triggered reorg or no messages to add
-		return nil, nil
+		return nil
 	}
 
 	if broadcastFirstMsgIdx > 0 {
 		_, err := s.GetMessage(broadcastFirstMsgIdx - 1)
 		if err != nil {
 			if !dbutil.IsErrNotFound(err) {
-				return nil, err
+				return err
 			}
 			// Message before current message doesn't exist in database, so don't add current messages yet
-			return nil, nil
+			return nil
 		}
 	}
 
 	oldMessages, err := s.addMessagesAndEndBatchImpl(broadcastFirstMsgIdx, false, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error adding pending broadcaster messages: %w", err)
+		return fmt.Errorf("error adding pending broadcaster messages: %w", err)
 	}
 
-	return oldMessages, nil
-}
-
-func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
-	oldMessages, err := s.addBroadcastMessagesImpl(feedMessages)
-	if err != nil {
-		return err
-	}
 	s.resequenceReorgedMessages(oldMessages)
+
 	return nil
 }
 
