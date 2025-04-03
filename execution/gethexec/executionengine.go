@@ -62,6 +62,8 @@ var (
 	blockWriteToDbTimer        = metrics.NewRegisteredTimer("arb/block/writetodb", nil)
 )
 
+var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
+
 type L1PriceDataOfMsg struct {
 	callDataUnits            uint64
 	cummulativeCallDataUnits uint64
@@ -100,6 +102,7 @@ type ExecutionEngine struct {
 	prefetchBlock bool
 
 	cachedL1PriceData *L1PriceData
+	syncTillBlock     uint64
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -108,12 +111,13 @@ func NewL1PriceData() *L1PriceData {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
+func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
 		bc:                bc,
 		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier:  make(chan struct{}, 1),
 		cachedL1PriceData: NewL1PriceData(),
+		syncTillBlock:     syncTillBlock,
 	}, nil
 }
 
@@ -651,6 +655,9 @@ func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingM
 }
 
 func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*types.Block, error) {
+	if s.syncTillBlock > 0 && s.latestBlock.NumberU64() >= s.syncTillBlock {
+		return nil, ExecutionEngineBlockCreationStopped
+	}
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err
@@ -1024,6 +1031,10 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 	s.LaunchThread(func(ctx context.Context) {
 		for {
+			if s.syncTillBlock > 0 && s.latestBlock.NumberU64() >= s.syncTillBlock {
+				log.Info("stopping block creation in execution engine", "syncTillBlock", s.syncTillBlock)
+				return
+			}
 			select {
 			case <-ctx.Done():
 				return

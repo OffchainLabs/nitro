@@ -611,7 +611,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, 0)
 	Require(t, err)
 
 	parentChainId, err := l1client.ChainID(ctx)
@@ -822,7 +822,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, 0)
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
