@@ -837,17 +837,15 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 		// 2: are new (syncing). We wasted very little work.
 	}
 
-	addMessagesAndEndBatch := func() ([]*arbostypes.MessageWithMetadata, error) {
-		s.insertionMutex.Lock()
-		defer s.insertionMutex.Unlock()
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
 
-		return s.addMessagesAndEndBatchImpl(firstMsgIdx, messagesAreConfirmed, messagesWithBlockInfo, batch)
-	}
-	oldMessages, err := addMessagesAndEndBatch()
+	oldMessages, err := s.addMessagesAndEndBatchImpl(firstMsgIdx, messagesAreConfirmed, messagesWithBlockInfo, batch)
 	if err != nil {
 		return err
 	}
 	s.resequenceReorgedMessages(oldMessages)
+
 	return nil
 }
 
