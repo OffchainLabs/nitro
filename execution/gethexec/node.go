@@ -192,9 +192,10 @@ func CreateExecutionNode(
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
+	syncTillBlock uint64,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain)
+	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
