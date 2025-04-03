@@ -360,20 +360,15 @@ func NewBlockValidator(
 		if err != nil {
 			return nil, err
 		}
-		if messageCount == 0 {
-			return nil, fmt.Errorf("messageCount is zero")
+		res := &execution.MessageResult{}
+		if messageCount > 0 {
+			res, err = streamer.ResultAtMessageIndex(messageCount - 1)
+			if err != nil {
+				return nil, err
+			}
 		}
-		msgIdx := messageCount - 1
-		res, err := streamer.ResultAtMessageIndex(msgIdx)
-		if err != nil {
-			return nil, err
-		}
-		gs := validator.GoGlobalState{
-			BlockHash:  res.BlockHash,
-			SendRoot:   res.SendRoot,
-			Batch:      startBlock,
-			PosInBatch: 0,
-		}
+		startPos, _, err := statelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
+		gs := BuildGlobalState(*res, startPos)
 		err = ret.writeLastValidated(gs, nil)
 		if err != nil {
 			return nil, err
