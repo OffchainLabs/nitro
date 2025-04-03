@@ -1,7 +1,7 @@
 // Copyright 2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest && !race
+//g o:build challengetest && !race
 
 package arbtest
 
