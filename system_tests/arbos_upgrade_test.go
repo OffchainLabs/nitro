@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
 	"math/big"
 	"strings"
 	"testing"
@@ -55,6 +56,17 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 	if scheduled.ArbosVersion != 0 || scheduled.ScheduledForTimestamp != 0 {
 		t.Errorf("expected completed scheduled upgrade to be ignored, got version %v timestamp %v", scheduled.ArbosVersion, scheduled.ScheduledForTimestamp)
 	}
+
+	l2rpc := builder.L2.Stack.Attach()
+	var result json.RawMessage
+	traceConfig := map[string]interface{}{
+		"tracer": "prestateTracer",
+		"tracerConfig": map[string]interface{}{
+			"diffMode": true,
+		},
+	}
+	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), traceConfig)
+	Require(t, err)
 
 	// We can't test 11 -> 20 because 11 doesn't have the GetScheduledUpgrade method we want to test
 	var testVersion uint64 = 100

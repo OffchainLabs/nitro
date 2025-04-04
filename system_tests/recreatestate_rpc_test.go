@@ -447,7 +447,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 }
 
 func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
-	cacheConfig := TestCachingConfig
+	cacheConfig := gethexec.DefaultCachingConfig
 	cacheConfig.Archive = true
 	// For now Archive node should use HashScheme
 	cacheConfig.StateScheme = rawdb.HashScheme

@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 )
 
 type importantRoots struct {
@@ -118,7 +119,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			Context:     ctx,
 			BlockNumber: big.NewInt(int64(rpc.FinalizedBlockNumber)),
 		}
-		rollup, err := staker.NewRollupWatcher(rollupAddrs.Rollup, l1Client, callOpts)
+		rollup, err := legacystaker.NewRollupWatcher(rollupAddrs.Rollup, l1Client, callOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -248,7 +249,7 @@ func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}
 
-	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: initConfig.PruneBloomSize, Threads: initConfig.PruneThreads, CleanCacheSize: initConfig.PruneTrieCleanCache})
+	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: initConfig.PruneBloomSize, Threads: initConfig.PruneThreads, CleanCacheSize: initConfig.PruneTrieCleanCache, ParallelStorageTraversal: initConfig.PruneParallelStorageTraversal})
 	if err != nil {
 		return err
 	}

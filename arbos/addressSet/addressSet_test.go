@@ -5,6 +5,7 @@ package addressSet
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/state"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
