@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"math"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -53,6 +54,7 @@ func sendAndTraceTransaction(
 	program common.Address,
 	value *big.Int,
 	data []byte,
+	mustRevert bool,
 ) logger.ExecutionResult {
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -63,7 +65,13 @@ func sendAndTraceTransaction(
 	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	if mustRevert {
+		if err == nil || !strings.Contains(err.Error(), "execution reverted") {
+			t.Fatal("expected revert error, got", err)
+		}
+	} else {
+		Require(t, err)
+	}
 
 	var result logger.ExecutionResult
 	err = rpcClient.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), nil)
@@ -111,20 +119,20 @@ func TestStylusOpcodeTraceStorage(t *testing.T) {
 	}
 
 	// storage_cache_bytes32
-	result := sendAndTraceTransaction(t, builder, program, nil, argsForStorageWrite(key, value))
+	result := sendAndTraceTransaction(t, builder, program, nil, argsForStorageWrite(key, value), false)
 	checkOpcode(t, result, 3, vm.SSTORE, key[:], value[:])
 
 	// storage_load_bytes32
-	result = sendAndTraceTransaction(t, builder, program, nil, argsForStorageRead(key))
+	result = sendAndTraceTransaction(t, builder, program, nil, argsForStorageRead(key), false)
 	checkOpcode(t, result, 3, vm.SLOAD, key[:])
 	checkOpcode(t, result, 4, vm.POP, value[:])
 
 	// transient_store_bytes32
-	result = sendAndTraceTransaction(t, builder, program, nil, trans(argsForStorageWrite(key, value)))
+	result = sendAndTraceTransaction(t, builder, program, nil, trans(argsForStorageWrite(key, value)), false)
 	checkOpcode(t, result, 3, vm.TSTORE, key[:], value[:])
 
 	// transient_load_bytes32
-	result = sendAndTraceTransaction(t, builder, program, nil, trans(argsForStorageRead(key)))
+	result = sendAndTraceTransaction(t, builder, program, nil, trans(argsForStorageRead(key)), false)
 	checkOpcode(t, result, 3, vm.TLOAD, key[:])
 	checkOpcode(t, result, 4, vm.POP, nil)
 }
@@ -143,7 +151,7 @@ func TestStylusOpcodeTraceNativeKeccak(t *testing.T) {
 	hash := crypto.Keccak256Hash(args) // the keccak.wat program computes the hash of the whole args
 
 	// native_keccak256
-	result := sendAndTraceTransaction(t, builder, program, nil, args)
+	result := sendAndTraceTransaction(t, builder, program, nil, args, false)
 	checkOpcode(t, result, 3, vm.KECCAK256, nil, intToBytes(len(args)))
 	checkOpcode(t, result, 4, vm.POP, hash[:])
 }
@@ -156,7 +164,7 @@ func TestStylusOpcodeTraceMath(t *testing.T) {
 	defer cleanup()
 
 	program := deployWasm(t, ctx, auth, l2client, rustFile("math"))
-	result := sendAndTraceTransaction(t, builder, program, nil, nil)
+	result := sendAndTraceTransaction(t, builder, program, nil, nil, false)
 
 	value := common.Hex2Bytes("eddecf107b5740cef7f5a01e3ea7e287665c4e75a8eb6afae2fda2e3d4367786")
 	unknown := common.Hex2Bytes("c6178c2de1078cd36c3bd302cde755340d7f17fcb3fcc0b9c333ba03b217029f")
@@ -200,18 +208,18 @@ func TestStylusOpcodeTraceExit(t *testing.T) {
 	// normal exit with return value
 	program := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 	key := testhelpers.RandomHash()
-	result := sendAndTraceTransaction(t, builder, program, nil, argsForStorageRead(key))
+	result := sendAndTraceTransaction(t, builder, program, nil, argsForStorageRead(key), false)
 	size := intToBytes(32)
 	checkOpcode(t, result, 5, vm.RETURN, nil, size)
 
 	// stop with exit early
 	program = deployWasm(t, ctx, auth, l2client, watFile("exit-early/exit-early"))
-	result = sendAndTraceTransaction(t, builder, program, nil, nil)
+	result = sendAndTraceTransaction(t, builder, program, nil, nil, false)
 	checkOpcode(t, result, 3, vm.STOP)
 
 	// revert
 	program = deployWasm(t, ctx, auth, l2client, watFile("exit-early/panic-after-write"))
-	result = sendAndTraceTransaction(t, builder, program, nil, nil)
+	result = sendAndTraceTransaction(t, builder, program, nil, nil, true)
 	size = intToBytes(len("execution reverted"))
 	checkOpcode(t, result, 3, vm.REVERT, nil, size)
 }
@@ -240,7 +248,7 @@ func TestStylusOpcodeTraceEvmData(t *testing.T) {
 	data = append(data, arbTestAddress.Bytes()...)
 	data = append(data, program.Bytes()...)
 	data = append(data, callBurnData...)
-	result := sendAndTraceTransaction(t, builder, program, nil, data)
+	result := sendAndTraceTransaction(t, builder, program, nil, data, false)
 
 	fundedBalance, err := l2client.BalanceAt(ctx, fundedAddr, nil)
 	Require(t, err)
@@ -344,7 +352,7 @@ func TestStylusOpcodeTraceLog(t *testing.T) {
 	}
 	args = append(args, testhelpers.RandomSlice(logSize)...) // log
 
-	result := sendAndTraceTransaction(t, builder, program, nil, args)
+	result := sendAndTraceTransaction(t, builder, program, nil, args, false)
 
 	// emit_log
 	checkOpcode(t, result, 3, vm.LOG4, expectedStack...)
@@ -359,7 +367,7 @@ func TestStylusOpcodeTraceReturnDataSize(t *testing.T) {
 
 	program := deployWasm(t, ctx, auth, l2client, watFile("timings/return_data_size"))
 	args := binary.LittleEndian.AppendUint32(nil, 1) // rounds
-	result := sendAndTraceTransaction(t, builder, program, nil, args)
+	result := sendAndTraceTransaction(t, builder, program, nil, args, false)
 
 	// return_data_size
 	checkOpcode(t, result, 3, vm.RETURNDATASIZE)
@@ -384,7 +392,7 @@ func TestStylusOpcodeTraceCall(t *testing.T) {
 	args := argsForMulticall(vm.CALL, storage, nil, innerArgs)
 	args = multicallAppend(args, vm.DELEGATECALL, storage, innerArgs)
 	args = multicallAppend(args, vm.STATICCALL, storage, innerArgs)
-	result := sendAndTraceTransaction(t, builder, multicall, nil, args)
+	result := sendAndTraceTransaction(t, builder, multicall, nil, args, false)
 
 	// call_contract
 	checkOpcode(t, result, 3, vm.CALL, gas, storage[:], nil, nil, argsLen, nil, nil)
@@ -419,7 +427,7 @@ func TestStylusOpcodeTraceCreate(t *testing.T) {
 	create1Args := []byte{0x01}
 	create1Args = append(create1Args, common.BigToHash(startValue).Bytes()...)
 	create1Args = append(create1Args, deployCode...)
-	result := sendAndTraceTransaction(t, builder, program, startValue, create1Args)
+	result := sendAndTraceTransaction(t, builder, program, startValue, create1Args, false)
 	checkOpcode(t, result, 10, vm.CREATE, startValue.Bytes(), nil, intToBytes(len(deployCode)))
 	checkOpcode(t, result, 11, vm.POP, create1Addr[:])
 
@@ -428,7 +436,7 @@ func TestStylusOpcodeTraceCreate(t *testing.T) {
 	create2Args = append(create2Args, common.BigToHash(startValue).Bytes()...)
 	create2Args = append(create2Args, salt[:]...)
 	create2Args = append(create2Args, deployCode...)
-	result = sendAndTraceTransaction(t, builder, program, startValue, create2Args)
+	result = sendAndTraceTransaction(t, builder, program, startValue, create2Args, false)
 	checkOpcode(t, result, 10, vm.CREATE2, startValue.Bytes(), nil, intToBytes(len(deployCode)), salt[:])
 	checkOpcode(t, result, 11, vm.POP, create2Addr[:])
 }
@@ -454,7 +462,7 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	wasmMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 	colors.PrintGrey("wasm multicall deployed at ", wasmMulticall)
 	wasmArgs := argsForMulticall(vm.CALL, wasmMulticall, nil, args)
-	wasmResult := sendAndTraceTransaction(t, builder, wasmMulticall, nil, wasmArgs)
+	wasmResult := sendAndTraceTransaction(t, builder, wasmMulticall, nil, wasmArgs, false)
 
 	// Trace recursive call in evm
 	evmMulticall, tx, _, err := mocks_legacy_gen.DeployMultiCallTest(&auth, builder.L2.Client)
@@ -463,7 +471,7 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	Require(t, err)
 	colors.PrintGrey("evm multicall deployed at ", evmMulticall)
 	evmArgs := argsForMulticall(vm.CALL, evmMulticall, nil, args)
-	evmResult := sendAndTraceTransaction(t, builder, evmMulticall, nil, evmArgs)
+	evmResult := sendAndTraceTransaction(t, builder, evmMulticall, nil, evmArgs, false)
 
 	// For some opcodes in the wasmTrace, make sure there is an equivalent one in the evmTrace.
 	argsLen := intToBytes(len(args))
@@ -502,6 +510,6 @@ func TestStylusHugeWriteResultTrace(t *testing.T) {
 	program := deployWasm(t, ctx, auth, l2client, watFile("write-result-len"))
 	const returnLen = math.MaxUint16 + 1
 	args := binary.LittleEndian.AppendUint32(nil, returnLen)
-	result := sendAndTraceTransaction(t, builder, program, nil, args)
+	result := sendAndTraceTransaction(t, builder, program, nil, args, false)
 	checkOpcode(t, result, 3, vm.RETURN, nil, intToBe32(returnLen))
 }
