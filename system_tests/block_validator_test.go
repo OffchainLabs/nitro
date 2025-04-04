@@ -25,7 +25,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -101,7 +100,6 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	perTransfer := big.NewInt(1e12)
 
-	var simple *mocksgen.Simple
 	if opts.workload != upgradeArbOs {
 		for i := 0; i < opts.workloadLoops; i++ {
 			var tx *types.Transaction
@@ -155,9 +153,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	} else {
 		auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 		// deploy a test contract
-		var err error
-		_, _, simple, err = mocksgen.DeploySimple(&auth, builder.L2.Client)
-		Require(t, err, "could not deploy contract")
+		_, simple := builder.L2.DeploySimple(t, auth)
 
 		tx, err := simple.StoreDifficulty(&auth)
 		Require(t, err)
