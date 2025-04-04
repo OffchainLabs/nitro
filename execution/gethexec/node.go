@@ -507,8 +507,8 @@ func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
 
 func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *params.ChainConfig) error {
 	execNodeConfig := n.ConfigFetcher()
-	if execNodeConfig.Sequencer.Dangerous.Timeboost.Enable {
-		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctionContractAddress)
+	if execNodeConfig.Sequencer.Timeboost.Enable {
+		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress)
 
 		auctionContract, err := NewExpressLaneAuctionFromInternalAPI(
 			n.Backend.APIBackend(),
@@ -530,14 +530,14 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			auctionContract,
 			auctionContractAddr,
 			chainConfig,
-			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
+			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
 		)
 
 		n.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
 
 		if execNodeConfig.Sequencer.Enable {
 			err := n.Sequencer.InitializeExpressLaneService(
-				common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
+				common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress),
 				roundTimingInfo,
 				expressLaneTracker,
 			)

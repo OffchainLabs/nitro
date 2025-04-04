@@ -1510,7 +1510,7 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
 	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
-	builderSeq.execConfig.Sequencer.Dangerous.Timeboost = gethexec.TimeboostConfig{
+	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
 		Enable:                       false, // We need to start without timeboost initially to create the auction contract
 		ExpressLaneAdvantage:         time.Second * 5,
 		RedisUrl:                     expressLaneRedisURL,
@@ -1696,7 +1696,7 @@ func setupExpressLaneAuction(
 
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
-	builderSeq.execConfig.Sequencer.Dangerous.Timeboost.Enable = true
+	builderSeq.execConfig.Sequencer.Timeboost.Enable = true
 	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
 
@@ -1707,7 +1707,7 @@ func setupExpressLaneAuction(
 		auctionContract,
 		proxyAddr,
 		builderSeq.chainConfig,
-		builderSeq.execConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
+		builderSeq.execConfig.Sequencer.Timeboost.EarlySubmissionGrace,
 	)
 
 	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(
