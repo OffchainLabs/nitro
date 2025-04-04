@@ -196,6 +196,7 @@ jobs:
         uses: tj-actions/changed-files@v46
         with:
           fetch_depth: 0
+          exclude_submodules: true
           files: bold/legacy/**
           
       # Add conditional execution for all subsequent steps
