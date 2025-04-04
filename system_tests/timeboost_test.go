@@ -1477,7 +1477,7 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
 	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
-	builderSeq.execConfig.Sequencer.Dangerous.Timeboost = gethexec.TimeboostConfig{
+	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
 		Enable:                       false, // We need to start without timeboost initially to create the auction contract
 		ExpressLaneAdvantage:         time.Second * 5,
 		RedisUrl:                     expressLaneRedisURL,
@@ -1688,7 +1688,7 @@ func setupExpressLaneAuction(
 		auctionContract,
 		proxyAddr,
 		builderSeq.chainConfig,
-		builderSeq.execConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
+		builderSeq.execConfig.Sequencer.Timeboost.EarlySubmissionGrace,
 	)
 
 	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(
@@ -1712,7 +1712,7 @@ func setupExpressLaneAuction(
 	}
 
 	expressLaneTracker.Start(ctx)
-	builderSeq.execConfig.Sequencer.Dangerous.Timeboost.Enable = true // Prevents race in sequencer where expressLaneService is read inside publishTransactionToQueue
+	builderSeq.execConfig.Sequencer.Timeboost.Enable = true // Prevents race in sequencer where expressLaneService is read inside publishTransactionToQueue
 
 	// Set up an autonomous auction contract service that runs in the background in this test.
 	redisURL := redisutil.CreateTestRedis(ctx, t)
