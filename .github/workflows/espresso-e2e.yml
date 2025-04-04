@@ -27,7 +27,12 @@ jobs:
       - name: Install dependencies
         run: >
           sudo apt update && sudo apt install -y wabt
-          cmake build-essential bison golang clang make wabt
+          build-essential bison golang clang make
+
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.31.6'
 
       - name: Install latest gotestsum
         uses: autero1/action-gotestsum@v2.0.0

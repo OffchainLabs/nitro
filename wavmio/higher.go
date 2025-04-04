@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 

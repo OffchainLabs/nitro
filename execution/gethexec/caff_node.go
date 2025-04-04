@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/espressostreamer"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -241,6 +242,14 @@ func (n *CaffNode) Start(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (n *CaffNode) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	return n.txForwarder.PublishAuctionResolutionTransaction(ctx, tx)
+}
+
+func (n *CaffNode) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	return n.txForwarder.PublishExpressLaneTransaction(ctx, msg)
 }
 
 func (n *CaffNode) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {

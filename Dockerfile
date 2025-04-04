@@ -302,6 +302,8 @@ FROM nitro-node-slim AS nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
 COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
 RUN rm -rf /workspace/target/legacy-machines/latest
@@ -337,6 +339,7 @@ RUN rm -f /home/user/target/machines/latest
 COPY --from=prover-export /bin/jit                                         /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/mockexternalsigner        /usr/local/bin/
 COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/

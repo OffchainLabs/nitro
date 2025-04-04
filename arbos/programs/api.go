@@ -4,12 +4,13 @@
 package programs
 
 import (
+	"strconv"
+
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -151,7 +152,7 @@ func newApiClosures(
 		case vm.STATICCALL:
 			ret, returnGas, err = evm.StaticCall(scope.Contract, contract, input, gas)
 		default:
-			log.Crit("unsupported call type", "opcode", opcode)
+			panic("unsupported call type: " + opcode.String())
 		}
 
 		interpreter.SetReturnData(ret)
@@ -266,7 +267,7 @@ func newApiClosures(
 		original := input
 
 		crash := func(reason string) {
-			log.Crit("bad API call", "reason", reason, "request", req, "len", len(original), "remaining", len(input))
+			panic("bad API call reason: " + reason + " request: " + strconv.Itoa(int(req)) + " len: " + strconv.Itoa(len(original)) + " remaining: " + strconv.Itoa(len(input)))
 		}
 		takeInput := func(needed int, reason string) []byte {
 			if len(input) < needed {
@@ -338,7 +339,7 @@ func newApiClosures(
 			case StaticCall:
 				opcode = vm.STATICCALL
 			default:
-				log.Crit("unsupported call type", "opcode", opcode)
+				panic("unsupported call type opcode: " + opcode.String())
 			}
 			contract := takeAddress()
 			value := takeU256()
@@ -414,8 +415,7 @@ func newApiClosures(
 			captureHostio(name, args, outs, startInk, endInk)
 			return []byte{}, nil, 0
 		default:
-			log.Crit("unsupported call type", "req", req)
-			return []byte{}, nil, 0
+			panic("unsupported call type: " + strconv.Itoa(int(req)))
 		}
 	}
 }

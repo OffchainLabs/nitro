@@ -335,12 +335,12 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 	}
 	// Make sure we don't allow accidentally downgrading ArbOS
 	if chainConfig.DebugMode() {
-		if currentArbosState.ArbOSVersion() > arbosState.MaxDebugArbosVersionSupported {
-			return fmt.Errorf("attempted to launch node in debug mode with ArbOS version %v on ArbOS state with version %v", arbosState.MaxDebugArbosVersionSupported, currentArbosState.ArbOSVersion())
+		if currentArbosState.ArbOSVersion() > params.MaxDebugArbosVersionSupported {
+			return fmt.Errorf("attempted to launch node in debug mode with ArbOS version %v on ArbOS state with version %v", params.MaxDebugArbosVersionSupported, currentArbosState.ArbOSVersion())
 		}
 	} else {
-		if currentArbosState.ArbOSVersion() > arbosState.MaxArbosVersionSupported {
-			return fmt.Errorf("attempted to launch node with ArbOS version %v on ArbOS state with version %v", arbosState.MaxArbosVersionSupported, currentArbosState.ArbOSVersion())
+		if currentArbosState.ArbOSVersion() > params.MaxArbosVersionSupported {
+			return fmt.Errorf("attempted to launch node with ArbOS version %v on ArbOS state with version %v", params.MaxArbosVersionSupported, currentArbosState.ArbOSVersion())
 		}
 
 	}
@@ -689,6 +689,36 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	var chainConfig *params.ChainConfig
 
+	if config.Init.GenesisJsonFile != "" {
+		if initDataReader != nil {
+			return chainDb, nil, errors.New("multiple init methods supplied")
+		}
+		genesisJson, err := os.ReadFile(config.Init.GenesisJsonFile)
+		if err != nil {
+			return chainDb, nil, err
+		}
+		var gen core.Genesis
+		if err := json.Unmarshal(genesisJson, &gen); err != nil {
+			return chainDb, nil, err
+		}
+		var accounts []statetransfer.AccountInitializationInfo
+		for address, account := range gen.Alloc {
+			accounts = append(accounts, statetransfer.AccountInitializationInfo{
+				Addr:       address,
+				EthBalance: account.Balance,
+				Nonce:      account.Nonce,
+				ContractInfo: &statetransfer.AccountInitContractInfo{
+					Code:            account.Code,
+					ContractStorage: account.Storage,
+				},
+			})
+		}
+		initDataReader = statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
+			Accounts: accounts,
+		})
+		chainConfig = gen.Config
+	}
+
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
@@ -714,9 +744,14 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
-		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.Chain.ID), config.Chain.Name, genesisBlockNr, config.Chain.InfoFiles, config.Chain.InfoJson)
-		if err != nil {
-			return chainDb, nil, err
+		if chainConfig == nil {
+			chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.Chain.ID), config.Chain.Name, genesisBlockNr, config.Chain.InfoFiles, config.Chain.InfoJson)
+			if err != nil {
+				return chainDb, nil, err
+			}
+		}
+		if config.Init.DevInit && config.Init.DevMaxCodeSize != 0 {
+			chainConfig.ArbitrumChainParams.MaxCodeSize = config.Init.DevMaxCodeSize
 		}
 		if config.Init.DevInit && config.Init.DevMaxCodeSize != 0 {
 			chainConfig.ArbitrumChainParams.MaxCodeSize = config.Init.DevMaxCodeSize

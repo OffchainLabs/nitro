@@ -81,7 +81,7 @@ jobs:
           echo -e "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
 
       - name: Upload WAVM machine as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wavm-machine-${{ steps.module-root.outputs.module-root }}
           path: target/machines/latest/*

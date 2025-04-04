@@ -2,6 +2,7 @@ package arbnode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -61,4 +62,20 @@ func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
 func (a *BlockValidatorDebugAPI) ValidationInputsAt(ctx context.Context, msgNum hexutil.Uint64, target ethdb.WasmTarget,
 ) (server_api.InputJSON, error) {
 	return a.val.ValidationInputsAt(ctx, arbutil.MessageIndex(msgNum), target)
+}
+
+type MaintenanceAPI struct {
+	runner *MaintenanceRunner
+}
+
+func (a *MaintenanceAPI) SecondsSinceLastMaintenance(ctx context.Context) (int64, error) {
+	running, since := a.runner.TimeSinceLastMaintenance()
+	if running {
+		return 0, errors.New("maintenance currently running")
+	}
+	return int64(since.Seconds()), nil
+}
+
+func (a *MaintenanceAPI) Trigger(ctx context.Context) error {
+	return a.runner.Trigger()
 }

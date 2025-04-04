@@ -59,6 +59,12 @@ func TestProgramKeccak(t *testing.T) {
 			builder.WithExtraArchs(allWasmTargets)
 		})
 	})
+
+	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
+		keccakTest(t, true, func(builder *NodeBuilder) {
+			builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+		})
+	})
 }
 
 func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
@@ -69,7 +75,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
 	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
@@ -82,7 +88,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 			Fatal(t, "activate should have failed with ProgramUpToDate", err)
 		}
 	})
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	if programAddress == otherAddressSameCode {
 		Fatal(t, "expected to deploy at two separate program addresses")
@@ -164,6 +170,11 @@ func TestProgramActivateTwice(t *testing.T) {
 			builder.WithExtraArchs(allWasmTargets)
 		})
 	})
+	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
+		testActivateTwice(t, true, func(builder *NodeBuilder) {
+			builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+		})
+	})
 }
 
 func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
@@ -195,7 +206,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	preimage := []byte("it's time to du-du-du-du d-d-d-d-d-d-d de-duplicate")
 
@@ -220,7 +231,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	// Calling the contract pre-activation should fail.
 	checkReverts()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// mechanisms for creating calldata
 	activateProgram, _ := util.NewCallParser(pgen.ArbWasmABI, "activateProgram")
@@ -243,7 +254,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	// Ensure the revert also reverted keccak's activation
 	checkReverts()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// Activate keccak program A, then call into B, which should succeed due to being the same codehash
 	args = argsForMulticall(vm.CALL, types.ArbWasmAddress, oneEth, pack(activateProgram(keccakA)))
@@ -251,7 +262,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, oneEth, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 2)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 2)
 
 	validateBlocks(t, 7, jit, builder)
 }
@@ -2083,7 +2094,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	storeMap, err := createMapFromDb(wasmDb)
 	Require(t, err)
 
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	// close nodeB
 	cleanupB()
 
@@ -2140,7 +2151,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 		}
 	}
 
-	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	cleanupB()
 }
 
@@ -2167,25 +2178,43 @@ func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
 	return modules
 }
 
-func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []string, numModules int) {
+func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []ethdb.WasmTarget, numModules int) {
+	t.Helper()
 	modules := readModuleHashes(t, wasmDb)
 	if len(modules) != numModules {
 		t.Fatalf("Unexpected number of module hashes found in wasm store, want: %d, have: %d", numModules, len(modules))
 	}
-	for _, module := range modules {
-		for _, target := range targets {
-			wasmTarget := ethdb.WasmTarget(target)
-			if !rawdb.IsSupportedWasmTarget(wasmTarget) {
-				t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
-			}
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
-					}
-				}()
-				_ = rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+	readAsm := func(module common.Hash, target string) []byte {
+		wasmTarget := ethdb.WasmTarget(target)
+		if !rawdb.IsSupportedWasmTarget(wasmTarget) {
+			t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
+		}
+		return func() []byte {
+			t.Helper()
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
+				}
 			}()
+			return rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+		}()
+	}
+	for _, module := range modules {
+		for _, target := range allWasmTargets {
+			var expected bool
+			for _, expectedTarget := range expectedTargets {
+				if ethdb.WasmTarget(target) == expectedTarget {
+					expected = true
+					break
+				}
+			}
+			asm := readAsm(module, target)
+			if expected && len(asm) == 0 {
+				t.Fatalf("Missing asm for target: %v, module: %v", target, module)
+			}
+			if !expected && len(asm) > 0 {
+				t.Fatalf("Found asm for target: %v, module: %v, expected targets: %v", target, module, expectedTargets)
+			}
 		}
 	}
 }

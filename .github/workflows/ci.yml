@@ -64,7 +64,19 @@ jobs:
           echo
 
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y wabt gotestsum
+        run: >
+          sudo apt update && sudo apt install -y wabt
+          build-essential bison golang clang make
+
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.31.6"
+
+      - name: Install latest gotestsum
+        uses: autero1/action-gotestsum@v2.0.0
+        with:
+          gotestsum_version: v1.12.0
 
       - name: Setup nodejs
         uses: actions/setup-node@v3
@@ -85,6 +97,7 @@ jobs:
 
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
+        id: install-rust
         with:
           toolchain: "1.81.0"
           targets: "wasm32-wasi, wasm32-unknown-unknown"
@@ -106,6 +119,9 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install cbindgen
+        run: cargo install --force cbindgen
 
       - name: Cache Build Products
         uses: actions/cache@v3
@@ -211,13 +227,11 @@ jobs:
         if: matrix.test-mode == 'defaults'
         run: |
           gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target" --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
-
       - name: run arbitrator prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |
           make build-prover-bin
           target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/TestProgramStorage/block_inputs.json"
-
       - name: run jit prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |

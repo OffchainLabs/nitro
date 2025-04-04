@@ -164,6 +164,7 @@ func waitForL1Node(ctx context.Context) error {
 			"{'jsonrpc':'2.0','id':45678,'method':'eth_chainId','params':[]}",
 			"http://localhost:8545",
 		).Run(); e != nil {
+			log.Warn("retry to check the l1 node", "err", e)
 			return false
 		}
 		return true

@@ -179,7 +179,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver autonomous-auctioneer bidder-client datool mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -327,8 +327,17 @@ $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/daserver"
 
+$(output_root)/bin/autonomous-auctioneer: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/autonomous-auctioneer"
+
+$(output_root)/bin/bidder-client: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/bidder-client"
+
 $(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/datool"
+
+$(output_root)/bin/mockexternalsigner: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/mockexternalsigner"
 
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
@@ -456,50 +465,80 @@ $(stylus_test_dir)/%.wasm: $(stylus_test_dir)/%.b $(stylus_lang_bf)
 
 $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_storage_wasm): $(stylus_test_storage_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_multicall_wasm): $(stylus_test_multicall_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_log_wasm): $(stylus_test_log_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_create_wasm): $(stylus_test_create_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_math_wasm): $(stylus_test_math_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_evm-data_wasm): $(stylus_test_evm-data_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_read-return-data_wasm): $(stylus_test_read-return-data_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_sdk-storage_wasm): $(stylus_test_sdk-storage_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_erc20_wasm): $(stylus_test_erc20_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_hostio-test_wasm): $(stylus_test_hostio-test_src)
+	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	wasm2wat $@ > $@.wat #removing reference types
+	wat2wasm $@.wat -o $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_hostio-test_wasm): $(stylus_test_hostio-test_src)

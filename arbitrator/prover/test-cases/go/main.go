@@ -17,9 +17,10 @@ import (
 	"sync"
 	"time"
 
+	merkletree "github.com/wealdtech/go-merkletree"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	merkletree "github.com/wealdtech/go-merkletree"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/programs"

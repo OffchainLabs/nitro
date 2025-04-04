@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ccoveille/go-safecast"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -224,6 +225,7 @@ func TestOverflowAssertions(t *testing.T) {
 		challengemanager.StackWithPostingInterval(time.Second),
 		challengemanager.StackWithPollingInterval(time.Millisecond * 500),
 		challengemanager.StackWithAverageBlockCreationTime(time.Second),
+		challengemanager.StackWithMinimumGapToParentAssertion(0),
 	}
 
 	manager, err := challengemanager.NewChallengeStack(

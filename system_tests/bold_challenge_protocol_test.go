@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
@@ -417,6 +418,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		challengemanager.StackWithMode(modes.MakeMode),
 		challengemanager.StackWithPostingInterval(time.Second * 3),
 		challengemanager.StackWithPollingInterval(time.Second),
+		challengemanager.StackWithMinimumGapToParentAssertion(0),
 		challengemanager.StackWithAverageBlockCreationTime(time.Second),
 	}
 
@@ -533,7 +535,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	fatalErrChan := make(chan error, 10)
-	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil, nil)
+	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
@@ -577,8 +579,9 @@ func createTestNodeOnL1ForBoldProtocol(
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 	l1TransactionOpts.Value = nil
-
-	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeToken)
+	espressoTEEVerifierAddress, tx, _, err := mocksgen.DeployEspressoTEEVerifierMock(&l1TransactionOpts, l1client)
+	Require(t, err)
+	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeToken, espressoTEEVerifierAddress)
 	rollupUser, err := rollupgen.NewRollupUserLogic(addresses.Rollup, l1client)
 	Require(t, err)
 	chalManagerAddr, err := rollupUser.ChallengeManager(&bind.CallOpts{})
@@ -661,6 +664,7 @@ func deployContractsOnly(
 	chainId *big.Int,
 	rollupStackConf setup.RollupStackConfig,
 	stakeToken common.Address,
+	espressoTEEVerifierAddress common.Address,
 ) *chaininfo.RollupAddresses {
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	locator, err := server_common.NewMachineLocator("")
@@ -692,9 +696,13 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   protocol.Height(bigStepChallengeLeafHeight),
 			SmallStepChallengeHeight: protocol.Height(smallStepChallengeLeafHeight),
 		}),
+
 		challengetesting.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
 		challengetesting.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
+
 	)
+
+	cfg.EspressoTEEVerifier = espressoTEEVerifierAddress
 	config, err := json.Marshal(chaininfo.ArbitrumDevTestChainConfig())
 	Require(t, err)
 	cfg.ChainConfig = string(config)
@@ -782,7 +790,11 @@ func create2ndNodeWithConfigForBoldProtocol(
 		Fatal(t, "not geth execution node")
 	}
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
-	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeTokenAddr)
+	rollupOwner := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+
+	espressoTEEVerifierAddress, _, _, err := mocksgen.DeployEspressoTEEVerifierMock(&rollupOwner, l1client)
+	Require(t, err)
+	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeTokenAddr, espressoTEEVerifierAddress)
 
 	l1info.SetContract("EvilBridge", addresses.Bridge)
 	l1info.SetContract("EvilSequencerInbox", addresses.SequencerInbox)
@@ -889,7 +901,7 @@ func makeBoldBatch(
 
 	seqNum := new(big.Int).Lsh(common.Big1, 256)
 	seqNum.Sub(seqNum, common.Big1)
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin37501551(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0), []byte{})
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
