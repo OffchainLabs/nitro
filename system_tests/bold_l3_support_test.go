@@ -46,6 +46,7 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 	cleanupL1AndL2 := builder.Build(t)
 	defer cleanupL1AndL2()
 
+	builder.l3Config.nodeConfig.Staker.Enable = true
 	cleanupL3FirstNode := builder.BuildL3OnL2(t)
 	defer cleanupL3FirstNode()
 	firstNodeTestClient := builder.L3
