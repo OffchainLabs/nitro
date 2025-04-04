@@ -56,8 +56,7 @@ done
 
 packages=$(go list ./...)
 for package in $packages; do
-  cmd="stdbuf -oL gotestsum --format short-verbose --no-color=false -- \"$package\""
-
+  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=2 --no-color=false --"
   if [ "$timeout" != "" ]; then
     cmd="$cmd -timeout $timeout"
   fi
@@ -79,7 +78,7 @@ for package in $packages; do
   fi
 
   if [ "$test_state_scheme" != "" ]; then
-      cmd="$cmd -- --test_state_scheme=$test_state_scheme"
+      cmd="$cmd -args -- --test_state_scheme=$test_state_scheme"
     fi
 
   cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
