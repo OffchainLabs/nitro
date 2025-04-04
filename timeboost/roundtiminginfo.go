@@ -19,12 +19,12 @@ func validateRoundTimingInfo(c *express_lane_auctiongen.RoundTimingInfo) error {
 	reserveSubmission := arbmath.SaturatingCast[time.Duration](c.ReserveSubmissionSeconds) * time.Second
 
 	// Validate minimum durations
-	if roundDuration < time.Second*10 {
-		return fmt.Errorf("RoundDurationSeconds (%d) must be at least 10 seconds", c.RoundDurationSeconds)
+	if roundDuration < time.Second*4 {
+		return fmt.Errorf("RoundDurationSeconds (%d) must be at least 4 seconds", c.RoundDurationSeconds)
 	}
 
-	if auctionClosing < time.Second*5 {
-		return fmt.Errorf("AuctionClosingSeconds (%d) must be at least 5 seconds", c.AuctionClosingSeconds)
+	if auctionClosing < time.Second*2 {
+		return fmt.Errorf("AuctionClosingSeconds (%d) must be at least 2 seconds", c.AuctionClosingSeconds)
 	}
 
 	if reserveSubmission < time.Second {
