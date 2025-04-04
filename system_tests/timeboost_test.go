@@ -1504,7 +1504,7 @@ func setupExpressLaneAuction(
 		extraNodebuilder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
 		extraNodebuilder.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 		extraNodebuilder.execConfig.Sequencer.Enable = true
-		extraNodebuilder.execConfig.Sequencer.Dangerous.Timeboost = gethexec.TimeboostConfig{
+		extraNodebuilder.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
 			Enable:                       true,
 			ExpressLaneAdvantage:         time.Second * 5,
 			RedisUrl:                     expressLaneRedisURL,
