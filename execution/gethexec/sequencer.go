@@ -83,7 +83,8 @@ type SequencerConfig struct {
 }
 
 type DangerousConfig struct {
-	Timeboost TimeboostConfig `koanf:"timeboost"`
+	Timeboost                       TimeboostConfig `koanf:"timeboost"`
+	DisableSeqInboxMaxDataSizeCheck bool            `koanf:"disable-seq-inbox-max-data-size-check"`
 }
 
 type TimeboostConfig struct {
@@ -184,7 +185,8 @@ var DefaultSequencerConfig = SequencerConfig{
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	Timeboost: DefaultTimeboostConfig,
+	Timeboost:                       DefaultTimeboostConfig,
+	DisableSeqInboxMaxDataSizeCheck: false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -195,7 +197,6 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	DangerousAddOptions(prefix+".dangerous", f)
-
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
@@ -222,6 +223,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 
 func DangerousAddOptions(prefix string, f *flag.FlagSet) {
 	TimeboostAddOptions(prefix+".timeboost", f)
+	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 }
 
 type txQueueItem struct {
@@ -916,7 +918,8 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 		return queueItems
 	}
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
-	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time)
+	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
+	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time, arbosVersion)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
 	var nextQueueItem *txQueueItem
 	var queueItemsIdx int
