@@ -1,7 +1,7 @@
 // Copyright 2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//g o:build challengetest && !race
+//go:build challengetest && !race
 
 package arbtest
 
@@ -32,6 +32,7 @@ import (
 )
 
 func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -77,9 +78,6 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 
 	go keepChainMoving(t, ctx, builder.L1Info, builder.L1.Client) // Advance L1.
 	go keepChainMoving(t, ctx, builder.L2Info, builder.L2.Client) // Advance L2.
-
-	_ = firstNodeTestClient
-	_ = secondNodeTestClient
 
 	builder.L2Info.GenerateAccount("HonestAsserter")
 	fundL3Staker(t, ctx, builder, builder.L2.Client, "HonestAsserter")
