@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -119,7 +118,7 @@ type PebbleConfig struct {
 
 var PebbleConfigDefault = PebbleConfig{
 	SyncMode:                 false, // use NO-SYNC mode, see: https://github.com/ethereum/go-ethereum/issues/29819
-	MaxConcurrentCompactions: runtime.NumCPU(),
+	MaxConcurrentCompactions: 1,
 	Experimental:             PebbleExperimentalConfigDefault,
 }
 
