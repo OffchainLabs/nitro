@@ -72,7 +72,7 @@ var DefaultCachingConfig = CachingConfig{
 	BlockCount:                         128,
 	BlockAge:                           30 * time.Minute,
 	TrieTimeLimit:                      time.Hour,
-	TrieDirtyCache:                     1024,
+	TrieDirtyCache:                     5 * 1024,
 	TrieCleanCache:                     600,
 	TrieCapLimit:                       100,
 	SnapshotCache:                      400,
