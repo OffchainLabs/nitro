@@ -714,7 +714,14 @@ func warpL1Time(t *testing.T, builder *NodeBuilder, ctx context.Context, current
 	}
 	hooks := arbos.NoopSequencingHooks()
 	tx := builder.L2Info.PrepareTx("Faucet", "User2", 300000, big.NewInt(1), nil)
-	_, _, err = builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, types.Transactions{tx}, hooks, nil)
+	sequencedMsg, _, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, types.Transactions{tx}, hooks, nil)
+	Require(t, err)
+	if sequencedMsg == nil {
+		Fatal(t, "sequencedMsg is nil")
+	}
+	err = builder.L2.ConsensusNode.TxStreamer.WriteSequencedMsg(sequencedMsg)
+	Require(t, err)
+	err = builder.L2.ExecNode.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
 	Require(t, err)
 	return newL1Timestamp
 }
