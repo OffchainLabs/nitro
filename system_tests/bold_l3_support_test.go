@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
 	modes "github.com/offchainlabs/bold/challenge-manager/types"
@@ -41,12 +44,22 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 	builder.nodeConfig.Staker.Strategy = "MakeNodes"
 	builder.nodeConfig.Bold.Strategy = "MakeNodes"
 	builder.nodeConfig.Bold.RPCBlockNumber = "latest"
+	builder.nodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
+	builder.nodeConfig.Bold.StateProviderConfig.ValidatorName = "L2-validator"
 	builder.valnodeConfig.UseJit = false
 
 	cleanupL1AndL2 := builder.Build(t)
 	defer cleanupL1AndL2()
 
+	builder.l3Config.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.l3Config.nodeConfig.Staker.Enable = true
+	builder.l3Config.nodeConfig.BlockValidator.Enable = true
+	builder.l3Config.nodeConfig.Staker.Strategy = "MakeNodes"
+	builder.l3Config.nodeConfig.Bold.Strategy = "MakeNodes"
+	builder.l3Config.nodeConfig.Bold.RPCBlockNumber = "latest"
+	builder.l3Config.nodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
+	builder.l3Config.nodeConfig.Bold.StateProviderConfig.ValidatorName = "L3-validator"
+	builder.l3Config.valnodeConfig.UseJit = false
 	cleanupL3FirstNode := builder.BuildL3OnL2(t)
 	defer cleanupL3FirstNode()
 	firstNodeTestClient := builder.L3
@@ -56,6 +69,8 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 	secondNodeNodeConfig.Staker.Enable = true
 	secondNodeNodeConfig.Staker.Strategy = "MakeNodes"
 	secondNodeNodeConfig.Bold.Strategy = "MakeNodes"
+	secondNodeNodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
+	secondNodeNodeConfig.Bold.StateProviderConfig.ValidatorName = "Second-L2-validator"
 	secondNodeNodeConfig.Bold.RPCBlockNumber = "latest"
 	secondNodeTestClient, cleanupL3SecondNode := builder.Build2ndNodeOnL3(t, &SecondNodeParams{nodeConfig: secondNodeNodeConfig})
 	defer cleanupL3SecondNode()
@@ -76,65 +91,81 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 
 	_ = assertionChain
 
-	time.Sleep(time.Hour)
+	_, cleanupEvilChallengeManager := startL3BoldChallengeManager(t, ctx, builder, secondNodeTestClient, "EvilAsserter", func(stateManager BoldStateProviderInterface) BoldStateProviderInterface {
+		return &incorrectBlockStateProvider{
+			honest:              stateManager,
+			chain:               assertionChain,
+			wrongAtFirstVirtual: false,
+			wrongAtBlockHeight:  blockChallengeLeafHeight - 2,
+		}
+	})
+	defer cleanupEvilChallengeManager()
 
-	// _, cleanupEvilChallengeManager := startL3BoldChallengeManager(t, ctx, builder, secondNodeTestClient, "EvilAsserter", func(stateManager BoldStateProviderInterface) BoldStateProviderInterface {
-	// 	return &incorrectBlockStateProvider{
-	// 		honest:              stateManager,
-	// 		chain:               assertionChain,
-	// 		wrongAtFirstVirtual: false,
-	// 		wrongAtBlockHeight:  blockChallengeLeafHeight - 2,
-	// 	}
-	// })
-	// defer cleanupEvilChallengeManager()
+	TransferBalance(t, "Faucet", "Faucet", common.Big0, builder.L3Info, builder.L3.Client, ctx)
 
-	// TransferBalance(t, "Faucet", "Faucet", common.Big0, builder.L3Info, builder.L3.Client, ctx)
+	// Everything's setup, now just wait for the challenge to complete and ensure the honest party won
+	filterer, err := rollupgen.NewRollupUserLogicFilterer(builder.l3Addresses.Rollup, builder.L2.Client)
+	Require(t, err)
 
-	// // Everything's setup, now just wait for the challenge to complete and ensure the honest party won
-	// chalManager := assertionChain.SpecChallengeManager()
-	// filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManager.Address(), builder.L2.Client)
-	// Require(t, err)
-
-	// fromBlock := uint64(0)
-	// ticker := time.NewTicker(time.Second)
-	// defer ticker.Stop()
-	// for {
-	// 	select {
-	// 	case <-ticker.C:
-	// 		latestBlock, err := builder.L2.Client.HeaderByNumber(ctx, nil)
-	// 		Require(t, err)
-	// 		toBlock := latestBlock.Number.Uint64()
-	// 		if fromBlock == toBlock {
-	// 			continue
-	// 		}
-	// 		filterOpts := &bind.FilterOpts{
-	// 			Start:   fromBlock,
-	// 			End:     &toBlock,
-	// 			Context: ctx,
-	// 		}
-	// 		it, err := filterer.FilterEdgeConfirmedByOneStepProof(filterOpts, nil, nil)
-	// 		Require(t, err)
-	// 		for it.Next() {
-	// 			if it.Error() != nil {
-	// 				t.Fatalf("Error in filter iterator: %v", it.Error())
-	// 			}
-	// 			t.Log("Received event of OSP confirmation!")
-	// 			tx, _, err := builder.L2.Client.TransactionByHash(ctx, it.Event.Raw.TxHash)
-	// 			Require(t, err)
-	// 			signer := types.NewCancunSigner(tx.ChainId())
-	// 			address, err := signer.Sender(tx)
-	// 			Require(t, err)
-	// 			if address == builder.L2Info.GetAddress("HonestAsserter") {
-	// 				t.Log("Honest party won OSP, impossible for evil party to win if honest party continues")
-	// 				Require(t, it.Close())
-	// 				return
-	// 			}
-	// 		}
-	// 		fromBlock = toBlock
-	// 	case <-ctx.Done():
-	// 		return
-	// 	}
-	// }
+	fromBlock := uint64(0)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			latestBlock, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+			Require(t, err)
+			toBlock := latestBlock.Number.Uint64()
+			if fromBlock == toBlock {
+				continue
+			}
+			filterOpts := &bind.FilterOpts{
+				Start:   fromBlock,
+				End:     &toBlock,
+				Context: ctx,
+			}
+			it, err := filterer.FilterAssertionConfirmed(filterOpts, nil)
+			Require(t, err)
+			for it.Next() {
+				if it.Error() != nil {
+					t.Fatalf("Error in filter iterator: %v", it.Error())
+				}
+				t.Log("Received event of assertion confirmation")
+				assertion, err := assertionChain.GetAssertion(ctx, &bind.CallOpts{}, protocol.AssertionHash{
+					Hash: it.Event.AssertionHash,
+				})
+				Require(t, err)
+				creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, assertion.Id())
+				Require(t, err)
+				parentAssertionHash := creationInfo.ParentAssertionHash
+				parentAssertion, err := assertionChain.GetAssertion(ctx, &bind.CallOpts{}, parentAssertionHash)
+				Require(t, err)
+				hasSecondChild, err := parentAssertion.HasSecondChild(ctx, &bind.CallOpts{})
+				Require(t, err)
+				if !hasSecondChild {
+					t.Log("Assertion did not have a second child")
+					continue
+				}
+				// If the parent assertion has a second child, it means the child was a confirmed assertion
+				// by challenge winner, so then we assert the winner was indeed the honest asserter.
+				tx, _, err := builder.L2.Client.TransactionByHash(ctx, it.Event.Raw.TxHash)
+				Require(t, err)
+				signer := types.NewCancunSigner(tx.ChainId())
+				address, err := signer.Sender(tx)
+				Require(t, err)
+				if address == builder.L2Info.GetAddress("HonestAsserter") {
+					t.Log("Honest party confirmed an assertion by challenge win")
+					Require(t, it.Close())
+					return
+				} else {
+					t.Fatal("Evil party won a challenge")
+				}
+			}
+			fromBlock = toBlock
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func fundL3Staker(t *testing.T, ctx context.Context, builder *NodeBuilder, l2Client *ethclient.Client, name string) {
