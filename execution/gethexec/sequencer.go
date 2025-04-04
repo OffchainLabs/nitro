@@ -78,8 +78,13 @@ type SequencerConfig struct {
 	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
 	Timeboost                    TimeboostConfig `koanf:"timeboost"`
+	Dangerous                    DangerousConfig `koanf:"dangerous"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
+}
+
+type DangerousConfig struct {
+	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
 }
 
 type TimeboostConfig struct {
@@ -174,6 +179,11 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	Timeboost:                    DefaultTimeboostConfig,
+	Dangerous:                    DefaultDangerousConfig,
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	DisableSeqInboxMaxDataSizeCheck: false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -185,6 +195,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	TimeboostAddOptions(prefix+".timeboost", f)
 
+	DangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
@@ -207,6 +218,10 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultTimeboostConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
 	f.Uint64(prefix+".redis-update-events-channel-size", DefaultTimeboostConfig.RedisUpdateEventsChannelSize, "size of update events' buffered channels in timeboost redis coordinator")
 	f.Uint64(prefix+".queue-timeout-in-blocks", DefaultTimeboostConfig.QueueTimeoutInBlocks, "maximum amount of time (measured in blocks) that Express Lane transactions can wait in the sequencer's queue")
+}
+
+func DangerousAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 }
 
 type txQueueItem struct {
