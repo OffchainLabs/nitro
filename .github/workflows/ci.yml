@@ -209,7 +209,7 @@ jobs:
     name: Notify Slack on failure
     needs: [test]
     runs-on: ubuntu-latest
-    if: ${{ failure() && (github.event_name == 'schedule' || github.event_name == 'push') }}
+    if: ${{ failure() && github.event_name == 'push' }}
     steps:
       - name: Send Slack notification
         uses: slackapi/slack-github-action@v2.0.0
