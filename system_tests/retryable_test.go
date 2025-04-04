@@ -847,7 +847,9 @@ func TestKeepaliveAndRetryableExpiry(t *testing.T) {
 	}
 
 	// checks that keepalive increases the timeout as expected
-	_, err = arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
+	tx, err := arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 	timeoutAfterKeepalive, err := arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
 	Require(t, err)
@@ -936,7 +938,9 @@ func TestKeepaliveAndCancelRetryable(t *testing.T) {
 	}
 
 	// checks that keepalive increases the timeout as expected
-	_, err = arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
+	tx, err := arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 	timeoutAfterKeepalive, err := arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
 	Require(t, err)
@@ -947,7 +951,7 @@ func TestKeepaliveAndCancelRetryable(t *testing.T) {
 
 	// cancel the ticket
 	beneficiaryTxOpts := builder.L2Info.GetDefaultTransactOpts("Beneficiary", ctx)
-	tx, err := arbRetryableTx.Cancel(&beneficiaryTxOpts, ticketId)
+	tx, err = arbRetryableTx.Cancel(&beneficiaryTxOpts, ticketId)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
