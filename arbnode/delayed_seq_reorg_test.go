@@ -15,6 +15,12 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
+func TestFailingDummy(t *testing.T) {
+	if 1 == 1 {
+		t.Fatal("Oops")
+	}
+}
+
 func TestSequencerReorgFromDelayed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
