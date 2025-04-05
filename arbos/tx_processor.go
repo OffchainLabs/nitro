@@ -126,7 +126,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 		tracingInfo,
 		input,
 		reentrant,
-		p.RunMode(),
+		p.RunContext(),
 	)
 }
 
@@ -403,8 +403,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runMode core.MessageRunMode, posterCost *big.Int) uint64 {
-	if runMode == core.MessageGasEstimationMode {
+func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.MessageRunContext, posterCost *big.Int) uint64 {
+	if runCtx.IsGasEstimation() {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
@@ -439,13 +439,13 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	}
 
 	var poster common.Address
-	if !p.msg.TxRunMode.ExecutedOnChain() {
+	if !p.msg.TxRunContext.IsExecutedOnChain() {
 		poster = l1pricing.BatchPosterAddress
 	} else {
 		poster = p.evm.Context.Coinbase
 	}
 
-	if p.msg.TxRunMode.ExecutedOnChain() {
+	if p.msg.TxRunContext.IsExecutedOnChain() {
 		p.msg.SkipL1Charging = false
 	}
 	if basefee.Sign() > 0 && !p.msg.SkipL1Charging {
@@ -460,7 +460,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 		if calldataUnits > 0 {
 			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
 		}
-		p.posterGas = GetPosterGas(p.state, basefee, p.msg.TxRunMode, posterCost)
+		p.posterGas = GetPosterGas(p.state, basefee, p.msg.TxRunContext, posterCost)
 		p.PosterFee = arbmath.BigMulByUint(basefee, p.posterGas) // round down
 		gasNeededToStartEVM = p.posterGas
 	}
@@ -471,7 +471,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
-	if p.msg.TxRunMode != core.MessageEthcallMode {
+	if !p.msg.TxRunContext.IsEthcall() {
 		// If this is a real tx, limit the amount of computed based on the gas pool.
 		// We do this by charging extra gas, and then refunding it later.
 		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
@@ -483,8 +483,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	return tipReceipient, nil
 }
 
-func (p *TxProcessor) RunMode() core.MessageRunMode {
-	return p.msg.TxRunMode
+func (p *TxProcessor) RunContext() *core.MessageRunContext {
+	return p.msg.TxRunContext
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {
@@ -512,7 +512,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		effectiveBaseFee := inner.GasFeeCap
-		if p.msg.TxRunMode.ExecutedOnChain() && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
+		if p.msg.TxRunContext.IsExecutedOnChain() && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
 			log.Error(
 				"ArbitrumRetryTx GasFeeCap doesn't match basefee in commit mode",
 				"txHash", underlyingTx.Hash(),
@@ -775,8 +775,7 @@ func (p *TxProcessor) MsgIsNonMutating() bool {
 	if p.msg == nil {
 		return false
 	}
-	mode := p.msg.TxRunMode
-	return mode == core.MessageGasEstimationMode || mode == core.MessageEthcallMode
+	return p.msg.TxRunContext.IsNonMutating()
 }
 
 func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
