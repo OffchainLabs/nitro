@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 xxd -l 32 -ps -c 40 /dev/urandom > /tmp/nitro-val.jwt
 
