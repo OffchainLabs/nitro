@@ -224,6 +224,7 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 		setup.RollupStackConfig{
 			UseMockBridge:          false,
 			UseMockOneStepProver:   true,
+			UseBlobs:               true,
 			MinimumAssertionPeriod: 0,
 		},
 	)

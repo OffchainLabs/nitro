@@ -395,6 +395,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		RollupStackConfig{
 			UseMockBridge:          setp.useMockBridge,
 			UseMockOneStepProver:   setp.useMockOneStepProver,
+			UseBlobs:               true,
 			MinimumAssertionPeriod: setp.minimumAssertionPeriod,
 		},
 	)
@@ -514,6 +515,7 @@ type RollupAddresses struct {
 type RollupStackConfig struct {
 	UseMockBridge          bool
 	UseMockOneStepProver   bool
+	UseBlobs               bool
 	MinimumAssertionPeriod int64
 }
 
@@ -526,7 +528,7 @@ func DeployFullRollupStack(
 	stackConf RollupStackConfig,
 ) (*RollupAddresses, error) {
 	log.Info("Deploying rollup creator")
-	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, deployAuth, stackConf.UseMockBridge, stackConf.UseMockOneStepProver)
+	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, deployAuth, stackConf.UseBlobs, stackConf.UseMockBridge, stackConf.UseMockOneStepProver)
 	if err != nil {
 		return nil, err
 	}
@@ -647,6 +649,7 @@ func DeployFullRollupStack(
 func deployBridgeCreator(
 	ctx context.Context,
 	auth *bind.TransactOpts,
+	useBlobs bool,
 	backend protocol.ChainBackend,
 	useMockBridge bool,
 ) (common.Address, error) {
@@ -675,25 +678,29 @@ func deployBridgeCreator(
 		}
 	}
 
-	datahashesReader, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
-		readerAddr, tx, _, err2 := yulgen.DeployReader4844(auth, backend)
+	var dataHashesReader common.Address
+	if useBlobs {
+		reader, err2 := retry.UntilSucceeds(ctx, func() (common.Address, error) {
+			readerAddr, tx, _, err3 := yulgen.DeployReader4844(auth, backend)
+			if err3 != nil {
+				return common.Address{}, err3
+			}
+			err3 = challenge_testing.TxSucceeded(ctx, tx, readerAddr, backend, err3)
+			if err3 != nil {
+				return common.Address{}, errors.Wrap(err3, "yulgen.DeployReader4844")
+			}
+			return readerAddr, nil
+		})
 		if err2 != nil {
 			return common.Address{}, err2
 		}
-		err2 = challenge_testing.TxSucceeded(ctx, tx, readerAddr, backend, err2)
-		if err2 != nil {
-			return common.Address{}, errors.Wrap(err2, "yulgen.DeployReader4844")
-		}
-		return readerAddr, nil
-	})
-	if err != nil {
-		return common.Address{}, err
+		dataHashesReader = reader
 	}
 
 	maxDataSize := big.NewInt(challenge_testing.MaxDataSize)
 	log.Info("Deploying seq inbox")
 	seqInboxTemplate, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
-		seqInboxTemplateAddr, tx, _, err2 := bridgegen.DeploySequencerInbox(auth, backend, maxDataSize, datahashesReader, false /* no fee token */, false /* disable delay buffer */)
+		seqInboxTemplateAddr, tx, _, err2 := bridgegen.DeploySequencerInbox(auth, backend, maxDataSize, dataHashesReader, false /* no fee token */, false /* disable delay buffer */)
 		if err2 != nil {
 			return common.Address{}, err2
 		}
@@ -709,7 +716,7 @@ func deployBridgeCreator(
 
 	log.Info("Deploying seq inbox bufferable")
 	seqInboxBufferableTemplate, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
-		seqInboxTemplateAddr, tx, _, err2 := bridgegen.DeploySequencerInbox(auth, backend, maxDataSize, datahashesReader, false /* no fee token */, true /* enable delay buffer */)
+		seqInboxTemplateAddr, tx, _, err2 := bridgegen.DeploySequencerInbox(auth, backend, maxDataSize, dataHashesReader, false /* no fee token */, true /* enable delay buffer */)
 		if err2 != nil {
 			return common.Address{}, err2
 		}
@@ -969,11 +976,12 @@ func deployRollupCreator(
 	ctx context.Context,
 	backend protocol.ChainBackend,
 	auth *bind.TransactOpts,
+	useBlobs bool,
 	useMockBridge bool,
 	useMockOneStepProver bool,
 ) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, common.Address, error) {
 	log.Info("Deploying bridge creator contracts")
-	bridgeCreator, err := deployBridgeCreator(ctx, auth, backend, useMockBridge)
+	bridgeCreator, err := deployBridgeCreator(ctx, auth, useBlobs, backend, useMockBridge)
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
