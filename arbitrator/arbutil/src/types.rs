@@ -79,7 +79,7 @@ impl From<u64> for Bytes32 {
 impl From<usize> for Bytes32 {
     fn from(x: usize) -> Self {
         let mut b = [0u8; 32];
-        b[(20 - (usize::BITS as usize / 8))..].copy_from_slice(&x.to_be_bytes());
+        b[(32 - (usize::BITS as usize / 8))..].copy_from_slice(&x.to_be_bytes());
         Self(b)
     }
 }
@@ -295,14 +295,13 @@ mod test {
     fn test_bytes32_from_usize() {
         let val: usize = 0x12345678;
         let b = Bytes32::from(val);
-
-        let mut expected = [0u8; 32];
-        expected[(20 - (usize::BITS as usize / 8))..].copy_from_slice(&val.to_be_bytes());
-
-        assert_eq!(b.0, expected);
+        let expected = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0x12, 0x34, 0x56, 0x78,
+        ];
+        assert_eq!(b, Bytes32(expected));
     }
 
-    
     #[test]
     fn test_from_str_short() {
         // Short hex string
