@@ -1115,7 +1115,7 @@ func (s *TransactionStreamer) ResumeReorgs() {
 }
 
 func (s *TransactionStreamer) PopulateFeedBacklog() error {
-	if s.broadcastServer == nil {
+	if s.broadcastServer == nil || s.inboxReader == nil {
 		return nil
 	}
 	return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
