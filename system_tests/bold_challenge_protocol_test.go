@@ -190,6 +190,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		l2nodeA.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
+		nil,
 	)
 	Require(t, err)
 	Require(t, blockValidatorA.Initialize(ctx))
@@ -200,6 +201,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
+		nil,
 		nil,
 	)
 	Require(t, err)
@@ -533,6 +535,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	fatalErrChan := make(chan error, 10)
+	quitNodeChan := make(chan string, 10)
 	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
@@ -618,7 +621,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	Require(t, err)
 	currentNode, err = arbnode.CreateNodeFullExecutionClient(
 		ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
-		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
+		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, quitNodeChan, parentChainId,
 		nil, // Blob reader.
 	)
 	Require(t, err)
@@ -775,6 +778,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	stakeTokenAddr common.Address,
 ) (*ethclient.Client, *arbnode.Node, *solimpl.AssertionChain) {
 	fatalErrChan := make(chan error, 10)
+	quitNodeChan := make(chan string, 10)
 	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
 	firstExec, ok := first.ExecutionClient.(*gethexec.ExecutionNode)
@@ -826,7 +830,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */)
+	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, quitNodeChan, l1ChainId, nil /* blob reader */)
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack)

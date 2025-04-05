@@ -110,6 +110,7 @@ func TestOverflowAssertions(t *testing.T) {
 		l2node.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
+		nil,
 	)
 	Require(t, err)
 	Require(t, blockValidator.Initialize(ctx))
