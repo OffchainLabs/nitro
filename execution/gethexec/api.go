@@ -52,7 +52,7 @@ func (a *ArbAPI) GetRawBlockMetadata(ctx context.Context, fromBlock, toBlock rpc
 	if a.bulkBlockMetadataFetcher == nil {
 		return nil, errors.New("arb_getRawBlockMetadata is not available")
 	}
-	return a.bulkBlockMetadataFetcher.Fetch(fromBlock, toBlock)
+	return a.bulkBlockMetadataFetcher.Fetch(ctx, fromBlock, toBlock)
 }
 
 type ArbTimeboostAuctioneerAPI struct {

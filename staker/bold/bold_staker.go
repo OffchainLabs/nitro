@@ -51,7 +51,6 @@ func init() {
 }
 
 type BoldConfig struct {
-	Enable   bool   `koanf:"enable"`
 	Strategy string `koanf:"strategy"`
 	// How often to post assertions onchain.
 	AssertionPostingInterval time.Duration `koanf:"assertion-posting-interval"`
@@ -73,6 +72,7 @@ type BoldConfig struct {
 	DelegatedStaking                    DelegatedStakingConfig `koanf:"delegated-staking"`
 	RPCBlockNumber                      string                 `koanf:"rpc-block-number"`
 	EnableFastConfirmation              bool                   `koanf:"enable-fast-confirmation"`
+	ParentChainBlockTime                time.Duration          `koanf:"parent-chain-block-time"`
 	// How long to wait since parent assertion was created to post a new assertion
 	MinimumGapToParentAssertion time.Duration `koanf:"minimum-gap-to-parent-assertion"`
 	strategy                    legacystaker.StakerStrategy
@@ -125,7 +125,6 @@ var DefaultStateProviderConfig = StateProviderConfig{
 }
 
 var DefaultBoldConfig = BoldConfig{
-	Enable:                              false,
 	Strategy:                            "Watchtower",
 	AssertionPostingInterval:            time.Minute * 15,
 	AssertionScanningInterval:           time.Minute,
@@ -142,6 +141,7 @@ var DefaultBoldConfig = BoldConfig{
 	AutoDeposit:                         true,
 	AutoIncreaseAllowance:               true,
 	DelegatedStaking:                    DefaultDelegatedStakingConfig,
+	ParentChainBlockTime:                time.Second * 12,
 	RPCBlockNumber:                      "finalized",
 	EnableFastConfirmation:              false,
 	MaxGetLogBlocks:                     5000,
@@ -155,7 +155,6 @@ var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
 }
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
 	f.String(prefix+".strategy", DefaultBoldConfig.Strategy, "define the bold validator staker strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.String(prefix+".rpc-block-number", DefaultBoldConfig.RPCBlockNumber, "define the block number to use for reading data onchain, either latest, safe, or finalized")
 	f.Int64(prefix+".max-get-log-blocks", DefaultBoldConfig.MaxGetLogBlocks, "maximum size for chunk of blocks when using get logs rpc")
@@ -164,6 +163,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
 	f.Duration(prefix+".minimum-gap-to-parent-assertion", DefaultBoldConfig.MinimumGapToParentAssertion, "minimum duration to wait since the parent assertion was created to post a new assertion")
 	f.Duration(prefix+".check-staker-switch-interval", DefaultBoldConfig.CheckStakerSwitchInterval, "how often to check if staker can switch to bold")
+	f.Duration(prefix+".parent-chain-block-time", DefaultBoldConfig.ParentChainBlockTime, "the average block time of the parent chain where assertions are posted")
 	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
 	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
@@ -425,6 +425,7 @@ func newBOLDChallengeManager(
 	}
 	assertionChainOpts := []solimpl.Opt{
 		solimpl.WithRpcHeadBlockNumber(config.blockNum),
+		solimpl.WithParentChainBlockCreationTime(config.ParentChainBlockTime),
 	}
 	if config.DelegatedStaking.Enable && config.DelegatedStaking.CustomWithdrawalAddress != "" {
 		withdrawalAddr := common.HexToAddress(config.DelegatedStaking.CustomWithdrawalAddress)
@@ -531,6 +532,7 @@ func newBOLDChallengeManager(
 		challengemanager.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
 		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 		challengemanager.StackWithHeaderProvider(l1Reader),
+		challengemanager.StackWithAverageBlockCreationTime(config.ParentChainBlockTime),
 		challengemanager.StackWithSyncMaxGetLogBlocks(config.MaxGetLogBlocks),
 	}
 	if config.API {

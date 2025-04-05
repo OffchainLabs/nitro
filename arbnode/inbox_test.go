@@ -63,9 +63,11 @@ func (w *execClientWrapper) Maintenance() containers.PromiseInterface[struct{}] 
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) Synced() bool { w.t.Error("not supported"); return false }
-
-func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
+func (w *execClientWrapper) Synced(ctx context.Context) bool {
+	w.t.Error("not supported")
+	return false
+}
+func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
 	w.t.Error("not supported")
 	return nil
 }
@@ -81,12 +83,12 @@ func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbo
 	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages, oldMessages))
 }
 
-func (w *execClientWrapper) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageNumber())
+func (w *execClientWrapper) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageIndex())
 }
 
-func (w *execClientWrapper) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
-	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtPos(pos))
+func (w *execClientWrapper) ResultAtMessageIndex(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtMessageIndex(pos))
 }
 
 func (w *execClientWrapper) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
@@ -129,7 +131,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := gethexec.NewExecutionEngine(bc)
+	execEngine, err := gethexec.NewExecutionEngine(bc, 0)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -189,7 +191,10 @@ func TestTransactionStreamer(t *testing.T) {
 	for i := 1; i < 100; i++ {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
-			err := inbox.ReorgTo(blockStates[reorgTo].numMessages)
+			if blockStates[reorgTo].numMessages == 0 {
+				Fail(t, "invalid reorg target")
+			}
+			err := inbox.ReorgAt(blockStates[reorgTo].numMessages)
 			if err != nil {
 				Fail(t, err)
 			}
