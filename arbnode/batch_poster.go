@@ -1028,9 +1028,26 @@ type estimateGasParams struct {
 	BlobHashes   []common.Hash    `json:"blobVersionedHashes,omitempty"`
 }
 
-func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams) (uint64, error) {
+type OverrideAccount struct {
+	StateDiff map[common.Hash]common.Hash `json:"stateDiff"`
+}
+
+type StateOverride map[common.Address]OverrideAccount
+
+func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, delayedMsgOverride *uint64) (uint64, error) {
 	var gas hexutil.Uint64
-	err := client.CallContext(ctx, &gas, "eth_estimateGas", params)
+	if delayedMsgOverride == nil {
+		err := client.CallContext(ctx, &gas, "eth_estimateGas", params)
+		return uint64(gas), err
+	}
+	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, rpc.PendingBlockNumber, StateOverride{
+		*params.To: {
+			StateDiff: map[common.Hash]common.Hash{
+				// overriding slot 0
+				{}: common.Hash(arbmath.Uint64ToU256Bytes(*delayedMsgOverride)),
+			},
+		},
+	})
 	return uint64(gas), err
 }
 
@@ -1042,6 +1059,7 @@ func (b *BatchPoster) estimateGas(
 	realBlobs []kzg4844.Blob,
 	realNonce uint64,
 	realAccessList types.AccessList,
+	delayedMsgNumBefore uint64,
 	delayProof *bridgegen.DelayProof,
 ) (uint64, error) {
 
@@ -1075,7 +1093,7 @@ func (b *BatchPoster) estimateGas(
 			MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
 			BlobHashes:   realBlobHashes,
 			AccessList:   realAccessList,
-		})
+		}, &delayedMsgNumBefore)
 		if err != nil {
 			return 0, fmt.Errorf("%w: %w", ErrNormalGasEstimationFailed, err)
 		}
@@ -1103,7 +1121,7 @@ func (b *BatchPoster) estimateGas(
 		// This isn't perfect because we're probably estimating the batch at a different sequence number,
 		// but it should overestimate rather than underestimate which is fine.
 		AccessList: realAccessList,
-	})
+	}, &delayedMsgNumBefore)
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage
 		if len(sequencerMessageHeader) > 33 {
@@ -1494,7 +1512,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	// In theory, this might reduce gas usage, but only by a factor that's already
 	// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
 	// posts a new delayed message that we didn't see while gas estimating.
-	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList, delayProof)
+	var delayedMsgOverride uint64
+	if b.building.firstDelayedMsg != nil {
+		delayedMsgOverride = b.building.firstDelayedMsg.DelayedMessagesRead - 1
+	} else if b.building.firstNonDelayedMsg != nil {
+		delayedMsgOverride = b.building.firstNonDelayedMsg.DelayedMessagesRead
+	}
+	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList, delayedMsgOverride, delayProof)
 	if err != nil {
 		return false, err
 	}
