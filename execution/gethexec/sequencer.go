@@ -879,14 +879,11 @@ func (s *Sequencer) getForwarder(ctx context.Context) (*TxForwarder, error) {
 }
 
 // only called from createBlock, may be paused
-func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem) bool {
-	forwarder, err := s.getForwarder(ctx)
-	if err != nil {
-		return true
-	}
+func (s *Sequencer) handleInactive(ctx context.Context, forwarder *TxForwarder, queueItems []txQueueItem) {
 	if forwarder == nil {
-		return false
+		return
 	}
+
 	publishResults := make(chan *txQueueItem, len(queueItems))
 	for _, item := range queueItems {
 		item := item
@@ -908,7 +905,6 @@ func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem
 	}
 	// Evict any leftover nonce failures, forwarding them
 	s.nonceFailures.Clear()
-	return true
 }
 
 var sequencerInternalError = errors.New("sequencer internal error")
@@ -1190,6 +1186,16 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 }
 
 func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.SequencedMsg, returnValue bool) {
+	pause, forwarder := s.GetPauseAndForwarder()
+	if pause != nil {
+		select {
+		case <-pause:
+		default:
+			// doesn't block if it is paused
+			return nil, false
+		}
+	}
+
 	var queueItems []txQueueItem
 
 	defer func() {
@@ -1341,9 +1347,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 		}
 	}
 
-	if s.handleInactive(ctx, queueItems) {
-		return nil, false
-	}
+	s.handleInactive(ctx, forwarder, queueItems)
 
 	timestamp := time.Now().Unix()
 	s.L1BlockAndTimeMutex.Lock()
@@ -1404,12 +1408,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 	}
 	if errors.Is(err, execution.ErrRetrySequencer) {
 		log.Warn("error sequencing transactions", "err", err)
-		// we changed roles
-		// forward if we have where to
-		if s.handleInactive(ctx, queueItems) {
-			return nil, false
-		}
-		// try to add back to queue otherwise
+		// we changed roles, add back to the queue
 		for _, item := range queueItems {
 			s.txRetryQueue.Push(item)
 		}
