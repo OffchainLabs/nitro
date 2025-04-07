@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -183,18 +184,16 @@ type BoldValidationClient struct {
 	stopwaiter.StopWaiter
 	*ValidationClient
 	// producers stores moduleRoot to producer mapping.
+	client    *rpcclient.RpcClient
 	producers map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]
 }
 
-func NewBoldValidationClient(redisBoldValidationClientConfig *ValidationClientConfig, stack *node.Node) (*BoldValidationClient, error) {
-	validationClient, err := NewValidationClient(redisBoldValidationClientConfig)
-	if err != nil {
-		return nil, err
-	}
+func NewBoldValidationClient(config rpcclient.ClientConfigFetcher, redisValClient *ValidationClient, stack *node.Node) *BoldValidationClient {
 	return &BoldValidationClient{
-		ValidationClient: validationClient,
+		ValidationClient: redisValClient,
+		client:           rpcclient.NewRpcClient(config, stack),
 		producers:        make(map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]),
-	}, nil
+	}
 }
 
 func (c *BoldValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
@@ -226,6 +225,9 @@ func (c *BoldValidationClient) Initialize(ctx context.Context, moduleRoots []com
 	return nil
 }
 
+func (c *BoldValidationClient) Client() *rpcclient.RpcClient {
+	return c.client
+}
 func (c *BoldValidationClient) GetLeavesWithStepSize(req *server_api.GetLeavesWithStepSizeInput) containers.PromiseInterface[[]common.Hash] {
 	producer, found := c.producers[req.ModuleRoot]
 	if !found {
@@ -240,6 +242,9 @@ func (c *BoldValidationClient) GetLeavesWithStepSize(req *server_api.GetLeavesWi
 
 func (c *BoldValidationClient) Start(ctx_in context.Context) error {
 	if err := c.Initialize(ctx_in, c.moduleRoots); err != nil {
+		return err
+	}
+	if err := c.client.Start(ctx_in); err != nil {
 		return err
 	}
 	for _, p := range c.producers {

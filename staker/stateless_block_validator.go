@@ -246,7 +246,7 @@ func NewStatelessBlockValidator(
 		}
 		if len(config().ValidationServerConfigs) > 0 {
 			confFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[0] }
-			executionSpawners = append(executionSpawners, validatorclient.NewBoldExecutionClient(confFetcher, &config().RedisValidationClientConfig, stack))
+			executionSpawners = append(executionSpawners, validatorclient.NewBoldExecutionClient(confFetcher, redisValClient, &config().RedisValidationClientConfig, stack))
 		}
 	}
 	configs := config().ValidationServerConfigs

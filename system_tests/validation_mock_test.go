@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
 	validatorclient "github.com/offchainlabs/nitro/validator/client"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 	clientredis "github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -223,10 +224,16 @@ func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bo
 
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	if withBoldValidationConsumerProducer {
-		var redisBoldValidationClientConfig *clientredis.ValidationClientConfig = &clientredis.TestValidationClientConfig
+		var redisBoldValidationClientConfig = &clientredis.TestValidationClientConfig
 		redisBoldValidationClientConfig.RedisURL = redisutil.CreateTestRedis(ctx, t)
 		redisBoldValidationClientConfig.CreateStreams = true
-		client = validatorclient.NewBoldExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisBoldValidationClientConfig, validationDefault)
+		redisValClient, err := redis.NewValidationClient(redisBoldValidationClientConfig)
+		Require(t, err)
+		err = redisValClient.Start(ctx)
+		Require(t, err)
+		err = redisValClient.Initialize(ctx, mockWasmModuleRoots)
+		Require(t, err)
+		client = validatorclient.NewBoldExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisValClient, redisBoldValidationClientConfig, validationDefault)
 	} else {
 		client = validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
 	}

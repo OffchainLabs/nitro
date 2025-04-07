@@ -285,22 +285,16 @@ func (r *ExecutionClientRun) Close() {
 
 type BoldExecutionClient struct {
 	*redis.BoldValidationClient
-	client *rpcclient.RpcClient
 	config rpcclient.ClientConfigFetcher
 	stack  *node.Node
 }
 
-func NewBoldExecutionClient(config rpcclient.ClientConfigFetcher, redisBoldValidationClientConfig *redis.ValidationClientConfig, stack *node.Node) *BoldExecutionClient {
+func NewBoldExecutionClient(config rpcclient.ClientConfigFetcher, redisValClient *redis.ValidationClient, redisBoldValidationClientConfig *redis.ValidationClientConfig, stack *node.Node) *BoldExecutionClient {
 	var validationClient *redis.BoldValidationClient
 	if redisBoldValidationClientConfig != nil && redisBoldValidationClientConfig.Enabled() {
-		var err error
-		validationClient, err = redis.NewBoldValidationClient(redisBoldValidationClientConfig, stack)
-		if err != nil {
-			log.Error("Creating new redis bold validation client", "error", err)
-		}
+		validationClient = redis.NewBoldValidationClient(config, redisValClient, stack)
 	}
 	return &BoldExecutionClient{
-		client:               rpcclient.NewRpcClient(config, stack),
 		BoldValidationClient: validationClient,
 		config:               config,
 		stack:                stack,
@@ -314,7 +308,7 @@ func (c *BoldExecutionClient) CreateExecutionRun(
 ) containers.PromiseInterface[validator.ExecutionRun] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), useBoldMachine)
+		err := c.Client().CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), useBoldMachine)
 		if err != nil {
 			return nil, err
 		}
@@ -333,7 +327,7 @@ func (c *BoldExecutionClient) CreateExecutionRun(
 func (c *BoldExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
 	return stopwaiter.LaunchPromiseThread[common.Hash](c, func(ctx context.Context) (common.Hash, error) {
 		var res common.Hash
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_latestWasmModuleRoot")
+		err := c.Client().CallContext(ctx, &res, server_api.Namespace+"_latestWasmModuleRoot")
 		if err != nil {
 			return common.Hash{}, err
 		}
