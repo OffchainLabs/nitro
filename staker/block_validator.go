@@ -170,7 +170,7 @@ func (c *BlockValidatorConfig) Validate() error {
 			}
 		}
 	}
-	if c.Dangerous.Revalidation.EndBlock < c.Dangerous.Revalidation.StartBlock {
+	if c.Dangerous.Revalidation.EndBlock > 0 && c.Dangerous.Revalidation.EndBlock < c.Dangerous.Revalidation.StartBlock {
 		return fmt.Errorf("revalidation end block %d is before start block %d", c.Dangerous.Revalidation.EndBlock, c.Dangerous.Revalidation.StartBlock)
 	}
 	return nil
