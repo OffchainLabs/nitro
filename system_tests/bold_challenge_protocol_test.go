@@ -99,6 +99,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	ownerBal.Mul(ownerBal, big.NewInt(1_000_000))
 	l2info.GenerateGenesisAccount("Owner", ownerBal)
 	sconf := setup.RollupStackConfig{
+		UseBlobs:               true,
 		UseMockBridge:          false,
 		UseMockOneStepProver:   false,
 		MinimumAssertionPeriod: 0,
