@@ -294,6 +294,19 @@ func (p *ExpressLaneProxy) BlockNumber(ctx context.Context) (uint64, error) {
 	return ethclient.NewClient(client).BlockNumber(ctx)
 }
 
+func (p *ExpressLaneProxy) GetBlockByNumber(ctx context.Context, blockNum *rpc.BlockNumber, includeTxData bool) (json.RawMessage, error) {
+	var result json.RawMessage
+
+	client, err := GetClientFromURL(ctx, p.config.ExpressLaneURL, nil)
+	if err != nil {
+		return result, err
+	}
+
+	err = client.CallContext(ctx, &result, "eth_getBlockByNumber", blockNum, includeTxData)
+	return result, err
+
+}
+
 func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
