@@ -138,7 +138,8 @@ const (
 )
 
 type BatchPosterDangerousConfig struct {
-	AllowPostingFirstBatchWhenSequencerMessageCountMismatch bool `koanf:"allow-posting-first-batch-when-sequencer-message-count-mismatch"`
+	AllowPostingFirstBatchWhenSequencerMessageCountMismatch bool   `koanf:"allow-posting-first-batch-when-sequencer-message-count-mismatch"`
+	FixedGasLimit                                           uint64 `koanf:"fixed-gas-limit"`
 }
 
 type BatchPosterConfig struct {
@@ -208,6 +209,7 @@ type BatchPosterConfigFetcher func() *BatchPosterConfig
 
 func DangerousBatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".allow-posting-first-batch-when-sequencer-message-count-mismatch", DefaultBatchPosterConfig.Dangerous.AllowPostingFirstBatchWhenSequencerMessageCountMismatch, "allow posting the first batch even if sequence number doesn't match chain (useful after force-inclusion)")
+	f.Uint64(prefix+".fixed-gas-limit", DefaultBatchPosterConfig.Dangerous.FixedGasLimit, "use this gas limit for batch posting instead of estimating it")
 }
 
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -1510,26 +1512,31 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
 	}
 	accessList := b.accessList(batchPosition.NextSeqNum, b.building.segments.delayedMsg)
-	useSimpleEstimation := b.dataPoster.MaxMempoolTransactions() == 1
-	if !useSimpleEstimation {
-		// Check if we can use normal estimation anyways because we're at the latest nonce
-		latestNonce, err := b.l1Reader.Client().NonceAt(ctx, b.dataPoster.Sender(), nil)
-		if err != nil {
-			return false, err
-		}
-		useSimpleEstimation = latestNonce == nonce
-	}
 	var gasLimit uint64
-	if useSimpleEstimation {
-		gasLimit, err = b.estimateGasSimple(ctx, data, kzgBlobs, accessList)
+	if b.config().Dangerous.FixedGasLimit != 0 {
+		gasLimit = b.config().Dangerous.FixedGasLimit
 	} else {
-		var delayedMsgBefore uint64
-		if b.building.firstDelayedMsg != nil {
-			delayedMsgBefore = b.building.firstDelayedMsg.DelayedMessagesRead - 1
-		} else if b.building.firstNonDelayedMsg != nil {
-			delayedMsgBefore = b.building.firstNonDelayedMsg.DelayedMessagesRead
+		useSimpleEstimation := b.dataPoster.MaxMempoolTransactions() == 1
+		if !useSimpleEstimation {
+			// Check if we can use normal estimation anyways because we're at the latest nonce
+			latestNonce, err := b.l1Reader.Client().NonceAt(ctx, b.dataPoster.Sender(), nil)
+			if err != nil {
+				return false, err
+			}
+			useSimpleEstimation = latestNonce == nonce
 		}
-		gasLimit, err = b.estimateGasForFutureTx(ctx, sequencerMsg, delayedMsgBefore, b.building.segments.delayedMsg, accessList, len(kzgBlobs) > 0, delayProof)
+
+		if useSimpleEstimation {
+			gasLimit, err = b.estimateGasSimple(ctx, data, kzgBlobs, accessList)
+		} else {
+			var delayedMsgBefore uint64
+			if b.building.firstDelayedMsg != nil {
+				delayedMsgBefore = b.building.firstDelayedMsg.DelayedMessagesRead - 1
+			} else if b.building.firstNonDelayedMsg != nil {
+				delayedMsgBefore = b.building.firstNonDelayedMsg.DelayedMessagesRead
+			}
+			gasLimit, err = b.estimateGasForFutureTx(ctx, sequencerMsg, delayedMsgBefore, b.building.segments.delayedMsg, accessList, len(kzgBlobs) > 0, delayProof)
+		}
 	}
 	if err != nil {
 		return false, err
