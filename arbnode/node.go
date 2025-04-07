@@ -660,7 +660,6 @@ func getBlockValidator(
 	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,
 	fatalErrChan chan error,
-	quitNodeChan chan string,
 ) (*staker.BlockValidator, error) {
 	var err error
 	var blockValidator *staker.BlockValidator
@@ -671,7 +670,6 @@ func getBlockValidator(
 			txStreamer,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			fatalErrChan,
-			quitNodeChan,
 		)
 		if err != nil {
 			return nil, err
@@ -991,7 +989,6 @@ func createNodeImpl(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	quitNodeChan chan string,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 ) (*Node, error) {
@@ -1068,7 +1065,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	blockValidator, err := getBlockValidator(config, configFetcher, statelessBlockValidator, inboxTracker, txStreamer, fatalErrChan, quitNodeChan)
+	blockValidator, err := getBlockValidator(config, configFetcher, statelessBlockValidator, inboxTracker, txStreamer, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1222,14 +1219,13 @@ func CreateNodeExecutionClient(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	quitNodeChan chan string,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 ) (*Node, error) {
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, quitNodeChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
 	if err != nil {
 		return nil, err
 	}
@@ -1253,14 +1249,13 @@ func CreateNodeFullExecutionClient(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	quitNodeChan chan string,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 ) (*Node, error) {
 	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (executionBatchPoster == nil) {
 		return nil, errors.New("execution client, sequencer, recorder, and batch poster must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, quitNodeChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
 	if err != nil {
 		return nil, err
 	}

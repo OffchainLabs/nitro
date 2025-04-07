@@ -464,7 +464,6 @@ func mainImpl() int {
 	}
 
 	fatalErrChan := make(chan error, 10)
-	quitNodeChan := make(chan string)
 
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		if !nodeConfig.Init.ThenQuit {
@@ -555,7 +554,6 @@ func mainImpl() int {
 		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
-		quitNodeChan,
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
 	)
@@ -709,10 +707,8 @@ func mainImpl() int {
 	}
 
 	err = nil
-	var quitNodeMsg string
 	select {
 	case err = <-fatalErrChan:
-	case quitNodeMsg = <-quitNodeChan:
 	case <-sigint:
 		// If there was both a sigint and a fatal error, we want to log the fatal error
 		select {
@@ -728,9 +724,6 @@ func mainImpl() int {
 		return 1
 	}
 
-	if quitNodeMsg != "" {
-		log.Info("shutting down node", "msg", quitNodeMsg)
-	}
 	return 0
 }
 

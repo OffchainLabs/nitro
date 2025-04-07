@@ -104,7 +104,6 @@ type BlockValidator struct {
 	validationInputsWriter *inputs.Writer
 
 	fatalErr chan<- error
-	quitNode chan<- string
 
 	MemoryFreeLimitChecker resourcemanager.LimitChecker
 }
@@ -307,7 +306,6 @@ func NewBlockValidator(
 	streamer TransactionStreamerInterface,
 	config BlockValidatorConfigFetcher,
 	fatalErr chan<- error,
-	quitNode chan<- string,
 ) (*BlockValidator, error) {
 	ret := &BlockValidator{
 		StatelessBlockValidator: statelessBlockValidator,
@@ -316,7 +314,6 @@ func NewBlockValidator(
 		progressValidationsChan: make(chan struct{}, 1),
 		config:                  config,
 		fatalErr:                fatalErr,
-		quitNode:                quitNode,
 		prevBatchCache:          make(map[uint64][]byte),
 	}
 	valInputsWriter, err := inputs.NewWriter(
@@ -849,9 +846,9 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	revalidationConfig := v.config().Dangerous.Revalidation
 	if revalidationConfig.EndBlock > 0 && validated.GlobalState.Batch >= revalidationConfig.EndBlock {
 		if revalidationConfig.QuitAfterRevalidation {
-			v.quitNode <- fmt.Sprintf("revalidation done from %d to %d", revalidationConfig.StartBlock, revalidationConfig.EndBlock)
+			v.fatalErr <- fmt.Errorf("revalidation done from %d to %d", revalidationConfig.StartBlock, revalidationConfig.EndBlock)
 		} else {
-			v.StopAndWait()
+			v.StopOnly()
 		}
 	}
 	return time.Second
