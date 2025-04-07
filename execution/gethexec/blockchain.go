@@ -29,6 +29,7 @@ type CachingConfig struct {
 	BlockCount                          uint64        `koanf:"block-count"`
 	BlockAge                            time.Duration `koanf:"block-age"`
 	TrieTimeLimit                       time.Duration `koanf:"trie-time-limit"`
+	TrieTimeLimitRandomOffset           time.Duration `koanf:"trie-time-limit-random-offset"`
 	TrieDirtyCache                      int           `koanf:"trie-dirty-cache"`
 	TrieCleanCache                      int           `koanf:"trie-clean-cache"`
 	TrieCapLimit                        uint32        `koanf:"trie-cap-limit"`
@@ -48,6 +49,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age of recent blocks to keep in memory")
 	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
+	f.Duration(prefix+".trie-time-limit-random-offset", DefaultCachingConfig.TrieTimeLimitRandomOffset, "if greater then 0, the block processing time period of writing trie to hard-disk is offset by a random value from range [0, trie-time-limit-random-offset)")
 	f.Int(prefix+".trie-dirty-cache", DefaultCachingConfig.TrieDirtyCache, "amount of memory in megabytes to cache state diffs against disk with (larger cache lowers database growth)")
 	f.Int(prefix+".trie-clean-cache", DefaultCachingConfig.TrieCleanCache, "amount of memory in megabytes to cache unchanged state trie nodes with")
 	f.Int(prefix+".snapshot-cache", DefaultCachingConfig.SnapshotCache, "amount of memory in megabytes to cache state snapshots with")
@@ -72,6 +74,7 @@ var DefaultCachingConfig = CachingConfig{
 	BlockCount:                         128,
 	BlockAge:                           30 * time.Minute,
 	TrieTimeLimit:                      time.Hour,
+	TrieTimeLimitRandomOffset:          0,
 	TrieDirtyCache:                     1024,
 	TrieCleanCache:                     600,
 	TrieCapLimit:                       100,
@@ -98,6 +101,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		TrieDirtyLimit:                     cachingConfig.TrieDirtyCache,
 		TrieDirtyDisabled:                  cachingConfig.Archive,
 		TrieTimeLimit:                      cachingConfig.TrieTimeLimit,
+		TrieTimeLimitRandomOffset:          cachingConfig.TrieTimeLimitRandomOffset,
 		TriesInMemory:                      cachingConfig.BlockCount,
 		TrieRetention:                      cachingConfig.BlockAge,
 		SnapshotLimit:                      cachingConfig.SnapshotCache,
