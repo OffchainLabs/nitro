@@ -1240,6 +1240,8 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespecte
 		defer w.Done()
 		err = seqClient.SendTransaction(ctx, aliceTx)
 		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, seqClient, aliceTx)
+		Require(t, err)
 	}(&wg)
 
 	txData := &types.DynamicFeeTx{
@@ -1431,6 +1433,8 @@ func verifyControllerAdvantage(t *testing.T, ctx context.Context, seqClient *eth
 	go func(w *sync.WaitGroup) {
 		defer w.Done()
 		Require(t, seqClient.SendTransaction(ctx, otherUserTx))
+		_, err = EnsureTxSucceeded(ctx, seqClient, otherUserTx)
+		Require(t, err)
 	}(&wg)
 
 	controllerNonce, err := seqClient.PendingNonceAt(ctx, seqInfo.GetAddress(controller))
@@ -1564,8 +1568,14 @@ func setupExpressLaneAuction(
 				return
 			case <-tick.C:
 				tx := seqInfo.PrepareTx("Owner", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
-				if err := seqClient.SendTransaction(ctx, tx); err != nil {
+				err := seqClient.SendTransaction(ctx, tx)
+				if err != nil {
 					t.Log("Failed to send test tx", err)
+				} else {
+					_, err = EnsureTxSucceeded(ctx, seqClient, tx)
+					if err != nil {
+						t.Log("Failed to ensure test tx succeeded", err)
+					}
 				}
 			}
 		}
