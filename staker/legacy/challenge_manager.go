@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -35,7 +35,7 @@ var challengeBisectedID common.Hash
 var executionChallengeBegunID common.Hash
 
 func init() {
-	parsedChallengeManagerABI, err := challengegen.ChallengeManagerMetaData.GetAbi()
+	parsedChallengeManagerABI, err := challenge_legacy_gen.ChallengeManagerMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
@@ -53,7 +53,7 @@ type ChallengeBackend interface {
 var _ ChallengeBackend = (*staker.ExecutionChallengeBackend)(nil)
 
 type challengeCore struct {
-	con                  *challengegen.ChallengeManager
+	con                  *challenge_legacy_gen.ChallengeManager
 	challengeManagerAddr common.Address
 	challengeIndex       uint64
 	client               bind.ContractBackend
@@ -94,7 +94,7 @@ func NewChallengeManager(
 	startL1Block uint64,
 	confirmationBlocks int64,
 ) (*ChallengeManager, error) {
-	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
+	con, err := challenge_legacy_gen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
 		return nil, fmt.Errorf("error creating bindgen ChallengeManager: %w", err)
 	}
@@ -164,7 +164,7 @@ func NewExecutionChallengeManager(
 	startL1Block uint64,
 	confirmationBlocks int64,
 ) (*ChallengeManager, error) {
-	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
+	con, err := challenge_legacy_gen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +316,7 @@ func (m *ChallengeManager) bisect(ctx context.Context, backend ChallengeBackend,
 	return m.con.BisectExecution(
 		m.auth,
 		m.challengeIndex,
-		challengegen.ChallengeLibSegmentSelection{
+		challenge_legacy_gen.ChallengeLibSegmentSelection{
 			OldSegmentsStart:  oldState.Start,
 			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
 			OldSegments:       oldState.RawSegments,
@@ -451,7 +451,7 @@ func (m *ChallengeManager) IssueOneStepProof(
 	return m.challengeCore.con.OneStepProveExecution(
 		m.challengeCore.auth,
 		m.challengeCore.challengeIndex,
-		challengegen.ChallengeLibSegmentSelection{
+		challenge_legacy_gen.ChallengeLibSegmentSelection{
 			OldSegmentsStart:  oldState.Start,
 			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
 			OldSegments:       oldState.RawSegments,

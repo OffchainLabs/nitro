@@ -486,7 +486,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 }
 
 // Every 3 seconds, send an L1 transaction to keep the chain moving.
-func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestInfo, l1Client *ethclient.Client) {
+func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
 	delay := time.Second * 3
 	for {
 		select {
@@ -497,8 +497,8 @@ func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestIn
 			if ctx.Err() != nil {
 				break
 			}
-			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1Info, l1Client, ctx)
-			latestBlock, err := l1Client.BlockNumber(ctx)
+			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1Info, client, ctx)
+			latestBlock, err := client.BlockNumber(ctx)
 			if ctx.Err() != nil {
 				break
 			}
@@ -611,7 +611,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, 0)
 	Require(t, err)
 
 	parentChainId, err := l1client.ChainID(ctx)
@@ -822,7 +822,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, 0)
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)

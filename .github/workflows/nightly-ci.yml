@@ -14,8 +14,8 @@ on:
 
 jobs:
   # Only run on schedule AND main branch
-  challenge-tests-scheduled:
-    name: Challenge tests (scheduled)
+  tests-scheduled:
+    name: Scheduled tests
     runs-on: ubuntu-8
 
     services:
@@ -41,7 +41,6 @@ jobs:
         run: sudo apt update && sudo apt install -y wabt gotestsum
 
       - name: Setup nodejs
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/setup-node@v3
         with:
           node-version: '18'
@@ -49,19 +48,16 @@ jobs:
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install go
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/setup-go@v4
         with:
           go-version: 1.23.x
 
       - name: Install wasm-ld
-        if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           sudo apt-get update && sudo apt-get install -y lld-14
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
       - name: Install rust stable
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: dtolnay/rust-toolchain@stable
         id: install-rust
         with:
@@ -70,7 +66,6 @@ jobs:
           components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Install rust nightly
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
@@ -79,19 +74,15 @@ jobs:
           components: 'rust-src, rustfmt, clippy'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
-        if: steps.changed-files.outputs.any_changed == 'true'
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
       - name: Install Foundry
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: foundry-rs/foundry-toolchain@v1
         
       - name: Install cbindgen
-        if: steps.changed-files.outputs.any_changed == 'true'
         run: cargo install --force cbindgen
 
       - name: Cache Build Products
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/cache@v3
         with:
           path: |
@@ -101,7 +92,6 @@ jobs:
           restore-keys: ${{ runner.os }}-go-
 
       - name: Cache Rust Build Products
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/cache@v3
         with:
           path: |
@@ -115,7 +105,6 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
       - name: Cache cbrotli
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/cache@v3
         id: cache-cbrotli
         with:
@@ -129,35 +118,28 @@ jobs:
           restore-keys: ${{ runner.os }}-brotli-
 
       - name: Build cbrotli-local
-        if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
         run: ./scripts/build-brotli.sh -l
 
       - name: Build cbrotli-wasm in docker
-        if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
         run: ./scripts/build-brotli.sh -w -d
 
       - name: Build
-        if: steps.changed-files.outputs.any_changed == 'true'
         run: make build test-go-deps -j
 
       - name: Build all lint dependencies
-        if: steps.changed-files.outputs.any_changed == 'true'
         run: make -j build-node-deps
 
       - name: Lint
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: golangci/golangci-lint-action@v3
         with:
           version: latest
           skip-pkg-cache: true
           
       - name: Custom Lint
-        if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           go run ./linters ./...
 
       - name: Set environment variables
-        if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           mkdir -p target/tmp/deadbeefbee
           echo "TMPDIR=$(pwd)/target/tmp/deadbeefbee" >> "$GITHUB_ENV"
@@ -167,11 +149,9 @@ jobs:
 
       - name: run tests with race detection and hash state scheme
         if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: hash
         run: |
           echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m --test_state_scheme hash
 
       - name: run challenge tests
         if: matrix.test-mode == 'legacychallenge'
@@ -182,14 +162,12 @@ jobs:
         run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
 
       - name: Archive detailed run log
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log
 
       - name: Upload coverage to Codecov
-        if: steps.changed-files.outputs.any_changed == 'true' && matrix.test-mode == 'defaults'
         uses: codecov/codecov-action@v2
         with:
           fail_ci_if_error: false
@@ -199,8 +177,8 @@ jobs:
 
 
   # Only run this job if files in bold/legacy/ are modified
-  challenge-tests-pr:
-    name: Challenge tests (PR modified files)
+  tests-pr:
+    name: PR modified files tests
     runs-on: ubuntu-8
     if: github.event_name == 'pull_request'
     
@@ -375,3 +353,19 @@ jobs:
           files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  notify-on-failure:
+    name: Notify Slack on failure
+    needs: [tests-scheduled]
+    runs-on: ubuntu-latest
+    if: ${{ failure() }}
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          errors: true
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+            "text": "⚠️ CI job failed! ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",

@@ -40,7 +40,6 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
@@ -54,33 +53,6 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
-
-func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, serializedChainConfig []byte, loserStakeEscrow common.Address) rollupgen.Config {
-	var confirmPeriod uint64
-	if prod {
-		confirmPeriod = 45818
-	} else {
-		confirmPeriod = 20
-	}
-	return rollupgen.Config{
-		ConfirmPeriodBlocks:      confirmPeriod,
-		ExtraChallengeTimeBlocks: 200,
-		StakeToken:               common.Address{},
-		BaseStake:                big.NewInt(params.Ether),
-		WasmModuleRoot:           wasmModuleRoot,
-		Owner:                    rollupOwner,
-		LoserStakeEscrow:         loserStakeEscrow,
-		ChainId:                  chainConfig.ChainID,
-		// TODO could the ChainConfig be just []byte?
-		ChainConfig: string(serializedChainConfig),
-		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
-			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
-			FutureBlocks:  big.NewInt(12),
-			DelaySeconds:  big.NewInt(60 * 60 * 24),
-			FutureSeconds: big.NewInt(60 * 60),
-		},
-	}
-}
 
 type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
@@ -1264,7 +1236,6 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}
 	}
-	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
@@ -1387,6 +1358,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
 	}
+	// Also make sure to call initialize on the sync monitor after the inbox reader, tx streamer, and block validator are started.
+	// Else sync might call inbox reader or tx streamer before they are started, and it will lead to panic.
+	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	n.SyncMonitor.Start(ctx)
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)

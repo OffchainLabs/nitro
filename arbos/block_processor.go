@@ -193,7 +193,6 @@ func ProduceBlockAdvanced(
 	chainConfig := chainContext.Config()
 
 	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
-	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := arbState.L2PricingState().PerBlockGasLimit()
@@ -255,6 +254,7 @@ func ProduceBlockAdvanced(
 		var sender common.Address
 		var dataGas uint64 = 0
 		preTxHeaderGasUsed := header.GasUsed
+		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbState.ArbOSVersion())
 		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {
