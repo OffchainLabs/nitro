@@ -488,7 +488,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 }
 
 // Every 3 seconds, send an L1 transaction to keep the chain moving.
-func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestInfo, l1Client *ethclient.Client) {
+func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
 	delay := time.Second * 3
 	for {
 		select {
@@ -499,8 +499,8 @@ func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestIn
 			if ctx.Err() != nil {
 				break
 			}
-			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1Info, l1Client, ctx)
-			latestBlock, err := l1Client.BlockNumber(ctx)
+			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1Info, client, ctx)
+			latestBlock, err := client.BlockNumber(ctx)
 			if ctx.Err() != nil {
 				break
 			}

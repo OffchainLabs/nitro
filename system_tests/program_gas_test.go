@@ -277,9 +277,9 @@ func TestProgramStorageCost(t *testing.T) {
 	for i := 0; i < numSlots; i++ {
 		slot := rander.GetHash()
 		readData = multicallAppendLoad(readData, slot, false)
-		writeRandAData = multicallAppendStore(writeRandAData, slot, rander.GetHash(), false)
-		writeRandBData = multicallAppendStore(writeRandBData, slot, rander.GetHash(), false)
-		writeZeroData = multicallAppendStore(writeZeroData, slot, common.Hash{}, false)
+		writeRandAData = multicallAppendStore(writeRandAData, slot, rander.GetHash(), false, false)
+		writeRandBData = multicallAppendStore(writeRandBData, slot, rander.GetHash(), false, false)
+		writeZeroData = multicallAppendStore(writeZeroData, slot, common.Hash{}, false, false)
 	}
 
 	writePair := compareGasPair{vm.SSTORE, "storage_flush_cache"}

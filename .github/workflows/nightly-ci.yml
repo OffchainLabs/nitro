@@ -149,11 +149,9 @@ jobs:
 
       - name: run tests with race detection and hash state scheme
         if: matrix.test-mode == 'race'
-        env:
-          TEST_STATE_SCHEME: hash
         run: |
           echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m --test_state_scheme hash
 
       - name: run challenge tests
         if: matrix.test-mode == 'legacychallenge'
@@ -358,14 +356,16 @@ jobs:
 
   notify-on-failure:
     name: Notify Slack on failure
-    needs: [tests-scheduled, tests-pr]
+    needs: [tests-scheduled]
     runs-on: ubuntu-latest
-    if: ${{ failure() && (github.event_name == 'schedule' || github.event_name == 'push') }}
+    if: ${{ failure() }}
     steps:
       - name: Send Slack notification
         uses: slackapi/slack-github-action@v2.0.0
         with:
-          channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
-          slack-message: "⚠️ Nightly CI job failed! ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          errors: true
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+            "text": "⚠️ CI job failed! ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",

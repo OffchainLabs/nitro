@@ -77,13 +77,14 @@ type SequencerConfig struct {
 	ExpectedSurplusSoftThreshold string          `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
+	Timeboost                    TimeboostConfig `koanf:"timeboost"`
 	Dangerous                    DangerousConfig `koanf:"dangerous"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
 
 type DangerousConfig struct {
-	Timeboost TimeboostConfig `koanf:"timeboost"`
+	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
 }
 
 type TimeboostConfig struct {
@@ -138,24 +139,21 @@ func (c *SequencerConfig) Validate() error {
 	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
 		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
 	}
-	return c.Dangerous.Timeboost.Validate()
-}
-
-func (c *TimeboostConfig) Validate() error {
-	if !c.Enable {
-		return nil
-	}
-	if c.RedisUrl == DefaultTimeboostConfig.RedisUrl {
-		return errors.New("timeboost is enabled but no redis-url was set")
-	}
-	if len(c.AuctionContractAddress) > 0 && !common.IsHexAddress(c.AuctionContractAddress) {
-		return fmt.Errorf("invalid timeboost.auction-contract-address \"%v\"", c.AuctionContractAddress)
-	}
-	if len(c.AuctioneerAddress) > 0 && !common.IsHexAddress(c.AuctioneerAddress) {
-		return fmt.Errorf("invalid timeboost.auctioneer-address \"%v\"", c.AuctioneerAddress)
-	}
-	if c.MaxFutureSequenceDistance == 0 {
-		return errors.New("timeboost max-future-sequence-distance option cannot be zero, it should be set to a positive value")
+	if c.Timeboost.Enable {
+		if len(c.Timeboost.AuctionContractAddress) > 0 && !common.IsHexAddress(c.Timeboost.AuctionContractAddress) {
+			return fmt.Errorf("invalid timeboost.auction-contract-address \"%v\"", c.Timeboost.AuctionContractAddress)
+		}
+		if c.Enable {
+			if c.Timeboost.RedisUrl == DefaultTimeboostConfig.RedisUrl {
+				return errors.New("timeboost is enabled but no redis-url was set")
+			}
+			if c.Timeboost.MaxFutureSequenceDistance == 0 {
+				return errors.New("timeboost max-future-sequence-distance option cannot be zero, it should be set to a positive value")
+			}
+			if len(c.Timeboost.AuctioneerAddress) > 0 && !common.IsHexAddress(c.Timeboost.AuctioneerAddress) {
+				return fmt.Errorf("invalid timeboost.auctioneer-address \"%v\"", c.Timeboost.AuctioneerAddress)
+			}
+		}
 	}
 	return nil
 }
@@ -180,11 +178,12 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+	Timeboost:                    DefaultTimeboostConfig,
 	Dangerous:                    DefaultDangerousConfig,
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	Timeboost: DefaultTimeboostConfig,
+	DisableSeqInboxMaxDataSizeCheck: false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -194,8 +193,9 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
-	DangerousAddOptions(prefix+".dangerous", f)
+	TimeboostAddOptions(prefix+".timeboost", f)
 
+	DangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
@@ -221,7 +221,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func DangerousAddOptions(prefix string, f *flag.FlagSet) {
-	TimeboostAddOptions(prefix+".timeboost", f)
+	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 }
 
 type txQueueItem struct {
@@ -501,7 +501,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 
 	config := s.config()
 	queueTimeout := config.QueueTimeout
-	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout+config.Dangerous.Timeboost.ExpressLaneAdvantage) // Include timeboost delay in ctx timeout
+	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout+config.Timeboost.ExpressLaneAdvantage) // Include timeboost delay in ctx timeout
 	defer cancelFunc()
 
 	resultChan := make(chan error, 1)
@@ -531,7 +531,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 }
 
 func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
-	if !s.config().Dangerous.Timeboost.Enable {
+	if !s.config().Timeboost.Enable {
 		return errors.New("timeboost not enabled")
 	}
 
@@ -587,7 +587,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 }
 
 func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
-	if !s.config().Dangerous.Timeboost.Enable {
+	if !s.config().Timeboost.Enable {
 		return errors.New("timeboost not enabled")
 	}
 
@@ -659,14 +659,14 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		return err
 	}
 
-	if s.config().Dangerous.Timeboost.Enable && s.expressLaneService != nil {
+	if s.config().Timeboost.Enable && s.expressLaneService != nil {
 		if !isExpressLaneController && s.expressLaneService.currentRoundHasController() {
-			time.Sleep(s.config().Dangerous.Timeboost.ExpressLaneAdvantage)
+			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
 		}
 	}
 
 	var blockStamp uint64
-	if isExpressLaneController && config.Dangerous.Timeboost.QueueTimeoutInBlocks > 0 {
+	if isExpressLaneController && config.Timeboost.QueueTimeoutInBlocks > 0 {
 		blockStamp = s.execEngine.bc.CurrentBlock().Number.Uint64()
 	}
 
@@ -1104,12 +1104,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 		if queueItem.isTimeboosted &&
 			queueItem.blockStamp != 0 &&
-			lastBlock.Number.Uint64() >= queueItem.blockStamp+config.Dangerous.Timeboost.QueueTimeoutInBlocks {
+			lastBlock.Number.Uint64() >= queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks {
 			err := fmt.Errorf("timeboosted tx: %s has hit block based timeout. currentBlockNum: %d, blockStamp: %d, blockExpiry: %d",
 				queueItem.tx.Hash(),
 				lastBlock.Number.Uint64()+1,
 				queueItem.blockStamp,
-				queueItem.blockStamp+config.Dangerous.Timeboost.QueueTimeoutInBlocks,
+				queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks,
 			)
 			queueItem.returnResult(err) // this isnt read by anyone, so we log a debug line
 			log.Debug("Error sequencing timeboost tx", "err", err)
@@ -1461,7 +1461,7 @@ func (s TxSource) String() string {
 
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
-	if s.config().Dangerous.Timeboost.Enable && s.expressLaneService != nil {
+	if s.config().Timeboost.Enable && s.expressLaneService != nil {
 		s.expressLaneService.StopAndWait()
 	}
 	if s.txRetryQueue.Len() == 0 &&

@@ -240,7 +240,7 @@ test-go-stylus: test-go-deps
 
 .PHONY: test-go-redis
 test-go-redis: test-go-deps
-	TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/...
+	gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/... -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
 .PHONY: test-gen-proofs
@@ -574,6 +574,8 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint run --disable-all -E gofmt --fix
+	cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
+	cargo fmt --all --manifest-path arbitrator/wasm-testsuite/Cargo.toml -- --check
 	yarn --cwd contracts prettier:solidity
 	@touch $@
 
