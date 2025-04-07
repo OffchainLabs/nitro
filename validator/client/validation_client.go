@@ -18,9 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -147,19 +145,13 @@ func (c *ValidationClient) Room() int {
 }
 
 type ExecutionClient struct {
-	*ValidationClient
+	ValidationClient
 }
 
 func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
 	return &ExecutionClient{
-		ValidationClient: NewValidationClient(config, stack),
+		ValidationClient: *NewValidationClient(config, stack),
 	}
-}
-func (c *ExecutionClient) Start(ctx context.Context) error {
-	if err := c.ValidationClient.Start(ctx); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (c *ExecutionClient) CreateExecutionRun(
@@ -291,97 +283,27 @@ func (r *ExecutionClientRun) Close() {
 	})
 }
 
-// BoldValidationClient implements bold validation client through redis streams.
-type BoldValidationClient struct {
-	stopwaiter.StopWaiter
-	*ValidationClient
-	// producers stores moduleRoot to producer mapping.
-	producers map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]
-	config    *redis.ValidationClientConfig
-}
-
-func NewBoldValidationClient(config rpcclient.ClientConfigFetcher, redisBoldValidationClientConfig *redis.ValidationClientConfig, stack *node.Node) (*BoldValidationClient, error) {
-	return &BoldValidationClient{
-		ValidationClient: NewValidationClient(config, stack),
-		producers:        make(map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]),
-		config:           redisBoldValidationClientConfig,
-	}, nil
-}
-
-func (c *BoldValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
-	if c.config.RedisURL == "" {
-		return fmt.Errorf("redis url cannot be empty")
-	}
-	redisClient, err := redisutil.RedisClientFromURL(c.config.RedisURL)
-	if err != nil {
-		return err
-	}
-	for _, mr := range moduleRoots {
-		if c.config.CreateStreams {
-			if err := pubsub.CreateStream(ctx, server_api.RedisBoldStreamForRoot(c.config.StreamPrefix, mr), redisClient); err != nil {
-				return fmt.Errorf("creating redis stream: %w", err)
-			}
-		}
-		if _, exists := c.producers[mr]; exists {
-			log.Warn("Producer already exists for module root", "hash", mr)
-			continue
-		}
-		p, err := pubsub.NewProducer[*server_api.GetLeavesWithStepSizeInput, []common.Hash](
-			redisClient, server_api.RedisBoldStreamForRoot(c.config.StreamPrefix, mr), &c.config.ProducerConfig)
-		if err != nil {
-			log.Warn("failed init redis for %v: %w", mr, err)
-			continue
-		}
-		c.producers[mr] = p
-	}
-	return nil
-}
-
-func (c *BoldValidationClient) GetLeavesWithStepSize(req *server_api.GetLeavesWithStepSizeInput) containers.PromiseInterface[[]common.Hash] {
-	producer, found := c.producers[req.ModuleRoot]
-	if !found {
-		return containers.NewReadyPromise([]common.Hash{}, fmt.Errorf("no validation is configured for wasm root %v", req.ModuleRoot))
-	}
-	promise, err := producer.Produce(c.GetContext(), req)
-	if err != nil {
-		return containers.NewReadyPromise([]common.Hash{}, fmt.Errorf("error producing input: %w", err))
-	}
-	return promise
-}
-
-func (c *BoldValidationClient) Start(ctx_in context.Context) error {
-	if err := c.Initialize(ctx_in, c.wasmModuleRoots); err != nil {
-		return err
-	}
-	for _, p := range c.producers {
-		p.Start(ctx_in)
-	}
-	c.StopWaiter.Start(ctx_in, c)
-	return nil
-}
-
-func (c *BoldValidationClient) Stop() {
-	for _, p := range c.producers {
-		p.StopAndWait()
-	}
-	c.StopWaiter.StopAndWait()
-}
-
 type BoldExecutionClient struct {
-	*BoldValidationClient
+	*redis.BoldValidationClient
+	client *rpcclient.RpcClient
+	config rpcclient.ClientConfigFetcher
+	stack  *node.Node
 }
 
 func NewBoldExecutionClient(config rpcclient.ClientConfigFetcher, redisBoldValidationClientConfig *redis.ValidationClientConfig, stack *node.Node) *BoldExecutionClient {
-	var validationClient *BoldValidationClient
+	var validationClient *redis.BoldValidationClient
 	if redisBoldValidationClientConfig != nil && redisBoldValidationClientConfig.Enabled() {
 		var err error
-		validationClient, err = NewBoldValidationClient(config, redisBoldValidationClientConfig, stack)
+		validationClient, err = redis.NewBoldValidationClient(redisBoldValidationClientConfig, stack)
 		if err != nil {
 			log.Error("Creating new redis bold validation client", "error", err)
 		}
 	}
 	return &BoldExecutionClient{
+		client:               rpcclient.NewRpcClient(config, stack),
 		BoldValidationClient: validationClient,
+		config:               config,
+		stack:                stack,
 	}
 }
 
@@ -399,7 +321,7 @@ func (c *BoldExecutionClient) CreateExecutionRun(
 		run := &ExecutionClientRun{
 			wasmModuleRoot: wasmModuleRoot,
 			boldClient:     c,
-			client:         &ExecutionClient{ValidationClient: c.BoldValidationClient.ValidationClient},
+			client:         NewExecutionClient(c.config, c.stack),
 			id:             res,
 			input:          input,
 		}
