@@ -219,15 +219,17 @@ func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bo
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var redisBoldValidationClientConfig *clientredis.ValidationClientConfig
-	if withBoldValidationConsumerProducer {
-		redisBoldValidationClientConfig = &clientredis.TestValidationClientConfig
-		redisBoldValidationClientConfig.RedisURL = redisutil.CreateTestRedis(ctx, t)
-		redisBoldValidationClientConfig.CreateStreams = true
-	}
+	var client validator.ExecutionSpawner
 
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
-	client := validatorclient.NewBoldExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisBoldValidationClientConfig, validationDefault)
+	if withBoldValidationConsumerProducer {
+		var redisBoldValidationClientConfig *clientredis.ValidationClientConfig = &clientredis.TestValidationClientConfig
+		redisBoldValidationClientConfig.RedisURL = redisutil.CreateTestRedis(ctx, t)
+		redisBoldValidationClientConfig.CreateStreams = true
+		client = validatorclient.NewBoldExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisBoldValidationClientConfig, validationDefault)
+	} else {
+		client = validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
+	}
 	err := client.Start(ctx)
 	Require(t, err)
 
