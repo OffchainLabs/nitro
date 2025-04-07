@@ -8,6 +8,7 @@
     "feed-url": "wss://arb1-feed.arbitrum.io/feed",
     "secondary-feed-url": "wss://arb1-delayed-feed.arbitrum.io/feed,wss://arb1-feed-fallback-1.arbitrum.io/feed,wss://arb1-feed-fallback-2.arbitrum.io/feed,wss://arb1-feed-fallback-3.arbitrum.io/feed,wss://arb1-feed-fallback-4.arbitrum.io/feed,wss://arb1-feed-fallback-5.arbitrum.io/feed",
     "has-genesis-state": true,
+    "track-block-metadata-from": 327000000,
     "chain-config": {
       "chainId": 42161,
       "homesteadBlock": 0,
@@ -44,7 +45,7 @@
       "sequencer-inbox": "0x1c479675ad559dc151f6ec7ed3fbf8cee79582b6",
       "validator-utils": "0x9e40625f52829cf04bc4839f186d621ee33b0e67",
       "validator-wallet-creator": "0x960953f7c69cd2bc2322db9223a815c680ccc7ea",
-      "stake-token": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      "stake-token": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
       "deployed-at": 15411056
     }
   },
@@ -91,7 +92,7 @@
       "sequencer-inbox": "0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b",
       "validator-utils": "0x2B081fbaB646D9013f2699BebEf62B7e7d7F0976",
       "validator-wallet-creator": "0xe05465Aab36ba1277dAE36aa27a7B74830e74DE4",
-      "stake-token": "0x765277eebeca2e31912c9946eae1021199b39c61",
+      "stake-token": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
       "deployed-at": 15016829
     }
   },
@@ -166,7 +167,7 @@
         "EnableArbOS": true,
         "AllowDebugPrecompiles": true,
         "DataAvailabilityCommittee": false,
-        "InitialArbOSVersion": 32,
+        "InitialArbOSVersion": 40,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
         "GenesisBlockNum": 0
       }
@@ -211,6 +212,7 @@
     "chain-name": "sepolia-rollup",
     "sequencer-url": "https://sepolia-rollup-sequencer.arbitrum.io/rpc",
     "feed-url": "wss://sepolia-rollup.arbitrum.io/feed",
+    "track-block-metadata-from": 123000000,
     "chain-config": {
       "chainId": 421614,
       "homesteadBlock": 0,

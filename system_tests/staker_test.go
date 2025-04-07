@@ -26,11 +26,12 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
@@ -135,12 +136,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	builder.L1.TransferBalance(t, "Faucet", "ValidatorB", balance, builder.L1Info)
 	l1authB := builder.L1Info.GetDefaultTransactOpts("ValidatorB", ctx)
 
-	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
+	rollup, err := rollup_legacy_gen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 
 	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err, "unable to bind upgrade executor")
-	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	rollupABI, err := abi.JSON(strings.NewReader(rollup_legacy_gen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
 	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
@@ -150,7 +151,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	validatorUtils, err := rollupgen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, builder.L1.Client)
+	validatorUtils, err := rollup_legacy_gen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, builder.L1.Client)
 	Require(t, err)
 
 	valConfigA := legacystaker.TestL1ValidatorConfig
@@ -229,7 +230,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
@@ -363,7 +364,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				if !challengeMangerTimedOut {
 					// Upgrade the ChallengeManager contract to an implementation which says challenges are always timed out
 
-					mockImpl, tx, _, err := mocksgen.DeployTimedOutChallengeManager(&deployAuth, builder.L1.Client)
+					mockImpl, tx, _, err := mocks_legacy_gen.DeployTimedOutChallengeManager(&deployAuth, builder.L1.Client)
 					Require(t, err)
 					_, err = builder.L1.EnsureTxSucceeded(tx)
 					Require(t, err)
@@ -378,7 +379,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 						Fatal(t, "failed to get challenge manager proxy admin")
 					}
 
-					proxyAdminABI, err := abi.JSON(strings.NewReader(mocksgen.ProxyAdminForBindingABI))
+					proxyAdminABI, err := abi.JSON(strings.NewReader(mocks_legacy_gen.ProxyAdminForBindingABI))
 					Require(t, err)
 					upgradeCalldata, err := proxyAdminABI.Pack("upgrade", managerAddr, mockImpl)
 					Require(t, err)

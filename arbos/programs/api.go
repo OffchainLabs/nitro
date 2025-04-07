@@ -74,6 +74,8 @@ func newApiClosures(
 		return db.GetState(actingAddress, key), cost
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
+		isOutOfGas := false
+		recording := db.Recording()
 		for len(data) > 0 {
 			key := common.BytesToHash(data[:32])
 			value := common.BytesToHash(data[32:64])
@@ -86,10 +88,17 @@ func newApiClosures(
 			cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
 			if cost > *gasLeft {
 				*gasLeft = 0
-				return OutOfGas
+				isOutOfGas = true
+				if recording {
+					continue
+				}
+				break
 			}
 			*gasLeft -= cost
 			db.SetState(actingAddress, key, value)
+		}
+		if isOutOfGas {
+			return OutOfGas
 		}
 		return Success
 	}
@@ -146,11 +155,11 @@ func newApiClosures(
 
 		switch opcode {
 		case vm.CALL:
-			ret, returnGas, err = evm.Call(scope.Contract, contract, input, gas, value)
+			ret, returnGas, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
 		case vm.DELEGATECALL:
-			ret, returnGas, err = evm.DelegateCall(scope.Contract, contract, input, gas)
+			ret, returnGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
 		case vm.STATICCALL:
-			ret, returnGas, err = evm.StaticCall(scope.Contract, contract, input, gas)
+			ret, returnGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
 		default:
 			panic("unsupported call type: " + opcode.String())
 		}
@@ -202,9 +211,9 @@ func newApiClosures(
 		var suberr error
 
 		if opcode == vm.CREATE {
-			res, addr, returnGas, suberr = evm.Create(contract, code, gas, endowment)
+			res, addr, returnGas, suberr = evm.Create(contract.Address(), code, gas, endowment)
 		} else {
-			res, addr, returnGas, suberr = evm.Create2(contract, code, gas, endowment, salt)
+			res, addr, returnGas, suberr = evm.Create2(contract.Address(), code, gas, endowment, salt)
 		}
 		if suberr != nil {
 			addr = zeroAddr

@@ -67,6 +67,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		builder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
 		builder.L2Info = l2Info
 		builder.dataDir = t.TempDir() // set new data dir for each node
+		builder.l2StackConfig = testhelpers.CreateStackConfigForTest(builder.dataDir)
 		builder.Build(t)
 		testNodes[nodeNum] = builder.L2
 	}
@@ -89,12 +90,12 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			},
 			DelayedMessagesRead: 1,
 		}
-		err = node.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage)
+		err = node.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage, nil)
 		if errors.Is(err, execution.ErrRetrySequencer) {
 			return false
 		}
 		Require(t, err)
-		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbostypes.MessageWithMetadata{emptyMessage}))
+		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbostypes.MessageWithMetadata{emptyMessage}, nil))
 		return true
 	}
 

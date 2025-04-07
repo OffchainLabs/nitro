@@ -164,7 +164,11 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				res, err := valRun.Await(ctx)
 				if err != nil {
 					log.Error("Error validating", "request value", work.req.Value, "error", err)
+					err := s.consumers[work.moduleRoot].SetError(ctx, work.req.ID, err.Error())
 					work.req.Ack()
+					if err != nil {
+						log.Error("Error setting error for request", "id", work.req.ID, "error", err)
+					}
 				} else {
 					log.Debug("done work", "thread", i, "workid", work.req.ID)
 					err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res)
