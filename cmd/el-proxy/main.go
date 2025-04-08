@@ -1,3 +1,14 @@
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+// el-proxy is an example implementation of a Timeboost Express Lane proxy
+// and should only be used for testing purposes. It listens for
+// eth_sendRawTransaction messages, wraps them, and forwards them to
+// an endpoint implementing timeboost_sendExpressLaneTransaction.
+// It also forwards other methods needed by tools like cast to build
+// and check on the transaction to an RPC url which may be different to
+// the express lane url.
+
 package main
 
 import (
