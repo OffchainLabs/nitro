@@ -255,7 +255,7 @@ func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bo
 		config.RedisValidationServerConfig.ModuleRoots = mockWasmModuleRootsStr
 		_, validationDefault := createMockValidationNode(t, ctx, &config)
 		executionClient := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
-		client = validatorclient.NewBoldExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisValClient, redisBoldValidationClientConfig, validationDefault, executionClient)
+		client = validatorclient.NewBoldExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisValClient, validationDefault, executionClient)
 		err = executionClient.Start(ctx)
 		Require(t, err)
 	} else {

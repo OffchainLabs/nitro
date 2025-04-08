@@ -288,13 +288,9 @@ type BoldExecutionClient struct {
 	executionClient *ExecutionClient
 }
 
-func NewBoldExecutionClient(config rpcclient.ClientConfigFetcher, redisValClient *redis.ValidationClient, redisBoldValidationClientConfig *redis.ValidationClientConfig, stack *node.Node, executionClient *ExecutionClient) *BoldExecutionClient {
-	var validationClient *redis.BoldValidationClient
-	if redisBoldValidationClientConfig != nil && redisBoldValidationClientConfig.Enabled() {
-		validationClient = redis.NewBoldValidationClient(config, redisValClient, stack)
-	}
+func NewBoldExecutionClient(config rpcclient.ClientConfigFetcher, redisValClient *redis.ValidationClient, stack *node.Node, executionClient *ExecutionClient) *BoldExecutionClient {
 	return &BoldExecutionClient{
-		BoldValidationClient: validationClient,
+		BoldValidationClient: redis.NewBoldValidationClient(config, redisValClient, stack),
 		executionClient:      executionClient,
 	}
 }
