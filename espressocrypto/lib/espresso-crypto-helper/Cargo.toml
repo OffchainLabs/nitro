@@ -3,28 +3,36 @@
 name = "espresso-crypto-helper"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.81"
 
 [lib]
 
-crate-type = ["staticlib"]
+crate-type = ["cdylib"]
 
 [dependencies]
 ark-ed-on-bn254 = "0.4"
 ark-ff = "0.4"
 ark-serialize = "0.4"
-ethers-core = "2.0.14"
+ethers = "2.0.14"
 sha2 = "0.10"
 serde_json = "1.0"
-committable = {version = "0.2", features = ["ark-serialize"]}
+solang-parser = "0.3.3"
+committable = { version = "0.2", features = ["ark-serialize"] }
 serde = "1"
 tagged-base64 = "0.4"
 jf-crhf = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
-espresso-types = { git = "https://github.com/espressosystems/espresso-sequencer", branch = "main" }
 jf-merkle-tree = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5", features = [
   "std",
-], default-features = false}
+], default-features = false }
 jf-rescue = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5", features = [
   "std",
-], default-features = false}
-hotshot-types = { git = "https://github.com/EspressoSystems/hotshot", tag = "0.5.81", default-features = false }
+], default-features = false }
+
+hotshot-types = { git = "https://github.com/EspressoSystems/espresso-network", default-features = false, rev = "b3ee13f" }
+hotshot-query-service = { git = "https://github.com/espressosystems/espresso-network", rev = "b3ee13f" }
+espresso-types = { git = "https://github.com/espressosystems/espresso-network", rev = "b3ee13f" }
+
+# https://tikv.github.io/doc/openssl/index.html
+openssl = { version = "0.10", features = ["vendored"] }
+
+[profile.release]
+panic = "abort"

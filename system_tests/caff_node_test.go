@@ -32,6 +32,7 @@ func createCaffNode(ctx context.Context, t *testing.T, existing *NodeBuilder) (*
 
 	// for testing, we can use the same hotshot url for both
 	nodeConfig.EspressoCaffNode.HotShotUrls = []string{hotShotUrl, hotShotUrl, hotShotUrl, hotShotUrl}
+	nodeConfig.EspressoCaffNode.FallbackUrls = []string{hotShotUrl, hotShotUrl, hotShotUrl, hotShotUrl}
 	nodeConfig.EspressoCaffNode.RetryTime = time.Second * 1
 	nodeConfig.EspressoCaffNode.HotshotPollingInterval = time.Millisecond * 100
 

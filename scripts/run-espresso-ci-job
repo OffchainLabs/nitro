@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 # This script runs the Espresso tests in ./system_tests only.
 set -euo pipefail
+
+# 1. First ensure the library path is set
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:$(pwd)/target/lib"
+
+# 2. Verify the library exists
+if [[ ! -f "$(pwd)/target/lib/libespresso_crypto_helper.so" ]]; then
+    echo "Error: libespresso_crypto_helper.so not found in $(pwd)/target/lib"
+    exit 1
+fi
+
 gotestsum \
     --format short-verbose \
     --packages="github.com/offchainlabs/nitro/system_tests" \

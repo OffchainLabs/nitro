@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
-	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
+	espressoClient "github.com/EspressoSystems/espresso-network-go/client"
+	espressoTypes "github.com/EspressoSystems/espresso-network-go/types"
 	"github.com/ccoveille/go-safecast"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"

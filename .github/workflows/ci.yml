@@ -90,7 +90,7 @@ jobs:
       - name: Install cmake
         uses: jwlawson/actions-setup-cmake@v2
         with:
-          cmake-version: '3.31.6'
+          cmake-version: "3.31.6"
 
       - name: Install latest gotestsum
         uses: autero1/action-gotestsum@v2.0.0
@@ -221,6 +221,7 @@ jobs:
         env:
           TEST_STATE_SCHEME: ${{ matrix.test-state-scheme }}
         run: |
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GITHUB_WORKSPACE/target/lib
           scripts/espresso-run-test-ci
 
       - name: run tests with race detection (path and hash state scheme)
@@ -229,29 +230,34 @@ jobs:
         env:
           TEST_STATE_SCHEME: ${{ matrix.test-state-scheme }}
         run: |
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GITHUB_WORKSPACE/target/lib
           scripts/espresso-run-test-ci -race
 
       - name: run redis tests
         if: matrix.test-mode == 'redis'
         run: |
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GITHUB_WORKSPACE/target/lib
           TEST_REDIS=redis://localhost:6379/0 scripts/espresso-run-test-ci -p 1 -run TestRedis ./arbnode/... ./system_tests/...
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
         shell: bash
         run: |
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GITHUB_WORKSPACE/target/lib
           scripts/espresso-run-test-ci -run=TestChallenge -tags=challengetest
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
         shell: bash
         run: |
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GITHUB_WORKSPACE/target/lib
           scripts/espresso-run-test-ci -tags=stylustest -run=TestProgramArbitrator
 
       - name: run long stylus tests
         if: matrix.test-mode == 'long'
         shell: bash
         run: |
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GITHUB_WORKSPACE/target/lib
           scripts/espresso-run-test-ci -tags=stylustest -run=TestProgramLong
 
       - name: Archive detailed run log

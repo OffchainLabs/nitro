@@ -70,7 +70,7 @@ arbitrator_cases=arbitrator/prover/test-cases
 arbitrator_tests_wat=$(wildcard $(arbitrator_cases)/*.wat)
 arbitrator_tests_rust=$(wildcard $(arbitrator_cases)/rust/src/bin/*.rs)
 
-arbitrator_test_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_tests_wat)) $(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,$(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm, $(arbitrator_tests_rust)) $(arbitrator_cases)/go/testcase.wasm
+arbitrator_test_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_tests_wat)) $(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,$(arbitrator_cases)/rust/target/wasm32-wasip1/release/%.wasm, $(arbitrator_tests_rust)) $(arbitrator_cases)/go/testcase.wasm
 
 arbitrator_tests_link_info = $(shell cat $(arbitrator_cases)/link.txt | xargs)
 arbitrator_tests_link_deps = $(patsubst %,$(arbitrator_cases)/%.wasm, $(arbitrator_tests_link_info))
@@ -103,7 +103,7 @@ stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(wasm_li
 jit_dir = arbitrator/jit
 jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs $(jit_dir)/src/*/*.rs) $(stylus_files)
 
-wasm32_wasi = target/wasm32-wasi/release
+wasm32_wasi = target/wasm32-wasip1/release
 wasm32_unknown = target/wasm32-unknown-unknown/release
 
 stylus_dir = arbitrator/stylus
@@ -157,7 +157,14 @@ stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(st
 
 espresso_crypto_dir = ./espressocrypto/lib/espresso-crypto-helper
 espresso_crypto_files = $(wildcard $(espresso_crypto_dir)/*.toml $(espresso_crypto_dir)/src/*.rs)
-espresso_crypto_lib = $(output_root)/lib/libespresso_crypto_helper.a
+espresso_crypto_lib = $(output_root)/lib/libespresso_crypto_helper
+espresso_crypto_filename = libespresso_crypto_helper.so
+ifeq ($(UNAME_S), Darwin)
+	espresso_crypto_filename = libespresso_crypto_helper.dylib
+else
+	export LD_LIBRARY_PATH := $(shell pwd)/target/lib:$LD_LIBRARY_PATH
+endif
+
 CBROTLI_WASM_BUILD_ARGS ?=-d
 
 # user targets
@@ -167,7 +174,7 @@ build-espresso-crypto-lib: $(espresso_crypto_lib)
 $(espresso_crypto_lib): $(DEP_PREDICATE) $(espresso_crypto_files)
 	mkdir -p `dirname $(espresso_crypto_lib)`
 	cargo build --release --manifest-path $(espresso_crypto_dir)/Cargo.toml
-	install $(espresso_crypto_dir)/target/release/libespresso_crypto_helper.a $@
+	install $(espresso_crypto_dir)/target/release/$(espresso_crypto_filename) $(output_root)/lib/$(espresso_crypto_filename)
 
 .PHONY: push
 push: lint test-go .make/fmt
@@ -346,6 +353,7 @@ $(output_root)/bin/dbconv: $(DEP_PREDICATE) build-node-deps
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	mkdir -p `dirname $(replay_wasm)`
 	GOOS=wasip1 GOARCH=wasm go build -o $@ ./cmd/replay/...
+	./scripts/remove_reference_types.sh $@
 
 $(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(prover_bin)`
@@ -363,7 +371,8 @@ $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	install arbitrator/target/release/jit $@
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
-	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasi --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
+	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
+	./scripts/remove_reference_types.sh $@
 
 $(arbitrator_cases)/go/testcase.wasm: $(arbitrator_cases)/go/*.go .make/solgen
 	cd $(arbitrator_cases)/go && GOOS=wasip1 GOARCH=wasm go build -o testcase.wasm
@@ -377,6 +386,7 @@ $(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
 $(output_latest)/wasi_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,wasi-stub)
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --config $(wasm_lib_cargo) --package wasi-stub
 	install arbitrator/wasm-libraries/$(wasm32_unknown)/wasi_stub.wasm $@
+	./scripts/remove_reference_types.sh $@
 
 arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_PREDICATE) \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/Makefile \
@@ -388,10 +398,10 @@ arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(D
 	cd arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && make $(MAKEFLAGS)
 
 arbitrator/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/bindings32.c
-	clang arbitrator/wasm-libraries/soft-float/bindings32.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasi -Wconversion -c -o $@
+	clang arbitrator/wasm-libraries/soft-float/bindings32.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
 
 arbitrator/wasm-libraries/soft-float/bindings64.o: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/bindings64.c
-	clang arbitrator/wasm-libraries/soft-float/bindings64.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasi -Wconversion -c -o $@
+	clang arbitrator/wasm-libraries/soft-float/bindings64.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
 
 $(output_latest)/soft-float.wasm: $(DEP_PREDICATE) \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
@@ -417,24 +427,29 @@ $(output_latest)/soft-float.wasm: $(DEP_PREDICATE) \
 		--export wavm__f64_promote_f32
 
 $(output_latest)/host_io.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,host-io) $(wasm_lib_go_abi)
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --config $(wasm_lib_cargo) --package host-io
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package host-io
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/host_io.wasm $@
+	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/user_host.wasm: $(DEP_PREDICATE) $(wasm_lib_user_host) $(rust_prover_files) $(output_latest)/forward_stub.wasm .make/machines
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --config $(wasm_lib_cargo) --package user-host
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-host
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_host.wasm $@
+	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/program_exec.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,program-exec) $(rust_prover_files) .make/machines
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --config $(wasm_lib_cargo) --package program-exec
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package program-exec
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/program_exec.wasm $@
+	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/user_test.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-test) $(rust_prover_files) .make/machines
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --config $(wasm_lib_cargo) --package user-test
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-test
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_test.wasm $@
+	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi)
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --config $(wasm_lib_cargo) --package arbcompress
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcompress
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/arbcompress.wasm $@
+	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
 	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward.wat
@@ -456,54 +471,67 @@ $(stylus_test_dir)/%.wasm: $(stylus_test_dir)/%.b $(stylus_lang_bf)
 
 $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_storage_wasm): $(stylus_test_storage_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_multicall_wasm): $(stylus_test_multicall_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_log_wasm): $(stylus_test_log_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_create_wasm): $(stylus_test_create_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_math_wasm): $(stylus_test_math_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_evm-data_wasm): $(stylus_test_evm-data_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_read-return-data_wasm): $(stylus_test_read-return-data_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_sdk-storage_wasm): $(stylus_test_sdk-storage_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_erc20_wasm): $(stylus_test_erc20_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_hostio-test_wasm): $(stylus_test_hostio-test_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(prover_bin) $(output_latest)/soft-float.wasm

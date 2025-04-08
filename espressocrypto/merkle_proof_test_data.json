@@ -2,9 +2,9 @@
   "proof": [
     {
       "Leaf": {
-        "value": "FIELD~DcnZ07RxPlMsdwiR0baPFBMcu5tqZBlZ0K__pS13AAXb",
-        "pos": "FIELD~_gEAAAAAAADs",
-        "elem": "FIELD~U6NZ6W_MrgPRMy4uWSuIzmvJfrlV3tleIqizpttHfsvs"
+        "value": "FIELD~pJkdCheLY1HylYhl-KGvF_FaMTM9xKKYNlJ-qkxW37hu",
+        "pos": "FIELD~UAAAAAAAAAAQ",
+        "elem": "FIELD~WXfpFkJ1BxNxFu2l8ZBCPCiFo4knlvVfcM5A1BhXlNm0"
       }
     },
     {
@@ -13,17 +13,17 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~DcnZ07RxPlMsdwiR0baPFBMcu5tqZBlZ0K__pS13AAXb"
+              "value": "FIELD~n1eE26MUIBAU6zg6ZOmcrMcVPqRLoYmNXR_QoL9rATTk"
             }
           },
           {
             "ForgettenSubtree": {
-              "value": "FIELD~azQTz4gm3jl3QrnSn3NptAy_eDaYj0TfBjaWL6W_yWa8"
+              "value": "FIELD~E0jRESSLpKQ-3TroP1UK3LIRUVm9Cdo8r_y0181Iirnf"
             }
           },
           {
             "ForgettenSubtree": {
-              "value": "FIELD~jq_CDUna-LSgDZiozzPfy3DcNCW-ZwDW2iMY_alhlugc"
+              "value": "FIELD~pJkdCheLY1HylYhl-KGvF_FaMTM9xKKYNlJ-qkxW37hu"
             }
           }
         ]
@@ -35,17 +35,17 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~bqXdcZa3GmNRDWyVVlmFN8ZdyXzMDPiMi7EdYszmnnUE"
+              "value": "FIELD~ec4saMwB-_FCEb2ur12YHqOOdtfdOd6wN6q6rIPz6PLg"
             }
           },
           {
             "ForgettenSubtree": {
-              "value": "FIELD~KhMOzW8RAyjOX8QEQz2DkaIafZEm6GERQDVvPb7lh_CI"
+              "value": "FIELD~udmu62ZpKJQGbNfdtiRQmVjH9f5IpwI7o0I_iiWXt292"
             }
           },
           {
             "ForgettenSubtree": {
-              "value": "FIELD~pTvZKqIaqm4lmnDv7K3OZ4J125A-JQKxvyYVuw3P-Qsg"
+              "value": "FIELD~s3a21G63M8qfIyIutp9eKF1ZExsbOJIYY09rtJHdrZCC"
             }
           }
         ]
@@ -57,17 +57,17 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~YyknbbBvuN92GA6TKkx8s1g38tLpbgXnxsRD0-Tr8arz"
+              "value": "FIELD~6VhIzq_Z_JlfhFCKgGkJSKzbNi8epUA5sc4LnadvyliN"
             }
           },
           {
             "ForgettenSubtree": {
-              "value": "FIELD~3LtfYqfVY6NQrqeiwv1qRfu0RFHlXp3r-f0dCjt_PxnY"
+              "value": "FIELD~dv6Jgl8tOJCHnrAGFDdWXkeQ_MXEdOco8N8XITPMhRkH"
             }
           },
           {
             "ForgettenSubtree": {
-              "value": "FIELD~Q53LCyMiwJeM9W0sMu00Hbu66JyzHWZtlIhTIPqBJZHN"
+              "value": "FIELD~c9ClFY21ZWVGg3zGgV35gEtnx9YZlqDBa6I5UigeTZ-y"
             }
           }
         ]
@@ -79,17 +79,17 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~FraHeLSS5RPovhrLL826qx1m6C0oSGqOrfkYLeQwB9uj"
+              "value": "FIELD~vyS4Gb66SjqLEHTfPWGe1Ksue2P5J86WQIZT8FmW3i3G"
             }
           },
           {
             "ForgettenSubtree": {
-              "value": "FIELD~_lZ1L_fBJZ_-S_ua0jHm-UqQSjLp7wy9BIR53tmp7noe"
+              "value": "FIELD~vVqfOT6QDoPA0udCTXZ6oHSiIjliUcOSPnDAXQw2xdPU"
             }
           },
           {
             "ForgettenSubtree": {
-              "value": "FIELD~zjsCQxis01GEdanGAizCVz-pbfkOCsvEvDZJUnCN7bbQ"
+              "value": "FIELD~y_rnA5rbMvWYIKcjE77FKNo1UTD1WRjXjeuP_Py5-38K"
             }
           }
         ]
@@ -101,56 +101,12 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~jc0Re5qXzftW_Nf0hNiLQci8cF1gTasv-xAZ2l_8M7sK"
+              "value": "FIELD~ONWMnKJxAKS8Jt4r393GmSKZ41L1gtlFTmvToRIMQodO"
             }
           },
           {
             "ForgettenSubtree": {
-              "value": "FIELD~OFQWOHPJQp9VFiGaLxVC7FGufce1Q6VfS6C2O4uoPBnL"
-            }
-          },
-          {
-            "ForgettenSubtree": {
-              "value": "FIELD~lFaYsLBIstwWoawAAMEFudmv4He3Rn-1RtUsSv5cUObp"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "Branch": {
-        "value": "FIELD~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-",
-        "children": [
-          {
-            "ForgettenSubtree": {
-              "value": "FIELD~CgQgjFu9Vz-Raa3wBmcq6kc8fo8Y_MtJ85tTxrG3orkx"
-            }
-          },
-          {
-            "ForgettenSubtree": {
-              "value": "FIELD~ycIw075_AhuUiMIl_VkmNtLmbv7J-nyZp4TfOOGk6eYh"
-            }
-          },
-          {
-            "ForgettenSubtree": {
-              "value": "FIELD~eVKPqGVQFaP3XTK4ug1ewDDHhx96Gl1HeOcG2R-HjyP0"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "Branch": {
-        "value": "FIELD~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-",
-        "children": [
-          {
-            "ForgettenSubtree": {
-              "value": "FIELD~uSXHBRmz7a_zCYZOGZeHYUTVQw-g3FQNSHyRi21aytrB"
-            }
-          },
-          {
-            "ForgettenSubtree": {
-              "value": "FIELD~dSwEo-4IZ4zxNOPKgce7icGU9GB4CZC7BYj4wSrwhsZ6"
+              "value": "FIELD~OkZUCzEBLsd_C9wGEtF-SboBwjGJzFSokHcdscmqh3s6"
             }
           },
           "Empty"
@@ -163,7 +119,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~3ngYm6Xh7cRvrOpmmB547bkb72h6FM8k_33YDdspDaw5"
+              "value": "FIELD~IeW40Z8ARc84W4wwLs1T8GggRu8OkRIyR_ZOVR9oOuxk"
             }
           },
           "Empty",
@@ -177,7 +133,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~BIGliDScBq5r6PnIIGsxjyzAbIqouyetdnK5fsi1joS4"
+              "value": "FIELD~86m8xTNleTtN4Sme5yfErlplyOnVoy6xZOAUvW8sPs8x"
             }
           },
           "Empty",
@@ -191,7 +147,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~xWNAtWtDa-0gBy8EbNxn2coG6BLNmXS0l0jUzXwRVu2d"
+              "value": "FIELD~3poXMuPgRrOwARbW0gtPyUnkbUui9uH10epyb7WToxlT"
             }
           },
           "Empty",
@@ -205,7 +161,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~UeQ8X5Amp2rL86DgYtN_TvTSQbSZr_UuyeqCi-KaF7IW"
+              "value": "FIELD~2aqFjWWfPC5KJk4AsoRfXEZ8Imm9RBfHyxitBQo-AnSv"
             }
           },
           "Empty",
@@ -219,7 +175,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~frsLQ4bv01CPrLtlycgBDNKrWjQVkTddSGgqry8CpuDR"
+              "value": "FIELD~5Nx3_Q7EjnGoruaeJOsWarfvbsJsQBPa1nlV7naVApGU"
             }
           },
           "Empty",
@@ -233,7 +189,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~4m6Ic_eOYj5070Ghg6Vz6rtWxX8ewNxjwFgOgh-mLVOW"
+              "value": "FIELD~mewvn2NFdGTOcpQ7Yva2vNeN-pRcexxcNbaxkcWSRWEt"
             }
           },
           "Empty",
@@ -247,7 +203,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~XunoegQgb-e0hkAjQs9nlq3jrJdh0nGXgtMI_sGGfc2k"
+              "value": "FIELD~Ie9KvTv3egBYsJM3PWyDlsgQPmZtsOjKaF_O6Mt9sbJU"
             }
           },
           "Empty",
@@ -261,7 +217,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~H-Or6i-EKetOlRADfwyh91HLtQiMbHW2u-1vlzFVWIR_"
+              "value": "FIELD~u-06KhJ9Qmo5mu_BwSeQAzhtOCZyALu4PAhuCFKSuV-h"
             }
           },
           "Empty",
@@ -275,7 +231,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~KEDFMHv3GXrGTLRc-RtfjmXYRGqpSGYELhdOyZMIG1A6"
+              "value": "FIELD~Yg2fwKD32X8NaXWpraiHQlziAmJbBSoz2Xjog1CwSCEI"
             }
           },
           "Empty",
@@ -289,7 +245,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~EVlauo0m1cDqtXiU0yDR_27FMhDgBlRv-KHJrMBO9-uz"
+              "value": "FIELD~iqf4Yqs1NVKL5LYdqarTUntH8XkmopgBtvzE1w10ujbF"
             }
           },
           "Empty",
@@ -303,7 +259,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~bV5Dyo4p1w1SS_T3kQaQETYvk6B9wulFgR6LwVphYLSc"
+              "value": "FIELD~bQGFsO-hEZoFATm3HEk_P_-q8SAvFzu1hLwCo_JvOEHl"
             }
           },
           "Empty",
@@ -317,7 +273,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~8BHeeLZDswjv4RVxVU7OzSBVZEKAXE2keoVYaqCSlD2e"
+              "value": "FIELD~zVSFBic_Sz5uSl0yeH7P8jq3I-38iidBXjCclcdV4X9n"
             }
           },
           "Empty",
@@ -331,7 +287,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~BbVjRDSxAUeJr8Rb0teyye19nyl1nv7aVOPJgI4u5_8y"
+              "value": "FIELD~5ryvdsAtE-EwMUpkuuPtJAQj4sXAdu2XUQJ2kVSiQ2fA"
             }
           },
           "Empty",
@@ -345,7 +301,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~-byioZ-d9aJWA78JIECbAShWKpSP1oY6dA3dmECf2VCE"
+              "value": "FIELD~zfzMJ2V4f-9egiqHIlM7eJAu41EJDE4ZuGIGn6-CNMsZ"
             }
           },
           "Empty",
@@ -359,7 +315,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~K1YbIY2H5oL287IHKa6yx6xcFlP7CUzkmcV8IBEj1PCI"
+              "value": "FIELD~L64vMO89STwlzMQYQy9bNOqSxEWnxBw3LXbySeQxcVx_"
             }
           },
           "Empty",
@@ -373,7 +329,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~GKfopBcEWNTRR5WZjKaVQoNmjkcctVK2ZT1wCtUiGD33"
+              "value": "FIELD~w552miskK4oP6i0my3QBNwD181JNkgZS_ehzAts-2r2b"
             }
           },
           "Empty",
@@ -387,7 +343,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~cmDTqA8cfO0ur8bmVDgDx8kBVM0bsoaO_OfHsIYGmMF9"
+              "value": "FIELD~XhMV77tKRQ1G0Tn-AE7PkJbKRDA0FS5VSjv0GsHjVogo"
             }
           },
           "Empty",
@@ -401,7 +357,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~tEpimFrTG4rerRZq8VmL8thZr-uPmFZzgLxmF6uGnfiJ"
+              "value": "FIELD~r4xMMi7u_bzHsiD0-LIBtUqHOHTG35gGNkEgybxQW1GN"
             }
           },
           "Empty",
@@ -415,7 +371,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~mxjV6c-fPi5u-ZNPx8uEKGnE7M4YIbEajuQ6XzYHZznV"
+              "value": "FIELD~fVzwdnCY5Oj43qzbdUAcO26MZCI_Gm2UQbamAYj-CPAQ"
             }
           },
           "Empty",
@@ -429,7 +385,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~AAt3wK9LOKBKJn4fscymoUyfjVekh2HTnusq2BJHx41M"
+              "value": "FIELD~lLa7Y7rmE9X59Bzmv92wOW9oN1LATUvz0j2yB8QedeQy"
             }
           },
           "Empty",
@@ -443,7 +399,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~v_2MDur30BrECwxh60GASmR8l1ZOKjZwf_vwzWo75_DT"
+              "value": "FIELD~CUHyGjB0GVhqP8LWtOtt4I84-Y7IgjQmOwxS02dqBhQJ"
             }
           },
           "Empty",
@@ -457,7 +413,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~eYiFz9mKAQWmAVPWBOOnA-7fvIZ1j679TGZhekWU25eL"
+              "value": "FIELD~_E-jrEv-dSYQYY-3mPr_LBRDNnDBFt0OlvmwcMEtHMmX"
             }
           },
           "Empty",
@@ -471,7 +427,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~LcxK9TV_f2iPc0tWNwp-QS3x9yVdfk-HLAtgK3ISLMg3"
+              "value": "FIELD~08PGwZgmYTs8H2SdhEiiPz69pA6BGsqIs0M-fCX06vke"
             }
           },
           "Empty",
@@ -485,7 +441,7 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~DBzlj7BRQmUd2HaaFcVmMLEuxU-KyTgVBpZapBcuc6DX"
+              "value": "FIELD~cUQkS31DEti_t7JBpx0jIp4K0c8I7JlmciHb4U3RdvvY"
             }
           },
           "Empty",
@@ -499,7 +455,35 @@
         "children": [
           {
             "ForgettenSubtree": {
-              "value": "FIELD~nrtb2SGFhTKDsR7DbqXYuFL7ibEJNddGnoZLLUV9E7ih"
+              "value": "FIELD~sPPZFj1vip8jmgAhTUoHRhLHTDvpdFLI0t-j_7doyq8U"
+            }
+          },
+          "Empty",
+          "Empty"
+        ]
+      }
+    },
+    {
+      "Branch": {
+        "value": "FIELD~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-",
+        "children": [
+          {
+            "ForgettenSubtree": {
+              "value": "FIELD~0KOIDz32Qfco550RL9VpXjGH-gsND38bLe05oI7xnfeh"
+            }
+          },
+          "Empty",
+          "Empty"
+        ]
+      }
+    },
+    {
+      "Branch": {
+        "value": "FIELD~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-",
+        "children": [
+          {
+            "ForgettenSubtree": {
+              "value": "FIELD~nM4qk7fqLL6jyhnIXijjXFP_dlQsjoD_lvnEo6T0yCZQ"
             }
           },
           "Empty",
@@ -509,54 +493,56 @@
     }
   ],
   "header": {
-    "version": { "Version": { "major": 0, "minor": 99 } },
+    "version": {
+      "Version": {
+        "major": 0,
+        "minor": 3
+      }
+    },
     "fields": {
       "chain_config": {
         "chain_config": {
           "Left": {
             "chain_id": "35353",
-            "max_block_size": "30720",
+            "max_block_size": "1000000",
             "base_fee": "0",
             "fee_contract": null,
             "fee_recipient": "0x0000000000000000000000000000000000000000",
-            "bid_recipient": null
+            "stake_table_contract": "0x5e36aa9caaf5f708fca5c04d2d4c776a62b2b258"
           }
         }
       },
-      "height": 510,
-      "timestamp": 1734502770,
-      "l1_head": 41,
+      "height": 80,
+      "timestamp": 1744006915,
+      "l1_head": 57,
       "l1_finalized": {
         "number": 32,
-        "timestamp": "0x6762694a",
-        "hash": "0xcd7a250b6abb054c27f8fb2d6fa2e62c8dbb95b904437914acc885fdf2017850"
+        "timestamp": "0x67f36eaf",
+        "hash": "0x2ac25f94631bcfe556364afb04449a09a44131188bf2e3cd424fabb1de039c70"
       },
-      "payload_commitment": "HASH~MuhII73cvm-zUb_cdtPgTRGn2CDhvhy07B8Pyhfi5viH",
-      "builder_commitment": "BUILDER_COMMITMENT~gmA1Gee6U6RzYpNRa43ZvT26BOAlhzfYo48-G5FcLqFJ",
-      "ns_table": { "bytes": "AQAAALpKBgCGAAAA" },
-      "block_merkle_tree_root": "MERKLE_COMM~jHEKwZlTUooyZDXrrYWZf3aJLV1t33LROfNE5Ts9QxcgAAAAAAAAAP4BAAAAAAAAOA",
-      "fee_merkle_tree_root": "MERKLE_COMM~m9aCqlOO_G4dtM2WqzaxvWx_SkX_Q1iT-QOwFqo5n2wUAAAAAAAAAAIAAAAAAAAAkQ",
-      "fee_info": [
-        {
-          "account": "0x7103f704ee6272ad0228343b362eeb3199f7e2b1",
-          "amount": "1420"
-        }
-      ],
-      "builder_signature": [
-        {
-          "r": "0xd4ab47b72a29a32a1e119adb3c0d4dfeb91bff2ed382ae50e160914d9d84d8fa",
-          "s": "0x2b10b3b297b8c2577cf1584789e174131dbcfba3e26c72091a554a986e88fecc",
-          "v": 28
-        }
-      ],
-      "auction_results": {
-        "view_number": 0,
-        "winning_bids": [],
-        "reserve_bids": []
-      }
+      "payload_commitment": "AvidMCommit~QAbha89TvRxfRV6_fjl6HekQAdO1YroYV06E5RaIEBiH",
+      "builder_commitment": "BUILDER_COMMITMENT~BGBqJJU9wBCMy8sQVm6NmzDSJDiOj_oCMxrtsO5v2acl",
+      "ns_table": {
+        "bytes": "AQAAALpKBgCNAgAA"
+      },
+      "block_merkle_tree_root": "MERKLE_COMM~BqBgFaj-l_sgczQqnwYa2HUevV9ucbLuMKIW7QZO7QkgAAAAAAAAAFAAAAAAAAAAzg",
+      "fee_merkle_tree_root": "MERKLE_COMM~LDD0Z5jcx-LA_uh0XwPeK1t_yz2yUokTL2aQzbnWAAMUAAAAAAAAAAIAAAAAAAAACA",
+      "fee_info": {
+        "account": "0x7103f704ee6272ad0228343b362eeb3199f7e2b1",
+        "amount": "123"
+      },
+      "builder_signature": {
+        "r": "0x6a4b00d7cb9776fe7ebaef0bca5a3ac83c1e35d0514c61a0f50e66493f9830f7",
+        "s": "0x1385697831f6b63ca8b2c6bd04b8e3771752f3a361c827c3eb7c0590b907f42e",
+        "v": 28
+      },
+      "reward_merkle_tree_root": "MERKLE_COMM~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAKA"
     }
   },
   "header_commitment": null,
-  "block_merkle_root": "MERKLE_COMM~mHbU01CwGO6Gn9a9Rijv2SxW12MDsAJVevnnEUvwgkcgAAAAAAAAABEDAAAAAAAA2A",
-  "hotshot_commitment": "VvTt41nglBB7VWS5tROtZmrqgzgxgRZnn/SxnSP+OxM="
+  "block_merkle_root": "MERKLE_COMM~WULw5pBA-hHee7VvWOcxl60InHSYSeLQAMPQzQMYCPQgAAAAAAAAAFUAAAAAAAAARA",
+  "hotshot_commitment": [
+    123, 45, 110, 165, 217, 169, 136, 226, 222, 170, 162, 118, 228, 19, 70, 142,
+    180, 143, 239, 70, 243, 182, 78, 205, 238, 94, 191, 63, 30, 14, 231, 25
+  ]
 }

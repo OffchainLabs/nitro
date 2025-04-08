@@ -1,8 +1,23 @@
 {
-  "ns_proof": "eyJuc19pbmRleCI6WzAsMCwwLDBdLCJuc19wYXlsb2FkIjoiQVFBQUFINEFBQUFBQUFBQUFBQUFkZ1FDK0hLREJrcTZnSUNFQyt2Q0FJUUJ5Y09BbEFkaUNTbTB3UHhJQmd4UHJ6ZUxIb1ZvSEozaGh5T0c4bS9CQUFDQXdJQ2dPUnBwaVhHcEJhUjdydloxWlI2N0lGTDBwSDc2aWRaTjZMV0poUGQzK3hLZ1U2Qy9NdktyWGtvbENtMTQxWkIxVmxnUVRxSDRoNWZWNVBPUTBNd2tvN0k9IiwibnNfcHJvb2YiOnsicHJlZml4X2VsZW1zIjoiRklFTER+QUFBQUFBQUFBQUQ3Iiwic3VmZml4X2VsZW1zIjoiRklFTER+QUFBQUFBQUFBQUQ3IiwicHJlZml4X2J5dGVzIjpbXSwic3VmZml4X2J5dGVzIjpbXX19",
-  "vid_commit": "SEFTSH5NdWhJSTczY3ZtLXpVYl9jZHRQZ1RSR24yQ0Rodmh5MDdCOFB5aGZpNXZpSA==",
-  "vid_common": "eyJwb2x5X2NvbW1pdHMiOiJGSUVMRH5Bd0FBQUFBQUFBQURLYXAwRmNxTHQyN2tPd0I2NndmVVQ3TmVORWRRdV9zek1kY29MUFJqRWlSUmNQNjg0X09iR0JxS3hhc21weUVvZWxlY2p1Z2g5MU1JbmozaEVDd2VvWHdyYXNrcktkcGktT0ZMUS1lZXU5cjZqMnJhWUlRa3JNbEtrTjFDOGdnMiIsImFsbF9ldmFsc19kaWdlc3QiOiJGSUVMRH5IcUxaQi1MOUVCRjY3c1lPRzRHclU5VENpbl9EQ1dGb1BOY3NEMUJVamxhWiIsInBheWxvYWRfYnl0ZV9sZW4iOjEzNCwibnVtX3N0b3JhZ2Vfbm9kZXMiOjIsIm11bHRpcGxpY2l0eSI6MX0=",
-  "namespace": 412346,
-  "ns_table": "AQAAALpKBgCGAAAA",
-  "tx_commit": "YzNjOTMwMzU2YzM3NzVjNTg5MjlhYWJhNjBhZjUxNjliZDk3NThiNTlhMDUxOGM2NTYyYmUwNWJkMzZiNjJlZA=="
+  "ns_proof": {
+    "V1": {
+      "ns_index": 1,
+      "ns_payload": [
+        3, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, 6, 0, 0, 0, 20, 26, 250, 111, 72, 40
+      ],
+      "ns_proof": "MERKLE_PROOF~AQAAAAAAAAACAAAAAAAAADNAe8tCpbwU7tclwWHJAyVDH-p7mm83kt2n5BgglE31AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4"
+    }
+  },
+  "vid_commit": "AvidMCommit~gQ5kyqGmio2448wCian4xv1FHjhStmW0adt9f0z7r6GU",
+  "vid_common": {
+    "V1": {
+      "total_weights": 10,
+      "recovery_threshold": 5
+    }
+  },
+  "namespace": 3911702764,
+  "ns_table": [
+    2, 0, 0, 0, 36, 45, 0, 179, 31, 0, 0, 0, 236, 216, 39, 233, 53, 0, 0, 0
+  ],
+  "tx_commit": "fe0505a36be9ad1d8509f7ed28f4eabd96d2c3ce24adcdacaf0d194aa41c1fac"
 }

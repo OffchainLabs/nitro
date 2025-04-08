@@ -10,7 +10,7 @@
 
   outputs = { flake-utils, nixpkgs, foundry, rust-overlay, ... }:
     let
-      goVersion = 22; # Change this to update the whole stack
+      goVersion = 23; # Change this to update the whole stack
       overlays = [
         (import rust-overlay)
         (final: prev: rec {
@@ -29,13 +29,13 @@
         pkgs = import nixpkgs {
           inherit overlays system;
         };
-        stableToolchain = pkgs.rust-bin.stable."1.81.0".minimal.override {
+        stableToolchain = pkgs.rust-bin.stable."1.85.0".minimal.override {
           extensions = [ "rustfmt" "clippy" "llvm-tools-preview" "rust-src" ];
-          targets = [ "wasm32-unknown-unknown" "wasm32-wasi" ];
+          targets = [ "wasm32-unknown-unknown" "wasm32-wasip1" ];
         };
-        nightlyToolchain = pkgs.rust-bin.nightly."2024-10-06".minimal.override {
+        nightlyToolchain = pkgs.rust-bin.nightly."2024-12-17".minimal.override {
           extensions = [ "rust-src" ];
-          targets = [ "wasm32-unknown-unknown" "wasm32-wasi" ];
+          targets = [ "wasm32-unknown-unknown" "wasm32-wasip1" ];
         };
         # A script that calls nightly cargo if invoked with `+nightly`
         # as the first argument, otherwise it calls stable cargo.
@@ -144,6 +144,9 @@
                 # wasm
                 rust-cbindgen
                 wabt
+
+                # for dynamic linking
+                curl
 
                 # Docker
                 docker-compose # provides the `docker-compose` command
