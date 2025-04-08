@@ -482,10 +482,7 @@ func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
 	for i := currSeq + 1; i < 1000; i++ {
 		futureSeqTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
 		bobExpressLaneTxs = append(bobExpressLaneTxs, futureSeqTx)
-		go func(tx *types.Transaction, seqNum uint64) {
-			err := bobExpressLaneClient.SendTransactionWithSequence(ctx, tx, seqNum)
-			t.Logf("got error for tx: hash-%s, seqNum-%d, err-%s", tx.Hash(), seqNum, err.Error())
-		}(futureSeqTx, i)
+		Require(t, bobExpressLaneClient.QueueTransactionWithSequence(ctx, futureSeqTx, i))
 	}
 
 	// Alice will win the auction for next round = x+1
@@ -495,7 +492,7 @@ func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
 
 	Require(t, bobExpressLaneClient.SendTransactionWithSequence(ctx, unblockingTx, currSeq)) // the unblockingTx itself should ideally pass, but the released 1000 txs shouldn't affect the round for which alice has won the bid for
 
-	time.Sleep(500 * time.Millisecond) // Wait for controller change after the current round's end
+	time.Sleep(roundTimingInfo.TimeTilNextRound()) // Wait for controller change after the current round's end
 
 	// Check that Alice's tx gets priority since she's the controller
 	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
@@ -667,9 +664,8 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
-	httpConfig := genericconf.HTTPConfigDefault
-	httpConfig.Addr = "127.0.0.1"
-	httpConfig.Apply(builder.l2StackConfig)
+	builder.l2StackConfig.HTTPHost = "localhost"
+	builder.l2StackConfig.HTTPModules = []string{"eth", "arb"}
 	builder.execConfig.BlockMetadataApiCacheSize = 0 // Caching is disabled
 	cleanupSeq := builder.Build(t)
 	defer cleanupSeq()
