@@ -29,8 +29,11 @@ RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
 RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup
 WORKDIR /workspace
+COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
+RUN cd contracts-legacy && yarn install
 COPY contracts/package.json contracts/yarn.lock contracts/
 RUN cd contracts && yarn install
+COPY contracts-legacy contracts-legacy/
 COPY contracts contracts/
 COPY safe-smart-account safe-smart-account/
 RUN cd safe-smart-account && yarn install
@@ -84,6 +87,8 @@ COPY ./statetransfer ./statetransfer
 COPY ./util ./util
 COPY ./wavmio ./wavmio
 COPY ./zeroheavy ./zeroheavy
+COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
+COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
 COPY ./safe-smart-account ./safe-smart-account
@@ -94,6 +99,7 @@ COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
 COPY --from=contracts-builder workspace/contracts/build/contracts/src/precompiles/ contracts/build/contracts/src/precompiles/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/
+COPY --from=contracts-builder workspace/contracts-legacy/build/contracts/src/precompiles/ contracts-legacy/build/contracts/src/precompiles/
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
@@ -193,6 +199,7 @@ COPY ./Makefile ./
 COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
+COPY ./contracts-legacy ./contracts-legacy
 COPY ./safe-smart-account ./safe-smart-account
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
@@ -222,6 +229,7 @@ COPY ./scripts/download-machine.sh .
 RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
 RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
 RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
+RUN ./download-machine.sh consensus-v40-rc.1 0x6dae396b0b7644a2d63b4b22e6452b767aa6a04b6778dadebdd74aa40f40a5c5
 
 FROM golang:1.23.1-bookworm AS node-builder
 WORKDIR /workspace
@@ -243,6 +251,8 @@ COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
 COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
+COPY --from=contracts-builder workspace/contracts-legacy/build/ contracts-legacy/build/
+COPY --from=contracts-builder workspace/contracts-legacy/out/ contracts-legacy/out/
 COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-account/build/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/

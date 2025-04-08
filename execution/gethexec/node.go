@@ -192,9 +192,10 @@ func CreateExecutionNode(
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
+	syncTillBlock uint64,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain)
+	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -500,12 +501,12 @@ func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, err)
 }
 
-func (n *ExecutionNode) Synced() bool {
-	return n.SyncMonitor.Synced()
+func (n *ExecutionNode) Synced(ctx context.Context) bool {
+	return n.SyncMonitor.Synced(ctx)
 }
 
-func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
-	return n.SyncMonitor.FullSyncProgressMap()
+func (n *ExecutionNode) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
+	return n.SyncMonitor.FullSyncProgressMap(ctx)
 }
 
 func (n *ExecutionNode) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
@@ -515,8 +516,8 @@ func (n *ExecutionNode) SetFinalityData(ctx context.Context, finalityData *arbut
 
 func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *params.ChainConfig) error {
 	execNodeConfig := n.ConfigFetcher()
-	if execNodeConfig.Sequencer.Dangerous.Timeboost.Enable {
-		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctionContractAddress)
+	if execNodeConfig.Sequencer.Timeboost.Enable {
+		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress)
 
 		auctionContract, err := NewExpressLaneAuctionFromInternalAPI(
 			n.Backend.APIBackend(),
@@ -538,14 +539,14 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			auctionContract,
 			auctionContractAddr,
 			chainConfig,
-			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
+			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
 		)
 
 		n.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
 
 		if execNodeConfig.Sequencer.Enable {
 			err := n.Sequencer.InitializeExpressLaneService(
-				common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
+				common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress),
 				roundTimingInfo,
 				expressLaneTracker,
 			)
