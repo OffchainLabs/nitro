@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -120,6 +121,8 @@ type AuctioneerServer struct {
 	auctionResolutionWaitTime      time.Duration
 	database                       *SqliteDatabase
 	s3StorageService               *S3StorageService
+	unackedBidsMutex               sync.Mutex
+	unackedBids                    map[string]*JsonValidatedBid
 }
 
 // NewAuctioneerServer creates a new autonomous auctioneer struct.
@@ -215,6 +218,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		bidCache:                       newBidCache(domainSeparator),
 		roundTimingInfo:                *roundTimingInfo,
 		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,
+		unackedBids:                    make(map[string]*JsonValidatedBid),
 	}, nil
 }
 
@@ -267,12 +271,20 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 			// another thread, so as to not block this consumption thread.
 			a.bidsReceiver <- req.Value
 
-			// We received the message, then we ack with a nil error.
-			if err := a.consumer.SetResult(ctx, req.ID, nil); err != nil {
-				log.Error("Error setting result for request", "id", req.ID, "result", nil, "error", err)
-				return 0
-			}
+			// We use Redis streams to keep the message until the round ends in case the auctioneer
+			// dies mid round. On restart Consume will fetch any messages that weren't used to
+			// resolve an auction yet.
+			// Calling "Ack()" on the request does not actually call XACK on redis which is what
+			// causes the message to be removed from the stream. Ack() just stops the Consumer's
+			// XClaimJustID heartbeat goroutine, which is only to prevent other consumers from
+			// processing the message. This isn't important in this case since there is only
+			// one consumer, so it's better to Ack() it here to avoid one goroutine per
+			// message.
+			a.unackedBidsMutex.Lock()
+			a.unackedBids[req.ID] = req.Value
+			a.unackedBidsMutex.Unlock()
 			req.Ack()
+
 			return 0
 		})
 	})
@@ -340,6 +352,11 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	var err error
 	opts := copyTxOpts(a.txOpts)
 	opts.NoSend = true
+
+	// Once resolveAuction returns, we acknowledge all bids to remove them from redis.
+	// We remove them unconditionally, since resolveAuction retries until the round ends,
+	// and there is no way to use them after the round ends.
+	defer a.acknowledgeAllBids(ctx, upcomingRound)
 
 	sequencerRpc, newRpc, err := a.endpointManager.GetSequencerRPC(ctx)
 	if err != nil {
@@ -424,6 +441,25 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 
 	log.Info("Auction resolved successfully", "txHash", tx.Hash().Hex())
 	return nil
+}
+
+func (a *AuctioneerServer) acknowledgeAllBids(ctx context.Context, round uint64) {
+	a.unackedBidsMutex.Lock()
+	defer a.unackedBidsMutex.Unlock()
+
+	var acknowledgedCount int
+	for msgID, bid := range a.unackedBids {
+		if uint64(bid.Round) <= round {
+			if err := a.consumer.SetResult(ctx, msgID, nil); err != nil {
+				log.Error("Error acknowledging bid after auction resolution", "msgID", msgID, "error", err)
+				continue
+			}
+			delete(a.unackedBids, msgID)
+			acknowledgedCount++
+		}
+	}
+
+	log.Info("Acknowledged bids in redis stream", "count", acknowledgedCount)
 }
 
 // retryUntil retries a given operation defined by the closure until the specified duration
