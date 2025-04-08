@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/valnode"
+	valnoderedis "github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
 type mockSpawner struct {
@@ -198,10 +199,20 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 
 	serverAPI.Start(ctx)
 
+	var redisConsumer *valnoderedis.ValidationServer
+	if config.RedisValidationServerConfig.Enabled() {
+		redisConsumer, err = valnoderedis.NewValidationServer(&config.RedisValidationServerConfig, spawner)
+		Require(t, err)
+		redisConsumer.Start(ctx)
+	}
+
 	go func() {
 		<-ctx.Done()
 		stack.Close()
 		serverAPI.StopOnly()
+		if redisConsumer != nil {
+			redisConsumer.StopOnly()
+		}
 	}()
 
 	return spawner, stack
@@ -222,10 +233,10 @@ func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bo
 	defer cancel()
 	var client validator.ExecutionSpawner
 
-	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	if withBoldValidationConsumerProducer {
 		var redisBoldValidationClientConfig = &clientredis.TestValidationClientConfig
-		redisBoldValidationClientConfig.RedisURL = redisutil.CreateTestRedis(ctx, t)
+		redisUrl := redisutil.CreateTestRedis(ctx, t)
+		redisBoldValidationClientConfig.RedisURL = redisUrl
 		redisBoldValidationClientConfig.CreateStreams = true
 		redisValClient, err := redis.NewValidationClient(redisBoldValidationClientConfig)
 		Require(t, err)
@@ -233,8 +244,22 @@ func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bo
 		Require(t, err)
 		err = redisValClient.Initialize(ctx, mockWasmModuleRoots)
 		Require(t, err)
-		client = validatorclient.NewBoldExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisValClient, redisBoldValidationClientConfig, validationDefault)
+
+		config := server_arb.DefaultArbitratorSpawnerConfig
+		config.RedisValidationServerConfig = valnoderedis.TestValidationServerConfig
+		config.RedisValidationServerConfig.RedisURL = redisUrl
+		mockWasmModuleRootsStr := make([]string, len(mockWasmModuleRoots))
+		for _, moduleRoot := range mockWasmModuleRoots {
+			mockWasmModuleRootsStr = append(mockWasmModuleRootsStr, moduleRoot.Hex())
+		}
+		config.RedisValidationServerConfig.ModuleRoots = mockWasmModuleRootsStr
+		_, validationDefault := createMockValidationNode(t, ctx, &config)
+		executionClient := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
+		client = validatorclient.NewBoldExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisValClient, redisBoldValidationClientConfig, validationDefault, executionClient)
+		err = executionClient.Start(ctx)
+		Require(t, err)
 	} else {
+		_, validationDefault := createMockValidationNode(t, ctx, nil)
 		client = validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
 	}
 	err := client.Start(ctx)
@@ -286,7 +311,7 @@ func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bo
 	if res != endState {
 		t.Error("unexpected mock validation run")
 	}
-	execRun, err := client.CreateExecutionRun(wasmRoot, &valInput, false).Await(ctx)
+	execRun, err := client.CreateExecutionRun(wasmRoot, &valInput, true).Await(ctx)
 	Require(t, err)
 	step0 := execRun.GetStepAt(0)
 	step0Res, err := step0.Await(ctx)

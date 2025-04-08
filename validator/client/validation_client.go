@@ -285,19 +285,17 @@ func (r *ExecutionClientRun) Close() {
 
 type BoldExecutionClient struct {
 	*redis.BoldValidationClient
-	config rpcclient.ClientConfigFetcher
-	stack  *node.Node
+	executionClient *ExecutionClient
 }
 
-func NewBoldExecutionClient(config rpcclient.ClientConfigFetcher, redisValClient *redis.ValidationClient, redisBoldValidationClientConfig *redis.ValidationClientConfig, stack *node.Node) *BoldExecutionClient {
+func NewBoldExecutionClient(config rpcclient.ClientConfigFetcher, redisValClient *redis.ValidationClient, redisBoldValidationClientConfig *redis.ValidationClientConfig, stack *node.Node, executionClient *ExecutionClient) *BoldExecutionClient {
 	var validationClient *redis.BoldValidationClient
 	if redisBoldValidationClientConfig != nil && redisBoldValidationClientConfig.Enabled() {
 		validationClient = redis.NewBoldValidationClient(config, redisValClient, stack)
 	}
 	return &BoldExecutionClient{
 		BoldValidationClient: validationClient,
-		config:               config,
-		stack:                stack,
+		executionClient:      executionClient,
 	}
 }
 
@@ -315,7 +313,7 @@ func (c *BoldExecutionClient) CreateExecutionRun(
 		run := &ExecutionClientRun{
 			wasmModuleRoot: wasmModuleRoot,
 			boldClient:     c,
-			client:         NewExecutionClient(c.config, c.stack),
+			client:         c.executionClient,
 			id:             res,
 			input:          input,
 		}
