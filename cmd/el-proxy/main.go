@@ -12,7 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync/atomic"
+	"sync"
 	"syscall"
 	"time"
 
@@ -78,8 +78,9 @@ type ExpressLaneProxy struct {
 	expressLaneTracker  *gethexec.ExpressLaneTracker
 	dataSignerFunc      signature.DataSignerFunc
 
-	lastRoundNumber    uint64
-	nextSequenceNumber atomic.Uint64
+	seqNumAssignmentMutex sync.Mutex
+	lastRoundNumber       uint64
+	nextSequenceNumber    uint64
 }
 
 type HeaderProviderAdapter struct {
@@ -95,7 +96,7 @@ func NewExpressLaneProxy(
 	config *ExpressLaneProxyConfig,
 	stack *node.Node,
 ) (*ExpressLaneProxy, error) {
-	client, err := GetClientFromURL(ctx, config.ExpressLaneURL, nil)
+	client, err := GetClientFromURL(ctx, config.RPCURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -203,25 +204,23 @@ func (p *ExpressLaneProxy) buildSignature(data []byte) ([]byte, error) {
 }
 
 func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (common.Hash, error) {
+	p.seqNumAssignmentMutex.Lock()
 	roundNumber := p.roundTimingInfo.RoundNumber()
 	if roundNumber != p.lastRoundNumber {
-		p.nextSequenceNumber.Store(0)
+		p.nextSequenceNumber = 0
+		p.lastRoundNumber = roundNumber
 	}
 
-	var nextSeqNumber uint64
-	for {
-		nextSeqNumber = p.nextSequenceNumber.Load()
-		if swapped := p.nextSequenceNumber.CompareAndSwap(nextSeqNumber, nextSeqNumber+1); swapped {
-			break
-		}
-	}
+	curSeqNumber := p.nextSequenceNumber
+	p.nextSequenceNumber++
+	p.seqNumAssignmentMutex.Unlock()
 
 	wrapper := timeboost.JsonExpressLaneSubmission{
 		ChainId:                (*hexutil.Big)(big.NewInt(p.config.ChainId)),
 		Round:                  (hexutil.Uint64)(roundNumber),
 		AuctionContractAddress: p.auctionContractAddr,
 		Transaction:            input,
-		SequenceNumber:         (hexutil.Uint64)(nextSeqNumber),
+		SequenceNumber:         (hexutil.Uint64)(curSeqNumber),
 		Signature:              []byte{}, // It is set below
 	}
 	goWrapper, err := timeboost.JsonSubmissionToGo(&wrapper)
@@ -243,16 +242,23 @@ func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil
 		return common.Hash{}, fmt.Errorf("Error getting client: %w", err)
 	}
 
+	log.Info("Sending timeboost_sendExpressLaneTransaction", "round", roundNumber, "seqNum", curSeqNumber, "txHash", goWrapper.Transaction.Hash().Hex())
 	err = client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", &wrapper)
 	if err != nil {
 		// Immediately rejected EL txs don't consume sequence numbers.
-		// TODO We need to be more clever about how we track rejected txs so we don't end up with gaps in the
-		// event of parallel txs.
-		p.nextSequenceNumber.Store(nextSeqNumber)
+		p.seqNumAssignmentMutex.Lock()
+		if p.nextSequenceNumber == curSeqNumber+1 {
+			// As long as no further sequence numbers were assigned we can just decrement this.
+			p.nextSequenceNumber--
+		} else {
+			// TODO We need to implement gap filling here to handle parallel failed txs.
+			log.Warn("Request failed but sequence number not able to be rolled back")
+		}
+		p.seqNumAssignmentMutex.Unlock()
 		return common.Hash{}, fmt.Errorf("Error forwarding msg: %w", err)
 	}
 
-	return common.Hash{}, err
+	return goWrapper.Transaction.Hash(), nil
 }
 
 //// We need to proxy some other methods for tools like cast to use when building txs.
@@ -263,7 +269,7 @@ func (p *ExpressLaneProxy) ChainId(_ context.Context) hexutil.Uint64 {
 }
 
 func (p *ExpressLaneProxy) GetTransactionCount(ctx context.Context, address common.Address, blockNumOrHash rpc.BlockNumberOrHash) (hexutil.Uint64, error) {
-	client, err := GetClientFromURL(ctx, p.config.ExpressLaneURL, nil)
+	client, err := GetClientFromURL(ctx, p.config.RPCURL, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -276,7 +282,7 @@ func (p *ExpressLaneProxy) GetTransactionCount(ctx context.Context, address comm
 func (p *ExpressLaneProxy) FeeHistory(ctx context.Context, blockCount hexutil.Uint64, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (json.RawMessage, error) {
 	var result json.RawMessage
 
-	client, err := GetClientFromURL(ctx, p.config.ExpressLaneURL, nil)
+	client, err := GetClientFromURL(ctx, p.config.RPCURL, nil)
 	if err != nil {
 		return result, err
 	}
@@ -286,7 +292,7 @@ func (p *ExpressLaneProxy) FeeHistory(ctx context.Context, blockCount hexutil.Ui
 }
 
 func (p *ExpressLaneProxy) BlockNumber(ctx context.Context) (uint64, error) {
-	client, err := GetClientFromURL(ctx, p.config.ExpressLaneURL, nil)
+	client, err := GetClientFromURL(ctx, p.config.RPCURL, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -297,12 +303,25 @@ func (p *ExpressLaneProxy) BlockNumber(ctx context.Context) (uint64, error) {
 func (p *ExpressLaneProxy) GetBlockByNumber(ctx context.Context, blockNum *rpc.BlockNumber, includeTxData bool) (json.RawMessage, error) {
 	var result json.RawMessage
 
-	client, err := GetClientFromURL(ctx, p.config.ExpressLaneURL, nil)
+	client, err := GetClientFromURL(ctx, p.config.RPCURL, nil)
 	if err != nil {
 		return result, err
 	}
 
 	err = client.CallContext(ctx, &result, "eth_getBlockByNumber", blockNum, includeTxData)
+	return result, err
+}
+
+func (p *ExpressLaneProxy) GetTransactionReceipt(ctx context.Context, txHash hexutil.Bytes, opts *json.RawMessage) (json.RawMessage, error) {
+	log.Debug("Received eth_getTransactionReceipt", "txHash", txHash)
+
+	var result json.RawMessage
+	client, err := GetClientFromURL(ctx, p.config.RPCURL, nil)
+	if err != nil {
+		return result, err
+	}
+
+	err = client.CallContext(ctx, &result, "eth_getTransactionReceipt", txHash, opts)
 	return result, err
 
 }

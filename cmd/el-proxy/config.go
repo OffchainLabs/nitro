@@ -18,6 +18,7 @@ import (
 
 type ExpressLaneProxyConfig struct {
 	ExpressLaneURL         string                   `koanf:"express-lane-url"`
+	RPCURL                 string                   `koanf:"rpc-url"`
 	ChainId                int64                    `koanf:"chain-id"`
 	AuctionContractAddress string                   `koanf:"auction-contract-address"`
 	Wallet                 genericconf.WalletConfig `koanf:"wallet"`
@@ -61,6 +62,7 @@ var IPCConfigDefault = genericconf.IPCConfig{
 
 var ExpressLaneProxyConfigDefault = ExpressLaneProxyConfig{
 	ExpressLaneURL:         "http://localhost:8547",
+	RPCURL:                 "http://localhost:8547",
 	ChainId:                412346, // nitro-testnode chainid
 	AuctionContractAddress: "",
 
@@ -78,7 +80,8 @@ var ExpressLaneProxyConfigDefault = ExpressLaneProxyConfig{
 }
 
 func ExpressLaneProxyConfigAddOptions(f *flag.FlagSet) {
-	f.String("express-lane-url", ExpressLaneProxyConfigDefault.ExpressLaneURL, "URL to proxy to. It should expose the RPC method timeboost_sendExpressLaneTransaction")
+	f.String("express-lane-url", ExpressLaneProxyConfigDefault.ExpressLaneURL, "URL to send timeboost_sendExpressLaneTransaction requests to")
+	f.String("rpc-url", ExpressLaneProxyConfigDefault.RPCURL, "URL to proxy to all other RPC requests to")
 	f.Int64("chain-id", ExpressLaneProxyConfigDefault.ChainId, "Chain ID of the chain being proxied to")
 	f.String("auction-contract-address", ExpressLaneProxyConfigDefault.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
 	genericconf.WalletConfigAddOptions("wallet", f, "wallet with account for proxy to use to sign txs")
