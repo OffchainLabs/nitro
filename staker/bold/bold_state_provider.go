@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
@@ -368,7 +367,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	input, err := entry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
+	input, err := entry.ToInput([]rawdb.WasmTarget{rawdb.TargetWavm})
 	if err != nil {
 		return nil, err
 	}
@@ -522,7 +521,7 @@ func (s *BOLDStateProvider) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	input, err := entry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
+	input, err := entry.ToInput([]rawdb.WasmTarget{rawdb.TargetWavm})
 	if err != nil {
 		return nil, err
 	}
