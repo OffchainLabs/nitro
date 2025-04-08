@@ -822,10 +822,10 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	// update wanting the lockout
 	var wantsLockoutErr error
 	if synced && !c.AvoidingLockout() {
-		//lint:ignore nilerr we want to retry after redis error
+		//nolint:nilerr	// we want to retry after redis error
 		wantsLockoutErr = c.wantsLockoutUpdate(ctx, c.RedisCoordinator().Client)
 	} else {
-		//lint:ignore nilerr we want to retry after redis error
+		//nolint:nilerr	// we want to retry after redis error
 		wantsLockoutErr = c.wantsLockoutRelease(ctx)
 	}
 	if wantsLockoutErr != nil {
@@ -833,7 +833,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	}
 
 	if (wantsLockoutErr != nil) || (msgReadErr != nil) {
-		//lint:ignore nilerr we want to retry after redis error
+		//nolint:nilerr	// we want to retry after redis error
 		return c.retryAfterRedisError(), nil
 	}
 	return c.noRedisError(), nil

@@ -139,7 +139,8 @@ const (
 )
 
 type BatchPosterDangerousConfig struct {
-	AllowPostingFirstBatchWhenSequencerMessageCountMismatch bool `koanf:"allow-posting-first-batch-when-sequencer-message-count-mismatch"`
+	AllowPostingFirstBatchWhenSequencerMessageCountMismatch bool   `koanf:"allow-posting-first-batch-when-sequencer-message-count-mismatch"`
+	FixedGasLimit                                           uint64 `koanf:"fixed-gas-limit"`
 }
 
 type BatchPosterConfig struct {
@@ -209,6 +210,7 @@ type BatchPosterConfigFetcher func() *BatchPosterConfig
 
 func DangerousBatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".allow-posting-first-batch-when-sequencer-message-count-mismatch", DefaultBatchPosterConfig.Dangerous.AllowPostingFirstBatchWhenSequencerMessageCountMismatch, "allow posting the first batch even if sequence number doesn't match chain (useful after force-inclusion)")
+	f.Uint64(prefix+".fixed-gas-limit", DefaultBatchPosterConfig.Dangerous.FixedGasLimit, "use this gas limit for batch posting instead of estimating it")
 }
 
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -1669,9 +1671,14 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	// In theory, this might reduce gas usage, but only by a factor that's already
 	// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
 	// posts a new delayed message that we didn't see while gas estimating.
-	gasLimit, err := b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList, delayProof)
-	if err != nil {
-		return false, err
+	var gasLimit uint64
+	if b.config().Dangerous.FixedGasLimit != 0 {
+		gasLimit = b.config().Dangerous.FixedGasLimit
+	} else {
+		gasLimit, err = b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList, delayProof)
+		if err != nil {
+			return false, err
+		}
 	}
 	newMeta, err := rlp.EncodeToBytes(batchPosterPosition{
 		MessageCount:        b.building.msgCount,
