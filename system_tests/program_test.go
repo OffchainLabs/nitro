@@ -2263,6 +2263,8 @@ func deployWasmAndGetEntrySizeEstimateBytes(
 	return programAddress, entrySizeEstimateBytes
 }
 
+// TestWasmLruCache shouldn't be run in parallel as it targets global Wasm LRU Cache,
+// programs.ClearWasmLruCache is called in the test.
 func TestWasmLruCache(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
@@ -2359,6 +2361,8 @@ func checkLruCacheMetrics(t *testing.T, expected programs.WasmLruCacheMetrics) {
 	}
 }
 
+// TestWasmLongTermCache shouldn't be run in parallel as it targets global Wasm Long Term Cache,
+// programs.ClearWasmLongTermCache is called in the test.
 func TestWasmLongTermCache(t *testing.T) {
 	builder, ownerAuth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
@@ -2495,6 +2499,8 @@ func TestWasmLongTermCache(t *testing.T) {
 	})
 }
 
+// TestRepopulateWasmLongTermCacheFromLru shouldn't be run in parallel as it targets global Wasm Long Term Cache and Wasm LRU Cache,
+// programs.ClearWasmLongTermCache and programs.ClearWasmLruCache are called in the test.o
 func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 	builder, ownerAuth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
