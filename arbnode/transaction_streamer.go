@@ -1119,10 +1119,6 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 }
 
 func (s *TransactionStreamer) WriteSequencedMsg(sequencedMsg *execution.SequencedMsg) error {
-	if err := s.ExpectChosenSequencer(); err != nil {
-		return err
-	}
-
 	headMsgIdx, err := s.GetHeadMessageIndex()
 	expectedMsgIdx := headMsgIdx + 1
 	if errors.Is(err, ErrNoMessages) {
