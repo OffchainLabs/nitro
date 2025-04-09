@@ -437,6 +437,9 @@ func TestRedisSwitchover(t *testing.T) {
 
 	redisClient.Set(ctx, redisutil.CHOSENSEQ_KEY, redisutil.SWITCHED_REDIS, time.Duration(-1))
 
+	// Wait for new sequencer to be elected
+	time.Sleep(1 * time.Second)
+
 	verifyTxIsProcessed(t, ctx, builder, testClientB, 1e12*2)
 
 	// Wait for all messages to be processed, before closing old redisClient
