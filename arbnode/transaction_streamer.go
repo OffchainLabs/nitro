@@ -245,6 +245,15 @@ func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) e
 
 func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.MessageWithMetadata) {
 	if s.execSequencer != nil {
+		if err := s.ExpectChosenSequencer(); err != nil {
+			if errors.Is(err, execution.ErrRetrySequencer) {
+				log.Debug("Not active sequencer, not resequencing reorged messages", "err", err)
+			} else {
+				log.Error("Error expecting chosen sequencer when resequencing reorged messages", "err", err)
+			}
+			return
+		}
+
 		for _, msg := range msgs {
 			sequencedMsg, sequenceNextMsg := s.execSequencer.ResequenceReorgedMessage(msg)
 
