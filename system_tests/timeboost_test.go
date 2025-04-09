@@ -478,13 +478,14 @@ func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
 	bobExpressLaneClient.Unlock()
 
 	// Send bunch of future txs so that they are queued up waiting for the unblocking seq num tx
-	endFloodingBeforeThisDurationToNextRound := time.Second
+	// endFloodingDuration represents the duration before which at the end of this round that we would like to stop flooding with txs
+	endFloodingDuration := time.Second
 	var bobExpressLaneTxs types.Transactions
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func(w *sync.WaitGroup) {
 		for i := currSeq + 1; i < 1000; i++ {
-			if roundTimingInfo.TimeTilNextRound() < endFloodingBeforeThisDurationToNextRound {
+			if roundTimingInfo.TimeTilNextRound() < endFloodingDuration {
 				break
 			}
 			futureSeqTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
@@ -497,12 +498,12 @@ func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
 	// Alice will win the auction for next round = x+1
 	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Alice", "Bob", aliceBidderClient, bobBidderClient, roundDuration)
 
-	time.Sleep(roundTimingInfo.TimeTilNextRound() - endFloodingBeforeThisDurationToNextRound/2) // we'll wait till the endFloodingBeforeThisDurationToNextRound/2 duration to the next round and then send the unblocking tx
+	time.Sleep(roundTimingInfo.TimeTilNextRound() - endFloodingDuration/2) // we'll wait till the endFloodingBeforeThisDurationToNextRound/2 duration to the next round and then send the unblocking tx
 	wg.Wait()
 
 	Require(t, bobExpressLaneClient.SendTransactionWithSequence(ctx, unblockingTx, currSeq)) // the unblockingTx itself should ideally pass, but the released 1000 txs shouldn't affect the round for which alice has won the bid for
 
-	time.Sleep(endFloodingBeforeThisDurationToNextRound / 2) // Wait for controller change after the current round's end
+	time.Sleep(endFloodingDuration / 2) // Wait for controller change after the current round's end
 
 	// Check that Alice's tx gets priority since she's the controller
 	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
