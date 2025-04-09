@@ -9,7 +9,7 @@ package programs
 // This file exists because cgo isn't allowed in tests
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #include "arbitrator.h"
 
 typedef uint16_t u16;
@@ -20,6 +20,7 @@ typedef size_t usize;
 void handleReqWrap(usize api, u32 req_type, RustSlice *data, u64 *out_cost, GoSliceData *out_result, GoSliceData *out_raw_data);
 */
 import "C"
+
 import (
 	"fmt"
 	"os"
@@ -34,10 +35,10 @@ func Wat2Wasm(wat []byte) ([]byte, error) {
 	status := C.wat_to_wasm(goSlice(wat), output)
 
 	if status != 0 {
-		return nil, fmt.Errorf("failed reading wat file: %v", string(output.intoBytes()))
+		return nil, fmt.Errorf("failed reading wat file: %v", string(rustBytesIntoBytes(output)))
 	}
 
-	return output.intoBytes(), nil
+	return rustBytesIntoBytes(output), nil
 }
 
 func testCompileArch(store bool) error {
@@ -65,7 +66,7 @@ func testCompileArch(store bool) error {
 		cbool(nativeArm64))
 
 	if status != 0 {
-		return fmt.Errorf("failed setting compilation target arm: %v", string(output.intoBytes()))
+		return fmt.Errorf("failed setting compilation target arm: %v", string(rustBytesIntoBytes(output)))
 	}
 
 	status = C.stylus_target_set(goSlice(amd64CompileName),
@@ -74,7 +75,7 @@ func testCompileArch(store bool) error {
 		cbool(nativeAmd64))
 
 	if status != 0 {
-		return fmt.Errorf("failed setting compilation target amd: %v", string(output.intoBytes()))
+		return fmt.Errorf("failed setting compilation target amd: %v", string(rustBytesIntoBytes(output)))
 	}
 
 	source, err := os.ReadFile("../../arbitrator/stylus/tests/add.wat")
@@ -106,7 +107,7 @@ func testCompileArch(store bool) error {
 		output,
 	)
 	if status == 0 {
-		return fmt.Errorf("succeeded compiling non-existent arch: %v", string(output.intoBytes()))
+		return fmt.Errorf("succeeded compiling non-existent arch: %v", string(rustBytesIntoBytes(output)))
 	}
 
 	status = C.stylus_compile(
@@ -117,7 +118,7 @@ func testCompileArch(store bool) error {
 		output,
 	)
 	if status != 0 {
-		return fmt.Errorf("failed compiling native: %v", string(output.intoBytes()))
+		return fmt.Errorf("failed compiling native: %v", string(rustBytesIntoBytes(output)))
 	}
 	if store && !nativeAmd64 && !nativeArm64 {
 		_, err := fmt.Printf("writing host file\n")
@@ -125,7 +126,7 @@ func testCompileArch(store bool) error {
 			return err
 		}
 
-		err = os.WriteFile("../../target/testdata/host.bin", output.intoBytes(), 0644)
+		err = os.WriteFile("../../target/testdata/host.bin", rustBytesIntoBytes(output), 0644)
 		if err != nil {
 			return err
 		}
@@ -139,7 +140,7 @@ func testCompileArch(store bool) error {
 		output,
 	)
 	if status != 0 {
-		return fmt.Errorf("failed compiling arm: %v", string(output.intoBytes()))
+		return fmt.Errorf("failed compiling arm: %v", string(rustBytesIntoBytes(output)))
 	}
 	if store {
 		_, err := fmt.Printf("writing arm file\n")
@@ -147,7 +148,7 @@ func testCompileArch(store bool) error {
 			return err
 		}
 
-		err = os.WriteFile("../../target/testdata/arm64.bin", output.intoBytes(), 0644)
+		err = os.WriteFile("../../target/testdata/arm64.bin", rustBytesIntoBytes(output), 0644)
 		if err != nil {
 			return err
 		}
@@ -161,7 +162,7 @@ func testCompileArch(store bool) error {
 		output,
 	)
 	if status != 0 {
-		return fmt.Errorf("failed compiling amd: %v", string(output.intoBytes()))
+		return fmt.Errorf("failed compiling amd: %v", string(rustBytesIntoBytes(output)))
 	}
 	if store {
 		_, err := fmt.Printf("writing amd64 file\n")
@@ -169,7 +170,7 @@ func testCompileArch(store bool) error {
 			return err
 		}
 
-		err = os.WriteFile("../../target/testdata/amd64.bin", output.intoBytes(), 0644)
+		err = os.WriteFile("../../target/testdata/amd64.bin", rustBytesIntoBytes(output), 0644)
 		if err != nil {
 			return err
 		}
@@ -194,7 +195,7 @@ func resetNativeTarget() error {
 		cbool(true))
 
 	if status != 0 {
-		return fmt.Errorf("failed setting compilation target arm: %v", string(output.intoBytes()))
+		return fmt.Errorf("failed setting compilation target arm: %v", string(rustBytesIntoBytes(output)))
 	}
 
 	return nil
@@ -259,7 +260,7 @@ func testCompileLoad() error {
 		return err
 	}
 
-	_, msg, err := status.toResult(output.intoBytes(), true)
+	_, msg, err := status.toResult(rustBytesIntoBytes(output), true)
 	if status == userFailure {
 		err = fmt.Errorf("%w: %v", err, msg)
 	}

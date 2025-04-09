@@ -14,9 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -33,11 +34,11 @@ func TestContractTxDeploy(t *testing.T) {
 	builder.L2.TransferBalanceTo(t, "Faucet", from, big.NewInt(1e18), builder.L2Info)
 
 	for stateNonce := uint64(0); stateNonce < 2; stateNonce++ {
-		pos, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+		msgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
 		var delayedMessagesRead uint64
-		if pos > 0 {
-			lastMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(pos - 1)
+		if msgCount > 0 {
+			lastMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(msgCount - 1)
 			Require(t, err)
 			delayedMessagesRead = lastMessage.DelayedMessagesRead
 		}
@@ -54,7 +55,7 @@ func TestContractTxDeploy(t *testing.T) {
 		// #nosec G115
 		requestId[0] = uint8(stateNonce)
 		contractTx := &types.ArbitrumContractTx{
-			ChainId:   params.ArbitrumDevTestChainConfig().ChainID,
+			ChainId:   chaininfo.ArbitrumDevTestChainConfig().ChainID,
 			RequestId: requestId,
 			From:      from,
 			GasFeeCap: big.NewInt(1e9),
@@ -70,7 +71,7 @@ func TestContractTxDeploy(t *testing.T) {
 		l2Msg = append(l2Msg, arbmath.U256Bytes(contractTx.Value)...)
 		l2Msg = append(l2Msg, contractTx.Data...)
 
-		err = builder.L2.ConsensusNode.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadata{
+		err = builder.L2.ConsensusNode.TxStreamer.AddMessages(msgCount, true, []arbostypes.MessageWithMetadata{
 			{
 				Message: &arbostypes.L1IncomingMessage{
 					Header: &arbostypes.L1IncomingMessageHeader{
@@ -86,7 +87,7 @@ func TestContractTxDeploy(t *testing.T) {
 				},
 				DelayedMessagesRead: delayedMessagesRead,
 			},
-		})
+		}, nil)
 		Require(t, err)
 
 		txHash := types.NewTx(contractTx).Hash()

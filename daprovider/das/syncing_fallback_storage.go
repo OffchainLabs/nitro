@@ -12,12 +12,16 @@ import (
 	"sync"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
@@ -25,7 +29,6 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	flag "github.com/spf13/pflag"
 )
 
 var sequencerInboxABI *abi.ABI
@@ -244,7 +247,7 @@ func FindDASDataFromLog(
 	inboxContract *bridgegen.SequencerInbox,
 	deliveredEvent *bridgegen.SequencerInboxSequencerBatchDelivered,
 	inboxAddr common.Address,
-	l1Client arbutil.L1Interface,
+	l1Client *ethclient.Client,
 	batchDeliveredLog types.Log) ([]byte, error) {
 	data := []byte{}
 	if deliveredEvent.DataLocation == uint8(batchDataSeparateEvent) {

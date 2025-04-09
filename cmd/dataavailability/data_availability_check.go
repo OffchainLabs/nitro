@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -27,8 +29,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/metricsutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-
-	flag "github.com/spf13/pflag"
 )
 
 // Data availability check is done to as to make sure that the data that is being stored by DAS is available at all time.

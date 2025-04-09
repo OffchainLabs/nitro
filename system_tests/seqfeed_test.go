@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"net"
 	"reflect"
 	"testing"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -61,7 +61,7 @@ func TestSequencerFeed(t *testing.T) {
 	defer cleanupSeq()
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
-	port := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testhelpers.AddrTCPPort(seqNode.BroadcastServer.ListenerAddr(), t)
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	builder.takeOwnership = false
@@ -107,7 +107,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	Require(t, err)
 
 	config := relay.ConfigDefault
-	port := seqNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testhelpers.AddrTCPPort(seqNode.BroadcastServer.ListenerAddr(), t)
 	config.Node.Feed.Input = *newBroadcastClientConfigTest(port)
 	config.Node.Feed.Output = *newBroadcasterConfigTest()
 	config.Chain.ID = bigChainId.Uint64()
@@ -119,7 +119,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	Require(t, err)
 	defer currentRelay.StopAndWait()
 
-	port = currentRelay.GetListenerAddr().(*net.TCPAddr).Port
+	port = testhelpers.AddrTCPPort(currentRelay.GetListenerAddr(), t)
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	builder.takeOwnership = false
@@ -149,33 +149,33 @@ func TestRelayedSequencerFeed(t *testing.T) {
 
 func compareAllMsgResultsFromConsensusAndExecution(
 	t *testing.T,
+	ctx context.Context,
 	testClient *TestClient,
 	testScenario string,
 ) *execution.MessageResult {
-	execHeadMsgNum, err := testClient.ExecNode.HeadMessageNumber()
+	execHeadMsgIdx, err := testClient.ExecNode.HeadMessageIndex().Await(context.Background())
 	Require(t, err)
-	consensusMsgCount, err := testClient.ConsensusNode.TxStreamer.GetMessageCount()
+	consensusHeadMsgIdx, err := testClient.ConsensusNode.TxStreamer.GetHeadMessageIndex()
 	Require(t, err)
-	if consensusMsgCount != execHeadMsgNum+1 {
+	if consensusHeadMsgIdx != execHeadMsgIdx {
 		t.Fatal(
-			"consensusMsgCount", consensusMsgCount, "is different than (execHeadMsgNum + 1)", execHeadMsgNum,
+			"consensusHeadMsgIdx", consensusHeadMsgIdx, "is different than execHeadMsgIdx", execHeadMsgIdx,
 			"testScenario:", testScenario,
 		)
 	}
 
 	var lastResult *execution.MessageResult
-	for msgCount := arbutil.MessageIndex(1); msgCount <= consensusMsgCount; msgCount++ {
-		pos := msgCount - 1
-		resultExec, err := testClient.ExecNode.ResultAtPos(arbutil.MessageIndex(pos))
+	for msgIdx := arbutil.MessageIndex(0); msgIdx <= consensusHeadMsgIdx; msgIdx++ {
+		resultExec, err := testClient.ExecNode.ResultAtMessageIndex(arbutil.MessageIndex(msgIdx)).Await(ctx)
 		Require(t, err)
 
-		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(msgCount)
+		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtMessageIndex(arbutil.MessageIndex(msgIdx))
 		Require(t, err)
 
 		if !reflect.DeepEqual(resultExec, resultConsensus) {
 			t.Fatal(
 				"resultExec", resultExec, "is different than resultConsensus", resultConsensus,
-				"pos:", pos,
+				"msgIdx:", msgIdx,
 				"testScenario:", testScenario,
 			)
 		}
@@ -219,7 +219,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer cleanupC()
 	l2clientC, nodeC := testClientC.Client, testClientC.ConsensusNode
 
-	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testhelpers.AddrTCPPort(nodeC.BroadcastServer.ListenerAddr(), t)
 
 	// The client node, connects to lying sequencer's feed
 	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
@@ -267,7 +267,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
 
-	fraudResult := compareAllMsgResultsFromConsensusAndExecution(t, testClientB, "fraud")
+	fraudResult := compareAllMsgResultsFromConsensusAndExecution(t, ctx, testClientB, "fraud")
 
 	// Send the real transaction to client A, will cause a reorg on nodeB
 	err = l2clientA.SendTransaction(ctx, realTx)
@@ -302,24 +302,24 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	}
 
 	// Since NodeB is not a sequencer, it will produce blocks through Consensus.
-	// So it is expected that Consensus.ResultAtCount will not rely on Execution to retrieve results.
-	// However, since count 1 is related to genesis, and Execution is initialized through InitializeArbosInDatabase and not through Consensus,
-	// first call to Consensus.ResultAtCount with count equals to 1 will fall back to Execution.
-	// Not necessarily the first call to Consensus.ResultAtCount with count equals to 1 will happen through compareMsgResultFromConsensusAndExecution,
+	// So it is expected that Consensus.ResultAtMessageIndex will not rely on Execution to retrieve results.
+	// However, since msgIdx 0 is related to genesis, and Execution is initialized through InitializeArbosInDatabase and not through Consensus,
+	// first call to Consensus.ResultAtMessageIndex with msgIdx equals to 0 will fall back to Execution.
+	// Not necessarily the first call to Consensus.ResultAtMessageIndex with msgIdx equals to 0 will happen through compareMsgResultFromConsensusAndExecution,
 	// so we don't test this here.
-	consensusMsgCount, err := testClientB.ConsensusNode.TxStreamer.GetMessageCount()
+	consensusHeadMsgIdx, err := testClientB.ConsensusNode.TxStreamer.GetHeadMessageIndex()
 	Require(t, err)
-	if consensusMsgCount != 2 {
-		t.Fatal("consensusMsgCount is different than 2")
+	if consensusHeadMsgIdx != 1 {
+		t.Fatal("consensusHeadMsgIdx is different than 1")
 	}
 	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
-	_, err = testClientB.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(2))
+	_, err = testClientB.ConsensusNode.TxStreamer.ResultAtMessageIndex(arbutil.MessageIndex(1))
 	Require(t, err)
 	if logHandler.WasLogged(arbnode.FailedToGetMsgResultFromDB) {
 		t.Fatal("Consensus relied on execution database to return the result")
 	}
 	// Consensus should update message result stored in its database after a reorg
-	realResult := compareAllMsgResultsFromConsensusAndExecution(t, testClientB, "real")
+	realResult := compareAllMsgResultsFromConsensusAndExecution(t, ctx, testClientB, "real")
 	// Checks that results changed
 	if reflect.DeepEqual(fraudResult, realResult) {
 		t.Fatal("realResult and fraudResult are equal")
@@ -361,7 +361,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	}
 	defer wsBroadcastServer.StopAndWait()
 
-	port := wsBroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testhelpers.AddrTCPPort(wsBroadcastServer.ListenerAddr(), t)
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
@@ -468,7 +468,7 @@ func TestPopulateFeedBacklog(t *testing.T) {
 
 	// Creates a sink node that will read from the output feed of the previous node.
 	nodeConfigSink := builder.nodeConfig
-	port := builder.L2.ConsensusNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port := testhelpers.AddrTCPPort(builder.L2.ConsensusNode.BroadcastServer.ListenerAddr(), t)
 	nodeConfigSink.Feed.Input = *newBroadcastClientConfigTest(port)
 	testClientSink, cleanupSink := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigSink})
 	defer cleanupSink()

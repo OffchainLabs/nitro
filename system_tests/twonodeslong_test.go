@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
-
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 func testTwoNodesLong(t *testing.T, dasModeStr string) {
@@ -101,7 +101,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		}
 
 		// adding multiple messages in the same Add with local=true to get them in the same L1 block
-		errs := builder.L1.L1Backend.TxPool().Add(l1Txs, true, false)
+		errs := builder.L1.L1Backend.TxPool().Add(l1Txs, false)
 		for _, err := range errs {
 			if err != nil {
 				Fatal(t, err)

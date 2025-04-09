@@ -14,8 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -24,6 +22,10 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/timeboost"
+	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type ForwarderConfig struct {
@@ -139,12 +141,62 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 		} else {
 			err = arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 		}
+		if err != nil {
+			log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
+		}
 		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
 			return err
 		}
-		log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
 	}
 	return errors.New("failed to publish transaction to any of the forwarding targets")
+}
+
+func (f *TxForwarder) PublishExpressLaneTransaction(inctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	if !f.enabled.Load() {
+		return ErrNoSequencer
+	}
+	ctx, cancelFunc := f.ctxWithTimeout()
+	defer cancelFunc()
+	for pos, rpcClient := range f.rpcClients {
+		err := sendExpressLaneTransactionRPC(ctx, rpcClient, msg)
+		if err != nil {
+			log.Warn("error forwarding express lane transaction to a backup target", "target", f.targets[pos], "err", err)
+		}
+		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
+			return err
+		}
+	}
+	return errors.New("failed to publish transaction to any of the forwarding targets")
+}
+
+func sendExpressLaneTransactionRPC(ctx context.Context, rpcClient *rpc.Client, msg *timeboost.ExpressLaneSubmission) error {
+	jsonMsg, err := msg.ToJson()
+	if err != nil {
+		return err
+	}
+	return rpcClient.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", jsonMsg)
+}
+
+func (f *TxForwarder) PublishAuctionResolutionTransaction(inctx context.Context, tx *types.Transaction) error {
+	if !f.enabled.Load() {
+		return ErrNoSequencer
+	}
+	ctx, cancelFunc := f.ctxWithTimeout()
+	defer cancelFunc()
+	for pos, rpcClient := range f.rpcClients {
+		err := sendAuctionResolutionTransactionRPC(ctx, rpcClient, tx)
+		if err != nil {
+			log.Warn("error forwarding auction resolution transaction to a backup target", "target", f.targets[pos], "err", err)
+		}
+		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
+			return err
+		}
+	}
+	return errors.New("failed to publish transaction to any of the forwarding targets")
+}
+
+func sendAuctionResolutionTransactionRPC(ctx context.Context, rpcClient *rpc.Client, tx *types.Transaction) error {
+	return rpcClient.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx)
 }
 
 const cacheUpstreamHealth = 2 * time.Second
@@ -243,6 +295,14 @@ func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transactio
 	return txDropperErr
 }
 
+func (f *TxDropper) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	return txDropperErr
+}
+
+func (f *TxDropper) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	return txDropperErr
+}
+
 func (f *TxDropper) CheckHealth(ctx context.Context) error {
 	return txDropperErr
 }
@@ -284,6 +344,22 @@ func (f *RedisTxForwarder) PublishTransaction(ctx context.Context, tx *types.Tra
 		return ErrNoSequencer
 	}
 	return forwarder.PublishTransaction(ctx, tx, options)
+}
+
+func (f *RedisTxForwarder) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	forwarder := f.getForwarder()
+	if forwarder == nil {
+		return ErrNoSequencer
+	}
+	return forwarder.PublishExpressLaneTransaction(ctx, msg)
+}
+
+func (f *RedisTxForwarder) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	forwarder := f.getForwarder()
+	if forwarder == nil {
+		return ErrNoSequencer
+	}
+	return forwarder.PublishAuctionResolutionTransaction(ctx, tx)
 }
 
 func (f *RedisTxForwarder) CheckHealth(ctx context.Context) error {

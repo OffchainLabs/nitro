@@ -26,13 +26,15 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -134,12 +136,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	builder.L1.TransferBalance(t, "Faucet", "ValidatorB", balance, builder.L1Info)
 	l1authB := builder.L1Info.GetDefaultTransactOpts("ValidatorB", ctx)
 
-	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
+	rollup, err := rollup_legacy_gen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 
 	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err, "unable to bind upgrade executor")
-	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	rollupABI, err := abi.JSON(strings.NewReader(rollup_legacy_gen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
 	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
@@ -149,10 +151,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	validatorUtils, err := rollupgen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, builder.L1.Client)
+	validatorUtils, err := rollup_legacy_gen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, builder.L1.Client)
 	Require(t, err)
 
-	valConfigA := staker.TestL1ValidatorConfig
+	valConfigA := legacystaker.TestL1ValidatorConfig
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
@@ -208,11 +210,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
-	stakerA, err := staker.NewStaker(
+	stakerA, err := legacystaker.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletA,
 		bind.CallOpts{},
-		func() *staker.L1ValidatorConfig { return &valConfigA },
+		func() *legacystaker.L1ValidatorConfig { return &valConfigA },
 		nil,
 		statelessA,
 		nil,
@@ -222,13 +224,13 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
-	if stakerA.Strategy() != staker.WatchtowerStrategy {
+	if stakerA.Strategy() != legacystaker.WatchtowerStrategy {
 		err = valWalletA.Initialize(ctx)
 		Require(t, err)
 	}
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
@@ -246,7 +248,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
-	valConfigB := staker.TestL1ValidatorConfig
+	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
@@ -261,11 +263,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	err = statelessB.Start(ctx)
 	Require(t, err)
-	stakerB, err := staker.NewStaker(
+	stakerB, err := legacystaker.NewStaker(
 		l2nodeB.L1Reader,
 		valWalletB,
 		bind.CallOpts{},
-		func() *staker.L1ValidatorConfig { return &valConfigB },
+		func() *legacystaker.L1ValidatorConfig { return &valConfigB },
 		nil,
 		statelessB,
 		nil,
@@ -276,18 +278,18 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
 	Require(t, err)
-	if stakerB.Strategy() != staker.WatchtowerStrategy {
+	if stakerB.Strategy() != legacystaker.WatchtowerStrategy {
 		err = valWalletB.Initialize(ctx)
 		Require(t, err)
 	}
 	valWalletC := validatorwallet.NewNoOp(builder.L1.Client, l2nodeA.DeployInfo.Rollup)
-	valConfigC := staker.TestL1ValidatorConfig
+	valConfigC := legacystaker.TestL1ValidatorConfig
 	valConfigC.Strategy = "Watchtower"
-	stakerC, err := staker.NewStaker(
+	stakerC, err := legacystaker.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletC,
 		bind.CallOpts{},
-		func() *staker.L1ValidatorConfig { return &valConfigC },
+		func() *legacystaker.L1ValidatorConfig { return &valConfigC },
 		nil,
 		statelessA,
 		nil,
@@ -296,7 +298,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 	)
 	Require(t, err)
-	if stakerC.Strategy() != staker.WatchtowerStrategy {
+	if stakerC.Strategy() != legacystaker.WatchtowerStrategy {
 		err = valWalletC.Initialize(ctx)
 		Require(t, err)
 	}
@@ -362,7 +364,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				if !challengeMangerTimedOut {
 					// Upgrade the ChallengeManager contract to an implementation which says challenges are always timed out
 
-					mockImpl, tx, _, err := mocksgen.DeployTimedOutChallengeManager(&deployAuth, builder.L1.Client)
+					mockImpl, tx, _, err := mocks_legacy_gen.DeployTimedOutChallengeManager(&deployAuth, builder.L1.Client)
 					Require(t, err)
 					_, err = builder.L1.EnsureTxSucceeded(tx)
 					Require(t, err)
@@ -377,7 +379,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 						Fatal(t, "failed to get challenge manager proxy admin")
 					}
 
-					proxyAdminABI, err := abi.JSON(strings.NewReader(mocksgen.ProxyAdminForBindingABI))
+					proxyAdminABI, err := abi.JSON(strings.NewReader(mocks_legacy_gen.ProxyAdminForBindingABI))
 					Require(t, err)
 					upgradeCalldata, err := proxyAdminABI.Pack("upgrade", managerAddr, mockImpl)
 					Require(t, err)
@@ -409,7 +411,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		if faultyStaker {
 			conflictInfo, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, l2nodeA.DeployInfo.Rollup, l1authA.From, srv.Address, big.NewInt(1024))
 			Require(t, err)
-			if staker.ConflictType(conflictInfo.Ty) == staker.CONFLICT_TYPE_FOUND {
+			if legacystaker.ConflictType(conflictInfo.Ty) == legacystaker.CONFLICT_TYPE_FOUND {
 				cancelBackgroundTxs()
 			}
 		}
@@ -503,7 +505,7 @@ func TestGetValidatorWalletContractWithDataposterOnlyUsedToCreateValidatorWallet
 		parentChainID,
 	)
 	if err != nil {
-		log.Crit("error creating data poster to create validator wallet contract", "err", err)
+		Fatal(t, "error creating data poster to create validator wallet contract", "err", err)
 	}
 	getExtraGas := func() uint64 { return builder.nodeConfig.Staker.ExtraGas }
 

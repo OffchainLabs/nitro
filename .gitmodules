@@ -23,6 +23,9 @@
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git
+[submodule "bold"]
+	path = bold
+	url = https://github.com/OffchainLabs/bold.git
 [submodule "arbitrator/langs/rust"]
 	path = arbitrator/langs/rust
 	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
@@ -35,3 +38,6 @@
 [submodule "safe-smart-account"]
 	path = safe-smart-account
 	url = https://github.com/safe-global/safe-smart-account.git
+[submodule "contracts-legacy"]
+	path = contracts-legacy
+	url = https://github.com/OffchainLabs/nitro-contracts.git

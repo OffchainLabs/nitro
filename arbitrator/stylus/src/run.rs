@@ -1,21 +1,21 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![allow(clippy::redundant_closure_call)]
 
 use crate::{env::Escape, native::NativeInstance};
-use arbutil::evm::api::{DataReader, EvmApi};
+use arbutil::evm::api::{DataReader, EvmApi, Ink};
 use arbutil::evm::user::UserOutcome;
 use eyre::{eyre, Result};
 use prover::machine::Machine;
 use prover::programs::{prelude::*, STYLUS_ENTRY_POINT};
 
 pub trait RunProgram {
-    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: u64) -> Result<UserOutcome>;
+    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome>;
 }
 
 impl RunProgram for Machine {
-    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: u64) -> Result<UserOutcome> {
+    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome> {
         macro_rules! call {
             ($module:expr, $func:expr, $args:expr) => {
                 call!($module, $func, $args, |error| UserOutcome::Failure(error))
@@ -65,7 +65,7 @@ impl RunProgram for Machine {
 }
 
 impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
-    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: u64) -> Result<UserOutcome> {
+    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome> {
         use UserOutcome::*;
 
         self.set_ink(ink);

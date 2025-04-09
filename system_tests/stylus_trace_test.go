@@ -6,17 +6,21 @@ package arbtest
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
+	"math"
 	"math/big"
 	"testing"
+
+	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -25,11 +29,15 @@ import (
 var skipCheck = []byte("skip")
 
 func checkOpcode(t *testing.T, result logger.ExecutionResult, index int, wantOp vm.OpCode, wantStack ...[]byte) {
-	CheckEqual(t, wantOp.String(), result.StructLogs[index].Op, "wrong opcode")
+	t.Helper()
+	var structLog StructLogRes
+	err := json.Unmarshal(result.StructLogs[index], &structLog)
+	Require(t, err, "failed to unmarshal structure log")
+	CheckEqual(t, wantOp.String(), structLog.Op, "wrong opcode")
 	for i, wantBytes := range wantStack {
 		if !bytes.Equal(wantBytes, skipCheck) {
 			wantVal := uint256.NewInt(0).SetBytes(wantBytes).Hex()
-			logStack := *result.StructLogs[index].Stack
+			logStack := *structLog.Stack
 			// the stack is in reverse order in log
 			if i > len(logStack) {
 				Fatal(t, "missing values in log stack")
@@ -61,12 +69,15 @@ func sendAndTraceTransaction(
 
 	colors.PrintGrey("Call trace:")
 	colors.PrintGrey("i\tdepth\topcode\tstack")
-	for i, log := range result.StructLogs {
-		if log.Stack == nil {
+	for i := range result.StructLogs {
+		var structLog StructLogRes
+		err := json.Unmarshal(result.StructLogs[i], &structLog)
+		Require(t, err, "failed to unmarshal structure log")
+		if structLog.Stack == nil {
 			stack := []string{}
-			log.Stack = &stack
+			structLog.Stack = &stack
 		}
-		colors.PrintGrey(i, "\t", log.Depth, "\t", log.Op, "\t", *log.Stack)
+		colors.PrintGrey(i, "\t", structLog.Depth, "\t", structLog.Op, "\t", *structLog.Stack)
 		if i > 100 {
 			break
 		}
@@ -435,7 +446,7 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	args := multicallEmptyArgs()
 	// We have to load first; otherwise, Stylus optimize-out the load after a store.
 	args = multicallAppendLoad(args, key, true)
-	args = multicallAppendStore(args, key, value, true)
+	args = multicallAppendStore(args, key, value, true, false)
 
 	// Trace recursive call in wasm
 	wasmMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
@@ -444,7 +455,7 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	wasmResult := sendAndTraceTransaction(t, builder, wasmMulticall, nil, wasmArgs)
 
 	// Trace recursive call in evm
-	evmMulticall, tx, _, err := mocksgen.DeployMultiCallTest(&auth, builder.L2.Client)
+	evmMulticall, tx, _, err := mocks_legacy_gen.DeployMultiCallTest(&auth, builder.L2.Client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
@@ -477,4 +488,18 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	// outer return
 	checkOpcode(t, wasmResult, 12, vm.RETURN, offset, returnLen)
 	checkOpcode(t, evmResult, 5078, vm.RETURN, offset, returnLen)
+}
+
+func TestStylusHugeWriteResultTrace(t *testing.T) {
+	const jit = false
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	program := deployWasm(t, ctx, auth, l2client, watFile("write-result-len"))
+	const returnLen = math.MaxUint16 + 1
+	args := binary.LittleEndian.AppendUint32(nil, returnLen)
+	result := sendAndTraceTransaction(t, builder, program, nil, args)
+	checkOpcode(t, result, 3, vm.RETURN, nil, intToBe32(returnLen))
 }

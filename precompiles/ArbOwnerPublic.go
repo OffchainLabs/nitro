@@ -5,6 +5,7 @@ package precompiles
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // ArbOwnerPublic precompile provides non-owners with info about the current chain owners.
@@ -42,7 +43,7 @@ func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 
 // GetInfraFeeAccount gets the infrastructure fee collector
 func (con ArbOwnerPublic) GetInfraFeeAccount(c ctx, evm mech) (addr, error) {
-	if c.State.ArbOSVersion() < 6 {
+	if c.State.ArbOSVersion() < params.ArbosVersion_6 {
 		return c.State.NetworkFeeAccount()
 	}
 	return c.State.InfraFeeAccount()
@@ -64,4 +65,10 @@ func (con ArbOwnerPublic) GetScheduledUpgrade(c ctx, evm mech) (uint64, uint64, 
 		return 0, 0, nil
 	}
 	return version, timestamp, nil
+}
+
+// IsCalldataPriceIncreaseEnabled checks if the increased calldata price feature
+// (EIP-7623) is enabled
+func (con ArbOwnerPublic) IsCalldataPriceIncreaseEnabled(c ctx, _ mech) (bool, error) {
+	return c.State.Features().IsIncreasedCalldataPriceEnabled()
 }

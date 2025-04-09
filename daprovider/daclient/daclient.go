@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/rpcclient"
-	"github.com/spf13/pflag"
 )
 
 type Client struct {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -22,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -50,7 +52,13 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	return header
 }
 
-type WavmChainContext struct{}
+type WavmChainContext struct {
+	chainConfig *params.ChainConfig
+}
+
+func (c WavmChainContext) Config() *params.ChainConfig {
+	return c.chainConfig
+}
 
 func (c WavmChainContext) Engine() consensus.Engine {
 	return arbos.Engine{}
@@ -187,7 +195,7 @@ func main() {
 	populateEcdsaCaches()
 
 	raw := rawdb.NewDatabase(PreimageDb{})
-	db := state.NewDatabase(raw)
+	db := state.NewDatabase(triedb.NewDatabase(raw, nil), nil)
 
 	lastBlockHash := wavmio.GetLastBlockHash()
 
@@ -291,8 +299,8 @@ func main() {
 
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
-		chainContext := WavmChainContext{}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false)
+		chainContext := WavmChainContext{chainConfig: chainConfig}
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.MessageReplayMode)
 		if err != nil {
 			panic(err)
 		}

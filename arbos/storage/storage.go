@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -21,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -67,7 +69,7 @@ var cacheFullLogged atomic.Bool
 // NewGeth uses a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
-	statedb.SetNonce(account, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
+	statedb.SetNonce(account, 1, tracing.NonceChangeUnspecified) // setting the nonce ensures Geth won't treat ArbOS as empty
 	return &Storage{
 		account:    account,
 		db:         statedb,
@@ -91,8 +93,8 @@ func NewMemoryBackedStateDB() vm.StateDB {
 	if env.GetTestStateScheme() == rawdb.HashScheme {
 		trieConfig = &triedb.Config{Preimages: false, HashDB: hashdb.Defaults}
 	}
-	db := state.NewDatabaseWithConfig(raw, trieConfig)
-	statedb, err := state.New(common.Hash{}, db, nil)
+	db := state.NewDatabase(triedb.NewDatabase(raw, trieConfig), nil)
+	statedb, err := state.New(common.Hash{}, db)
 	if err != nil {
 		panic("failed to init empty statedb")
 	}
@@ -129,7 +131,7 @@ func (s *Storage) Get(key common.Hash) (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	if info := s.burner.TracingInfo(); info != nil {
-		info.RecordStorageGet(key)
+		info.RecordStorageGet(s.mapAddress(key))
 	}
 	return s.GetFree(key), nil
 }
@@ -166,7 +168,7 @@ func (s *Storage) Set(key common.Hash, value common.Hash) error {
 		return err
 	}
 	if info := s.burner.TracingInfo(); info != nil {
-		info.RecordStorageSet(key, value)
+		info.RecordStorageSet(s.mapAddress(key), value)
 	}
 	s.db.SetState(s.account, s.mapAddress(key), value)
 	return nil

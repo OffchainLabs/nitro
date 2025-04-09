@@ -10,22 +10,22 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/offchainlabs/nitro/daprovider"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/client/redis"
-
 	validatorclient "github.com/offchainlabs/nitro/validator/client"
+	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
 type StatelessBlockValidator struct {
@@ -41,6 +41,7 @@ type StatelessBlockValidator struct {
 	streamer     TransactionStreamerInterface
 	db           ethdb.Database
 	dapReaders   []daprovider.Reader
+	stack        *node.Node
 }
 
 type BlockValidatorRegistrer interface {
@@ -59,8 +60,8 @@ type InboxTrackerInterface interface {
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
 	GetProcessedMessageCount() (arbutil.MessageIndex, error)
-	GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
-	ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error)
+	GetMessage(msgIdx arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
+	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error)
 	PauseReorgs()
 	ResumeReorgs()
 	ChainConfig() *params.ChainConfig
@@ -68,6 +69,7 @@ type TransactionStreamerInterface interface {
 
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error)
+	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
 }
 
 type GlobalStatePosition struct {
@@ -114,6 +116,13 @@ const (
 	ReadyForRecord
 	Ready
 )
+
+type FullBatchInfo struct {
+	Number     uint64
+	PostedData []byte
+	MsgCount   arbutil.MessageIndex
+	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
+}
 
 type validationEntry struct {
 	Stage ValidationEntryStage
@@ -172,16 +181,28 @@ func newValidationEntry(
 	start validator.GoGlobalState,
 	end validator.GoGlobalState,
 	msg *arbostypes.MessageWithMetadata,
-	batch []byte,
-	batchBlockHash common.Hash,
+	fullBatchInfo *FullBatchInfo,
+	prevBatches []validator.BatchInfo,
 	prevDelayed uint64,
 	chainConfig *params.ChainConfig,
 ) (*validationEntry, error) {
-	batchInfo := validator.BatchInfo{
-		Number:    start.Batch,
-		BlockHash: batchBlockHash,
-		Data:      batch,
+	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	if fullBatchInfo == nil {
+		return nil, fmt.Errorf("fullbatchInfo cannot be nil")
 	}
+	if fullBatchInfo.Number != start.Batch {
+		return nil, fmt.Errorf("got wrong batch expected: %d got: %d", start.Batch, fullBatchInfo.Number)
+	}
+	valBatches := []validator.BatchInfo{
+		{
+			Number: fullBatchInfo.Number,
+			Data:   fullBatchInfo.PostedData,
+		},
+	}
+	valBatches = append(valBatches, prevBatches...)
+
+	copyPreimagesInto(preimages, fullBatchInfo.Preimages)
+
 	hasDelayed := false
 	var delayedNum uint64
 	if msg.DelayedMessagesRead == prevDelayed+1 {
@@ -190,6 +211,7 @@ func newValidationEntry(
 	} else if msg.DelayedMessagesRead != prevDelayed {
 		return nil, fmt.Errorf("illegal validation entry delayedMessage %d, previous %d", msg.DelayedMessagesRead, prevDelayed)
 	}
+
 	return &validationEntry{
 		Stage:         ReadyForRecord,
 		Pos:           pos,
@@ -198,8 +220,9 @@ func newValidationEntry(
 		HasDelayedMsg: hasDelayed,
 		DelayedMsgNr:  delayedNum,
 		msg:           msg,
-		BatchInfo:     []validator.BatchInfo{batchInfo},
+		BatchInfo:     valBatches,
 		ChainConfig:   chainConfig,
+		Preimages:     preimages,
 	}, nil
 }
 
@@ -244,33 +267,107 @@ func NewStatelessBlockValidator(
 		db:             arbdb,
 		dapReaders:     dapReaders,
 		execSpawners:   executionSpawners,
+		stack:          stack,
 	}, nil
 }
 
-func (v *StatelessBlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, []byte, common.Hash, arbutil.MessageIndex, error) {
+func (v *StatelessBlockValidator) readPostedBatch(ctx context.Context, batchNum uint64) ([]byte, error) {
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
-		return false, nil, common.Hash{}, 0, err
+		return nil, err
 	}
 	if batchCount <= batchNum {
-		return false, nil, common.Hash{}, 0, nil
+		return nil, fmt.Errorf("batch not found: %d", batchNum)
+	}
+	postedData, _, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+	return postedData, err
+}
+
+func (v *StatelessBlockValidator) InboxTracker() InboxTrackerInterface {
+	return v.inboxTracker
+}
+
+func (v *StatelessBlockValidator) InboxReader() InboxReaderInterface {
+	return v.inboxReader
+}
+
+func (v *StatelessBlockValidator) InboxStreamer() TransactionStreamerInterface {
+	return v.streamer
+}
+
+func (v *StatelessBlockValidator) ExecutionSpawners() []validator.ExecutionSpawner {
+	return v.execSpawners
+}
+
+func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum uint64) (bool, *FullBatchInfo, error) {
+	batchCount, err := v.inboxTracker.GetBatchCount()
+	if err != nil {
+		return false, nil, err
+	}
+	if batchCount <= batchNum {
+		return false, nil, nil
 	}
 	batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchNum)
 	if err != nil {
-		return false, nil, common.Hash{}, 0, err
+		return false, nil, err
 	}
-	batch, batchBlockHash, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+	postedData, batchBlockHash, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 	if err != nil {
-		return false, nil, common.Hash{}, 0, err
+		return false, nil, err
 	}
-	return true, batch, batchBlockHash, batchMsgCount, nil
+	preimages := make(daprovider.PreimagesMap)
+	if len(postedData) > 40 {
+		foundDA := false
+		for _, dapReader := range v.dapReaders {
+			if dapReader != nil && dapReader.IsValidHeaderByte(ctx, postedData[40]) {
+				var err error
+				var preimagesRecorded daprovider.PreimagesMap
+				_, preimagesRecorded, err = dapReader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, postedData, preimages, true)
+				if err != nil {
+					// Matches the way keyset validation was done inside DAS readers i.e logging the error
+					//  But other daproviders might just want to return the error
+					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(postedData[40]) {
+						log.Error(err.Error())
+					} else {
+						return false, nil, err
+					}
+				} else {
+					preimages = preimagesRecorded
+				}
+				foundDA = true
+				break
+			}
+		}
+		if !foundDA {
+			if daprovider.IsDASMessageHeaderByte(postedData[40]) {
+				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
+			}
+		}
+	}
+	fullInfo := FullBatchInfo{
+		Number:     batchNum,
+		PostedData: postedData,
+		MsgCount:   batchMsgCount,
+		Preimages:  preimages,
+	}
+	return true, &fullInfo, nil
+}
+
+func copyPreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]byte) {
+	for piType, piMap := range source {
+		if dest[piType] == nil {
+			dest[piType] = make(map[common.Hash][]byte, len(piMap))
+		}
+		for hash, preimage := range piMap {
+			dest[piType][hash] = preimage
+		}
+	}
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
-	e.Preimages = make(daprovider.PreimagesMap)
 	if e.Pos != 0 {
 		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg)
 		if err != nil {
@@ -279,30 +376,11 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if recording.BlockHash != e.End.BlockHash {
 			return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
 		}
-		// record any additional batch fetching
-		batchFetcher := func(batchNum uint64) ([]byte, error) {
-			found, data, hash, _, err := v.readBatch(ctx, batchNum)
-			if err != nil {
-				return nil, err
-			}
-			if !found {
-				return nil, errors.New("batch not found")
-			}
-			e.BatchInfo = append(e.BatchInfo, validator.BatchInfo{
-				Number:    batchNum,
-				BlockHash: hash,
-				Data:      data,
-			})
-			return data, nil
-		}
-		e.msg.Message.BatchGasCost = nil
-		err = e.msg.Message.FillInBatchGasCost(batchFetcher)
-		if err != nil {
-			return err
-		}
-
 		if recording.Preimages != nil {
-			e.Preimages[arbutil.Keccak256PreimageType] = recording.Preimages
+			recordingPreimages := map[arbutil.PreimageType]map[common.Hash][]byte{
+				arbutil.Keccak256PreimageType: recording.Preimages,
+			}
+			copyPreimagesInto(e.Preimages, recordingPreimages)
 		}
 		e.UserWasms = recording.UserWasms
 	}
@@ -317,44 +395,12 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		e.DelayedMsg = delayedMsg
 	}
-	for _, batch := range e.BatchInfo {
-		if len(batch.Data) <= 40 {
-			continue
-		}
-		foundDA := false
-		for _, dapReader := range v.dapReaders {
-			if dapReader != nil && dapReader.IsValidHeaderByte(ctx, batch.Data[40]) {
-				var err error
-				var preimages daprovider.PreimagesMap
-				_, preimages, err = dapReader.RecoverPayloadFromBatch(ctx, batch.Number, batch.BlockHash, batch.Data, e.Preimages, true)
-				if err != nil {
-					// Matches the way keyset validation was done inside DAS readers i.e logging the error
-					//  But other daproviders might just want to return the error
-					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
-						log.Error(err.Error())
-					} else {
-						return err
-					}
-				} else {
-					e.Preimages = preimages
-				}
-				foundDA = true
-				break
-			}
-		}
-		if !foundDA {
-			if daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
-				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
-			}
-		}
-	}
-
 	e.msg = nil // no longer needed
 	e.Stage = Ready
 	return nil
 }
 
-func buildGlobalState(res execution.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
+func BuildGlobalState(res execution.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
 		SendRoot:   res.SendRoot,
@@ -386,33 +432,54 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	result, err := v.streamer.ResultAtCount(pos + 1)
+	result, err := v.streamer.ResultAtMessageIndex(pos)
 	if err != nil {
 		return nil, err
 	}
 	var prevDelayed uint64
+	prevResult := &execution.MessageResult{}
 	if pos > 0 {
 		prev, err := v.streamer.GetMessage(pos - 1)
 		if err != nil {
 			return nil, err
 		}
 		prevDelayed = prev.DelayedMessagesRead
+		prevResult, err = v.streamer.ResultAtMessageIndex(pos - 1)
+		if err != nil {
+			return nil, err
+		}
 	}
-	prevResult, err := v.streamer.ResultAtCount(pos)
-	if err != nil {
-		return nil, err
-	}
+
 	startPos, endPos, err := v.GlobalStatePositionsAtCount(pos + 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed calculating position for validation: %w", err)
 	}
-	start := buildGlobalState(*prevResult, startPos)
-	end := buildGlobalState(*result, endPos)
-	seqMsg, batchBlockHash, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
+	start := BuildGlobalState(*prevResult, startPos)
+	end := BuildGlobalState(*result, endPos)
+	found, fullBatchInfo, err := v.readFullBatch(ctx, start.Batch)
 	if err != nil {
 		return nil, err
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, v.streamer.ChainConfig())
+	if !found {
+		return nil, fmt.Errorf("batch %d not found", startPos.BatchNumber)
+	}
+
+	prevBatchNums, err := msg.Message.PastBatchesRequired()
+	if err != nil {
+		return nil, err
+	}
+	prevBatches := make([]validator.BatchInfo, 0, len(prevBatchNums))
+	for _, batchNum := range prevBatchNums {
+		data, err := v.readPostedBatch(ctx, batchNum)
+		if err != nil {
+			return nil, err
+		}
+		prevBatches = append(prevBatches, validator.BatchInfo{
+			Number: batchNum,
+			Data:   data,
+		})
+	}
+	entry, err := newValidationEntry(pos, start, end, msg, fullBatchInfo, prevBatches, prevDelayed, v.streamer.ChainConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -464,6 +531,18 @@ func (v *StatelessBlockValidator) ValidateResult(
 		return false, &gsEnd, err
 	}
 	return true, &entry.End, nil
+}
+
+func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, targets ...ethdb.WasmTarget) (server_api.InputJSON, error) {
+	entry, err := v.CreateReadyValidationEntry(ctx, pos)
+	if err != nil {
+		return server_api.InputJSON{}, err
+	}
+	input, err := entry.ToInput(targets)
+	if err != nil {
+		return server_api.InputJSON{}, err
+	}
+	return *server_api.ValidationInputToJson(input), nil
 }
 
 func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execution.ExecutionRecorder) {

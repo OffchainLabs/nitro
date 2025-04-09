@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
@@ -86,7 +87,8 @@ func (n NodeInterface) msgNumToInboxBatch(msgIndex arbutil.MessageIndex) (uint64
 	if fetcher == nil {
 		return 0, false, errors.New("batch fetcher not set")
 	}
-	return fetcher.FindInboxBatchContainingMessage(msgIndex)
+	inboxBatch, err := fetcher.FindInboxBatchContainingMessage(msgIndex).Await(n.context)
+	return inboxBatch.BatchNum, inboxBatch.Found, err
 }
 
 func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
@@ -132,7 +134,7 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if !found {
 		return 0, nil
 	}
-	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum)
+	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum).Await(n.context)
 	if err != nil {
 		return 0, err
 	}
@@ -404,7 +406,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 	if !balanced {
 		// This tree isn't balanced, so we'll need to use the partials to recover the missing info.
-		// To do this, we'll walk the boundry of what's known, computing hashes along the way
+		// To do this, we'll walk the boundary of what's known, computing hashes along the way
 
 		step := *minPartialPlace
 		step.Leaf += 1 << step.Level // we start on the min partial's zero-hash sibling
@@ -522,10 +524,14 @@ func (n NodeInterface) GasEstimateL1Component(
 	args.Gas = (*hexutil.Uint64)(&randomGas)
 
 	// We set the run mode to eth_call mode here because we want an exact estimate, not a padded estimate
-	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB), core.MessageEthcallMode)
-	if err != nil {
+	if err := args.CallDefaults(randomGas, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
 		return 0, nil, nil, err
 	}
+	sdb, ok := evm.StateDB.(*state.StateDB)
+	if !ok {
+		return 0, nil, nil, errors.New("failed to cast to stateDB")
+	}
+	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, sdb, core.MessageEthcallMode, true, true)
 
 	pricing := c.State.L1PricingState()
 	l1BaseFeeEstimate, err := pricing.PricePerUnit()
@@ -567,7 +573,7 @@ func (n NodeInterface) GasEstimateComponents(
 	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
 	args := n.messageArgs(evm, value, to, contractCreation, data)
 
-	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, nil, gasCap)
+	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, nil, nil, gasCap)
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
@@ -578,10 +584,14 @@ func (n NodeInterface) GasEstimateComponents(
 	// Setting the gas currently doesn't affect the PosterDataCost,
 	// but we do it anyways for accuracy with potential future changes.
 	args.Gas = &totalRaw
-	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB), core.MessageGasEstimationMode)
-	if err != nil {
+	if err := args.CallDefaults(gasCap, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
 		return 0, 0, nil, nil, err
 	}
+	sdb, ok := evm.StateDB.(*state.StateDB)
+	if !ok {
+		return 0, 0, nil, nil, errors.New("failed to cast to stateDB")
+	}
+	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, sdb, core.MessageGasEstimationMode, true, true)
 	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
 	if err != nil {
 		return 0, 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)

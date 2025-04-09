@@ -1,5 +1,5 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
@@ -595,13 +595,13 @@ impl Display for OperatorCode {
     }
 }
 
-impl<'a> From<Operator<'a>> for OperatorCode {
+impl From<Operator<'_>> for OperatorCode {
     fn from(op: Operator) -> Self {
         OperatorCode::from(&op)
     }
 }
 
-impl<'a> From<&Operator<'a>> for OperatorCode {
+impl From<&Operator<'_>> for OperatorCode {
     fn from(op: &Operator) -> Self {
         use Operator as O;
 

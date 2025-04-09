@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -28,7 +29,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	evm mech,
 	aggregator addr,
 ) (huge, huge, huge, huge, huge, huge, error) {
-	if c.State.ArbOSVersion() < 4 {
+	if c.State.ArbOSVersion() < params.ArbosVersion_4 {
 		return con._preVersion4_GetPricesInWeiWithAggregator(c, evm, aggregator)
 	}
 
@@ -104,7 +105,7 @@ func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, h
 
 // GetPricesInArbGasWithAggregator gets prices in ArbGas when using the provided aggregator
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
-	if c.State.ArbOSVersion() < 4 {
+	if c.State.ArbOSVersion() < params.ArbosVersion_4 {
 		return con._preVersion4_GetPricesInArbGasWithAggregator(c, evm, aggregator)
 	}
 	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
@@ -219,7 +220,7 @@ func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
 
 // GetL1PricingSurplus gets the surplus of funds for L1 batch posting payments (may be negative)
 func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
-	if c.State.ArbOSVersion() < 10 {
+	if c.State.ArbOSVersion() < params.ArbosVersion_10 {
 		return con._preversion10_GetL1PricingSurplus(c, evm)
 	}
 	ps := c.State.L1PricingState()

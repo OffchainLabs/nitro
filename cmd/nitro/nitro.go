@@ -57,7 +57,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/dbutil"
@@ -207,16 +207,15 @@ func mainImpl() int {
 		nodeConfig.Node.ParentChainReader.Enable = true
 	}
 
-	if nodeConfig.Execution.Sequencer.Enable && nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Node.InboxReader.HardReorg {
-		flag.Usage()
-		log.Crit("hard reorgs cannot safely be enabled with sequencer mode enabled")
-	}
 	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
 	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
 		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
 		return 1
+	}
+	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
+		log.Warn("Sequencer node's track-block-metadata-from is set but timeboost is not enabled")
 	}
 
 	var dataSigner signature.DataSignerFunc
@@ -225,7 +224,7 @@ func mainImpl() int {
 	// If sequencer and signing is enabled or batchposter is enabled without
 	// external signing sequencer will need a key.
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
-		(nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "")
+		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DataAvailability.Enable))
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
@@ -233,7 +232,7 @@ func mainImpl() int {
 	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
 	nodeConfig.Node.Staker.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
-	defaultValidatorL1WalletConfig := staker.DefaultValidatorL1WalletConfig
+	defaultValidatorL1WalletConfig := legacystaker.DefaultValidatorL1WalletConfig
 	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
 	nodeConfig.Node.BatchPoster.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
@@ -261,18 +260,16 @@ func mainImpl() int {
 		}
 	}
 
-	combinedL2ChainInfoFile := util.AggregateL2ChainInfoFiles(ctx, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)
-
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.ParentChainReader.Enable {
 			flag.Usage()
 			log.Crit("validator must have the parent chain reader enabled")
 		}
-		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
+		strategy, err := legacystaker.ParseStrategy(nodeConfig.Node.Staker.Strategy)
 		if err != nil {
 			log.Crit("couldn't parse staker strategy", "err", err)
 		}
-		if strategy != staker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
+		if strategy != legacystaker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
@@ -311,7 +308,7 @@ func mainImpl() int {
 
 		log.Info("connected to l1 chain", "l1url", nodeConfig.ParentChain.Connection.URL, "l1chainid", nodeConfig.ParentChain.ID)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
@@ -343,7 +340,7 @@ func mainImpl() int {
 			log.Crit("--node.validator.only-create-wallet-contract conflicts with --node.dangerous.no-l1-listener")
 		}
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -419,61 +416,9 @@ func mainImpl() int {
 
 	// Check that node is compatible with on-chain WASM module root on startup and before any ArbOS upgrades take effect to prevent divergences
 	if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
-		// Fetch current on-chain WASM module root
-		rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
+		err := checkWasmModuleRootCompatibility(ctx, nodeConfig.Validation.Wasm, l1Client, rollupAddrs)
 		if err != nil {
-			log.Error("failed to create rollupUserLogic", "err", err)
-			return 1
-		}
-		moduleRoot, err := rollupUserLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
-		if err != nil {
-			log.Error("failed to get on-chain WASM module root", "err", err)
-			return 1
-		}
-		if (moduleRoot == common.Hash{}) {
-			log.Error("on-chain WASM module root is zero")
-			return 1
-		}
-		// Check if the on-chain WASM module root belongs to the set of allowed module roots
-		allowedWasmModuleRoots := nodeConfig.Validation.Wasm.AllowedWasmModuleRoots
-		if len(allowedWasmModuleRoots) > 0 {
-			moduleRootMatched := false
-			for _, root := range allowedWasmModuleRoots {
-				bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
-				if err == nil {
-					if common.HexToHash(root) == common.BytesToHash(bytes) {
-						moduleRootMatched = true
-						break
-					}
-					continue
-				}
-				locator, locatorErr := server_common.NewMachineLocator(root)
-				if locatorErr != nil {
-					log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
-					continue
-				}
-				path := locator.GetMachinePath(moduleRoot)
-				if _, err := os.Stat(path); err == nil {
-					moduleRootMatched = true
-					break
-				}
-			}
-			if !moduleRootMatched {
-				log.Error("on-chain WASM module root did not match with any of the allowed WASM module roots")
-				return 1
-			}
-		} else {
-			// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
-			locator, err := server_common.NewMachineLocator(nodeConfig.Validation.Wasm.RootPath)
-			if err != nil {
-				log.Warn("failed to create machine locator. Skipping the check for compatibility with on-chain WASM module root", "err", err)
-			} else {
-				path := locator.GetMachinePath(moduleRoot)
-				if _, err := os.Stat(path); err != nil {
-					log.Error("unable to find validator machine directory for the on-chain WASM module root", "err", err)
-					return 1
-				}
-			}
+			log.Warn("failed to check if node is compatible with on-chain WASM module root", "err", err)
 		}
 	}
 
@@ -502,20 +447,29 @@ func mainImpl() int {
 
 	fatalErrChan := make(chan error, 10)
 
-	var blocksReExecutor *blocksreexecutor.BlocksReExecutor
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
-		blocksReExecutor = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
-		if nodeConfig.Init.ThenQuit {
-			success := make(chan struct{})
-			blocksReExecutor.Start(ctx, success)
-			deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
-			select {
-			case err := <-fatalErrChan:
-				log.Error("shutting down due to fatal error", "err", err)
-				defer log.Error("shut down due to fatal error", "err", err)
-				return 1
-			case <-success:
-			}
+		if !nodeConfig.Init.ThenQuit {
+			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
+			return 1
+		}
+		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
+		if err != nil {
+			log.Error("error initializing blocksReExecutor", "err", err)
+			return 1
+		}
+		if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+			log.Error("error populating stylus target cache", "err", err)
+			return 1
+		}
+		success := make(chan struct{})
+		blocksReExecutor.Start(ctx, success)
+		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
+		select {
+		case err := <-fatalErrChan:
+			log.Error("shutting down due to fatal error", "err", err)
+			defer log.Error("shut down due to fatal error", "err", err)
+			return 1
+		case <-success:
 		}
 	}
 
@@ -523,7 +477,7 @@ func mainImpl() int {
 		return 0
 	}
 
-	chainInfo, err := chaininfo.ProcessChainInfo(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+	chainInfo, err := chaininfo.ProcessChainInfo(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 	if err != nil {
 		log.Error("error processing l2 chain info", "err", err)
 		return 1
@@ -559,15 +513,19 @@ func mainImpl() int {
 		l2BlockChain,
 		l1Client,
 		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 	)
 	if err != nil {
 		log.Error("failed to create execution node", "err", err)
 		return 1
 	}
 
-	currentNode, err := arbnode.CreateNode(
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(
 		ctx,
 		stack,
+		execNode,
+		execNode,
+		execNode,
 		execNode,
 		arbDb,
 		&NodeConfigFetcher{liveNodeConfig},
@@ -598,7 +556,7 @@ func mainImpl() int {
 		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
 		if err == nil {
 			seqInboxMaxDataSize = int(res.Int64())
-		} else if !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		} else if !headerreader.IsExecutionReverted(err) {
 			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
 			return 1
 		}
@@ -611,12 +569,16 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
-	// And since batchposter's MaxSize is to be at least 10kB below the sequencer inbox’s maxDataSize, this leads to another condition of atlest 15kB below the sequencer inbox’s maxDataSize.
+
 	if nodeConfig.Execution.Sequencer.Enable {
-		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 ||
-			nodeConfig.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 {
-			log.Error("sequencer's MaxTxDataSize too large")
+		// Validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
+		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 {
+			log.Error("sequencer's MaxTxDataSize too large compared to the batchPoster's MaxSize")
+			return 1
+		}
+		// Since the batchposter's MaxSize must be at least 10kB below the sequencer inbox’s maxDataSize, then MaxTxDataSize must also be 15kB below the sequencer inbox’s maxDataSize.
+		if nodeConfig.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 && !nodeConfig.Execution.Sequencer.Dangerous.DisableSeqInboxMaxDataSizeCheck {
+			log.Error("sequencer's MaxTxDataSize too large compared to the sequencer inbox's MaxDataSize")
 			return 1
 		}
 	}
@@ -643,6 +605,46 @@ func mainImpl() int {
 			}
 		}
 	}
+
+	// Before starting the node, wait until the transaction that deployed rollup is finalized
+	if nodeConfig.EnsureRollupDeployment &&
+		nodeConfig.Node.ParentChainReader.Enable &&
+		rollupAddrs.DeployedAt > 0 {
+		currentFinalized, err := l1Reader.LatestFinalizedBlockNr(ctx)
+		if err != nil && errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
+			log.Info("Finality not supported by parent chain, disabling the check to verify if rollup deployment tx was finalized", "err", err)
+		} else {
+			newHeaders, unsubscribe := l1Reader.Subscribe(false)
+			retriesOnError := 10
+			sigint := make(chan os.Signal, 1)
+			signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+			for currentFinalized < rollupAddrs.DeployedAt && retriesOnError > 0 {
+				select {
+				case <-newHeaders:
+					if finalized, err := l1Reader.LatestFinalizedBlockNr(ctx); err != nil {
+						if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
+							log.Error("Finality support was removed from parent chain mid way, disabling the check to verify if the rollup deployment tx was finalized", "err", err)
+							retriesOnError = 0 // Break out of for loop as well
+							break
+						}
+						log.Error("Error getting latestFinalizedBlockNr from l1Reader", "err", err)
+						retriesOnError--
+					} else {
+						currentFinalized = finalized
+						log.Debug("Finalized block number updated", "finalized", finalized)
+					}
+				case <-ctx.Done():
+					log.Error("Context done while checking if the rollup deployment tx was finalized")
+					return 1
+				case <-sigint:
+					log.Info("shutting down because of sigint")
+					return 0
+				}
+			}
+			unsubscribe()
+		}
+	}
+
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
 		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
@@ -657,6 +659,7 @@ func mainImpl() int {
 			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
 		} else {
 			log.Info("validation node started")
+			defer valNode.Stop()
 		}
 	}
 	if err == nil {
@@ -666,10 +669,6 @@ func mainImpl() int {
 		}
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
-	}
-	if blocksReExecutor != nil && !nodeConfig.Init.ThenQuit {
-		blocksReExecutor.Start(ctx, nil)
-		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -682,6 +681,11 @@ func mainImpl() int {
 		} else if nodeConfig.Init.ThenQuit {
 			return 0
 		}
+	}
+
+	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
+	if err != nil {
+		fatalErrChan <- fmt.Errorf("error intializing timeboost: %w", err)
 	}
 
 	err = nil
@@ -706,53 +710,55 @@ func mainImpl() int {
 }
 
 type NodeConfig struct {
-	Conf             genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
-	Node             arbnode.Config                  `koanf:"node" reload:"hot"`
-	Execution        gethexec.Config                 `koanf:"execution" reload:"hot"`
-	Validation       valnode.Config                  `koanf:"validation" reload:"hot"`
-	ParentChain      conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
-	Chain            conf.L2Config                   `koanf:"chain"`
-	LogLevel         string                          `koanf:"log-level" reload:"hot"`
-	LogType          string                          `koanf:"log-type" reload:"hot"`
-	FileLogging      genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
-	Persistent       conf.PersistentConfig           `koanf:"persistent"`
-	HTTP             genericconf.HTTPConfig          `koanf:"http"`
-	WS               genericconf.WSConfig            `koanf:"ws"`
-	IPC              genericconf.IPCConfig           `koanf:"ipc"`
-	Auth             genericconf.AuthRPCConfig       `koanf:"auth"`
-	GraphQL          genericconf.GraphQLConfig       `koanf:"graphql"`
-	Metrics          bool                            `koanf:"metrics"`
-	MetricsServer    genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	PProf            bool                            `koanf:"pprof"`
-	PprofCfg         genericconf.PProf               `koanf:"pprof-cfg"`
-	Init             conf.InitConfig                 `koanf:"init"`
-	Rpc              genericconf.RpcConfig           `koanf:"rpc"`
-	BlocksReExecutor blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
+	Conf                   genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	Node                   arbnode.Config                  `koanf:"node" reload:"hot"`
+	Execution              gethexec.Config                 `koanf:"execution" reload:"hot"`
+	Validation             valnode.Config                  `koanf:"validation" reload:"hot"`
+	ParentChain            conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
+	Chain                  conf.L2Config                   `koanf:"chain"`
+	LogLevel               string                          `koanf:"log-level" reload:"hot"`
+	LogType                string                          `koanf:"log-type" reload:"hot"`
+	FileLogging            genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
+	Persistent             conf.PersistentConfig           `koanf:"persistent"`
+	HTTP                   genericconf.HTTPConfig          `koanf:"http"`
+	WS                     genericconf.WSConfig            `koanf:"ws"`
+	IPC                    genericconf.IPCConfig           `koanf:"ipc"`
+	Auth                   genericconf.AuthRPCConfig       `koanf:"auth"`
+	GraphQL                genericconf.GraphQLConfig       `koanf:"graphql"`
+	Metrics                bool                            `koanf:"metrics"`
+	MetricsServer          genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf                  bool                            `koanf:"pprof"`
+	PprofCfg               genericconf.PProf               `koanf:"pprof-cfg"`
+	Init                   conf.InitConfig                 `koanf:"init"`
+	Rpc                    genericconf.RpcConfig           `koanf:"rpc"`
+	BlocksReExecutor       blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
+	EnsureRollupDeployment bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:             genericconf.ConfConfigDefault,
-	Node:             arbnode.ConfigDefault,
-	Execution:        gethexec.ConfigDefault,
-	Validation:       valnode.DefaultValidationConfig,
-	ParentChain:      conf.L1ConfigDefault,
-	Chain:            conf.L2ConfigDefault,
-	LogLevel:         "INFO",
-	LogType:          "plaintext",
-	FileLogging:      genericconf.DefaultFileLoggingConfig,
-	Persistent:       conf.PersistentConfigDefault,
-	HTTP:             genericconf.HTTPConfigDefault,
-	WS:               genericconf.WSConfigDefault,
-	IPC:              genericconf.IPCConfigDefault,
-	Auth:             genericconf.AuthRPCConfigDefault,
-	GraphQL:          genericconf.GraphQLConfigDefault,
-	Metrics:          false,
-	MetricsServer:    genericconf.MetricsServerConfigDefault,
-	Init:             conf.InitConfigDefault,
-	Rpc:              genericconf.DefaultRpcConfig,
-	PProf:            false,
-	PprofCfg:         genericconf.PProfDefault,
-	BlocksReExecutor: blocksreexecutor.DefaultConfig,
+	Conf:                   genericconf.ConfConfigDefault,
+	Node:                   arbnode.ConfigDefault,
+	Execution:              gethexec.ConfigDefault,
+	Validation:             valnode.DefaultValidationConfig,
+	ParentChain:            conf.L1ConfigDefault,
+	Chain:                  conf.L2ConfigDefault,
+	LogLevel:               "INFO",
+	LogType:                "plaintext",
+	FileLogging:            genericconf.DefaultFileLoggingConfig,
+	Persistent:             conf.PersistentConfigDefault,
+	HTTP:                   genericconf.HTTPConfigDefault,
+	WS:                     genericconf.WSConfigDefault,
+	IPC:                    genericconf.IPCConfigDefault,
+	Auth:                   genericconf.AuthRPCConfigDefault,
+	GraphQL:                genericconf.GraphQLConfigDefault,
+	Metrics:                false,
+	MetricsServer:          genericconf.MetricsServerConfigDefault,
+	Init:                   conf.InitConfigDefault,
+	Rpc:                    genericconf.DefaultRpcConfig,
+	PProf:                  false,
+	PprofCfg:               genericconf.PProfDefault,
+	BlocksReExecutor:       blocksreexecutor.DefaultConfig,
+	EnsureRollupDeployment: true,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -779,6 +785,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.InitConfigAddOptions("init", f)
 	genericconf.RpcConfigAddOptions("rpc", f)
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
+	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -870,12 +877,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	l2ChainId := k.Int64("chain.id")
 	l2ChainName := k.String("chain.name")
-	l2ChainInfoIpfsUrl := k.String("chain.info-ipfs-url")
-	l2ChainInfoIpfsDownloadPath := k.String("chain.info-ipfs-download-path")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
 	// #nosec G115
-	err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -938,9 +943,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l2DevWallet, nil
 }
 
-func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) error {
-	combinedL2ChainInfoFiles := util.AggregateL2ChainInfoFiles(ctx, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
-	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
+func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) error {
+	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err
 	}
@@ -949,7 +953,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
 	} else {
 		log.Warn("Chain info field parent-chain-is-arbitrum is missing, in the future this will be required", "chainId", chainInfo.ChainConfig.ChainID, "parentChainId", chainInfo.ParentChainId)
-		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", combinedL2ChainInfoFiles, "")
+		_, err := chaininfo.ProcessChainInfo(chainInfo.ParentChainId, "", l2ChainInfoFiles, "")
 		if err == nil {
 			parentChainIsArbitrum = true
 		}
@@ -999,6 +1003,8 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
+	// 0 is default for any chain unless specified in the chain_defaults
+	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err
@@ -1029,14 +1035,15 @@ func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 			return nil
 		}
 		// Reorg out the batch containing the next message
-		var missing bool
+		var found bool
 		var err error
-		batchCount, missing, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
 		if err != nil {
 			return err
 		}
-		if missing {
-			return fmt.Errorf("cannot reorg to unknown message index %v", messageIndex)
+		if !found {
+			log.Warn("init-reorg: no need to reorg, because message ahead of chain", "messageIndex", messageIndex)
+			return nil
 		}
 	}
 	return inboxTracker.ReorgBatchesTo(batchCount)
@@ -1048,4 +1055,58 @@ type NodeConfigFetcher struct {
 
 func (f *NodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveConfig.Get().Node
+}
+
+func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {
+	// Fetch current on-chain WASM module root
+	rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
+	if err != nil {
+		return fmt.Errorf("failed to create RollupUserLogic: %w", err)
+	}
+	moduleRoot, err := rollupUserLogic.WasmModuleRoot(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return fmt.Errorf("failed to get on-chain WASM module root: %w", err)
+	}
+	if (moduleRoot == common.Hash{}) {
+		return errors.New("on-chain WASM module root is zero")
+	}
+	// Check if the on-chain WASM module root belongs to the set of allowed module roots
+	allowedWasmModuleRoots := wasmConfig.AllowedWasmModuleRoots
+	if len(allowedWasmModuleRoots) > 0 {
+		moduleRootMatched := false
+		for _, root := range allowedWasmModuleRoots {
+			bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
+			if err == nil {
+				if common.HexToHash(root) == common.BytesToHash(bytes) {
+					moduleRootMatched = true
+					break
+				}
+				continue
+			}
+			locator, locatorErr := server_common.NewMachineLocator(root)
+			if locatorErr != nil {
+				log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
+				continue
+			}
+			path := locator.GetMachinePath(moduleRoot)
+			if _, err := os.Stat(path); err == nil {
+				moduleRootMatched = true
+				break
+			}
+		}
+		if !moduleRootMatched {
+			return errors.New("on-chain WASM module root did not match with any of the allowed WASM module roots")
+		}
+	} else {
+		// If no allowed module roots were provided in config, check if we have a validator machine directory for the on-chain WASM module root
+		locator, err := server_common.NewMachineLocator(wasmConfig.RootPath)
+		if err != nil {
+			return fmt.Errorf("failed to create machine locator: %w", err)
+		}
+		path := locator.GetMachinePath(moduleRoot)
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("unable to find validator machine directory for the on-chain WASM module root: %w", err)
+		}
+	}
+	return nil
 }

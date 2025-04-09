@@ -80,12 +80,19 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 	}
 }
 
-func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON) (uint64, error) {
+func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON, useBoldMachineOptional *bool) (uint64, error) {
+	if a.Stopped() {
+		return 0, errors.New("ExecServerAPI is stopped")
+	}
 	input, err := server_api.ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
 	}
-	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	useBoldMachine := false
+	if useBoldMachineOptional != nil {
+		useBoldMachine = *useBoldMachineOptional
+	}
+	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input, useBoldMachine).Await(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -107,6 +114,7 @@ func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 	defer a.runIdLock.Unlock()
 	for id, entry := range a.runs {
 		if entry.accessed.Before(oldestKept) {
+			entry.run.Close()
 			delete(a.runs, id)
 		}
 	}
@@ -118,18 +126,21 @@ func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.CallIteratively(a.removeOldRuns)
 }
 
-func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *server_api.InputJSON, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
-	input, err := server_api.ValidationInputFromJson(jsonInput)
-	if err != nil {
-		return err
+func (a *ExecServerAPI) StopAndWait() {
+	a.StopWaiter.StopAndWait()
+	a.runIdLock.Lock()
+	defer a.runIdLock.Unlock()
+	for _, entry := range a.runs {
+		entry.run.Close()
 	}
-	_, err = a.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(ctx)
-	return err
 }
 
 var errRunNotFound error = errors.New("run not found")
 
 func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
+	if a.Stopped() {
+		return nil, errRunNotFound
+	}
 	a.runIdLock.Lock()
 	defer a.runIdLock.Unlock()
 	entry := a.runs[id]
@@ -196,13 +207,19 @@ func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error 
 	return nil
 }
 
-func (a *ExecServerAPI) CloseExec(execid uint64) {
-	a.runIdLock.Lock()
-	defer a.runIdLock.Unlock()
-	run, found := a.runs[execid]
-	if !found {
-		return
+func (a *ExecServerAPI) CheckAlive(ctx context.Context, execid uint64) error {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return err
 	}
-	run.run.Close()
+	return run.CheckAlive(ctx)
+}
+
+func (a *ExecServerAPI) CloseExec(execid uint64) {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return // means not found
+	}
+	run.Close()
 	delete(a.runs, execid)
 }

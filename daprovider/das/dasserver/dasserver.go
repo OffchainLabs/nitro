@@ -11,12 +11,15 @@ import (
 	"strings"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbutil"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
@@ -24,7 +27,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
-	flag "github.com/spf13/pflag"
 )
 
 type Server struct {
@@ -75,7 +77,7 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 	return nil, errors.New("JWT secret file not found")
 }
 
-func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.DataSignerFunc, l1Client arbutil.L1Interface, l1Reader *headerreader.HeaderReader, sequencerInboxAddr common.Address) (*http.Server, func(), error) {
+func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.DataSignerFunc, l1Client *ethclient.Client, l1Reader *headerreader.HeaderReader, sequencerInboxAddr common.Address) (*http.Server, func(), error) {
 	var err error
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader

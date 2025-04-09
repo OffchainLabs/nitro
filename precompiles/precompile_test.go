@@ -5,17 +5,14 @@ package precompiles
 
 import (
 	"fmt"
-	"io"
 	"math/big"
-	"os"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/storage"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -183,38 +180,44 @@ func TestEventCosts(t *testing.T) {
 }
 
 func TestPrecompilesPerArbosVersion(t *testing.T) {
-	// Set up a logger in case log.Crit is called by Precompiles()
-	glogger := log.NewGlogHandler(
-		log.NewTerminalHandler(io.Writer(os.Stderr), false))
-	glogger.Verbosity(log.LevelWarn)
-	log.SetDefault(log.NewLogger(glogger))
-
-	expectedNewMethodsPerArbosVersion := map[uint64]int{
-		0:  89,
-		5:  3,
-		10: 2,
-		11: 4,
-		20: 8,
-		30: 38,
-		31: 1,
+	// Each new precompile contract and each method on new or existing precompile
+	// contracts should be counted.
+	expectedNewEntriesPerArbosVersion := map[uint64]int{
+		0:                      98,
+		params.ArbosVersion_5:  3,
+		params.ArbosVersion_10: 2,
+		params.ArbosVersion_11: 4,
+		params.ArbosVersion_20: 8,
+		params.ArbosVersion_30: 39,
+		params.ArbosVersion_31: 1,
+		params.ArbosVersion_40: 3,
 	}
 
 	precompiles := Precompiles()
-	newMethodsPerArbosVersion := make(map[uint64]int)
+	newEntriesPerArbosVersion := make(map[uint64]int)
 	for _, precompile := range precompiles {
-		for _, method := range precompile.Precompile().methods {
-			version := arbmath.MaxInt(method.arbosVersion, precompile.Precompile().arbosVersion)
-			newMethodsPerArbosVersion[version]++
+		innerPrecompile := precompile.Precompile()
+		// This counts newly-added precompile contracts
+		newEntriesPerArbosVersion[innerPrecompile.arbosVersion]++
+		_, isDebug := precompile.(*DebugPrecompile)
+		if isDebug {
+			// Debug methods are disabled on production chains
+			continue
+		}
+		for _, method := range innerPrecompile.methods {
+			version := arbmath.MaxInt(method.arbosVersion, innerPrecompile.arbosVersion)
+			// This counts new methods on existing or new precompile contracts.
+			newEntriesPerArbosVersion[version]++
 		}
 	}
 
-	if len(expectedNewMethodsPerArbosVersion) != len(newMethodsPerArbosVersion) {
-		t.Errorf("expected %v ArbOS versions with new precompile methods but got %v", len(expectedNewMethodsPerArbosVersion), len(newMethodsPerArbosVersion))
+	if len(expectedNewEntriesPerArbosVersion) != len(newEntriesPerArbosVersion) {
+		t.Errorf("expected %v ArbOS versions with new precompile methods but got %v", len(expectedNewEntriesPerArbosVersion), len(newEntriesPerArbosVersion))
 	}
-	for version, count := range newMethodsPerArbosVersion {
+	for version, count := range newEntriesPerArbosVersion {
 		fmt.Printf("got %v version count %v\n", version, count)
-		if expectedNewMethodsPerArbosVersion[version] != count {
-			t.Errorf("expected %v new precompile methods for ArbOS version %v but got %v", expectedNewMethodsPerArbosVersion[version], version, count)
+		if expectedNewEntriesPerArbosVersion[version] != count {
+			t.Errorf("expected %v new precompile methods for ArbOS version %v but got %v", expectedNewEntriesPerArbosVersion[version], version, count)
 		}
 	}
 }

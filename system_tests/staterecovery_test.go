@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/trie"
+
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -56,7 +57,7 @@ func TestRectreateMissingStates(t *testing.T) {
 		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 		Require(t, err)
 		defer chainDb.Close()
-		cachingConfig := TestCachingConfig
+		cachingConfig := gethexec.DefaultCachingConfig
 		// For now Archive node should use HashScheme
 		cachingConfig.StateScheme = rawdb.HashScheme
 		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &cachingConfig)

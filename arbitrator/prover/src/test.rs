@@ -1,7 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
-
-#![cfg(test)]
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::binary;
 use brotli::Dictionary;
@@ -64,7 +62,7 @@ pub fn test_compress() -> Result<()> {
         let deflate = brotli::compress(data, 11, 22, dict).unwrap();
         let inflate = brotli::decompress(&deflate, dict).unwrap();
         assert_eq!(hex::encode(inflate), hex::encode(data));
-        assert!(&deflate != &last);
+        assert!(deflate != last);
         last = deflate;
     }
     Ok(())

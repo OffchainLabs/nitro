@@ -7,9 +7,11 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/google/go-cmp/cmp"
+
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -48,7 +50,7 @@ func TestStylusTracer(t *testing.T) {
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
 	loadStoreArgs := multicallEmptyArgs()
-	loadStoreArgs = multicallAppendStore(loadStoreArgs, key, value, false)
+	loadStoreArgs = multicallAppendStore(loadStoreArgs, key, value, false, false)
 	loadStoreArgs = multicallAppendLoad(loadStoreArgs, key, false)
 	callArgs := argsForMulticall(vm.CALL, stylusMulticall, nil, []byte{0})
 	evmCall := argsForMulticall(vm.CALL, evmMulticall, nil, []byte{0})

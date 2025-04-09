@@ -10,24 +10,27 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/txbuilder"
+	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 )
 
+// EOA is a ValidatorWallet that uses an Externally Owned Account to sign transactions.
+// An Ethereum Externally Owned Account is directly represented by a private key,
+// as opposed to a smart contract wallet where the smart contract authorizes transactions.
 type EOA struct {
 	auth                    *bind.TransactOpts
-	client                  arbutil.L1Interface
+	client                  *ethclient.Client
 	rollupAddress           common.Address
-	challengeManager        *challengegen.ChallengeManager
+	challengeManager        *challenge_legacy_gen.ChallengeManager
 	challengeManagerAddress common.Address
 	dataPoster              *dataposter.DataPoster
 	getExtraGas             func() uint64
 }
 
-func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, getExtraGas func() uint64) (*EOA, error) {
+func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client *ethclient.Client, getExtraGas func() uint64) (*EOA, error) {
 	return &EOA{
 		auth:          dataPoster.Auth(),
 		client:        l1Client,
@@ -38,7 +41,7 @@ func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1C
 }
 
 func (w *EOA) Initialize(ctx context.Context) error {
-	rollup, err := rollupgen.NewRollupUserLogic(w.rollupAddress, w.client)
+	rollup, err := rollup_legacy_gen.NewRollupUserLogic(w.rollupAddress, w.client)
 	if err != nil {
 		return err
 	}
@@ -47,7 +50,7 @@ func (w *EOA) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	w.challengeManager, err = challengegen.NewChallengeManager(w.challengeManagerAddress, w.client)
+	w.challengeManager, err = challenge_legacy_gen.NewChallengeManager(w.challengeManagerAddress, w.client)
 	return err
 }
 
@@ -63,7 +66,7 @@ func (w *EOA) TxSenderAddress() *common.Address {
 	return &w.auth.From
 }
 
-func (w *EOA) L1Client() arbutil.L1Interface {
+func (w *EOA) L1Client() *ethclient.Client {
 	return w.client
 }
 
@@ -80,21 +83,17 @@ func (w *EOA) TestTransactions(context.Context, []*types.Transaction) error {
 	return nil
 }
 
-func (w *EOA) ExecuteTransactions(ctx context.Context, builder *txbuilder.Builder, _ common.Address) (*types.Transaction, error) {
-	if len(builder.Transactions()) == 0 {
+func (w *EOA) ExecuteTransactions(ctx context.Context, txes []*types.Transaction, _ common.Address) (*types.Transaction, error) {
+	if len(txes) == 0 {
 		return nil, nil
 	}
-	tx := builder.Transactions()[0] // we ignore future txs and only execute the first
+	tx := txes[0] // we ignore future txs and only execute the first
 	return w.postTransaction(ctx, tx)
 }
 
 func (w *EOA) postTransaction(ctx context.Context, baseTx *types.Transaction) (*types.Transaction, error) {
-	nonce, err := w.L1Client().NonceAt(ctx, w.auth.From, nil)
-	if err != nil {
-		return nil, err
-	}
 	gas := baseTx.Gas() + w.getExtraGas()
-	newTx, err := w.dataPoster.PostSimpleTransaction(ctx, nonce, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
+	newTx, err := w.dataPoster.PostSimpleTransaction(ctx, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
 	if err != nil {
 		return nil, fmt.Errorf("post transaction: %w", err)
 	}

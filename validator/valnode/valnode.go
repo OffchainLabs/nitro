@@ -3,17 +3,18 @@ package valnode
 import (
 	"context"
 
-	"github.com/offchainlabs/nitro/validator"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/server_jit"
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
-	"github.com/spf13/pflag"
 )
 
 type WasmConfig struct {
@@ -76,6 +77,7 @@ type ValidationNode struct {
 	config     ValidationConfigFetcher
 	arbSpawner *server_arb.ArbitratorSpawner
 	jitSpawner *server_jit.JitSpawner
+	serverAPI  *ExecServerAPI
 
 	redisConsumer *redis.ValidationServer
 }
@@ -93,7 +95,7 @@ func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
 	}
 }
 
-func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Node, fatalErrChan chan error) (*ValidationNode, error) {
+func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Node, fatalErrChan chan error, spawnerOpts ...server_arb.SpawnerOption) (*ValidationNode, error) {
 	config := configFetcher()
 	locator, err := server_common.NewMachineLocator(config.Wasm.RootPath)
 	if err != nil {
@@ -102,7 +104,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
 		return &configFetcher().Arbitrator
 	}
-	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
+	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher, spawnerOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +138,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	}}
 	stack.RegisterAPIs(valAPIs)
 
-	return &ValidationNode{configFetcher, arbSpawner, jitSpawner, redisConsumer}, nil
+	return &ValidationNode{configFetcher, arbSpawner, jitSpawner, serverAPI, redisConsumer}, nil
 }
 
 func (v *ValidationNode) Start(ctx context.Context) error {
@@ -151,7 +153,19 @@ func (v *ValidationNode) Start(ctx context.Context) error {
 	if v.redisConsumer != nil {
 		v.redisConsumer.Start(ctx)
 	}
+	v.serverAPI.Start(ctx) // starting cleanup of stale execRuns
 	return nil
+}
+
+func (v *ValidationNode) Stop() {
+	if v.redisConsumer != nil {
+		v.redisConsumer.StopOnly()
+	}
+	v.arbSpawner.Stop()
+	if v.jitSpawner != nil {
+		v.jitSpawner.Stop()
+	}
+	v.serverAPI.StopAndWait() // cleanup of all execRuns
 }
 
 func (v *ValidationNode) GetExec() validator.ExecutionSpawner {

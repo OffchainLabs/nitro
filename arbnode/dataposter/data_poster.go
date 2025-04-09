@@ -20,12 +20,18 @@ import (
 	"time"
 
 	"github.com/Knetic/govaluate"
+	"github.com/holiman/uint256"
+	"github.com/redis/go-redis/v9"
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -33,22 +39,20 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
-	"github.com/go-redis/redis/v8"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/spf13/pflag"
-
-	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 var (
@@ -69,7 +73,7 @@ var (
 type DataPoster struct {
 	stopwaiter.StopWaiter
 	headerReader      *headerreader.HeaderReader
-	client            arbutil.L1Interface
+	client            *ethclient.Client
 	auth              *bind.TransactOpts
 	signer            signerFn
 	config            ConfigFetcher
@@ -78,6 +82,7 @@ type DataPoster struct {
 	extraBacklog      func() uint64
 	parentChainID     *big.Int
 	parentChainID256  *uint256.Int
+	parentChain       *parent.ParentChain
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -164,6 +169,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		maxFeeCapExpression: expression,
 		extraBacklog:        opts.ExtraBacklog,
 		parentChainID:       opts.ParentChainID,
+		parentChain:         &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.HeaderReader},
 	}
 	var overflow bool
 	dp.parentChainID256, overflow = uint256.FromBig(opts.ParentChainID)
@@ -399,7 +405,14 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		previousTxCumulativeWeight = arbmath.MaxInt(previousTxCumulativeWeight, confirmedWeight)
 		newCumulativeWeight := previousTxCumulativeWeight + thisWeight
 
-		weightDiff := arbmath.MinInt(newCumulativeWeight-confirmedWeight, (nextNonce-unconfirmedNonce)*params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)
+		maxBlobGasPerBlock := uint64(0)
+		if p.config().Post4844Blobs {
+			maxBlobGasPerBlock, err = p.parentChain.MaxBlobGasPerBlock(ctx, nil)
+			if err != nil {
+				return err
+			}
+		}
+		weightDiff := arbmath.MinInt(newCumulativeWeight-confirmedWeight, (nextNonce-unconfirmedNonce)*maxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)
 		if weightDiff > cfg.MaxMempoolWeight {
 			return fmt.Errorf("%w: transaction nonce: %d, transaction cumulative weight: %d, unconfirmed nonce: %d, confirmed weight: %d, new mempool weight: %d, max mempool weight: %d", ErrExceedsMaxMempoolSize, nextNonce, newCumulativeWeight, unconfirmedNonce, confirmedWeight, weightDiff, cfg.MaxMempoolWeight)
 		}
@@ -513,14 +526,20 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		return nil, nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
 	currentBlobFee := big.NewInt(0)
-	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
-		currentBlobFee = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
-	} else if numBlobs > 0 {
-		return nil, nil, nil, fmt.Errorf(
-			"latest parent chain block %v missing ExcessBlobGas or BlobGasUsed but blobs were specified in data poster transaction "+
-				"(either the parent chain node is not synced or the EIP-4844 was improperly activated)",
-			latestHeader.Number,
-		)
+	if numBlobs > 0 {
+		if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+			var err error
+			currentBlobFee, err = p.parentChain.BlobFeePerByte(ctx, latestHeader)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to get blob base fee: %w", err)
+			}
+		} else {
+			return nil, nil, nil, fmt.Errorf(
+				"latest parent chain block %v missing ExcessBlobGas or BlobGasUsed but blobs were specified in data poster transaction "+
+					"(either the parent chain node is not synced or the EIP-4844 was improperly activated)",
+				latestHeader.Number,
+			)
+		}
 	}
 	softConfBlock := arbmath.BigSubByUint(latestHeader.Number, config.NonceRbfSoftConfs)
 	softConfNonce, err := p.client.NonceAt(ctx, p.Sender(), softConfBlock)
@@ -710,13 +729,23 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
 }
 
-func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
-	return p.PostTransaction(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
+func (p *DataPoster) PostSimpleTransaction(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	nonce, _, _, _, err := p.getNextNonceAndMaybeMeta(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
+	return p.postTransactionWithMutex(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
 }
 
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+	return p.postTransactionWithMutex(ctx, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
+}
+
+func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 
 	if p.config().DisableNewTx {
 		return nil, fmt.Errorf("posting new transaction is disabled")
@@ -853,8 +882,11 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 		return err
 	}
 	var currentBlobFee *big.Int
-	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
-		currentBlobFee = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+	if p.config().Post4844Blobs && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+		currentBlobFee, err = p.parentChain.BlobFeePerByte(ctx, latestHeader)
+		if err != nil {
+			return err
+		}
 	}
 
 	if arbmath.BigLessThan(newTx.FullTx.GasFeeCap(), latestHeader.BaseFee) {
@@ -1087,7 +1119,7 @@ func (p *DataPoster) updateBalance(ctx context.Context) error {
 	return nil
 }
 
-const maxConsecutiveIntermittentErrors = 10
+const maxConsecutiveIntermittentErrors = 20
 
 func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg string) {
 	nonce := tx.FullTx.Nonce()
@@ -1096,10 +1128,19 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 		return
 	}
 	logLevel := log.Error
-	if errors.Is(err, storage.ErrStorageRace) {
+	isStorageRace := errors.Is(err, storage.ErrStorageRace)
+	isFutureReplacePending := strings.Contains(err.Error(), legacypool.ErrFutureReplacePending.Error())
+	isNonceTooHigh := strings.Contains(err.Error(), core.ErrNonceTooHigh.Error())
+	if isStorageRace || isFutureReplacePending || isNonceTooHigh {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
-			logLevel = log.Debug
+			if isStorageRace {
+				logLevel = log.Debug
+			} else {
+				logLevel = log.Info
+			}
+		} else if isStorageRace {
+			logLevel = log.Warn
 		}
 	} else {
 		delete(p.errorCount, nonce)
@@ -1243,6 +1284,7 @@ type DataPosterConfig struct {
 	MaxBlobTxTipCapGwei    float64           `koanf:"max-blob-tx-tip-cap-gwei" reload:"hot"`
 	MaxFeeBidMultipleBips  arbmath.UBips     `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
+	Post4844Blobs          bool              `koanf:"post-4844-blobs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
 	UseNoOpStorage         bool              `koanf:"use-noop-storage"`
@@ -1278,6 +1320,21 @@ type ExternalSignerCfg struct {
 	InsecureSkipVerify bool `koanf:"insecure-skip-verify"`
 }
 
+func ExternalSignerTestCfg(addr common.Address, url string) (*ExternalSignerCfg, error) {
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		return nil, fmt.Errorf("getting certificates path: %w", err)
+	}
+	return &ExternalSignerCfg{
+		Address:          common.Bytes2Hex(addr.Bytes()),
+		URL:              url,
+		Method:           externalsignertest.SignerMethod,
+		RootCA:           cp.ServerCert,
+		ClientCert:       cp.ClientCert,
+		ClientPrivateKey: cp.ClientKey,
+	}, nil
+}
+
 type DangerousConfig struct {
 	// This should be used with caution, only when dataposter somehow gets in a
 	// bad state and we require clearing it.
@@ -1306,6 +1363,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Bool(prefix+".allocate-mempool-balance", defaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
+	f.Bool(prefix+".post-4844-blobs", defaultDataPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
 	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap gwei the result of which would be float64.\n"+
 		"This expression is expected to be evaluated please refer https://github.com/Knetic/govaluate/blob/master/MANUAL.md to find all available mathematical operators.\n"+
@@ -1347,6 +1405,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
 	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
+	Post4844Blobs:          false,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
 	UseNoOpStorage:         false,
@@ -1382,6 +1441,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxBlobTxTipCapGwei:    1,
 	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
+	Post4844Blobs:          false,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,

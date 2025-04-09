@@ -12,13 +12,15 @@ import (
 	"sync"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	flag "github.com/spf13/pflag"
 )
 
 // Most of the time we will use the SimpleDASReaderAggregator only to  aggregate
