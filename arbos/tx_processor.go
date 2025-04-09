@@ -389,7 +389,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, err, nil
 		}
 		if retryable == nil {
-			return true, 0, fmt.Errorf("retryable with tickerId: %v not found", tx.TicketId), nil
+			return true, 0, fmt.Errorf("retryable with ticketId: %v not found", tx.TicketId), nil
 		}
 
 		// Transfer callvalue from escrow

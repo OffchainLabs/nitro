@@ -410,7 +410,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	l2FaucetTxOpts.GasLimit = 0 // gas estimation
 	l2FaucetTxOpts.Value = big.NewInt(2)
 	l2FaucetTxOpts.NoSend = true
-	expectedErr := fmt.Errorf("retryable with tickerId: %v not found", ticketId)
+	expectedErr := fmt.Errorf("retryable with ticketId: %v not found", ticketId)
 	_, err = simple.RedeemAllAndCreateAddresses(&l2FaucetTxOpts, [][32]byte{ticketId, ticketId}, []common.Address{testhelpers.RandomAddress(), testhelpers.RandomAddress()})
 	if err == nil {
 		t.Fatal("expected non-nil error for gas estimation of duplicate retryable redeems")
