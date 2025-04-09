@@ -1529,6 +1529,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		if useSimpleEstimation {
 			gasLimit, err = b.estimateGasSimple(ctx, data, kzgBlobs, accessList)
 		} else {
+			// When there are previous batches queued up in the dataPoster, we override the delayed message count in the sequencer inbox
+			// so it accepts the corresponding delay proof. Otherwise, the gas estimation would revert.
 			var delayedMsgBefore uint64
 			if b.building.firstDelayedMsg != nil {
 				delayedMsgBefore = b.building.firstDelayedMsg.DelayedMessagesRead - 1
