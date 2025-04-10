@@ -376,7 +376,7 @@ func (s *ExecutionEngine) blockCreationStopped() bool {
 
 func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, bool) {
 	if s.blockCreationStopped() {
-		log.Debug(ExecutionEngineBlockCreationStopped.Error())
+		log.Debug("Not resequencing old msg", "reason", ExecutionEngineBlockCreationStopped)
 		return nil, false
 	}
 	s.createBlocksMutex.Lock()
