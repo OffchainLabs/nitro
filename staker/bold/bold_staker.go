@@ -271,7 +271,7 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 			}
 			latestStaked = latestConfirmed
 		}
-		assertion, err := readBoldAssertionCreationInfo(
+		assertion, err := ReadBoldAssertionCreationInfo(
 			ctx,
 			rollupUserLogic,
 			b.client,
@@ -565,10 +565,10 @@ func newBOLDChallengeManager(
 
 // Read the creation info for an assertion by looking up its creation
 // event from the rollup contracts.
-func readBoldAssertionCreationInfo(
+func ReadBoldAssertionCreationInfo(
 	ctx context.Context,
 	rollup *boldrollup.RollupUserLogic,
-	client protocol.ChainBackend,
+	client bind.ContractBackend,
 	rollupAddress common.Address,
 	assertionHash common.Hash,
 ) (*protocol.AssertionCreatedInfo, error) {
