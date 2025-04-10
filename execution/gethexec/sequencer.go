@@ -1006,6 +1006,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
+	s.lastCreatedBlockInfo = nil
+
 	pause, forwarder := s.GetPauseAndForwarder()
 	if pause != nil {
 		select {
@@ -1030,6 +1032,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 					item.returnResult(sequencerInternalError)
 				}
 			}
+			s.lastCreatedBlockInfo = nil
 			// Wait for the MaxBlockSpeed until attempting to create a block again
 			returnValue = true
 		}
@@ -1255,38 +1258,40 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 		return nil, false
 	}
 
+	madeBlock := false
+	for _, err := range hooks.TxErrors {
+		if err == nil {
+			madeBlock = true
+		}
+	}
+
 	s.lastCreatedBlockInfo = &createdBlockInfo{
 		block:      block,
 		hooks:      hooks,
 		queueItems: queueItems,
 	}
-	return sequencedMsg, false
+
+	return sequencedMsg, madeBlock
 }
 
-func (s *Sequencer) checkLastCreatedBlockInfo(expectedBlockHash common.Hash) error {
-	if s.lastCreatedBlockInfo == nil {
-		return errors.New("no last created block info")
-	}
-	if s.lastCreatedBlockInfo.block == nil {
-		return errors.New("no last created block")
-	}
-	if s.lastCreatedBlockInfo.block.Hash() != expectedBlockHash {
-		return fmt.Errorf("expected block hash %v, got %v", expectedBlockHash, s.lastCreatedBlockInfo.block.Hash())
-	}
-	return nil
-}
-
-func (s *Sequencer) ProcessHooksFromLastCreatedBlock(ctx context.Context, expectedBlockHash common.Hash) (time.Duration, error) {
+func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error) {
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
-	if err := s.checkLastCreatedBlockInfo(expectedBlockHash); err != nil {
-		return 0, err
+	if s.lastCreatedBlockInfo == nil {
+		return
 	}
 
 	if s.lastCreatedBlockInfo.block != nil {
 		successfulBlocksCounter.Inc(1)
 		s.nonceCache.Finalize(s.lastCreatedBlockInfo.block)
+	}
+
+	if errWhileSequencing != nil {
+		for _, queueItem := range s.lastCreatedBlockInfo.queueItems {
+			queueItem.returnResult(errWhileSequencing)
+		}
+		return
 	}
 
 	madeBlock := false
@@ -1315,20 +1320,17 @@ func (s *Sequencer) ProcessHooksFromLastCreatedBlock(ctx context.Context, expect
 		queueItem.returnResult(err)
 	}
 
-	if madeBlock {
-		return s.config().MaxBlockSpeed, nil
-	}
-	return 0, nil
+	s.lastCreatedBlockInfo = nil
 }
 
 // Consensus calls ReAddTransactionsFromLastCreatedBlock in case it is unable to
 // process the last sequenced msg due to not being related to the active sequencer
-func (s *Sequencer) ReAddTransactionsFromLastCreatedBlock(ctx context.Context, sequencedMsg *execution.SequencedMsg) error {
+func (s *Sequencer) ReAddTransactionsFromLastCreatedBlock(ctx context.Context) error {
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
-	if err := s.checkLastCreatedBlockInfo(sequencedMsg.MsgResult.BlockHash); err != nil {
-		return err
+	if s.lastCreatedBlockInfo == nil {
+		return nil
 	}
 
 	_, forwarder := s.GetPauseAndForwarder()
@@ -1500,7 +1502,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-func (s *Sequencer) Sequence(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
+func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
 	sequencedMsg, waitUntilSequencingNextBlock := s.createBlock(ctx)
 	if waitUntilSequencingNextBlock {
 		return sequencedMsg, s.config().MaxBlockSpeed
