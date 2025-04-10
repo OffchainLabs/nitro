@@ -49,16 +49,15 @@ func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duratio
 	if sequencedMsg != nil {
 		err := s.txStreamer.WriteSequencedMsg(sequencedMsg)
 		if errors.Is(err, execution.ErrRetrySequencer) {
-			log.Error("Error writing sequenced message, re-adding transactions from sequenced msg", "err", err)
+			log.Warn("Error writing sequenced message, not active sequencer, re-adding transactions from sequenced msg", "err", err)
 			err = s.execSequencer.ReAddTransactionsFromLastCreatedBlock(ctx, sequencedMsg)
 			if err != nil {
 				log.Error("Error re-adding transactions from last created block", "err", err)
-				return 0
 			}
 			return 0
 		} else if err != nil {
 			log.Error("Error writing sequenced message", "err", err)
-			return nextSequenceCall
+			return 0
 		}
 
 		err = s.execSequencer.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
@@ -66,6 +65,7 @@ func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duratio
 			log.Error("Error appending last sequenced block", "err", err)
 			return nextSequenceCall
 		}
+
 		nextSequenceCall, err = s.execSequencer.ProcessHooksFromLastCreatedBlock(ctx, sequencedMsg.MsgResult.BlockHash)
 		if err != nil {
 			log.Error("Error processing hooks from last created block", "err", err)
