@@ -236,7 +236,7 @@ func TestRedisProduceComplex(t *testing.T) {
 		numProducers         int
 		killConsumers        bool
 		withInvalidEntries   bool // If this is set, then every 50th entry is invalid (requests that can't be solved by any consumer)
-		notRetryingConsumers int  // number of consumers that should retry timed out messages
+		notRetryingConsumers int  // number of consumers that won't retry timed out messages
 	}{
 		{
 			name:         "one producer, all consumers are active",
