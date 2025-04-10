@@ -21,7 +21,7 @@ type MaintenanceStatus struct {
 type SequencedMsg struct {
 	MsgIdx        arbutil.MessageIndex
 	MsgWithMeta   arbostypes.MessageWithMetadata
-	MsgResult     MessageResult
+	MsgResult     *MessageResult
 	BlockMetadata common.BlockMetadata
 }
 
