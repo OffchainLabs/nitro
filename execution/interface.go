@@ -96,6 +96,8 @@ type ExecutionSequencer interface {
 	Sequence(ctx context.Context) (*SequencedMsg, time.Duration)
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*SequencedMsg, error)
 	AppendLastSequencedBlock(blockHash common.Hash) error
+	ProcessHooksFromLastCreatedBlock(ctx context.Context, expectedBlockHash common.Hash) (time.Duration, error)
+	RetryTransactionsFromLastCreatedBlock(ctx context.Context, sequencedMsg *SequencedMsg) error
 	ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*SequencedMsg, bool)
 	NextDelayedMessageNumber() (uint64, error)
 	Synced(ctx context.Context) bool

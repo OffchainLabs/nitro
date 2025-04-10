@@ -426,6 +426,12 @@ func (q *synchronizedTxQueue) Len() int {
 	return q.queue.Len()
 }
 
+type createdBlockInfo struct {
+	block      *types.Block
+	queueItems []txQueueItem
+	hooks      *FullSequencingHooks
+}
+
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
@@ -458,6 +464,9 @@ type Sequencer struct {
 	expectedSurplusFailureCount       int
 	auctioneerAddr                    common.Address
 	timeboostAuctionResolutionTxQueue chan txQueueItem
+
+	lastCreatedBlockInfo *createdBlockInfo
+	createBlockMutex     sync.Mutex
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChainId *big.Int) (*Sequencer, error) {
@@ -1186,6 +1195,9 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 }
 
 func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.SequencedMsg, returnValue bool) {
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+
 	pause, forwarder := s.GetPauseAndForwarder()
 	if pause != nil {
 		select {
@@ -1429,17 +1441,46 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 		return nil, false
 	}
 
-	if block != nil {
+	s.lastCreatedBlockInfo = &createdBlockInfo{
+		block:      block,
+		hooks:      hooks,
+		queueItems: queueItems,
+	}
+	return sequencedMsg, false
+}
+
+func (s *Sequencer) checkLastCreatedBlockInfo(expectedBlockHash common.Hash) error {
+	if s.lastCreatedBlockInfo == nil {
+		return errors.New("no last created block info")
+	}
+	if s.lastCreatedBlockInfo.block == nil {
+		return errors.New("no last created block")
+	}
+	if s.lastCreatedBlockInfo.block.Hash() != expectedBlockHash {
+		return fmt.Errorf("expected block hash %v, got %v", expectedBlockHash, s.lastCreatedBlockInfo.block.Hash())
+	}
+	return nil
+}
+
+func (s *Sequencer) ProcessHooksFromLastCreatedBlock(ctx context.Context, expectedBlockHash common.Hash) (time.Duration, error) {
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+
+	if err := s.checkLastCreatedBlockInfo(expectedBlockHash); err != nil {
+		return 0, err
+	}
+
+	if s.lastCreatedBlockInfo.block != nil {
 		successfulBlocksCounter.Inc(1)
-		s.nonceCache.Finalize(block)
+		s.nonceCache.Finalize(s.lastCreatedBlockInfo.block)
 	}
 
 	madeBlock := false
-	for i, err := range hooks.txErrors {
+	for i, err := range s.lastCreatedBlockInfo.hooks.txErrors {
 		if err == nil {
 			madeBlock = true
 		}
-		queueItem := queueItems[i]
+		queueItem := s.lastCreatedBlockInfo.queueItems[i]
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
 			if madeBlock {
@@ -1459,7 +1500,34 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 		}
 		queueItem.returnResult(err)
 	}
-	return sequencedMsg, madeBlock
+
+	if madeBlock {
+		return time.Until(time.Now().Add(s.config().MaxBlockSpeed)), nil
+	}
+	return 0, nil
+}
+
+// Consensus calls RetryTransactionsFromLastCreatedBlock in case it is unable to
+// process the last sequenced msg due to not being related to the active sequencer
+func (s *Sequencer) RetryTransactionsFromLastCreatedBlock(ctx context.Context, sequencedMsg *execution.SequencedMsg) error {
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+
+	if err := s.checkLastCreatedBlockInfo(sequencedMsg.MsgResult.BlockHash); err != nil {
+		return err
+	}
+
+	_, forwarder := s.GetPauseAndForwarder()
+	if forwarder != nil {
+		// forward if we have where to
+		s.handleInactive(ctx, forwarder, s.lastCreatedBlockInfo.queueItems)
+		return nil
+	}
+	// try to add back to queue otherwise
+	for _, item := range s.lastCreatedBlockInfo.queueItems {
+		s.txRetryQueue.Push(item)
+	}
+	return nil
 }
 
 func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {
