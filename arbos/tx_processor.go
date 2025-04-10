@@ -384,6 +384,13 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		return true, usergas, nil, ticketId.Bytes()
 	case *types.ArbitrumRetryTx:
+		retryable, err := p.state.RetryableState().OpenRetryable(tx.TicketId, p.evm.Context.Time)
+		if err != nil {
+			return true, 0, err, nil
+		}
+		if retryable == nil {
+			return true, 0, fmt.Errorf("retryable with ticketId: %v not found", tx.TicketId), nil
+		}
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
