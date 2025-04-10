@@ -1507,9 +1507,9 @@ func (s *Sequencer) ProcessHooksFromLastCreatedBlock(ctx context.Context, expect
 	return 0, nil
 }
 
-// Consensus calls RetryTransactionsFromLastCreatedBlock in case it is unable to
+// Consensus calls ReAddTransactionsFromLastCreatedBlock in case it is unable to
 // process the last sequenced msg due to not being related to the active sequencer
-func (s *Sequencer) RetryTransactionsFromLastCreatedBlock(ctx context.Context, sequencedMsg *execution.SequencedMsg) error {
+func (s *Sequencer) ReAddTransactionsFromLastCreatedBlock(ctx context.Context, sequencedMsg *execution.SequencedMsg) error {
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
