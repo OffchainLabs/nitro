@@ -93,11 +93,11 @@ type ExecutionSequencer interface {
 	Pause()
 	Activate()
 	ForwardTo(url string) error
-	Sequence(ctx context.Context) (*SequencedMsg, time.Duration)
+	StartSequencing(ctx context.Context) (*SequencedMsg, time.Duration)
+	EndSequencing(ctx context.Context, errWhileSequencing error)
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*SequencedMsg, error)
 	AppendLastSequencedBlock(blockHash common.Hash) error
-	ProcessHooksFromLastCreatedBlock(ctx context.Context, expectedBlockHash common.Hash) (time.Duration, error)
-	ReAddTransactionsFromLastCreatedBlock(ctx context.Context, sequencedMsg *SequencedMsg) error
+	ReAddTransactionsFromLastCreatedBlock(ctx context.Context) error
 	ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*SequencedMsg, error)
 	NextDelayedMessageNumber() (uint64, error)
 	Synced(ctx context.Context) bool

@@ -47,30 +47,28 @@ func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duratio
 		return 50 * time.Millisecond
 	}
 
-	sequencedMsg, timeToWaitUntilNextSequencing := s.execSequencer.Sequence(ctx)
+	sequencedMsg, timeToWaitUntilNextSequencing := s.execSequencer.StartSequencing(ctx)
+
+	var errWhileSequencing error
+	defer s.execSequencer.EndSequencing(ctx, errWhileSequencing)
+
 	if sequencedMsg != nil {
-		err := s.txStreamer.WriteSequencedMsg(sequencedMsg)
-		if errors.Is(err, execution.ErrRetrySequencer) {
-			log.Warn("Error writing sequenced message, not active sequencer, re-adding transactions from sequenced msg", "err", err)
-			err = s.execSequencer.ReAddTransactionsFromLastCreatedBlock(ctx, sequencedMsg)
-			if err != nil {
-				log.Error("Error re-adding transactions from last created block", "err", err)
+		errWhileSequencing = s.txStreamer.WriteSequencedMsg(sequencedMsg)
+		if errors.Is(errWhileSequencing, execution.ErrRetrySequencer) {
+			log.Warn("Error writing sequenced message, not active sequencer, re-adding transactions from sequenced msg", "err", errWhileSequencing)
+			errWhileSequencing = s.execSequencer.ReAddTransactionsFromLastCreatedBlock(ctx)
+			if errWhileSequencing != nil {
+				log.Error("Error re-adding transactions from last created block", "err", errWhileSequencing)
 			}
 			return 0
-		} else if err != nil {
-			log.Error("Error writing sequenced message", "err", err)
+		} else if errWhileSequencing != nil {
+			log.Error("Error writing sequenced message", "err", errWhileSequencing)
 			return 0
 		}
 
-		err = s.execSequencer.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
-		if err != nil {
-			log.Error("Error appending last sequenced block", "err", err)
-			return 0
-		}
-
-		timeToWaitUntilNextSequencing, err = s.execSequencer.ProcessHooksFromLastCreatedBlock(ctx, sequencedMsg.MsgResult.BlockHash)
-		if err != nil {
-			log.Error("Error processing hooks from last created block", "err", err)
+		errWhileSequencing = s.execSequencer.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
+		if errWhileSequencing != nil {
+			log.Error("Error appending last sequenced block", "err", errWhileSequencing)
 			return 0
 		}
 	}
