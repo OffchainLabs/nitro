@@ -646,7 +646,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	sequencedMsg := &execution.SequencedMsg{
 		MsgIdx:        msgIdx,
 		MsgWithMeta:   msgWithMeta,
-		MsgResult:     *msgResult,
+		MsgResult:     msgResult,
 		BlockMetadata: blockMetadata,
 	}
 
@@ -727,7 +727,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	sequencedMsg := &execution.SequencedMsg{
 		MsgIdx:        msgIdx,
 		MsgWithMeta:   messageWithMeta,
-		MsgResult:     *msgResult,
+		MsgResult:     msgResult,
 		BlockMetadata: s.blockMetadataFromBlock(block, nil),
 	}
 
