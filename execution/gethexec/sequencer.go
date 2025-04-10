@@ -1327,7 +1327,7 @@ func (s *Sequencer) ProcessHooksFromLastCreatedBlock(ctx context.Context, expect
 	}
 
 	if madeBlock {
-		return time.Until(time.Now().Add(s.config().MaxBlockSpeed)), nil
+		return s.config().MaxBlockSpeed, nil
 	}
 	return 0, nil
 }
@@ -1540,13 +1540,10 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 }
 
 func (s *Sequencer) Sequence(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
-	nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
 	sequencedMsg, waitUntilSequencingNextBlock := s.createBlock(ctx)
 	if waitUntilSequencingNextBlock {
-		// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
-		return sequencedMsg, time.Until(nextBlock)
+		return sequencedMsg, s.config().MaxBlockSpeed
 	}
-	// If we didn't make a block, try again immediately.
 	return sequencedMsg, 0
 }
 
