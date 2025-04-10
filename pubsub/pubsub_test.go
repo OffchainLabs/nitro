@@ -385,6 +385,8 @@ func TestRedisProduceComplex(t *testing.T) {
 						t.Errorf("Did not get expected error while awaiting responses, producer: %d, response: %d, err: %v", i, j, err)
 					} else if err == nil {
 						gotResponses = append(gotResponses, response)
+					} else {
+						gotErrors = append(gotErrors, err.Error())
 					}
 				}
 			}
