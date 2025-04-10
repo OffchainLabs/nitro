@@ -70,10 +70,17 @@ type AuctioneerServerConfig struct {
 	S3Storage                 S3StorageServiceConfig   `koanf:"s3-storage"`
 }
 
+var DefaultAuctioneerConsumerConfig = pubsub.ConsumerConfig{
+	// Messages with no heartbeat for over 1s will be reclaimed by the auctioneer
+	IdletimeToAutoclaim: time.Second,
+
+	ResponseEntryTimeout: time.Minute * 5,
+}
+
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 	Enable:                    true,
 	RedisURL:                  "",
-	ConsumerConfig:            pubsub.DefaultConsumerConfig,
+	ConsumerConfig:            DefaultAuctioneerConsumerConfig,
 	StreamTimeout:             10 * time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
 	S3Storage:                 DefaultS3StorageServiceConfig,
@@ -82,7 +89,7 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 var TestAuctioneerServerConfig = AuctioneerServerConfig{
 	Enable:                    true,
 	RedisURL:                  "",
-	ConsumerConfig:            pubsub.TestConsumerConfig,
+	ConsumerConfig:            DefaultAuctioneerConsumerConfig,
 	StreamTimeout:             time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
 }
@@ -122,7 +129,7 @@ type AuctioneerServer struct {
 	database                       *SqliteDatabase
 	s3StorageService               *S3StorageService
 	unackedBidsMutex               sync.Mutex
-	unackedBids                    map[string]*JsonValidatedBid
+	unackedBids                    map[string]*pubsub.Message[*JsonValidatedBid]
 }
 
 // NewAuctioneerServer creates a new autonomous auctioneer struct.
@@ -157,6 +164,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err != nil {
 		return nil, fmt.Errorf("creating consumer for validation: %w", err)
 	}
+	c.EnableDeterministicReprocessing()
 
 	var endpointManager SequencerEndpointManager
 	if cfg.UseRedisCoordinator {
@@ -267,23 +275,47 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 				// There's nothing in the queue.
 				return time.Millisecond * 250
 			}
+
+			if err := validateBidTemporal(&a.roundTimingInfo, (uint64)(req.Value.Round)); err != nil {
+				log.Info("Consumed bid that was no longer valid, skipping", "err", err, "msgId", req.ID)
+				req.Ack()
+				if errerr := a.consumer.SetError(ctx, req.ID, err.Error()); errerr != nil {
+					log.Warn("Error setting error response to bid", "err", err, "msgId", req.ID)
+					// We tried, all we can do here is warn.
+					// It will be cleaned up by the Consumer
+					// on the next try or ultimately by
+					// Producer.clearMessages After RequesTimeout
+				}
+				return 0
+			}
+
+			// We use Redis streams to keep the message until the round ends in
+			// case the auctioneer dies mid round. On restart Consume will
+			// fetch any messages that weren't used to resolve an auction yet.
+			a.unackedBidsMutex.Lock()
+
+			// If the heartbeat is slow, it's possible to re-consume the same
+			// bid, so we handle that here.
+			if _, ok := a.unackedBids[req.ID]; ok {
+				a.unackedBidsMutex.Unlock()
+				log.Info("Duplicate bid, skipping", "id", req.ID)
+				// Ack() stops the heartbeat goroutine created by the above
+				// invocation of Consume. This is OK since the original
+				// heartbeat goroutine for the unacked bid is still running,
+				// and will be stopped at auction end.
+				req.Ack()
+
+				// Importantly we don't want to send duplicate bids to
+				// the bidsReceiver since it cares about the ordering.
+				return 0
+			}
+
+			a.unackedBids[req.ID] = req
+			a.unackedBidsMutex.Unlock()
+
 			// Forward the message over a channel for processing elsewhere in
 			// another thread, so as to not block this consumption thread.
 			a.bidsReceiver <- req.Value
-
-			// We use Redis streams to keep the message until the round ends in case the auctioneer
-			// dies mid round. On restart Consume will fetch any messages that weren't used to
-			// resolve an auction yet.
-			// Calling "Ack()" on the request does not actually call XACK on redis which is what
-			// causes the message to be removed from the stream. Ack() just stops the Consumer's
-			// XClaimJustID heartbeat goroutine, which is only to prevent other consumers from
-			// processing the message. This isn't important in this case since there is only
-			// one consumer, so it's better to Ack() it here to avoid one goroutine per
-			// message.
-			a.unackedBidsMutex.Lock()
-			a.unackedBids[req.ID] = req.Value
-			a.unackedBidsMutex.Unlock()
-			req.Ack()
 
 			return 0
 		})
@@ -448,11 +480,19 @@ func (a *AuctioneerServer) acknowledgeAllBids(ctx context.Context, round uint64)
 	defer a.unackedBidsMutex.Unlock()
 
 	var acknowledgedCount int
-	for msgID, bid := range a.unackedBids {
+	for msgID, msg := range a.unackedBids {
+		bid := msg.Value
 		if uint64(bid.Round) <= round {
+			msg.Ack() // Stop the heartbeat goroutine
+
+			// SetResult calls XAck to remove the msg from the consumer group's
+			// pending list and then removes it from the stream with XDel.
 			if err := a.consumer.SetResult(ctx, msgID, nil); err != nil {
-				log.Error("Error acknowledging bid after auction resolution", "msgID", msgID, "error", err)
-				continue
+				log.Warn("Error marking bid message as consumed by auctioneer", "msgID", msgID, "error", err)
+				// We still need delete that bid from unacked bids since
+				// it can't be Ack()ed more than once.
+				// It will be cleaned up when it's re-read or by the producer
+				// after it expires.
 			}
 			delete(a.unackedBids, msgID)
 			acknowledgedCount++
