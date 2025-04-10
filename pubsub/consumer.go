@@ -150,8 +150,12 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 				if len(exceededRetries) > 0 {
 					idx := rand.Intn(len(exceededRetries))
 					if err := c.SetError(ctx, exceededRetries[idx].ID, "too many retries"); err != nil {
-						// TODO(magic): don't log error when other consumer set the error before us
-						log.Error("Failed to set error response for a message that exceeded retries limit", "err", err, "retryCount", exceededRetries[idx].RetryCount)
+						logger := log.Error
+						if errors.Is(err, ErrAlreadySet) {
+							// if error is already set, that's not a real error
+							logger = log.Debug
+						}
+						logger("Failed to set error response for a message that exceeded retries limit", "err", err, "retryCount", exceededRetries[idx].RetryCount)
 					}
 				}
 				pendingMsgs = filtered
