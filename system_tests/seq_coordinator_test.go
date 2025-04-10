@@ -434,13 +434,10 @@ func TestRedisSwitchover(t *testing.T) {
 	defer cleanupB()
 
 	verifyTxIsProcessed(t, ctx, builder, testClientB, 1e12)
-	log.Error("verifyTxIsProcessed1")
 
 	redisClient.Set(ctx, redisutil.CHOSENSEQ_KEY, redisutil.SWITCHED_REDIS, time.Duration(-1))
-	log.Error("verifyTxIsProcessed2")
 
 	verifyTxIsProcessed(t, ctx, builder, testClientB, 1e12*2)
-	log.Error("verifyTxIsProcessed3")
 
 	// Wait for all messages to be processed, before closing old redisClient
 	time.Sleep(1 * time.Second)
