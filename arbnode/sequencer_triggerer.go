@@ -63,7 +63,7 @@ func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duratio
 		err = s.execSequencer.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
 		if err != nil {
 			log.Error("Error appending last sequenced block", "err", err)
-			return nextSequenceCall
+			return 0
 		}
 
 		nextSequenceCall, err = s.execSequencer.ProcessHooksFromLastCreatedBlock(ctx, sequencedMsg.MsgResult.BlockHash)
