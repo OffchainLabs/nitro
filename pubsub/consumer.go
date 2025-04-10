@@ -138,6 +138,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 			}
 		} else if len(pendingMsgs) > 0 {
 			if c.cfg.MaxRetryCount != -1 {
+				// choose messages that didn't exceed MaxRetryCount
 				var exceededRetries []redis.XPendingExt
 				var filtered []redis.XPendingExt
 				for _, msg := range pendingMsgs {
@@ -148,6 +149,9 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 					}
 				}
 				if len(exceededRetries) > 0 {
+					// set error for one randomly chosen pending message
+					// * error set for only one message - avoid starving message processing
+					// * randomly chosen - mitigation for multiple consumers trying to set error for the same msg
 					idx := rand.Intn(len(exceededRetries))
 					if err := c.SetError(ctx, exceededRetries[idx].ID, "too many retries"); err != nil {
 						logger := log.Error
@@ -161,6 +165,8 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 				pendingMsgs = filtered
 			}
 			if len(pendingMsgs) > 0 {
+				// attempt auto-claiming one randomly chosen message;
+				// random choice is a mitigation for multiple consumers trying to claim same msg
 				idx := rand.Intn(len(pendingMsgs))
 				messages, _, err = c.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
 					Group:    c.redisGroup,
