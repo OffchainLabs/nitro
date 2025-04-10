@@ -41,27 +41,29 @@ func NewRestfulDasClientFromURL(url string) (*RestfulDasClient, error) {
 }
 
 func (c *RestfulDasClient) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	res, err := http.Get(c.url + getByHashRequestPath + EncodeStorageServiceKey(hash))
+	req, err := http.NewRequestWithContext(ctx, "GET", c.url+getByHashRequestPath+EncodeStorageServiceKey(hash), nil)
 	if err != nil {
 		return nil, err
 	}
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP error with status %d returned by server: %s", res.StatusCode, http.StatusText(res.StatusCode))
 	}
 
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-
+	jsonDecoder := json.NewDecoder(res.Body)
 	var response RestfulDasServerResponse
-	err = json.Unmarshal(body, &response)
-	if err != nil {
+	if err := jsonDecoder.Decode(&response); err != nil {
 		return nil, err
 	}
 
-	decoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(response.Data)))
-	decodedBytes, err := io.ReadAll(decoder)
+	b64Decoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(response.Data)))
+	decodedBytes, err := io.ReadAll(b64Decoder)
 	if err != nil {
 		return nil, err
 	}

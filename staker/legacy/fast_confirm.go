@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -28,7 +28,6 @@ type FastConfirmSafe struct {
 	fastConfirmNextNodeMethod abi.Method
 	builder                   *txbuilder.Builder
 	wallet                    ValidatorWalletInterface
-	gasRefunder               common.Address
 	l1Reader                  *headerreader.HeaderReader
 }
 
@@ -37,14 +36,12 @@ func NewFastConfirmSafe(
 	fastConfirmSafeAddress common.Address,
 	builder *txbuilder.Builder,
 	wallet ValidatorWalletInterface,
-	gasRefunder common.Address,
 	l1Reader *headerreader.HeaderReader,
 ) (*FastConfirmSafe, error) {
 	fastConfirmSafe := &FastConfirmSafe{
-		builder:     builder,
-		wallet:      wallet,
-		gasRefunder: gasRefunder,
-		l1Reader:    l1Reader,
+		builder:  builder,
+		wallet:   wallet,
+		l1Reader: l1Reader,
 	}
 	safe, err := contractsgen.NewSafe(fastConfirmSafeAddress, wallet.L1Client())
 	if err != nil {
@@ -66,7 +63,7 @@ func NewFastConfirmSafe(
 		return nil, fmt.Errorf("calling getThreshold: %w", err)
 	}
 	fastConfirmSafe.threshold = threshold.Uint64()
-	rollupUserLogicAbi, err := rollupgen.RollupUserLogicMetaData.GetAbi()
+	rollupUserLogicAbi, err := rollup_legacy_gen.RollupUserLogicMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +123,7 @@ func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash com
 		return err
 	}
 
-	log.Info("Approving Safe tx hash to fast confirm", "safeHash", safeTxHash, "nodeHash", nodeHash)
+	log.Info("Approving Safe tx hash to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]), "nodeHash", nodeHash, "self", f.wallet.Address())
 	_, err = f.safe.ApproveHash(f.builder.Auth(ctx), safeTxHash)
 	if err != nil {
 		return err
@@ -224,7 +221,7 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		}
 	}
 	if approvedHashCount >= f.threshold {
-		log.Info("Executing Safe tx to fast confirm", "safeHash", safeTxHash)
+		log.Info("Executing Safe tx to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]))
 		_, err := f.safe.ExecTransaction(
 			f.builder.Auth(ctx),
 			f.wallet.RollupAddress(),
@@ -243,6 +240,6 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		}
 		return true, nil
 	}
-	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", safeTxHash)
+	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]), "approved", approvedHashCount, "threshold", f.threshold, "self", f.wallet.Address())
 	return false, nil
 }

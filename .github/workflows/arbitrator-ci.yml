@@ -70,16 +70,16 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-10-06'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          toolchain: 'nightly-2025-02-14'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
 
       - name: Install rust stable
         id: install-rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.80.1'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          toolchain: '1.84.1'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
@@ -173,9 +173,6 @@ jobs:
       - name: Rustfmt
         run: cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
 
-      - name: Rustfmt - langs/rust
-        run: cargo fmt --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
-
       - name: Rustfmt - tools/stylus_benchmark
         run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
 
@@ -190,7 +187,8 @@ jobs:
       - name: Run proof validation tests
         run: |
           npm install --global yarn
-          cd contracts
+          cd contracts-legacy
+          cp -r ../contracts/test/prover/proofs/* ./test/prover/proofs
           yarn install
           yarn build
           yarn build:forge:yul

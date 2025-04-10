@@ -98,7 +98,7 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key common.Hash)
 }
 
 func (f *FallbackStorageService) String() string {
-	return "FallbackStorageService(stoargeService:" + f.StorageService.String() + ")"
+	return "FallbackStorageService(storageService:" + f.StorageService.String() + ")"
 }
 
 func (f *FallbackStorageService) HealthCheck(ctx context.Context) error {

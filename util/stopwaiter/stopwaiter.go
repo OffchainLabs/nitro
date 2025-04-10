@@ -229,6 +229,7 @@ func CallIterativelyWith[T any](
 	return s.LaunchThreadSafe(func(ctx context.Context) {
 		var defaultVal T
 		var val T
+		var ok bool
 		for {
 			interval := foo(ctx, val)
 			if ctx.Err() != nil {
@@ -244,7 +245,30 @@ func CallIterativelyWith[T any](
 				timer.Stop()
 				return
 			case <-timer.C:
-			case val = <-triggerChan:
+			case val, ok = <-triggerChan:
+				if !ok {
+					return
+				}
+			}
+		}
+	})
+}
+
+func CallWhenTriggeredWith[T any](
+	s ThreadLauncher,
+	foo func(context.Context, T),
+	triggerChan <-chan T,
+) error {
+	return s.LaunchThreadSafe(func(ctx context.Context) {
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case val := <-triggerChan:
+				foo(ctx, val)
 			}
 		}
 	})

@@ -182,9 +182,10 @@ func awaitResponses(ctx context.Context, promises []*containers.Promise[testResp
 }
 
 // consume messages from every consumer except stopped ones.
-func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testRequest, testResponse], gotMessages []map[string]string) [][]string {
+func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testRequest, testResponse], gotMessages []map[string]string) ([][]string, [][]string) {
 	t.Helper()
 	wantResponses := make([][]string, consumersCount)
+	wantErrors := make([][]string, consumersCount)
 	for idx := 0; idx < consumersCount; idx++ {
 		if consumers[idx].Stopped() {
 			continue
@@ -194,7 +195,6 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 		c.StopWaiter.LaunchThread(
 			func(ctx context.Context) {
 				for {
-
 					msg, err := c.Consume(ctx)
 					if err != nil {
 						if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
@@ -207,7 +207,13 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 						continue
 					}
 					gotMessages[idx][msg.ID] = msg.Value.Request
-					if !msg.Value.IsInvalid {
+					if msg.Value.IsInvalid {
+						errString := fmt.Sprintf("invalid request: %v", msg.ID)
+						if err := c.SetError(ctx, msg.ID, errString); err != nil {
+							t.Errorf("Error setting a error: %v", err)
+						}
+						wantErrors[idx] = append(wantErrors[idx], errString)
+					} else {
 						resp := fmt.Sprintf("result for: %v", msg.ID)
 						if err := c.SetResult(ctx, msg.ID, testResponse{Response: resp}); err != nil {
 							t.Errorf("Error setting a result: %v", err)
@@ -218,7 +224,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 				}
 			})
 	}
-	return wantResponses
+	return wantResponses, wantErrors
 }
 
 func TestRedisProduceComplex(t *testing.T) {
@@ -301,15 +307,15 @@ func TestRedisProduceComplex(t *testing.T) {
 
 			entries := wantMessages(tc.entriesCount)
 
-			var allPromises [][]*containers.Promise[testResponse]
-			var allRequests [][]testRequest
+			var promises [][]*containers.Promise[testResponse]
+			var requests [][]testRequest
 			for i := 0; i < tc.numProducers; i++ {
 				prs, rqs, err := produceMessages(ctx, entries[i], producers[i], tc.withInvalidEntries)
 				if err != nil {
 					t.Fatalf("Error producing messages from producer%d: %v", i, err)
 				}
-				allPromises = append(allPromises, prs)
-				allRequests = append(allRequests, rqs)
+				promises = append(promises, prs)
+				requests = append(requests, rqs)
 			}
 
 			gotMessages := messagesMaps(len(consumers))
@@ -353,24 +359,21 @@ func TestRedisProduceComplex(t *testing.T) {
 			killedConsumers := len(killedEntries)
 
 			time.Sleep(time.Second)
-			wantResponses := consume(ctx, t, consumers, gotMessages)
+			wantResponses, wantErrors := consume(ctx, t, consumers, gotMessages)
 
 			var gotResponses []string
+			var gotErrors []string
 			waitingForTooLong := 0
 			for i := 0; i < tc.numProducers; i++ {
-				requests := allRequests[i]
-				responses, errors := awaitResponses(ctx, allPromises[i])
-				if len(responses) != len(requests) {
-					t.Errorf("Unexpected number of responses, producer: %d, len(responses): %d, len(requests): %d", i, len(responses), len(requests))
-				}
-				if len(errors) != len(responses) {
-					t.Errorf("internal test error - got unexpected number of errors, should be equal number of responses, producer: %d, len(errors): %d, len(responses): %d", i, len(errors), len(responses))
+				responses, errs := awaitResponses(ctx, promises[i])
+				if len(errs) != len(responses) {
+					t.Errorf("internal test error - got unexpected number of errors, should be equal number of responses, producer: %d, len(errs): %d, len(responses): %d", i, len(errs), len(responses))
 				}
 				if t.Failed() {
 					continue
 				}
 				for j := 0; j < len(responses); j++ {
-					request, response, err := requests[j], responses[j], errors[j]
+					request, response, err := requests[i][j], responses[j], errs[j]
 					if err != nil && strings.Contains(err.Error(), "request has been waiting for too long") && tc.notRetryingConsumers == consumersCount && killedConsumers > 0 {
 						// we expect this error in case all consumers are not retrying and some have been killed
 						waitingForTooLong++
@@ -422,6 +425,12 @@ func TestRedisProduceComplex(t *testing.T) {
 			wantResp := flatten(wantResponses)
 			if diff := cmp.Diff(wantResp, gotResponses); diff != "" {
 				t.Errorf("Unexpected diff in responses:\n%s\n", diff)
+			}
+
+			sort.Strings(gotErrors)
+			wantErr := flatten(wantErrors)
+			if diff := cmp.Diff(wantErr, gotErrors); diff != "" {
+				t.Errorf("Unexpected diff in errors:\n%s\n", diff)
 			}
 
 			// Check each producers all promises were responded to
