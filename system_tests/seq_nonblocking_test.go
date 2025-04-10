@@ -20,7 +20,7 @@ func TestSequencerDoesntBlockWithoutTransactions(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	_, nextSequenceTime := builder.L2.ExecNode.Sequence(ctx)
+	_, nextSequenceTime := builder.L2.ExecNode.StartSequencing(ctx)
 	if nextSequenceTime == time.Duration(0) {
 		t.Fatal("Expected non-zero next sequence time")
 	}
