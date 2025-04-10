@@ -41,12 +41,8 @@ func (s *SequencerTrigger) triggerSequencing(ctx context.Context) time.Duration 
 	defer s.txStreamer.insertionMutex.Unlock()
 
 	if err := s.txStreamer.ExpectChosenSequencer(); err != nil {
-		if errors.Is(err, execution.ErrRetrySequencer) {
-			log.Debug("Not active sequencer, retrying", "err", err)
-		} else {
-			log.Error("Error expecting chosen sequencer", "err", err)
-		}
-		return 100 * time.Millisecond
+		log.Debug("Not active sequencer, retrying", "err", err)
+		return 50 * time.Millisecond
 	}
 
 	sequencedMsg, nextSequenceCall := s.execSequencer.Sequence(ctx)
