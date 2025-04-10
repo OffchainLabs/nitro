@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
@@ -110,7 +111,7 @@ func NewMultiProtocolStaker(
 }
 
 func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
-	boldActive, rollupAddress, err := m.isBoldActive(ctx)
+	boldActive, rollupAddress, err := IsBoldActive(m.getCallOpts(ctx), m.bridge, m.l1Reader.Client())
 	if err != nil {
 		return err
 	}
@@ -167,14 +168,13 @@ func (m *MultiProtocolStaker) StopAndWait() {
 	m.StopWaiter.StopAndWait()
 }
 
-func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Address, error) {
+func IsBoldActive(callOpts *bind.CallOpts, bridge *bridgegen.IBridge, l1Backend *ethclient.Client) (bool, common.Address, error) {
 	var addr common.Address
-	callOpts := m.getCallOpts(ctx)
-	rollupAddress, err := m.bridge.Rollup(callOpts)
+	rollupAddress, err := bridge.Rollup(callOpts)
 	if err != nil {
 		return false, addr, err
 	}
-	userLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, m.l1Reader.Client())
+	userLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, l1Backend)
 	if err != nil {
 		return false, addr, err
 	}
@@ -188,7 +188,7 @@ func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Ad
 }
 
 func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) error {
-	shouldSwitch, rollupAddress, err := m.isBoldActive(ctx)
+	shouldSwitch, rollupAddress, err := IsBoldActive(m.getCallOpts(ctx), m.bridge, m.l1Reader.Client())
 	if err != nil {
 		return err
 	}
