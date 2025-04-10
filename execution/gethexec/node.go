@@ -478,7 +478,7 @@ func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.
 func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.Reorg(newHeadMsgIdx, newMessages))
 }
-func (n *ExecutionNode) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, bool) {
+func (n *ExecutionNode) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, error) {
 	return n.ExecEngine.ResequenceReorgedMessage(msg)
 }
 func (n *ExecutionNode) Sequence(ctx context.Context) (*execution.SequencedMsg, time.Duration) {

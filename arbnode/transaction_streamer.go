@@ -251,10 +251,14 @@ func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.Messa
 		}
 
 		for _, msg := range msgs {
-			sequencedMsg, sequenceNextMsg := s.execSequencer.ResequenceReorgedMessage(msg)
+			sequencedMsg, err := s.execSequencer.ResequenceReorgedMessage(msg)
+			if err != nil {
+				log.Error("failed to resequence reorged message", "err", err)
+				return
+			}
 
 			if sequencedMsg != nil {
-				err := s.WriteSequencedMsg(sequencedMsg)
+				err = s.WriteSequencedMsg(sequencedMsg)
 				if err != nil {
 					log.Error("failed to write reorged message", "msg", sequencedMsg, "err", err)
 					return
@@ -265,10 +269,6 @@ func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.Messa
 					log.Error("failed to append last sequenced block", "msg", sequencedMsg, "err", err)
 					return
 				}
-			}
-
-			if !sequenceNextMsg {
-				return
 			}
 		}
 	}

@@ -98,7 +98,7 @@ type ExecutionSequencer interface {
 	AppendLastSequencedBlock(blockHash common.Hash) error
 	ProcessHooksFromLastCreatedBlock(ctx context.Context, expectedBlockHash common.Hash) (time.Duration, error)
 	ReAddTransactionsFromLastCreatedBlock(ctx context.Context, sequencedMsg *SequencedMsg) error
-	ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*SequencedMsg, bool)
+	ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*SequencedMsg, error)
 	NextDelayedMessageNumber() (uint64, error)
 	Synced(ctx context.Context) bool
 	FullSyncProgressMap(ctx context.Context) map[string]interface{}
