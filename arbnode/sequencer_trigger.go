@@ -52,7 +52,15 @@ func (s *SequencerTrigger) triggerSequencing(ctx context.Context) time.Duration 
 	sequencedMsg, nextSequenceCall := s.execSequencer.Sequence(ctx)
 	if sequencedMsg != nil {
 		err := s.txStreamer.WriteSequencedMsg(sequencedMsg)
-		if err != nil {
+		if errors.Is(err, execution.ErrRetrySequencer) {
+			log.Error("Error writing sequenced message, retrying transactions from sequenced msg", "err", err)
+			err = s.execSequencer.RetryTransactionsFromLastCreatedBlock(ctx, sequencedMsg)
+			if err != nil {
+				log.Error("Error retrying transactions from last created block", "err", err)
+				return 0
+			}
+			return 0
+		} else if err != nil {
 			log.Error("Error writing sequenced message", "err", err)
 			return nextSequenceCall
 		}
@@ -60,7 +68,14 @@ func (s *SequencerTrigger) triggerSequencing(ctx context.Context) time.Duration 
 		err = s.execSequencer.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
 		if err != nil {
 			log.Error("Error appending last sequenced block", "err", err)
+			return nextSequenceCall
 		}
+		nextSequenceCall, err = s.execSequencer.ProcessHooksFromLastCreatedBlock(ctx, sequencedMsg.MsgResult.BlockHash)
+		if err != nil {
+			log.Error("Error processing hooks from last created block", "err", err)
+			return 0
+		}
+
 	}
 	return nextSequenceCall
 }
