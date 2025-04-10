@@ -482,9 +482,15 @@ func (n *ExecutionNode) ResequenceReorgedMessage(msg *arbostypes.MessageWithMeta
 	return n.ExecEngine.ResequenceReorgedMessage(msg)
 }
 func (n *ExecutionNode) StartSequencing(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
+	if n.Sequencer == nil {
+		return nil, time.Hour
+	}
 	return n.Sequencer.StartSequencing(ctx)
 }
 func (n *ExecutionNode) EndSequencing(ctx context.Context, errWhileSequencing error) {
+	if n.Sequencer == nil {
+		return
+	}
 	n.Sequencer.EndSequencing(ctx, errWhileSequencing)
 }
 func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
@@ -500,6 +506,9 @@ func (n *ExecutionNode) AppendLastSequencedBlock(blockHash common.Hash) error {
 	return n.ExecEngine.AppendLastSequencedBlock(blockHash)
 }
 func (n *ExecutionNode) ReAddTransactionsFromLastCreatedBlock(ctx context.Context) error {
+	if n.Sequencer == nil {
+		return errors.New("sequencer not active")
+	}
 	return n.Sequencer.ReAddTransactionsFromLastCreatedBlock(ctx)
 }
 
