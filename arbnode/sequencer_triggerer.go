@@ -49,10 +49,10 @@ func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duratio
 	if sequencedMsg != nil {
 		err := s.txStreamer.WriteSequencedMsg(sequencedMsg)
 		if errors.Is(err, execution.ErrRetrySequencer) {
-			log.Error("Error writing sequenced message, retrying transactions from sequenced msg", "err", err)
-			err = s.execSequencer.RetryTransactionsFromLastCreatedBlock(ctx, sequencedMsg)
+			log.Error("Error writing sequenced message, re-adding transactions from sequenced msg", "err", err)
+			err = s.execSequencer.ReAddTransactionsFromLastCreatedBlock(ctx, sequencedMsg)
 			if err != nil {
-				log.Error("Error retrying transactions from last created block", "err", err)
+				log.Error("Error re-adding transactions from last created block", "err", err)
 				return 0
 			}
 			return 0

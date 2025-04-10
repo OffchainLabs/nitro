@@ -500,8 +500,8 @@ func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMes
 func (n *ExecutionNode) AppendLastSequencedBlock(blockHash common.Hash) error {
 	return n.ExecEngine.AppendLastSequencedBlock(blockHash)
 }
-func (n *ExecutionNode) RetryTransactionsFromLastCreatedBlock(ctx context.Context, sequencedMsg *execution.SequencedMsg) error {
-	return n.Sequencer.RetryTransactionsFromLastCreatedBlock(ctx, sequencedMsg)
+func (n *ExecutionNode) ReAddTransactionsFromLastCreatedBlock(ctx context.Context, sequencedMsg *execution.SequencedMsg) error {
+	return n.Sequencer.ReAddTransactionsFromLastCreatedBlock(ctx, sequencedMsg)
 }
 func (n *ExecutionNode) ProcessHooksFromLastCreatedBlock(ctx context.Context, expectedBlockHash common.Hash) (time.Duration, error) {
 	return n.Sequencer.ProcessHooksFromLastCreatedBlock(ctx, expectedBlockHash)
