@@ -99,7 +99,7 @@ func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbo
 	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages))
 }
 
-func (w *execClientWrapper) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, bool) {
+func (w *execClientWrapper) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, error) {
 	return w.ExecutionEngine.ResequenceReorgedMessage(msg)
 }
 
