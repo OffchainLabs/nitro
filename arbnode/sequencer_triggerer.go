@@ -14,29 +14,29 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-type SequencerTrigger struct {
+type SequencerTriggerer struct {
 	stopwaiter.StopWaiter
 
 	execSequencer execution.ExecutionSequencer
 	txStreamer    *TransactionStreamer
 }
 
-func NewSequencerTrigger(
+func NewSequencerTriggerer(
 	execSequencer execution.ExecutionSequencer,
 	txStreamer *TransactionStreamer,
-) *SequencerTrigger {
-	return &SequencerTrigger{
+) *SequencerTriggerer {
+	return &SequencerTriggerer{
 		execSequencer: execSequencer,
 		txStreamer:    txStreamer,
 	}
 }
 
-func (s *SequencerTrigger) Start(ctx_in context.Context) {
+func (s *SequencerTriggerer) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 	s.CallIteratively(s.triggerSequencing)
 }
 
-func (s *SequencerTrigger) triggerSequencing(ctx context.Context) time.Duration {
+func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duration {
 	s.txStreamer.insertionMutex.Lock()
 	defer s.txStreamer.insertionMutex.Unlock()
 
