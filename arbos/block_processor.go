@@ -224,6 +224,18 @@ func ProduceBlockAdvanced(
 	// We'll check that the block can fit each message, so this pool is set to not run out
 	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
 
+	if liveTracingHooks != nil && runMode == core.MessageCommitMode {
+		if liveTracingHooks.OnBlockStart != nil {
+			tmpBlock := types.NewBlock(header, &types.Body{Transactions: complete}, receipts, trie.NewStackTrie(nil))
+
+			liveTracingHooks.OnBlockStart(tracing.BlockEvent{
+				Block:     tmpBlock,
+				Finalized: header,
+				Safe:      header,
+			})
+		}
+	}
+
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
@@ -522,6 +534,12 @@ func ProduceBlockAdvanced(
 		}
 		// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
 		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
+	}
+
+	if liveTracingHooks != nil && runMode == core.MessageCommitMode {
+		if liveTracingHooks.OnBlockEnd != nil {
+			liveTracingHooks.OnBlockEnd(nil)
+		}
 	}
 
 	return block, receipts, nil
