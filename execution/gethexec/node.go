@@ -481,8 +481,11 @@ func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []
 func (n *ExecutionNode) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, error) {
 	return n.ExecEngine.ResequenceReorgedMessage(msg)
 }
-func (n *ExecutionNode) Sequence(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
-	return n.Sequencer.Sequence(ctx)
+func (n *ExecutionNode) StartSequencing(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
+	return n.Sequencer.StartSequencing(ctx)
+}
+func (n *ExecutionNode) EndSequencing(ctx context.Context, errWhileSequencing error) {
+	n.Sequencer.EndSequencing(ctx, errWhileSequencing)
 }
 func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
 	return containers.NewReadyPromise(n.ExecEngine.HeadMessageIndex())
@@ -496,11 +499,8 @@ func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMes
 func (n *ExecutionNode) AppendLastSequencedBlock(blockHash common.Hash) error {
 	return n.ExecEngine.AppendLastSequencedBlock(blockHash)
 }
-func (n *ExecutionNode) ReAddTransactionsFromLastCreatedBlock(ctx context.Context, sequencedMsg *execution.SequencedMsg) error {
-	return n.Sequencer.ReAddTransactionsFromLastCreatedBlock(ctx, sequencedMsg)
-}
-func (n *ExecutionNode) ProcessHooksFromLastCreatedBlock(ctx context.Context, expectedBlockHash common.Hash) (time.Duration, error) {
-	return n.Sequencer.ProcessHooksFromLastCreatedBlock(ctx, expectedBlockHash)
+func (n *ExecutionNode) ReAddTransactionsFromLastCreatedBlock(ctx context.Context) error {
+	return n.Sequencer.ReAddTransactionsFromLastCreatedBlock(ctx)
 }
 
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
