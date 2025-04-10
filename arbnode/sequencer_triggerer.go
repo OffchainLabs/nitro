@@ -37,6 +37,8 @@ func (s *SequencerTriggerer) Start(ctx_in context.Context) {
 }
 
 func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duration {
+	startSequencingTime := time.Now()
+
 	s.txStreamer.insertionMutex.Lock()
 	defer s.txStreamer.insertionMutex.Unlock()
 
@@ -45,7 +47,7 @@ func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duratio
 		return 50 * time.Millisecond
 	}
 
-	sequencedMsg, nextSequenceCall := s.execSequencer.Sequence(ctx)
+	sequencedMsg, timeToWaitUntilNextSequencing := s.execSequencer.Sequence(ctx)
 	if sequencedMsg != nil {
 		err := s.txStreamer.WriteSequencedMsg(sequencedMsg)
 		if errors.Is(err, execution.ErrRetrySequencer) {
@@ -66,12 +68,11 @@ func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duratio
 			return 0
 		}
 
-		nextSequenceCall, err = s.execSequencer.ProcessHooksFromLastCreatedBlock(ctx, sequencedMsg.MsgResult.BlockHash)
+		timeToWaitUntilNextSequencing, err = s.execSequencer.ProcessHooksFromLastCreatedBlock(ctx, sequencedMsg.MsgResult.BlockHash)
 		if err != nil {
 			log.Error("Error processing hooks from last created block", "err", err)
 			return 0
 		}
-
 	}
-	return nextSequenceCall
+	return time.Until(startSequencingTime.Add(timeToWaitUntilNextSequencing))
 }
