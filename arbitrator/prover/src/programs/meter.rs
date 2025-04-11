@@ -1,5 +1,6 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+#![allow(clippy::needless_lifetimes)]
 
 use crate::{
     programs::{
@@ -122,7 +123,7 @@ pub struct FuncMeter<'a, F: OpcodePricer> {
     sigs: Arc<SigMap>,
 }
 
-impl<'a, F: OpcodePricer> FuncMeter<'a, F> {
+impl<F: OpcodePricer> FuncMeter<'_, F> {
     fn new(
         ink_global: GlobalIndex,
         status_global: GlobalIndex,

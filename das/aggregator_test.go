@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
@@ -50,7 +51,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		backends = append(backends, *details)
 	}
 
-	aggregator, err := NewAggregator(ctx, DataAvailabilityConfig{RPCAggregator: AggregatorConfig{AssumedHonest: 1}, ParentChainNodeURL: "none"}, backends)
+	aggregator, err := NewAggregator(ctx, DataAvailabilityConfig{RPCAggregator: AggregatorConfig{AssumedHonest: 1, EnableChunkedStore: true}, ParentChainNodeURL: "none"}, backends)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -207,7 +208,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	aggregator, err := NewAggregator(
 		ctx,
 		DataAvailabilityConfig{
-			RPCAggregator:      AggregatorConfig{AssumedHonest: assumedHonest},
+			RPCAggregator:      AggregatorConfig{AssumedHonest: assumedHonest, EnableChunkedStore: true},
 			ParentChainNodeURL: "none",
 			RequestTimeout:     time.Millisecond * 2000,
 		}, backends)
@@ -243,25 +244,22 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 func initTest(t *testing.T) int {
 	t.Parallel()
 	seed := time.Now().UnixNano()
-	seedStr := os.Getenv("SEED")
-	if len(seedStr) > 0 {
+	if len(*testflag.SeedFlag) > 0 {
 		var err error
-		intSeed, err := strconv.Atoi(seedStr)
+		intSeed, err := strconv.Atoi(*testflag.SeedFlag)
 		Require(t, err, "Failed to parse string")
 		seed = int64(intSeed)
 	}
 	rand.Seed(seed)
 
-	runsStr := os.Getenv("RUNS")
 	runs := 2 ^ 32
-	if len(runsStr) > 0 {
+	if len(*testflag.RunsFlag) > 0 {
 		var err error
-		runs, err = strconv.Atoi(runsStr)
+		runs, err = strconv.Atoi(*testflag.RunsFlag)
 		Require(t, err, "Failed to parse string")
 	}
 
-	loggingStr := os.Getenv("LOGGING")
-	if len(loggingStr) > 0 {
+	if len(*testflag.LoggingFlag) > 0 {
 		enableLogging()
 	}
 

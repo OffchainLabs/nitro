@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -28,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 )
@@ -58,7 +60,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, opts.dasModeString)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	if opts.workload == upgradeArbOs {
-		chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+		chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_10
 	}
 
 	var delayEvery int
@@ -202,8 +204,6 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 			WrapL2ForDelayed(t, delayedTx, builder.L1Info, "User", 100000),
 		})
-		// give the inbox reader a bit of time to pick up the delayed message
-		time.Sleep(time.Millisecond * 500)
 
 		// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 		for i := 0; i < 30; i++ {
@@ -248,7 +248,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	if !testClientB.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fatal(t, "did not validate all blocks")
 	}
-	gethExec, ok := testClientB.ConsensusNode.Execution.(*gethexec.ExecutionNode)
+	gethExec, ok := testClientB.ConsensusNode.ExecutionClient.(*gethexec.ExecutionNode)
 	if !ok {
 		t.Fail()
 	}
@@ -262,6 +262,33 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
 		Fatal(t, "unexpected refcount:", finalRefCount)
 	}
+}
+
+func TestBlockRecordSimple(t *testing.T) {
+	if !*testflag.RecordBlockInputsEnable {
+		t.Skip("not recording")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BlockValidator.Enable = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User2")
+
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
+	// give the inbox reader a bit of time to pick up the delayed message
+	time.Sleep(time.Millisecond * 100)
 }
 
 func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {

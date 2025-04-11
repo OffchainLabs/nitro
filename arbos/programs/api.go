@@ -4,12 +4,13 @@
 package programs
 
 import (
+	"strconv"
+
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -73,6 +74,8 @@ func newApiClosures(
 		return db.GetState(actingAddress, key), cost
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
+		isOutOfGas := false
+		recording := db.Recording()
 		for len(data) > 0 {
 			key := common.BytesToHash(data[:32])
 			value := common.BytesToHash(data[32:64])
@@ -85,10 +88,17 @@ func newApiClosures(
 			cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
 			if cost > *gasLeft {
 				*gasLeft = 0
-				return OutOfGas
+				isOutOfGas = true
+				if recording {
+					continue
+				}
+				break
 			}
 			*gasLeft -= cost
 			db.SetState(actingAddress, key, value)
+		}
+		if isOutOfGas {
+			return OutOfGas
 		}
 		return Success
 	}
@@ -145,13 +155,13 @@ func newApiClosures(
 
 		switch opcode {
 		case vm.CALL:
-			ret, returnGas, err = evm.Call(scope.Contract, contract, input, gas, value)
+			ret, returnGas, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
 		case vm.DELEGATECALL:
-			ret, returnGas, err = evm.DelegateCall(scope.Contract, contract, input, gas)
+			ret, returnGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
 		case vm.STATICCALL:
-			ret, returnGas, err = evm.StaticCall(scope.Contract, contract, input, gas)
+			ret, returnGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
 		default:
-			log.Crit("unsupported call type", "opcode", opcode)
+			panic("unsupported call type: " + opcode.String())
 		}
 
 		interpreter.SetReturnData(ret)
@@ -201,9 +211,9 @@ func newApiClosures(
 		var suberr error
 
 		if opcode == vm.CREATE {
-			res, addr, returnGas, suberr = evm.Create(contract, code, gas, endowment)
+			res, addr, returnGas, suberr = evm.Create(contract.Address(), code, gas, endowment)
 		} else {
-			res, addr, returnGas, suberr = evm.Create2(contract, code, gas, endowment, salt)
+			res, addr, returnGas, suberr = evm.Create2(contract.Address(), code, gas, endowment, salt)
 		}
 		if suberr != nil {
 			addr = zeroAddr
@@ -266,7 +276,7 @@ func newApiClosures(
 		original := input
 
 		crash := func(reason string) {
-			log.Crit("bad API call", "reason", reason, "request", req, "len", len(original), "remaining", len(input))
+			panic("bad API call reason: " + reason + " request: " + strconv.Itoa(int(req)) + " len: " + strconv.Itoa(len(original)) + " remaining: " + strconv.Itoa(len(input)))
 		}
 		takeInput := func(needed int, reason string) []byte {
 			if len(input) < needed {
@@ -338,7 +348,7 @@ func newApiClosures(
 			case StaticCall:
 				opcode = vm.STATICCALL
 			default:
-				log.Crit("unsupported call type", "opcode", opcode)
+				panic("unsupported call type opcode: " + opcode.String())
 			}
 			contract := takeAddress()
 			value := takeU256()
@@ -414,8 +424,7 @@ func newApiClosures(
 			captureHostio(name, args, outs, startInk, endInk)
 			return []byte{}, nil, 0
 		default:
-			log.Crit("unsupported call type", "req", req)
-			return []byte{}, nil, 0
+			panic("unsupported call type: " + strconv.Itoa(int(req)))
 		}
 	}
 }

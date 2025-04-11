@@ -1,10 +1,11 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![allow(clippy::too_many_arguments)]
 
 use crate::env::{Escape, HostioInfo, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::{
+    benchmark::Benchmark,
     evm::{
         api::{DataReader, EvmApi, Gas, Ink},
         EvmData,
@@ -21,7 +22,7 @@ use std::{
 use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
 
-impl<'a, DR, A> UserHost<DR> for HostioInfo<'a, DR, A>
+impl<DR, A> UserHost<DR> for HostioInfo<'_, DR, A>
 where
     DR: DataReader,
     A: EvmApi<DR>,
@@ -44,6 +45,10 @@ where
 
     fn evm_data(&self) -> &EvmData {
         &self.evm_data
+    }
+
+    fn benchmark(&mut self) -> &mut Benchmark {
+        &mut self.env.benchmark
     }
 
     fn evm_return_data_len(&mut self) -> &mut u32 {
@@ -464,3 +469,13 @@ pub(crate) fn console_tee<D: DataReader, E: EvmApi<D>, T: Into<Value> + Copy>(
 }
 
 pub(crate) fn null_host<D: DataReader, E: EvmApi<D>>(_: WasmEnvMut<D, E>) {}
+
+pub(crate) fn start_benchmark<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> MaybeEscape {
+    hostio!(env, start_benchmark())
+}
+
+pub(crate) fn end_benchmark<D: DataReader, E: EvmApi<D>>(mut env: WasmEnvMut<D, E>) -> MaybeEscape {
+    hostio!(env, end_benchmark())
+}

@@ -1,7 +1,8 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use arbutil::{
+    benchmark::Benchmark,
     crypto,
     evm::{
         self,
@@ -21,6 +22,7 @@ use prover::{
 };
 use ruint2::Uint;
 use std::fmt::Display;
+use std::time::Instant;
 
 macro_rules! be {
     ($int:expr) => {
@@ -68,6 +70,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
     fn evm_api(&mut self) -> &mut Self::A;
     fn evm_data(&self) -> &EvmData;
+    fn benchmark(&mut self) -> &mut Benchmark;
     fn evm_return_data_len(&mut self) -> &mut u32;
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, Self::MemoryErr>;
@@ -606,8 +609,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
 
+        let arbos_version = self.evm_data().arbos_version;
+
         // we pass `gas` to check if there's enough before loading from the db
-        let (code, gas_cost) = self.evm_api().account_code(address, gas);
+        let (code, gas_cost) = self.evm_api().account_code(arbos_version, address, gas);
         self.buy_gas(gas_cost)?;
 
         let code = code.slice();
@@ -636,8 +641,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
 
+        let arbos_version = self.evm_data().arbos_version;
+
         // we pass `gas` to check if there's enough before loading from the db
-        let (code, gas_cost) = self.evm_api().account_code(address, gas);
+        let (code, gas_cost) = self.evm_api().account_code(arbos_version, address, gas);
         self.buy_gas(gas_cost)?;
 
         let code = code.slice();
@@ -961,5 +968,39 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn console_tee<T: Into<Value> + Copy>(&mut self, value: T) -> Result<T, Self::Err> {
         self.say(value.into());
         Ok(value)
+    }
+
+    // Initializes benchmark data related to a code block.
+    // A code block is defined by the instructions between start_benchmark and end_benchmark calls.
+    // If start_benchmark is called multiple times without end_benchmark being called,
+    // then only the last start_benchmark before end_benchmark will be used.
+    // It is possible to have multiple code blocks benchmarked in the same program.
+    fn start_benchmark(&mut self) -> Result<(), Self::Err> {
+        let ink_curr = self.ink_ready()?;
+
+        let benchmark = self.benchmark();
+        benchmark.timer = Some(Instant::now());
+        benchmark.ink_start = Some(ink_curr);
+
+        Ok(())
+    }
+
+    // Updates cumulative benchmark data related to a code block.
+    // If end_benchmark is called without a corresponding start_benchmark nothing will happen.
+    fn end_benchmark(&mut self) -> Result<(), Self::Err> {
+        let ink_curr = self.ink_ready()?;
+
+        let benchmark = self.benchmark();
+        if let Some(timer) = benchmark.timer {
+            benchmark.elapsed_total = benchmark.elapsed_total.saturating_add(timer.elapsed());
+
+            let code_block_ink = benchmark.ink_start.unwrap().saturating_sub(ink_curr);
+            benchmark.ink_total = benchmark.ink_total.saturating_add(code_block_ink);
+
+            benchmark.timer = None;
+            benchmark.ink_start = None;
+        };
+
+        Ok(())
     }
 }

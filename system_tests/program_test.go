@@ -32,11 +32,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -59,6 +61,12 @@ func TestProgramKeccak(t *testing.T) {
 			builder.WithExtraArchs(allWasmTargets)
 		})
 	})
+
+	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
+		keccakTest(t, true, func(builder *NodeBuilder) {
+			builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+		})
+	})
 }
 
 func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
@@ -69,7 +77,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
 	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
@@ -82,7 +90,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 			Fatal(t, "activate should have failed with ProgramUpToDate", err)
 		}
 	})
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	if programAddress == otherAddressSameCode {
 		Fatal(t, "expected to deploy at two separate program addresses")
@@ -164,6 +172,11 @@ func TestProgramActivateTwice(t *testing.T) {
 			builder.WithExtraArchs(allWasmTargets)
 		})
 	})
+	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
+		testActivateTwice(t, true, func(builder *NodeBuilder) {
+			builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+		})
+	})
 }
 
 func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
@@ -195,7 +208,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	preimage := []byte("it's time to du-du-du-du d-d-d-d-d-d-d de-duplicate")
 
@@ -220,7 +233,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	// Calling the contract pre-activation should fail.
 	checkReverts()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// mechanisms for creating calldata
 	activateProgram, _ := util.NewCallParser(pgen.ArbWasmABI, "activateProgram")
@@ -243,7 +256,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	// Ensure the revert also reverted keccak's activation
 	checkReverts()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// Activate keccak program A, then call into B, which should succeed due to being the same codehash
 	args = argsForMulticall(vm.CALL, types.ArbWasmAddress, oneEth, pack(activateProgram(keccakA)))
@@ -251,7 +264,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, oneEth, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 2)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 2)
 
 	validateBlocks(t, 7, jit, builder)
 }
@@ -1835,10 +1848,13 @@ func multicallEmptyArgs() []byte {
 	return []byte{0} // number of actions
 }
 
-func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
+func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool, notFlush bool) []byte {
 	var action byte = 0x10
 	if emitLog {
 		action |= 0x08
+	}
+	if notFlush {
+		action |= 0x02
 	}
 	args[0] += 1
 	args = binary.BigEndian.AppendUint32(args, 1+64) // length
@@ -1888,7 +1904,7 @@ func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 		Require(t, err)
 		meta, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageNumber()
+		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
 		Require(t, err)
 		return msgExecuted+1 >= msgCount && meta.MessageCount >= msgCount
 	})
@@ -2083,7 +2099,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	storeMap, err := createMapFromDb(wasmDb)
 	Require(t, err)
 
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	// close nodeB
 	cleanupB()
 
@@ -2140,7 +2156,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 		}
 	}
 
-	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.ExtraArchs, 1)
+	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	cleanupB()
 }
 
@@ -2167,25 +2183,43 @@ func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
 	return modules
 }
 
-func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []string, numModules int) {
+func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []ethdb.WasmTarget, numModules int) {
+	t.Helper()
 	modules := readModuleHashes(t, wasmDb)
 	if len(modules) != numModules {
 		t.Fatalf("Unexpected number of module hashes found in wasm store, want: %d, have: %d", numModules, len(modules))
 	}
-	for _, module := range modules {
-		for _, target := range targets {
-			wasmTarget := ethdb.WasmTarget(target)
-			if !rawdb.IsSupportedWasmTarget(wasmTarget) {
-				t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
-			}
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
-					}
-				}()
-				_ = rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+	readAsm := func(module common.Hash, target string) []byte {
+		wasmTarget := ethdb.WasmTarget(target)
+		if !rawdb.IsSupportedWasmTarget(wasmTarget) {
+			t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
+		}
+		return func() []byte {
+			t.Helper()
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
+				}
 			}()
+			return rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+		}()
+	}
+	for _, module := range modules {
+		for _, target := range allWasmTargets {
+			var expected bool
+			for _, expectedTarget := range expectedTargets {
+				if ethdb.WasmTarget(target) == expectedTarget {
+					expected = true
+					break
+				}
+			}
+			asm := readAsm(module, target)
+			if expected && len(asm) == 0 {
+				t.Fatalf("Missing asm for target: %v, module: %v", target, module)
+			}
+			if !expected && len(asm) > 0 {
+				t.Fatalf("Found asm for target: %v, module: %v, expected targets: %v", target, module, expectedTargets)
+			}
 		}
 	}
 }
@@ -2588,4 +2622,103 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 		Count:     1,
 		SizeBytes: fallibleEntrySize,
 	})
+}
+
+func TestOutOfGasInStorageCacheFlush(t *testing.T) {
+	jit := false
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	defer cleanup()
+
+	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: arbnode.ConfigDefaultL1NonSequencerTest()})
+	defer cleanup2ndNode()
+
+	// Sets l1 data gas to zero
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbOwner.SetL1BaseFeeEstimateInertia(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricingEquilibrationUnits(&auth, big.NewInt(0))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricingInertia(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricingRewardRate(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricePerUnit(&auth, big.NewInt(0))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetPerBatchGasCharge(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetAmortizedCostCapBips(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	multiAddr := deployWasm(t, ctx, auth, builder.L2.Client, rustFile("multicall"))
+
+	argsMulticall := func(numberOfStores int) []byte {
+		args := multicallEmptyArgs()
+		for i := 0; i < numberOfStores; i++ {
+			key := testhelpers.RandomHash()
+			val := testhelpers.RandomHash()
+			args = multicallAppendStore(args, key, val, false, true)
+		}
+		return args
+	}
+
+	// Successful transaction to multicall
+	args := argsMulticall(50)
+	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(2210000), nil, args)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+	receipt, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
+	Require(t, err)
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+
+	// Failed transaction to multicall.
+	// The transaction will fail during storage flush.
+	args = argsMulticall(200)
+	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(2210000), nil, args)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
+	if err == nil || err.Error() != fmt.Sprintf("out of gas for tx hash %v", tx.Hash().String()) {
+		t.Fatalf("expected out of gas error, got %v", err)
+	}
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+	receipt, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
+	Require(t, err)
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+	blockNumberFailedTx := receipt.BlockNumber
+
+	wasmModuleRoot := currentRootModule(t)
+	_, _, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
+		ctx,
+		arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
+		false,
+		wasmModuleRoot,
+	)
+	Require(t, err)
 }

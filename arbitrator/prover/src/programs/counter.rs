@@ -1,5 +1,5 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
 use crate::Machine;
@@ -75,7 +75,7 @@ pub struct FuncCounter<'a> {
     block: Vec<Operator<'a>>,
 }
 
-impl<'a> FuncCounter<'a> {
+impl FuncCounter<'_> {
     fn new(counters: Arc<Mutex<Vec<GlobalIndex>>>) -> Self {
         let block = vec![];
         Self { counters, block }

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -53,7 +54,7 @@ func GenerateAndStoreKeys(keyDir string) (*blsSignatures.PublicKey, *blsSignatur
 	if err != nil {
 		return nil, nil, err
 	}
-	pubKeyPath := keyDir + "/" + DefaultPubKeyFilename
+	pubKeyPath := filepath.Join(keyDir, DefaultPubKeyFilename)
 	pubKeyBytes := blsSignatures.PublicKeyToBytes(pubKey)
 	encodedPubKey := make([]byte, base64.StdEncoding.EncodedLen(len(pubKeyBytes)))
 	base64.StdEncoding.Encode(encodedPubKey, pubKeyBytes)
@@ -62,7 +63,7 @@ func GenerateAndStoreKeys(keyDir string) (*blsSignatures.PublicKey, *blsSignatur
 		return nil, nil, err
 	}
 
-	privKeyPath := keyDir + "/" + DefaultPrivKeyFilename
+	privKeyPath := filepath.Join(keyDir, DefaultPrivKeyFilename)
 	privKeyBytes := blsSignatures.PrivateKeyToBytes(privKey)
 	encodedPrivKey := make([]byte, base64.StdEncoding.EncodedLen(len(privKeyBytes)))
 	base64.StdEncoding.Encode(encodedPrivKey, privKeyBytes)
@@ -74,12 +75,12 @@ func GenerateAndStoreKeys(keyDir string) (*blsSignatures.PublicKey, *blsSignatur
 }
 
 func ReadKeysFromFile(keyDir string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
-	pubKey, err := ReadPubKeyFromFile(keyDir + "/" + DefaultPubKeyFilename)
+	pubKey, err := ReadPubKeyFromFile(filepath.Join(keyDir, DefaultPubKeyFilename))
 	if err != nil {
 		return nil, nil, err
 	}
 
-	privKey, err := ReadPrivKeyFromFile(keyDir + "/" + DefaultPrivKeyFilename)
+	privKey, err := ReadPrivKeyFromFile(filepath.Join(keyDir, DefaultPrivKeyFilename))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -116,10 +117,10 @@ func GenerateAndStoreECDSAKeys(dir string) error {
 		return err
 	}
 
-	err = crypto.SaveECDSA(dir+"/ecdsa", privateKey)
+	err = crypto.SaveECDSA(filepath.Join(dir, "ecdsa"), privateKey)
 	if err != nil {
 		return err
 	}
 	encodedPubKey := hex.EncodeToString(crypto.FromECDSAPub(&privateKey.PublicKey))
-	return os.WriteFile(dir+"/ecdsa.pub", []byte(encodedPubKey), 0o600)
+	return os.WriteFile(filepath.Join(dir, "ecdsa.pub"), []byte(encodedPubKey), 0o600)
 }

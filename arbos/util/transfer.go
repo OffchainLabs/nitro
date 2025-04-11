@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -26,7 +27,7 @@ func TransferBalance(
 	amount *big.Int,
 	evm *vm.EVM,
 	scenario TracingScenario,
-	purpose string,
+	reason tracing.BalanceChangeReason,
 ) error {
 	if amount.Sign() < 0 {
 		panic(fmt.Sprintf("Tried to transfer negative amount %v from %v to %v", amount, from, to))
@@ -40,7 +41,7 @@ func TransferBalance(
 
 		if scenario != TracingDuringEVM {
 			if tracer.CaptureArbitrumTransfer != nil {
-				tracer.CaptureArbitrumTransfer(from, to, amount, scenario == TracingBeforeEVM, purpose)
+				tracer.CaptureArbitrumTransfer(from, to, amount, scenario == TracingBeforeEVM, reason)
 			}
 		} else {
 			fromCopy := from
@@ -55,7 +56,7 @@ func TransferBalance(
 			info := &TracingInfo{
 				Tracer:   evm.Config.Tracer,
 				Scenario: scenario,
-				Contract: vm.NewContract(addressHolder{*toCopy}, addressHolder{*fromCopy}, uint256.NewInt(0), 0),
+				Contract: vm.NewContract(*toCopy, *fromCopy, uint256.NewInt(0), 0, evm.JumpDests()),
 				Depth:    evm.Depth(),
 			}
 			info.MockCall([]byte{}, 0, *fromCopy, *toCopy, amount)
@@ -66,26 +67,26 @@ func TransferBalance(
 		if arbmath.BigLessThan(balance.ToBig(), amount) {
 			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
 		}
-		if evm.Context.ArbOSVersion < 30 && amount.Sign() == 0 {
+		if evm.Context.ArbOSVersion < params.ArbosVersion_Stylus && amount.Sign() == 0 {
 			evm.StateDB.CreateZombieIfDeleted(*from)
 		}
-		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
+		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount), reason)
 	}
 	if to != nil {
-		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
+		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount), reason)
 	}
 	return nil
 }
 
 // MintBalance mints funds for the user and adds them to their balance
-func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, purpose string) {
-	err := TransferBalance(nil, to, amount, evm, scenario, purpose)
+func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, reason tracing.BalanceChangeReason) {
+	err := TransferBalance(nil, to, amount, evm, scenario, reason)
 	if err != nil {
 		panic(fmt.Sprintf("impossible error: %v", err))
 	}
 }
 
 // BurnBalance burns funds from a user's account
-func BurnBalance(from *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, purpose string) error {
-	return TransferBalance(from, nil, amount, evm, scenario, purpose)
+func BurnBalance(from *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, reason tracing.BalanceChangeReason) error {
+	return TransferBalance(from, nil, amount, evm, scenario, reason)
 }

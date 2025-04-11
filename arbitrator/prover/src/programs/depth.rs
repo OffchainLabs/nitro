@@ -1,5 +1,5 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use super::{
     config::{CompileMemoryParams, SigMap},
@@ -107,7 +107,7 @@ pub struct FuncDepthChecker<'a> {
     done: bool,
 }
 
-impl<'a> FuncDepthChecker<'a> {
+impl FuncDepthChecker<'_> {
     fn new(
         global: GlobalIndex,
         funcs: Arc<HashMap<FunctionIndex, FunctionType>>,
@@ -227,7 +227,7 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
     }
 }
 
-impl<'a> FuncDepthChecker<'a> {
+impl FuncDepthChecker<'_> {
     fn worst_case_depth(&self) -> Result<u32> {
         use Operator::*;
 

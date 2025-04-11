@@ -36,6 +36,8 @@ var TestConsumerConfig = ConsumerConfig{
 	IdletimeToAutoclaim:  30 * time.Millisecond,
 }
 
+var ErrAlreadySet = errors.New("redis key already set")
+
 func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".response-entry-timeout", DefaultConsumerConfig.ResponseEntryTimeout, "timeout for response entry")
 	f.Duration(prefix+".idletime-to-autoclaim", DefaultConsumerConfig.IdletimeToAutoclaim, "After a message spends this amount of time in PEL (Pending Entries List i.e claimed by another consumer but not Acknowledged) it will be allowed to be autoclaimed by other consumers")
@@ -221,8 +223,31 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID s
 	resultKey := ResultKeyFor(c.StreamName(), messageID)
 	log.Debug("consumer: setting result", "cid", c.id, "msgIdInStream", messageID, "resultKeyInRedis", resultKey)
 	acquired, err := c.client.SetNX(ctx, resultKey, resp, c.cfg.ResponseEntryTimeout).Result()
-	if err != nil || !acquired {
+	if !acquired && err == nil {
+		err = ErrAlreadySet
+	}
+	if err != nil {
 		return fmt.Errorf("setting result for message with message-id in stream: %v, error: %w", messageID, err)
+	}
+	log.Debug("consumer: xack", "cid", c.id, "messageId", messageID)
+	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {
+		return fmt.Errorf("acking message: %v, error: %w", messageID, err)
+	}
+	if _, err := c.client.XDel(ctx, c.redisStream, messageID).Result(); err != nil {
+		return fmt.Errorf("deleting message: %v, error: %w", messageID, err)
+	}
+	return nil
+}
+
+func (c *Consumer[Request, Response]) SetError(ctx context.Context, messageID string, error string) error {
+	errorKey := ErrorKeyFor(c.StreamName(), messageID)
+	log.Debug("consumer: setting error", "cid", c.id, "msgIdInStream", messageID, "errorKeyInRedis", errorKey)
+	acquired, err := c.client.SetNX(ctx, errorKey, error, c.cfg.ResponseEntryTimeout).Result()
+	if !acquired && err == nil {
+		err = ErrAlreadySet
+	}
+	if err != nil {
+		return fmt.Errorf("setting error for message with message-id in stream: %v, error: %w", messageID, err)
 	}
 	log.Debug("consumer: xack", "cid", c.id, "messageId", messageID)
 	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {

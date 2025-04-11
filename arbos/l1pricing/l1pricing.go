@@ -8,10 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -216,7 +216,7 @@ func (ps *L1PricingState) LastSurplus() (*big.Int, error) {
 }
 
 func (ps *L1PricingState) SetLastSurplus(val *big.Int, arbosVersion uint64) error {
-	if arbosVersion < 7 {
+	if arbosVersion < params.ArbosVersion_7 {
 		return ps.lastSurplus.Set_preVersion7(val)
 	}
 	return ps.lastSurplus.SetSaturatingWithWarning(val, "L1 pricer last surplus")
@@ -279,9 +279,9 @@ func (ps *L1PricingState) TransferFromL1FeesAvailable(
 	amount *big.Int,
 	evm *vm.EVM,
 	scenario util.TracingScenario,
-	purpose string,
+	reason tracing.BalanceChangeReason,
 ) (*big.Int, error) {
-	if err := util.TransferBalance(&L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, purpose); err != nil {
+	if err := util.TransferBalance(&L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, reason); err != nil {
 		return nil, err
 	}
 	old, err := ps.L1FeesAvailable()
@@ -309,7 +309,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	l1Basefee *big.Int,
 	scenario util.TracingScenario,
 ) error {
-	if arbosVersion < 10 {
+	if arbosVersion < params.ArbosVersion_10 {
 		return ps._preversion10_UpdateForBatchPosterSpending(statedb, evm, arbosVersion, updateTime, currentTime, batchPoster, weiSpent, l1Basefee, scenario)
 	}
 
@@ -359,7 +359,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	}
 
 	// impose cap on amortized cost, if there is one
-	if arbosVersion >= 3 {
+	if arbosVersion >= params.ArbosVersion_3 {
 		amortizedCostCapBips, err := ps.AmortizedCostCapBips()
 		if err != nil {
 			return err
@@ -408,7 +408,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		return err
 	}
 	l1FeesAvailable, err = ps.TransferFromL1FeesAvailable(
-		payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+		payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -429,7 +429,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 			return err
 		}
 		l1FeesAvailable, err = ps.TransferFromL1FeesAvailable(
-			addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+			addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 		)
 		if err != nil {
 			return err
@@ -520,10 +520,13 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 	if poster != BatchPosterAddress {
 		return common.Big0, 0
 	}
-	units := atomic.LoadUint64(&tx.CalldataUnits)
-	if units == 0 {
+	var units uint64
+	if cachedUnits := tx.GetCachedCalldataUnits(brotliCompressionLevel); cachedUnits != nil {
+		units = *cachedUnits
+	} else {
+		// The cache is empty or invalid, so we need to compute the calldata units
 		units = ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
-		atomic.StoreUint64(&tx.CalldataUnits, units)
+		tx.SetCachedCalldataUnits(brotliCompressionLevel, units)
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata

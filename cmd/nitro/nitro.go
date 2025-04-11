@@ -150,13 +150,12 @@ func main() {
 func startMetrics(cfg *NodeConfig) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
-	if cfg.Metrics && !metrics.Enabled {
-		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
-	}
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
 		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
 	}
 	if cfg.Metrics {
+		log.Info("Enabling metrics collection")
+		metrics.Enable()
 		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
 		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
 	}
@@ -233,16 +232,15 @@ func mainImpl() int {
 		nodeConfig.Node.ParentChainReader.Enable = true
 	}
 
-	if nodeConfig.Execution.Sequencer.Enable && nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Node.InboxReader.HardReorg {
-		flag.Usage()
-		log.Crit("hard reorgs cannot safely be enabled with sequencer mode enabled")
-	}
 	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
 	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
 		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
 		return 1
+	}
+	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
+		log.Warn("Sequencer node's track-block-metadata-from is set but timeboost is not enabled")
 	}
 
 	var dataSigner signature.DataSignerFunc
@@ -534,15 +532,19 @@ func mainImpl() int {
 		l2BlockChain,
 		l1Client,
 		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 	)
 	if err != nil {
 		log.Error("failed to create execution node", "err", err)
 		return 1
 	}
 
-	currentNode, err := arbnode.CreateNode(
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(
 		ctx,
 		stack,
+		execNode,
+		execNode,
+		execNode,
 		execNode,
 		arbDb,
 		&NodeConfigFetcher{liveNodeConfig},
@@ -573,7 +575,7 @@ func mainImpl() int {
 		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
 		if err == nil {
 			seqInboxMaxDataSize = int(res.Int64())
-		} else if !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		} else if !headerreader.IsExecutionReverted(err) {
 			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
 			return 1
 		}
@@ -586,12 +588,16 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	// If sequencer is enabled, validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
-	// And since batchposter's MaxSize is to be at least 10kB below the sequencer inbox’s maxDataSize, this leads to another condition of atlest 15kB below the sequencer inbox’s maxDataSize.
+
 	if nodeConfig.Execution.Sequencer.Enable {
-		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 ||
-			nodeConfig.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 {
-			log.Error("sequencer's MaxTxDataSize too large")
+		// Validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
+		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 {
+			log.Error("sequencer's MaxTxDataSize too large compared to the batchPoster's MaxSize")
+			return 1
+		}
+		// Since the batchposter's MaxSize must be at least 10kB below the sequencer inbox’s maxDataSize, then MaxTxDataSize must also be 15kB below the sequencer inbox’s maxDataSize.
+		if nodeConfig.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 && !nodeConfig.Execution.Sequencer.Dangerous.DisableSeqInboxMaxDataSizeCheck {
+			log.Error("sequencer's MaxTxDataSize too large compared to the sequencer inbox's MaxDataSize")
 			return 1
 		}
 	}
@@ -618,6 +624,46 @@ func mainImpl() int {
 			}
 		}
 	}
+
+	// Before starting the node, wait until the transaction that deployed rollup is finalized
+	if nodeConfig.EnsureRollupDeployment &&
+		nodeConfig.Node.ParentChainReader.Enable &&
+		rollupAddrs.DeployedAt > 0 {
+		currentFinalized, err := l1Reader.LatestFinalizedBlockNr(ctx)
+		if err != nil && errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
+			log.Info("Finality not supported by parent chain, disabling the check to verify if rollup deployment tx was finalized", "err", err)
+		} else {
+			newHeaders, unsubscribe := l1Reader.Subscribe(false)
+			retriesOnError := 10
+			sigint := make(chan os.Signal, 1)
+			signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+			for currentFinalized < rollupAddrs.DeployedAt && retriesOnError > 0 {
+				select {
+				case <-newHeaders:
+					if finalized, err := l1Reader.LatestFinalizedBlockNr(ctx); err != nil {
+						if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
+							log.Error("Finality support was removed from parent chain mid way, disabling the check to verify if the rollup deployment tx was finalized", "err", err)
+							retriesOnError = 0 // Break out of for loop as well
+							break
+						}
+						log.Error("Error getting latestFinalizedBlockNr from l1Reader", "err", err)
+						retriesOnError--
+					} else {
+						currentFinalized = finalized
+						log.Debug("Finalized block number updated", "finalized", finalized)
+					}
+				case <-ctx.Done():
+					log.Error("Context done while checking if the rollup deployment tx was finalized")
+					return 1
+				case <-sigint:
+					log.Info("shutting down because of sigint")
+					return 0
+				}
+			}
+			unsubscribe()
+		}
+	}
+
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
 		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
@@ -632,6 +678,7 @@ func mainImpl() int {
 			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
 		} else {
 			log.Info("validation node started")
+			defer valNode.Stop()
 		}
 	}
 	if err == nil {
@@ -658,6 +705,11 @@ func mainImpl() int {
 		} else if nodeConfig.Init.ThenQuit {
 			return 0
 		}
+	}
+
+	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
+	if err != nil {
+		fatalErrChan <- fmt.Errorf("error intializing timeboost: %w", err)
 	}
 
 	err = nil
@@ -719,55 +771,57 @@ func liveDBSnapshotter(ctx context.Context, chainDb, arbDb ethdb.Database, creat
 }
 
 type NodeConfig struct {
-	Conf             genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
-	Node             arbnode.Config                  `koanf:"node" reload:"hot"`
-	Execution        gethexec.Config                 `koanf:"execution" reload:"hot"`
-	Validation       valnode.Config                  `koanf:"validation" reload:"hot"`
-	ParentChain      conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
-	Chain            conf.L2Config                   `koanf:"chain"`
-	LogLevel         string                          `koanf:"log-level" reload:"hot"`
-	LogType          string                          `koanf:"log-type" reload:"hot"`
-	FileLogging      genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
-	Persistent       conf.PersistentConfig           `koanf:"persistent"`
-	HTTP             genericconf.HTTPConfig          `koanf:"http"`
-	WS               genericconf.WSConfig            `koanf:"ws"`
-	IPC              genericconf.IPCConfig           `koanf:"ipc"`
-	Auth             genericconf.AuthRPCConfig       `koanf:"auth"`
-	GraphQL          genericconf.GraphQLConfig       `koanf:"graphql"`
-	Metrics          bool                            `koanf:"metrics"`
-	MetricsServer    genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	PProf            bool                            `koanf:"pprof"`
-	PprofCfg         genericconf.PProf               `koanf:"pprof-cfg"`
-	Init             conf.InitConfig                 `koanf:"init"`
-	Rpc              genericconf.RpcConfig           `koanf:"rpc"`
-	BlocksReExecutor blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
-	SnapshotDir      string                          `koanf:"snapshot-dir" reload:"hot"`
+	Conf                   genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	Node                   arbnode.Config                  `koanf:"node" reload:"hot"`
+	Execution              gethexec.Config                 `koanf:"execution" reload:"hot"`
+	Validation             valnode.Config                  `koanf:"validation" reload:"hot"`
+	ParentChain            conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
+	Chain                  conf.L2Config                   `koanf:"chain"`
+	LogLevel               string                          `koanf:"log-level" reload:"hot"`
+	LogType                string                          `koanf:"log-type" reload:"hot"`
+	FileLogging            genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
+	Persistent             conf.PersistentConfig           `koanf:"persistent"`
+	HTTP                   genericconf.HTTPConfig          `koanf:"http"`
+	WS                     genericconf.WSConfig            `koanf:"ws"`
+	IPC                    genericconf.IPCConfig           `koanf:"ipc"`
+	Auth                   genericconf.AuthRPCConfig       `koanf:"auth"`
+	GraphQL                genericconf.GraphQLConfig       `koanf:"graphql"`
+	Metrics                bool                            `koanf:"metrics"`
+	MetricsServer          genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf                  bool                            `koanf:"pprof"`
+	PprofCfg               genericconf.PProf               `koanf:"pprof-cfg"`
+	Init                   conf.InitConfig                 `koanf:"init"`
+	Rpc                    genericconf.RpcConfig           `koanf:"rpc"`
+	BlocksReExecutor       blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
+	EnsureRollupDeployment bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
+	SnapshotDir            string                          `koanf:"snapshot-dir" reload:"hot"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:             genericconf.ConfConfigDefault,
-	Node:             arbnode.ConfigDefault,
-	Execution:        gethexec.ConfigDefault,
-	Validation:       valnode.DefaultValidationConfig,
-	ParentChain:      conf.L1ConfigDefault,
-	Chain:            conf.L2ConfigDefault,
-	LogLevel:         "INFO",
-	LogType:          "plaintext",
-	FileLogging:      genericconf.DefaultFileLoggingConfig,
-	Persistent:       conf.PersistentConfigDefault,
-	HTTP:             genericconf.HTTPConfigDefault,
-	WS:               genericconf.WSConfigDefault,
-	IPC:              genericconf.IPCConfigDefault,
-	Auth:             genericconf.AuthRPCConfigDefault,
-	GraphQL:          genericconf.GraphQLConfigDefault,
-	Metrics:          false,
-	MetricsServer:    genericconf.MetricsServerConfigDefault,
-	Init:             conf.InitConfigDefault,
-	Rpc:              genericconf.DefaultRpcConfig,
-	PProf:            false,
-	PprofCfg:         genericconf.PProfDefault,
-	BlocksReExecutor: blocksreexecutor.DefaultConfig,
-	SnapshotDir:      "",
+	Conf:                   genericconf.ConfConfigDefault,
+	Node:                   arbnode.ConfigDefault,
+	Execution:              gethexec.ConfigDefault,
+	Validation:             valnode.DefaultValidationConfig,
+	ParentChain:            conf.L1ConfigDefault,
+	Chain:                  conf.L2ConfigDefault,
+	LogLevel:               "INFO",
+	LogType:                "plaintext",
+	FileLogging:            genericconf.DefaultFileLoggingConfig,
+	Persistent:             conf.PersistentConfigDefault,
+	HTTP:                   genericconf.HTTPConfigDefault,
+	WS:                     genericconf.WSConfigDefault,
+	IPC:                    genericconf.IPCConfigDefault,
+	Auth:                   genericconf.AuthRPCConfigDefault,
+	GraphQL:                genericconf.GraphQLConfigDefault,
+	Metrics:                false,
+	MetricsServer:          genericconf.MetricsServerConfigDefault,
+	Init:                   conf.InitConfigDefault,
+	Rpc:                    genericconf.DefaultRpcConfig,
+	PProf:                  false,
+	PprofCfg:               genericconf.PProfDefault,
+	BlocksReExecutor:       blocksreexecutor.DefaultConfig,
+	EnsureRollupDeployment: true,
+	SnapshotDir:            "",
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -794,7 +848,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.InitConfigAddOptions("init", f)
 	genericconf.RpcConfigAddOptions("rpc", f)
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
-
+	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
 	f.String("snapshot-dir", NodeConfigDefault.SnapshotDir, "directory in which snapshot of databases would be stored")
 }
 
@@ -1013,6 +1067,8 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.batch-poster.max-size"] = 1_000_000
 	}
+	// 0 is default for any chain unless specified in the chain_defaults
+	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err
