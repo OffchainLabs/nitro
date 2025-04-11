@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/triedb"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -186,38 +187,29 @@ func checkRetryables(arbState *ArbosState, expected []statetransfer.Initializati
 		// Detailed comparison
 		from, err := found.From()
 		Require(t, err)
-		if from != exp.From {
-			t.Fatalf("Retryable %v: from mismatch. Expected %v, got %v", exp.Id, exp.From, from)
-		}
-
 		to, err := found.To()
 		Require(t, err)
-		if (to == nil && exp.To != nil) || (to != nil && exp.To == nil) || (to != nil && exp.To != nil && *to != *exp.To) {
-			t.Fatalf("Retryable %v: to mismatch. Expected %v, got %v", exp.Id, exp.To, to)
-		}
-
 		callvalue, err := found.Callvalue()
 		Require(t, err)
-		if callvalue.Cmp(exp.Callvalue) != 0 {
-			t.Fatalf("Retryable %v: callvalue mismatch. Expected %v, got %v", exp.Id, exp.Callvalue, callvalue)
-		}
-
 		beneficiary, err := found.Beneficiary()
 		Require(t, err)
-		if beneficiary != exp.Beneficiary {
-			t.Fatalf("Retryable %v: beneficiary mismatch. Expected %v, got %v", exp.Id, exp.Beneficiary, beneficiary)
-		}
-
 		calldata, err := found.Calldata()
 		Require(t, err)
-		if !bytes.Equal(calldata, exp.Calldata) {
-			t.Fatalf("Retryable %v: calldata mismatch. Expected %v, got %v", exp.Id, exp.Calldata, calldata)
-		}
-
 		timeout, err := found.CalculateTimeout()
 		Require(t, err)
-		if timeout != exp.Timeout {
-			t.Fatalf("Retryable %v: timeout mismatch. Expected %v, got %v", exp.Id, exp.Timeout, timeout)
+
+		actual := statetransfer.InitializationDataForRetryable{
+			Id:          exp.Id,
+			Timeout:     timeout,
+			From:        from,
+			To:          to,
+			Callvalue:   callvalue,
+			Beneficiary: beneficiary,
+			Calldata:    calldata,
+		}
+
+		if diff := cmp.Diff(exp, actual); diff != "" {
+			t.Fatalf("Retryable %v mismatch (-expected +actual):\n%s", exp.Id, diff)
 		}
 	}
 }
