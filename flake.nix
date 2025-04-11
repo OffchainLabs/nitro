@@ -20,6 +20,15 @@
           nodejs = prev.nodejs_18;
           yarn = (prev.yarn.override { inherit nodejs; });
           pnpm = (prev.pnpm.override { inherit nodejs; });
+          golangci-lint = prev.golangci-lint.overrideAttrs (old: {
+            version = "2.0.2";
+            src = prev.fetchFromGitHub {
+              owner = "golangci";
+              repo = "golangci-lint";
+              rev = "v1.64.8";
+              sha256 = "sha256-ODnNBwtfILD0Uy2AKDR/e76ZrdyaOGlCktVUcf9ujy8";
+            };
+          });
         })
         foundry.overlay
       ];
