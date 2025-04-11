@@ -315,7 +315,7 @@ func CreateExecutionNode(
 			l2BlockChain,
 			config.RPC.ArbDebug.BlockRangeBound,
 			config.RPC.ArbDebug.TimeoutQueueBound,
-			config.Caching.Archive && config.LiveDBSnapshotter.Enable,
+			config.LiveDBSnapshotter.Enable,
 		),
 		Public: false,
 	})

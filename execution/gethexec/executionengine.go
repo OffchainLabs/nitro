@@ -815,8 +815,9 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	blockGasUsedHistogram.Update(int64(blockGasused))
 	gasUsedSinceStartupCounter.Inc(int64(blockGasused))
 	s.updateL1GasPriceEstimateMetric()
-	if s.liveDBSnapshotter != nil {
-		s.liveDBSnapshotter.CreateDBSnapshotIfDue()
+	if s.liveDBSnapshotter != nil && s.liveDBSnapshotter.IsSnapshotDue() {
+		s.bc.FlushToDisk(false)
+		s.liveDBSnapshotter.CreateDBSnapshot()
 	}
 	return nil
 }

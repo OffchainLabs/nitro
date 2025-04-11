@@ -526,23 +526,28 @@ func mainImpl() int {
 	// TODO: after the consensus-execution split, remove this code block and modify LiveDBSnapshotter to
 	// directly read from sigur2. Currently execution will trigger snapshot creation of consensus side once
 	// its own snapshotting is complete.
-	executionDBSnapShotTrigger := make(chan struct{}, 1)
-	consensusDBSnapShotTrigger := make(chan struct{}, 1)
-	go func() {
-		sigusr := make(chan os.Signal, 1)
-		signal.Notify(sigusr, syscall.SIGUSR2)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-sigusr:
+	var executionDBSnapShotTrigger, consensusDBSnapShotTrigger chan struct{}
+	if nodeConfig.Execution.LiveDBSnapshotter.Enable {
+		executionDBSnapShotTrigger = make(chan struct{}, 1)
+		go func() {
+			sigusr := make(chan os.Signal, 1)
+			signal.Notify(sigusr, syscall.SIGUSR2)
+			for {
 				select {
-				case executionDBSnapShotTrigger <- struct{}{}:
-				default:
+				case <-ctx.Done():
+					return
+				case <-sigusr:
+					select {
+					case executionDBSnapShotTrigger <- struct{}{}:
+					default:
+					}
 				}
 			}
-		}
-	}()
+		}()
+	}
+	if nodeConfig.Node.LiveDBSnapshotter.Enable {
+		consensusDBSnapShotTrigger = make(chan struct{}, 1)
+	}
 
 	execNode, err := gethexec.CreateExecutionNode(
 		ctx,

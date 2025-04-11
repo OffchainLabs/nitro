@@ -69,14 +69,18 @@ func (l *LiveDBSnapshotter) scheduleSnapshotCreation(ctx context.Context) {
 			continue
 		}
 		l.isSnapshotDue.Store(true)
-		if !l.withScheduling {
-			l.CreateDBSnapshotIfDue()
+		if !l.withScheduling && l.IsSnapshotDue() {
+			l.CreateDBSnapshot()
 		}
 	}
 }
 
-func (l *LiveDBSnapshotter) CreateDBSnapshotIfDue() {
-	if l.Stopped() || !l.isSnapshotDue.Load() {
+func (l *LiveDBSnapshotter) IsSnapshotDue() bool {
+	return l.isSnapshotDue.Load()
+}
+
+func (l *LiveDBSnapshotter) CreateDBSnapshot() {
+	if l.Stopped() {
 		return
 	}
 
