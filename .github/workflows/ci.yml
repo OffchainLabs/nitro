@@ -165,7 +165,7 @@ jobs:
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
         run: |
-          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 -- --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target" --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
+          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 -- --recordBlockInputs.enable=true --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target" --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
       
       - name: run arbitrator prover on block input json
         if: matrix.test-mode == 'defaults'
