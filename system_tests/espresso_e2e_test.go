@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
+	lightclient "github.com/EspressoSystems/espresso-network-go/light-client"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -134,7 +134,7 @@ func waitForWith(
 }
 
 func waitForEspressoNode(ctx context.Context) error {
-	return waitForWith(ctx, 400*time.Second, 1*time.Second, func() bool {
+	return waitForWith(ctx, 3*time.Minute, 1*time.Second, func() bool {
 		out, err := exec.Command("curl", "http://localhost:20000/api/dev-info", "-L").Output()
 		if err != nil {
 			log.Warn("retry to check the espresso dev node", "err", err)

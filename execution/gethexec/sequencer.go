@@ -169,6 +169,7 @@ type SequencerConfigFetcher func() *SequencerConfig
 
 type CaffNodeConfig struct {
 	HotShotUrls             []string            `koanf:"hotshot-urls"`
+	FallbackUrls            []string            `koanf:"fallback-urls"`
 	NextHotshotBlock        uint64              `koanf:"next-hotshot-block"`
 	Namespace               uint64              `koanf:"namespace"`
 	RetryTime               time.Duration       `koanf:"retry-time"`
@@ -184,6 +185,7 @@ type CaffNodeConfig struct {
 
 var DefaultCaffNodeConfig = CaffNodeConfig{
 	HotShotUrls:             []string{},
+	FallbackUrls:            []string{},
 	NextHotshotBlock:        1,
 	Namespace:               0,
 	RetryTime:               time.Second * 2,
@@ -224,6 +226,7 @@ var DefaultDangerousConfig = DangerousConfig{
 
 func CaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".hotshot-urls", DefaultCaffNodeConfig.HotShotUrls, "hotshot urls")
+	f.StringSlice(prefix+".fallback-urls", DefaultCaffNodeConfig.FallbackUrls, "fallback urls")
 	f.Uint64(prefix+".next-hotshot-block", DefaultCaffNodeConfig.NextHotshotBlock, "the hotshot block number from which the caff node will read")
 	f.Uint64(prefix+".namespace", DefaultCaffNodeConfig.Namespace, "the namespace of the chain in Espresso Network, usually the chain id")
 	f.Duration(prefix+".retry-time", DefaultCaffNodeConfig.RetryTime, "retry time after a failure")

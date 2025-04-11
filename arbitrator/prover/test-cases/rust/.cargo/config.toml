@@ -1,10 +1,8 @@
 [build]
-target = "wasm32-wasi"
+target = "wasm32-wasip1"
 
-[target.wasm32-wasi]
-rustflags = [
-  "-C", "target-cpu=mvp",
-]
+[target.wasm32-wasip1]
+rustflags = ["-C", "target-cpu=mvp"]
 
 [unstable]
 build-std = ["core", "panic_abort", "alloc", "std"]

@@ -9,7 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
-	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
+	espressoTypes "github.com/EspressoSystems/espresso-network-go/types"
 )
 
 // TODO move to espresso-go-sequencer: https://github.com/EspressoSystems/nitro-espresso-integration/issues/88

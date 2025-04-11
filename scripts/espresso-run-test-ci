@@ -5,6 +5,15 @@
 # Arguments passed to this script are passed to go test.
 set -euo pipefail
 
+# 1. First ensure the library path is set
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:$(pwd)/target/lib"
+
+# 2. Verify the library exists
+if [[ ! -f "$(pwd)/target/lib/libespresso_crypto_helper.so" ]]; then
+    echo "Error: libespresso_crypto_helper.so not found in $(pwd)/target/lib"
+    exit 1
+fi
+
 skip_tests=$(grep -vE '^\s*#|^\s*$' ci_skip_tests | tr '\n' '|' | sed 's/|$//')
 packages=`go list ./...`
 echo running tests for $packages

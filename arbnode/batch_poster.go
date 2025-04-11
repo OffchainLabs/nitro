@@ -16,8 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	hotshotClient "github.com/EspressoSystems/espresso-sequencer-go/client"
-	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
+	hotshotClient "github.com/EspressoSystems/espresso-network-go/client"
+	lightclient "github.com/EspressoSystems/espresso-network-go/light-client"
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -34,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
@@ -185,6 +186,7 @@ type BatchPosterConfig struct {
 	// Espresso specific flags
 	LightClientAddress          string        `koanf:"light-client-address"`
 	HotShotUrl                  string        `koanf:"hotshot-url"`
+	FallBackUrl                 string        `koanf:"fall-back-url"`
 	UseEscapeHatch              bool          `koanf:"use-escape-hatch"`
 	EspressoTxnsPollingInterval time.Duration `koanf:"espresso-txns-polling-interval"`
 	ResubmitEspressoTxDeadline  time.Duration `koanf:"resubmit-espresso-tx-deadline"`
@@ -386,7 +388,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	lightClientAddr := opts.Config().LightClientAddress
 
 	if hotShotUrl != "" {
-		hotShotClient := hotshotClient.NewClient(hotShotUrl)
+		hotShotClient := hotshotClient.NewClient(hotShotUrl, opts.Config().FallBackUrl)
 		opts.Streamer.espressoClient = hotShotClient
 	}
 

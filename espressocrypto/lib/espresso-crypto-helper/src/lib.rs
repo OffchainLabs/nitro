@@ -4,13 +4,12 @@ use committable::{Commitment, Committable};
 use espresso_types::{
     BlockMerkleCommitment, BlockMerkleTree, Header, NsProof, NsTable, Transaction,
 };
-use ethers_core::types::U256;
-use hotshot_types::vid::{VidCommitment, VidCommon};
-use jf_crhf::CRHF;
+use ethers::types::U256;
+use hotshot_query_service::VidCommon;
+use hotshot_types::{data::VidCommitment, light_client::hash_bytes_to_field};
 use jf_merkle_tree::prelude::{
     MerkleCommitment, MerkleNode, MerkleProof, MerkleTreeScheme, Sha3Node,
 };
-use jf_rescue::{crhf::VariableLengthRescueCRHF, RescueError};
 use sha2::{Digest, Sha256};
 use tagged_base64::TaggedBase64;
 
@@ -70,14 +69,18 @@ pub extern "C" fn verify_merkle_proof_helper(
 
     let mut block_comm_root_bytes = vec![];
     handle_result!(block_comm.serialize_compressed(&mut block_comm_root_bytes));
-    let field_bytes = handle_result!(hash_bytes_to_field(&block_comm_root_bytes));
+    let field_bytes = handle_result!(hash_bytes_to_field::<CircuitField>(&block_comm_root_bytes));
     let local_block_comm_u256 = field_to_u256(field_bytes);
     let circuit_block_comm_u256 = U256::from_little_endian(circuit_block_bytes);
 
-    if (proved_comm == header_comm) && (local_block_comm_u256 == circuit_block_comm_u256) {
-        return true;
+    if proved_comm != header_comm {
+        return false;
     }
-    return false;
+
+    if local_block_comm_u256 != circuit_block_comm_u256 {
+        return false;
+    }
+    return true;
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
@@ -136,16 +139,6 @@ fn hash_txns(namespace: u32, txns: &[Transaction]) -> String {
     }
     let hash_result = hasher.finalize();
     format!("{:x}", hash_result)
-}
-
-fn hash_bytes_to_field(bytes: &[u8]) -> Result<CircuitField, RescueError> {
-    // make sure that `mod_order` won't happen.
-    let bytes_len = ((<CircuitField as PrimeField>::MODULUS_BIT_SIZE + 7) / 8 - 1) as usize;
-    let elem = bytes
-        .chunks(bytes_len)
-        .map(CircuitField::from_le_bytes_mod_order)
-        .collect::<Vec<_>>();
-    Ok(VariableLengthRescueCRHF::<_, 1>::evaluate(elem)?[0])
 }
 
 pub fn field_to_u256<F: PrimeField>(f: F) -> U256 {
