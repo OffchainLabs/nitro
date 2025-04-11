@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sync"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -30,10 +29,10 @@ type DelayedSequencer struct {
 	bridge                   *DelayedBridge
 	inbox                    *InboxTracker
 	reader                   *InboxReader
+	txStreamer               *TransactionStreamer
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock *uint64
-	mutex                    sync.Mutex
 	config                   DelayedSequencerConfigFetcher
 }
 
@@ -71,12 +70,13 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	RescanInterval:      time.Millisecond * 100,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher, txStreamer *TransactionStreamer) (*DelayedSequencer, error) {
 	d := &DelayedSequencer{
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
 		inbox:       reader.Tracker(),
 		reader:      reader,
+		txStreamer:  txStreamer,
 		coordinator: coordinator,
 		exec:        exec,
 		config:      config,
@@ -100,8 +100,8 @@ func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *typ
 }
 
 func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
+	d.txStreamer.insertionMutex.Lock()
+	defer d.txStreamer.insertionMutex.Unlock()
 
 	config := d.config()
 	if !config.Enable {
@@ -197,9 +197,19 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		}
 		for i, msg := range messages {
 			// #nosec G115
-			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
+			sequencedMsg, err := d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
 			if err != nil {
 				return err
+			}
+			if sequencedMsg != nil {
+				err = d.txStreamer.WriteSequencedMsg(sequencedMsg)
+				if err != nil {
+					return err
+				}
+				err = d.exec.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
