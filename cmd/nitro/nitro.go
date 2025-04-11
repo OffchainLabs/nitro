@@ -523,6 +523,32 @@ func mainImpl() int {
 		}
 	}
 
+	// TODO: after the consensus-execution split, remove this code block and modify LiveDBSnapshotter to
+	// directly read from sigur2. Currently execution will trigger snapshot creation of consensus side once
+	// its own snapshotting is complete.
+	var executionDBSnapShotTrigger, consensusDBSnapShotTrigger chan struct{}
+	if nodeConfig.Execution.LiveDBSnapshotter.Enable {
+		executionDBSnapShotTrigger = make(chan struct{}, 1)
+		go func() {
+			sigusr := make(chan os.Signal, 1)
+			signal.Notify(sigusr, syscall.SIGUSR2)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-sigusr:
+					select {
+					case executionDBSnapShotTrigger <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}()
+	}
+	if nodeConfig.Node.LiveDBSnapshotter.Enable {
+		consensusDBSnapShotTrigger = make(chan struct{}, 1)
+	}
+
 	execNode, err := gethexec.CreateExecutionNode(
 		ctx,
 		stack,
@@ -531,6 +557,8 @@ func mainImpl() int {
 		l1Client,
 		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
 		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
+		executionDBSnapShotTrigger,
+		consensusDBSnapShotTrigger, // execution will invoke conensus's db snapshotting
 	)
 	if err != nil {
 		log.Error("failed to create execution node", "err", err)
@@ -555,6 +583,7 @@ func mainImpl() int {
 		fatalErrChan,
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
+		consensusDBSnapShotTrigger,
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)
