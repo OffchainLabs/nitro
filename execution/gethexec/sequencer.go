@@ -1445,7 +1445,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 	}
 
 	madeBlock := false
-	for _, err := range hooks.TxErrors {
+	for _, err := range hooks.txErrors {
 		if err == nil {
 			madeBlock = true
 		}
@@ -1468,6 +1468,23 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		return
 	}
 
+	if errors.Is(errWhileSequencing, execution.ErrRetrySequencer) {
+		_, forwarder := s.GetPauseAndForwarder()
+		if forwarder != nil {
+			// forward if we have where to
+			s.handleInactive(ctx, forwarder, s.lastCreatedBlockInfo.queueItems)
+			return
+		}
+
+		// adds back to queue otherwise
+		for _, item := range s.lastCreatedBlockInfo.queueItems {
+			s.txRetryQueue.Push(item)
+		}
+
+		s.lastCreatedBlockInfo = nil
+		return
+	}
+
 	if s.lastCreatedBlockInfo.block != nil {
 		successfulBlocksCounter.Inc(1)
 		s.nonceCache.Finalize(s.lastCreatedBlockInfo.block)
@@ -1477,60 +1494,26 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		for _, queueItem := range s.lastCreatedBlockInfo.queueItems {
 			queueItem.returnResult(errWhileSequencing)
 		}
-		return
-	}
-
-	madeBlock := false
-	for i, err := range s.lastCreatedBlockInfo.hooks.txErrors {
-		if err == nil {
-			madeBlock = true
-		}
-		queueItem := s.lastCreatedBlockInfo.queueItems[i]
-		if errors.Is(err, core.ErrGasLimitReached) {
-			// There's not enough gas left in the block for this tx.
-			if madeBlock {
-				// There was already an earlier tx in the block; retry in a fresh block.
-				s.txRetryQueue.Push(queueItem)
-				continue
+	} else {
+		madeBlock := false
+		for i, err := range s.lastCreatedBlockInfo.hooks.txErrors {
+			if err == nil {
+				madeBlock = true
 			}
+			queueItem := s.lastCreatedBlockInfo.queueItems[i]
+			if errors.Is(err, core.ErrGasLimitReached) {
+				// There's not enough gas left in the block for this tx.
+				if madeBlock {
+					// There was already an earlier tx in the block; retry in a fresh block.
+					s.txRetryQueue.Push(queueItem)
+					continue
+				}
+			}
+			queueItem.returnResult(err)
 		}
-		if errors.Is(err, core.ErrIntrinsicGas) {
-			// Strip additional information, as it's incorrect due to L1 data gas.
-			err = core.ErrIntrinsicGas
-		}
-		var nonceError NonceError
-		if errors.As(err, &nonceError) && nonceError.txNonce > nonceError.stateNonce {
-			s.nonceFailures.Add(nonceError, queueItem)
-			continue
-		}
-		queueItem.returnResult(err)
 	}
 
 	s.lastCreatedBlockInfo = nil
-}
-
-// Consensus calls ReAddTransactionsFromLastCreatedBlock in case it is unable to
-// process the last sequenced msg due to not being related to the active sequencer
-func (s *Sequencer) ReAddTransactionsFromLastCreatedBlock(ctx context.Context) error {
-	s.createBlockMutex.Lock()
-	defer s.createBlockMutex.Unlock()
-
-	if s.lastCreatedBlockInfo == nil {
-		return nil
-	}
-
-	_, forwarder := s.GetPauseAndForwarder()
-	if forwarder != nil {
-		// forward if we have where to
-		s.handleInactive(ctx, forwarder, s.lastCreatedBlockInfo.queueItems)
-		return nil
-	}
-	// try to add back to queue otherwise
-	for _, item := range s.lastCreatedBlockInfo.queueItems {
-		s.txRetryQueue.Push(item)
-	}
-	s.lastCreatedBlockInfo = nil
-	return nil
 }
 
 func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {

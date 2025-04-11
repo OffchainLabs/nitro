@@ -5,7 +5,6 @@ package arbnode
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -54,14 +53,7 @@ func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duratio
 
 	if sequencedMsg != nil {
 		errWhileSequencing = s.txStreamer.WriteSequencedMsg(sequencedMsg)
-		if errors.Is(errWhileSequencing, execution.ErrRetrySequencer) {
-			log.Warn("Error writing sequenced message, not active sequencer, re-adding transactions from sequenced msg", "err", errWhileSequencing)
-			errWhileSequencing = s.execSequencer.ReAddTransactionsFromLastCreatedBlock(ctx)
-			if errWhileSequencing != nil {
-				log.Error("Error re-adding transactions from last created block", "err", errWhileSequencing)
-			}
-			return 0
-		} else if errWhileSequencing != nil {
+		if errWhileSequencing != nil {
 			log.Error("Error writing sequenced message", "err", errWhileSequencing)
 			return 0
 		}
