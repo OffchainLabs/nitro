@@ -505,13 +505,6 @@ func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMes
 func (n *ExecutionNode) AppendLastSequencedBlock(blockHash common.Hash) error {
 	return n.ExecEngine.AppendLastSequencedBlock(blockHash)
 }
-func (n *ExecutionNode) ReAddTransactionsFromLastCreatedBlock(ctx context.Context) error {
-	if n.Sequencer == nil {
-		return errors.New("sequencer not active")
-	}
-	return n.Sequencer.ReAddTransactionsFromLastCreatedBlock(ctx)
-}
-
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
 }
