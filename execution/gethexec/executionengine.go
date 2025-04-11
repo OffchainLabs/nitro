@@ -399,7 +399,7 @@ func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMe
 			log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedMsgIdx, "found", delayedMsgIdx)
 			return nil, nil
 		}
-		sequencedMsg, _, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedMsgIdx)
+		sequencedMsg, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedMsgIdx)
 		if err != nil {
 			log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
 			return nil, nil
@@ -425,39 +425,10 @@ func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMe
 	return sequencedMsg, nil
 }
 
-func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*execution.SequencedMsg, *types.Block, error)) (*execution.SequencedMsg, *types.Block, error) {
-	attempts := 0
-	for {
-		s.createBlocksMutex.Lock()
-		sequencedMsg, block, err := sequencerFunc()
-		s.createBlocksMutex.Unlock()
-		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
-			return sequencedMsg, block, err
-		}
-		// We got SequencerInsertLockTaken
-		// option 1: there was a race, we are no longer main sequencer
-		_, chosenErr := s.consensus.ExpectChosenSequencer().Await(s.GetContext())
-		if chosenErr != nil {
-			return nil, nil, chosenErr
-		}
-		// option 2: we are in a test without very orderly sequencer coordination
-		if !s.bc.Config().ArbitrumChainParams.AllowDebugPrecompiles {
-			// option 3: something weird. send warning
-			log.Warn("sequence transactions: insert lock takent", "attempts", attempts)
-		}
-		// options 2/3 fail after too many attempts
-		attempts++
-		if attempts > 20 {
-			return nil, nil, err
-		}
-		<-time.After(time.Millisecond * 100)
-	}
-}
-
 func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*execution.SequencedMsg, *types.Block, error) {
-	return s.sequencerWrapper(func() (*execution.SequencedMsg, *types.Block, error) {
-		return s.sequenceTransactionsWithBlockMutex(header, hooks, timeboostedTxs)
-	})
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+	return s.sequenceTransactionsWithBlockMutex(header, hooks, timeboostedTxs)
 }
 
 // SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
@@ -647,30 +618,29 @@ func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboosted
 }
 
 func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, error) {
-	sequencedMsg, _, err := s.sequencerWrapper(func() (*execution.SequencedMsg, *types.Block, error) {
-		return s.sequenceDelayedMessageWithBlockMutex(message, delayedMsgIdx)
-	})
-	return sequencedMsg, err
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+	return s.sequenceDelayedMessageWithBlockMutex(message, delayedMsgIdx)
 }
 
-func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, *types.Block, error) {
+func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, error) {
 	if s.blockCreationStopped() {
-		return nil, nil, ExecutionEngineBlockCreationStopped
+		return nil, ExecutionEngineBlockCreationStopped
 	}
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	expectedDelayedMsgIdx := currentHeader.Nonce.Uint64()
 
 	msgIdx, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64() + 1)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	if expectedDelayedMsgIdx != delayedMsgIdx {
-		return nil, nil, fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedMsgIdx, expectedDelayedMsgIdx)
+		return nil, fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedMsgIdx, expectedDelayedMsgIdx)
 	}
 
 	messageWithMeta := arbostypes.MessageWithMetadata{
@@ -681,14 +651,14 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	startTime := time.Now()
 	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
 	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	s.lastSequencedBlockInfo = &sequencedBlockInfo{
@@ -706,7 +676,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		BlockMetadata: s.blockMetadataFromBlock(block, nil),
 	}
 
-	return sequencedMsg, block, nil
+	return sequencedMsg, nil
 }
 
 func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
