@@ -192,7 +192,7 @@ func checkRetryables(arbState *ArbosState, expected []statetransfer.Initializati
 
 		to, err := found.To()
 		Require(t, err)
-		if (to == nil && exp.To != nil) || (to != nil && exp.To == nil) || (to != nil && exp.To != nil && *to != *exp.To) {
+		if (to == nil && exp.To != common.Address{}) || (to != nil && exp.To == common.Address{}) || (to != nil && exp.To != common.Address{} && *to != exp.To) {
 			t.Fatalf("Retryable %v: to mismatch. Expected %v, got %v", exp.Id, exp.To, to)
 		}
 
