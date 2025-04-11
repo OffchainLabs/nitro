@@ -542,7 +542,7 @@
   "header_commitment": null,
   "block_merkle_root": "MERKLE_COMM~WULw5pBA-hHee7VvWOcxl60InHSYSeLQAMPQzQMYCPQgAAAAAAAAAFUAAAAAAAAARA",
   "hotshot_commitment": [
-    123, 45, 110, 165, 217, 169, 136, 226, 222, 170, 162, 118, 228, 19, 70, 142,
-    180, 143, 239, 70, 243, 182, 78, 205, 238, 94, 191, 63, 30, 14, 231, 25
+    12, 228, 98, 110, 101, 26, 175, 145, 246, 214, 100, 29, 220, 33, 66, 136,
+    174, 219, 185, 221, 18, 215, 120, 125, 91, 222, 197, 229, 210, 138, 197, 31
   ]
 }

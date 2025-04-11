@@ -8,13 +8,6 @@ import (
 	"testing"
 )
 
-type merkleProofTestData struct {
-	Proof             json.RawMessage `json:"proof"`
-	Header            json.RawMessage `json:"header"`
-	BlockMerkleRoot   string          `json:"block_merkle_root"`
-	HotShotCommitment []uint8         `json:"hotshot_commitment"`
-}
-
 func TestMerkleProofVerification(t *testing.T) {
 	file, err := os.Open("./merkle_proof_test_data.json")
 	if err != nil {
@@ -46,15 +39,6 @@ func TestMerkleProofVerification(t *testing.T) {
 		log.Fatalf("Failed to verify the merkle proof")
 	}
 
-}
-
-type namespaceProofTestData struct {
-	NsProof   json.RawMessage `json:"ns_proof"`
-	VidCommit string          `json:"vid_commit"`
-	VidCommon json.RawMessage `json:"vid_common"`
-	Namespace uint64          `json:"namespace"`
-	NsTable   []uint8         `json:"ns_table"`
-	TxCommit  string          `json:"tx_commit"`
 }
 
 func TestNamespaceProofVerification(t *testing.T) {
