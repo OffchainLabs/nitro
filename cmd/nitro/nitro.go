@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -37,7 +36,6 @@ import (
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -525,6 +523,27 @@ func mainImpl() int {
 		}
 	}
 
+	// TODO: after the consensus-execution split, remove this code block and modify LiveDBSnapshotter to
+	// directly read from sigur2. Currently execution will trigger snapshot creation of consensus side once
+	// its own snapshotting is complete.
+	executionDBSnapShotTrigger := make(chan struct{}, 1)
+	consensusDBSnapShotTrigger := make(chan struct{}, 1)
+	go func() {
+		sigusr := make(chan os.Signal, 1)
+		signal.Notify(sigusr, syscall.SIGUSR2)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-sigusr:
+				select {
+				case executionDBSnapShotTrigger <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+
 	execNode, err := gethexec.CreateExecutionNode(
 		ctx,
 		stack,
@@ -533,6 +552,8 @@ func mainImpl() int {
 		l1Client,
 		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
 		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
+		executionDBSnapShotTrigger,
+		consensusDBSnapShotTrigger, // execution will invoke conensus's db snapshotting
 	)
 	if err != nil {
 		log.Error("failed to create execution node", "err", err)
@@ -557,6 +578,7 @@ func mainImpl() int {
 		fatalErrChan,
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
+		consensusDBSnapShotTrigger,
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)
@@ -690,11 +712,6 @@ func mainImpl() int {
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
 
-	// Live db snapshot creation is only supported on archive nodes
-	if nodeConfig.Execution.Caching.Archive {
-		go liveDBSnapshotter(ctx, chainDb, arbDb, execNode.ExecEngine.CreateBlocksMutex(), func() string { return liveNodeConfig.Get().SnapshotDir })
-	}
-
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
@@ -733,43 +750,6 @@ func mainImpl() int {
 	return 0
 }
 
-func liveDBSnapshotter(ctx context.Context, chainDb, arbDb ethdb.Database, createBlocksMutex *sync.Mutex, snapshotDirGetter func() string) {
-	sigusr2 := make(chan os.Signal, 1)
-	signal.Notify(sigusr2, syscall.SIGUSR2)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-sigusr2:
-			log.Info("Live databases snapshot creation triggered by SIGUSR2")
-		}
-
-		snapshotDir := snapshotDirGetter()
-		if snapshotDir == "" {
-			log.Error("Aborting live databases snapshot creation as destination directory is empty, try updating --snapshot-dir in the config file")
-			continue
-		}
-
-		createBlocksMutex.Lock()
-		log.Info("Beginning snapshot creation for l2chaindata, ancient and wasm databases")
-		err := chainDb.CreateDBSnapshot(snapshotDir)
-		createBlocksMutex.Unlock()
-		if err != nil {
-			log.Error("Snapshot creation for l2chaindata, ancient and wasm databases failed", "err", err)
-			continue
-		}
-		log.Info("Live snapshot of l2chaindata, ancient and wasm databases were successfully created")
-
-		log.Info("Beginning snapshot creation for arbitrumdata database")
-		if err := arbDb.CreateDBSnapshot(snapshotDir); err != nil {
-			log.Error("Snapshot creation for arbitrumdata database failed", "err", err)
-		} else {
-			log.Info("Live snapshot of arbitrumdata database was successfully created")
-		}
-	}
-}
-
 type NodeConfig struct {
 	Conf                   genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node                   arbnode.Config                  `koanf:"node" reload:"hot"`
@@ -794,7 +774,6 @@ type NodeConfig struct {
 	Rpc                    genericconf.RpcConfig           `koanf:"rpc"`
 	BlocksReExecutor       blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
 	EnsureRollupDeployment bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
-	SnapshotDir            string                          `koanf:"snapshot-dir" reload:"hot"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -821,7 +800,6 @@ var NodeConfigDefault = NodeConfig{
 	PprofCfg:               genericconf.PProfDefault,
 	BlocksReExecutor:       blocksreexecutor.DefaultConfig,
 	EnsureRollupDeployment: true,
-	SnapshotDir:            "",
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -849,7 +827,6 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.RpcConfigAddOptions("rpc", f)
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
 	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
-	f.String("snapshot-dir", NodeConfigDefault.SnapshotDir, "directory in which snapshot of databases would be stored")
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
