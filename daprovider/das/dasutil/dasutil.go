@@ -96,14 +96,6 @@ var (
 
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-// DASMessageHeaderFlag indicates that this data is a certificate for the data availability service,
-// which will retrieve the full batch data.
-const DASMessageHeaderFlag byte = 0x80
-
-// TreeDASMessageHeaderFlag indicates that this DAS certificate data employs the new merkelization strategy.
-// Ignored when DASMessageHeaderFlag is not set.
-const TreeDASMessageHeaderFlag byte = 0x08
-
 func RecoverPayloadFromDasBatch(
 	ctx context.Context,
 	batchNum uint64,
@@ -438,9 +430,9 @@ func StringToExpirationPolicy(s string) (ExpirationPolicy, error) {
 
 func Serialize(c *DataAvailabilityCertificate) []byte {
 
-	flags := DASMessageHeaderFlag
+	flags := daprovider.DASMessageHeaderFlag
 	if c.Version != 0 {
-		flags |= TreeDASMessageHeaderFlag
+		flags |= daprovider.TreeDASMessageHeaderFlag
 	}
 
 	buf := make([]byte, 0)
