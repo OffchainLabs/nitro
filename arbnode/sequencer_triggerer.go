@@ -47,22 +47,22 @@ func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duratio
 	}
 
 	sequencedMsg, timeToWaitUntilNextSequencing := s.execSequencer.StartSequencing(ctx)
-
-	var errWhileSequencing error
-	defer s.execSequencer.EndSequencing(ctx, errWhileSequencing)
-
 	if sequencedMsg != nil {
-		errWhileSequencing = s.txStreamer.WriteSequencedMsg(sequencedMsg)
-		if errWhileSequencing != nil {
-			log.Error("Error writing sequenced message", "err", errWhileSequencing)
+		err := s.txStreamer.WriteSequencedMsg(sequencedMsg)
+		if err != nil {
+			log.Error("Error writing sequenced message", "err", err)
+			s.execSequencer.EndSequencing(ctx, err)
 			return 0
 		}
 
-		errWhileSequencing = s.execSequencer.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
-		if errWhileSequencing != nil {
-			log.Error("Error appending last sequenced block", "err", errWhileSequencing)
+		err = s.execSequencer.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
+		if err != nil {
+			log.Error("Error appending last sequenced block", "err", err)
+			s.execSequencer.EndSequencing(ctx, err)
 			return 0
 		}
 	}
+
+	s.execSequencer.EndSequencing(ctx, nil)
 	return time.Until(startSequencingTime.Add(timeToWaitUntilNextSequencing))
 }
