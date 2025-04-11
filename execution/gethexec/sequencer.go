@@ -1235,14 +1235,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
-	if errors.Is(err, execution.ErrRetrySequencer) {
-		log.Warn("error sequencing transactions", "err", err)
-		// we changed roles, add back to the queue
-		for _, item := range queueItems {
-			s.txRetryQueue.Push(item)
-		}
-		return nil, false
-	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			// thread closed. We'll later try to forward these messages.
