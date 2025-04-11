@@ -16,5 +16,4 @@ var (
 	ErrDuplicateSequenceNumber  = errors.New("SUBMISSION_NONCE_ALREADY_SEEN")
 	ErrSequenceNumberTooLow     = errors.New("SUBMISSION_NONCE_TOO_LOW")
 	ErrTooManyBids              = errors.New("PER_ROUND_BID_LIMIT_REACHED")
-	ErrAcceptedTxFailed         = errors.New("Accepted timeboost tx failed")
 )

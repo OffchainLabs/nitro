@@ -138,7 +138,7 @@ func TestPrestateTracingSimple(t *testing.T) {
 	}
 }
 
-func TestPrestateTracingComplex(t *testing.T) {
+func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -193,6 +193,17 @@ func TestPrestateTracingComplex(t *testing.T) {
 	if !arbmath.BigEquals(result.Post[faucetAddr].Balance.ToInt(), arbmath.BigAdd(oldBalance, txOpts.Value)) {
 		Fatal(t, "Unexpected final balance of Faucet")
 	}
+
+	var blockTrace json.RawMessage
+	blockTraceConfig := map[string]interface{}{"tracer": "callTracer"}
+
+	blockTraceConfig["tracerConfig"] = map[string]interface{}{"onlyTopCall": false}
+	err = l2rpc.CallContext(ctx, &blockTrace, "debug_traceBlockByNumber", rpc.BlockNumber(l2Receipt.BlockNumber.Int64()), blockTraceConfig)
+	Require(t, err)
+
+	blockTraceConfig["tracerConfig"] = map[string]interface{}{"onlyTopCall": true}
+	err = l2rpc.CallContext(ctx, &blockTrace, "debug_traceBlockByNumber", rpc.BlockNumber(l2Receipt.BlockNumber.Int64()), blockTraceConfig)
+	Require(t, err)
 
 	// Test prestate tracing of a ArbitrumSubmitRetryableTx type tx
 	user2Address := builder.L2Info.GetAddress("User2")
@@ -287,6 +298,16 @@ func TestPrestateTracingComplex(t *testing.T) {
 	if !arbmath.BigEquals(result.Post[escrowAddr].Balance.ToInt(), callValue) {
 		Fatal(t, "Unexpected final balance of Escrow")
 	}
+
+	blockTraceConfig["tracerConfig"] = map[string]interface{}{"onlyTopCall": false}
+	err = l2rpc.CallContext(ctx, &blockTrace, "debug_traceBlockByNumber", rpc.BlockNumber(receipt.BlockNumber.Int64()), blockTraceConfig)
+	Require(t, err)
+	fmt.Println(string(blockTrace))
+
+	blockTraceConfig["tracerConfig"] = map[string]interface{}{"onlyTopCall": true}
+	err = l2rpc.CallContext(ctx, &blockTrace, "debug_traceBlockByNumber", rpc.BlockNumber(receipt.BlockNumber.Int64()), blockTraceConfig)
+	Require(t, err)
+	fmt.Println(string(blockTrace))
 
 	// Trace ArbitrumRetryTx
 	result = prestateTrace{}

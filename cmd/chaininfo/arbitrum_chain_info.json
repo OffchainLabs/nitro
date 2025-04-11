@@ -8,6 +8,7 @@
     "feed-url": "wss://arb1-feed.arbitrum.io/feed",
     "secondary-feed-url": "wss://arb1-delayed-feed.arbitrum.io/feed,wss://arb1-feed-fallback-1.arbitrum.io/feed,wss://arb1-feed-fallback-2.arbitrum.io/feed,wss://arb1-feed-fallback-3.arbitrum.io/feed,wss://arb1-feed-fallback-4.arbitrum.io/feed,wss://arb1-feed-fallback-5.arbitrum.io/feed",
     "has-genesis-state": true,
+    "track-block-metadata-from": 327000000,
     "chain-config": {
       "chainId": 42161,
       "homesteadBlock": 0,

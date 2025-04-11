@@ -1,6 +1,7 @@
 package timeboost
 
 import (
+	"encoding/hex"
 	"math/big"
 	"os"
 	"testing"
@@ -93,7 +94,7 @@ func TestInsertBids(t *testing.T) {
 			bid.AuctionContractAddress.Hex(),
 			bid.Round,
 			bid.Amount.String(),
-			bid.Signature,
+			hex.EncodeToString(bid.Signature),
 		).WillReturnResult(sqlmock.NewResult(1, 1))
 	}
 
