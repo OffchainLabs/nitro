@@ -1525,6 +1525,7 @@ func (s *Sequencer) ReAddTransactionsFromLastCreatedBlock(ctx context.Context) e
 	for _, item := range s.lastCreatedBlockInfo.queueItems {
 		s.txRetryQueue.Push(item)
 	}
+	s.lastCreatedBlockInfo = nil
 	return nil
 }
 
