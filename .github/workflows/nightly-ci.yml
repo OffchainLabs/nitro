@@ -78,6 +78,8 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          cache: false
         
       - name: Install cbindgen
         run: cargo install --force cbindgen
@@ -252,6 +254,8 @@ jobs:
       - name: Install Foundry
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          cache: false
         
       - name: Install cbindgen
         if: steps.changed-files.outputs.any_changed == 'true'
