@@ -190,7 +190,8 @@ func TestEspressoE2E(t *testing.T) {
 	err := waitForL1Node(ctx)
 	Require(t, err)
 
-	runEspresso()
+	shutdown := runEspresso()
+	defer shutdown()
 
 	// wait for the builder
 	err = waitForEspressoNode(ctx)
@@ -291,24 +292,57 @@ func TestEspressoE2E(t *testing.T) {
 	// but shut down before it can be finalized
 	time.Sleep(1 * time.Second)
 
-	// Shutdown the espresso node
-	shutdownEspressoWithoutRemovingVolumes := func() {
-		p := exec.Command("docker", "compose", "down")
+	log.Info("Pausing espresso node")
+	pauseEspresso := func() {
+		p := exec.Command("docker", "compose", "pause")
 		p.Dir = workingDir
 		err := p.Run()
 		if err != nil {
 			panic(err)
 		}
-	}
-	// Note: It's important not to remove the volumes because otherwise namespace proof validations will fail
-	shutdownEspressoWithoutRemovingVolumes()
+		// Disconnect the container from the network to ensure requests to the dev node
+		// don't just hang but actually fail.
+		p = exec.Command(
+			"docker",
+			"network",
+			"disconnect",
+			"espresso-e2e_default",
+			"espresso-e2e-espresso-dev-node-1",
+		)
+		err = p.Run()
+		if err != nil {
+			panic(err)
+		}
 
-	// Wait for a 1 minute before restarting the espresso node
+	}
+	pauseEspresso()
+
+	log.Info("Waiting for 1 minute before resuming espresso node")
 	time.Sleep(1 * time.Minute)
 
-	// Restart the espresso node
-	cleanEspresso := runEspresso()
-	defer cleanEspresso()
+	log.Info("Resuming espresso node")
+	unpauseEspresso := func() {
+		// reconnect the network first
+		p := exec.Command(
+			"docker",
+			"network",
+			"connect",
+			"espresso-e2e_default",
+			"espresso-e2e-espresso-dev-node-1",
+		)
+		err := p.Run()
+		if err != nil {
+			panic(err)
+		}
+		// resume the dev node
+		p = exec.Command("docker", "compose", "unpause")
+		p.Dir = workingDir
+		err = p.Run()
+		if err != nil {
+			panic(err)
+		}
+	}
+	unpauseEspresso()
 
 	err = waitForEspressoNode(ctx)
 	Require(t, err)
