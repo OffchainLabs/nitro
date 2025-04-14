@@ -48,6 +48,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/livedbsnapshotter"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -74,6 +75,7 @@ type Config struct {
 	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
 	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
 	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
+	LiveDBSnapshotter        livedbsnapshotter.Config       `koanf:"live-db-snapshotter"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -145,6 +147,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
+	livedbsnapshotter.ConfigAddOptions(prefix+".live-db-snapshotter", f)
 }
 
 var ConfigDefault = Config{
@@ -168,6 +171,7 @@ var ConfigDefault = Config{
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
 	SnapSyncTest:             DefaultSnapSyncConfig,
+	LiveDBSnapshotter:        livedbsnapshotter.DefaultConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -270,6 +274,7 @@ type Node struct {
 	configFetcher            ConfigFetcher
 	ctx                      context.Context
 	ConsensusExecutionSyncer *ConsensusExecutionSyncer
+	liveDBSnapshotter        *livedbsnapshotter.LiveDBSnapshotter
 }
 
 type SnapSyncConfig struct {
@@ -942,6 +947,7 @@ func getNodeParentChainReaderDisabled(
 	syncMonitor *SyncMonitor,
 	configFetcher ConfigFetcher,
 	blockMetadataFetcher *BlockMetadataFetcher,
+	liveDBSnapshotter *livedbsnapshotter.LiveDBSnapshotter,
 ) *Node {
 	return &Node{
 		ArbDB:                   arbDb,
@@ -970,6 +976,7 @@ func getNodeParentChainReaderDisabled(
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
 		blockMetadataFetcher:    blockMetadataFetcher,
+		liveDBSnapshotter:       liveDBSnapshotter,
 	}
 }
 
@@ -991,6 +998,7 @@ func createNodeImpl(
 	fatalErrChan chan error,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
+	dBSnapshotTrigger chan struct{},
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -1041,8 +1049,13 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	var liveDBSnapshotter *livedbsnapshotter.LiveDBSnapshotter
+	if config.LiveDBSnapshotter.Enable {
+		liveDBSnapshotter = livedbsnapshotter.NewLiveDBSnapshotter(arbDb, "arbitrumdata", dBSnapshotTrigger, config.LiveDBSnapshotter.Dir, false, nil)
+	}
+
 	if !config.ParentChainReader.Enable {
-		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
+		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher, liveDBSnapshotter), nil
 	}
 
 	delayedBridge, sequencerInbox, err := getDelayedBridgeAndSequencerInbox(deployInfo, l1client)
@@ -1118,6 +1131,7 @@ func createNodeImpl(
 		configFetcher:            configFetcher,
 		ctx:                      ctx,
 		ConsensusExecutionSyncer: consensusExecutionSyncer,
+		liveDBSnapshotter:        liveDBSnapshotter,
 	}, nil
 }
 
@@ -1221,11 +1235,12 @@ func CreateNodeExecutionClient(
 	fatalErrChan chan error,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
+	dBSnapshotTrigger chan struct{},
 ) (*Node, error) {
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, dBSnapshotTrigger)
 	if err != nil {
 		return nil, err
 	}
@@ -1251,11 +1266,12 @@ func CreateNodeFullExecutionClient(
 	fatalErrChan chan error,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
+	dBSnapshotTrigger chan struct{},
 ) (*Node, error) {
 	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (executionBatchPoster == nil) {
 		return nil, errors.New("execution client, sequencer, recorder, and batch poster must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, dBSnapshotTrigger)
 	if err != nil {
 		return nil, err
 	}
@@ -1403,10 +1419,16 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)
 	}
+	if n.liveDBSnapshotter != nil {
+		n.liveDBSnapshotter.Start(ctx)
+	}
 	return nil
 }
 
 func (n *Node) StopAndWait() {
+	if n.liveDBSnapshotter != nil {
+		n.liveDBSnapshotter.StopAndWait()
+	}
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()
 	}

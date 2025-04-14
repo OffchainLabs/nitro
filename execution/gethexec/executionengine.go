@@ -47,6 +47,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/livedbsnapshotter"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -103,6 +104,8 @@ type ExecutionEngine struct {
 
 	cachedL1PriceData *L1PriceData
 	syncTillBlock     uint64
+
+	liveDBSnapshotter *livedbsnapshotter.LiveDBSnapshotter
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -224,6 +227,16 @@ func (s *ExecutionEngine) SetReorgEventsNotifier(reorgEventsNotifier chan struct
 		panic("trying to set reorg events notifier when already set")
 	}
 	s.reorgEventsNotifier = reorgEventsNotifier
+}
+
+func (s *ExecutionEngine) SetLiveDBSnapshotter(liveDBSnapshotter *livedbsnapshotter.LiveDBSnapshotter) {
+	if s.Started() {
+		panic("trying to set liveDBSnapshotter after start")
+	}
+	if s.liveDBSnapshotter != nil {
+		panic("trying to set liveDBSnapshotter when already set")
+	}
+	s.liveDBSnapshotter = liveDBSnapshotter
 }
 
 func (s *ExecutionEngine) EnableReorgSequencing() {
@@ -798,6 +811,10 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	blockGasUsedHistogram.Update(int64(blockGasused))
 	gasUsedSinceStartupCounter.Inc(int64(blockGasused))
 	s.updateL1GasPriceEstimateMetric()
+	if s.liveDBSnapshotter != nil && s.liveDBSnapshotter.IsSnapshotDue() {
+		s.bc.FlushToDisk(false)
+		s.liveDBSnapshotter.CreateDBSnapshot()
+	}
 	return nil
 }
 

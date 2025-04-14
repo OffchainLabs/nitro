@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -84,13 +85,21 @@ func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *t
 }
 
 type ArbDebugAPI struct {
-	blockchain        *core.BlockChain
-	blockRangeBound   uint64
-	timeoutQueueBound uint64
+	blockchain               *core.BlockChain
+	blockRangeBound          uint64
+	timeoutQueueBound        uint64
+	enableLiveDBSnapshotting bool
 }
 
-func NewArbDebugAPI(blockchain *core.BlockChain, blockRangeBound uint64, timeoutQueueBound uint64) *ArbDebugAPI {
-	return &ArbDebugAPI{blockchain, blockRangeBound, timeoutQueueBound}
+func NewArbDebugAPI(blockchain *core.BlockChain, blockRangeBound uint64, timeoutQueueBound uint64, enableLiveDBSnapshotting bool) *ArbDebugAPI {
+	return &ArbDebugAPI{blockchain, blockRangeBound, timeoutQueueBound, enableLiveDBSnapshotting}
+}
+
+func (api *ArbDebugAPI) CreateDBSnapshot(ctx context.Context) error {
+	if !api.enableLiveDBSnapshotting {
+		return errors.New("live database snapshot creation is not enabled")
+	}
+	return syscall.Kill(syscall.Getpid(), syscall.SIGUSR2)
 }
 
 type PricingModelHistory struct {
