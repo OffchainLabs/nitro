@@ -20,7 +20,7 @@ func TestHistoricalBlockHash(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	contractInfo := &statetransfer.AccountInitContractInfo{
-		Code:            params.HistoryStorageCode,
+		Code:            params.HistoryStorageCodeArbitrum,
 		ContractStorage: make(map[common.Hash]common.Hash),
 	}
 	accountInfo := statetransfer.AccountInitializationInfo{
