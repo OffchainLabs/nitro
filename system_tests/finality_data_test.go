@@ -379,3 +379,63 @@ func TestSetFinalityBlockHashMismatch(t *testing.T) {
 		t.Fatalf("err is not correct")
 	}
 }
+
+func TestFinalityDataNodeOutOfSync(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// The procedure that periodically pushes finality data, from consensus to execution,
+	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
+	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
+	// In that way we can control in this test which finality data is pushed to Execution by calling SyncMonitor.SetFinalityData.
+	builder.nodeConfig.ParentChainReader.UseFinalityData = false
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	nodeConfig2ndNode := arbnode.ConfigDefaultL1NonSequencerTest()
+	execConfig2ndNode := ExecConfigDefaultTest(t)
+	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2ndNode, execConfig: execConfig2ndNode})
+	defer cleanup2ndNode()
+
+	// Creates at least 20 L2 blocks
+	builder.L2Info.GenerateAccount("User2")
+	generateBlocks(t, ctx, builder, testClient2ndNode, 20)
+
+	safeMsgIdx := arbutil.MessageIndex(14)
+	safeMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(safeMsgIdx).Await(ctx)
+	Require(t, err)
+	safeFinalityData := arbutil.FinalityData{
+		MsgIdx:    safeMsgIdx,
+		BlockHash: safeMsgResult.BlockHash,
+	}
+
+	finalizedMsgIdx := arbutil.MessageIndex(9)
+	finalizedMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(finalizedMsgIdx).Await(ctx)
+	Require(t, err)
+	finalizedFinalityData := arbutil.FinalityData{
+		MsgIdx:    finalizedMsgIdx,
+		BlockHash: finalizedMsgResult.BlockHash,
+	}
+
+	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, nil)
+	Require(t, err)
+
+	checksFinalityData(t, "before out of sync", ctx, builder.L2, finalizedFinalityData.MsgIdx, safeFinalityData.MsgIdx)
+
+	// sets finality data to blocks that are not in the chain
+	safeFinalityData = arbutil.FinalityData{
+		MsgIdx: arbutil.MessageIndex(1000),
+	}
+	finalizedFinalityData = arbutil.FinalityData{
+		MsgIdx: arbutil.MessageIndex(900),
+	}
+	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, nil)
+	Require(t, err)
+
+	ensureFinalizedBlockDoesNotExist(t, ctx, builder.L2, "out of sync")
+	ensureSafeBlockDoesNotExist(t, ctx, builder.L2, "out of sync")
+}

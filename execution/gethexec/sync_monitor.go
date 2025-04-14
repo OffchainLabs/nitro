@@ -148,7 +148,8 @@ func (s *SyncMonitor) getFinalityBlockHeader(
 	finalityBlockNumber := s.exec.MessageIndexToBlockNumber(finalityMsgIdx)
 	finalityBlock := s.exec.bc.GetBlockByNumber(finalityBlockNumber)
 	if finalityBlock == nil {
-		return nil, errors.New("unable to get block by number, number=" + fmt.Sprint(finalityBlockNumber))
+		log.Debug("Finality block not found", "blockNumber", finalityBlockNumber)
+		return nil, nil
 	}
 	if finalityBlock.Hash() != finalityBlockHash {
 		errorMsg := fmt.Sprintf(
