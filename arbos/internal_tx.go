@@ -60,6 +60,8 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		if evm.Context.BlockNumber.Sign() > 0 {
 			prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
 		}
+		// For ArbOS versions >= 40 we need to call ProcessParentBlockHash to fill
+		// the historyStorage with the block hash to support EIP-2935.
 		if state.ArbOSVersion() >= params.ArbosVersion_40 {
 			core.ProcessParentBlockHash(prevHash, evm)
 		}
