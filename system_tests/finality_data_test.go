@@ -201,6 +201,26 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	}
 }
 
+func ensureFinalizedBlockDoesNotExist(t *testing.T, ctx context.Context, testClient *TestClient, scenario string) {
+	_, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+	if err == nil {
+		t.Fatalf("err should not be nil, scenario: %v", scenario)
+	}
+	if err.Error() != "finalized block not found" {
+		t.Fatalf("err is not correct, scenario: %v", scenario)
+	}
+}
+
+func ensureSafeBlockDoesNotExist(t *testing.T, ctx context.Context, testClient *TestClient, scenario string) {
+	_, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+	if err == nil {
+		t.Fatalf("err should not be nil, scenario: %v", scenario)
+	}
+	if err.Error() != "safe block not found" {
+		t.Fatalf("err is not correct, scenario: %v", scenario)
+	}
+}
+
 func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	t.Parallel()
 
@@ -217,30 +237,11 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2ndNode})
 	defer cleanup2ndNode()
 
-	ensureFinalizedBlockDoesNotExist := func(testClient *TestClient, scenario string) {
-		_, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
-		if err == nil {
-			t.Fatalf("err should not be nil, scenario: %v", scenario)
-		}
-		if err.Error() != "finalized block not found" {
-			t.Fatalf("err is not correct, scenario: %v", scenario)
-		}
-	}
-	ensureSafeBlockDoesNotExist := func(testClient *TestClient, scenario string) {
-		_, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
-		if err == nil {
-			t.Fatalf("err should not be nil, scenario: %v", scenario)
-		}
-		if err.Error() != "safe block not found" {
-			t.Fatalf("err is not correct, scenario: %v", scenario)
-		}
-	}
-
 	// final and safe blocks shouldn't exist before generating blocks
-	ensureFinalizedBlockDoesNotExist(builder.L2, "first node before generating blocks")
-	ensureSafeBlockDoesNotExist(builder.L2, "first node before generating blocks")
-	ensureFinalizedBlockDoesNotExist(testClient2ndNode, "2nd node before generating blocks")
-	ensureSafeBlockDoesNotExist(testClient2ndNode, "2nd node before generating blocks")
+	ensureFinalizedBlockDoesNotExist(t, ctx, builder.L2, "first node before generating blocks")
+	ensureSafeBlockDoesNotExist(t, ctx, builder.L2, "first node before generating blocks")
+	ensureFinalizedBlockDoesNotExist(t, ctx, testClient2ndNode, "2nd node before generating blocks")
+	ensureSafeBlockDoesNotExist(t, ctx, testClient2ndNode, "2nd node before generating blocks")
 
 	builder.L2Info.GenerateAccount("User2")
 	generateBlocks(t, ctx, builder, testClient2ndNode, 100)
@@ -249,14 +250,14 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	time.Sleep(time.Second * 20)
 
 	// finality data usage is disabled in first node, so finality data should not be set in first node
-	ensureFinalizedBlockDoesNotExist(builder.L2, "first node after generating blocks")
-	ensureSafeBlockDoesNotExist(builder.L2, "first node after generating blocks")
+	ensureFinalizedBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks")
+	ensureSafeBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks")
 
 	// if nil is passed finality data should not be set
 	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, nil, nil, nil)
 	Require(t, err)
-	ensureFinalizedBlockDoesNotExist(builder.L2, "first node after generating blocks and setting finality data to nil")
-	ensureSafeBlockDoesNotExist(builder.L2, "first node after generating blocks and setting finality data to nil")
+	ensureFinalizedBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks and setting finality data to nil")
+	ensureSafeBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks and setting finality data to nil")
 
 	// finality data usage is enabled in second node, so finality data should be set in second node
 	finalBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
@@ -329,7 +330,8 @@ func TestFinalityAfterReorg(t *testing.T) {
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
 	Require(t, err)
 
-	checksFinalityData(t, "after reorg", ctx, builder.L2, reorgAt-1, reorgAt-1)
+	ensureFinalizedBlockDoesNotExist(t, ctx, builder.L2, "after reorg")
+	ensureSafeBlockDoesNotExist(t, ctx, builder.L2, "after reorg")
 }
 
 func TestSetFinalityBlockHashMismatch(t *testing.T) {

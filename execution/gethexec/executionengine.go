@@ -302,12 +302,12 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 	currentSafeBlock := s.bc.CurrentSafeBlock()
 	if currentSafeBlock != nil && lastBlockToKeep.Number().Cmp(currentSafeBlock.Number) < 0 {
 		log.Warn("reorg target block is below safe block", "lastBlockNumToKeep", lastBlockNumToKeep, "currentSafeBlock", currentSafeBlock.Number)
-		s.bc.SetSafe(lastBlockToKeep.Header())
+		s.bc.SetSafe(nil)
 	}
 	currentFinalBlock := s.bc.CurrentFinalBlock()
 	if currentFinalBlock != nil && lastBlockToKeep.Number().Cmp(currentFinalBlock.Number) < 0 {
 		log.Warn("reorg target block is below final block", "lastBlockNumToKeep", lastBlockNumToKeep, "currentFinalBlock", currentFinalBlock.Number)
-		s.bc.SetFinalized(lastBlockToKeep.Header())
+		s.bc.SetFinalized(nil)
 	}
 
 	tag := s.bc.StateCache().WasmCacheTag()
