@@ -57,7 +57,7 @@ func NewRedisStorageService(redisConfig RedisConfig, baseStorageService StorageS
 	}
 	signingKey := common.HexToHash(redisConfig.KeyConfig)
 	if signingKey == (common.Hash{}) {
-		return nil, errors.New("signing key file contents are not 32 bytes of hex")
+		return nil, errors.New("invalid signing key: not a 32-byte hex string")
 	}
 	return &RedisStorageService{
 		baseStorageService: baseStorageService,
@@ -85,7 +85,9 @@ func (rs *RedisStorageService) verifyMessageSignature(data []byte) ([]byte, erro
 func (rs *RedisStorageService) getVerifiedData(ctx context.Context, key common.Hash) ([]byte, error) {
 	data, err := rs.client.Get(ctx, string(key.Bytes())).Bytes()
 	if err != nil {
-		log.Error("das.RedisStorageService.getVerifiedData", "err", err)
+		if err != redis.Nil {
+		    log.Error("das.RedisStorageService.getVerifiedData", "err", err)
+		}
 		return nil, err
 	}
 	data, err = rs.verifyMessageSignature(data)
@@ -121,7 +123,7 @@ func (rs *RedisStorageService) GetByHash(ctx context.Context, key common.Hash) (
 }
 
 func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	logPut("das.RedisStorageService.Store", value, timeout, rs)
+	logPut("das.RedisStorageService.Put", value, timeout, rs)
 	err := rs.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err
