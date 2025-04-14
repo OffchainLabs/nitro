@@ -3,6 +3,7 @@ package livedbsnapshotter
 import (
 	"context"
 	"sync/atomic"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -84,11 +85,12 @@ func (l *LiveDBSnapshotter) CreateDBSnapshot() {
 		return
 	}
 
+	startTime := time.Now()
 	log.Info("Beginning snapshot creation", "databases", l.dbName)
 	if err := l.db.CreateDBSnapshot(l.dir); err != nil {
-		log.Error("Snapshot creation for database failed", "databases", l.dbName, "err", err)
+		log.Error("Snapshot creation for database failed", "databases", l.dbName, "err", err, "timeTaken", time.Since(startTime))
 	} else {
-		log.Info("Live snapshot was successfully created", "databases", l.dbName)
+		log.Info("Live snapshot was successfully created", "databases", l.dbName, "timeTaken", time.Since(startTime))
 	}
 	l.isSnapshotDue.Store(false)
 
