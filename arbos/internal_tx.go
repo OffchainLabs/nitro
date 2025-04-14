@@ -60,7 +60,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		if evm.Context.BlockNumber.Sign() > 0 {
 			prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
 		}
-		if state.ArbOSVersion() >= params.ArbosVersion_40 && evm.ChainConfig().IsArbitrum() {
+		if state.ArbOSVersion() >= params.ArbosVersion_40 {
 			core.ProcessParentBlockHash(prevHash, evm)
 		}
 		l1BlockNumber := util.SafeMapGet[uint64](inputs, "l1BlockNumber")
