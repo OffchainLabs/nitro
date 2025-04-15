@@ -156,7 +156,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 }
 
 func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	maxNumBlocks := uint64(1 << 14)
@@ -358,6 +358,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	sconf := setup.RollupStackConfig{
 		UseMockBridge:          false,
 		UseMockOneStepProver:   false,
+		UseBlobs:               true,
 		MinimumAssertionPeriod: 0,
 	}
 
