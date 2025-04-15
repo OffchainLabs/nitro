@@ -28,18 +28,17 @@ type BlockMetadataFetcherConfig struct {
 }
 
 var DefaultBlockMetadataFetcherConfig = BlockMetadataFetcherConfig{
-	Enable:         false,
+	Enable:         true,
 	Source:         rpcclient.DefaultClientConfig,
 	SyncInterval:   time.Minute * 5,
 	APIBlocksLimit: 100,
 }
 
 func BlockMetadataFetcherConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBlockMetadataFetcherConfig.Enable, "enable syncing blockMetadata using a bulk blockMetadata api. If the source doesn't have the missing blockMetadata, we keep retyring in every sync-interval (default=5mins) duration")
+	f.Bool(prefix+".enable", DefaultBlockMetadataFetcherConfig.Enable, "enable syncing blockMetadata using a bulk blockMetadata api")
 	rpcclient.RPCClientAddOptions(prefix+".source", f, &DefaultBlockMetadataFetcherConfig.Source)
-	f.Duration(prefix+".sync-interval", DefaultBlockMetadataFetcherConfig.SyncInterval, "interval at which blockMetadata are synced regularly")
-	f.Uint64(prefix+".api-blocks-limit", DefaultBlockMetadataFetcherConfig.APIBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query.\n"+
-		"This should be set lesser than or equal to the limit on the api provider side")
+	f.Duration(prefix+".sync-interval", DefaultBlockMetadataFetcherConfig.SyncInterval, "how often blockMetadata is synced")
+	f.Uint64(prefix+".api-blocks-limit", DefaultBlockMetadataFetcherConfig.APIBlocksLimit, "maximum number of blocks per arb_getRawBlockMetadata query")
 }
 
 // BlockMetadataFetcher looks for missing blockMetadata of block numbers starting from trackBlockMetadataFrom (config option of tx streamer)
