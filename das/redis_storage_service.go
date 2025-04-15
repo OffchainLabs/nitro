@@ -85,7 +85,7 @@ func (rs *RedisStorageService) verifyMessageSignature(data []byte) ([]byte, erro
 func (rs *RedisStorageService) getVerifiedData(ctx context.Context, key common.Hash) ([]byte, error) {
 	data, err := rs.client.Get(ctx, string(key.Bytes())).Bytes()
 	if err != nil {
-		if err != redis.Nil {
+		if !errors.Is(err, redis.Nil) {
 		    log.Error("das.RedisStorageService.getVerifiedData", "err", err)
 		}
 		return nil, err
