@@ -502,8 +502,8 @@ func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*execution.SequencedMsg, error) {
 	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)
 }
-func (n *ExecutionNode) AppendLastSequencedBlock(blockHash common.Hash) error {
-	return n.ExecEngine.AppendLastSequencedBlock(blockHash)
+func (n *ExecutionNode) AppendLastSequencedBlock() error {
+	return n.ExecEngine.AppendLastSequencedBlock()
 }
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
