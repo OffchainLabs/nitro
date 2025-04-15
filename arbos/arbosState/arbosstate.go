@@ -341,8 +341,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 
 		case params.ArbosVersion_40:
 			// EIP-2935: Add support for historical block hashes.
-			stateDB.SetNonce(params.HistoryStorageAddress, 1, tracing.NonceChangeUnspecified)
-			stateDB.SetCode(params.HistoryStorageAddress, params.HistoryStorageCodeArbitrum)
+			if firstTime {
+				stateDB.SetNonce(params.HistoryStorageAddress, 1, tracing.NonceChangeUnspecified)
+				stateDB.SetCode(params.HistoryStorageAddress, params.HistoryStorageCodeArbitrum)
+			}
 			// The MaxWasmSize was a constant before arbos version 40, and can
 			// be read as a parameter after arbos version 40.
 			params, err := state.Programs().Params()
