@@ -206,7 +206,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 				if err != nil {
 					return err
 				}
-				err = d.exec.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
+				err = d.exec.AppendLastSequencedBlock()
 				if err != nil {
 					return err
 				}

@@ -264,7 +264,7 @@ func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.Messa
 					return
 				}
 
-				err = s.execSequencer.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
+				err = s.execSequencer.AppendLastSequencedBlock()
 				if err != nil {
 					log.Error("failed to append last sequenced block", "msg", sequencedMsg, "err", err)
 					return

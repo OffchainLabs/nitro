@@ -718,7 +718,7 @@ func warpL1Time(t *testing.T, builder *NodeBuilder, ctx context.Context, current
 	}
 	err = builder.L2.ConsensusNode.TxStreamer.WriteSequencedMsg(sequencedMsg)
 	Require(t, err)
-	err = builder.L2.ExecNode.AppendLastSequencedBlock(sequencedMsg.MsgResult.BlockHash)
+	err = builder.L2.ExecNode.AppendLastSequencedBlock()
 	Require(t, err)
 	return newL1Timestamp
 }

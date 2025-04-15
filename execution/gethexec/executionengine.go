@@ -468,15 +468,12 @@ func writeAndLog(pprof, trace *bytes.Buffer) {
 	log.Info("Transactions sequencing took longer than 2 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
-func (s *ExecutionEngine) AppendLastSequencedBlock(blockHash common.Hash) error {
+func (s *ExecutionEngine) AppendLastSequencedBlock() error {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 
 	if s.lastSequencedBlockInfo == nil {
 		return errors.New("no last sequenced block info")
-	}
-	if s.lastSequencedBlockInfo.block.Hash() != blockHash {
-		return fmt.Errorf("block hash mismatch: expected %v vs but %v was provided", s.lastSequencedBlockInfo.block.Hash(), blockHash)
 	}
 
 	err := s.appendBlock(
