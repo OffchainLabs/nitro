@@ -1,6 +1,6 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see
-// https://github.com/offchainlabs/bold/blob/main/LICENSE
+// https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package bold
 
 import (

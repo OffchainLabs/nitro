@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use arbutil::Bytes32;
 use std::{
