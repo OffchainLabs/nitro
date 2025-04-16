@@ -284,7 +284,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 					// We tried, all we can do here is warn.
 					// It will be cleaned up by the Consumer
 					// on the next try or ultimately by
-					// Producer.clearMessages After RequesTimeout
+					// Producer.clearMessages after RequestTimeout
 				}
 				return 0
 			}
@@ -559,4 +559,9 @@ func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {
 		copied.GasTipCap = new(big.Int).Set(opts.GasTipCap)
 	}
 	return copied
+}
+
+func (a *AuctioneerServer) StopAndWait() {
+	a.StopWaiter.StopAndWait()
+	a.consumer.StopAndWait()
 }

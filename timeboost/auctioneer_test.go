@@ -277,9 +277,10 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 	require.Equal(t, bobAddr, result.secondPlace.Bidder)
 
 	// "Restart" the auctioneer by creating a new instance
-	t.Log("Restarting auctioneer...")
+	t.Log("Stopping auctioneer...")
 	auctioneer.StopAndWait()
 
+	t.Log("Starting auctioneer...")
 	// Create a new auctioneer with the same configuration (pointing to the same DB directory)
 	newAuctioneer, err := NewAuctioneerServer(ctx, auctioneerConfigFn)
 	require.NoError(t, err)
