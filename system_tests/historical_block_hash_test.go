@@ -9,8 +9,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-
-	"github.com/offchainlabs/nitro/statetransfer"
 )
 
 func TestHistoricalBlockHash(t *testing.T) {
@@ -19,17 +17,6 @@ func TestHistoricalBlockHash(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	contractInfo := &statetransfer.AccountInitContractInfo{
-		Code:            params.HistoryStorageCodeArbitrum,
-		ContractStorage: make(map[common.Hash]common.Hash),
-	}
-	accountInfo := statetransfer.AccountInitializationInfo{
-		Addr:         params.HistoryStorageAddress,
-		EthBalance:   big.NewInt(0),
-		Nonce:        1,
-		ContractInfo: contractInfo,
-	}
-	builder.L2Info.ArbInitData.Accounts = append(builder.L2Info.ArbInitData.Accounts, accountInfo)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
