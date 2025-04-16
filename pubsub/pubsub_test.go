@@ -319,7 +319,7 @@ func TestRedisProduceComplex(t *testing.T) {
 			}
 
 			gotMessages := messagesMaps(len(consumers))
-			var killedEntries []string
+			killedEntries := make(map[string]struct{})
 			if tc.killConsumers {
 				// Consumer messages in every third consumer but don't ack them to check
 				// that other consumers will claim ownership on those messages.
@@ -349,7 +349,7 @@ func TestRedisProduceComplex(t *testing.T) {
 					if req == nil {
 						t.Error("Didn't consume any message")
 					} else {
-						killedEntries = append(killedEntries, req.Value.Request)
+						killedEntries[req.Value.Request] = struct{}{}
 					}
 					// Kills the actnotifier hence allowing XAUTOCLAIM
 					consumers[i].StopAndWait()
@@ -492,17 +492,10 @@ func mergeValues(messages []map[string]string, withInvalidEntries bool) ([]strin
 	return ret, nil
 }
 
-func filterEntries(entries []string, toSkip []string) []string {
+func filterEntries(entries []string, toSkip map[string]struct{}) []string {
 	var res []string
 	for _, e := range entries {
-		skip := false
-		for _, s := range toSkip {
-			if s == e {
-				skip = true
-				break
-			}
-		}
-		if !skip {
+		if _, skip := toSkip[e]; !skip {
 			res = append(res, e)
 		}
 	}
