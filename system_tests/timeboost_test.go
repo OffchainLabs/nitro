@@ -1752,6 +1752,7 @@ func setupExpressLaneAuction(
 		AuctionContractAddress: proxyAddr.Hex(),
 		RedisURL:               redisURL,
 		ProducerConfig:         pubsub.TestProducerConfig,
+		MaxBidsPerSender:       5,
 	}
 	fetcher := func() *timeboost.BidValidatorConfig {
 		return cfg
