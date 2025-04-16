@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -55,6 +56,15 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			return err
 		}
 
+		var prevHash common.Hash
+		if evm.Context.BlockNumber.Sign() > 0 {
+			prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
+		}
+		// For ArbOS versions >= 40 we need to call ProcessParentBlockHash to fill
+		// the historyStorage with the block hash to support EIP-2935.
+		if state.ArbOSVersion() >= params.ArbosVersion_40 {
+			core.ProcessParentBlockHash(prevHash, evm)
+		}
 		l1BlockNumber := util.SafeMapGet[uint64](inputs, "l1BlockNumber")
 		timePassed := util.SafeMapGet[uint64](inputs, "timePassed")
 		if state.ArbOSVersion() < params.ArbosVersion_3 {
@@ -73,10 +83,6 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		state.Restrict(err)
 
 		if l1BlockNumber > oldL1BlockNumber {
-			var prevHash common.Hash
-			if evm.Context.BlockNumber.Sign() > 0 {
-				prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
-			}
 			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber-1, prevHash, state.ArbOSVersion()))
 		}
 
