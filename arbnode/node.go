@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -1088,7 +1088,7 @@ func createNodeImpl(
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
 		return &configFetcher.Get().ConsensusExecutionSyncer
 	}
-	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, executionClient, blockValidator)
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, executionClient, blockValidator, txStreamer)
 
 	return &Node{
 		ArbDB:                    arbDb,
@@ -1407,6 +1407,9 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
+	if n.ConsensusExecutionSyncer != nil {
+		n.ConsensusExecutionSyncer.StopAndWait()
+	}
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()
 	}

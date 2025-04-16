@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::test::{run_native, test_configs, TestInstance};
 use arbutil::{color::Color, format};

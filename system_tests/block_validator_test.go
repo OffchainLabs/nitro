@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -312,6 +312,9 @@ func TestBlockValidatorSimpleOnchain(t *testing.T) {
 }
 
 func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
+	t.Skip("Fails cause EIP-2935 (part of arbOs 40) is not implemented in the latest published machine i.e Consensus V32")
+	// TODO: Remove this skip when consensus V40 is published
+	// TODO: Make this more robust in the future, so that it can handle if the latest consensus release is behind the arbOS version we want to test.
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
@@ -326,6 +329,9 @@ func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
 }
 
 func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
+	t.Skip("Fails cause EIP-2935 (part of arbOs 40) is not implemented in the latest published machine i.e Consensus V32")
+	// TODO: Remove this skip when consensus V40 is published
+	// TODO: Make this more robust in the future, so that it can handle if the latest consensus release is behind the arbOS version we want to test.
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
