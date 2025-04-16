@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [race, legacychallenge, long]
+        test-mode: [race, legacychallenge, long, challeneg]
 
     if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
     
@@ -154,6 +154,10 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m --test_state_scheme hash
 
       - name: run challenge tests
+        if: matrix.test-mode == 'challenge'
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --timeout 120m --cover
+
+      - name: run legacy challenge tests
         if: matrix.test-mode == 'legacychallenge'
         run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest --run TestChallenge --timeout 60m --cover
 
