@@ -39,6 +39,7 @@ type ConsensusExecutionSyncer struct {
 	inboxReader    *InboxReader
 	execClient     execution.ExecutionClient
 	blockValidator *staker.BlockValidator
+	txStreamer     *TransactionStreamer
 }
 
 func NewConsensusExecutionSyncer(
@@ -46,12 +47,14 @@ func NewConsensusExecutionSyncer(
 	inboxReader *InboxReader,
 	execClient execution.ExecutionClient,
 	blockValidator *staker.BlockValidator,
+	txStreamer *TransactionStreamer,
 ) *ConsensusExecutionSyncer {
 	return &ConsensusExecutionSyncer{
 		config:         config,
 		inboxReader:    inboxReader,
 		execClient:     execClient,
 		blockValidator: blockValidator,
+		txStreamer:     txStreamer,
 	}
 }
 
@@ -60,37 +63,61 @@ func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 	c.CallIteratively(c.pushFinalityDataFromConsensusToExecution)
 }
 
+func (c *ConsensusExecutionSyncer) getFinalityData(
+	ctx context.Context,
+	msgCount arbutil.MessageIndex,
+	errMsgCount error,
+	scenario string,
+) (*arbutil.FinalityData, error) {
+	if errors.Is(errMsgCount, headerreader.ErrBlockNumberNotSupported) {
+		log.Debug("Finality not supported, not pushing finality data to execution")
+		return nil, errMsgCount
+	} else if errMsgCount != nil {
+		log.Error("Error getting finality msg count", "scenario", scenario, "err", errMsgCount)
+		return nil, errMsgCount
+	}
+
+	if msgCount == 0 {
+		return nil, nil
+	}
+	msgIdx := msgCount - 1
+	msgResult, err := c.txStreamer.ResultAtMessageIndex(msgIdx)
+	if err != nil {
+		log.Error("Error getting message result", "msgIdx", msgIdx, "err", err)
+		return nil, err
+	}
+
+	finalityData := &arbutil.FinalityData{
+		MsgIdx:    msgIdx,
+		BlockHash: msgResult.BlockHash,
+	}
+	return finalityData, nil
+}
+
 func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx context.Context) time.Duration {
 	safeMsgCount, err := c.inboxReader.GetSafeMsgCount(ctx)
-	if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
-		log.Info("Finality not supported, not pushing finality data to execution")
-		return c.config().SyncInterval
-	} else if err != nil {
-		log.Error("Error getting safe message count", "err", err)
+	safeFinalityData, err := c.getFinalityData(ctx, safeMsgCount, err, "safe")
+	if err != nil {
 		return c.config().SyncInterval
 	}
 
 	finalizedMsgCount, err := c.inboxReader.GetFinalizedMsgCount(ctx)
-	if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
-		log.Info("Finality not supported, not pushing finality data to execution")
-		return c.config().SyncInterval
-	} else if err != nil {
-		log.Error("Error getting finalized message count", "err", err)
+	finalizedFinalityData, err := c.getFinalityData(ctx, finalizedMsgCount, err, "finalized")
+	if err != nil {
 		return c.config().SyncInterval
 	}
 
+	var validatedFinalityData *arbutil.FinalityData
 	var validatedMsgCount arbutil.MessageIndex
 	if c.blockValidator != nil {
 		validatedMsgCount = c.blockValidator.GetValidated()
+		validatedFinalityData, err = c.getFinalityData(ctx, validatedMsgCount, nil, "validated")
+		if err != nil {
+			return c.config().SyncInterval
+		}
 	}
 
-	finalityData := &arbutil.FinalityData{
-		SafeMsgCount:      safeMsgCount,
-		FinalizedMsgCount: finalizedMsgCount,
-		ValidatedMsgCount: &validatedMsgCount,
-	}
-
-	_, err = c.execClient.SetFinalityData(ctx, finalityData).Await(ctx)
+	_, err = c.execClient.SetFinalityData(ctx, safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
 	if err != nil {
 		log.Error("Error pushing finality data from consensus to execution", "err", err)
 	} else {

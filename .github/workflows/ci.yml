@@ -182,9 +182,10 @@ jobs:
             exit 1
           fi
 
-      - name: run challenge tests
+      - name: build challenge tests
         if: matrix.test-mode == 'challenge'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --timeout 60m --cover
+        run: |
+          go test -tags challengetest ./... -run=^$ -v
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'

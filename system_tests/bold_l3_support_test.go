@@ -32,7 +32,6 @@ import (
 )
 
 func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
