@@ -1,5 +1,5 @@
 // Copyright 2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
 
@@ -32,7 +32,6 @@ import (
 )
 
 func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

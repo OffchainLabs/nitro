@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
 
@@ -140,6 +140,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	defer l2nodeB.StopAndWait()
 
 	genesisA, err := l2nodeA.ExecutionClient.ResultAtMessageIndex(0).Await(ctx)
+	Require(t, err)
 	genesisB, err := l2nodeB.ExecutionClient.ResultAtMessageIndex(0).Await(ctx)
 	Require(t, err)
 	if genesisA.BlockHash != genesisB.BlockHash {
@@ -498,12 +499,24 @@ func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestIn
 			if ctx.Err() != nil {
 				break
 			}
-			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1Info, client, ctx)
+			to := l1Info.GetAddress("Faucet")
+			tx := l1Info.PrepareTxTo("Faucet", &to, l1Info.TransferGas, common.Big0, nil)
+			if err := client.SendTransaction(ctx, tx); err != nil {
+				t.Log("Error sending tx:", err)
+				continue
+			}
+			if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+				t.Log("Error ensuring tx succeeded:", err)
+				continue
+			}
 			latestBlock, err := client.BlockNumber(ctx)
 			if ctx.Err() != nil {
 				break
 			}
-			Require(t, err)
+			if err != nil {
+				t.Log("Error getting latest block number:", err)
+				continue
+			}
 			if latestBlock > 150 {
 				delay = time.Second
 			}
@@ -534,7 +547,8 @@ func createTestNodeOnL1ForBoldProtocol(
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	fatalErrChan := make(chan error, 10)
-	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
+	withoutClientWrapper := false
+	l1info, l1client, l1backend, l1stack, _ = createTestL1BlockChain(t, nil, withoutClientWrapper)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
