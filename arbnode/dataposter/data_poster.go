@@ -1,5 +1,5 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package dataposter implements generic functionality to post transactions.
 package dataposter

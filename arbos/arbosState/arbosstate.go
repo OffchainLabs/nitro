@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbosState
 
@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
@@ -339,6 +340,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case params.ArbosVersion_40:
+			// EIP-2935: Add support for historical block hashes.
+			stateDB.SetNonce(params.HistoryStorageAddress, 1, tracing.NonceChangeUnspecified)
+			stateDB.SetCode(params.HistoryStorageAddress, params.HistoryStorageCodeArbitrum)
 			// The MaxWasmSize was a constant before arbos version 40, and can
 			// be read as a parameter after arbos version 40.
 			params, err := state.Programs().Params()

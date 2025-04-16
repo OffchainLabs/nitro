@@ -10,7 +10,7 @@ var (
 	fs                                            = flag.NewFlagSet("test", flag.ExitOnError)
 	StateSchemeFlag                               = fs.String("test_state_scheme", "", "State scheme to use for tests")
 	RedisFlag                                     = fs.String("test_redis", "", "Redis URL for testing")
-	RecordBlockInputsEnable                       = fs.Bool("recordBlockInputs.enable", true, "Whether to record block inputs as a json file")
+	RecordBlockInputsEnable                       = fs.Bool("recordBlockInputs.enable", false, "Whether to record block inputs as a json file")
 	RecordBlockInputsWithSlug                     = fs.String("recordBlockInputs.WithSlug", "", "Slug directory for validationInputsWriter")
 	RecordBlockInputsWithBaseDir                  = fs.String("recordBlockInputs.WithBaseDir", "", "Base directory for validationInputsWriter")
 	RecordBlockInputsWithTimestampDirEnabled      = fs.Bool("recordBlockInputs.WithTimestampDirEnabled", true, "Whether to add timestamp directory while recording block inputs")
