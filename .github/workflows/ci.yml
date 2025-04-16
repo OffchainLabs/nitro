@@ -185,7 +185,7 @@ jobs:
       - name: build challenge tests
         if: matrix.test-mode == 'challenge'
         run: |
-            go test -tags challengetest ./... -run=^$ -v
+          go test -tags challengetest ./... -run=^$ -v
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'

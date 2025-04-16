@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [race, legacychallenge, long, challeneg]
+        test-mode: [race, legacychallenge, long, challenge]
 
     if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
     
