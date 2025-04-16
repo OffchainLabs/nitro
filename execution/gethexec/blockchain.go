@@ -1,7 +1,6 @@
 package gethexec
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -11,9 +10,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -213,7 +212,7 @@ func GetBlockChain(
 	chainDb ethdb.Database,
 	cacheConfig *core.CacheConfig,
 	chainConfig *params.ChainConfig,
-	vmTraceConfig *arbostypes.VMTraceConfig,
+	tracer *tracing.Hooks,
 	txLookupLimit uint64,
 ) (*core.BlockChain, error) {
 	engine := arbos.Engine{
@@ -222,16 +221,7 @@ func GetBlockChain(
 
 	vmConfig := vm.Config{
 		EnablePreimageRecording: false,
-	}
-
-	if vmTraceConfig != nil && vmTraceConfig.TracerName != "" {
-		t, err := tracers.LiveDirectory.New(vmTraceConfig.TracerName, json.RawMessage(vmTraceConfig.JSONConfig))
-		if err == nil {
-			log.Info(vmTraceConfig.TracerName + " live tracer activated")
-			vmConfig.Tracer = t
-		} else {
-			log.Error("Custom tracer error: " + err.Error())
-		}
+		Tracer:                  tracer,
 	}
 
 	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, &txLookupLimit)
@@ -242,7 +232,7 @@ func WriteOrTestBlockChain(
 	cacheConfig *core.CacheConfig,
 	initData statetransfer.InitDataReader,
 	chainConfig *params.ChainConfig,
-	vmTraceConfig *arbostypes.VMTraceConfig,
+	tracer *tracing.Hooks,
 	initMessage *arbostypes.ParsedInitMessage,
 	txLookupLimit uint64,
 	accountsPerSync uint,
@@ -252,7 +242,7 @@ func WriteOrTestBlockChain(
 		// When using path scheme, and the stored state trie is not empty,
 		// WriteOrTestGenBlock is not able to recover EmptyRootHash state trie node.
 		// In that case Nitro doesn't test genblock, but just returns the BlockChain.
-		return GetBlockChain(chainDb, cacheConfig, chainConfig, vmTraceConfig, txLookupLimit)
+		return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
 	}
 
 	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, initMessage, accountsPerSync)
@@ -263,7 +253,7 @@ func WriteOrTestBlockChain(
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, vmTraceConfig, txLookupLimit)
+	return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
 }
 
 func init() {

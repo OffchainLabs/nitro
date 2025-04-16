@@ -563,7 +563,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.MessageCommitMode,
-		s.bc.GetVMConfig().Tracer,
 	)
 	if err != nil {
 		return nil, err
@@ -760,7 +759,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		isMsgForPrefetch,
 		runMode,
-		s.bc.GetVMConfig().Tracer,
 	)
 
 	return block, statedb, receipts, err
@@ -768,6 +766,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 
 // must hold createBlockMutex
 func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB, receipts types.Receipts, duration time.Duration) error {
+	if s.bc.GetVMConfig().Tracer != nil {
+		// this will recompute the entire block, needed for live-tracing
+		_, err := s.bc.InsertChain([]*types.Block{block})
+		return err
+	}
 	var logs []*types.Log
 	for _, receipt := range receipts {
 		logs = append(logs, receipt.Logs...)

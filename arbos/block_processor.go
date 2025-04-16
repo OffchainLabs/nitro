@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -147,7 +146,6 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
-	liveTracingHooks *tracing.Hooks,
 ) (*types.Block, types.Receipts, error) {
 	chainConfig := chainContext.Config()
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
@@ -167,7 +165,6 @@ func ProduceBlock(
 		hooks,
 		isMsgForPrefetch,
 		runMode,
-		liveTracingHooks,
 	)
 }
 
@@ -181,7 +178,6 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
-	liveTracingHooks *tracing.Hooks,
 ) (*types.Block, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -326,17 +322,8 @@ func ProduceBlockAdvanced(
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
 
-			var evm *vm.EVM
+			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
 
-			if isMsgForPrefetch || liveTracingHooks == nil {
-				evm = vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
-			} else {
-				// Enable tracing
-				tracingStateDB := state.NewHookedState(statedb, liveTracingHooks)
-				evm = vm.NewEVM(blockContext, tracingStateDB, chainConfig, vm.Config{
-					Tracer: liveTracingHooks,
-				})
-			}
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
 				&gasPool,
