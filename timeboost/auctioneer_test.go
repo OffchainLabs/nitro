@@ -322,6 +322,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 
 	// Now let the auction resolve and check the contract state
 	// For this, we need to wait until the auction round closes and the auctioneer resolves it
+	// #nosec G115
 	roundEndTime := time.Unix(int64(info.OffsetTimestamp), 0).Add(
 		time.Duration(info.RoundDurationSeconds) * time.Second)
 	waitTime := time.Until(roundEndTime) + time.Second*5 // Add buffer time for resolution
