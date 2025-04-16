@@ -136,10 +136,9 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 
 		msgs := prevSegment.Messages()
 		if isFirstSegment && prevSegment.Contains(uint64(cc.requestedSeqNum)) {
-			// #nosec G115
-			requestedIdx := int(cc.requestedSeqNum) - int(prevSegment.Start())
+			requestedIdx := uint64(cc.requestedSeqNum) - prevSegment.Start()
 			// This might be false if messages were added after we fetched the segment's messages
-			if len(msgs) >= requestedIdx {
+			if uint64(len(msgs)) >= requestedIdx {
 				msgs = msgs[requestedIdx:]
 			}
 		}
