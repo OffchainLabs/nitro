@@ -305,9 +305,13 @@ func (m *ArbitratorMachine) ProveNextStep() []byte {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	rustProof := C.arbitrator_gen_proof(m.ptr)
-	proofBytes := C.GoBytes(unsafe.Pointer(rustProof.ptr), C.int(rustProof.len))
-	C.arbitrator_free_proof(rustProof)
+	output := &C.RustBytes{}
+	C.arbitrator_gen_proof(m.ptr, output)
+	defer C.free_rust_bytes(*output)
+	if output.len == 0 {
+		return nil
+	}
+	proofBytes := C.GoBytes(unsafe.Pointer(output.ptr), C.int(output.len))
 
 	return proofBytes
 }

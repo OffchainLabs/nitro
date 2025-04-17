@@ -5,7 +5,8 @@ mkdir "$2"
 ln -sfT "$2" latest
 cd "$2"
 echo "$2" > module-root.txt
-url_base="https://github.com/OffchainLabs/nitro/releases/download/$1"
+url_org="${3:-OffchainLabs}"
+url_base="https://github.com/$url_org/nitro/releases/download/$1"
 wget "$url_base/machine.wavm.br"
 
 status_code="$(curl -LI "$url_base/replay.wasm" -so /dev/null -w '%{http_code}')"

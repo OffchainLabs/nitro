@@ -90,6 +90,7 @@ func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 		AssumedHonest:         1,
 		Backends:              das.BackendConfigList{backendConfig},
 		MaxStoreChunkBodySize: 512 * 1024,
+		EnableChunkedStore:    true,
 	}
 }
 
@@ -347,6 +348,7 @@ func TestDASBatchPosterFallback(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
 	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
+	builder.nodeConfig.DAPreference = []string{"anytrust"}
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true // Disable DAS fallback
 	builder.nodeConfig.BatchPoster.ErrorDelay = time.Millisecond * 250       // Increase error delay because we expect errors
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
@@ -380,7 +382,7 @@ func TestDASBatchPosterFallback(t *testing.T) {
 
 	// Send 2nd transaction and check it doesn't arrive on second node
 	tx, _ := TransferBalanceTo(t, "Owner", l2info.GetAddress("User2"), big.NewInt(1e12), l2info, l2client, ctx)
-	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Millisecond*2)
+	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Second*3)
 	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
 		Fatal(t, "expected context-deadline exceeded error, but got:", err)
 	}

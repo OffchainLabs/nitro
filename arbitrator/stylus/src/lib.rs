@@ -15,9 +15,12 @@ use cache::{deserialize_module, CacheMetrics, InitCache};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
-use prover::programs::{prelude::*, StylusData};
+use prover::{
+    programs::{prelude::*, StylusData},
+    RustBytes,
+};
 use run::RunProgram;
-use std::{marker::PhantomData, mem, ptr};
+use std::ptr;
 use target_cache::{target_cache_get, target_cache_set};
 
 pub use brotli;
@@ -76,52 +79,15 @@ impl DataReader for GoSliceData {
     }
 }
 
-#[repr(C)]
-pub struct RustSlice<'a> {
-    ptr: *const u8,
-    len: usize,
-    phantom: PhantomData<&'a [u8]>,
+unsafe fn write_err(output: &mut RustBytes, err: ErrReport) -> UserOutcomeKind {
+    output.write(err.debug_bytes());
+    UserOutcomeKind::Failure
 }
 
-impl<'a> RustSlice<'a> {
-    fn new(slice: &'a [u8]) -> Self {
-        Self {
-            ptr: slice.as_ptr(),
-            len: slice.len(),
-            phantom: PhantomData,
-        }
-    }
-}
-
-#[repr(C)]
-pub struct RustBytes {
-    ptr: *mut u8,
-    len: usize,
-    cap: usize,
-}
-
-impl RustBytes {
-    unsafe fn into_vec(self) -> Vec<u8> {
-        Vec::from_raw_parts(self.ptr, self.len, self.cap)
-    }
-
-    unsafe fn write(&mut self, mut vec: Vec<u8>) {
-        self.ptr = vec.as_mut_ptr();
-        self.len = vec.len();
-        self.cap = vec.capacity();
-        mem::forget(vec);
-    }
-
-    unsafe fn write_err(&mut self, err: ErrReport) -> UserOutcomeKind {
-        self.write(err.debug_bytes());
-        UserOutcomeKind::Failure
-    }
-
-    unsafe fn write_outcome(&mut self, outcome: UserOutcome) -> UserOutcomeKind {
-        let (status, outs) = outcome.into_data();
-        self.write(outs);
-        status
-    }
+unsafe fn write_outcome(output: &mut RustBytes, outcome: UserOutcome) -> UserOutcomeKind {
+    let (status, outs) = outcome.into_data();
+    output.write(outs);
+    status
 }
 
 /// "activates" a user wasm.
@@ -164,7 +130,7 @@ pub unsafe extern "C" fn stylus_activate(
         gas,
     ) {
         Ok(val) => val,
-        Err(err) => return output.write_err(err),
+        Err(err) => return write_err(output, err),
     };
 
     *module_hash = module.hash();
@@ -194,16 +160,16 @@ pub unsafe extern "C" fn stylus_compile(
     let output = &mut *output;
     let name = match String::from_utf8(name.slice().to_vec()) {
         Ok(val) => val,
-        Err(err) => return output.write_err(err.into()),
+        Err(err) => return write_err(output, err.into()),
     };
     let target = match target_cache_get(&name) {
         Ok(val) => val,
-        Err(err) => return output.write_err(err),
+        Err(err) => return write_err(output, err),
     };
 
     let asm = match native::compile(wasm, version, debug, target) {
         Ok(val) => val,
-        Err(err) => return output.write_err(err),
+        Err(err) => return write_err(output, err),
     };
 
     output.write(asm);
@@ -218,7 +184,7 @@ pub unsafe extern "C" fn wat_to_wasm(wat: GoSliceData, output: *mut RustBytes) -
     let output = &mut *output;
     let wasm = match wasmer::wat2wasm(wat.slice()) {
         Ok(val) => val,
-        Err(err) => return output.write_err(err.into()),
+        Err(err) => return write_err(output, err.into()),
     };
     output.write(wasm.into_owned());
     UserOutcomeKind::Success
@@ -241,16 +207,16 @@ pub unsafe extern "C" fn stylus_target_set(
     let output = &mut *output;
     let name = match String::from_utf8(name.slice().to_vec()) {
         Ok(val) => val,
-        Err(err) => return output.write_err(err.into()),
+        Err(err) => return write_err(output, err.into()),
     };
 
     let desc_str = match String::from_utf8(description.slice().to_vec()) {
         Ok(val) => val,
-        Err(err) => return output.write_err(err.into()),
+        Err(err) => return write_err(output, err.into()),
     };
 
     if let Err(err) = target_cache_set(name, desc_str, native) {
-        return output.write_err(err);
+        return write_err(output, err);
     };
 
     UserOutcomeKind::Success
@@ -298,8 +264,8 @@ pub unsafe extern "C" fn stylus_call(
     };
 
     let status = match instance.run_main(&calldata, config, ink) {
-        Err(e) | Ok(UserOutcome::Failure(e)) => output.write_err(e.wrap_err("call failed")),
-        Ok(outcome) => output.write_outcome(outcome),
+        Err(e) | Ok(UserOutcome::Failure(e)) => write_err(output, e.wrap_err("call failed")),
+        Ok(outcome) => write_outcome(output, outcome),
     };
     let ink_left = match status {
         UserOutcomeKind::OutOfStack => Ink(0), // take all gas when out of stack
@@ -350,18 +316,6 @@ pub extern "C" fn stylus_evict_module(
 #[no_mangle]
 pub extern "C" fn stylus_reorg_vm(_block: u64, arbos_tag: u32) {
     InitCache::clear_long_term(arbos_tag);
-}
-
-/// Frees the vector. Does nothing when the vector is null.
-///
-/// # Safety
-///
-/// Must only be called once per vec.
-#[no_mangle]
-pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
-    if !vec.ptr.is_null() {
-        mem::drop(vec.into_vec())
-    }
 }
 
 /// Gets cache metrics.

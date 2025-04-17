@@ -4,6 +4,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::machine::{Escape, MaybeEscape};
+use arbutil::benchmark::Benchmark;
 use arbutil::evm::api::{Gas, Ink, VecReader};
 use arbutil::evm::{
     api::{EvmApiMethod, EVM_API_METHOD_REQ_OFFSET},
@@ -35,6 +36,7 @@ struct MessageToCothread {
 pub struct MessageFromCothread {
     pub req_type: u32,
     pub req_data: Vec<u8>,
+    pub benchmark: Benchmark,
 }
 
 struct CothreadRequestor {
@@ -51,6 +53,7 @@ impl RequestHandler<VecReader> for CothreadRequestor {
         let msg = MessageFromCothread {
             req_type: req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
             req_data: req_data.as_ref().to_vec(),
+            benchmark: Benchmark::default(),
         };
 
         if let Err(error) = self.tx.send(msg) {
@@ -169,6 +172,7 @@ pub fn exec_wasm(
         let msg = MessageFromCothread {
             req_data: output,
             req_type: out_kind as u32,
+            benchmark: instance.env().benchmark,
         };
         instance
             .env_mut()

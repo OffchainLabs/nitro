@@ -15,11 +15,6 @@ type mockMachine struct {
 	totalSteps uint64
 }
 
-// GetNextOpcode implements MachineInterface.
-func (m *mockMachine) GetNextOpcode() uint16 {
-	panic("unimplemented")
-}
-
 func (m *mockMachine) Hash() common.Hash {
 	return m.gs.Hash()
 }
@@ -65,7 +60,9 @@ func (m *mockMachine) Status() uint8 {
 func (m *mockMachine) ProveNextStep() []byte {
 	return nil
 }
-
+func (m *mockMachine) GetNextOpcode() uint16 {
+	return 0
+}
 func (m *mockMachine) Freeze()  {}
 func (m *mockMachine) Destroy() {}
 

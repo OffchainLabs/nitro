@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
+    benchmark::Benchmark,
     evm::{
         api::{DataReader, EvmApi, Ink},
         EvmData,
@@ -48,6 +49,8 @@ pub struct WasmEnv<D: DataReader, E: EvmApi<D>> {
     pub compile: CompileConfig,
     /// The runtime config
     pub config: Option<StylusConfig>,
+    // Used to benchmark execution blocks of code
+    pub benchmark: Benchmark,
     // Using the unused generic parameter D in a PhantomData field
     _data_reader_marker: PhantomData<D>,
 }
@@ -68,6 +71,7 @@ impl<D: DataReader, E: EvmApi<D>> WasmEnv<D, E> {
             outs: vec![],
             memory: None,
             meter: None,
+            benchmark: Benchmark::default(),
             _data_reader_marker: PhantomData,
         }
     }
@@ -143,7 +147,7 @@ pub struct HostioInfo<'a, D: DataReader, E: EvmApi<D>> {
     pub start_ink: Ink,
 }
 
-impl<'a, D: DataReader, E: EvmApi<D>> HostioInfo<'a, D, E> {
+impl<D: DataReader, E: EvmApi<D>> HostioInfo<'_, D, E> {
     pub fn config(&self) -> StylusConfig {
         self.config.expect("no config")
     }
@@ -168,7 +172,7 @@ impl<'a, D: DataReader, E: EvmApi<D>> HostioInfo<'a, D, E> {
     }
 }
 
-impl<'a, D: DataReader, E: EvmApi<D>> MeteredMachine for HostioInfo<'a, D, E> {
+impl<D: DataReader, E: EvmApi<D>> MeteredMachine for HostioInfo<'_, D, E> {
     fn ink_left(&self) -> MachineMeter {
         let vm = self.env.meter();
         match vm.status() {
@@ -184,13 +188,13 @@ impl<'a, D: DataReader, E: EvmApi<D>> MeteredMachine for HostioInfo<'a, D, E> {
     }
 }
 
-impl<'a, D: DataReader, E: EvmApi<D>> GasMeteredMachine for HostioInfo<'a, D, E> {
+impl<D: DataReader, E: EvmApi<D>> GasMeteredMachine for HostioInfo<'_, D, E> {
     fn pricing(&self) -> PricingParams {
         self.config().pricing
     }
 }
 
-impl<'a, D: DataReader, E: EvmApi<D>> Deref for HostioInfo<'a, D, E> {
+impl<D: DataReader, E: EvmApi<D>> Deref for HostioInfo<'_, D, E> {
     type Target = WasmEnv<D, E>;
 
     fn deref(&self) -> &Self::Target {
@@ -198,7 +202,7 @@ impl<'a, D: DataReader, E: EvmApi<D>> Deref for HostioInfo<'a, D, E> {
     }
 }
 
-impl<'a, D: DataReader, E: EvmApi<D>> DerefMut for HostioInfo<'a, D, E> {
+impl<D: DataReader, E: EvmApi<D>> DerefMut for HostioInfo<'_, D, E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.env
     }
