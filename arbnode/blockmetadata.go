@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -54,6 +53,9 @@ type BlockMetadataFetcher struct {
 	client                 *rpcclient.RpcClient
 	exec                   execution.ExecutionClient
 	trackBlockMetadataFrom arbutil.MessageIndex
+	expectedChainId        uint64
+
+	chainIdChecked bool
 }
 
 func NewBlockMetadataFetcher(
@@ -76,21 +78,13 @@ func NewBlockMetadataFetcher(
 	if err = client.Start(ctx); err != nil {
 		return nil, err
 	}
-	ethClient := ethclient.NewClient(client)
-	chainId, err := ethClient.ChainID(ctx)
-	if err != nil {
-		log.Error("error when getting ChainId from backend configured with --node.block-metadata-fetcher.source.url, continuing to start the node without the BlockMetadataFetcher", "url", c.Source.URL, "err", err)
-		return nil, nil
-	}
-	if chainId.Uint64() != expectedChainId {
-		return nil, fmt.Errorf("BlockMetadataFetcher error, ChainId %d from %s (configured with --node.block-metadata-fetcher.source.url) does not match expected ChainId %d", chainId.Uint64(), c.Source.URL, expectedChainId)
-	}
 	return &BlockMetadataFetcher{
 		config:                 c,
 		db:                     db,
 		client:                 client,
 		exec:                   exec,
 		trackBlockMetadataFrom: trackBlockMetadataFrom,
+		expectedChainId:        expectedChainId,
 	}, nil
 }
 
@@ -132,6 +126,20 @@ func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query [
 }
 
 func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
+	if !b.chainIdChecked {
+		ethClient := ethclient.NewClient(b.client)
+		chainId, err := ethClient.ChainID(ctx)
+		if err != nil {
+			log.Error("error when getting ChainId from backend configured with --node.block-metadata-fetcher.source.url, retrying in 10 minutes", "url", b.config.Source.URL, "err", err)
+			return time.Minute * 10
+		}
+		if chainId.Uint64() != b.expectedChainId {
+			log.Error("ChainId from backend configured with --node.block-metadata-fetcher.source.url does not match expected ChainId, retrying in 10 minutes", "backendChainId", chainId.Uint64(), "expectedChainId", b.expectedChainId, "url", b.config.Source.URL)
+			return time.Minute * 10
+		}
+		b.chainIdChecked = true
+	}
+
 	handleQuery := func(query []uint64) bool {
 		fromBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])).Await(ctx)
 		if err != nil {
