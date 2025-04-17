@@ -79,7 +79,8 @@ func NewBlockMetadataFetcher(
 	ethClient := ethclient.NewClient(client)
 	chainId, err := ethClient.ChainID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("BlockMetadataFetcher error when getting ChainId from %s (configured with --node.block-metadata-fetcher.source.url) %w", c.Source.URL, err)
+		log.Error("error when getting ChainId from backend configured with --node.block-metadata-fetcher.source.url, continuing to start the node without the BlockMetadataFetcher", "url", c.Source.URL, "err", err)
+		return nil, nil
 	}
 	if chainId.Uint64() != expectedChainId {
 		return nil, fmt.Errorf("BlockMetadataFetcher error, ChainId %d from %s (configured with --node.block-metadata-fetcher.source.url) does not match expected ChainId %d", chainId.Uint64(), c.Source.URL, expectedChainId)
