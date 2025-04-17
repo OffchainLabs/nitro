@@ -248,6 +248,16 @@ ENV NITRO_VERSION=$version
 ENV NITRO_DATETIME=$datetime
 ENV NITRO_MODIFIED=$modified
 
+# Free up disk space before building
+RUN rm -rf /usr/share/dotnet \
+    /usr/local/lib/android \
+    /opt/ghc \
+    /usr/local/share/powershell \
+    /usr/share/swift \
+    /usr/lib/jvm \
+    /tmp/* \
+    && apt-get clean
+
 # Install Rust and build dependencies
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -273,7 +283,14 @@ COPY --from=brotli-library-export / target/
 COPY --from=prover-export / target/
 RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
+
+# Clean up disk space after building
+RUN set -e && \
+    rm -rf /tmp/* && \
+    NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build && \
+    rm -rf /root/.cargo/registry && \
+    rm -rf /root/.cargo/git && \
+    go clean -cache -modcache
 
 FROM node-builder AS fuzz-builder
 RUN mkdir fuzzers/
