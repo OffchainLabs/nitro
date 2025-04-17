@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"time"
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -54,7 +56,14 @@ type BlockMetadataFetcher struct {
 	trackBlockMetadataFrom arbutil.MessageIndex
 }
 
-func NewBlockMetadataFetcher(ctx context.Context, c BlockMetadataFetcherConfig, db ethdb.Database, exec execution.ExecutionClient, startPos uint64) (*BlockMetadataFetcher, error) {
+func NewBlockMetadataFetcher(
+	ctx context.Context,
+	c BlockMetadataFetcherConfig,
+	db ethdb.Database,
+	exec execution.ExecutionClient,
+	startPos uint64,
+	expectedChainId uint64,
+) (*BlockMetadataFetcher, error) {
 	var trackBlockMetadataFrom arbutil.MessageIndex
 	var err error
 	if startPos != 0 {
@@ -66,6 +75,14 @@ func NewBlockMetadataFetcher(ctx context.Context, c BlockMetadataFetcherConfig, 
 	client := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &c.Source }, nil)
 	if err = client.Start(ctx); err != nil {
 		return nil, err
+	}
+	ethClient := ethclient.NewClient(client)
+	chainId, err := ethClient.ChainID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("BlockMetadataFetcher error when getting ChainId from %s (configured with --node.block-metadata-fetcher.source.url) %w", c.Source.URL, err)
+	}
+	if chainId.Uint64() != expectedChainId {
+		return nil, fmt.Errorf("BlockMetadataFetcher error, ChainId %d from %s (configured with --node.block-metadata-fetcher.source.url) does not match expected ChainId %d", chainId.Uint64(), c.Source.URL, expectedChainId)
 	}
 	return &BlockMetadataFetcher{
 		config:                 c,
