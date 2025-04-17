@@ -90,6 +90,7 @@ func (b *readerForBlobReader) RecoverPayloadFromBatch(
 	}
 	kzgBlobs, err := b.blobReader.GetBlobs(ctx, batchBlockHash, versionedHashes)
 	if err != nil {
+		log.Error("Failed to get blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
 		return nil, fmt.Errorf("failed to get blobs: %w", err)
 	}
 	if preimageRecorder != nil {
