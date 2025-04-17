@@ -283,14 +283,7 @@ COPY --from=brotli-library-export / target/
 COPY --from=prover-export / target/
 RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
-
-# Clean up disk space after building
-RUN set -e && \
-    rm -rf /tmp/* && \
-    NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build && \
-    rm -rf /root/.cargo/registry && \
-    rm -rf /root/.cargo/git && \
-    go clean -cache -modcache
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM node-builder AS fuzz-builder
 RUN mkdir fuzzers/
