@@ -426,14 +426,8 @@ func TestFinalityDataNodeOutOfSync(t *testing.T) {
 
 	checksFinalityData(t, "before out of sync", ctx, builder.L2, finalizedFinalityData.MsgIdx, safeFinalityData.MsgIdx)
 
-	// sets finality data to blocks that are not in the chain
-	safeFinalityData = arbutil.FinalityData{
-		MsgIdx: arbutil.MessageIndex(1000),
-	}
-	finalizedFinalityData = arbutil.FinalityData{
-		MsgIdx: arbutil.MessageIndex(900),
-	}
-	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, &safeFinalityData, &finalizedFinalityData, nil)
+	// out of sync node
+	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(ctx, nil, nil, nil)
 	Require(t, err)
 
 	ensureFinalizedBlockDoesNotExist(t, ctx, builder.L2, "out of sync")
