@@ -66,6 +66,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 			RedisURL:               redisURL,
 			ProducerConfig:         pubsub.TestProducerConfig,
+			MaxBidsPerSender:       5,
 		}
 		fetcher := func() *BidValidatorConfig {
 			return cfg
