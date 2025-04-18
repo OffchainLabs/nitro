@@ -21,8 +21,6 @@ import (
 )
 
 func TestSequencerTxFilter(t *testing.T) {
-	t.Parallel()
-
 	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, false)
 	defer cleanup()
 
@@ -49,8 +47,6 @@ func TestSequencerTxFilter(t *testing.T) {
 }
 
 func TestSequencerBlockFilterReject(t *testing.T) {
-	t.Parallel()
-
 	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, true)
 	defer cleanup()
 
@@ -67,8 +63,6 @@ func TestSequencerBlockFilterReject(t *testing.T) {
 }
 
 func TestSequencerBlockFilterAccept(t *testing.T) {
-	t.Parallel()
-
 	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, true)
 	defer cleanup()
 

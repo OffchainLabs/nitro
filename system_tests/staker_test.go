@@ -479,8 +479,6 @@ func TestStakersCooperative(t *testing.T) {
 }
 
 func TestGetValidatorWalletContractWithDataposterOnlyUsedToCreateValidatorWalletContract(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 

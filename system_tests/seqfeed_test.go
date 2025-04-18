@@ -93,7 +93,6 @@ func TestSequencerFeed(t *testing.T) {
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -187,8 +186,6 @@ func compareAllMsgResultsFromConsensusAndExecution(
 }
 
 func testLyingSequencer(t *testing.T, dasModeStr string) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
