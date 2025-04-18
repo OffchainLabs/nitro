@@ -229,6 +229,7 @@ func ExecConfigDefaultTest(t *testing.T) *gethexec.Config {
 type NodeBuilder struct {
 	// NodeBuilder configuration
 	ctx           context.Context
+	ctxCancel     context.CancelFunc
 	chainConfig   *params.ChainConfig
 	nodeConfig    *arbnode.Config
 	execConfig    *gethexec.Config
@@ -310,8 +311,9 @@ func L3NitroConfigDefaultTest(t *testing.T) *NitroConfig {
 	}
 }
 
-func NewNodeBuilder(ctx context.Context) *NodeBuilder {
-	return &NodeBuilder{ctx: ctx}
+func NewNodeBuilder(ctxIn context.Context) *NodeBuilder {
+	ctx, cancel := context.WithCancel(ctxIn)
+	return &NodeBuilder{ctx: ctx, ctxCancel: cancel}
 }
 
 func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {

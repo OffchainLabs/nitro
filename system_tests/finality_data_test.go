@@ -32,8 +32,6 @@ func generateBlocks(t *testing.T, ctx context.Context, builder *NodeBuilder, tes
 }
 
 func TestFinalizedBlocksMovedToAncients(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -129,8 +127,6 @@ func checksFinalityData(
 }
 
 func TestFinalityDataWaitForBlockValidator(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -222,8 +218,6 @@ func ensureSafeBlockDoesNotExist(t *testing.T, ctx context.Context, testClient *
 }
 
 func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -279,8 +273,6 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 }
 
 func TestFinalityAfterReorg(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -335,8 +327,6 @@ func TestFinalityAfterReorg(t *testing.T) {
 }
 
 func TestSetFinalityBlockHashMismatch(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -381,8 +371,6 @@ func TestSetFinalityBlockHashMismatch(t *testing.T) {
 }
 
 func TestFinalityDataNodeOutOfSync(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

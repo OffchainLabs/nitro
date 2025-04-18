@@ -95,8 +95,6 @@ func checkArbOSVersion(t *testing.T, testClient *TestClient, expectedVersion uin
 }
 
 func TestArbos11To32UpgradeWithMcopy(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -199,8 +197,6 @@ func TestArbos11To32UpgradeWithMcopy(t *testing.T) {
 }
 
 func TestArbos11To32UpgradeWithCalldata(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

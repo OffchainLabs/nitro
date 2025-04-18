@@ -191,7 +191,6 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *e
 }
 
 func TestDASComplexConfigAndRestMirror(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
