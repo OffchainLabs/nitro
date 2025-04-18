@@ -77,12 +77,11 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 	}
 
 	now := time.Now()
-	if firstSequencerWantingLockoutErrorTime.IsZero() || now.Sub(firstSequencerWantingLockoutErrorTime) > time.Minute {
+	elapsedTime := time.Since(firstSequencerWantingLockoutErrorTime)
+	if firstSequencerWantingLockoutErrorTime.IsZero() || elapsedTime > time.Minute {
 		firstSequencerWantingLockoutErrorTime = now
 		logMessage(log.Debug)
 	} else {
-		elapsedTime := now.Sub(firstSequencerWantingLockoutErrorTime)
-
 		if elapsedTime > 20*time.Second {
 			logMessage(log.Error)
 		} else if elapsedTime > 10*time.Second {
