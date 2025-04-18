@@ -51,7 +51,6 @@ var oneEth = arbmath.UintToBig(1e18)
 var allWasmTargets = []string{string(rawdb.TargetWavm), string(rawdb.TargetArm64), string(rawdb.TargetAmd64), string(rawdb.TargetHost)}
 
 func TestProgramKeccak(t *testing.T) {
-	t.Parallel()
 	t.Run("WithDefaultWasmTargets", func(t *testing.T) {
 		keccakTest(t, true)
 	})
@@ -270,7 +269,6 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 }
 
 func TestStylusUpgrade(t *testing.T) {
-	t.Parallel()
 	testStylusUpgrade(t, true)
 }
 

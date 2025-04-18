@@ -79,8 +79,6 @@ func checkInkUsage(
 }
 
 func TestWriteResultGasUsage(t *testing.T) {
-	t.Parallel()
-
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
@@ -109,8 +107,6 @@ func TestWriteResultGasUsage(t *testing.T) {
 }
 
 func TestReadArgsGasUsage(t *testing.T) {
-	t.Parallel()
-
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
@@ -135,8 +131,6 @@ func TestReadArgsGasUsage(t *testing.T) {
 }
 
 func TestMsgReentrantGasUsage(t *testing.T) {
-	t.Parallel()
-
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
@@ -150,8 +144,6 @@ func TestMsgReentrantGasUsage(t *testing.T) {
 }
 
 func TestStorageCacheBytes32GasUsage(t *testing.T) {
-	t.Parallel()
-
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
@@ -165,8 +157,6 @@ func TestStorageCacheBytes32GasUsage(t *testing.T) {
 }
 
 func TestPayForMemoryGrowGasUsage(t *testing.T) {
-	t.Parallel()
-
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
