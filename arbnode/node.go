@@ -28,7 +28,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -270,6 +269,7 @@ type Node struct {
 	configFetcher            ConfigFetcher
 	ctx                      context.Context
 	ConsensusExecutionSyncer *ConsensusExecutionSyncer
+	SequencerTriggerer       *SequencerTriggerer
 }
 
 type SnapSyncConfig struct {
@@ -770,13 +770,14 @@ func getTransactionStreamer(
 	ctx context.Context,
 	arbDb ethdb.Database,
 	l2Config *params.ChainConfig,
-	exec execution.ExecutionClient,
+	execClient execution.ExecutionClient,
+	execSequencer execution.ExecutionSequencer,
 	broadcastServer *broadcaster.Broadcaster,
 	configFetcher ConfigFetcher,
 	fatalErrChan chan error,
 ) (*TransactionStreamer, error) {
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(ctx, arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
+	txStreamer, err := NewTransactionStreamer(ctx, arbDb, l2Config, execClient, execSequencer, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}
@@ -911,6 +912,7 @@ func getBatchPoster(
 func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
 	inboxReader *InboxReader,
+	txStreamer *TransactionStreamer,
 	exec execution.ExecutionSequencer,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
@@ -920,11 +922,21 @@ func getDelayedSequencer(
 	}
 
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer }, txStreamer)
 	if err != nil {
 		return nil, err
 	}
 	return delayedSequencer, nil
+}
+
+func getSequencerTriggerer(
+	execSequencer execution.ExecutionSequencer,
+	txStreamer *TransactionStreamer,
+) *SequencerTriggerer {
+	if execSequencer == nil {
+		return nil
+	}
+	return NewSequencerTriggerer(execSequencer, txStreamer)
 }
 
 func getNodeParentChainReaderDisabled(
@@ -943,6 +955,7 @@ func getNodeParentChainReaderDisabled(
 	syncMonitor *SyncMonitor,
 	configFetcher ConfigFetcher,
 	blockMetadataFetcher *BlockMetadataFetcher,
+	sequencerTriggerer *SequencerTriggerer,
 ) *Node {
 	return &Node{
 		ArbDB:                   arbDb,
@@ -971,6 +984,7 @@ func getNodeParentChainReaderDisabled(
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
 		blockMetadataFetcher:    blockMetadataFetcher,
+		SequencerTriggerer:      sequencerTriggerer,
 	}
 }
 
@@ -1012,7 +1026,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	txStreamer, err := getTransactionStreamer(ctx, arbDb, l2Config, executionClient, broadcastServer, configFetcher, fatalErrChan)
+	txStreamer, err := getTransactionStreamer(ctx, arbDb, l2Config, executionClient, executionSequencer, broadcastServer, configFetcher, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1042,8 +1056,10 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	sequencerTriggerer := getSequencerTriggerer(executionSequencer, txStreamer)
+
 	if !config.ParentChainReader.Enable {
-		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
+		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher, sequencerTriggerer), nil
 	}
 
 	delayedBridge, sequencerInbox, err := getDelayedBridgeAndSequencerInbox(deployInfo, l1client)
@@ -1081,7 +1097,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, executionSequencer, configFetcher, coordinator)
+	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, txStreamer, executionSequencer, configFetcher, coordinator)
 	if err != nil {
 		return nil, err
 	}
@@ -1119,6 +1135,7 @@ func createNodeImpl(
 		configFetcher:            configFetcher,
 		ctx:                      ctx,
 		ConsensusExecutionSyncer: consensusExecutionSyncer,
+		SequencerTriggerer:       sequencerTriggerer,
 	}, nil
 }
 
@@ -1404,6 +1421,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)
 	}
+	if n.SequencerTriggerer != nil {
+		n.SequencerTriggerer.Start(ctx)
+	}
 	return nil
 }
 
@@ -1423,6 +1443,9 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.PrepareForShutdown()
 	}
 	n.Stack.StopRPC() // does nothing if not running
+	if n.SequencerTriggerer != nil {
+		n.SequencerTriggerer.StopAndWait()
+	}
 	if n.DelayedSequencer != nil && n.DelayedSequencer.Started() {
 		n.DelayedSequencer.StopAndWait()
 	}
@@ -1500,11 +1523,6 @@ func (n *Node) Synced() containers.PromiseInterface[bool] {
 
 func (n *Node) SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
 	return containers.NewReadyPromise(n.SyncMonitor.SyncTargetMessageCount(), nil)
-}
-
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
-	err := n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
-	return containers.NewReadyPromise(struct{}{}, err)
 }
 
 func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
