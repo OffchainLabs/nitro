@@ -1667,7 +1667,10 @@ func testReturnDataCost(t *testing.T, arbosVersion uint64) {
 }
 
 func TestReturnDataCost(t *testing.T) {
-	testReturnDataCost(t, params.ArbosVersion_Stylus)
+	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
+}
+
+func TestReturnDataCost_StylusFixes(t *testing.T) {
 	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
 }
 

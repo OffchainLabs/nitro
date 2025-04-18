@@ -250,6 +250,7 @@ func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerC
 }
 
 func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
+	t.Skip("Double t.Parallel")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -378,6 +379,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 }
 
 func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
+	t.Skip("Double t.Parallel")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1168,6 +1170,7 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t
 }
 
 func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrect(t *testing.T) {
+	t.Skip("Double t.Parallel")
 	logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
