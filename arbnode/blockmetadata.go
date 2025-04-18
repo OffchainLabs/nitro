@@ -45,20 +45,18 @@ func BlockMetadataFetcherConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 var wrongChainIdErr = errors.New("WRONG_CHAINID")
+var failedToGetChainIdErr = errors.New("FAILED_TO_GET_CHAINID")
 
-func (b *BlockMetadataFetcher) checkMetadataBackendChainId(ctx context.Context) error {
-	if !b.chainIdChecked {
-		ethClient := ethclient.NewClient(b.client)
-		chainId, err := ethClient.ChainID(ctx)
-		if err != nil {
-			log.Error("error when getting ChainId from backend configured with --node.block-metadata-fetcher.source.url", "url", b.config.Source.URL, "err", err)
-			return nil
-		}
-		if chainId.Uint64() != b.expectedChainId {
-			log.Error("ChainId from backend configured with --node.block-metadata-fetcher.source.url does not match expected ChainId", "backendChainId", chainId.Uint64(), "expectedChainId", b.expectedChainId, "url", b.config.Source.URL)
-			return wrongChainIdErr
-		}
-		b.chainIdChecked = true
+func checkMetadataBackendChainId(ctx context.Context, client *rpcclient.RpcClient, sourceUrl string, expectedChainId uint64) error {
+	ethClient := ethclient.NewClient(client)
+	chainId, err := ethClient.ChainID(ctx)
+	if err != nil {
+		log.Error("error when getting ChainId from backend configured with --node.block-metadata-fetcher.source.url", "url", sourceUrl, "err", err)
+		return failedToGetChainIdErr
+	}
+	if chainId.Uint64() != expectedChainId {
+		log.Error("ChainId from backend configured with --node.block-metadata-fetcher.source.url does not match expected ChainId", "backendChainId", chainId.Uint64(), "expectedChainId", expectedChainId, "url", sourceUrl)
+		return wrongChainIdErr
 	}
 	return nil
 }
@@ -98,6 +96,16 @@ func NewBlockMetadataFetcher(
 	if err = client.Start(ctx); err != nil {
 		return nil, err
 	}
+
+	chainIdChecked := false
+	if err = checkMetadataBackendChainId(ctx, client, c.Source.URL, expectedChainId); err != nil {
+		if errors.Is(err, wrongChainIdErr) {
+			return nil, err
+		}
+	} else {
+		chainIdChecked = true
+	}
+
 	fetcher := &BlockMetadataFetcher{
 		config:                 c,
 		db:                     db,
@@ -105,10 +113,7 @@ func NewBlockMetadataFetcher(
 		exec:                   exec,
 		trackBlockMetadataFrom: trackBlockMetadataFrom,
 		expectedChainId:        expectedChainId,
-	}
-
-	if err = fetcher.checkMetadataBackendChainId(ctx); errors.Is(err, wrongChainIdErr) {
-		return nil, err
+		chainIdChecked:         chainIdChecked,
 	}
 	return fetcher, nil
 }
@@ -151,9 +156,12 @@ func (b *BlockMetadataFetcher) persistBlockMetadata(query []uint64, result []get
 }
 
 func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
-	if err := b.checkMetadataBackendChainId(ctx); err != nil {
-		log.Error("Error running the BlockMetadataFetcher, trying again in 10 minutes", "err", err)
-		return time.Minute * 10
+	if !b.chainIdChecked {
+		if err := checkMetadataBackendChainId(ctx, b.client, b.config.Source.URL, b.expectedChainId); err != nil {
+			log.Error("Error running the BlockMetadataFetcher, trying again in 10 minutes", "err", err)
+			return time.Minute * 10
+		}
+		b.chainIdChecked = true
 	}
 
 	handleQuery := func(query []uint64) bool {
