@@ -41,8 +41,7 @@ func NewRedisCoordinator(redisUrl string) (*RedisCoordinator, error) {
 	}
 
 	return &RedisCoordinator{
-		Client:                                redisClient,
-		firstSequencerWantingLockoutErrorTime: time.Now(),
+		Client: redisClient,
 	}, nil
 }
 
@@ -76,12 +75,11 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 		level("no sequencer appears to want the lockout on redis", args...)
 	}
 
-	now := time.Now()
-	elapsedTime := time.Since(c.firstSequencerWantingLockoutErrorTime)
-	if elapsedTime > time.Hour {
-		c.firstSequencerWantingLockoutErrorTime = now
+	if c.firstSequencerWantingLockoutErrorTime.IsZero() {
+		c.firstSequencerWantingLockoutErrorTime = time.Now()
 		logMessage(log.Debug)
 	} else {
+		elapsedTime := time.Since(c.firstSequencerWantingLockoutErrorTime)
 		if elapsedTime > 20*time.Second {
 			logMessage(log.Error)
 		} else if elapsedTime > 10*time.Second {
