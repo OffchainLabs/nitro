@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -25,6 +26,8 @@ const WANTS_LOCKOUT_VAL string = "OK"
 const SWITCHED_REDIS string = "SWITCHED_REDIS"
 const INVALID_VAL string = "INVALID"
 const INVALID_URL string = "<?INVALID-URL?>"
+
+var firstSequencerWantingLockoutErrorTime time.Time
 
 type RedisCoordinator struct {
 	Client redis.UniversalClient
@@ -63,7 +66,31 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 		}
 		return url, nil
 	}
-	log.Error("no sequencer appears to want the lockout on redis", "priorities", prioritiesString)
+
+	// If we hit this line, it means no sequencer is currently wanting the lockout from Redis.
+	// A log will be emitted at different levels depending on how long it has been since the first error was logged.
+	// At first, the log will be at the debug level, but if it persists for more than 10 seconds, it will be logged at the warn level.
+	// If it persists for more than 20 seconds, it will be logged at the error level.
+	logMessage := func(level func(msg string, ctx ...interface{})) {
+		args := []interface{}{"priorities", prioritiesString}
+		level("no sequencer appears to want the lockout on redis", args...)
+	}
+
+	now := time.Now()
+	if firstSequencerWantingLockoutErrorTime.IsZero() || now.Sub(firstSequencerWantingLockoutErrorTime) > time.Minute {
+		firstSequencerWantingLockoutErrorTime = now
+		logMessage(log.Debug)
+	} else {
+		elapsedTime := now.Sub(firstSequencerWantingLockoutErrorTime)
+
+		if elapsedTime > 20*time.Second {
+			logMessage(log.Error)
+		} else if elapsedTime > 10*time.Second {
+			logMessage(log.Warn)
+		} else {
+			logMessage(log.Debug)
+		}
+	}
 	return "", nil
 }
 
