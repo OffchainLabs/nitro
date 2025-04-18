@@ -27,10 +27,9 @@ const SWITCHED_REDIS string = "SWITCHED_REDIS"
 const INVALID_VAL string = "INVALID"
 const INVALID_URL string = "<?INVALID-URL?>"
 
-var firstSequencerWantingLockoutErrorTime time.Time
-
 type RedisCoordinator struct {
-	Client redis.UniversalClient
+	Client                                redis.UniversalClient
+	firstSequencerWantingLockoutErrorTime time.Time // Time of the first error logged for no sequencer wanting the lockout.
 }
 
 func WantsLockoutKeyFor(url string) string { return WANTS_LOCKOUT_KEY_PREFIX + url }
@@ -42,7 +41,8 @@ func NewRedisCoordinator(redisUrl string) (*RedisCoordinator, error) {
 	}
 
 	return &RedisCoordinator{
-		Client: redisClient,
+		Client:                                redisClient,
+		firstSequencerWantingLockoutErrorTime: time.Now(),
 	}, nil
 }
 
@@ -77,9 +77,9 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 	}
 
 	now := time.Now()
-	elapsedTime := time.Since(firstSequencerWantingLockoutErrorTime)
-	if firstSequencerWantingLockoutErrorTime.IsZero() || elapsedTime > time.Minute {
-		firstSequencerWantingLockoutErrorTime = now
+	elapsedTime := time.Since(c.firstSequencerWantingLockoutErrorTime)
+	if elapsedTime > time.Minute {
+		c.firstSequencerWantingLockoutErrorTime = now
 		logMessage(log.Debug)
 	} else {
 		if elapsedTime > 20*time.Second {
