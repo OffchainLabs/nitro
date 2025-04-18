@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
@@ -17,8 +18,11 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -233,6 +237,7 @@ type NodeBuilder struct {
 	valnodeConfig *valnode.Config
 	l3Config      *NitroConfig
 	deployBold    bool
+	parallelise   bool
 	L1Info        info
 	L2Info        info
 	L3Info        info
@@ -312,6 +317,7 @@ func NewNodeBuilder(ctx context.Context) *NodeBuilder {
 func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	// most used values across current tests are set here as default
 	b.withL1 = withL1
+	b.parallelise = true
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
@@ -330,6 +336,11 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.execConfig = ExecConfigDefaultTest(t)
 	b.l3Config = L3NitroConfigDefaultTest(t)
 	b.useFreezer = true
+	return b
+}
+
+func (b *NodeBuilder) DontParalellise() *NodeBuilder {
+	b.parallelise = false
 	return b
 }
 
@@ -387,12 +398,107 @@ func (b *NodeBuilder) WithL1ClientWrapper(t *testing.T) *NodeBuilder {
 }
 
 func (b *NodeBuilder) Build(t *testing.T) func() {
+	if b.parallelise {
+		b.parallelise = false
+		t.Parallel()
+	}
 	b.CheckConfig(t)
 	if b.withL1 {
 		b.BuildL1(t)
 		return b.BuildL2OnL1(t)
 	}
 	return b.BuildL2(t)
+}
+
+type testCollection struct {
+	room    atomic.Int64
+	cond    *sync.Cond
+	running map[string]int64
+	waiting map[string]int64
+}
+
+var globalCollection *testCollection
+
+func initTestCollection() {
+	if globalCollection != nil {
+		panic("trying to init testCollection twice")
+	}
+	globalCollection = &testCollection{}
+	globalCollection.cond = sync.NewCond(&sync.Mutex{})
+	room := int64(runtime.NumCPU())
+	if room < 2 {
+		room = 2
+	}
+	globalCollection.running = make(map[string]int64)
+	globalCollection.waiting = make(map[string]int64)
+	globalCollection.room.Store(room)
+}
+
+func runningWithContext(ctx context.Context, weight int64, name string) {
+	current := globalCollection.running[name]
+	globalCollection.running[name] = current + weight
+	globalCollection.cond.L.Unlock()
+	go func() {
+		<-ctx.Done()
+		globalCollection.cond.L.Lock()
+		current := globalCollection.running[name]
+		if current-weight <= 0 {
+			delete(globalCollection.running, name)
+		} else {
+			globalCollection.running[name] = current - weight
+		}
+		if globalCollection.room.Add(weight) > 0 {
+			globalCollection.cond.Broadcast()
+		}
+		globalCollection.cond.L.Unlock()
+	}()
+}
+
+func WaitAndRun(ctx context.Context, weight int64, name string) error {
+	globalCollection.cond.L.Lock()
+	current := globalCollection.waiting[name]
+	globalCollection.waiting[name] = current + weight
+	for globalCollection.room.Add(0-weight) < 0 {
+		if globalCollection.room.Add(weight) > 0 {
+			globalCollection.cond.Broadcast()
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("Context cancelled while waiting to launch test: %s", name)
+		}
+		globalCollection.cond.Wait()
+	}
+	current = globalCollection.waiting[name]
+	if current-weight <= 0 {
+		delete(globalCollection.waiting, name)
+	} else {
+		globalCollection.waiting[name] = current - weight
+	}
+	runningWithContext(ctx, weight, name)
+	return nil
+}
+
+func DontWaitAndRun(ctx context.Context, weight int64, name string) {
+	globalCollection.room.Add(0 - weight)
+	globalCollection.cond.L.Lock()
+	runningWithContext(ctx, weight, name)
+}
+
+func CurrentlyRunning() (map[string]int64, map[string]int64) {
+	running := make(map[string]int64)
+	waiting := make(map[string]int64)
+	globalCollection.cond.L.Lock()
+	for k, v := range globalCollection.running {
+		if v > 0 {
+			running[k] = v
+		}
+	}
+	for k, v := range globalCollection.waiting {
+		if v > 0 {
+			waiting[k] = v
+		}
+	}
+	globalCollection.cond.L.Unlock()
+	return running, waiting
 }
 
 func (b *NodeBuilder) CheckConfig(t *testing.T) {
@@ -421,6 +527,14 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
+	if b.parallelise {
+		b.parallelise = false
+		t.Parallel()
+	}
+	err := WaitAndRun(b.ctx, 2, t.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
 	b.L1 = NewTestClient(b.ctx)
 	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
@@ -524,6 +638,7 @@ func buildOnParentChain(
 }
 
 func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
+	DontWaitAndRun(b.ctx, 1, t.Name())
 	b.L3Info = NewArbTestInfo(t, b.l3Config.chainConfig.ChainID)
 
 	locator, err := server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath)
@@ -606,12 +721,21 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		if b.L1 != nil && b.L1.cleanup != nil {
 			b.L1.cleanup()
 		}
+		b.ctxCancel()
 	}
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
 func (b *NodeBuilder) BuildL2(t *testing.T) func() {
+	if b.parallelise {
+		b.parallelise = false
+		t.Parallel()
+	}
+	err := WaitAndRun(b.ctx, 1, t.Name())
+	if err != nil {
+		Fatal(t, err)
+	}
 	b.L2 = NewTestClient(b.ctx)
 
 	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
@@ -661,7 +785,10 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
 	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
-	return func() { b.L2.cleanup() }
+	return func() {
+		b.L2.cleanup()
+		b.ctxCancel()
+	}
 }
 
 // L2 -Only. RestartL2Node shutdowns the existing l2 node and start it again using the same data dir.
@@ -756,6 +883,7 @@ func build2ndNode(
 }
 
 func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
+	DontWaitAndRun(b.ctx, 1, t.Name())
 	if b.L2 == nil {
 		t.Fatal("builder did not previously built an L2 Node")
 	}
@@ -784,6 +912,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 }
 
 func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
+	DontWaitAndRun(b.ctx, 1, t.Name())
 	if b.L3 == nil {
 		t.Fatal("builder did not previously built an L3 Node")
 	}
@@ -1821,7 +1950,7 @@ func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
 	Fatal(t, "failed to complete after ", delay*time.Duration(max))
 }
 
-func TestMain(m *testing.M) {
+func initDefaultTestLog() {
 	flag.Parse()
 	if *testflag.LogLevelFlag != "" {
 		logLevel, err := strconv.ParseInt(*testflag.LogLevelFlag, 10, 32)
@@ -1833,6 +1962,27 @@ func TestMain(m *testing.M) {
 		glogger.Verbosity(slog.Level(logLevel))
 		log.SetDefault(log.NewLogger(glogger))
 	}
+}
+
+func TestMain(m *testing.M) {
+	initDefaultTestLog()
+	initTestCollection()
+	go func() {
+		for {
+			<-time.After(time.Second)
+			running, waiting := CurrentlyRunning()
+			print := "["
+			for test, count := range running {
+				print += fmt.Sprintf("%s[%d],", test, count)
+			}
+			print += "]    Q{"
+			for test, count := range waiting {
+				print += fmt.Sprintf("%s[%d],", test, count)
+			}
+			print += "}"
+			fmt.Printf("\n------ room: %d, %s\n", globalCollection.room.Load(), print)
+		}
+	}()
 	code := m.Run()
 	os.Exit(code)
 }
