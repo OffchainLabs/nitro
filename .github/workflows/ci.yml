@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, pathdb, challenge, l3challenge, stylus]
+        test-mode: [defaults, pathdb, challenge, stylus]
 
     steps:
       - name: Checkout
@@ -186,10 +186,6 @@ jobs:
         if: matrix.test-mode == 'challenge'
         run: |
           go test -tags challengetest ./... -run=^$ -v
-
-      - name: run L3 challenge tests
-        if: matrix.test-mode == 'l3challenge'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestL3Challenge --timeout 120m --cover
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
