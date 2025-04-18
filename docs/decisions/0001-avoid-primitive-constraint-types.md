@@ -66,7 +66,7 @@ positive values.
 ## Decision Outcome
 
 Chosen option: "Status Quo", because the "New Package" option introduces a
-regression in being able to use type type with operators, and "Minimize Checks"
+regression in being able to use type with operators, and "Minimize Checks"
 is too prone to bugs introduced by refactoring.
 
 
