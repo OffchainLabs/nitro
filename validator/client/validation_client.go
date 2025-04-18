@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
@@ -165,8 +166,10 @@ func (c *ExecutionClient) CreateExecutionRun(
 			return nil, err
 		}
 		run := &ExecutionClientRun{
-			client: c,
-			id:     res,
+			wasmModuleRoot: wasmModuleRoot,
+			client:         c,
+			id:             res,
+			input:          input,
 		}
 		run.Start(c.GetContext()) // note: not this temporary thread's context!
 		return run, nil
@@ -175,8 +178,11 @@ func (c *ExecutionClient) CreateExecutionRun(
 
 type ExecutionClientRun struct {
 	stopwaiter.StopWaiter
-	client *ExecutionClient
-	id     uint64
+	client         *ExecutionClient
+	boldClient     *BoldExecutionClient
+	id             uint64
+	wasmModuleRoot common.Hash
+	input          *validator.ValidationInput
 }
 
 func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
@@ -223,6 +229,15 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 }
 
 func (r *ExecutionClientRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash] {
+	if r.boldClient != nil {
+		return r.boldClient.GetLeavesWithStepSize(&server_api.GetLeavesWithStepSizeInput{
+			ModuleRoot:        r.wasmModuleRoot,
+			MachineStartIndex: machineStartIndex,
+			StepSize:          stepSize,
+			NumDesiredLeaves:  maxIterations,
+			ValidationInput:   r.input,
+		})
+	}
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
 		var resJson []common.Hash
 		err := r.client.client.CallContext(ctx, &resJson, server_api.Namespace+"_getMachineHashesWithStepSize", r.id, machineStartIndex, stepSize, maxIterations)
@@ -265,5 +280,51 @@ func (r *ExecutionClientRun) Close() {
 		if err != nil {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}
+	})
+}
+
+type BoldExecutionClient struct {
+	*redis.BoldValidationClient
+	executionClient *ExecutionClient
+}
+
+func NewBoldExecutionClient(config rpcclient.ClientConfigFetcher, redisValClient *redis.ValidationClient, stack *node.Node, executionClient *ExecutionClient) *BoldExecutionClient {
+	return &BoldExecutionClient{
+		BoldValidationClient: redis.NewBoldValidationClient(config, redisValClient, stack),
+		executionClient:      executionClient,
+	}
+}
+
+func (c *BoldExecutionClient) CreateExecutionRun(
+	wasmModuleRoot common.Hash,
+	input *validator.ValidationInput,
+	useBoldMachine bool,
+) containers.PromiseInterface[validator.ExecutionRun] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (validator.ExecutionRun, error) {
+		var res uint64
+		err := c.Client().CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), useBoldMachine)
+		if err != nil {
+			return nil, err
+		}
+		run := &ExecutionClientRun{
+			wasmModuleRoot: wasmModuleRoot,
+			boldClient:     c,
+			client:         c.executionClient,
+			id:             res,
+			input:          input,
+		}
+		run.Start(c.GetContext()) // note: not this temporary thread's context!
+		return run, nil
+	})
+}
+
+func (c *BoldExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
+	return stopwaiter.LaunchPromiseThread[common.Hash](c, func(ctx context.Context) (common.Hash, error) {
+		var res common.Hash
+		err := c.Client().CallContext(ctx, &res, server_api.Namespace+"_latestWasmModuleRoot")
+		if err != nil {
+			return common.Hash{}, err
+		}
+		return res, nil
 	})
 }
