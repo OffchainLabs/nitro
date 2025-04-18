@@ -74,8 +74,6 @@ type Config struct {
 	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
 	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
 	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
-	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
-	SnapSyncTest SnapSyncConfig
 }
 
 func (c *Config) Validate() error {
@@ -167,7 +165,6 @@ var ConfigDefault = Config{
 	BlockMetadataFetcher:     DefaultBlockMetadataFetcherConfig,
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
-	SnapSyncTest:             DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -279,15 +276,6 @@ type SnapSyncConfig struct {
 	BatchCount                uint64
 	DelayedCount              uint64
 	ParentChainAssertionBlock uint64
-}
-
-var DefaultSnapSyncConfig = SnapSyncConfig{
-	Enabled:                   false,
-	PrevBatchMessageCount:     0,
-	PrevDelayedRead:           0,
-	BatchCount:                0,
-	DelayedCount:              0,
-	ParentChainAssertionBlock: 0,
 }
 
 type ConfigFetcher interface {
@@ -615,37 +603,11 @@ func getInboxTrackerAndReader(
 	sequencerInbox *SequencerInbox,
 	exec execution.ExecutionSequencer,
 ) (*InboxTracker, *InboxReader, error) {
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders)
 	if err != nil {
 		return nil, nil, err
 	}
-	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
-	if config.SnapSyncTest.Enabled {
-		if exec == nil {
-			return nil, nil, errors.New("snap sync test requires an execution sequencer")
-		}
-
-		batchCount := config.SnapSyncTest.BatchCount
-		delayedMessageNumber, err := exec.NextDelayedMessageNumber()
-		if err != nil {
-			return nil, nil, err
-		}
-		if batchCount > delayedMessageNumber {
-			batchCount = delayedMessageNumber
-		}
-		// Find the first block containing the batch count.
-		// Subtract 1 to get the block before the needed batch count,
-		// this is done to fetch previous batch metadata needed for snap sync.
-		if batchCount > 0 {
-			batchCount--
-		}
-		block, err := FindBlockContainingBatchCount(ctx, deployInfo.Bridge, l1client, config.SnapSyncTest.ParentChainAssertionBlock, batchCount)
-		if err != nil {
-			return nil, nil, err
-		}
-		firstMessageBlock.SetUint64(block)
-	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), deployInfo.Rollup, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, nil, err
 	}
@@ -776,7 +738,7 @@ func getTransactionStreamer(
 	fatalErrChan chan error,
 ) (*TransactionStreamer, error) {
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(ctx, arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
+	txStreamer, err := NewTransactionStreamer(ctx, arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
