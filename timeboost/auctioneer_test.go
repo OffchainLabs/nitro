@@ -197,6 +197,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 		AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 		RedisURL:               redisURL,
 		ProducerConfig:         pubsub.TestProducerConfig,
+		MaxBidsPerSender:       10,
 	}
 	validatorFetcher := func() *BidValidatorConfig {
 		return validatorCfg
@@ -256,11 +257,25 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 
 	// First round of bids - Alice will be the winner with 20, Bob second with 15
 	t.Log("Submitting first round of bids...")
+	_, err = alice.Bid(ctx, big.NewInt(5), aliceAddr)
+	require.NoError(t, err)
+	_, err = alice.Bid(ctx, big.NewInt(10), aliceAddr)
+	require.NoError(t, err)
 	_, err = alice.Bid(ctx, big.NewInt(20), aliceAddr)
+	require.NoError(t, err)
+
+	_, err = bob.Bid(ctx, big.NewInt(3), bobAddr)
+	require.NoError(t, err)
+	_, err = bob.Bid(ctx, big.NewInt(8), bobAddr)
 	require.NoError(t, err)
 	_, err = bob.Bid(ctx, big.NewInt(15), bobAddr)
 	require.NoError(t, err)
-	_, err = charlie.Bid(ctx, big.NewInt(10), charlieAddr)
+
+	_, err = charlie.Bid(ctx, big.NewInt(2), charlieAddr)
+	require.NoError(t, err)
+	_, err = charlie.Bid(ctx, big.NewInt(30), charlieAddr) // High bid
+	require.NoError(t, err)
+	_, err = charlie.Bid(ctx, big.NewInt(10), charlieAddr) // Overwrite high bid
 	require.NoError(t, err)
 
 	// Allow time for bids to be processed
@@ -314,11 +329,10 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 	require.Equal(t, big.NewInt(20), result.firstPlace.Amount, "Alice should still be the highest bidder after restart")
 	require.Equal(t, aliceAddr, result.firstPlace.Bidder)
 
-	// The second place may be Bob's original 15 or his new 12 bid, depending on how the bid cache is updated
 	secondPlaceAmount := result.secondPlace.Amount
 	require.True(t,
-		secondPlaceAmount.Cmp(big.NewInt(15)) == 0 || secondPlaceAmount.Cmp(big.NewInt(12)) == 0,
-		"Second place should be either Bob's original 15 or his new 12 bid, got %s", secondPlaceAmount.String())
+		secondPlaceAmount.Cmp(big.NewInt(12)) == 0,
+		"Second place should be Bob's new 12 bid which overwrote the 15 bid, got %s", secondPlaceAmount.String())
 	require.Equal(t, bobAddr, result.secondPlace.Bidder)
 
 	// Now let the auction resolve and check the contract state
