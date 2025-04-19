@@ -373,7 +373,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 		sourcesDisconnectedGauge.Inc(1)
 		backoffDuration := bc.config().ReconnectInitialBackoff
 		flateReader := wsbroadcastserver.NewFlateReader()
-		// We set lastConnectionResetByPeerErrorTime to 2 minutes in the past to bypass initial time.Since(lastConnectionResetByPeerErrorTime) <= time.Minute check
+		// Log should be error instead of debug if first attempt fails
 		lastConnectionResetByPeerErrorTime := time.Now().Add(-2 * time.Minute)
 		for {
 			select {
