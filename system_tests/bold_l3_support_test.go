@@ -32,7 +32,6 @@ import (
 )
 
 func TestL3ChallengeProtocolBOLD(t *testing.T) {
-	t.Skip("Failing due to ArbOS 40 geth changes as of commit 77da75a635b2726eaed14c43b0fbcbca1c904a6a")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
