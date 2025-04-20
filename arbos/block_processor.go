@@ -75,12 +75,15 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
 	timestamp := uint64(0)
+	// lint:require-exhaustive-initialization
 	coinbase := common.Address{}
 	if l1info != nil {
 		timestamp = l1info.l1Timestamp
 		coinbase = l1info.poster
 	}
+	// lint:require-exhaustive-initialization
 	extra := common.Hash{}.Bytes()
+	// lint:require-exhaustive-initialization
 	mixDigest := common.Hash{}
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
@@ -91,6 +94,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		copy(extra, prevHeader.Extra)
 		mixDigest = prevHeader.MixDigest
 	}
+	// lint:require-exhaustive-initialization
 	header := &types.Header{
 		ParentHash:  lastBlockHash,
 		UncleHash:   types.EmptyUncleHash, // Post-merge Ethereum will require this to be types.EmptyUncleHash
@@ -124,6 +128,7 @@ type SequencingHooks struct {
 }
 
 func NoopSequencingHooks() *SequencingHooks {
+	// lint:require-exhaustive-initialization
 	return &SequencingHooks{
 		[]error{},
 		false,
@@ -154,6 +159,7 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
+	// lint:require-exhaustive-initialization
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
 		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runMode,
@@ -184,6 +190,7 @@ func ProduceBlockAdvanced(
 
 	poster := l1Header.Poster
 
+	// lint:require-exhaustive-initialization
 	l1Info := &L1Info{
 		poster:        poster,
 		l1BlockNumber: l1Header.BlockNumber,
@@ -202,11 +209,15 @@ func ProduceBlockAdvanced(
 	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.L1BaseFee, l1BlockNum, header, lastBlockHeader)
 	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
+	// lint:require-exhaustive-initialization
 	complete := types.Transactions{}
+	// lint:require-exhaustive-initialization
 	receipts := types.Receipts{}
 	basefee := header.BaseFee
 	time := header.Time
+	// lint:require-exhaustive-initialization
 	expectedBalanceDelta := new(big.Int)
+	// lint:require-exhaustive-initialization
 	redeems := types.Transactions{}
 	userTxsProcessed := 0
 
@@ -218,6 +229,7 @@ func ProduceBlockAdvanced(
 
 		var tx *types.Transaction
 		var options *arbitrum_types.ConditionalOptions
+		// lint:require-exhaustive-initialization
 		hooks := NoopSequencingHooks()
 		isUserTx := false
 		if len(redeems) > 0 {
@@ -314,6 +326,7 @@ func ProduceBlockAdvanced(
 
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
+			// lint:require-exhaustive-initialization
 			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
@@ -353,6 +366,7 @@ func ProduceBlockAdvanced(
 				logLevel = log.Warn
 			}
 			if !isMsgForPrefetch {
+				// lint:require-exhaustive-initialization
 				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			}
 			if !hooks.DiscardInvalidTxsEarly {
@@ -530,6 +544,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
 			arbosVersion = state.ArbOSVersion()
 		}
+		// lint:require-exhaustive-initialization
 		arbitrumHeader := types.HeaderInfo{
 			SendRoot:           sendRoot,
 			SendCount:          sendCount,
