@@ -1,7 +1,7 @@
 // Copyright 2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-//go:build challengetest && !race
+//ro build challengetest && !race
 
 package arbtest
 
@@ -67,8 +67,8 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	secondNodeNodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	secondNodeNodeConfig.BlockValidator.Enable = true
 	secondNodeNodeConfig.Staker.Enable = true
-	secondNodeNodeConfig.Staker.Strategy = "MakeNodes"
-	secondNodeNodeConfig.Bold.Strategy = "MakeNodes"
+	secondNodeNodeConfig.Staker.Strategy = "Watchtower"
+	secondNodeNodeConfig.Bold.Strategy = "Watchtower"
 	secondNodeNodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
 	secondNodeNodeConfig.Bold.StateProviderConfig.ValidatorName = "Second-L2-validator"
 	secondNodeNodeConfig.Bold.RPCBlockNumber = "latest"
@@ -105,7 +105,7 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	Require(t, err)
 
 	fromBlock := uint64(0)
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
