@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultBroadcastTimeout       = time.Minute
+	defaultBroadcastTimeout       = time.Millisecond * 500
 	defaultSubscriptionBufferSize = 10
 )
 
