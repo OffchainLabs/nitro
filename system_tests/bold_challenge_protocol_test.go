@@ -509,17 +509,6 @@ func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestIn
 				t.Log("Error ensuring tx succeeded:", err)
 				continue
 			}
-			latestBlock, err := client.BlockNumber(ctx)
-			if ctx.Err() != nil {
-				break
-			}
-			if err != nil {
-				t.Log("Error getting latest block number:", err)
-				continue
-			}
-			if latestBlock > 150 {
-				delay = time.Second
-			}
 		}
 	}
 }
