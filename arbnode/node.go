@@ -522,9 +522,19 @@ func createNodeImpl(
 		}
 	}
 
+func getBlockMetadataFetcher(
+	ctx context.Context,
+	configFetcher ConfigFetcher,
+	arbDb ethdb.Database,
+	exec execution.ExecutionClient,
+	expectedChainId uint64,
+) (*BlockMetadataFetcher, error) {
+	config := configFetcher.Get()
+
 	var blockMetadataFetcher *BlockMetadataFetcher
 	if config.BlockMetadataFetcher.Enable {
-		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec, config.TransactionStreamer.TrackBlockMetadataFrom)
+		var err error
+		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec, config.TransactionStreamer.TrackBlockMetadataFrom, expectedChainId)
 		if err != nil {
 			return nil, err
 		}
@@ -812,6 +822,155 @@ func createNodeImpl(
 		blockMetadataFetcher:    blockMetadataFetcher,
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
+		blockMetadataFetcher:    blockMetadataFetcher,
+	}
+}
+
+func createNodeImpl(
+	ctx context.Context,
+	stack *node.Node,
+	executionClient execution.ExecutionClient,
+	executionSequencer execution.ExecutionSequencer,
+	executionRecorder execution.ExecutionRecorder,
+	executionBatchPoster execution.ExecutionBatchPoster,
+	arbDb ethdb.Database,
+	configFetcher ConfigFetcher,
+	l2Config *params.ChainConfig,
+	l1client *ethclient.Client,
+	deployInfo *chaininfo.RollupAddresses,
+	txOptsValidator *bind.TransactOpts,
+	txOptsBatchPoster *bind.TransactOpts,
+	dataSigner signature.DataSignerFunc,
+	fatalErrChan chan error,
+	parentChainID *big.Int,
+	blobReader daprovider.BlobReader,
+) (*Node, error) {
+	config := configFetcher.Get()
+
+	err := checkArbDbSchemaVersion(arbDb)
+	if err != nil {
+		return nil, err
+	}
+
+	syncMonitor := getSyncMonitor(configFetcher)
+
+	l1Reader, err := getL1Reader(ctx, config, configFetcher, l1client)
+	if err != nil {
+		return nil, err
+	}
+
+	broadcastServer, err := getBroadcastServer(config, configFetcher, dataSigner, l2Config.ChainID.Uint64(), fatalErrChan)
+	if err != nil {
+		return nil, err
+	}
+
+	txStreamer, err := getTransactionStreamer(ctx, arbDb, l2Config, executionClient, broadcastServer, configFetcher, fatalErrChan)
+	if err != nil {
+		return nil, err
+	}
+
+	bpVerifier, err := getBPVerifier(deployInfo, l1client)
+	if err != nil {
+		return nil, err
+	}
+
+	coordinator, err := getSeqCoordinator(config, dataSigner, bpVerifier, txStreamer, syncMonitor, executionSequencer)
+	if err != nil {
+		return nil, err
+	}
+
+	maintenanceRunner, err := getMaintenanceRunner(arbDb, configFetcher, coordinator, executionClient)
+	if err != nil {
+		return nil, err
+	}
+
+	broadcastClients, err := getBroadcastClients(config, configFetcher, txStreamer, l2Config.ChainID.Uint64(), bpVerifier, fatalErrChan)
+	if err != nil {
+		return nil, err
+	}
+
+	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, executionClient, l2Config.ChainID.Uint64())
+	if err != nil {
+		return nil, err
+	}
+
+	if !config.ParentChainReader.Enable {
+		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
+	}
+
+	delayedBridge, sequencerInbox, err := getDelayedBridgeAndSequencerInbox(deployInfo, l1client)
+	if err != nil {
+		return nil, err
+	}
+
+	daWriter, dasLifecycleManager, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client)
+	if err != nil {
+		return nil, err
+	}
+
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
+	if err != nil {
+		return nil, err
+	}
+
+	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack)
+	if err != nil {
+		return nil, err
+	}
+
+	blockValidator, err := getBlockValidator(config, configFetcher, statelessBlockValidator, inboxTracker, txStreamer, fatalErrChan)
+	if err != nil {
+		return nil, err
+	}
+
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, stack, fatalErrChan, statelessBlockValidator, blockValidator)
+	if err != nil {
+		return nil, err
+	}
+
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, daWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, executionSequencer, configFetcher, coordinator)
+	if err != nil {
+		return nil, err
+	}
+
+	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
+		return &configFetcher.Get().ConsensusExecutionSyncer
+	}
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, executionClient, blockValidator, txStreamer)
+
+	return &Node{
+		ArbDB:                    arbDb,
+		Stack:                    stack,
+		ExecutionClient:          executionClient,
+		ExecutionSequencer:       executionSequencer,
+		ExecutionRecorder:        executionRecorder,
+		L1Reader:                 l1Reader,
+		TxStreamer:               txStreamer,
+		DeployInfo:               deployInfo,
+		BlobReader:               blobReader,
+		InboxReader:              inboxReader,
+		InboxTracker:             inboxTracker,
+		DelayedSequencer:         delayedSequencer,
+		BatchPoster:              batchPoster,
+		MessagePruner:            messagePruner,
+		BlockValidator:           blockValidator,
+		StatelessBlockValidator:  statelessBlockValidator,
+		Staker:                   stakerObj,
+		BroadcastServer:          broadcastServer,
+		BroadcastClients:         broadcastClients,
+		SeqCoordinator:           coordinator,
+		MaintenanceRunner:        maintenanceRunner,
+		DASLifecycleManager:      dasLifecycleManager,
+		SyncMonitor:              syncMonitor,
+		blockMetadataFetcher:     blockMetadataFetcher,
+		configFetcher:            configFetcher,
+		ctx:                      ctx,
+		ConsensusExecutionSyncer: consensusExecutionSyncer,
 	}, nil
 }
 
