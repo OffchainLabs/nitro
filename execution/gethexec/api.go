@@ -371,7 +371,7 @@ func (api *ArbTraceForwarderAPI) forward(ctx context.Context, method string, arg
 		return nil, err
 	}
 	if fallbackClient == nil {
-		return nil, errors.New("arbtrace calls forwarding not configured") // TODO(magic)
+		return nil, fmt.Errorf("arbtrace forwarding is not configured: fallback client is nil; check fallbackClientUrl and initialization logic")
 	}
 	var resp *json.RawMessage
 	err = fallbackClient.CallContext(ctx, &resp, method, args...)
