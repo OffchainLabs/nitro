@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
-//ro build challengetest
+//go:build challengetest
 //go:build challengetest
 // +build challengetest
 

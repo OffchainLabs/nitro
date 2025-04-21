@@ -2,7 +2,7 @@
 // For license information, see:
 // https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-//ro build challengetest && !race
+//go:build challengetest && !race
 
 package arbtest
 
