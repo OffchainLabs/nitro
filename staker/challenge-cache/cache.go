@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 /*
 * Package challengecache stores hashes required for making history commitments in Arbitrum BOLD.
 When a challenge begins, validators need to post Merkle commitments to a series of block hashes to
