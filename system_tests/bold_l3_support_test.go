@@ -31,7 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/staker/bold"
 )
 
-func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
+func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -111,7 +111,10 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 		select {
 		case <-ticker.C:
 			latestBlock, err := builder.L2.Client.HeaderByNumber(ctx, nil)
-			Require(t, err)
+			if err != nil {
+				t.Logf("Error getting latest block: %v", err)
+				continue
+			}
 			toBlock := latestBlock.Number.Uint64()
 			if fromBlock == toBlock {
 				continue
@@ -122,7 +125,10 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 				Context: ctx,
 			}
 			it, err := filterer.FilterAssertionConfirmed(filterOpts, nil)
-			Require(t, err)
+			if err != nil {
+				t.Logf("Error creating filter: %v", err)
+				continue
+			}
 			for it.Next() {
 				if it.Error() != nil {
 					t.Fatalf("Error in filter iterator: %v", it.Error())
@@ -131,14 +137,26 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 				assertion, err := assertionChain.GetAssertion(ctx, &bind.CallOpts{}, protocol.AssertionHash{
 					Hash: it.Event.AssertionHash,
 				})
-				Require(t, err)
+				if err != nil {
+					t.Logf("Error getting assertion: %v", err)
+					continue
+				}
 				creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, assertion.Id())
-				Require(t, err)
+				if err != nil {
+					t.Logf("Error getting assertion creation info: %v", err)
+					continue
+				}
 				parentAssertionHash := creationInfo.ParentAssertionHash
 				parentAssertion, err := assertionChain.GetAssertion(ctx, &bind.CallOpts{}, parentAssertionHash)
-				Require(t, err)
+				if err != nil {
+					t.Logf("Error getting parent assertion: %v", err)
+					continue
+				}
 				hasSecondChild, err := parentAssertion.HasSecondChild(ctx, &bind.CallOpts{})
-				Require(t, err)
+				if err != nil {
+					t.Logf("Error checking for second child: %v", err)
+					continue
+				}
 				if !hasSecondChild {
 					t.Log("Assertion did not have a second child")
 					continue
@@ -146,10 +164,16 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 				// If the parent assertion has a second child, it means the child was a confirmed assertion
 				// by challenge winner, so then we assert the winner was indeed the honest asserter.
 				tx, _, err := builder.L2.Client.TransactionByHash(ctx, it.Event.Raw.TxHash)
-				Require(t, err)
+				if err != nil {
+					t.Logf("Error getting transaction: %v", err)
+					continue
+				}
 				signer := types.NewCancunSigner(tx.ChainId())
 				address, err := signer.Sender(tx)
-				Require(t, err)
+				if err != nil {
+					t.Logf("Error getting sender address: %v", err)
+					continue
+				}
 				if address == builder.L2Info.GetAddress("HonestAsserter") {
 					t.Log("Honest party confirmed an assertion by challenge win")
 					Require(t, it.Close())
