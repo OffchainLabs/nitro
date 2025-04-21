@@ -1004,8 +1004,11 @@ func testCreate(t *testing.T, jit bool) {
 }
 
 func TestProgramInfiniteLoopShouldCauseErrOutOfGas(t *testing.T) {
-	testInfiniteLoopCausesErrOutOfGas(t, true)
 	testInfiniteLoopCausesErrOutOfGas(t, false)
+}
+
+func TestProgramInfiniteLoopShouldCauseErrOutOfGas_Jit(t *testing.T) {
+	testInfiniteLoopCausesErrOutOfGas(t, true)
 }
 
 func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
