@@ -163,12 +163,12 @@ func NewExpressLaneProxy(
 }
 
 func (p *ExpressLaneProxy) Start(ctx context.Context) {
-	p.StopWaiterSafe.Start(ctx, p)
+	p.StopWaiter.Start(ctx, p)
 	p.expressLaneTracker.Start(ctx)
 }
 
 func (p *ExpressLaneProxy) StopAndWait() {
-	p.StopWaiterSafe.StopAndWait()
+	p.StopWaiter.StopAndWait()
 	p.expressLaneTracker.StopAndWait()
 }
 
@@ -276,6 +276,7 @@ func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil
 
 func (p *ExpressLaneProxy) ChainId(_ context.Context) hexutil.Uint64 {
 	chainId := p.config.ChainId
+	// #nosec G115
 	return (hexutil.Uint64)(chainId)
 }
 
