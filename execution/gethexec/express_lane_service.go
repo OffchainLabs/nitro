@@ -215,7 +215,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		if err := es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, nextMsg.Transaction, nextMsg.Options); err != nil {
 			logLevel := log.Error
 			// If tx sequencing was attempted right around the edge of a round then an error due to context timing out is expected, so we log a warning in such a case
-			if err == queueCtx.Err() && timeout < time.Second {
+			if errors.Is(err, queueCtx.Err()) && timeout < time.Second {
 				logLevel = log.Warn
 			}
 			logLevel("Error queuing expressLane transaction", "seqNum", nextMsg.SequenceNumber, "txHash", nextMsg.Transaction.Hash(), "err", err)
