@@ -63,6 +63,7 @@ var (
 )
 
 var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
+var ResultNotFound = errors.New("result not found")
 
 type L1PriceDataOfMsg struct {
 	callDataUnits            uint64
@@ -814,7 +815,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 
 func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.MessageResult, error) {
 	if header == nil {
-		return nil, fmt.Errorf("result not found")
+		return nil, ResultNotFound
 	}
 	info := types.DeserializeHeaderExtraInformation(header)
 	return &execution.MessageResult{

@@ -373,6 +373,8 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 		sourcesDisconnectedGauge.Inc(1)
 		backoffDuration := bc.config().ReconnectInitialBackoff
 		flateReader := wsbroadcastserver.NewFlateReader()
+		// Log should be error instead of debug if first attempt fails
+		lastConnectionResetByPeerErrorTime := time.Now().Add(-2 * time.Minute)
 		for {
 			select {
 			case <-ctx.Done():
@@ -393,6 +395,13 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					log.Error("Server connection timed out without receiving data", "url", bc.websocketUrl, "err", err)
 				} else if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 					log.Warn("readData returned EOF", "url", bc.websocketUrl, "opcode", int(op), "err", err)
+				} else if strings.Contains(err.Error(), "connection reset by peer") {
+					logLevel := log.Warn
+					if time.Since(lastConnectionResetByPeerErrorTime) <= time.Minute {
+						logLevel = log.Error
+					}
+					lastConnectionResetByPeerErrorTime = time.Now()
+					logLevel("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				} else {
 					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				}
