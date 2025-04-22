@@ -1022,6 +1022,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	}
 	// 0 is default for any chain unless specified in the chain_defaults
 	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom
+	chainDefaults["node.block-metadata-fetcher.source.url"] = chainInfo.BlockMetadataUrl
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err

@@ -28,7 +28,7 @@ type BlockMetadataFetcherConfig struct {
 }
 
 var DefaultBlockMetadataFetcherConfig = BlockMetadataFetcherConfig{
-	Enable:         true,
+	Enable:         false,
 	Source:         rpcclient.DefaultClientConfig,
 	SyncInterval:   time.Minute * 5,
 	APIBlocksLimit: 100,
