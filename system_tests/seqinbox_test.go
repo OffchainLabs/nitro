@@ -264,8 +264,8 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				sourceNum := rand.Int() % len(state.accounts)
 				source := state.accounts[sourceNum]
 				// #nosec G115
-				amount := new(big.Int).SetUint64((uint64(rand.Int()%10000) % state.balances[source].Uint64()))
-				reserveAmount := new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei * 100000000)
+				amount := new(big.Int).SetUint64(uint64(rand.Int()) % state.balances[source].Uint64())
+				reserveAmount := new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei * 100000000000)
 				if state.balances[source].Cmp(new(big.Int).Add(amount, reserveAmount)) < 0 {
 					// Leave enough funds for gas
 					amount = big.NewInt(1)
