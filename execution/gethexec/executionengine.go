@@ -63,6 +63,7 @@ var (
 )
 
 var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
+var ResultNotFound = errors.New("result not found")
 
 type L1PriceDataOfMsg struct {
 	callDataUnits            uint64
@@ -297,6 +298,17 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 	if lastBlockToKeep == nil {
 		log.Warn("reorg target block not found", "block", lastBlockNumToKeep)
 		return nil, nil
+	}
+
+	currentSafeBlock := s.bc.CurrentSafeBlock()
+	if currentSafeBlock != nil && lastBlockToKeep.Number().Cmp(currentSafeBlock.Number) < 0 {
+		log.Warn("reorg target block is below safe block", "lastBlockNumToKeep", lastBlockNumToKeep, "currentSafeBlock", currentSafeBlock.Number)
+		s.bc.SetSafe(nil)
+	}
+	currentFinalBlock := s.bc.CurrentFinalBlock()
+	if currentFinalBlock != nil && lastBlockToKeep.Number().Cmp(currentFinalBlock.Number) < 0 {
+		log.Warn("reorg target block is below final block", "lastBlockNumToKeep", lastBlockNumToKeep, "currentFinalBlock", currentFinalBlock.Number)
+		s.bc.SetFinalized(nil)
 	}
 
 	tag := s.bc.StateCache().WasmCacheTag()
@@ -803,7 +815,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 
 func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.MessageResult, error) {
 	if header == nil {
-		return nil, fmt.Errorf("result not found")
+		return nil, ResultNotFound
 	}
 	info := types.DeserializeHeaderExtraInformation(header)
 	return &execution.MessageResult{
@@ -1089,24 +1101,4 @@ func (s *ExecutionEngine) Maintenance(capLimit uint64) error {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 	return s.bc.FlushTrieDB(common.StorageSize(capLimit))
-}
-
-func (s *ExecutionEngine) SetFinalized(finalizedBlockNumber uint64) error {
-	block := s.bc.GetBlockByNumber(finalizedBlockNumber)
-	if block == nil {
-		return errors.New("unable to get block by number")
-	}
-
-	s.bc.SetFinalized(block.Header())
-	return nil
-}
-
-func (s *ExecutionEngine) SetSafe(safeBlockNumber uint64) error {
-	block := s.bc.GetBlockByNumber(safeBlockNumber)
-	if block == nil {
-		return errors.New("unable to get block by number")
-	}
-
-	s.bc.SetSafe(block.Header())
-	return nil
 }
