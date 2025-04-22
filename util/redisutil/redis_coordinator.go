@@ -63,6 +63,9 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 		if err != nil {
 			return "", err
 		}
+		// We found a sequencer that wants the lockout, so we reset the last time we observed the error
+		// to a value of zero for logging purposes below.
+		c.firstSequencerWantingLockoutErrorTime = time.Time{}
 		return url, nil
 	}
 
