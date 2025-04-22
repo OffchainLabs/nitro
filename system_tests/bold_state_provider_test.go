@@ -386,6 +386,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		valnode.TestValidationConfig.Wasm.RootPath,
 	)
 	Require(t, err)
 	Require(t, stateless.Start(ctx))
