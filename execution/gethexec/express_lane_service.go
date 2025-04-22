@@ -213,7 +213,12 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		timeout := min(es.roundTimingInfo.TimeTilNextRound(), queueTimeout)
 		queueCtx, _ := ctxWithTimeout(es.GetContext(), timeout)
 		if err := es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, nextMsg.Transaction, nextMsg.Options); err != nil {
-			log.Error("Error queuing expressLane transaction", "seqNum", nextMsg.SequenceNumber, "txHash", nextMsg.Transaction.Hash(), "err", err)
+			logLevel := log.Error
+			// If tx sequencing was attempted right around the edge of a round then an error due to context timing out is expected, so we log a warning in such a case
+			if err == queueCtx.Err() && timeout < time.Second {
+				logLevel = log.Warn
+			}
+			logLevel("Error queuing expressLane transaction", "seqNum", nextMsg.SequenceNumber, "txHash", nextMsg.Transaction.Hash(), "err", err)
 			if nextMsg.SequenceNumber == msg.SequenceNumber {
 				retErr = err
 			}
