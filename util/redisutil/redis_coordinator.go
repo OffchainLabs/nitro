@@ -30,6 +30,7 @@ const INVALID_URL string = "<?INVALID-URL?>"
 type RedisCoordinator struct {
 	Client                                redis.UniversalClient
 	firstSequencerWantingLockoutErrorTime time.Time // Time of the first error logged for no sequencer wanting the lockout.
+	lastLockoutErrorLogTime               time.Time // Add this field to track when we last logged lockout errors.
 }
 
 func WantsLockoutKeyFor(url string) string { return WANTS_LOCKOUT_KEY_PREFIX + url }
@@ -66,6 +67,7 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 		// We found a sequencer that wants the lockout, so we reset the last time we observed the error
 		// to a value of zero for logging purposes below.
 		c.firstSequencerWantingLockoutErrorTime = time.Time{}
+		c.lastLockoutErrorLogTime = time.Time{} // Reset log throttling timer when state changes.
 		return url, nil
 	}
 
@@ -80,15 +82,21 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 
 	if c.firstSequencerWantingLockoutErrorTime.IsZero() {
 		c.firstSequencerWantingLockoutErrorTime = time.Now()
+		c.lastLockoutErrorLogTime = time.Now()
 		logMessage(log.Debug)
 	} else {
 		elapsedTime := time.Since(c.firstSequencerWantingLockoutErrorTime)
-		if elapsedTime > 20*time.Second {
-			logMessage(log.Error)
-		} else if elapsedTime > 10*time.Second {
-			logMessage(log.Warn)
-		} else {
-			logMessage(log.Debug)
+		// Only log if it's been at least 5 seconds since the last log,
+		// as these logs would otherwise be spammed at a high rate when they occur.
+		if time.Since(c.lastLockoutErrorLogTime) >= 5*time.Second {
+			if elapsedTime > 20*time.Second {
+				logMessage(log.Error)
+			} else if elapsedTime > 10*time.Second {
+				logMessage(log.Warn)
+			} else {
+				logMessage(log.Debug)
+			}
+			c.lastLockoutErrorLogTime = time.Now() // Update last log time.
 		}
 	}
 	return "", nil
