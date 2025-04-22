@@ -68,6 +68,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		builder.L2Info = l2Info
 		builder.dataDir = t.TempDir() // set new data dir for each node
 		builder.l2StackConfig = testhelpers.CreateStackConfigForTest(builder.dataDir)
+		builder.parallelise = false
 		builder.Build(t)
 		testNodes[nodeNum] = builder.L2
 	}
