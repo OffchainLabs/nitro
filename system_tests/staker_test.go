@@ -206,6 +206,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		valnode.TestValidationConfig.Wasm.RootPath,
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -259,6 +260,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		valnode.TestValidationConfig.Wasm.RootPath,
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)

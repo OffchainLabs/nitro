@@ -34,18 +34,21 @@ type BidValidatorConfig struct {
 	// Timeout on polling for existence of each redis stream.
 	SequencerEndpoint      string `koanf:"sequencer-endpoint"`
 	AuctionContractAddress string `koanf:"auction-contract-address"`
+	MaxBidsPerSender       uint8  `koanf:"max-bids-per-sender"`
 }
 
 var DefaultBidValidatorConfig = BidValidatorConfig{
-	Enable:         true,
-	RedisURL:       "",
-	ProducerConfig: pubsub.DefaultProducerConfig,
+	Enable:           true,
+	RedisURL:         "",
+	ProducerConfig:   pubsub.DefaultProducerConfig,
+	MaxBidsPerSender: 5,
 }
 
 var TestBidValidatorConfig = BidValidatorConfig{
-	Enable:         true,
-	RedisURL:       "",
-	ProducerConfig: pubsub.TestProducerConfig,
+	Enable:           true,
+	RedisURL:         "",
+	ProducerConfig:   pubsub.TestProducerConfig,
+	MaxBidsPerSender: 5,
 }
 
 func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -54,6 +57,8 @@ func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
+	f.Uint8(prefix+".max-bids-per-sender", DefaultBidValidatorConfig.MaxBidsPerSender, "maximum number of bids a sender can submit per round")
+
 }
 
 type BidValidator struct {
@@ -142,7 +147,7 @@ func NewBidValidator(
 		reservePrice:                   reservePrice,
 		domainValue:                    domainValue,
 		bidsPerSenderInRound:           make(map[common.Address]uint8),
-		maxBidsPerSenderInRound:        5, // 5 max bids per sender address in a round.
+		maxBidsPerSenderInRound:        cfg.MaxBidsPerSender,
 		producerCfg:                    &cfg.ProducerConfig,
 	}
 	api := &BidValidatorAPI{bidValidator}

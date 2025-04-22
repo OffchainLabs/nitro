@@ -101,10 +101,6 @@ func (s *ArbitratorSpawner) Start(ctx_in context.Context) error {
 	return nil
 }
 
-func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return containers.NewReadyPromise(s.locator.LatestWasmModuleRoot(), nil)
-}
-
 func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return s.locator.ModuleRoots(), nil
 }

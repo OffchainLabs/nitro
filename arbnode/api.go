@@ -43,11 +43,7 @@ func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
 	if moduleRootOptional != nil {
 		moduleRoot = *moduleRootOptional
 	} else {
-		var err error
-		moduleRoot, err = a.val.GetLatestWasmModuleRoot(ctx)
-		if err != nil {
-			return result, fmt.Errorf("no latest WasmModuleRoot configured, must provide parameter: %w", err)
-		}
+		moduleRoot = a.val.GetLatestWasmModuleRoot()
 	}
 	start_time := time.Now()
 	valid, gs, err := a.val.ValidateResult(ctx, arbutil.MessageIndex(msgNum), full, moduleRoot)

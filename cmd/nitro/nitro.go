@@ -555,6 +555,7 @@ func mainImpl() int {
 		fatalErrChan,
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
+		liveNodeConfig.Get().Validation.Wasm.RootPath,
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)

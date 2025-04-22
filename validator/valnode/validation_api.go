@@ -104,10 +104,6 @@ func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot c
 	return newId, nil
 }
 
-func (a *ExecServerAPI) LatestWasmModuleRoot(ctx context.Context) (common.Hash, error) {
-	return a.execSpawner.LatestWasmModuleRoot().Await(ctx)
-}
-
 func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 	oldestKept := time.Now().Add(-1 * a.config().ExecutionRunTimeout)
 	a.runIdLock.Lock()

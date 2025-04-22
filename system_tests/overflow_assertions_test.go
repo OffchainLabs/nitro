@@ -100,6 +100,7 @@ func TestOverflowAssertions(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		valCfg.Wasm.RootPath,
 	)
 	Require(t, err)
 	err = stateless.Start(ctx)
