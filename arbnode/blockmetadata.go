@@ -70,6 +70,7 @@ type BlockMetadataFetcher struct {
 	client                 *rpcclient.RpcClient
 	exec                   execution.ExecutionClient
 	trackBlockMetadataFrom arbutil.MessageIndex
+	syncUntilBlock         uint64
 	expectedChainId        uint64
 
 	chainIdChecked bool
@@ -81,6 +82,7 @@ func NewBlockMetadataFetcher(
 	db ethdb.Database,
 	exec execution.ExecutionClient,
 	startPos uint64,
+	syncUntilBlock uint64,
 	expectedChainId uint64,
 ) (*BlockMetadataFetcher, error) {
 	var trackBlockMetadataFrom arbutil.MessageIndex
@@ -111,6 +113,7 @@ func NewBlockMetadataFetcher(
 		client:                 client,
 		exec:                   exec,
 		trackBlockMetadataFrom: trackBlockMetadataFrom,
+		syncUntilBlock:         syncUntilBlock,
 		expectedChainId:        expectedChainId,
 		chainIdChecked:         chainIdChecked,
 	}
@@ -127,31 +130,35 @@ func (b *BlockMetadataFetcher) fetch(ctx context.Context, fromBlock, toBlock uin
 	return result, nil
 }
 
-func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query []uint64, result []gethexec.NumberAndBlockMetadata) error {
+func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query []uint64, result []gethexec.NumberAndBlockMetadata) (bool, error) {
 	batch := b.db.NewBatch()
 	queryMap := util.ArrayToSet(query)
 	for _, elem := range result {
+		if elem.BlockNumber > b.syncUntilBlock {
+			b.StopWaiterSafe.StopOnly()
+			return true, nil
+		}
 		pos, err := b.exec.BlockNumberToMessageIndex(elem.BlockNumber).Await(ctx)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if _, ok := queryMap[uint64(pos)]; ok {
 			if err := batch.Put(dbKey(blockMetadataInputFeedPrefix, uint64(pos)), elem.RawMetadata); err != nil {
-				return err
+				return false, err
 			}
 			if err := batch.Delete(dbKey(missingBlockMetadataInputFeedPrefix, uint64(pos))); err != nil {
-				return err
+				return false, err
 			}
 			// If we reached the ideal batch size, commit and reset
 			if batch.ValueSize() >= ethdb.IdealBatchSize {
 				if err := batch.Write(); err != nil {
-					return err
+					return false, err
 				}
 				batch.Reset()
 			}
 		}
 	}
-	return batch.Write()
+	return false, batch.Write()
 }
 
 func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
@@ -163,16 +170,16 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 		b.chainIdChecked = true
 	}
 
-	handleQuery := func(query []uint64) bool {
+	handleQuery := func(query []uint64) (bool, bool) {
 		fromBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])).Await(ctx)
 		if err != nil {
 			log.Error("Error getting fromBlock", "err", err)
-			return false
+			return false, false
 		}
 		toBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1])).Await(ctx)
 		if err != nil {
 			log.Error("Error getting toBlock", "err", err)
-			return false
+			return false, false
 		}
 
 		result, err := b.fetch(
@@ -182,13 +189,16 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 		)
 		if err != nil {
 			log.Error("Error getting result from bulk blockMetadata API", "err", err)
-			return false
+			return false, false
 		}
-		if err = b.persistBlockMetadata(ctx, query, result); err != nil {
+		var done bool
+		done, err = b.persistBlockMetadata(ctx, query, result)
+		if err != nil {
 			log.Error("Error committing result from bulk blockMetadata API to ArbDB", "err", err)
-			return false
+			return false, false
 		}
-		return true
+
+		return done, true
 	}
 	var start []byte
 	if b.trackBlockMetadataFrom != 0 {
@@ -205,14 +215,14 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 			if query[end]-query[0]+1 > uint64(b.config.APIBlocksLimit) && len(query) >= 2 {
 				end -= 1
 			}
-			if success := handleQuery(query[:end+1]); !success {
+			if done, success := handleQuery(query[:end+1]); done || !success {
 				return b.config.SyncInterval
 			}
 			query = query[end+1:]
 		}
 	}
 	if len(query) > 0 {
-		_ = handleQuery(query)
+		_, _ = handleQuery(query)
 	}
 	return b.config.SyncInterval
 }
