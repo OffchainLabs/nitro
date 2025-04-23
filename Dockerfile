@@ -231,7 +231,7 @@ RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de
 RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
 #RUN ./download-machine.sh consensus-v40-rc.1 0x6dae396b0b7644a2d63b4b22e6452b767aa6a04b6778dadebdd74aa40f40a5c5
 #RUN ./download-machine.sh consensus-v40-rc.2 0xa8206be13d53e456c7ab061d94bab5b229d674ac57ffe7281216479a8820fcc0
-RUN ./download-machine.sh consensus-v40 0x08b78f6f60c915c64421ece9314bf364cdcce41aeaf4f4c5dd3151fa468e4179
+RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
 
 FROM golang:1.23.1-bookworm AS node-builder
 WORKDIR /workspace
