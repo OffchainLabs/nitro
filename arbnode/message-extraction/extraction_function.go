@@ -1,13 +1,18 @@
 package mel
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 )
@@ -63,8 +68,10 @@ func (m *MessageExtractionLayer) extractMessages(
 			return nil, nil, err
 		}
 		_ = rawSequencerMsg
-		// TODO: Implement get next message.
-		msg := &arbostypes.MessageWithMetadata{}
+		msg, err := m.extractArbosMessage(rawSequencerMsg)
+		if err != nil {
+			return nil, nil, err
+		}
 		messages = append(messages, msg)
 		state.AccumulateMessage(msg)
 	}
@@ -75,4 +82,123 @@ func (m *MessageExtractionLayer) extractMessages(
 	state.ParentChainBlockNumber = parentChainBlock.NumberU64()
 
 	return state, messages, nil
+}
+
+func (m *MessageExtractionLayer) extractArbosMessage(seqMsg *arbstate.SequencerMessage) (*arbostypes.MessageWithMetadata, error) {
+	delayedMessagesRead := uint64(0) // TODO: Get from the MEL state.
+	segmentNum := uint64(0)
+	submessageNumber := uint64(0)
+	targetSubMessage := uint64(0)
+	blockNumber := uint64(0)
+	timestamp := uint64(0)
+	var segment []byte
+	for {
+		if segmentNum >= uint64(len(seqMsg.Segments)) {
+			break
+		}
+		segment = seqMsg.Segments[segmentNum]
+		if len(segment) == 0 {
+			segmentNum++
+			continue
+		}
+		segmentKind := segment[0]
+		if segmentKind == arbstate.BatchSegmentKindAdvanceTimestamp || segmentKind == arbstate.BatchSegmentKindAdvanceL1BlockNumber {
+			rd := bytes.NewReader(segment[1:])
+			advancing, err := rlp.NewStream(rd, 16).Uint64()
+			if err != nil {
+				log.Warn("Error parsing sequencer advancing segment", "err", err)
+				segmentNum++
+				continue
+			}
+			if segmentKind == arbstate.BatchSegmentKindAdvanceTimestamp {
+				timestamp += advancing
+			} else if segmentKind == arbstate.BatchSegmentKindAdvanceL1BlockNumber {
+				blockNumber += advancing
+			}
+			segmentNum++
+		} else if submessageNumber < targetSubMessage {
+			segmentNum++
+			submessageNumber++
+		} else {
+			break
+		}
+	}
+	if timestamp < seqMsg.MinTimestamp {
+		timestamp = seqMsg.MinTimestamp
+	} else if timestamp > seqMsg.MaxTimestamp {
+		timestamp = seqMsg.MaxTimestamp
+	}
+	if blockNumber < seqMsg.MinL1Block {
+		blockNumber = seqMsg.MinL1Block
+	} else if blockNumber > seqMsg.MaxL1Block {
+		blockNumber = seqMsg.MaxL1Block
+	}
+	if segmentNum >= uint64(len(seqMsg.Segments)) {
+		// after end of batch there might be "virtual" delayedMsgSegments
+		log.Warn("reading virtual delayed message segment")
+		segment = []byte{arbstate.BatchSegmentKindDelayedMessages}
+	} else {
+		segment = seqMsg.Segments[segmentNum]
+	}
+	if len(segment) == 0 {
+		log.Error("Empty sequencer message segment", "segmentNum", segmentNum)
+		return nil, nil
+	}
+	kind := segment[0]
+	segment = segment[1:]
+	var msg *arbostypes.MessageWithMetadata
+	if kind == arbstate.BatchSegmentKindL2Message || kind == arbstate.BatchSegmentKindL2MessageBrotli {
+		if kind == arbstate.BatchSegmentKindL2MessageBrotli {
+			decompressed, err := arbcompress.Decompress(segment, arbostypes.MaxL2MessageSize)
+			if err != nil {
+				log.Info("dropping compressed message", "err", err)
+				return nil, nil
+			}
+			segment = decompressed
+		}
+
+		msg = &arbostypes.MessageWithMetadata{
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{
+					Kind:        arbostypes.L1MessageType_L2Message,
+					Poster:      l1pricing.BatchPosterAddress,
+					BlockNumber: blockNumber,
+					Timestamp:   timestamp,
+					RequestId:   nil,
+					L1BaseFee:   big.NewInt(0),
+				},
+				L2msg: segment,
+			},
+			DelayedMessagesRead: delayedMessagesRead,
+		}
+	} else if kind == arbstate.BatchSegmentKindDelayedMessages {
+		if delayedMessagesRead >= seqMsg.AfterDelayedMessages {
+			if segmentNum < uint64(len(seqMsg.Segments)) {
+				log.Warn(
+					"Attempt to read past batch delayed message count",
+					"delayedMessagesRead", delayedMessagesRead,
+					"batchAfterDelayedMessages", seqMsg.AfterDelayedMessages,
+				)
+			}
+			msg = &arbostypes.MessageWithMetadata{
+				Message:             arbostypes.InvalidL1Message,
+				DelayedMessagesRead: seqMsg.AfterDelayedMessages,
+			}
+		} else {
+			// delayed, realErr := r.backend.ReadDelayedInbox(delayedMessagesRead)
+			// if realErr != nil {
+			// 	return nil, realErr
+			// }
+			// r.delayedMessagesRead += 1
+			// msg = &arbostypes.MessageWithMetadata{
+			// 	Message:             delayed,
+			// 	DelayedMessagesRead: r.delayedMessagesRead,
+			// }
+			msg = &arbostypes.MessageWithMetadata{}
+		}
+	} else {
+		log.Error("Bad sequencer message segment kind", "segmentNum", segmentNum, "kind", kind)
+		return nil, nil
+	}
+	return msg, nil
 }

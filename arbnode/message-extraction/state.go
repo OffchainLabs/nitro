@@ -7,16 +7,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
-type StateDatabase interface {
-	SaveState(ctx context.Context, state *State) error
-}
-
-type StateFetcher interface {
-	GetState(
-		ctx context.Context, parentChainBlockHash common.Hash,
-	) (*State, error)
-}
-
+// State defines the main struct describing the results of processing a single parent
+// chain block at the message extraction layer. It is a versioned consensus type that can
+// be deterministically constructed from any start state and parent chain blocks from
+// that point onwards.
 type State struct {
 	Version                      uint16
 	ParentChainId                uint64
@@ -25,6 +19,20 @@ type State struct {
 	ParentChainPreviousBlockHash common.Hash
 	BatchPostingTargetAddress    common.Address
 	MessageAccumulator           common.Hash
+}
+
+type StateDatabase interface {
+	SaveState(
+		ctx context.Context,
+		state *State,
+		messages []*arbostypes.MessageWithMetadata,
+	) error
+}
+
+type StateFetcher interface {
+	GetState(
+		ctx context.Context, parentChainBlockHash common.Hash,
+	) (*State, error)
 }
 
 func (s *State) Clone() *State {

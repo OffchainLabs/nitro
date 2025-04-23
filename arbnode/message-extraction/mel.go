@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -47,20 +46,16 @@ var TestMELConfig = MELConfig{
 
 type MessageExtractionLayer struct {
 	stopwaiter.StopWaiter
-	config         MELConfigFetcher
-	l1Reader       *headerreader.HeaderReader
-	delayedBridge  *arbnode.DelayedBridge
-	sequencerInbox *arbnode.SequencerInbox
-	stateFetcher   StateFetcher
-	addrs          *chaininfo.RollupAddresses
-	melDB          StateDatabase
-	dataProviders  []daprovider.Reader
+	config        MELConfigFetcher
+	l1Reader      *headerreader.HeaderReader
+	stateFetcher  StateFetcher
+	addrs         *chaininfo.RollupAddresses
+	melDB         StateDatabase
+	dataProviders []daprovider.Reader
 }
 
 func NewMessageExtractionLayer(
 	l1Reader *headerreader.HeaderReader,
-	delayedBridge *arbnode.DelayedBridge,
-	sequencerInbox *arbnode.SequencerInbox,
 	rollupAddrs *chaininfo.RollupAddresses,
 	stateFetcher StateFetcher,
 	melDB StateDatabase,
@@ -71,14 +66,12 @@ func NewMessageExtractionLayer(
 		return nil, err
 	}
 	return &MessageExtractionLayer{
-		l1Reader:       l1Reader,
-		delayedBridge:  delayedBridge,
-		sequencerInbox: sequencerInbox,
-		addrs:          rollupAddrs,
-		stateFetcher:   stateFetcher,
-		melDB:          melDB,
-		dataProviders:  dataProviders,
-		config:         config,
+		l1Reader:      l1Reader,
+		addrs:         rollupAddrs,
+		stateFetcher:  stateFetcher,
+		melDB:         melDB,
+		dataProviders: dataProviders,
+		config:        config,
 	}, nil
 }
 
@@ -126,7 +119,7 @@ func (m *MessageExtractionLayer) Start(ctxIn context.Context) error {
 			return err
 		}
 		endNum := latestBlock.Number.Uint64()
-		postState, err := m.walkForwards(
+		postState, err := m.WalkForwards(
 			ctx,
 			state,
 			client,
@@ -150,7 +143,7 @@ type blockFetcher interface {
 	) (*types.Header, error)
 }
 
-func (m *MessageExtractionLayer) walkForwards(
+func (m *MessageExtractionLayer) WalkForwards(
 	ctx context.Context,
 	initialState *State,
 	blockFetcher blockFetcher,
@@ -166,7 +159,7 @@ func (m *MessageExtractionLayer) walkForwards(
 		if err != nil {
 			return nil, err
 		}
-		postState, err := m.extractMessages(
+		postState, msgs, err := m.extractMessages(
 			ctx,
 			state,
 			parentChainBlock,
@@ -175,7 +168,7 @@ func (m *MessageExtractionLayer) walkForwards(
 			return nil, err
 		}
 		state = postState
-		if err := m.melDB.SaveState(ctx, state); err != nil {
+		if err := m.melDB.SaveState(ctx, state, msgs); err != nil {
 			return nil, err
 		}
 		currNum += 1
