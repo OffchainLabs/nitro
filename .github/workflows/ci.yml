@@ -72,6 +72,10 @@ jobs:
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
+      - name: Get Rust version
+        id: rust-version
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
@@ -98,8 +102,8 @@ jobs:
             arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
             /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.rustc_hash }}-
+          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v3
