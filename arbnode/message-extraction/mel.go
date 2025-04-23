@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -53,6 +54,7 @@ type MessageExtractionLayer struct {
 	stateFetcher   StateFetcher
 	addrs          *chaininfo.RollupAddresses
 	melDB          StateDatabase
+	dataProviders  []daprovider.Reader
 }
 
 func NewMessageExtractionLayer(
@@ -61,8 +63,9 @@ func NewMessageExtractionLayer(
 	sequencerInbox *arbnode.SequencerInbox,
 	rollupAddrs *chaininfo.RollupAddresses,
 	stateFetcher StateFetcher,
-	config MELConfigFetcher,
 	melDB StateDatabase,
+	dataProviders []daprovider.Reader,
+	config MELConfigFetcher,
 ) (*MessageExtractionLayer, error) {
 	if err := config().Validate(); err != nil {
 		return nil, err
@@ -74,6 +77,7 @@ func NewMessageExtractionLayer(
 		addrs:          rollupAddrs,
 		stateFetcher:   stateFetcher,
 		melDB:          melDB,
+		dataProviders:  dataProviders,
 		config:         config,
 	}, nil
 }

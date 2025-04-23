@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
 type StateDatabase interface {
@@ -22,4 +23,12 @@ type State struct {
 	ParentChainBlockNumber       uint64
 	ParentChainBlockHash         common.Hash
 	ParentChainPreviousBlockHash common.Hash
+	BatchPostingTargetAddress    common.Address
+	MessageAccumulator           common.Hash
 }
+
+func (s *State) Clone() *State {
+	return s // TODO: Implement smart cloning of the state.
+}
+
+func (s *State) AccumulateMessage(message *arbostypes.MessageWithMetadata) {}
