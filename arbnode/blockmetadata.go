@@ -134,7 +134,7 @@ func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query [
 	batch := b.db.NewBatch()
 	queryMap := util.ArrayToSet(query)
 	for _, elem := range result {
-		if elem.BlockNumber > b.syncUntilBlock {
+		if (b.syncUntilBlock != 0) && (elem.BlockNumber > b.syncUntilBlock) {
 			b.StopWaiterSafe.StopOnly()
 			return true, nil
 		}
