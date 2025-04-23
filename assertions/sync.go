@@ -294,7 +294,7 @@ func (m *Manager) findCanonicalAssertionBranch(
 					return false, err
 				}
 				return expectedState.Equals(protocol.GoExecutionStateFromSolidity(assertion.AfterState)), nil
-			})
+			}, func(rc *retry.RetryConfig) { rc.LevelWarningError = "could not check if we have result at count" })
 			if err != nil {
 				return errors.New("could not check for assertion agreements")
 			}

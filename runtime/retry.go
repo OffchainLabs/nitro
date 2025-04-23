@@ -9,6 +9,7 @@ package retry
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -22,7 +23,8 @@ var (
 )
 
 type RetryConfig struct {
-	sleepTime time.Duration
+	sleepTime         time.Duration
+	LevelWarningError string // can be extended to a list or regex if demanded in future, currently supporting for one error
 }
 
 type Opt func(*RetryConfig)
@@ -49,7 +51,11 @@ func UntilSucceedsMultipleReturnValue[T, U any](ctx context.Context, fn func() (
 		got, got2, err := fn()
 		if err != nil {
 			count++
-			log.Error("Could not succeed function after retries",
+			logLevel := log.Error
+			if cfg.LevelWarningError != "" && strings.Contains(err.Error(), cfg.LevelWarningError) {
+				logLevel = log.Warn
+			}
+			logLevel("Could not succeed function after retries",
 				"retryCount", count,
 				"err", err,
 			)
