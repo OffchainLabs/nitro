@@ -601,7 +601,6 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 	}
 	rpcClient := b.l1Reader.Client()
 	config := b.config()
-	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
 	to := b.dataPoster.Sender()
 
 	data := []byte{}
@@ -609,12 +608,15 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 		data = append(data, 1)
 	}
 
-	blockNumber, err := rpcClient.BlockNumber(ctx)
+	// Rather than checking the latest block, we're going to check a recent
+	// block (5 blocks back) to avoid reorgs.
+	targetBlockNumber := latestHeader.Number.Sub(latestHeader.Number, big.NewInt(5))
+	targetHeader, err := rpcClient.HeaderByNumber(ctx, targetBlockNumber)
 	if err != nil {
 		return false, err
 	}
-	// Go back 5 blocks to reduce the chance of reorgs
-	blockHex := hexutil.Uint64(blockNumber - 5).String()
+	maxFeePerGas := arbmath.BigMulByUBips(targetHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
+	blockHex := hexutil.Uint64(targetBlockNumber.Uint64()).String()
 
 	gasParams := estimateGasParams{
 		From:         b.dataPoster.Sender(),
@@ -625,12 +627,14 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 
 	gas1, err := estimateGas(rpcClient.Client(), ctx, gasParams, blockHex)
 	if err != nil {
+		log.Warn("Failed to estimate gas for EIP-7623 check 1", "err", err)
 		return false, err
 	}
 
 	gasParams.Data = append(gasParams.Data, 1)
 	gas2, err := estimateGas(rpcClient.Client(), ctx, gasParams, blockHex)
 	if err != nil {
+		log.Warn("Failed to estimate gas for EIP-7623 check 2", "err", err)
 		return false, err
 	}
 
