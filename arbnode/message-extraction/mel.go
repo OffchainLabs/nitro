@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -46,12 +47,13 @@ var TestMELConfig = MELConfig{
 
 type MessageExtractionLayer struct {
 	stopwaiter.StopWaiter
-	config        MELConfigFetcher
-	l1Reader      *headerreader.HeaderReader
-	stateFetcher  StateFetcher
-	addrs         *chaininfo.RollupAddresses
-	melDB         StateDatabase
-	dataProviders []daprovider.Reader
+	config         MELConfigFetcher
+	l1Reader       *headerreader.HeaderReader
+	stateFetcher   StateFetcher
+	addrs          *chaininfo.RollupAddresses
+	melDB          StateDatabase
+	sequencerInbox *arbnode.SequencerInbox
+	dataProviders  []daprovider.Reader
 }
 
 func NewMessageExtractionLayer(
@@ -59,6 +61,7 @@ func NewMessageExtractionLayer(
 	rollupAddrs *chaininfo.RollupAddresses,
 	stateFetcher StateFetcher,
 	melDB StateDatabase,
+	sequencerInbox *arbnode.SequencerInbox,
 	dataProviders []daprovider.Reader,
 	config MELConfigFetcher,
 ) (*MessageExtractionLayer, error) {
@@ -66,12 +69,13 @@ func NewMessageExtractionLayer(
 		return nil, err
 	}
 	return &MessageExtractionLayer{
-		l1Reader:      l1Reader,
-		addrs:         rollupAddrs,
-		stateFetcher:  stateFetcher,
-		melDB:         melDB,
-		dataProviders: dataProviders,
-		config:        config,
+		l1Reader:       l1Reader,
+		addrs:          rollupAddrs,
+		stateFetcher:   stateFetcher,
+		melDB:          melDB,
+		sequencerInbox: sequencerInbox,
+		dataProviders:  dataProviders,
+		config:         config,
 	}, nil
 }
 

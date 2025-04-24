@@ -2,13 +2,20 @@ package arbtest
 
 import (
 	"context"
+	"math/big"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/arbnode"
 	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 type mockMELStateFetcher struct {
@@ -55,27 +62,51 @@ func TestMessageExtractionLayer(t *testing.T) {
 	forceBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
 
 	// Create an initial MEL state from the latest confirmed assertion.
+	rollup, err := rollupgen.NewRollupUserLogic(builder.addresses.Rollup, builder.L1.Client)
+	Require(t, err)
+	confirmedHash, err := rollup.LatestConfirmed(&bind.CallOpts{})
+	Require(t, err)
+	latestConfirmedAssertion, err := bold.ReadBoldAssertionCreationInfo(
+		ctx,
+		rollup,
+		builder.L1.Client,
+		builder.addresses.Rollup,
+		confirmedHash,
+	)
+	Require(t, err)
+	startBlock, err := builder.L1.Client.BlockByNumber(ctx, new(big.Int).SetUint64(latestConfirmedAssertion.CreationL1Block))
+	Require(t, err)
 	latestBlock, err := builder.L1.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	chainId, err := builder.L1.Client.ChainID(ctx)
 	Require(t, err)
 	melState := &mel.State{
-		Version:                0,
-		ParentChainId:          chainId.Uint64(),
-		ParentChainBlockNumber: 0,
-		// ParentChainBlockHash:         builder.L1Info.BlockHash,
-		// ParentChainPreviousBlockHash: builder.L1Info.BlockHash,
-		BatchPostingTargetAddress: builder.addresses.SequencerInbox,
-		MessageAccumulator:        common.Hash{},
+		Version:                      0,
+		ParentChainId:                chainId.Uint64(),
+		ParentChainBlockNumber:       latestConfirmedAssertion.CreationL1Block,
+		ParentChainBlockHash:         startBlock.Hash(),
+		ParentChainPreviousBlockHash: startBlock.ParentHash(),
+		BatchPostingTargetAddress:    builder.addresses.SequencerInbox,
+		MessageAccumulator:           common.Hash{},
 	}
 
 	// Construct a new MEL service and provide with an initial MEL state
 	// to begin extracting messages from the parent chain.
+	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
+	Require(t, err)
+
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
+	l1Reader, err := headerreader.New(ctx, builder.L1.Client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
+	Require(t, err)
+	l1Reader.Start(ctx)
+	defer l1Reader.StopAndWait()
+
 	melService, err := mel.NewMessageExtractionLayer(
-		builder.L1.ConsensusNode.L1Reader,
+		l1Reader,
 		builder.addresses,
 		&mockMELStateFetcher{state: melState},
 		&mockMELDB{},
+		seqInbox,
 		nil, // TODO: Provide a da reader here.
 		func() *mel.MELConfig {
 			return &mel.DefaultMELConfig
