@@ -652,7 +652,10 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 		return false, fmt.Errorf("unexpected gas difference, gas1: %d, gas2: %d", gas1, gas2)
 	}
 	b.useEip7623 = parentChainIsUsingEIP7623
-	b.checkEip7623 = false
+	if parentChainIsUsingEIP7623 {
+		// Once the parent chain is using EIP-7623, we don't need to check it again.
+		b.checkEip7623 = false
+	}
 	return parentChainIsUsingEIP7623, nil
 }
 
