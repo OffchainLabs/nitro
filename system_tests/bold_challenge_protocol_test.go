@@ -166,6 +166,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		valCfg.Wasm.RootPath,
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -181,6 +182,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStackB,
+		valCfg.Wasm.RootPath,
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)
@@ -499,14 +501,15 @@ func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestIn
 			if ctx.Err() != nil {
 				break
 			}
-			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1Info, client, ctx)
-			latestBlock, err := client.BlockNumber(ctx)
-			if ctx.Err() != nil {
-				break
+			to := l1Info.GetAddress("Faucet")
+			tx := l1Info.PrepareTxTo("Faucet", &to, l1Info.TransferGas, common.Big0, nil)
+			if err := client.SendTransaction(ctx, tx); err != nil {
+				t.Log("Error sending tx:", err)
+				continue
 			}
-			Require(t, err)
-			if latestBlock > 150 {
-				delay = time.Second
+			if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+				t.Log("Error ensuring tx succeeded:", err)
+				continue
 			}
 		}
 	}
@@ -623,6 +626,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
 		nil, // Blob reader.
+		"",  // Wasm root path.
 	)
 	Require(t, err)
 
@@ -829,7 +833,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */)
+	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, "" /* wasm root path */)
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack)
