@@ -591,23 +591,20 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 		return false, err
 	}
 
-	gas1, err := estimateGasOnBlock(rpcClient.Client(), ctx, estimateGasParams{
+	gasParams := estimateGasParams{
 		From:         b.dataPoster.Sender(),
 		To:           &to,
 		Data:         data,
 		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
-	}, blockHex)
+	}
+
+	gas1, err := estimateGas(rpcClient.Client(), ctx, gasParams, blockHex)
 	if err != nil {
 		return false, err
 	}
 
-	data = append(data, 1)
-	gas2, err := estimateGasOnBlock(rpcClient.Client(), ctx, estimateGasParams{
-		From:         b.dataPoster.Sender(),
-		To:           &to,
-		Data:         data,
-		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
-	}, blockHex)
+	gasParams.Data = append(gasParams.Data, 1)
+	gas2, err := estimateGas(rpcClient.Client(), ctx, gasParams, blockHex)
 	if err != nil {
 		return false, err
 	}
@@ -1176,13 +1173,7 @@ type OverrideAccount struct {
 
 type StateOverride map[common.Address]OverrideAccount
 
-func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams) (uint64, error) {
-	var gas hexutil.Uint64
-	err := client.CallContext(ctx, &gas, "eth_estimateGas", params)
-	return uint64(gas), err
-}
-
-func estimateGasOnBlock(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
+func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
 	var gas hexutil.Uint64
 	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, blockHex)
 	return uint64(gas), err
@@ -1215,7 +1206,7 @@ func (b *BatchPoster) estimateGasSimple(
 		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
 		BlobHashes:   realBlobHashes,
 		AccessList:   realAccessList,
-	})
+	}, "latest")
 	if err != nil {
 		return 0, fmt.Errorf("%w: %w", ErrNormalGasEstimationFailed, err)
 	}
