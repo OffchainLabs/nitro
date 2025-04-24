@@ -322,9 +322,10 @@ func (bv *BidValidator) validateBid(
 	// Signature verification expects the last byte of the signature to have 27 subtracted,
 	// as it represents the recovery ID. If the last byte is greater than or equal to 27, it indicates a recovery ID that hasn't been adjusted yet,
 	// it's needed for internal signature verification logic.
-	if sigItem[len(sigItem)-1] >= 27 {
-		sigItem[len(sigItem)-1] -= 27
+	if sigItem[len(sigItem)-1] != 27 && sigItem[len(sigItem)-1] != 28 {
+		return nil, errors.New("invalid Ethereum signature (V is not 27 or 28)")
 	}
+	sigItem[len(sigItem)-1] -= 27
 
 	bidHash, err := bid.ToEIP712Hash(bv.auctionContractDomainSeparator)
 	if err != nil {
