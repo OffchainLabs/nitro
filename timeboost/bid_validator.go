@@ -337,6 +337,9 @@ func (bv *BidValidator) validateBid(
 	}
 	// Check how many bids the bidder has sent in this round and cap according to a limit.
 	bidder := crypto.PubkeyToAddress(*pubkey)
+	if !crypto.VerifySignature(crypto.CompressPubkey(pubkey), bidHash[:], sigItem[:64]) {
+		return nil, errors.New("invalid signature")
+	}
 	bv.Lock()
 	numBids, ok := bv.bidsPerSenderInRound[bidder]
 	if !ok {
