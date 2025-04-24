@@ -122,8 +122,10 @@ type BatchPoster struct {
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
 
-	accessList  func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
-	parentChain *parent.ParentChain
+	accessList   func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
+	parentChain  *parent.ParentChain
+	checkEip7623 bool
+	useEip7623   bool
 }
 
 type l1BlockBound int
@@ -177,6 +179,7 @@ type BatchPosterConfig struct {
 	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
 	MaxEmptyBatchDelay             time.Duration               `koanf:"max-empty-batch-delay"`
 	DelayBufferThresholdMargin     uint64                      `koanf:"delay-buffer-threshold-margin"`
+	ParentChainEip7623             string                      `koanf:"parent-chain-eip7623"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -237,6 +240,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
 	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed")
 	f.Uint64(prefix+".delay-buffer-threshold-margin", DefaultBatchPosterConfig.DelayBufferThresholdMargin, "the number of blocks to post the batch before reaching the delay buffer threshold")
+	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\")")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -273,6 +277,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	CheckBatchCorrectness:          true,
 	MaxEmptyBatchDelay:             3 * 24 * time.Hour,
 	DelayBufferThresholdMargin:     25, // 5 minutes considering 12-second blocks
+	ParentChainEip7623:             "auto",
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -305,6 +310,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	CheckBatchCorrectness:          true,
 	DelayBufferThresholdMargin:     0,
+	ParentChainEip7623:             "auto",
 }
 
 type BatchPosterOpts struct {
@@ -330,6 +336,19 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 
 	if err = opts.Config().Validate(); err != nil {
 		return nil, err
+	}
+	var checkEip7623 bool
+	var useEip7623 bool
+	switch opts.Config().ParentChainEip7623 {
+	case "no":
+		checkEip7623 = false
+		useEip7623 = false
+	case "yes":
+		checkEip7623 = false
+		useEip7623 = true
+	case "auto":
+		checkEip7623 = true
+		useEip7623 = false
 	}
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
@@ -364,6 +383,8 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		redisLock:          redisLock,
 		dapReaders:         opts.DAPReaders,
 		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
+		checkEip7623:       checkEip7623,
+		useEip7623:         useEip7623,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -575,6 +596,9 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 	// TOTAL_COST_FLOOR_PER_TOKEN * 4 * (length(calldata_tx_2) - length(calldata_tx_1)) =
 	// 40
 
+	if !b.checkEip7623 {
+		return b.useEip7623, nil
+	}
 	rpcClient := b.l1Reader.Client()
 	config := b.config()
 	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
@@ -585,11 +609,12 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 		data = append(data, 1)
 	}
 
-	var blockHex string
-	err := rpcClient.Client().CallContext(ctx, &blockHex, "eth_blockNumber")
+	blockNumber, err := rpcClient.BlockNumber(ctx)
 	if err != nil {
 		return false, err
 	}
+	// Go back 5 blocks to reduce the chance of reorgs
+	blockHex := hexutil.Uint64(blockNumber - 5).String()
 
 	gasParams := estimateGasParams{
 		From:         b.dataPoster.Sender(),
@@ -626,6 +651,8 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 	} else {
 		return false, fmt.Errorf("unexpected gas difference, gas1: %d, gas2: %d", gas1, gas2)
 	}
+	b.useEip7623 = parentChainIsUsingEIP7623
+	b.checkEip7623 = false
 	return parentChainIsUsingEIP7623, nil
 }
 
