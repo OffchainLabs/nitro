@@ -76,14 +76,12 @@ func TestMessageExtractionLayer(t *testing.T) {
 	Require(t, err)
 	startBlock, err := builder.L1.Client.BlockByNumber(ctx, new(big.Int).SetUint64(latestConfirmedAssertion.CreationL1Block))
 	Require(t, err)
-	latestBlock, err := builder.L1.Client.BlockByNumber(ctx, nil)
-	Require(t, err)
 	chainId, err := builder.L1.Client.ChainID(ctx)
 	Require(t, err)
 	melState := &mel.State{
 		Version:                      0,
 		ParentChainId:                chainId.Uint64(),
-		ParentChainBlockNumber:       latestConfirmedAssertion.CreationL1Block,
+		ParentChainBlockNumber:       startBlock.NumberU64(),
 		ParentChainBlockHash:         startBlock.Hash(),
 		ParentChainPreviousBlockHash: startBlock.ParentHash(),
 		BatchPostingTargetAddress:    builder.addresses.SequencerInbox,
@@ -101,7 +99,7 @@ func TestMessageExtractionLayer(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	melService, err := mel.NewMessageExtractionLayer(
+	extractor, err := mel.NewMessageExtractor(
 		l1Reader,
 		builder.addresses,
 		&mockMELStateFetcher{state: melState},
@@ -114,14 +112,10 @@ func TestMessageExtractionLayer(t *testing.T) {
 	)
 	Require(t, err)
 
-	postState, err := melService.WalkForwards(
-		ctx,
-		melState,
-		builder.L1.Client,
-		latestBlock.NumberU64(),
-	)
+	err = extractor.Act(ctx)
 	Require(t, err)
-	_ = postState
+	err = extractor.Act(ctx)
+	Require(t, err)
 }
 
 func forceBatchPosting(

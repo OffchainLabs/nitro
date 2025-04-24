@@ -23,7 +23,7 @@ var (
 	ErrInvalidParentChainBlock = errors.New("invalid parent chain block")
 )
 
-func (m *MessageExtractionLayer) extractMessages(
+func (m *MessageExtractor) extractMessages(
 	ctx context.Context,
 	inputState *State,
 	parentChainBlock *types.Block,
@@ -84,7 +84,7 @@ func (m *MessageExtractionLayer) extractMessages(
 	return state, messages, nil
 }
 
-func (m *MessageExtractionLayer) extractArbosMessage(seqMsg *arbstate.SequencerMessage) (*arbostypes.MessageWithMetadata, error) {
+func (m *MessageExtractor) extractArbosMessage(seqMsg *arbstate.SequencerMessage) (*arbostypes.MessageWithMetadata, error) {
 	delayedMessagesRead := uint64(0) // TODO: Get from the MEL state.
 	segmentNum := uint64(0)
 	submessageNumber := uint64(0)

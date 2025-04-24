@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -45,7 +45,7 @@ var TestMELConfig = MELConfig{
 	ReadMode: "latest",
 }
 
-type MessageExtractionLayer struct {
+type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	config         MELConfigFetcher
 	l1Reader       *headerreader.HeaderReader
@@ -54,9 +54,10 @@ type MessageExtractionLayer struct {
 	melDB          StateDatabase
 	sequencerInbox *arbnode.SequencerInbox
 	dataProviders  []daprovider.Reader
+	fsm            *fsm.Fsm[action, FSMState]
 }
 
-func NewMessageExtractionLayer(
+func NewMessageExtractor(
 	l1Reader *headerreader.HeaderReader,
 	rollupAddrs *chaininfo.RollupAddresses,
 	stateFetcher StateFetcher,
@@ -64,11 +65,15 @@ func NewMessageExtractionLayer(
 	sequencerInbox *arbnode.SequencerInbox,
 	dataProviders []daprovider.Reader,
 	config MELConfigFetcher,
-) (*MessageExtractionLayer, error) {
+) (*MessageExtractor, error) {
 	if err := config().Validate(); err != nil {
 		return nil, err
 	}
-	return &MessageExtractionLayer{
+	fsm, err := newFSM(Start)
+	if err != nil {
+		return nil, err
+	}
+	return &MessageExtractor{
 		l1Reader:       l1Reader,
 		addrs:          rollupAddrs,
 		stateFetcher:   stateFetcher,
@@ -76,135 +81,39 @@ func NewMessageExtractionLayer(
 		sequencerInbox: sequencerInbox,
 		dataProviders:  dataProviders,
 		config:         config,
+		fsm:            fsm,
 	}, nil
 }
 
-func (m *MessageExtractionLayer) Start(ctxIn context.Context) error {
+func (m *MessageExtractor) Start(ctxIn context.Context) error {
 	m.StopWaiter.Start(ctxIn, m)
-	client := m.l1Reader.Client()
-	rollup, err := rollupgen.NewRollupUserLogic(m.addrs.Rollup, client)
-	if err != nil {
-		return err
-	}
-	confirmedAssertionHash, err := rollup.LatestConfirmed(m.callOpts())
-	if err != nil {
-		return err
-	}
-	ctx := m.StopWaiter.GetContext()
-	latestConfirmedAssertion, err := bold.ReadBoldAssertionCreationInfo(
-		ctx,
-		rollup,
-		client,
-		m.addrs.Rollup,
-		confirmedAssertionHash,
+	runChan := make(chan struct{}, 1)
+	return stopwaiter.CallIterativelyWith(
+		&m.StopWaiterSafe,
+		func(ctx context.Context, ignored struct{}) time.Duration {
+			if err := m.Act(ctx); err != nil {
+				log.Error("Error in message extractor", "err", err)
+			}
+			return time.Second
+		},
+		runChan,
 	)
-	if err != nil {
-		return err
-	}
-	startBlock, err := client.HeaderByNumber(
-		ctx,
-		new(big.Int).SetUint64(latestConfirmedAssertion.CreationL1Block),
-	)
-	if err != nil {
-		return err
-	}
-	state, err := m.stateFetcher.GetState(
-		ctx,
-		startBlock.Hash(),
-	)
-	if err != nil {
-		return err
-	}
-	// TODO: Check this state parent chain id corresponds to
-	// the node's configured chain id.
-	for {
-		latestBlock, err := client.HeaderByNumber(ctx, m.desiredBlockNumber())
-		if err != nil {
-			return err
-		}
-		endNum := latestBlock.Number.Uint64()
-		postState, err := m.WalkForwards(
-			ctx,
-			state,
-			client,
-			endNum,
-		)
-		if err != nil {
-			return err
-		}
-		state = postState
-	}
 }
 
-type blockFetcher interface {
-	BlockByNumber(
-		ctx context.Context,
-		number *big.Int,
-	) (*types.Block, error)
-	HeaderByNumber(
-		ctx context.Context,
-		number *big.Int,
-	) (*types.Header, error)
-}
-
-func (m *MessageExtractionLayer) WalkForwards(
-	ctx context.Context,
-	initialState *State,
-	blockFetcher blockFetcher,
-	endBlockNumber uint64,
-) (*State, error) {
-	currNum := initialState.ParentChainBlockNumber
-	state := initialState
-	for currNum < endBlockNumber {
-		parentChainBlock, err := blockFetcher.BlockByNumber(
-			ctx,
-			new(big.Int).SetUint64(currNum),
-		)
-		if err != nil {
-			return nil, err
-		}
-		postState, msgs, err := m.extractMessages(
-			ctx,
-			state,
-			parentChainBlock,
-		)
-		if err != nil {
-			return nil, err
-		}
-		state = postState
-		if err := m.melDB.SaveState(ctx, state, msgs); err != nil {
-			return nil, err
-		}
-		currNum += 1
-	}
-	return state, nil
-}
-
-func (m *MessageExtractionLayer) desiredBlockNumber() *big.Int {
-	readMode := m.config().ReadMode
-	if readMode == "latest" {
-		return big.NewInt(int64(rpc.LatestBlockNumber))
-	} else if readMode == "safe" {
-		return big.NewInt(int64(rpc.SafeBlockNumber))
-	} else {
-		return big.NewInt(int64(rpc.FinalizedBlockNumber))
-	}
-}
-
-func (m *MessageExtractionLayer) callOpts() *bind.CallOpts {
+func (m *MessageExtractor) callOpts(ctx context.Context) *bind.CallOpts {
 	readMode := m.config().ReadMode
 	if readMode == "latest" {
 		return &bind.CallOpts{
-			Context: m.StopWaiter.GetContext(),
+			Context: ctx,
 		}
 	} else if readMode == "safe" {
 		return &bind.CallOpts{
-			Context:     m.StopWaiter.GetContext(),
+			Context:     ctx,
 			BlockNumber: big.NewInt(int64(rpc.SafeBlockNumber)),
 		}
 	} else {
 		return &bind.CallOpts{
-			Context:     m.StopWaiter.GetContext(),
+			Context:     ctx,
 			BlockNumber: big.NewInt(int64(rpc.FinalizedBlockNumber)),
 		}
 	}
