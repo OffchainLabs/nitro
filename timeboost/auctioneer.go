@@ -230,6 +230,61 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	}, nil
 }
 
+func (a *AuctioneerServer) consumeNextBid(ctx context.Context) time.Duration {
+	req, err := a.consumer.Consume(ctx)
+	if err != nil {
+		log.Error("Consuming request", "error", err)
+		return 0
+	}
+	if req == nil {
+		// There's nothing in the queue.
+		return time.Millisecond * 250
+	}
+
+	if err := validateBidTemporal(&a.roundTimingInfo, (uint64)(req.Value.Round)); err != nil {
+		log.Info("Consumed bid that was no longer valid, skipping", "err", err, "msgId", req.ID)
+		req.Ack()
+		if errerr := a.consumer.SetError(ctx, req.ID, err.Error()); errerr != nil {
+			log.Warn("Error setting error response to bid", "err", err, "msgId", req.ID)
+			// We tried, all we can do here is warn.
+			// It will be cleaned up by the Consumer
+			// on the next try or ultimately by
+			// Producer.clearMessages after RequestTimeout
+		}
+		return 0
+	}
+
+	// We use Redis streams to keep the message until the round ends in
+	// case the auctioneer dies mid round. On restart Consume will
+	// fetch any messages that weren't used to resolve an auction yet.
+	a.unackedBidsMutex.Lock()
+
+	// If the heartbeat is slow, it's possible to re-consume the same
+	// bid, so we handle that here.
+	if _, ok := a.unackedBids[req.ID]; ok {
+		a.unackedBidsMutex.Unlock()
+		log.Info("Duplicate bid, skipping", "id", req.ID)
+		// Ack() stops the heartbeat goroutine created by the above
+		// invocation of Consume. This is OK since the original
+		// heartbeat goroutine for the unacked bid is still running,
+		// and will be stopped at auction end.
+		req.Ack()
+
+		// Importantly we don't want to send duplicate bids to
+		// the bidsReceiver since it cares about the ordering.
+		return 0
+	}
+
+	a.unackedBids[req.ID] = req
+	a.unackedBidsMutex.Unlock()
+
+	// Forward the message over a channel for processing elsewhere in
+	// another thread, so as to not block this consumption thread.
+	a.bidsReceiver <- req.Value
+
+	return 0
+}
+
 func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	// Start S3 storage service to persist validated bids to s3
@@ -265,60 +320,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 		case <-ready: // Wait until the stream exists and start consuming iteratively.
 		}
 		log.Info("Stream exists, now attempting to consume data from it")
-		a.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
-			req, err := a.consumer.Consume(ctx)
-			if err != nil {
-				log.Error("Consuming request", "error", err)
-				return 0
-			}
-			if req == nil {
-				// There's nothing in the queue.
-				return time.Millisecond * 250
-			}
-
-			if err := validateBidTemporal(&a.roundTimingInfo, (uint64)(req.Value.Round)); err != nil {
-				log.Info("Consumed bid that was no longer valid, skipping", "err", err, "msgId", req.ID)
-				req.Ack()
-				if errerr := a.consumer.SetError(ctx, req.ID, err.Error()); errerr != nil {
-					log.Warn("Error setting error response to bid", "err", err, "msgId", req.ID)
-					// We tried, all we can do here is warn.
-					// It will be cleaned up by the Consumer
-					// on the next try or ultimately by
-					// Producer.clearMessages after RequestTimeout
-				}
-				return 0
-			}
-
-			// We use Redis streams to keep the message until the round ends in
-			// case the auctioneer dies mid round. On restart Consume will
-			// fetch any messages that weren't used to resolve an auction yet.
-			a.unackedBidsMutex.Lock()
-
-			// If the heartbeat is slow, it's possible to re-consume the same
-			// bid, so we handle that here.
-			if _, ok := a.unackedBids[req.ID]; ok {
-				a.unackedBidsMutex.Unlock()
-				log.Info("Duplicate bid, skipping", "id", req.ID)
-				// Ack() stops the heartbeat goroutine created by the above
-				// invocation of Consume. This is OK since the original
-				// heartbeat goroutine for the unacked bid is still running,
-				// and will be stopped at auction end.
-				req.Ack()
-
-				// Importantly we don't want to send duplicate bids to
-				// the bidsReceiver since it cares about the ordering.
-				return 0
-			}
-
-			a.unackedBids[req.ID] = req
-			a.unackedBidsMutex.Unlock()
-
-			// Forward the message over a channel for processing elsewhere in
-			// another thread, so as to not block this consumption thread.
-			a.bidsReceiver <- req.Value
-
-			return 0
-		})
+		a.StopWaiter.CallIteratively(a.consumeNextBid)
 	})
 	a.StopWaiter.LaunchThread(func(ctx context.Context) {
 		for {
