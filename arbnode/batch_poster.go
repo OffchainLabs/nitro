@@ -1210,6 +1210,10 @@ type StateOverride map[common.Address]OverrideAccount
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
 	var gas hexutil.Uint64
 	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, blockHex)
+	// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
+	if err != nil && headerreader.IsExecutionReverted(err) {
+		err = client.CallContext(ctx, nil, "eth_call", params, blockHex)
+	}
 	return uint64(gas), err
 }
 
@@ -1308,6 +1312,10 @@ func (b *BatchPoster) estimateGasForFutureTx(
 		sequencerMessageHeader := sequencerMessage
 		if len(sequencerMessageHeader) > 33 {
 			sequencerMessageHeader = sequencerMessageHeader[:33]
+		}
+		// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
+		if headerreader.IsExecutionReverted(err) {
+			err = rawRpcClient.CallContext(ctx, nil, "eth_call", gasParams, rpc.PendingBlockNumber, stateOverride)
 		}
 		log.Warn(
 			"error estimating gas for batch",
