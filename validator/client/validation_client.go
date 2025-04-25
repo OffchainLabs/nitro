@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -22,10 +23,11 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
+
+var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
@@ -166,34 +168,98 @@ func (c *ExecutionClient) CreateExecutionRun(
 			return nil, err
 		}
 		run := &ExecutionClientRun{
-			wasmModuleRoot: wasmModuleRoot,
-			client:         c,
-			id:             res,
-			input:          input,
+			client: c,
+			id:     res,
 		}
 		run.Start(c.GetContext()) // note: not this temporary thread's context!
 		return run, nil
 	})
 }
 
-type ExecutionClientRun struct {
-	stopwaiter.StopWaiter
-	client         *ExecutionClient
-	boldClient     *BoldExecutionClient
-	id             uint64
-	wasmModuleRoot common.Hash
-	input          *validator.ValidationInput
+var _ validator.BOLDExecutionSpawner = (*BOLDExecutionClient)(nil)
+
+type BOLDExecutionClient struct {
+	executionSpawner validator.ExecutionSpawner
 }
 
-func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return stopwaiter.LaunchPromiseThread[common.Hash](c, func(ctx context.Context) (common.Hash, error) {
-		var res common.Hash
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_latestWasmModuleRoot")
-		if err != nil {
-			return common.Hash{}, err
+func (b *BOLDExecutionClient) Start(ctx context.Context) error {
+	return nil
+}
+
+func (b *BOLDExecutionClient) Stop() {}
+
+func NewBOLDExecutionClient(executionSpawner validator.ExecutionSpawner) *BOLDExecutionClient {
+	return &BOLDExecutionClient{
+		executionSpawner: executionSpawner,
+	}
+}
+
+func (b *BOLDExecutionClient) WasmModuleRoots() ([]common.Hash, error) {
+	return b.executionSpawner.WasmModuleRoots()
+}
+
+func (b *BOLDExecutionClient) GetMachineHashesWithStepSize(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, machineStartIndex, stepSize, maxIterations uint64) ([]common.Hash, error) {
+	execRun, err := b.executionSpawner.CreateExecutionRun(wasmModuleRoot, input, true).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer execRun.Close()
+	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
+	defer cancelCheckAlive()
+	stepLeaves := execRun.GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations)
+	return stepLeaves.Await(ctxCheckAlive)
+}
+
+func (b *BOLDExecutionClient) GetProofAt(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, position uint64) ([]byte, error) {
+	execRun, err := b.executionSpawner.CreateExecutionRun(wasmModuleRoot, input, true).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer execRun.Close()
+	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
+	defer cancelCheckAlive()
+	oneStepProofPromise := execRun.GetProofAt(position)
+	return oneStepProofPromise.Await(ctxCheckAlive)
+}
+
+// CtxWithCheckAlive Creates a context with a check alive routine that will
+// cancel the context if the check alive routine fails.
+func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (context.Context, context.CancelFunc) {
+	// Create a context that will cancel if the check alive routine fails.
+	// This is to ensure that we do not have the validator froze indefinitely if
+	// the execution run is no longer alive.
+	ctx, cancel := context.WithCancel(ctxIn)
+	go func() {
+		// Call cancel so that the calling function is canceled if the check alive
+		// routine fails/returns.
+		defer cancel()
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Create a context with a timeout, so that the check alive routine does
+				// not run indefinitely.
+				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctx, 5*time.Second)
+				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
+				if err != nil {
+					executionNodeOfflineGauge.Inc(1)
+					cancelCheckAliveWithTimeout()
+					return
+				}
+				cancelCheckAliveWithTimeout()
+			}
 		}
-		return res, nil
-	})
+	}()
+	return ctx, cancel
+}
+
+type ExecutionClientRun struct {
+	stopwaiter.StopWaiter
+	client *ExecutionClient
+	id     uint64
 }
 
 func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
@@ -229,15 +295,6 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 }
 
 func (r *ExecutionClientRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash] {
-	if r.boldClient != nil {
-		return r.boldClient.GetLeavesWithStepSize(&server_api.GetLeavesWithStepSizeInput{
-			ModuleRoot:        r.wasmModuleRoot,
-			MachineStartIndex: machineStartIndex,
-			StepSize:          stepSize,
-			NumDesiredLeaves:  maxIterations,
-			ValidationInput:   r.input,
-		})
-	}
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
 		var resJson []common.Hash
 		err := r.client.client.CallContext(ctx, &resJson, server_api.Namespace+"_getMachineHashesWithStepSize", r.id, machineStartIndex, stepSize, maxIterations)
@@ -280,51 +337,5 @@ func (r *ExecutionClientRun) Close() {
 		if err != nil {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}
-	})
-}
-
-type BoldExecutionClient struct {
-	*redis.BoldValidationClient
-	executionClient *ExecutionClient
-}
-
-func NewBoldExecutionClient(config rpcclient.ClientConfigFetcher, redisValClient *redis.ValidationClient, stack *node.Node, executionClient *ExecutionClient) *BoldExecutionClient {
-	return &BoldExecutionClient{
-		BoldValidationClient: redis.NewBoldValidationClient(config, redisValClient, stack),
-		executionClient:      executionClient,
-	}
-}
-
-func (c *BoldExecutionClient) CreateExecutionRun(
-	wasmModuleRoot common.Hash,
-	input *validator.ValidationInput,
-	useBoldMachine bool,
-) containers.PromiseInterface[validator.ExecutionRun] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (validator.ExecutionRun, error) {
-		var res uint64
-		err := c.Client().CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), useBoldMachine)
-		if err != nil {
-			return nil, err
-		}
-		run := &ExecutionClientRun{
-			wasmModuleRoot: wasmModuleRoot,
-			boldClient:     c,
-			client:         c.executionClient,
-			id:             res,
-			input:          input,
-		}
-		run.Start(c.GetContext()) // note: not this temporary thread's context!
-		return run, nil
-	})
-}
-
-func (c *BoldExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return stopwaiter.LaunchPromiseThread[common.Hash](c, func(ctx context.Context) (common.Hash, error) {
-		var res common.Hash
-		err := c.Client().CallContext(ctx, &res, server_api.Namespace+"_latestWasmModuleRoot")
-		if err != nil {
-			return common.Hash{}, err
-		}
-		return res, nil
 	})
 }

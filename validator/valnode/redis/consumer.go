@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"time"
@@ -202,7 +203,7 @@ type ExecutionSpawner struct {
 	spawner validator.ExecutionSpawner
 
 	// consumers stores moduleRoot to consumer mapping.
-	consumers map[common.Hash]*pubsub.Consumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]
+	consumers map[common.Hash]*pubsub.Consumer[*server_api.BoldValidationInput, []byte]
 	config    *ValidationServerConfig
 }
 
@@ -214,10 +215,10 @@ func NewExecutionSpawner(cfg *ValidationServerConfig, spawner validator.Executio
 	if err != nil {
 		return nil, err
 	}
-	consumers := make(map[common.Hash]*pubsub.Consumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash])
+	consumers := make(map[common.Hash]*pubsub.Consumer[*server_api.BoldValidationInput, []byte])
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
-		c, err := pubsub.NewConsumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash](redisClient, server_api.RedisBoldStreamForRoot(cfg.StreamPrefix, mr), &cfg.ConsumerConfig)
+		c, err := pubsub.NewConsumer[*server_api.BoldValidationInput, []byte](redisClient, server_api.RedisBoldStreamForRoot(cfg.StreamPrefix, mr), &cfg.ConsumerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating consumer for validation: %w", err)
 		}
@@ -279,16 +280,28 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 					log.Error("Creating BOLD execution", "error", err)
 					return 0
 				}
-				hashes, err := run.GetMachineHashesWithStepSize(
-					req.Value.MachineStartIndex,
-					req.Value.StepSize,
-					req.Value.NumDesiredLeaves).Await(ctx)
+				var res interface{}
+				if req.Value.NumDesiredLeaves != 0 {
+					res, err = run.GetMachineHashesWithStepSize(
+						req.Value.MachineStartIndex,
+						req.Value.StepSize,
+						req.Value.NumDesiredLeaves).Await(ctx)
+				} else {
+					res, err = run.GetProofAt(
+						req.Value.MachineStartIndex,
+					).Await(ctx)
+				}
 				if err != nil {
 					log.Error("Getting machine hashes", "error", err)
 					return 0
 				}
-				if err := c.SetResult(ctx, req.ID, hashes); err != nil {
-					log.Error("Error setting result for request", "id", req.ID, "result", hashes, "error", err)
+				jsonRes, err := json.Marshal(res)
+				if err != nil {
+					log.Error("Marshaling result", "error", err)
+					return 0
+				}
+				if err := c.SetResult(ctx, req.ID, jsonRes); err != nil {
+					log.Error("Error setting result for request", "id", req.ID, "result", res, "error", err)
 					return 0
 				}
 				return time.Second

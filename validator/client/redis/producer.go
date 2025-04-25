@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync/atomic"
 
@@ -12,12 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -179,84 +178,117 @@ func (c *ValidationClient) Room() int {
 	return int(c.room.Load())
 }
 
-// BoldValidationClient implements bold validation client through redis streams.
-type BoldValidationClient struct {
+var _ validator.BOLDExecutionSpawner = (*BOLDRedisExecutionClient)(nil)
+
+type BOLDRedisExecutionClient struct {
 	stopwaiter.StopWaiter
-	*ValidationClient
+	redisValidationClient *ValidationClient
 	// producers stores moduleRoot to producer mapping.
-	client    *rpcclient.RpcClient
-	producers map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]
+	producers map[common.Hash]*pubsub.Producer[*server_api.BoldValidationInput, []byte]
 }
 
-func NewBoldValidationClient(config rpcclient.ClientConfigFetcher, redisValClient *ValidationClient, stack *node.Node) *BoldValidationClient {
-	return &BoldValidationClient{
-		ValidationClient: redisValClient,
-		client:           rpcclient.NewRpcClient(config, stack),
-		producers:        make(map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]),
+func NewBOLDRedisExecutionClient(redisValClient *ValidationClient) *BOLDRedisExecutionClient {
+	return &BOLDRedisExecutionClient{
+		redisValidationClient: redisValClient,
+		producers:             make(map[common.Hash]*pubsub.Producer[*server_api.BoldValidationInput, []byte]),
 	}
 }
 
-func (c *BoldValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
-	if c.config.RedisURL == "" {
+func (br *BOLDRedisExecutionClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
+	if br.redisValidationClient.config.RedisURL == "" {
 		return fmt.Errorf("redis url cannot be empty")
 	}
-	redisClient, err := redisutil.RedisClientFromURL(c.config.RedisURL)
+	redisClient, err := redisutil.RedisClientFromURL(br.redisValidationClient.config.RedisURL)
 	if err != nil {
 		return err
 	}
 	for _, mr := range moduleRoots {
-		if c.config.CreateStreams {
-			if err := pubsub.CreateStream(ctx, server_api.RedisBoldStreamForRoot(c.config.StreamPrefix, mr), redisClient); err != nil {
+		if br.redisValidationClient.config.CreateStreams {
+			if err := pubsub.CreateStream(ctx, server_api.RedisBoldStreamForRoot(br.redisValidationClient.config.StreamPrefix, mr), redisClient); err != nil {
 				return fmt.Errorf("creating redis stream: %w", err)
 			}
 		}
-		if _, exists := c.producers[mr]; exists {
+		if _, exists := br.producers[mr]; exists {
 			log.Warn("Producer already exists for module root", "hash", mr)
 			continue
 		}
-		p, err := pubsub.NewProducer[*server_api.GetLeavesWithStepSizeInput, []common.Hash](
-			redisClient, server_api.RedisBoldStreamForRoot(c.config.StreamPrefix, mr), &c.config.ProducerConfig)
+		p, err := pubsub.NewProducer[*server_api.BoldValidationInput, []byte](
+			redisClient, server_api.RedisBoldStreamForRoot(br.redisValidationClient.config.StreamPrefix, mr), &br.redisValidationClient.config.ProducerConfig)
 		if err != nil {
 			log.Warn("failed init redis for %v: %w", mr, err)
 			continue
 		}
-		c.producers[mr] = p
+		br.producers[mr] = p
 	}
 	return nil
 }
 
-func (c *BoldValidationClient) Client() *rpcclient.RpcClient {
-	return c.client
-}
-func (c *BoldValidationClient) GetLeavesWithStepSize(req *server_api.GetLeavesWithStepSizeInput) containers.PromiseInterface[[]common.Hash] {
-	producer, found := c.producers[req.ModuleRoot]
+func (br *BOLDRedisExecutionClient) produce(req *server_api.BoldValidationInput) containers.PromiseInterface[[]byte] {
+	producer, found := br.producers[req.ModuleRoot]
 	if !found {
-		return containers.NewReadyPromise([]common.Hash{}, fmt.Errorf("no validation is configured for wasm root %v", req.ModuleRoot))
+		return containers.NewReadyPromise([]byte{}, fmt.Errorf("no validation is configured for wasm root %v", req.ModuleRoot))
 	}
-	promise, err := producer.Produce(c.GetContext(), req)
+	promise, err := producer.Produce(br.GetContext(), req)
 	if err != nil {
-		return containers.NewReadyPromise([]common.Hash{}, fmt.Errorf("error producing input: %w", err))
+		return containers.NewReadyPromise([]byte{}, fmt.Errorf("error producing input: %w", err))
 	}
 	return promise
 }
 
-func (c *BoldValidationClient) Start(ctx_in context.Context) error {
-	if err := c.Initialize(ctx_in, c.moduleRoots); err != nil {
+func (br *BOLDRedisExecutionClient) Start(ctx_in context.Context) error {
+	if err := br.Initialize(ctx_in, br.redisValidationClient.moduleRoots); err != nil {
 		return err
 	}
-	if err := c.client.Start(ctx_in); err != nil {
-		return err
-	}
-	for _, p := range c.producers {
+	for _, p := range br.producers {
 		p.Start(ctx_in)
 	}
-	c.StopWaiter.Start(ctx_in, c)
+	br.StopWaiter.Start(ctx_in, br)
 	return nil
 }
 
-func (c *BoldValidationClient) Stop() {
-	for _, p := range c.producers {
+func (br *BOLDRedisExecutionClient) Stop() {
+	for _, p := range br.producers {
 		p.StopAndWait()
 	}
-	c.StopWaiter.StopAndWait()
+	br.StopWaiter.StopAndWait()
+}
+
+func (br *BOLDRedisExecutionClient) WasmModuleRoots() ([]common.Hash, error) {
+	return br.redisValidationClient.WasmModuleRoots()
+}
+
+func (br *BOLDRedisExecutionClient) GetMachineHashesWithStepSize(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, machineStartIndex, stepSize, maxIterations uint64) ([]common.Hash, error) {
+	res, err := br.produce(&server_api.BoldValidationInput{
+		ModuleRoot:        wasmModuleRoot,
+		MachineStartIndex: machineStartIndex,
+		StepSize:          stepSize,
+		NumDesiredLeaves:  maxIterations,
+		ValidationInput:   input,
+	}).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var resJson []common.Hash
+	err = json.Unmarshal(res, &resJson)
+	if err != nil {
+		return nil, err
+	}
+	return resJson, nil
+}
+
+func (br *BOLDRedisExecutionClient) GetProofAt(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, position uint64) ([]byte, error) {
+	res, err := br.produce(&server_api.BoldValidationInput{
+		ModuleRoot:        wasmModuleRoot,
+		MachineStartIndex: position,
+		ValidationInput:   input,
+	}).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var resJson []byte
+	err = json.Unmarshal(res, &resJson)
+	if err != nil {
+		return nil, err
+	}
+	return resJson, nil
 }

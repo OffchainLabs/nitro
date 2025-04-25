@@ -174,7 +174,7 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 	return valInput, nil
 }
 
-type GetLeavesWithStepSizeInput struct {
+type BoldValidationInput struct {
 	ModuleRoot        common.Hash
 	MachineStartIndex uint64
 	StepSize          uint64

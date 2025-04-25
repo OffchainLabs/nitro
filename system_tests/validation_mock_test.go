@@ -96,10 +96,6 @@ func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *vali
 	}, nil)
 }
 
-func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoots[0], nil)
-}
-
 type mockValRun struct {
 	containers.Promise[validator.GoGlobalState]
 	root common.Hash
@@ -220,58 +216,13 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 
 // mostly tests translation to/from json and running over network
 func TestValidationServerAPI(t *testing.T) {
-	testValidationServerAPI(t, false)
-}
-
-// mostly tests translation to/from json and running over network with bold validation redis consumer/producer
-func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
-	testValidationServerAPI(t, true)
-}
-func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bool) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var client validator.ExecutionSpawner
-
-	if withBoldValidationConsumerProducer {
-		var redisBoldValidationClientConfig = &clientredis.TestValidationClientConfig
-		redisUrl := redisutil.CreateTestRedis(ctx, t)
-		redisBoldValidationClientConfig.RedisURL = redisUrl
-		redisBoldValidationClientConfig.CreateStreams = true
-		redisValClient, err := redis.NewValidationClient(redisBoldValidationClientConfig)
-		Require(t, err)
-		err = redisValClient.Start(ctx)
-		Require(t, err)
-		err = redisValClient.Initialize(ctx, mockWasmModuleRoots)
-		Require(t, err)
-
-		config := server_arb.DefaultArbitratorSpawnerConfig
-		config.RedisValidationServerConfig = valnoderedis.TestValidationServerConfig
-		config.RedisValidationServerConfig.RedisURL = redisUrl
-		mockWasmModuleRootsStr := make([]string, len(mockWasmModuleRoots))
-		for _, moduleRoot := range mockWasmModuleRoots {
-			mockWasmModuleRootsStr = append(mockWasmModuleRootsStr, moduleRoot.Hex())
-		}
-		config.RedisValidationServerConfig.ModuleRoots = mockWasmModuleRootsStr
-		_, validationDefault := createMockValidationNode(t, ctx, &config)
-		executionClient := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
-		client = validatorclient.NewBoldExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), redisValClient, validationDefault, executionClient)
-		err = executionClient.Start(ctx)
-		Require(t, err)
-	} else {
-		_, validationDefault := createMockValidationNode(t, ctx, nil)
-		client = validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
-	}
+	_, validationDefault := createMockValidationNode(t, ctx, nil)
+	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
-
-	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
-	Require(t, err)
-
-	if wasmRoot != mockWasmModuleRoots[0] {
-		t.Error("unexpected mock wasmModuleRoot")
-	}
-
 	roots, err := client.WasmModuleRoots()
 	Require(t, err)
 	if len(roots) != len(mockWasmModuleRoots) {
@@ -305,13 +256,13 @@ func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bo
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
 	}
-	valRun := client.Launch(&valInput, wasmRoot)
+	valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 	res, err := valRun.Await(ctx)
 	Require(t, err)
 	if res != endState {
 		t.Error("unexpected mock validation run")
 	}
-	execRun, err := client.CreateExecutionRun(wasmRoot, &valInput, true).Await(ctx)
+	execRun, err := client.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, true).Await(ctx)
 	Require(t, err)
 	step0 := execRun.GetStepAt(0)
 	step0Res, err := step0.Await(ctx)
@@ -338,6 +289,86 @@ func testValidationServerAPI(t *testing.T, withBoldValidationConsumerProducer bo
 	if len(hashesRes) != 5 {
 		t.Error("unexpected number of hashes")
 	}
+
+}
+
+// mostly tests translation to/from json and running over network with bold validation redis consumer/producer
+func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var redisBoldValidationClientConfig = &clientredis.TestValidationClientConfig
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
+	redisBoldValidationClientConfig.RedisURL = redisUrl
+	redisBoldValidationClientConfig.CreateStreams = true
+	redisValClient, err := redis.NewValidationClient(redisBoldValidationClientConfig)
+	Require(t, err)
+	err = redisValClient.Start(ctx)
+	Require(t, err)
+	err = redisValClient.Initialize(ctx, mockWasmModuleRoots)
+	Require(t, err)
+
+	config := server_arb.DefaultArbitratorSpawnerConfig
+	config.RedisValidationServerConfig = valnoderedis.TestValidationServerConfig
+	config.RedisValidationServerConfig.RedisURL = redisUrl
+	mockWasmModuleRootsStr := make([]string, len(mockWasmModuleRoots))
+	for _, moduleRoot := range mockWasmModuleRoots {
+		mockWasmModuleRootsStr = append(mockWasmModuleRootsStr, moduleRoot.Hex())
+	}
+	config.RedisValidationServerConfig.ModuleRoots = mockWasmModuleRootsStr
+	_, validationDefault := createMockValidationNode(t, ctx, &config)
+	executionClient := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
+	err = executionClient.Start(ctx)
+	Require(t, err)
+	client := redis.NewBOLDRedisExecutionClient(redisValClient)
+	err = client.Start(ctx)
+	Require(t, err)
+	roots, err := client.WasmModuleRoots()
+
+	Require(t, err)
+	if len(roots) != len(mockWasmModuleRoots) {
+		Fatal(t, "wrong number of wasmModuleRoots", len(roots))
+	}
+	for i := range roots {
+		if roots[i] != mockWasmModuleRoots[i] {
+			Fatal(t, "unexpected root", roots[i], mockWasmModuleRoots[i])
+		}
+	}
+
+	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
+	hash2 := common.HexToHash("0x11111111122222223333333444444444")
+
+	startState := validator.GoGlobalState{
+		BlockHash:  hash1,
+		SendRoot:   hash2,
+		Batch:      300,
+		PosInBatch: 3000,
+	}
+	endState := validator.GoGlobalState{
+		BlockHash:  hash2,
+		SendRoot:   hash1,
+		Batch:      3000,
+		PosInBatch: 300,
+	}
+
+	valInput := validator.ValidationInput{
+		StartState: startState,
+		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
+			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
+		},
+	}
+	proof, err := client.GetProofAt(ctx, mockWasmModuleRoots[0], &valInput, 0)
+	Require(t, err)
+	if !bytes.Equal(proof, mockProof) {
+		t.Error("mock proof not expected")
+	}
+
+	hashes, err := client.GetMachineHashesWithStepSize(ctx, mockWasmModuleRoots[0], &valInput, 0, 1, 5)
+	Require(t, err)
+	if len(hashes) != 5 {
+		t.Error("unexpected number of hashes")
+	}
+
 }
 
 func TestValidationClientRoom(t *testing.T) {
@@ -347,9 +378,6 @@ func TestValidationClientRoom(t *testing.T) {
 	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
 	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
 	err := client.Start(ctx)
-	Require(t, err)
-
-	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
 	Require(t, err)
 
 	if client.Room() != 4 {
@@ -382,7 +410,7 @@ func TestValidationClientRoom(t *testing.T) {
 	valRuns := make([]validator.ValidationRun, 0, 4)
 
 	for i := 0; i < 4; i++ {
-		valRun := client.Launch(&valInput, wasmRoot)
+		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 		valRuns = append(valRuns, valRun)
 	}
 
@@ -400,7 +428,7 @@ func TestValidationClientRoom(t *testing.T) {
 	valRuns = make([]validator.ValidationRun, 0, 3)
 
 	for i := 0; i < 4; i++ {
-		valRun := client.Launch(&valInput, wasmRoot)
+		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 		valRuns = append(valRuns, valRun)
 		room := client.Room()
 		if room != 3-i {
@@ -439,13 +467,10 @@ func TestExecutionKeepAlive(t *testing.T) {
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 
-	wasmRoot, err := clientDefault.LatestWasmModuleRoot().Await(ctx)
-	Require(t, err)
-
 	valInput := validator.ValidationInput{}
-	runDefault, err := clientDefault.CreateExecutionRun(wasmRoot, &valInput, false).Await(ctx)
+	runDefault, err := clientDefault.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
-	runShortTO, err := clientShortTO.CreateExecutionRun(wasmRoot, &valInput, false).Await(ctx)
+	runShortTO, err := clientShortTO.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
 	<-time.After(time.Second * 10)
 	stepDefault := runDefault.GetStepAt(0)
