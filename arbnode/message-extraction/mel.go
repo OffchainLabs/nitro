@@ -53,6 +53,7 @@ type MessageExtractor struct {
 	addrs          *chaininfo.RollupAddresses
 	melDB          StateDatabase
 	sequencerInbox *arbnode.SequencerInbox
+	delayedBridge  *arbnode.DelayedBridge
 	dataProviders  []daprovider.Reader
 	fsm            *fsm.Fsm[action, FSMState]
 }
@@ -63,6 +64,7 @@ func NewMessageExtractor(
 	stateFetcher StateFetcher,
 	melDB StateDatabase,
 	sequencerInbox *arbnode.SequencerInbox,
+	delayedBridge *arbnode.DelayedBridge,
 	dataProviders []daprovider.Reader,
 	config MELConfigFetcher,
 ) (*MessageExtractor, error) {
@@ -79,6 +81,7 @@ func NewMessageExtractor(
 		stateFetcher:   stateFetcher,
 		melDB:          melDB,
 		sequencerInbox: sequencerInbox,
+		delayedBridge:  delayedBridge,
 		dataProviders:  dataProviders,
 		config:         config,
 		fsm:            fsm,

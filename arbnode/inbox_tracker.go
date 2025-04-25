@@ -770,6 +770,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		if err != nil {
 			return err
 		}
+		fmt.Printf("Popped the msg: after delayed %d, %+v\n", msg.DelayedMessagesRead, msg.Message)
 		messages = append(messages, *msg)
 		batchMessageCounts[batchSeqNum] = currentpos
 		currentpos += 1

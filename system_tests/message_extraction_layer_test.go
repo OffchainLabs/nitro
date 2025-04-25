@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -28,13 +29,18 @@ func (m *mockMELStateFetcher) GetState(
 	return m.state, nil
 }
 
-type mockMELDB struct{}
+type mockMELDB struct {
+	savedMsgs   []*arbostypes.MessageWithMetadata
+	savedStates []*mel.State
+}
 
 func (m *mockMELDB) SaveState(
 	ctx context.Context,
 	state *mel.State,
 	messages []*arbostypes.MessageWithMetadata,
 ) error {
+	m.savedStates = append(m.savedStates, state)
+	m.savedMsgs = append(m.savedMsgs, messages...)
 	return nil
 }
 
@@ -92,6 +98,8 @@ func TestMessageExtractionLayer(t *testing.T) {
 	// to begin extracting messages from the parent chain.
 	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
 	Require(t, err)
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.addresses.Bridge, 0)
+	Require(t, err)
 
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
 	l1Reader, err := headerreader.New(ctx, builder.L1.Client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
@@ -99,12 +107,17 @@ func TestMessageExtractionLayer(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
+	mockDB := &mockMELDB{
+		savedMsgs:   make([]*arbostypes.MessageWithMetadata, 0),
+		savedStates: make([]*mel.State, 0),
+	}
 	extractor, err := mel.NewMessageExtractor(
 		l1Reader,
 		builder.addresses,
 		&mockMELStateFetcher{state: melState},
-		&mockMELDB{},
+		mockDB,
 		seqInbox,
+		delayedBridge,
 		nil, // TODO: Provide a da reader here.
 		func() *mel.MELConfig {
 			return &mel.DefaultMELConfig
@@ -112,10 +125,18 @@ func TestMessageExtractionLayer(t *testing.T) {
 	)
 	Require(t, err)
 
+	_ = extractor
 	err = extractor.Act(ctx)
 	Require(t, err)
 	err = extractor.Act(ctx)
 	Require(t, err)
+	err = extractor.Act(ctx)
+	Require(t, err)
+
+	for _, msg := range mockDB.savedMsgs {
+		fmt.Printf("after delayed %d, %+v\n", msg.DelayedMessagesRead, msg.Message)
+	}
+	time.Sleep(time.Hour)
 }
 
 func forceBatchPosting(

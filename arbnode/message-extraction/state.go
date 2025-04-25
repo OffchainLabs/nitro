@@ -19,6 +19,8 @@ type State struct {
 	ParentChainPreviousBlockHash common.Hash
 	BatchPostingTargetAddress    common.Address
 	MessageAccumulator           common.Hash
+	MsgCount                     uint64
+	AfterDelayedMessagesRead     uint64
 }
 
 type StateDatabase interface {
@@ -39,4 +41,6 @@ func (s *State) Clone() *State {
 	return s // TODO: Implement smart cloning of the state.
 }
 
-func (s *State) AccumulateMessage(message *arbostypes.MessageWithMetadata) {}
+func (s *State) AccumulateMessage(msgHash common.Hash) *State {
+	return s
+}

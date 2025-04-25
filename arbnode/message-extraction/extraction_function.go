@@ -11,10 +11,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 var (
@@ -29,7 +31,7 @@ func (m *MessageExtractor) extractMessages(
 	parentChainBlock *types.Block,
 ) (*State, []*arbostypes.MessageWithMetadata, error) {
 	state := inputState.Clone()
-	// Copies the state to avoid mutating the input in case of errors.
+	// Clones the state to avoid mutating the input pointer in case of errors.
 	// Check parent chain block hash linkage.
 	if state.ParentChainPreviousBlockHash != parentChainBlock.ParentHash() {
 		return nil, nil, fmt.Errorf(
@@ -39,17 +41,40 @@ func (m *MessageExtractor) extractMessages(
 			parentChainBlock.ParentHash().Hex(),
 		)
 	}
+	// Updates the fields in the state to corresponding to the
+	// incoming parent chain block.
+	state.ParentChainBlockHash = parentChainBlock.Hash()
+	state.ParentChainBlockNumber = parentChainBlock.NumberU64()
 	// Now, check for any logs emitted by the sequencer inbox by txs
 	// included in the parent chain block.
-	prevBlockNum := parentChainBlock.NumberU64() - 1
+	fromBlock := new(big.Int).SetUint64(31)
+	toBlock := new(big.Int).SetUint64(37)
 	batches, err := m.sequencerInbox.LookupBatchesInRange(
 		ctx,
-		new(big.Int).SetUint64(prevBlockNum),
-		parentChainBlock.Number(),
+		fromBlock,
+		toBlock,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
+	delayedMessages, err := m.delayedBridge.LookupMessagesInRange(
+		ctx,
+		fromBlock,
+		toBlock,
+		func(batchNum uint64) ([]byte, error) {
+			if len(batches) > 0 && batchNum >= batches[0].SequenceNumber {
+				idx := batchNum - batches[0].SequenceNumber
+				if idx < uint64(len(batches)) {
+					return batches[idx].Serialize(ctx, m.l1Reader.Client())
+				}
+				return nil, fmt.Errorf("missing batch %d", batchNum)
+			}
+			return nil, fmt.Errorf("batch %d not found", batchNum)
+		})
+	if err != nil {
+		return nil, nil, err
+	}
+	delayedMessageQueue := newDelayedMessageQueue(delayedMessages)
 	var messages []*arbostypes.MessageWithMetadata
 	for _, batch := range batches {
 		serialized, err := batch.Serialize(ctx, m.l1Reader.Client())
@@ -67,25 +92,27 @@ func (m *MessageExtractor) extractMessages(
 		if err != nil {
 			return nil, nil, err
 		}
-		_ = rawSequencerMsg
-		msg, err := m.extractArbosMessage(rawSequencerMsg)
+		msg, err := m.extractArbosMessage(state, rawSequencerMsg, delayedMessageQueue)
 		if err != nil {
 			return nil, nil, err
 		}
 		messages = append(messages, msg)
-		state.AccumulateMessage(msg)
+		state.MsgCount += 1
+		msgIdx := arbutil.MessageIndex(state.MsgCount) - 1
+		msgHash, err := msg.Hash(msgIdx, state.ParentChainId)
+		if err != nil {
+			return nil, nil, err
+		}
+		state = state.AccumulateMessage(msgHash)
 	}
-
-	// Updates the fields in the state to corresponding to the
-	// incoming parent chain block.
-	state.ParentChainBlockHash = parentChainBlock.Hash()
-	state.ParentChainBlockNumber = parentChainBlock.NumberU64()
-
 	return state, messages, nil
 }
 
-func (m *MessageExtractor) extractArbosMessage(seqMsg *arbstate.SequencerMessage) (*arbostypes.MessageWithMetadata, error) {
-	delayedMessagesRead := uint64(0) // TODO: Get from the MEL state.
+func (m *MessageExtractor) extractArbosMessage(
+	melState *State,
+	seqMsg *arbstate.SequencerMessage,
+	delayedMsgs *delayedMessageQueue,
+) (*arbostypes.MessageWithMetadata, error) {
 	segmentNum := uint64(0)
 	submessageNumber := uint64(0)
 	targetSubMessage := uint64(0)
@@ -169,14 +196,14 @@ func (m *MessageExtractor) extractArbosMessage(seqMsg *arbstate.SequencerMessage
 				},
 				L2msg: segment,
 			},
-			DelayedMessagesRead: delayedMessagesRead,
+			DelayedMessagesRead: melState.AfterDelayedMessagesRead,
 		}
 	} else if kind == arbstate.BatchSegmentKindDelayedMessages {
-		if delayedMessagesRead >= seqMsg.AfterDelayedMessages {
+		if melState.AfterDelayedMessagesRead >= seqMsg.AfterDelayedMessages {
 			if segmentNum < uint64(len(seqMsg.Segments)) {
 				log.Warn(
 					"Attempt to read past batch delayed message count",
-					"delayedMessagesRead", delayedMessagesRead,
+					"delayedMessagesRead", melState.AfterDelayedMessagesRead,
 					"batchAfterDelayedMessages", seqMsg.AfterDelayedMessages,
 				)
 			}
@@ -185,20 +212,56 @@ func (m *MessageExtractor) extractArbosMessage(seqMsg *arbstate.SequencerMessage
 				DelayedMessagesRead: seqMsg.AfterDelayedMessages,
 			}
 		} else {
-			// delayed, realErr := r.backend.ReadDelayedInbox(delayedMessagesRead)
-			// if realErr != nil {
-			// 	return nil, realErr
-			// }
-			// r.delayedMessagesRead += 1
-			// msg = &arbostypes.MessageWithMetadata{
-			// 	Message:             delayed,
-			// 	DelayedMessagesRead: r.delayedMessagesRead,
-			// }
-			msg = &arbostypes.MessageWithMetadata{}
+			delayed := delayedMsgs.Pop()
+			if delayed == nil {
+				log.Error("No more delayed messages in queue", "delayedMessagesRead", melState.AfterDelayedMessagesRead)
+				return nil, fmt.Errorf("no more delayed messages in queue")
+			}
+			melState.AfterDelayedMessagesRead += 1
+			msg = &arbostypes.MessageWithMetadata{
+				Message:             delayed.Message,
+				DelayedMessagesRead: melState.AfterDelayedMessagesRead,
+			}
 		}
 	} else {
 		log.Error("Bad sequencer message segment kind", "segmentNum", segmentNum, "kind", kind)
 		return nil, nil
 	}
 	return msg, nil
+}
+
+type delayedMessageQueue struct {
+	messages []*arbnode.DelayedInboxMessage
+	position int
+}
+
+func newDelayedMessageQueue(messages []*arbnode.DelayedInboxMessage) *delayedMessageQueue {
+	return &delayedMessageQueue{
+		messages: messages,
+		position: 0,
+	}
+}
+
+func (q *delayedMessageQueue) Peek() *arbnode.DelayedInboxMessage {
+	if q.position >= len(q.messages) {
+		return nil
+	}
+	return q.messages[q.position]
+}
+
+func (q *delayedMessageQueue) Pop() *arbnode.DelayedInboxMessage {
+	if q.position >= len(q.messages) {
+		return nil
+	}
+	msg := q.messages[q.position]
+	q.position++
+	return msg
+}
+
+func (q *delayedMessageQueue) HasMore() bool {
+	return q.position < len(q.messages)
+}
+
+func (q *delayedMessageQueue) Remaining() int {
+	return len(q.messages) - q.position
 }
