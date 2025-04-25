@@ -1701,7 +1701,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil && delayBuffer.isUpdatable(latestHeader.Number.Uint64()) {
+	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil {
 		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.inbox)
 		if err != nil {
 			return false, fmt.Errorf("failed to generate delay proof: %w", err)
