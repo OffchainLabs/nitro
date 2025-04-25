@@ -223,6 +223,7 @@ func TestValidationServerAPI(t *testing.T) {
 	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
+
 	roots, err := client.WasmModuleRoots()
 	Require(t, err)
 	if len(roots) != len(mockWasmModuleRoots) {
@@ -262,7 +263,7 @@ func TestValidationServerAPI(t *testing.T) {
 	if res != endState {
 		t.Error("unexpected mock validation run")
 	}
-	execRun, err := client.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, true).Await(ctx)
+	execRun, err := client.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
 	step0 := execRun.GetStepAt(0)
 	step0Res, err := step0.Await(ctx)
@@ -316,10 +317,7 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 		mockWasmModuleRootsStr = append(mockWasmModuleRootsStr, moduleRoot.Hex())
 	}
 	config.RedisValidationServerConfig.ModuleRoots = mockWasmModuleRootsStr
-	_, validationDefault := createMockValidationNode(t, ctx, &config)
-	executionClient := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
-	err = executionClient.Start(ctx)
-	Require(t, err)
+	createMockValidationNode(t, ctx, &config)
 	client := redis.NewBOLDRedisExecutionClient(redisValClient)
 	err = client.Start(ctx)
 	Require(t, err)
