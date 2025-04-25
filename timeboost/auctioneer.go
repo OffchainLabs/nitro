@@ -241,7 +241,7 @@ func (a *AuctioneerServer) consumeNextBid(ctx context.Context) time.Duration {
 		return time.Millisecond * 250
 	}
 
-	if err := validateBidTemporal(&a.roundTimingInfo, (uint64)(req.Value.Round)); err != nil {
+	if err := validateBidTimeConstraints(&a.roundTimingInfo, (uint64)(req.Value.Round)); err != nil {
 		log.Info("Consumed bid that was no longer valid, skipping", "err", err, "msgId", req.ID)
 		req.Ack()
 		if errerr := a.consumer.SetError(ctx, req.ID, err.Error()); errerr != nil {

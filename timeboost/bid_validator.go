@@ -280,7 +280,7 @@ func (bv *BidValidator) fetchReservePrice() *big.Int {
 // Check time-related constraints for bid.
 // It's useful to split out to be able to re-check just these contraints after
 // time has elapsed.
-func validateBidTemporal(roundTimingInfo *RoundTimingInfo, bidRound uint64) error {
+func validateBidTimeConstraints(roundTimingInfo *RoundTimingInfo, bidRound uint64) error {
 	// Check if the bid is intended for upcoming round.
 	upcomingRound := roundTimingInfo.RoundNumber() + 1
 	if bidRound != upcomingRound {
@@ -316,7 +316,7 @@ func (bv *BidValidator) validateBid(
 		return nil, errors.Wrapf(ErrWrongChainId, "can not auction for chain id: %d", bid.ChainId)
 	}
 
-	if err := validateBidTemporal(&bv.roundTimingInfo, (uint64)(bid.Round)); err != nil {
+	if err := validateBidTimeConstraints(&bv.roundTimingInfo, (uint64)(bid.Round)); err != nil {
 		return nil, err
 	}
 
