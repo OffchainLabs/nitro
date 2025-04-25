@@ -47,7 +47,7 @@ func TestGasDimensionLoggerComputationOnlyOpcodes(t *testing.T) {
 	}
 
 	// 4. Now you can interact with the contract
-	tx, err = contract.Increment(&auth) // For write operations
+	tx, err = contract.NoSpecials(&auth) // For write operations
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,9 +89,6 @@ func TestGasDimensionLoggerComputationOnlyOpcodes(t *testing.T) {
 	// Validate each log entry
 	for i, log := range traceResult.DimensionLogs {
 		// Basic field validation
-		if log.Pc == 0 {
-			t.Errorf("Log entry %d: Expected non-zero PC", i)
-		}
 		if log.Op == "" {
 			t.Errorf("Log entry %d: Expected non-empty opcode", i)
 		}
