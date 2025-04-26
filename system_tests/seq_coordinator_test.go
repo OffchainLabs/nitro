@@ -253,7 +253,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			if sequencer == currentSequencer {
 				break
 			}
-			Fatal(t, "unexpected sequencer", "expected", currentSequencer, "got", sequencer, "messages", sequencedMesssages)
+			Fatal(t, "unexpected sequencer", "expected", currentSequencer, "got", sequencer, "messages", sequencedMesssages, "last", lastSequencer, "adding", addNodes)
 		}
 
 		// all nodes get messages
