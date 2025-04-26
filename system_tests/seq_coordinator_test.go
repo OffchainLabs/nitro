@@ -220,6 +220,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			sequencedMesssages++
 		}
 
+		lastSequencer := currentSequencer
 		if currentSequencer == len(testNodes)-1 {
 			addNodes = true
 		}
@@ -245,8 +246,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			if sequencer != -1 {
 				sequencedMesssages++
 			}
-			if sequencer == -1 ||
-				(addNodes && (sequencer == currentSequencer+1)) {
+			if sequencer == -1 || (sequencer == lastSequencer) {
 				time.Sleep(builder.nodeConfig.SeqCoordinator.LockoutDuration / 5)
 				continue
 			}
