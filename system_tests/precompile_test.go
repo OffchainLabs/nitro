@@ -472,6 +472,29 @@ func TestCurrentTxL1GasFees(t *testing.T) {
 	}
 }
 
+func TestMintAndBurnNativeToken(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+
+	builder.L2Info.GenerateAccount("User2")
+
+	addr := builder.L2Info.GetAddress("User2")
+	// TODO: fails with "unexpected total balance delta 100 (expected 0)"
+	tx, err := arbOwner.MintNativeToken(&auth, addr, 100)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+}
+
 func TestGetBrotliCompressionLevel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
