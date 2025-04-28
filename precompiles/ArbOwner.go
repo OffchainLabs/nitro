@@ -11,7 +11,9 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
@@ -369,4 +371,20 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 // (EIP-7623)
 func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 	return c.State.Features().SetCalldataPriceIncrease(enable)
+}
+
+// Mints some amount of the native gas token for this chain to the given address
+func (con ArbOwner) MintNativeToken(_ ctx, evm mech, to addr, amount uint64) error {
+	evm.StateDB.AddBalance(to, uint256.MustFromBig(new(big.Int).SetUint64(amount)), tracing.BalanceIncreaseMintNativeToken)
+	return nil
+}
+
+// Burns some amount of the native gas token for this chain from the given address
+func (con ArbOwner) BurnNativeToken(_ ctx, evm mech, from addr, amount uint64) error {
+	toSub := uint256.MustFromBig(new(big.Int).SetUint64(amount))
+	if evm.StateDB.GetBalance(from).Cmp(toSub) < 0 {
+		return errors.New("burn amount exceeds balance")
+	}
+	evm.StateDB.SubBalance(from, toSub, tracing.BalanceDecreaseBurnNativeToken)
+	return nil
 }
