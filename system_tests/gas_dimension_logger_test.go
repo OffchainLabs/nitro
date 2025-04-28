@@ -1057,9 +1057,163 @@ func TestGasDimensionLoggerExtCodeCopyWarmMemExpansion(t *testing.T) {
 	)
 }
 
-// ############################################################################
-//                                HELPER FUNCTIONS
-// ############################################################################
+// ############################################################
+//
+//	DELEGATECALL & STATICCALL
+//
+// ############################################################
+//
+// DELEGATECALL and STATICCALL have many permutations
+// warm or cold
+// empty or non-empty code at target address
+
+func TestGasDimensionLoggerDelegateCallEmptyCold(t *testing.T) {
+}
+func TestGasDimensionLoggerDelegateCallEmptyWarm(t *testing.T) {
+}
+func TestGasDimensionLoggerDelegateCallNonEmptyCold(t *testing.T) {
+}
+func TestGasDimensionLoggerDelegateCallNonEmptyWarm(t *testing.T) {
+}
+func TestGasDimensionLoggerStaticCallEmptyCold(t *testing.T) {
+}
+func TestGasDimensionLoggerStaticCallEmptyWarm(t *testing.T) {
+}
+func TestGasDimensionLoggerStaticCallNonEmptyCold(t *testing.T) {
+}
+func TestGasDimensionLoggerStaticCallNonEmptyWarm(t *testing.T) {
+}
+
+// ############################################################
+//	             LOG0, LOG1, LOG2, LOG3, LOG4
+// ############################################################
+
+func TestGasDimensionLoggerLog0Empty(t *testing.T) {
+}
+
+func TestGasDimensionLoggerLog0NonEmpty(t *testing.T) {
+}
+
+func TestGasDimensionLoggerLog1Empty(t *testing.T) {
+}
+
+func TestGasDimensionLoggerLog1NonEmpty(t *testing.T) {
+}
+
+func TestGasDimensionLoggerLog2(t *testing.T) {}
+
+func TestGasDimensionLoggerLog2ExtraData(t *testing.T) {}
+
+func TestGasDimensionLoggerLog3(t *testing.T) {}
+
+func TestGasDimensionLoggerLog3ExtraData(t *testing.T) {}
+
+func TestGasDimensionLoggerLog4(t *testing.T) {}
+
+func TestGasDimensionLoggerLog4ExtraData(t *testing.T) {}
+
+// ############################################################
+//	                    CREATE & CREATE2
+// ############################################################
+//
+// CREATE and CREATE2 only have two permutations, whether or not you
+// transfer value with the creation
+
+func TestGasDimensionLoggerCreate(t *testing.T) {}
+
+func TestGasDimensionLoggerCreateWithValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCreate2(t *testing.T) {}
+
+func TestGasDimensionLoggerCreate2WithValue(t *testing.T) {}
+
+// ############################################################
+//                      CALL and CALLCODE
+// ############################################################
+//
+// CALL and CALLCODE have many permutations
+// warm or cold
+// no value or value transfer with the call
+// empty or non-empty code at target address
+
+func TestGasDimensionLoggerCallEmptyColdNoValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallEmptyColdWithValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallEmptyWarmNoValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallEmptyWarmWithValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallNonEmptyColdNoValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallNonEmptyColdWithValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallNonEmptyWarmNoValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallNonEmptyWarmWithValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallCodeEmptyColdNoValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallCodeEmptyColdWithValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallCodeEmptyWarmNoValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallCodeEmptyWarmWithValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallCodeNonEmptyColdNoValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallCodeNonEmptyColdWithValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallCodeNonEmptyWarmNoValue(t *testing.T) {}
+
+func TestGasDimensionLoggerCallCodeNonEmptyWarmWithValue(t *testing.T) {}
+
+// ############################################################
+//                           SSTORE
+// ############################################################
+//
+// SSTORE has many permutations
+// warm or cold
+// 0 -> 0
+// 0 -> non-zero
+// non-zero -> 0
+// non-zero -> non-zero (same value)
+// non-zero -> non-zero (different value)
+
+func TestGasDimensionLoggerSstoreColdZeroToZero(t *testing.T)                     {}
+func TestGasDimensionLoggerSstoreColdZeroToNonZeroValue(t *testing.T)             {}
+func TestGasDimensionLoggerSstoreColdNonZeroValueToZero(t *testing.T)             {}
+func TestGasDimensionLoggerSstoreColdNonZeroToSameNonZeroValue(t *testing.T)      {}
+func TestGasDimensionLoggerSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {}
+
+func TestGasDimensionLoggerSstoreWarmZeroToZero(t *testing.T)                     {}
+func TestGasDimensionLoggerSstoreWarmZeroToNonZeroValue(t *testing.T)             {}
+func TestGasDimensionLoggerSstoreWarmNonZeroValueToZero(t *testing.T)             {}
+func TestGasDimensionLoggerSstoreWarmNonZeroToSameNonZeroValue(t *testing.T)      {}
+func TestGasDimensionLoggerSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {}
+
+// ############################################################
+//                          SELFDESTRUCT
+// ############################################################
+//
+// SELFDESTRUCT has many permutations
+// warm or cold
+// code at target address
+// value transferred or no value transferred
+
+func TestGasDimensionLoggerSelfdestructColdNoValueEmpty(t *testing.T)      {}
+func TestGasDimensionLoggerSelfdestructColdNoValueNonEmpty(t *testing.T)   {}
+func TestGasDimensionLoggerSelfdestructColdWithValueEmpty(t *testing.T)    {}
+func TestGasDimensionLoggerSelfdestructColdWithValueNonEmpty(t *testing.T) {}
+
+func TestGasDimensionLoggerSelfdestructWarmNoValueEmpty(t *testing.T)      {}
+func TestGasDimensionLoggerSelfdestructWarmNoValueNonEmpty(t *testing.T)   {}
+func TestGasDimensionLoggerSelfdestructWarmWithValueEmpty(t *testing.T)    {}
+func TestGasDimensionLoggerSelfdestructWarmWithValueNonEmpty(t *testing.T) {}
+
+// ############################################################
+//                         HELPER FUNCTIONS
+// ############################################################
 
 // common setup for all gas_dimension_logger tests
 func gasDimensionLoggerSetup(t *testing.T) (
