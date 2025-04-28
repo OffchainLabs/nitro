@@ -71,7 +71,6 @@ type BlockValidator struct {
 
 	// can only be accessed from from validation thread or if holding reorg-write
 	lastValidGS     validator.GoGlobalState
-	valLoopPos      arbutil.MessageIndex
 	legacyValidInfo *legacyLastBlockValidatedDbInfo
 
 	// only from logger thread
@@ -817,16 +816,11 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 	v.reorgMutex.RLock()
 	defer v.reorgMutex.RUnlock()
 
-	pos := v.validated() - 1 // to reverse the first +1 in the loop
-validationsLoop:
 	for {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		v.valLoopPos = pos + 1
-		v.reorgMutex.RUnlock()
-		v.reorgMutex.RLock()
-		pos = v.valLoopPos
+		pos := v.validated()
 		if pos >= v.recordSent() {
 			log.Trace("advanceValidations: nothing to validate", "pos", pos)
 			return nil, nil
@@ -835,53 +829,50 @@ validationsLoop:
 		if !found {
 			return nil, fmt.Errorf("not found entry for pos %d", pos)
 		}
-		currentStatus := validationStatus.getStatus()
-		if currentStatus == ValidationSent && pos == v.validated() {
-			if validationStatus.Entry.Start != v.lastValidGS {
-				log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.Entry.Start, "expected", v.lastValidGS)
-				validationStatus.Cancel()
-				return &pos, nil
-			}
-			var wasmRoots []common.Hash
-			for i, run := range validationStatus.Runs {
-				if !run.Ready() {
-					log.Trace("advanceValidations: validation not ready", "pos", pos, "run", i)
-					continue validationsLoop
-				}
-				wasmRoots = append(wasmRoots, run.WasmModuleRoot())
-				runEnd, err := run.Current()
-				if err == nil && runEnd != validationStatus.Entry.End {
-					err = fmt.Errorf("validation failed: expected %v got %v", validationStatus.Entry.End, runEnd)
-					writeErr := v.writeToFile(validationStatus.Entry)
-					if writeErr != nil {
-						log.Warn("failed to write debug results file", "err", writeErr)
-					}
-				}
-				if err != nil {
-					validatorFailedValidationsCounter.Inc(1)
-					v.possiblyFatal(err)
-					return &pos, nil // if not fatal - retry
-				}
-				validatorValidValidationsCounter.Inc(1)
-			}
-			err := v.writeLastValidated(validationStatus.Entry.End, wasmRoots)
-			if err != nil {
-				log.Error("failed writing new validated to database", "pos", pos, "err", err)
-			}
-			go v.recorder.MarkValid(pos, v.lastValidGS.BlockHash)
-			atomicStorePos(&v.validatedA, pos+1, validatorMsgCountValidatedGauge)
-			v.validations.Delete(pos)
-			nonBlockingTrigger(v.createNodesChan)
-			nonBlockingTrigger(v.sendRecordChan)
-			nonBlockingTrigger(v.sendValidationsChan)
-			v.testingProgressMadeMutex.Lock()
-			if v.testingProgressMadeChan != nil {
-				nonBlockingTrigger(v.testingProgressMadeChan)
-			}
-			v.testingProgressMadeMutex.Unlock()
-
-			log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
+		if validationStatus.Entry.Start != v.lastValidGS {
+			log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.Entry.Start, "expected", v.lastValidGS)
+			validationStatus.Cancel()
+			return &pos, nil
 		}
+		var wasmRoots []common.Hash
+		for i, run := range validationStatus.Runs {
+			if !run.Ready() {
+				log.Trace("advanceValidations: validation not ready", "pos", pos, "run", i)
+				return nil, nil
+			}
+			wasmRoots = append(wasmRoots, run.WasmModuleRoot())
+			runEnd, err := run.Current()
+			if err == nil && runEnd != validationStatus.Entry.End {
+				err = fmt.Errorf("validation failed: expected %v got %v", validationStatus.Entry.End, runEnd)
+				writeErr := v.writeToFile(validationStatus.Entry)
+				if writeErr != nil {
+					log.Warn("failed to write debug results file", "err", writeErr)
+				}
+			}
+			if err != nil {
+				validatorFailedValidationsCounter.Inc(1)
+				v.possiblyFatal(err)
+				return &pos, nil // if not fatal - retry
+			}
+			validatorValidValidationsCounter.Inc(1)
+		}
+		err := v.writeLastValidated(validationStatus.Entry.End, wasmRoots)
+		if err != nil {
+			log.Error("failed writing new validated to database", "pos", pos, "err", err)
+		}
+		go v.recorder.MarkValid(pos, v.lastValidGS.BlockHash)
+		atomicStorePos(&v.validatedA, pos+1, validatorMsgCountValidatedGauge)
+		v.validations.Delete(pos)
+		nonBlockingTrigger(v.createNodesChan)
+		nonBlockingTrigger(v.sendRecordChan)
+		nonBlockingTrigger(v.sendValidationsChan)
+		v.testingProgressMadeMutex.Lock()
+		if v.testingProgressMadeChan != nil {
+			nonBlockingTrigger(v.testingProgressMadeChan)
+		}
+		v.testingProgressMadeMutex.Unlock()
+
+		log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
 	}
 }
 
@@ -1131,7 +1122,6 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	}
 	// #nosec G115
 	v.validatedA.Store(countUint64)
-	v.valLoopPos = count
 	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
 	err = v.writeLastValidated(globalState, nil) // we don't know which wasm roots were validated
