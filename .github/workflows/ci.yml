@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, pathdb, challenge, stylus]
+        test-mode: [defaults, pathdb, challenge, stylus, l3challenge]
 
     steps:
       - name: Checkout
@@ -72,6 +72,10 @@ jobs:
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
+      - name: Get Rust version
+        id: rust-version
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
@@ -98,8 +102,8 @@ jobs:
             arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
             /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.rustc_hash }}-
+          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v3
@@ -182,9 +186,14 @@ jobs:
             exit 1
           fi
 
-      - name: run challenge tests
+      - name: build challenge tests
         if: matrix.test-mode == 'challenge'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --timeout 60m --cover
+        run: |
+          go test -tags challengetest ./... -run=^$ -v
+
+      - name: run L3 challenge tests
+        if: matrix.test-mode == 'l3challenge'
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestL3Challenge --timeout 120m --cover
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
