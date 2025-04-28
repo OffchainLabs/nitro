@@ -1,8 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
-
-//go:build cionly
-// +build cionly
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -18,15 +15,6 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// This is a flaky test.
-// During a reorg:
-// 1. TransactionStreamer, holding insertionMutex lock, calls ExecutionEngine, which then adds old messages to a channel.
-// After that, and before releasing the lock, TransactionStreamer does more computations.
-// 2. Asynchronously, ExecutionEngine reads from this channel and calls TransactionStreamer,
-// which expects that insertionMutex is free in order to succeed.
-//
-// If step 1 is still executing when Execution calls TransactionStreamer in step 2 then this error happens:
-// 'failed to re-sequence old user message removed by reorg err="insert lock taken"'
 func TestReorgResequencing(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -73,6 +61,7 @@ func TestReorgResequencing(t *testing.T) {
 
 	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startHeadMsgIdx)
 	Require(t, err)
+	// #nosec G115
 	delayedIndexHash := common.BigToHash(big.NewInt(int64(prevMessage.DelayedMessagesRead)))
 	newMessage := &arbostypes.L1IncomingMessage{
 		Header: &arbostypes.L1IncomingMessageHeader{

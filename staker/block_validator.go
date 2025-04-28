@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package staker
 
@@ -1232,11 +1232,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
-		latest, err := v.GetLatestWasmModuleRoot(ctx)
-		if err != nil {
-			return err
-		}
-		v.currentWasmModuleRoot = latest
+		v.currentWasmModuleRoot = v.GetLatestWasmModuleRoot()
 	case "current":
 		if (v.currentWasmModuleRoot == common.Hash{}) {
 			return errors.New("wasmModuleRoot set to 'current' - but info not set from chain")
@@ -1250,11 +1246,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	pendingModuleRoot := config.PendingUpgradeModuleRoot
 	if pendingModuleRoot != "" {
 		if pendingModuleRoot == "latest" {
-			latest, err := v.GetLatestWasmModuleRoot(ctx)
-			if err != nil {
-				return err
-			}
-			v.pendingWasmModuleRoot = latest
+			v.pendingWasmModuleRoot = v.GetLatestWasmModuleRoot()
 		} else {
 			valid, _ := regexp.MatchString("(0x)?[0-9a-fA-F]{64}", pendingModuleRoot)
 			v.pendingWasmModuleRoot = common.HexToHash(pendingModuleRoot)

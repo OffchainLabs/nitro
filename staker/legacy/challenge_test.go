@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package legacystaker
 
@@ -21,26 +21,26 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
-	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
+	"github.com/offchainlabs/nitro/solgen/go/osp_legacy_gen"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
 func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend) common.Address {
-	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
+	osp0, _, _, err := osp_legacy_gen.DeployOneStepProver0(auth, client)
 	Require(t, err)
 
-	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
+	ospMem, _, _, err := osp_legacy_gen.DeployOneStepProverMemory(auth, client)
 	Require(t, err)
 
-	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
+	ospMath, _, _, err := osp_legacy_gen.DeployOneStepProverMath(auth, client)
 	Require(t, err)
 
-	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
+	ospHostIo, _, _, err := osp_legacy_gen.DeployOneStepProverHostIo(auth, client)
 	Require(t, err)
 
-	ospEntry, _, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
+	ospEntry, _, _, err := osp_legacy_gen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
 	Require(t, err)
 	return ospEntry
 }
@@ -55,8 +55,8 @@ func CreateChallenge(
 	maxInboxMessage uint64,
 	asserter common.Address,
 	challenger common.Address,
-) (*mocksgen.MockResultReceiver, common.Address) {
-	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client, common.Address{})
+) (*mocks_legacy_gen.MockResultReceiver, common.Address) {
+	resultReceiverAddr, _, resultReceiver, err := mocks_legacy_gen.DeployMockResultReceiver(auth, client, common.Address{})
 	Require(t, err)
 
 	machine := inputMachine.CloneMachineInterface()
@@ -71,7 +71,7 @@ func CreateChallenge(
 	var endHashBytes [32]byte
 	copy(startHashBytes[:], startMachineHash[:])
 	copy(endHashBytes[:], endMachineHash[:])
-	challenge, _, _, err := mocksgen.DeploySingleExecutionChallenge(
+	challenge, _, _, err := mocks_legacy_gen.DeploySingleExecutionChallenge(
 		auth,
 		client,
 		ospEntry,

@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package programs
 
@@ -74,6 +74,8 @@ func newApiClosures(
 		return db.GetState(actingAddress, key), cost
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
+		isOutOfGas := false
+		recording := db.Recording()
 		for len(data) > 0 {
 			key := common.BytesToHash(data[:32])
 			value := common.BytesToHash(data[32:64])
@@ -86,10 +88,17 @@ func newApiClosures(
 			cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
 			if cost > *gasLeft {
 				*gasLeft = 0
-				return OutOfGas
+				isOutOfGas = true
+				if recording {
+					continue
+				}
+				break
 			}
 			*gasLeft -= cost
 			db.SetState(actingAddress, key, value)
+		}
+		if isOutOfGas {
+			return OutOfGas
 		}
 		return Success
 	}

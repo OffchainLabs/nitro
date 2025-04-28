@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
 
@@ -73,6 +73,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	filePathsInternal, err := filepath.Glob(filepath.Join(parent, "contracts-legacy", "build", "contracts", "src", "*", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	filePathsSafeSmartAccount, err := filepath.Glob(filepath.Join(parent, "safe-smart-account", "build", "artifacts", "contracts", "*", "*.sol", "*.json"))
 	if err != nil {
 		log.Fatal(err)
@@ -82,6 +87,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	filePaths = append(filePaths, filePathsInternal...)
 	filePaths = append(filePaths, filePathsSafeSmartAccount...)
 	filePaths = append(filePaths, filePathsSafeSmartAccountOuter...)
 
@@ -96,6 +102,11 @@ func main() {
 		dir, _ = filepath.Split(dir[:len(dir)-1])
 		_, module := filepath.Split(dir[:len(dir)-1])
 		module = strings.ReplaceAll(module, "-", "_")
+
+		if strings.Contains(path, "contracts-legacy") {
+			module += "_legacy_"
+		}
+
 		module += "gen"
 
 		name := file[:len(file)-5]

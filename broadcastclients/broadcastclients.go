@@ -1,10 +1,11 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcastclients
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -194,6 +195,10 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 			// Primary feeds
 			case msg := <-bcs.primaryRouter.messageChan:
 				if err := msgHandler(msg, bcs.primaryRouter); err != nil {
+					if errors.Is(err, broadcastclient.TransactionStreamerBlockCreationStopped) {
+						log.Info("stopping block creation in broadcast clients because transaction streamer has stopped")
+						return
+					}
 					log.Error("Error routing message from Primary Sequencer Feeds", "err", err)
 				}
 				clearAndResetTicker(startSecondaryFeedTimer, MAX_FEED_INACTIVE_TIME)

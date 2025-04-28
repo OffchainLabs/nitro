@@ -24,6 +24,11 @@ type RecordResult struct {
 	UserWasms state.UserWasms
 }
 
+type InboxBatch struct {
+	BatchNum uint64
+	Found    bool
+}
+
 var ErrRetrySequencer = errors.New("please retry transaction")
 var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
@@ -35,7 +40,7 @@ type ExecutionClient interface {
 	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
 	BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex]
-	SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
+	SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 
 	Maintenance() containers.PromiseInterface[struct{}]
@@ -63,8 +68,8 @@ type ExecutionSequencer interface {
 	ForwardTo(url string) error
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
-	Synced() bool
-	FullSyncProgressMap() map[string]interface{}
+	Synced(ctx context.Context) bool
+	FullSyncProgressMap(ctx context.Context) map[string]interface{}
 }
 
 // needed for batch poster
@@ -75,20 +80,20 @@ type ExecutionBatchPoster interface {
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error)
-	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
+	FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[InboxBatch]
+	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
 }
 
 type ConsensusInfo interface {
-	Synced() bool
-	FullSyncProgressMap() map[string]interface{}
-	SyncTargetMessageCount() arbutil.MessageIndex
-	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) (common.BlockMetadata, error)
+	Synced() containers.PromiseInterface[bool]
+	FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}]
+	SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex]
+	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata]
 }
 
 type ConsensusSequencer interface {
-	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) error
-	ExpectChosenSequencer() error
+	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}]
+	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
 }
 
 type FullConsensusClient interface {

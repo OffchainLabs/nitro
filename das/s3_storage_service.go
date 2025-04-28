@@ -1,14 +1,13 @@
 // Copyright 2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package das
 
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"math"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -43,7 +42,7 @@ func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".object-prefix", DefaultS3StorageServiceConfig.ObjectPrefix, "prefix to add to S3 objects")
 	f.String(prefix+".region", DefaultS3StorageServiceConfig.Region, "S3 region")
 	f.String(prefix+".secret-key", DefaultS3StorageServiceConfig.SecretKey, "S3 secret key")
-	f.Bool(prefix+".discard-after-timeout", DefaultS3StorageServiceConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
+	f.Bool(prefix+".discard-after-timeout", DefaultS3StorageServiceConfig.DiscardAfterTimeout, "this config option is deprecated")
 }
 
 type S3StorageService struct {
@@ -57,6 +56,9 @@ func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) 
 	client, err := s3client.NewS3FullClient(config.AccessKey, config.SecretKey, config.Region)
 	if err != nil {
 		return nil, err
+	}
+	if config.DiscardAfterTimeout {
+		return nil, errors.New("s3-storage.discard-after-timeout is depreciated and no longer accepted. Expiration for objects uploaded to S3 bucket can be set by adding lifecycle configuration rule to a bucket")
 	}
 	return &S3StorageService{
 		client:              client,
@@ -77,17 +79,12 @@ func (s3s *S3StorageService) GetByHash(ctx context.Context, key common.Hash) ([]
 	return buf.Bytes(), err
 }
 
-func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	logPut("das.S3StorageService.Store", value, timeout, s3s)
+func (s3s *S3StorageService) Put(ctx context.Context, value []byte, _ uint64) error {
+	logPut("das.S3StorageService.Store", value, 0, s3s)
 	putObjectInput := s3.PutObjectInput{
 		Bucket: aws.String(s3s.bucket),
 		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(dastree.Hash(value))),
 		Body:   bytes.NewReader(value)}
-	if s3s.discardAfterTimeout && timeout <= math.MaxInt64 {
-		// #nosec G115
-		expires := time.Unix(int64(timeout), 0)
-		putObjectInput.Expires = &expires
-	}
 	_, err := s3s.client.Upload(ctx, &putObjectInput)
 	if err != nil {
 		log.Error("das.S3StorageService.Store", "err", err)
@@ -104,9 +101,9 @@ func (s3s *S3StorageService) Close(ctx context.Context) error {
 }
 
 func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
-	if s3s.discardAfterTimeout {
-		return daprovider.DiscardAfterDataTimeout, nil
-	}
+	// Expiration of data uploaded to S3 bucket is handled directly via LifeCycle configuration of the bucket. Users can choose to add a
+	// Lifecycle configuration rule with an expiration action that causes objects with a specific prefix to expire certain days after creation.
+	// ref=https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html
 	return daprovider.KeepForever, nil
 }
 

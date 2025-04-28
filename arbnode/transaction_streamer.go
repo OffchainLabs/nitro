@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -28,6 +28,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
@@ -75,6 +76,7 @@ type TransactionStreamerConfig struct {
 	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
 	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
 	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
+	SyncTillBlock           uint64        `koanf:"sync-till-block"`
 	TrackBlockMetadataFrom  uint64        `koanf:"track-block-metadata-from"`
 }
 
@@ -84,6 +86,7 @@ var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 50_000,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
+	SyncTillBlock:           0,
 	TrackBlockMetadataFrom:  0,
 }
 
@@ -91,6 +94,7 @@ var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
 	ExecuteMessageLoopDelay: time.Millisecond,
+	SyncTillBlock:           0,
 	TrackBlockMetadataFrom:  0,
 }
 
@@ -98,7 +102,8 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
-	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "this is the block number starting from which blockmetadata is being tracked in the local disk and is being published to the feed. This is also the starting position for bulk syncing of missing blockmetadata. Setting to zero (default value) disables this")
+	f.Uint64(prefix+".sync-till-block", DefaultTransactionStreamerConfig.SyncTillBlock, "node will not sync past this block")
+	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "block number to start saving blockmetadata, 0 to disable")
 }
 
 func NewTransactionStreamer(
@@ -1018,7 +1023,49 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
 	}
-	if !s.insertionMutex.TryLock() {
+
+	lock := func() bool {
+		// Considering current Nitro's Consensus <-> Execution circular dependency design,
+		// there are some scenarios in which using s.insertionMutex.Lock() here would cause a deadlock.
+		// As an example, considering t(i) as times, and that t(i) occurs before t(i+1):
+		// t(1): Consensus identifies a Reorg and locks insertionMutex in ReorgAtAndEndBatch
+		// t(2): Execution sequences a message and locks createBlockMutex
+		// t(3): Consensus calls Execution.Reorg, which waits until createBlockMutex is available
+		// t(4): Execution calls Consensus.WriteMessageFromSequencer, which waits until insertionMutex is available
+		// t(3) and t(4) define a deadlock.
+		//
+		// In the other hand, a simple s.insertionMutex.TryLock() can cause some issues when resequencing reorgs, such as:
+		// 1. TransactionStreamer, holding insertionMutex lock, calls ExecutionEngine, which then adds old messages to a channel.
+		// After that, and before releasing the lock, TransactionStreamer does more computations.
+		// 2. Asynchronously, ExecutionEngine reads from this channel and calls TransactionStreamer,
+		// which expects that insertionMutex is free in order to succeed.
+		// If step 1 is still executing when Execution calls TransactionStreamer in step 2 then s.insertionMutex.TryLock() will fail.
+		//
+		// This retry lock with timeout mechanism is a workaround to avoid deadlocks,
+		// but enabling some reorg resequencing scenarios.
+
+		if s.insertionMutex.TryLock() {
+			return true
+		}
+		lockTick := time.Tick(5 * time.Millisecond)
+		lockTimeout := time.After(50 * time.Millisecond)
+		for {
+			select {
+			case <-lockTimeout:
+				return false
+			default:
+				select {
+				case <-lockTimeout:
+					return false
+				case <-lockTick:
+					if s.insertionMutex.TryLock() {
+						return true
+					}
+				}
+			}
+		}
+	}
+	if !lock() {
 		return execution.ErrSequencerInsertLockTaken
 	}
 	defer s.insertionMutex.Unlock()
@@ -1068,7 +1115,7 @@ func (s *TransactionStreamer) ResumeReorgs() {
 }
 
 func (s *TransactionStreamer) PopulateFeedBacklog() error {
-	if s.broadcastServer == nil {
+	if s.broadcastServer == nil || s.inboxReader == nil {
 		return nil
 	}
 	return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
@@ -1136,6 +1183,9 @@ func (s *TransactionStreamer) broadcastMessages(
 // The mutex must be held, and firstMsgIdx must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(firstMsgIdx arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
+	if s.config().SyncTillBlock > 0 && uint64(firstMsgIdx) > s.config().SyncTillBlock {
+		return broadcastclient.TransactionStreamerBlockCreationStopped
+	}
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}
@@ -1341,6 +1391,10 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 }
 
 func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struct{}) time.Duration {
+	if s.config().SyncTillBlock > 0 && s.prevHeadMsgIdx != nil && uint64(*s.prevHeadMsgIdx) >= s.config().SyncTillBlock {
+		log.Info("stopping block creation in transaction streamer", "syncTillBlock", s.config().SyncTillBlock)
+		return s.config().ExecuteMessageLoopDelay
+	}
 	if s.ExecuteNextMsg(ctx) {
 		return 0
 	}
