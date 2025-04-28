@@ -74,6 +74,435 @@ func TestGasDimensionLoggerComputationOnlyOpcodes(t *testing.T) {
 	}
 }
 
+// BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
+// this test deployes a contract that calls BALANCE on a cold access list address
+//
+// on the cold BALANCE, we expect the total one-dimensional gas cost to be 2600
+// the computation to be 100 (for the warm access cost of the address)
+// and the state access to be 2500 (for the cold access cost of the address)
+// and all other gas dimensions to be 0
+func TestGasDimensionLoggerBalanceCold(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployBalance(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.CallBalanceCold(&auth) // For write operations
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var balanceCount uint64 = 0
+	var balanceLog *DimensionLogRes
+
+	// there should only be one BALANCE in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "BALANCE" {
+			balanceCount++
+			balanceLog = &log
+		}
+	}
+	if balanceCount != 1 {
+		Fatal(t, "Expected 1 BALANCE, got %d", balanceCount)
+	}
+	if balanceLog == nil {
+		Fatal(t, "Expected BALANCE log, got nil")
+	}
+
+	checkDimensionLogGasCostsEqual(
+		t,
+		ExpectedGasCosts{
+			OneDimensionalGasCost: 2600,
+			Computation:           100,
+			StateAccess:           2500,
+			StateGrowth:           0,
+			HistoryGrowth:         0,
+			StateGrowthRefund:     0,
+		},
+		balanceLog,
+	)
+}
+
+// BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
+// this test deployes a contract that calls BALANCE on a warm access list address
+//
+// on the warm BALANCE, we expect the total one-dimensional gas cost to be 100
+// the computation to be 100 (for the warm access cost of the address)
+// and all other gas dimensions to be 0
+func TestGasDimensionLoggerBalanceWarm(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployBalance(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.CallBalanceWarm(&auth) // For write operations
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var balanceCount uint64 = 0
+	var balanceLog *DimensionLogRes
+
+	// there should only be one BALANCE in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "BALANCE" {
+			balanceCount++
+			balanceLog = &log
+		}
+	}
+	if balanceCount != 1 {
+		Fatal(t, "Expected 1 BALANCE, got %d", balanceCount)
+	}
+	if balanceLog == nil {
+		Fatal(t, "Expected BALANCE log, got nil")
+	}
+
+	checkDimensionLogGasCostsEqual(
+		t,
+		ExpectedGasCosts{
+			OneDimensionalGasCost: 100,
+			Computation:           100,
+			StateAccess:           0,
+			StateGrowth:           0,
+			HistoryGrowth:         0,
+			StateGrowthRefund:     0,
+		},
+		balanceLog,
+	)
+}
+
+// BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
+// this test deployes a contract that calls EXTCODESIZE on a cold access list address
+//
+// on the cold EXTCODESIZE, we expect the total one-dimensional gas cost to be 2600
+// the computation to be 100 (for the warm access cost of the address)
+// and the state access to be 2500 (for the cold access cost of the address)
+// and all other gas dimensions to be 0
+func TestGasDimensionLoggerExtCodeSizeCold(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployExtCodeSize(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.GetExtCodeSizeCold(&auth) // For write operations
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var extCodeSizeCount uint64 = 0
+	var extCodeSizeLog *DimensionLogRes
+
+	// there should only be one EXTCODESIZE in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "EXTCODESIZE" {
+			extCodeSizeCount++
+			extCodeSizeLog = &log
+		}
+	}
+	if extCodeSizeCount != 1 {
+		Fatal(t, "Expected 1 EXTCODESIZE, got %d", extCodeSizeCount)
+	}
+	if extCodeSizeLog == nil {
+		Fatal(t, "Expected EXTCODESIZE log, got nil")
+	}
+
+	checkDimensionLogGasCostsEqual(
+		t,
+		ExpectedGasCosts{
+			OneDimensionalGasCost: 2600,
+			Computation:           100,
+			StateAccess:           2500,
+			StateGrowth:           0,
+			HistoryGrowth:         0,
+			StateGrowthRefund:     0,
+		},
+		extCodeSizeLog,
+	)
+}
+
+// BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
+// this test deployes a contract that calls EXTCODESIZE on a warm access list address
+//
+// on the warm EXTCODESIZE, we expect the total one-dimensional gas cost to be 100
+// the computation to be 100 (for the warm access cost of the address)
+// and all other gas dimensions to be 0
+func TestGasDimensionLoggerExtCodeSizeWarm(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployExtCodeSize(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.GetExtCodeSizeWarm(&auth) // For write operations
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var extCodeSizeCount uint64 = 0
+	var extCodeSizeLog *DimensionLogRes
+
+	// there should only be one EXTCODESIZE in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "EXTCODESIZE" {
+			extCodeSizeCount++
+			extCodeSizeLog = &log
+		}
+	}
+	if extCodeSizeCount != 1 {
+		Fatal(t, "Expected 1 EXTCODESIZE, got %d", extCodeSizeCount)
+	}
+	if extCodeSizeLog == nil {
+		Fatal(t, "Expected EXTCODESIZE log, got nil")
+	}
+
+	checkDimensionLogGasCostsEqual(
+		t,
+		ExpectedGasCosts{
+			OneDimensionalGasCost: 100,
+			Computation:           100,
+			StateAccess:           0,
+			StateGrowth:           0,
+			HistoryGrowth:         0,
+			StateGrowthRefund:     0,
+		},
+		extCodeSizeLog,
+	)
+}
+
+// BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
+// this test deployes a contract that calls EXTCODEHASH on a cold access list address
+//
+// on the cold EXTCODEHASH, we expect the total one-dimensional gas cost to be 2600
+// the computation to be 100 (for the warm access cost of the address)
+// and the state access to be 2500 (for the cold access cost of the address)
+// and all other gas dimensions to be 0
+func TestGasDimensionLoggerExtCodeHashCold(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployExtCodeHash(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.GetExtCodeHashCold(&auth) // For write operations
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var extCodeHashCount uint64 = 0
+	var extCodeHashLog *DimensionLogRes
+
+	// there should only be one EXTCODEHASH in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "EXTCODEHASH" {
+			extCodeHashCount++
+			extCodeHashLog = &log
+		}
+	}
+	if extCodeHashCount != 1 {
+		Fatal(t, "Expected 1 EXTCODEHASH, got %d", extCodeHashCount)
+	}
+	if extCodeHashLog == nil {
+		Fatal(t, "Expected EXTCODEHASH log, got nil")
+	}
+
+	checkDimensionLogGasCostsEqual(
+		t,
+		ExpectedGasCosts{
+			OneDimensionalGasCost: 2600,
+			Computation:           100,
+			StateAccess:           2500,
+			StateGrowth:           0,
+			HistoryGrowth:         0,
+			StateGrowthRefund:     0,
+		},
+		extCodeHashLog,
+	)
+}
+
+// BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
+// this test deployes a contract that calls EXTCODEHASH on a warm access list address
+//
+// on the warm EXTCODEHASH, we expect the total one-dimensional gas cost to be 100
+// the computation to be 100 (for the warm access cost of the address)
+// and all other gas dimensions to be 0
+func TestGasDimensionLoggerExtCodeHashWarm(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployExtCodeHash(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.GetExtCodeHashWarm(&auth) // For write operations
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var extCodeHashCount uint64 = 0
+	var extCodeHashLog *DimensionLogRes
+
+	// there should only be one EXTCODEHASH in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "EXTCODEHASH" {
+			extCodeHashCount++
+			extCodeHashLog = &log
+		}
+	}
+	if extCodeHashCount != 1 {
+		Fatal(t, "Expected 1 EXTCODEHASH, got %d", extCodeHashCount)
+	}
+	if extCodeHashLog == nil {
+		Fatal(t, "Expected EXTCODEHASH log, got nil")
+	}
+
+	checkDimensionLogGasCostsEqual(
+		t,
+		ExpectedGasCosts{
+			OneDimensionalGasCost: 100,
+			Computation:           100,
+			StateAccess:           0,
+			StateGrowth:           0,
+			HistoryGrowth:         0,
+			StateGrowthRefund:     0,
+		},
+		extCodeHashLog,
+	)
+}
+
 // In this test we deploy a contract with a function that all it does
 // is perform an sload on a cold slot that has not been touched yet
 //
@@ -107,7 +536,7 @@ func TestGasDimensionLoggerSloadCold(t *testing.T) {
 	var sloadCount uint64 = 0
 	var sloadLog *DimensionLogRes
 
-	// there should only be one sload in the entire trace
+	// there should only be one SLOAD in the entire trace
 	// go through and grab it and its data
 	for i, log := range traceResult.DimensionLogs {
 		// Basic field validation
@@ -126,10 +555,10 @@ func TestGasDimensionLoggerSloadCold(t *testing.T) {
 		}
 	}
 	if sloadCount != 1 {
-		Fatal(t, "Expected 1 sload, got %d", sloadCount)
+		Fatal(t, "Expected 1 SLOAD, got %d", sloadCount)
 	}
 	if sloadLog == nil {
-		Fatal(t, "Expected sload log, got nil")
+		Fatal(t, "Expected SLOAD log, got nil")
 	}
 
 	checkDimensionLogGasCostsEqual(
@@ -178,7 +607,7 @@ func TestGasDimensionLoggerSloadWarm(t *testing.T) {
 	var sloadCount uint64 = 0
 	var sloadLog *DimensionLogRes
 
-	// there should only be one sload in the entire trace
+	// there should only be one SLOAD in the entire trace
 	// go through and grab it and its data
 	for i, log := range traceResult.DimensionLogs {
 		// Basic field validation
@@ -197,10 +626,10 @@ func TestGasDimensionLoggerSloadWarm(t *testing.T) {
 		}
 	}
 	if sloadCount != 1 {
-		Fatal(t, "Expected 1 sload, got %d", sloadCount)
+		Fatal(t, "Expected 1 SLOAD, got %d", sloadCount)
 	}
 	if sloadLog == nil {
-		Fatal(t, "Expected sload log, got nil")
+		Fatal(t, "Expected SLOAD log, got nil")
 	}
 
 	// on the warm sload, we expect the total one-dimensional gas cost to be 100
@@ -300,21 +729,21 @@ func checkDimensionLogGasCostsEqual(
 ) {
 	t.Helper()
 	if actual.OneDimensionalGasCost != expected.OneDimensionalGasCost {
-		Fatal(t, "Expected OneDimensionalGasCost %d, got %d", expected.OneDimensionalGasCost, actual.OneDimensionalGasCost)
+		Fatal(t, "Expected OneDimensionalGasCost ", expected.OneDimensionalGasCost, " got ", actual.OneDimensionalGasCost)
 	}
 	if actual.Computation != expected.Computation {
-		Fatal(t, "Expected Computation %d, got %d", expected.Computation, actual.Computation)
+		Fatal(t, "Expected Computation ", expected.Computation, " got ", actual.Computation)
 	}
 	if actual.StateAccess != expected.StateAccess {
-		Fatal(t, "Expected StateAccess %d, got %d", expected.StateAccess, actual.StateAccess)
+		Fatal(t, "Expected StateAccess ", expected.StateAccess, " got ", actual.StateAccess)
 	}
 	if actual.StateGrowth != expected.StateGrowth {
-		Fatal(t, "Expected StateGrowth %d, got %d", expected.StateGrowth, actual.StateGrowth)
+		Fatal(t, "Expected StateGrowth ", expected.StateGrowth, " got ", actual.StateGrowth)
 	}
 	if actual.HistoryGrowth != expected.HistoryGrowth {
-		Fatal(t, "Expected HistoryGrowth %d, got %d", expected.HistoryGrowth, actual.HistoryGrowth)
+		Fatal(t, "Expected HistoryGrowth ", expected.HistoryGrowth, " got ", actual.HistoryGrowth)
 	}
 	if actual.StateGrowthRefund != expected.StateGrowthRefund {
-		Fatal(t, "Expected StateGrowthRefund %d, got %d", expected.StateGrowthRefund, actual.StateGrowthRefund)
+		Fatal(t, "Expected StateGrowthRefund ", expected.StateGrowthRefund, " got ", actual.StateGrowthRefund)
 	}
 }
