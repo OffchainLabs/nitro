@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -34,7 +33,6 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/inputs"
-	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
 var (
@@ -547,19 +545,6 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 		}
 		nonBlockingTrigger(v.sendValidationsChan)
 	})
-	return nil
-}
-
-//nolint:gosec
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry) error {
-	input, err := validationEntry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
-	if err != nil {
-		return err
-	}
-	inputJson := server_api.ValidationInputToJson(input)
-	if err := v.validationInputsWriter.Write(inputJson); err != nil {
-		return err
-	}
 	return nil
 }
 
