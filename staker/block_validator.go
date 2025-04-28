@@ -984,7 +984,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 			return nil, fmt.Errorf("bad status trying to send validation for pos %d status: %v", pos, currentStatus)
 		}
 	}
-	return nil, nil
 }
 
 func (v *BlockValidator) iterativeValidationProgress(ctx context.Context, ignored struct{}) time.Duration {
