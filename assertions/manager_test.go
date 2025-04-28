@@ -404,7 +404,9 @@ func TestFastConfirmation(t *testing.T) {
 	posted, err := assertionManager.PostAssertion(ctx)
 	require.NoError(t, err)
 	require.Equal(t, true, posted.IsSome())
-	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(posted.Unwrap().AfterState))
+	creationInfo, err := aliceChain.ReadAssertionCreationInfo(ctx, posted.Unwrap().Id())
+	require.NoError(t, err)
+	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(creationInfo.AfterState))
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -479,10 +481,12 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	posted, err := assertionManagerAlice.PostAssertion(ctx)
 	require.NoError(t, err)
 	require.Equal(t, true, posted.IsSome())
-	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(posted.Unwrap().AfterState))
+	creationInfo, err := aliceChain.ReadAssertionCreationInfo(ctx, posted.Unwrap().Id())
+	require.NoError(t, err)
+	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(creationInfo.AfterState))
 
 	<-time.After(time.Second)
-	status, err := aliceChain.AssertionStatus(ctx, posted.Unwrap().AssertionHash)
+	status, err := aliceChain.AssertionStatus(ctx, posted.Unwrap().Id())
 	require.NoError(t, err)
 	// Just one fast confirmation is not enough to confirm the assertion.
 	require.Equal(t, protocol.AssertionPending, status)

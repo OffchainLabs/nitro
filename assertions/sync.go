@@ -451,7 +451,7 @@ func (m *Manager) maybePostRivalAssertion(
 		return none, err
 	}
 	// If the validator is already staked, we post an assertion and move existing stake to it.
-	var assertionOpt option.Option[*protocol.AssertionCreatedInfo]
+	var assertionOpt option.Option[protocol.Assertion]
 	var postErr error
 	if staked {
 		assertionOpt, postErr = m.PostAssertionBasedOnParent(
@@ -467,7 +467,10 @@ func (m *Manager) maybePostRivalAssertion(
 		return none, postErr
 	}
 	if assertionOpt.IsSome() {
-		creationInfo := assertionOpt.Unwrap()
+		creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionOpt.Unwrap().Id())
+		if err != nil {
+			return none, err
+		}
 		log.Info("Posted rival assertion to another that we disagreed with",
 			"parentAssertionHash", canonicalParent.AssertionHash,
 			"correctRivalAssertionHash", creationInfo.AssertionHash,
@@ -477,7 +480,7 @@ func (m *Manager) maybePostRivalAssertion(
 		)
 		go func() {
 			if _, err2 := retry.UntilSucceeds(ctx, func() (bool, error) {
-				innerErr := m.saveAssertionToDB(ctx, assertionOpt.Unwrap())
+				innerErr := m.saveAssertionToDB(ctx, creationInfo)
 				if innerErr != nil {
 					log.Error("Could not save assertion to DB", "err", innerErr)
 					return false, innerErr
@@ -487,8 +490,9 @@ func (m *Manager) maybePostRivalAssertion(
 				log.Error("Could not save assertion to DB", "err", err2)
 			}
 		}()
+		return option.Some(creationInfo), nil
 	}
-	return assertionOpt, nil
+	return none, nil
 }
 
 func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.AssertionCreatedInfo) error {

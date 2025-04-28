@@ -88,7 +88,7 @@ func (m *Manager) awaitPostingSignal(ctx context.Context) {
 }
 
 // PostAssertion differs depending on whether or not the validator is currently staked.
-func (m *Manager) PostAssertion(ctx context.Context) (option.Option[*protocol.AssertionCreatedInfo], error) {
+func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Assertion], error) {
 	if !m.isReadyToPost {
 		m.awaitPostingSignal(ctx)
 	}
@@ -98,7 +98,7 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[*protocol.As
 	m.assertionChainData.Lock()
 	parentAssertionCreationInfo, ok := m.assertionChainData.canonicalAssertions[m.assertionChainData.latestAgreedAssertion]
 	m.assertionChainData.Unlock()
-	none := option.None[*protocol.AssertionCreatedInfo]()
+	none := option.None[protocol.Assertion]()
 	if !ok {
 		return none, fmt.Errorf(
 			"latest agreed assertion %#x not part of canonical mapping, something is wrong",
@@ -110,7 +110,7 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[*protocol.As
 		return none, err
 	}
 	// If the validator is already staked, we post an assertion and move existing stake to it.
-	var assertionOpt option.Option[*protocol.AssertionCreatedInfo]
+	var assertionOpt option.Option[protocol.Assertion]
 	var postErr error
 	if staked {
 		assertionOpt, postErr = m.PostAssertionBasedOnParent(
@@ -126,7 +126,7 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[*protocol.As
 		return none, postErr
 	}
 	if assertionOpt.IsSome() {
-		m.submittedAssertions.Insert(assertionOpt.Unwrap().AssertionHash)
+		m.submittedAssertions.Insert(assertionOpt.Unwrap().Id())
 	}
 	return assertionOpt, nil
 }
@@ -140,8 +140,8 @@ func (m *Manager) PostAssertionBasedOnParent(
 		parentCreationInfo *protocol.AssertionCreatedInfo,
 		newState *protocol.ExecutionState,
 	) (protocol.Assertion, error),
-) (option.Option[*protocol.AssertionCreatedInfo], error) {
-	none := option.None[*protocol.AssertionCreatedInfo]()
+) (option.Option[protocol.Assertion], error) {
+	none := option.None[protocol.Assertion]()
 	if !parentCreationInfo.InboxMaxCount.IsUint64() {
 		return none, errors.New("inbox max count not a uint64")
 	}
@@ -190,19 +190,14 @@ func (m *Manager) PostAssertionBasedOnParent(
 		return none, err
 	}
 	assertionPostedCounter.Inc(1)
-	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertion.Id())
-	if err != nil {
-		return none, err
-	}
 	log.Info("Successfully submitted assertion",
 		"validatorName", m.validatorName,
 		"requiredInboxMaxCount", batchCount,
 		"postedExecutionState", fmt.Sprintf("%+v", newState),
-		"assertionHash", creationInfo.AssertionHash,
-		"transactionHash", creationInfo.TransactionHash,
+		"assertionHash", assertion.Id(),
 	)
 	m.observedCanonicalAssertions <- assertion.Id()
-	return option.Some(creationInfo), nil
+	return option.Some(assertion), nil
 }
 
 func (m *Manager) waitToPostIfNeeded(

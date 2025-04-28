@@ -89,5 +89,7 @@ func TestPostAssertion(t *testing.T) {
 	posted, err := assertionManager.PostAssertion(ctx)
 	require.NoError(t, err)
 	require.Equal(t, true, posted.IsSome())
-	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(posted.Unwrap().AfterState))
+	creationInfo, err := aliceChain.ReadAssertionCreationInfo(ctx, posted.Unwrap().Id())
+	require.NoError(t, err)
+	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(creationInfo.AfterState))
 }
