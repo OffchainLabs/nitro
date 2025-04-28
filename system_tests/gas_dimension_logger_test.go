@@ -9,11 +9,20 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
 )
 
 type DimensionLogRes = native.DimensionLogRes
 type TraceResult = native.ExecutionResult
+
+const (
+	ColdMinusWarmAccountAccessCost = params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929
+	ColdMinusWarmSloadCost         = params.ColdSloadCostEIP2929 - params.WarmStorageReadCostEIP2929
+	ColdAccountAccessCost          = params.ColdAccountAccessCostEIP2929
+	ColdSloadCost                  = params.ColdSloadCostEIP2929
+	WarmStorageReadCost            = params.WarmStorageReadCostEIP2929
+)
 
 // ############################################################
 //      REGULAR COMPUTATION OPCODES (ADD, SWAP, ETC)
@@ -140,16 +149,18 @@ func TestGasDimensionLoggerBalanceCold(t *testing.T) {
 		Fatal(t, "Expected BALANCE log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: ColdAccountAccessCost,
+		Computation:           WarmStorageReadCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, balanceLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 2600,
-			Computation:           100,
-			StateAccess:           2500,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		balanceLog,
 	)
 }
@@ -211,16 +222,18 @@ func TestGasDimensionLoggerBalanceWarm(t *testing.T) {
 		Fatal(t, "Expected BALANCE log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: WarmStorageReadCost,
+		Computation:           WarmStorageReadCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, balanceLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 100,
-			Computation:           100,
-			StateAccess:           0,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		balanceLog,
 	)
 }
@@ -283,16 +296,18 @@ func TestGasDimensionLoggerExtCodeSizeCold(t *testing.T) {
 		Fatal(t, "Expected EXTCODESIZE log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: ColdAccountAccessCost,
+		Computation:           WarmStorageReadCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeSizeLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 2600,
-			Computation:           100,
-			StateAccess:           2500,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		extCodeSizeLog,
 	)
 }
@@ -354,16 +369,18 @@ func TestGasDimensionLoggerExtCodeSizeWarm(t *testing.T) {
 		Fatal(t, "Expected EXTCODESIZE log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: WarmStorageReadCost,
+		Computation:           WarmStorageReadCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeSizeLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 100,
-			Computation:           100,
-			StateAccess:           0,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		extCodeSizeLog,
 	)
 }
@@ -426,16 +443,18 @@ func TestGasDimensionLoggerExtCodeHashCold(t *testing.T) {
 		Fatal(t, "Expected EXTCODEHASH log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: ColdAccountAccessCost,
+		Computation:           WarmStorageReadCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeHashLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 2600,
-			Computation:           100,
-			StateAccess:           2500,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		extCodeHashLog,
 	)
 }
@@ -497,16 +516,18 @@ func TestGasDimensionLoggerExtCodeHashWarm(t *testing.T) {
 		Fatal(t, "Expected EXTCODEHASH log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: WarmStorageReadCost,
+		Computation:           WarmStorageReadCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeHashLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 100,
-			Computation:           100,
-			StateAccess:           0,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		extCodeHashLog,
 	)
 }
@@ -573,16 +594,18 @@ func TestGasDimensionLoggerSloadCold(t *testing.T) {
 		Fatal(t, "Expected SLOAD log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: ColdSloadCost,
+		Computation:           WarmStorageReadCost,
+		StateAccess:           ColdMinusWarmSloadCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, sloadLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 2100,
-			Computation:           100,
-			StateAccess:           2000,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		sloadLog,
 	)
 }
@@ -644,19 +667,18 @@ func TestGasDimensionLoggerSloadWarm(t *testing.T) {
 		Fatal(t, "Expected SLOAD log, got nil")
 	}
 
-	// on the warm sload, we expect the total one-dimensional gas cost to be 100
-	// the computation to be 100 (for the warm base access cost)
-	// all others zero
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: WarmStorageReadCost,
+		Computation:           WarmStorageReadCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, sloadLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 100,
-			Computation:           100,
-			StateAccess:           0,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		sloadLog,
 	)
 }
@@ -787,16 +809,18 @@ func TestGasDimensionLoggerExtCodeCopyColdNoMemExpansion(t *testing.T) {
 		Fatal(t, "Expected EXTCODECOPY log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: ColdAccountAccessCost + extCodeCopyMinimumWordCost,
+		Computation:           WarmStorageReadCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost + extCodeCopyMinimumWordCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 2600 + extCodeCopyMinimumWordCost,
-			Computation:           100,
-			StateAccess:           2500 + extCodeCopyMinimumWordCost,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		extCodeCopyLog,
 	)
 }
@@ -863,16 +887,18 @@ func TestGasDimensionLoggerExtCodeCopyColdMemExpansion(t *testing.T) {
 		Fatal(t, "Expected EXTCODECOPY log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: ColdAccountAccessCost + extCodeCopyMemoryExpansionCost + extCodeCopyMinimumWordCost,
+		Computation:           WarmStorageReadCost + extCodeCopyMemoryExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost + extCodeCopyMinimumWordCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 2600 + extCodeCopyMemoryExpansionCost + extCodeCopyMinimumWordCost,
-			Computation:           100 + extCodeCopyMemoryExpansionCost,
-			StateAccess:           2500 + extCodeCopyMinimumWordCost,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		extCodeCopyLog,
 	)
 }
@@ -937,16 +963,18 @@ func TestGasDimensionLoggerExtCodeCopyWarmNoMemExpansion(t *testing.T) {
 		Fatal(t, "Expected EXTCODECOPY log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: WarmStorageReadCost + extCodeCopyMinimumWordCost,
+		Computation:           WarmStorageReadCost,
+		StateAccess:           extCodeCopyMinimumWordCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 100 + extCodeCopyMinimumWordCost,
-			Computation:           100,
-			StateAccess:           extCodeCopyMinimumWordCost,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		extCodeCopyLog,
 	)
 }
@@ -1013,16 +1041,18 @@ func TestGasDimensionLoggerExtCodeCopyWarmMemExpansion(t *testing.T) {
 		Fatal(t, "Expected EXTCODECOPY log, got nil")
 	}
 
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: WarmStorageReadCost + extCodeCopyMemoryExpansionCost + extCodeCopyMinimumWordCost,
+		Computation:           WarmStorageReadCost + extCodeCopyMemoryExpansionCost,
+		StateAccess:           extCodeCopyMinimumWordCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 	checkDimensionLogGasCostsEqual(
 		t,
-		ExpectedGasCosts{
-			OneDimensionalGasCost: 100 + extCodeCopyMemoryExpansionCost + extCodeCopyMinimumWordCost,
-			Computation:           100 + extCodeCopyMemoryExpansionCost,
-			StateAccess:           extCodeCopyMinimumWordCost,
-			StateGrowth:           0,
-			HistoryGrowth:         0,
-			StateGrowthRefund:     0,
-		},
+		expected,
 		extCodeCopyLog,
 	)
 }
@@ -1100,6 +1130,7 @@ type ExpectedGasCosts struct {
 	StateGrowthRefund     int64
 }
 
+// checks that all of the fields of the expected and actual dimension logs are equal
 func checkDimensionLogGasCostsEqual(
 	t *testing.T,
 	expected ExpectedGasCosts,
@@ -1123,5 +1154,16 @@ func checkDimensionLogGasCostsEqual(
 	}
 	if actual.StateGrowthRefund != expected.StateGrowthRefund {
 		Fatal(t, "Expected StateGrowthRefund ", expected.StateGrowthRefund, " got ", actual.StateGrowthRefund)
+	}
+}
+
+// checks that the one dimensional gas cost is equal to the sum of the other gas dimensions
+func checkGasDimensionsEqualOneDimensionalGas(
+	t *testing.T,
+	l *DimensionLogRes,
+) {
+	t.Helper()
+	if l.OneDimensionalGasCost != l.Computation+l.StateAccess+l.StateGrowth+l.HistoryGrowth {
+		Fatal(t, "Expected OneDimensionalGasCost to equal sum of gas dimensions", l)
 	}
 }
