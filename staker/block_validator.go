@@ -255,15 +255,22 @@ const (
 	RecordFailed
 	Prepared
 	SendingValidation
-	ValidationSent
+	ValidationDone
 )
 
 type validationStatus struct {
-	Status    atomic.Uint32             // atomic: value is one of validationStatus*
-	Cancel    func()                    // non-atomic: only read/written to with reorg mutex
-	Entry     *validationEntry          // non-atomic: only read if Status >= validationStatusPrepared
-	Runs      []validator.ValidationRun // if status >= ValidationSent
-	profileTS int64                     // time-stamp for profiling
+	Status    atomic.Uint32        // atomic: value is one of validationStatus*
+	Cancel    func()               // non-atomic: only read/written to with reorg mutex
+	Entry     *validationEntry     // non-atomic: only read if Status >= validationStatusPrepared
+	DoneEntry *validationDoneEntry // non-atomic: only read if status == ValidationDone
+	profileTS int64                // time-stamp for profiling
+}
+
+type validationDoneEntry struct {
+	Success         bool
+	Start           validator.GoGlobalState
+	End             validator.GoGlobalState
+	WasmModuleRoots []common.Hash
 }
 
 func (s *validationStatus) getStatus() valStatusField {
@@ -829,34 +836,16 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 		if !found {
 			return nil, fmt.Errorf("not found entry for pos %d", pos)
 		}
-		if validationStatus.Entry.Start != v.lastValidGS {
-			log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.Entry.Start, "expected", v.lastValidGS)
+		if validationStatus.DoneEntry.Start != v.lastValidGS {
+			log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.DoneEntry.Start, "expected", v.lastValidGS)
 			validationStatus.Cancel()
 			return &pos, nil
 		}
-		var wasmRoots []common.Hash
-		for i, run := range validationStatus.Runs {
-			if !run.Ready() {
-				log.Trace("advanceValidations: validation not ready", "pos", pos, "run", i)
-				return nil, nil
-			}
-			wasmRoots = append(wasmRoots, run.WasmModuleRoot())
-			runEnd, err := run.Current()
-			if err == nil && runEnd != validationStatus.Entry.End {
-				err = fmt.Errorf("validation failed: expected %v got %v", validationStatus.Entry.End, runEnd)
-				writeErr := v.writeToFile(validationStatus.Entry)
-				if writeErr != nil {
-					log.Warn("failed to write debug results file", "err", writeErr)
-				}
-			}
-			if err != nil {
-				validatorFailedValidationsCounter.Inc(1)
-				v.possiblyFatal(err)
-				return &pos, nil // if not fatal - retry
-			}
-			validatorValidValidationsCounter.Inc(1)
+		if !validationStatus.DoneEntry.Success {
+			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
+			return &pos, nil // if not fatal - retry
 		}
-		err := v.writeLastValidated(validationStatus.Entry.End, wasmRoots)
+		err := v.writeLastValidated(validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots)
 		if err != nil {
 			log.Error("failed writing new validated to database", "pos", pos, "err", err)
 		}
@@ -944,28 +933,42 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 				runs = append(runs, run)
 			}
+			validationStatus.DoneEntry = &validationDoneEntry{
+				Success:         false,
+				Start:           validationStatus.Entry.Start,
+				End:             validationStatus.Entry.End,
+				WasmModuleRoots: wasmRoots,
+			}
+			validationStatus.Entry = nil // no longer needed
 			validatorProfileLaunchingHist.Update(validationStatus.profileStep())
 			validationCtx, cancel := context.WithCancel(ctx)
-			validationStatus.Runs = runs
 			validationStatus.Cancel = cancel
 			v.LaunchUntrackedThread(func() {
 				defer validatorPendingValidationsGauge.Dec(1)
 				defer cancel()
-				startTsMilli := validationStatus.profileTS
-				replaced = validationStatus.replaceStatus(SendingValidation, ValidationSent)
-				if !replaced {
-					v.possiblyFatal(errors.New("failed to set status to ValidationSent"))
-				}
+				markSuccess := len(runs) > 0
 
 				// validationStatus might be removed from under us
 				// trigger validation progress when done
 				for _, run := range runs {
-					_, err := run.Await(validationCtx)
-					if err != nil {
-						return
+					runEnd, err := run.Await(validationCtx)
+					if err == nil && runEnd != validationStatus.DoneEntry.End {
+						err = fmt.Errorf("validation failed: got %v", runEnd)
 					}
+					if err != nil {
+						validatorFailedValidationsCounter.Inc(1)
+						markSuccess = false
+						log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
+						break
+					}
+					validatorValidValidationsCounter.Inc(1)
 				}
-				validatorProfileRunningHist.Update(time.Now().UnixMilli() - startTsMilli)
+				validationStatus.DoneEntry.Success = markSuccess
+				validatorProfileRunningHist.Update(validationStatus.profileStep())
+				replaced := validationStatus.replaceStatus(SendingValidation, ValidationDone)
+				if !replaced {
+					v.possiblyFatal(errors.New("failed to set SendingValidation status"))
+				}
 				nonBlockingTrigger(v.progressValidationsChan)
 			})
 			pos += 1
