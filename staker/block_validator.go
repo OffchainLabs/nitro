@@ -836,11 +836,6 @@ validationsLoop:
 			return nil, fmt.Errorf("not found entry for pos %d", pos)
 		}
 		currentStatus := validationStatus.getStatus()
-		if currentStatus == RecordFailed {
-			// retry
-			log.Warn("Recording for validation failed, retrying..", "pos", pos)
-			return &pos, nil
-		}
 		if currentStatus == ValidationSent && pos == v.validated() {
 			if validationStatus.Entry.Start != v.lastValidGS {
 				log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.Entry.Start, "expected", v.lastValidGS)
@@ -897,22 +892,18 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 	defer v.reorgMutex.RUnlock()
 
 	wasmRoots := v.GetModuleRootsToValidate()
-	pos := v.lastValidationSent()
-	recordSent := v.recordSent()
-	initialLastValidationSent := pos
-	sendValidationUntil := v.validated() + arbutil.MessageIndex(v.config().ValidationSentLimit) - 1
-	if sendValidationUntil > recordSent-1 {
-		sendValidationUntil = recordSent - 1
-	}
-	for pos <= sendValidationUntil {
+	for {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		v.reorgMutex.RUnlock()
 		v.reorgMutex.RLock()
-		if v.lastValidationSent() != initialLastValidationSent {
-			pos = v.lastValidationSent()
-			initialLastValidationSent = pos
+		pos := v.lastValidationSent()
+		if pos > v.validated()+arbutil.MessageIndex(v.config().ValidationSentLimit)-1 {
+			return nil, nil
+		}
+		if pos > v.recordSent()-1 {
+			return nil, nil
 		}
 		validationStatus, found := v.validations.Load(pos)
 		if !found {
