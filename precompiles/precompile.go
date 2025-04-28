@@ -639,6 +639,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbOwner.methodsByName["SetWasmMaxSize"].arbosVersion = params.ArbosVersion_40
 
+	ArbOwner.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
+	ArbOwner.methodsByName["BurnNativeToken"].arbosVersion = params.ArbosVersion_41
+
 	return contracts
 }
 

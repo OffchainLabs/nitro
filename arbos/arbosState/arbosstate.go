@@ -350,6 +350,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(params.UpgradeToArbosVersion(nextArbosVersion))
 			ensure(params.Save())
 
+		case params.ArbosVersion_41:
+			// no change state needed
+
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
