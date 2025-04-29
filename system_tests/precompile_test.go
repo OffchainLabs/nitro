@@ -489,7 +489,7 @@ func TestMintAndBurnNativeToken(t *testing.T) {
 
 	addr := builder.L2Info.GetAddress("User2")
 	// TODO: fails with "unexpected total balance delta 100 (expected 0)"
-	tx, err := arbOwner.MintNativeToken(&auth, addr, 100)
+	tx, err := arbOwner.MintNativeToken(&auth, addr, big.NewInt(100))
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)

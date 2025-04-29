@@ -375,14 +375,14 @@ func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 }
 
 // Mints some amount of the native gas token for this chain to the given address
-func (con ArbOwner) MintNativeToken(_ ctx, evm mech, to addr, amount uint64) error {
-	evm.StateDB.AddBalance(to, uint256.MustFromBig(new(big.Int).SetUint64(amount)), tracing.BalanceIncreaseMintNativeToken)
+func (con ArbOwner) MintNativeToken(_ ctx, evm mech, to addr, amount huge) error {
+	evm.StateDB.AddBalance(to, uint256.MustFromBig(amount), tracing.BalanceIncreaseMintNativeToken)
 	return nil
 }
 
 // Burns some amount of the native gas token for this chain from the given address
-func (con ArbOwner) BurnNativeToken(_ ctx, evm mech, from addr, amount uint64) error {
-	toSub := uint256.MustFromBig(new(big.Int).SetUint64(amount))
+func (con ArbOwner) BurnNativeToken(_ ctx, evm mech, from addr, amount huge) error {
+	toSub := uint256.MustFromBig(amount)
 	if evm.StateDB.GetBalance(from).Cmp(toSub) < 0 {
 		return errors.New("burn amount exceeds balance")
 	}
