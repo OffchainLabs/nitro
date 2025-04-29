@@ -57,7 +57,6 @@ func (m *MessageExtractor) extractMessages(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	fmt.Printf("Batches: %d, block num %d\n", len(batches), blockNum)
 	delayedMessages, err := m.delayedBridge.LookupMessagesInRange(
 		ctx,
 		blockNum,
@@ -78,20 +77,20 @@ func (m *MessageExtractor) extractMessages(
 	// Update the delayed message accumulator in the MEL state.
 	batchPostingReports := make([]*arbnode.DelayedInboxMessage, 0)
 	for _, delayed := range delayedMessages {
-		// If this message is a batch posting report, we do not save it to the state. Instead, we
-		// save it for later use in this function once we extract messages from batches and
+		// If this message is a batch posting report, we save it for later
+		// use in this function once we extract messages from batches and
 		// need to fill in their batch posting report.
 		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
 			batchPostingReports = append(batchPostingReports, delayed)
-			continue
 		}
 		// TODO: Create a unique, delayed message hash beyond just
 		// the underlying message's hash.
 		state.DelayedMessagedSeen += 1
 		state = state.AccumulateDelayedMessage(delayed)
-		fmt.Printf("MEL observed delayed msg, parent chain num %d: %+v and %+v and %+v\n", blockNum.Uint64(), delayed, delayed.Message.Header, delayed.Message)
 	}
 
+	// Batch posting reports are included in the same transaction as a batch, so there should
+	// always be the same number of reports as there are batches.
 	if len(batchPostingReports) != len(batches) {
 		return nil, nil, nil, fmt.Errorf(
 			"batch posting reports %d do not match the number of batches %d",
@@ -138,9 +137,6 @@ func (m *MessageExtractor) extractMessages(
 			return nil, nil, nil, err
 		}
 		state = state.AccumulateMessage(msgHash)
-		fmt.Printf("State: %+v\n", state)
-		fmt.Printf("Batch posting cost: %d\n", *report.Message.BatchGasCost)
-		fmt.Printf("Extracted message, batch seq num %d, parent chain num %d: %+v and %+v and %+v\n", batch.SequenceNumber, batch.ParentChainBlockNumber, msg, msg.Message.Header, msg.Message)
 	}
 	return state, messages, delayedMessages, nil
 }

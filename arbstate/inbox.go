@@ -370,7 +370,6 @@ func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error)
 				DelayedMessagesRead: seqMsg.AfterDelayedMessages,
 			}
 		} else {
-			fmt.Println("Got it from the delayed inbox", r.delayedMessagesRead)
 			delayed, realErr := r.backend.ReadDelayedInbox(r.delayedMessagesRead)
 			if realErr != nil {
 				return nil, realErr

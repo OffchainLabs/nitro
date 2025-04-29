@@ -10,6 +10,10 @@ import (
 	"github.com/offchainlabs/nitro/staker/bold"
 )
 
+func (m *MessageExtractor) CurrentFSMState() FSMState {
+	return m.fsm.Current().State
+}
+
 func (m *MessageExtractor) Act(ctx context.Context) error {
 	current := m.fsm.Current()
 	switch current.State {

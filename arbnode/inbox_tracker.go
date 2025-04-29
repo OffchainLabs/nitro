@@ -410,11 +410,6 @@ func (t *InboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64
 }
 
 func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error {
-	fmt.Printf("Adding delayed messages: %d\n", len(messages))
-	for i, mm := range messages {
-		fmt.Printf("index %d, %+v and %+v\n", i, mm.Message.Header, mm.Message)
-	}
-	fmt.Println("Done adding")
 	var nextAcc common.Hash
 	firstDelayedMsgToKeep := uint64(0)
 	if len(messages) == 0 {
@@ -771,12 +766,10 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 			break
 		}
 		batchSeqNum := backend.batches[0].SequenceNumber
-		blockNum := backend.batches[0].ParentChainBlockNumber
 		msg, err := multiplexer.Pop(ctx)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Popped the msg: after delayed %d, batch seq %d, parent chain block num %d and %+v and %+v\n", msg.DelayedMessagesRead, batchSeqNum, blockNum, msg.Message.Header, msg.Message)
 		messages = append(messages, *msg)
 		batchMessageCounts[batchSeqNum] = currentpos
 		currentpos += 1

@@ -88,8 +88,8 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence(t *testing.T) {
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
 
-	// Force a batch to be posted and ensure it is reflected in the onchain contracts.
-	forceBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
+	// Force a batch to be posted as a delayed message and ensure it is reflected in the onchain contracts.
+	forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
 
 	// Create an initial MEL state from the latest confirmed assertion.
 	rollup, err := rollupgen.NewRollupUserLogic(builder.addresses.Rollup, builder.L1.Client)
@@ -108,6 +108,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence(t *testing.T) {
 	Require(t, err)
 	chainId, err := builder.L1.Client.ChainID(ctx)
 	Require(t, err)
+
 	// TODO: Construct the correct MEL state from the latest confirmed assertion.
 	melState := &mel.State{
 		Version:                      0,
@@ -117,7 +118,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence(t *testing.T) {
 		ParentChainPreviousBlockHash: startBlock.ParentHash(),
 		MessageAccumulator:           common.Hash{},
 		DelayedMessagedSeen:          1,
-		DelayedMessagesRead:          1,
+		DelayedMessagesRead:          1, // Assumes we have read the init message.
 		MsgCount:                     1,
 	}
 
@@ -154,18 +155,49 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence(t *testing.T) {
 	Require(t, err)
 
 	for {
-		err = extractor.Act(ctx)
-		if err != nil {
-			t.Fatal(err)
+		prevFSMState := extractor.CurrentFSMState()
+		Require(t, extractor.Act(ctx))
+		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
+		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
+		// exit the loop here and assert information about MEL.
+		if prevFSMState == mel.ProcessingNextBlock && extractor.CurrentFSMState() == mel.ProcessingNextBlock {
+			break
 		}
-		Require(t, err)
-		time.Sleep(time.Millisecond * 5)
 	}
-	a := 1
-	_ = a
+
+	if len(mockDB.savedStates) == 0 {
+		t.Fatal("MEL did not save any states")
+	}
+
+	numDelayedMessages, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
+	Require(t, err)
+	lastState := mockDB.savedStates[len(mockDB.savedStates)-1]
+
+	// Check that MEL extracted the same number of delayed messages the inbox tracker has seen.
+	if lastState.DelayedMessagedSeen != numDelayedMessages {
+		t.Fatalf(
+			"MEL delayed message count %d does not match inbox tracker %d",
+			lastState.DelayedMessagedSeen,
+			numDelayedMessages,
+		)
+	}
+	delayedInInboxTracker := make([]*arbostypes.L1IncomingMessage, 0)
+	for i := 1; i < int(numDelayedMessages); i++ {
+		fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, uint64(i))
+		Require(t, err)
+		delayedInInboxTracker = append(delayedInInboxTracker, fetchedDelayedMsg)
+	}
+
+	// Check the messages we extracted from MEL and the inbox tracker are the same.
+	for i, delayedMsg := range mockDB.savedDelayedMsgs {
+		fromInboxTracker := delayedInInboxTracker[i]
+		if !fromInboxTracker.Equals(delayedMsg.Message) {
+			t.Fatal("Messages from MEL and inbox tracker do not match")
+		}
+	}
 }
 
-func forceBatchPosting(
+func forceDelayedBatchPosting(
 	t *testing.T,
 	ctx context.Context,
 	builder *NodeBuilder,
