@@ -485,14 +485,39 @@ func TestMintAndBurnNativeToken(t *testing.T) {
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
 
-	builder.L2Info.GenerateAccount("User2")
+	accountName := "User2"
+	builder.L2Info.GenerateAccount(accountName)
+	accountAddr := builder.L2Info.GetAddress(accountName)
 
-	addr := builder.L2Info.GetAddress("User2")
-	// TODO: fails with "unexpected total balance delta 100 (expected 0)"
-	tx, err := arbOwner.MintNativeToken(&auth, addr, big.NewInt(100))
+	checkBalance := func(expectedBalance *big.Int, scenario string) {
+		balance, err := builder.L2.Client.BalanceAt(ctx, accountAddr, nil)
+		Require(t, err)
+		if balance.Cmp(expectedBalance) != 0 {
+			t.Fatal("expected balance to be", expectedBalance, "got", balance, "scenario", scenario)
+		}
+	}
+
+	checkBalance(big.NewInt(0), "initial balance")
+
+	tx, err := arbOwner.MintNativeToken(&auth, accountAddr, big.NewInt(100))
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+
+	checkBalance(big.NewInt(100), "after mint")
+
+	tx, err = arbOwner.BurnNativeToken(&auth, accountAddr, big.NewInt(10))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	checkBalance(big.NewInt(90), "after burning 10")
+
+	// balance not enough to burn 100
+	_, err = arbOwner.BurnNativeToken(&auth, accountAddr, big.NewInt(100))
+	if err == nil {
+		t.Fatal("expected burn to fail")
+	}
 }
 
 func TestGetBrotliCompressionLevel(t *testing.T) {
