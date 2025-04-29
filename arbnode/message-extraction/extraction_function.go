@@ -116,6 +116,9 @@ func (m *MessageExtractor) extractMessages(
 		if err != nil {
 			return nil, nil, nil, err
 		}
+
+		// TODO: This needs to extract more than one message. It needs to loop
+		// until we extracted all messages from the batch being processed.
 		msg, err := m.extractArbosMessage(ctx, state, rawSequencerMsg, m.melDB)
 		if err != nil {
 			return nil, nil, nil, err
