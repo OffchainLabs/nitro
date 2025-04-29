@@ -19,55 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
-type mockMELStateFetcher struct {
-	state *mel.State
-}
-
-func (m *mockMELStateFetcher) GetState(
-	ctx context.Context, parentChainBlockHash common.Hash,
-) (*mel.State, error) {
-	return m.state, nil
-}
-
-type mockMELDB struct {
-	savedMsgs        []*arbostypes.MessageWithMetadata
-	savedDelayedMsgs []*arbnode.DelayedInboxMessage
-	savedStates      []*mel.State
-}
-
-func (m *mockMELDB) SaveState(
-	ctx context.Context,
-	state *mel.State,
-	messages []*arbostypes.MessageWithMetadata,
-) error {
-	m.savedStates = append(m.savedStates, state)
-	m.savedMsgs = append(m.savedMsgs, messages...)
-	return nil
-}
-
-func (m *mockMELDB) SaveDelayedMessages(
-	ctx context.Context,
-	state *mel.State,
-	delayedMessages []*arbnode.DelayedInboxMessage,
-) error {
-	m.savedDelayedMsgs = append(m.savedDelayedMsgs, delayedMessages...)
-	return nil
-}
-func (m *mockMELDB) ReadDelayedMessage(
-	ctx context.Context,
-	index uint64,
-) (*arbnode.DelayedInboxMessage, error) {
-	if index == 0 {
-		return nil, errors.New("index cannot be 0")
-	}
-	// Ignore the init message, as we do not store it in this mock DB.
-	index = index - 1
-	if index >= uint64(len(m.savedDelayedMsgs)) {
-		return nil, errors.New("index out of bounds")
-	}
-	return m.savedDelayedMsgs[index], nil
-}
-
 func TestMessageExtractionLayer_DelayedMessageEquivalence(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -147,7 +98,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence(t *testing.T) {
 		mockDB,
 		seqInbox,
 		delayedBridge,
-		nil, // TODO: Provide a da reader here.
+		nil, // TODO: Provide da readers here.
 		func() *mel.MELConfig {
 			return &mel.DefaultMELConfig
 		},
@@ -157,10 +108,11 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence(t *testing.T) {
 	for {
 		prevFSMState := extractor.CurrentFSMState()
 		Require(t, extractor.Act(ctx))
+		newFSMState := extractor.CurrentFSMState()
 		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
 		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
 		// exit the loop here and assert information about MEL.
-		if prevFSMState == mel.ProcessingNextBlock && extractor.CurrentFSMState() == mel.ProcessingNextBlock {
+		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.ProcessingNextBlock {
 			break
 		}
 	}
@@ -182,6 +134,8 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence(t *testing.T) {
 		)
 	}
 	delayedInInboxTracker := make([]*arbostypes.L1IncomingMessage, 0)
+
+	// Start from 1 to ignore the init message.
 	for i := 1; i < int(numDelayedMessages); i++ {
 		fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, uint64(i))
 		Require(t, err)
@@ -195,6 +149,55 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence(t *testing.T) {
 			t.Fatal("Messages from MEL and inbox tracker do not match")
 		}
 	}
+}
+
+type mockMELStateFetcher struct {
+	state *mel.State
+}
+
+func (m *mockMELStateFetcher) GetState(
+	ctx context.Context, parentChainBlockHash common.Hash,
+) (*mel.State, error) {
+	return m.state, nil
+}
+
+type mockMELDB struct {
+	savedMsgs        []*arbostypes.MessageWithMetadata
+	savedDelayedMsgs []*arbnode.DelayedInboxMessage
+	savedStates      []*mel.State
+}
+
+func (m *mockMELDB) SaveState(
+	ctx context.Context,
+	state *mel.State,
+	messages []*arbostypes.MessageWithMetadata,
+) error {
+	m.savedStates = append(m.savedStates, state)
+	m.savedMsgs = append(m.savedMsgs, messages...)
+	return nil
+}
+
+func (m *mockMELDB) SaveDelayedMessages(
+	ctx context.Context,
+	state *mel.State,
+	delayedMessages []*arbnode.DelayedInboxMessage,
+) error {
+	m.savedDelayedMsgs = append(m.savedDelayedMsgs, delayedMessages...)
+	return nil
+}
+func (m *mockMELDB) ReadDelayedMessage(
+	ctx context.Context,
+	index uint64,
+) (*arbnode.DelayedInboxMessage, error) {
+	if index == 0 {
+		return nil, errors.New("index cannot be 0")
+	}
+	// Ignore the init message, as we do not store it in this mock DB.
+	index = index - 1
+	if index >= uint64(len(m.savedDelayedMsgs)) {
+		return nil, errors.New("index out of bounds")
+	}
+	return m.savedDelayedMsgs[index], nil
 }
 
 func forceDelayedBatchPosting(
