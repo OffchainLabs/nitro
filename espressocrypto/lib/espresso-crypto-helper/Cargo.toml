@@ -27,9 +27,9 @@ jf-rescue = { version = "0.1.0", git = "https://github.com/EspressoSystems/jelly
   "std",
 ], default-features = false }
 
-hotshot-types = { git = "https://github.com/EspressoSystems/espresso-network", default-features = false, tag = "20250412-dev-node-pos-preview" }
-hotshot-query-service = { git = "https://github.com/espressosystems/espresso-network", tag = "20250412-dev-node-pos-preview" }
-espresso-types = { git = "https://github.com/espressosystems/espresso-network", tag = "20250412-dev-node-pos-preview" }
+hotshot-types = { git = "https://github.com/EspressoSystems/espresso-network", default-features = false, tag = "20250428-dev-node-decaf-pos" }
+hotshot-query-service = { git = "https://github.com/espressosystems/espresso-network", tag = "20250428-dev-node-decaf-pos" }
+espresso-types = { git = "https://github.com/espressosystems/espresso-network", tag = "20250428-dev-node-decaf-pos" }
 
 # https://tikv.github.io/doc/openssl/index.html
 openssl = { version = "0.10", features = ["vendored"] }
