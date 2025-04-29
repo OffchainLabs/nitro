@@ -846,7 +846,10 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	revalidationConfig := v.config().Dangerous.Revalidation
 	if revalidationConfig.EndBlock > 0 && validated.GlobalState.Batch >= revalidationConfig.EndBlock {
 		if revalidationConfig.QuitAfterRevalidation {
-			v.fatalErr <- fmt.Errorf("revalidation done from %d to %d", revalidationConfig.StartBlock, revalidationConfig.EndBlock)
+			log.Info("revalidation done from %d to %d", revalidationConfig.StartBlock, revalidationConfig.EndBlock)
+			// Sending nil to fatalErr channel to stop the node, but not report as an error
+			// since this is expected shutdown of the node.
+			v.fatalErr <- nil
 		} else {
 			v.StopOnly()
 		}
