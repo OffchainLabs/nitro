@@ -375,14 +375,22 @@ func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 }
 
 // Mints some amount of the native gas token for this chain to the given address
-func (con ArbOwner) MintNativeToken(_ ctx, evm mech, to addr, amount huge) error {
+func (con ArbOwner) MintNativeToken(c ctx, evm mech, to addr, amount huge) error {
+	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
+		return fmt.Errorf("minting native token is not supported in ArbOS version %d", c.State.ArbOSVersion())
+	}
+
 	evm.StateDB.ExpectBalanceMint(amount)
 	evm.StateDB.AddBalance(to, uint256.MustFromBig(amount), tracing.BalanceIncreaseMintNativeToken)
 	return nil
 }
 
 // Burns some amount of the native gas token for this chain from the given address
-func (con ArbOwner) BurnNativeToken(_ ctx, evm mech, from addr, amount huge) error {
+func (con ArbOwner) BurnNativeToken(c ctx, evm mech, from addr, amount huge) error {
+	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
+		return fmt.Errorf("burning native token is not supported in ArbOS version %d", c.State.ArbOSVersion())
+	}
+
 	toSub := uint256.MustFromBig(amount)
 	if evm.StateDB.GetBalance(from).Cmp(toSub) < 0 {
 		return errors.New("burn amount exceeds balance")

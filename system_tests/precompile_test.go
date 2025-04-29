@@ -476,7 +476,7 @@ func TestMintAndBurnNativeToken(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_41)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -515,8 +515,31 @@ func TestMintAndBurnNativeToken(t *testing.T) {
 
 	// balance not enough to burn 100
 	_, err = arbOwner.BurnNativeToken(&auth, accountAddr, big.NewInt(100))
-	if err == nil {
+	if err == nil || err.Error() != "execution reverted" {
 		t.Fatal("expected burn to fail")
+	}
+}
+
+func TestMintTokenNotAvailableBeforeArbos41(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_40)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+
+	accountName := "User2"
+	builder.L2Info.GenerateAccount(accountName)
+	accountAddr := builder.L2Info.GetAddress(accountName)
+
+	_, err = arbOwner.MintNativeToken(&auth, accountAddr, big.NewInt(100))
+	if err == nil || err.Error() != "execution reverted" {
+		t.Fatal("expected mint to fail")
 	}
 }
 
