@@ -821,6 +821,10 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 		if !found {
 			return nil, fmt.Errorf("not found entry for pos %d", pos)
 		}
+		if validationStatus.getStatus() != ValidationDone {
+			log.Trace("advanceValidations: validation not done", "pos", pos, "status", validationStatus.getStatus())
+			return nil, nil
+		}
 		if validationStatus.DoneEntry.Start != v.lastValidGS {
 			log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.DoneEntry.Start, "expected", v.lastValidGS)
 			validationStatus.Cancel()
