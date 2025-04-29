@@ -179,6 +179,7 @@ type BatchPosterConfig struct {
 	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
 	MaxEmptyBatchDelay             time.Duration               `koanf:"max-empty-batch-delay"`
 	DelayBufferThresholdMargin     uint64                      `koanf:"delay-buffer-threshold-margin"`
+	DelayBufferAlwaysUpdatable     bool                        `koanf:"delay-buffer-always-updatable"`
 	ParentChainEip7623             string                      `koanf:"parent-chain-eip7623"`
 
 	gasRefunder  common.Address
@@ -241,6 +242,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed")
 	f.Uint64(prefix+".delay-buffer-threshold-margin", DefaultBatchPosterConfig.DelayBufferThresholdMargin, "the number of blocks to post the batch before reaching the delay buffer threshold")
 	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\")")
+	f.Bool(prefix+".delay-buffer-always-updatable", DefaultBatchPosterConfig.DelayBufferAlwaysUpdatable, "always treat delay buffer as updatable")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -277,6 +279,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	CheckBatchCorrectness:          true,
 	MaxEmptyBatchDelay:             3 * 24 * time.Hour,
 	DelayBufferThresholdMargin:     25, // 5 minutes considering 12-second blocks
+	DelayBufferAlwaysUpdatable:     true,
 	ParentChainEip7623:             "auto",
 }
 
@@ -310,6 +313,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	CheckBatchCorrectness:          true,
 	DelayBufferThresholdMargin:     0,
+	DelayBufferAlwaysUpdatable:     true,
 	ParentChainEip7623:             "auto",
 }
 
@@ -1210,6 +1214,10 @@ type StateOverride map[common.Address]OverrideAccount
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
 	var gas hexutil.Uint64
 	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, blockHex)
+	// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
+	if err != nil && headerreader.IsExecutionReverted(err) {
+		err = client.CallContext(ctx, nil, "eth_call", params, blockHex)
+	}
 	return uint64(gas), err
 }
 
@@ -1308,6 +1316,10 @@ func (b *BatchPoster) estimateGasForFutureTx(
 		sequencerMessageHeader := sequencerMessage
 		if len(sequencerMessageHeader) > 33 {
 			sequencerMessageHeader = sequencerMessageHeader[:33]
+		}
+		// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
+		if headerreader.IsExecutionReverted(err) {
+			err = rawRpcClient.CallContext(ctx, nil, "eth_call", gasParams, rpc.PendingBlockNumber, stateOverride)
 		}
 		log.Warn(
 			"error estimating gas for batch",
@@ -1701,7 +1713,9 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil && delayBuffer.isUpdatable(latestHeader.Number.Uint64()) {
+	delayProofNeeded := delayBuffer.Enabled && b.building.firstDelayedMsg != nil
+	delayProofNeeded = delayProofNeeded && (config.DelayBufferAlwaysUpdatable || delayBuffer.isUpdatable(latestHeader.Number.Uint64()))
+	if delayProofNeeded {
 		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.inbox)
 		if err != nil {
 			return false, fmt.Errorf("failed to generate delay proof: %w", err)
