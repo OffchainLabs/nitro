@@ -99,6 +99,9 @@ func (s *SyncMonitor) Synced(ctx context.Context) bool {
 			log.Error("Error getting consensus sync target", "err", err)
 			return false
 		}
+		if consensusSyncTarget == 0 {
+			return false
+		}
 
 		if built+1 >= consensusSyncTarget {
 			return true
