@@ -487,14 +487,6 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Got sequencer messages: %v and from block %d to block %d\n", len(sequencerBatches), from, to)
-			fmt.Printf("Got delayed messages: %v and from block %d to block %d\n", len(delayedMessages), from, to)
-			for _, batch := range sequencerBatches {
-				fmt.Printf("Seq batch %+v\n", batch)
-			}
-			for _, msg := range delayedMessages {
-				fmt.Printf("Inbox reader delayed Message %+v\n", msg)
-			}
 			if !r.caughtUp && to.Cmp(currentHeight) == 0 && readMode == "latest" {
 				r.caughtUp = true
 				close(r.caughtUpChan)

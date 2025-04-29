@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/offchainlabs/bold/containers/fsm"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
@@ -42,8 +43,9 @@ type processNextBlock struct {
 }
 
 type saveMessages struct {
-	melState *State
-	messages []*arbostypes.MessageWithMetadata
+	postState       *State
+	messages        []*arbostypes.MessageWithMetadata
+	delayedMessages []*arbnode.DelayedInboxMessage
 }
 
 func (backToStart) String() string {

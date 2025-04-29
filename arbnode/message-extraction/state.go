@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
@@ -17,10 +18,10 @@ type State struct {
 	ParentChainBlockNumber       uint64
 	ParentChainBlockHash         common.Hash
 	ParentChainPreviousBlockHash common.Hash
-	BatchPostingTargetAddress    common.Address
 	MessageAccumulator           common.Hash
 	MsgCount                     uint64
-	AfterDelayedMessagesRead     uint64
+	DelayedMessagesRead          uint64
+	DelayedMessagedSeen          uint64
 }
 
 type StateDatabase interface {
@@ -29,6 +30,15 @@ type StateDatabase interface {
 		state *State,
 		messages []*arbostypes.MessageWithMetadata,
 	) error
+	SaveDelayedMessages(
+		ctx context.Context,
+		state *State,
+		delayedMessages []*arbnode.DelayedInboxMessage,
+	) error
+	ReadDelayedMessage(
+		ctx context.Context,
+		index uint64,
+	) (*arbnode.DelayedInboxMessage, error)
 }
 
 type StateFetcher interface {
@@ -42,5 +52,9 @@ func (s *State) Clone() *State {
 }
 
 func (s *State) AccumulateMessage(msgHash common.Hash) *State {
+	return s
+}
+
+func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) *State {
 	return s
 }

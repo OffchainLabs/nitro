@@ -2,7 +2,7 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -30,8 +30,9 @@ func (m *mockMELStateFetcher) GetState(
 }
 
 type mockMELDB struct {
-	savedMsgs   []*arbostypes.MessageWithMetadata
-	savedStates []*mel.State
+	savedMsgs        []*arbostypes.MessageWithMetadata
+	savedDelayedMsgs []*arbnode.DelayedInboxMessage
+	savedStates      []*mel.State
 }
 
 func (m *mockMELDB) SaveState(
@@ -44,7 +45,30 @@ func (m *mockMELDB) SaveState(
 	return nil
 }
 
-func TestMessageExtractionLayer(t *testing.T) {
+func (m *mockMELDB) SaveDelayedMessages(
+	ctx context.Context,
+	state *mel.State,
+	delayedMessages []*arbnode.DelayedInboxMessage,
+) error {
+	m.savedDelayedMsgs = append(m.savedDelayedMsgs, delayedMessages...)
+	return nil
+}
+func (m *mockMELDB) ReadDelayedMessage(
+	ctx context.Context,
+	index uint64,
+) (*arbnode.DelayedInboxMessage, error) {
+	if index == 0 {
+		return nil, errors.New("index cannot be 0")
+	}
+	// Ignore the init message, as we do not store it in this mock DB.
+	index = index - 1
+	if index >= uint64(len(m.savedDelayedMsgs)) {
+		return nil, errors.New("index out of bounds")
+	}
+	return m.savedDelayedMsgs[index], nil
+}
+
+func TestMessageExtractionLayer_DelayedMessageEquivalence(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -84,14 +108,17 @@ func TestMessageExtractionLayer(t *testing.T) {
 	Require(t, err)
 	chainId, err := builder.L1.Client.ChainID(ctx)
 	Require(t, err)
+	// TODO: Construct the correct MEL state from the latest confirmed assertion.
 	melState := &mel.State{
 		Version:                      0,
 		ParentChainId:                chainId.Uint64(),
 		ParentChainBlockNumber:       startBlock.NumberU64(),
 		ParentChainBlockHash:         startBlock.Hash(),
 		ParentChainPreviousBlockHash: startBlock.ParentHash(),
-		BatchPostingTargetAddress:    builder.addresses.SequencerInbox,
 		MessageAccumulator:           common.Hash{},
+		DelayedMessagedSeen:          1,
+		DelayedMessagesRead:          1,
+		MsgCount:                     1,
 	}
 
 	// Construct a new MEL service and provide with an initial MEL state
@@ -108,8 +135,9 @@ func TestMessageExtractionLayer(t *testing.T) {
 	defer l1Reader.StopAndWait()
 
 	mockDB := &mockMELDB{
-		savedMsgs:   make([]*arbostypes.MessageWithMetadata, 0),
-		savedStates: make([]*mel.State, 0),
+		savedMsgs:        make([]*arbostypes.MessageWithMetadata, 0),
+		savedStates:      make([]*mel.State, 0),
+		savedDelayedMsgs: make([]*arbnode.DelayedInboxMessage, 0),
 	}
 	extractor, err := mel.NewMessageExtractor(
 		l1Reader,
@@ -125,18 +153,16 @@ func TestMessageExtractionLayer(t *testing.T) {
 	)
 	Require(t, err)
 
-	_ = extractor
-	err = extractor.Act(ctx)
-	Require(t, err)
-	err = extractor.Act(ctx)
-	Require(t, err)
-	err = extractor.Act(ctx)
-	Require(t, err)
-
-	for _, msg := range mockDB.savedMsgs {
-		fmt.Printf("after delayed %d, %+v\n", msg.DelayedMessagesRead, msg.Message)
+	for {
+		err = extractor.Act(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		Require(t, err)
+		time.Sleep(time.Millisecond * 5)
 	}
-	time.Sleep(time.Hour)
+	a := 1
+	_ = a
 }
 
 func forceBatchPosting(

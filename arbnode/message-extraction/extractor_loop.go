@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -59,28 +60,37 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 		if !ok {
 			return fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		melState := processAction.melState
+		preState := processAction.melState
 
 		// TODO: Check the latest block number to see if it exists, otherwise, we just have to
 		// repeat this FSM state until the new block exists.
 		parentChainBlock, err := m.l1Reader.Client().BlockByNumber(
 			ctx,
-			new(big.Int).SetUint64(melState.ParentChainBlockNumber),
+			new(big.Int).SetUint64(preState.ParentChainBlockNumber+1),
 		)
 		if err != nil {
+			// TODO: Additionally return a duration from this function so that a stop waiter
+			// can know how long before it retries. This gives us more control of how often
+			// we want to retry a state in the FSM.
+			if strings.Contains(err.Error(), "not found") {
+				return m.fsm.Do(processNextBlock{
+					melState: preState,
+				})
+			}
 			return err
 		}
-		postState, msgs, err := m.extractMessages(
+		postState, msgs, delayedMsgs, err := m.extractMessages(
 			ctx,
-			melState,
+			preState,
 			parentChainBlock,
 		)
 		if err != nil {
 			return err
 		}
 		return m.fsm.Do(saveMessages{
-			messages: msgs,
-			melState: postState,
+			postState:       postState,
+			messages:        msgs,
+			delayedMessages: delayedMsgs,
 		})
 	case SavingMessages:
 		// Persists messages and a processed MEL state to the database.
@@ -88,11 +98,16 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 		if !ok {
 			return fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		if err := m.melDB.SaveState(ctx, saveAction.melState, saveAction.messages); err != nil {
+		// TODO: Make these database writes atomic, so if one fails, nothing
+		// gets persisted and we retry.
+		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
+			return err
+		}
+		if err := m.melDB.SaveState(ctx, saveAction.postState, saveAction.messages); err != nil {
 			return err
 		}
 		return m.fsm.Do(processNextBlock{
-			melState: saveAction.melState,
+			melState: saveAction.postState,
 		})
 	default:
 		return fmt.Errorf("invalid state: %s", current.State)
