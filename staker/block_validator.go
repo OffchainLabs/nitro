@@ -364,11 +364,11 @@ func NewBlockValidator(
 				return nil, err
 			}
 		}
-		startPos, _, err := statelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
+		_, endPos, err := statelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
 		if err != nil {
 			return nil, err
 		}
-		gs := BuildGlobalState(*res, startPos)
+		gs := BuildGlobalState(*res, endPos)
 		err = ret.writeLastValidated(gs, nil)
 		if err != nil {
 			return nil, err
@@ -845,8 +845,8 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	v.lastValidInfoPrinted = validated
 	revalidationConfig := v.config().Dangerous.Revalidation
 	if revalidationConfig.EndBlock > 0 && validated.GlobalState.Batch >= revalidationConfig.EndBlock {
+		log.Info("revalidation done from %d to %d", revalidationConfig.StartBlock, revalidationConfig.EndBlock)
 		if revalidationConfig.QuitAfterRevalidation {
-			log.Info("revalidation done from %d to %d", revalidationConfig.StartBlock, revalidationConfig.EndBlock)
 			// Sending nil to fatalErr channel to stop the node, but not report as an error
 			// since this is expected shutdown of the node.
 			v.fatalErr <- nil
