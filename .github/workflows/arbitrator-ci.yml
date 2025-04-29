@@ -41,7 +41,6 @@ jobs:
         with:
           submodules: recursive
 
-
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
@@ -66,6 +65,7 @@ jobs:
           node-version: '18'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
+
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
@@ -81,6 +81,7 @@ jobs:
           toolchain: '1.84.1'
           targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
+
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
@@ -120,6 +121,8 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          cache: false
 
       - name: Cache cbrotli
         uses: actions/cache@v3
@@ -131,8 +134,8 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-3-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
-          restore-keys: ${{ runner.os }}-brotli-2-
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-arbitrator
+          restore-keys: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -195,3 +198,4 @@ jobs:
           yarn build
           yarn build:forge:yul
           yarn hardhat --network localhost test test/prover/*.ts
+          
