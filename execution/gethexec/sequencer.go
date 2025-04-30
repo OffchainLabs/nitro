@@ -52,6 +52,8 @@ var (
 	nonceFailureCacheOverflowCounter        = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/overflow", nil)
 	blockCreationTimer                      = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
 	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
+	nonTimeboostedTxInclusionTimer          = metrics.NewRegisteredTimer("arb/sequencer/tx/nontimeboosted/inclusion", nil)
+	timeboostedTxInclusionTimer             = metrics.NewRegisteredTimer("arb/sequencer/tx/timeboosted/inclusion", nil)
 	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/rejected", nil)
 	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/accepted", nil)
 	l1GasPriceGauge                         = metrics.NewRegisteredGauge("arb/sequencer/l1gasprice", nil)
@@ -225,21 +227,29 @@ func DangerousAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type txQueueItem struct {
-	tx              *types.Transaction
-	txSize          int // size in bytes of the marshalled transaction
-	options         *arbitrum_types.ConditionalOptions
-	resultChan      chan<- error
-	returnedResult  *atomic.Bool
-	ctx             context.Context
-	firstAppearance time.Time
-	isTimeboosted   bool
-	blockStamp      uint64 // block number at which timeboosted tx was added to the txQueue
+	tx                  *types.Transaction
+	txSize              int // size in bytes of the marshalled transaction
+	options             *arbitrum_types.ConditionalOptions
+	resultChan          chan<- error
+	returnedResult      *atomic.Bool
+	ctx                 context.Context
+	firstAppearance     time.Time
+	isTimeboosted       bool
+	isAuctionResolution bool
+	blockStamp          uint64 // block number at which timeboosted tx was added to the txQueue
 }
 
 func (i *txQueueItem) returnResult(err error) {
 	if i.returnedResult.Swap(true) {
 		log.Error("attempting to return result to already finished queue item", "err", err)
 		return
+	}
+	if err == nil && !i.isAuctionResolution {
+		if i.isTimeboosted {
+			timeboostedTxInclusionTimer.UpdateSince(i.firstAppearance)
+		} else {
+			nonTimeboostedTxInclusionTimer.UpdateSince(i.firstAppearance)
+		}
 	}
 	i.resultChan <- err
 	close(i.resultChan)
@@ -574,14 +584,15 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	}
 	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
 	s.timeboostAuctionResolutionTxQueue <- txQueueItem{
-		tx:              tx,
-		txSize:          len(txBytes),
-		options:         nil,
-		resultChan:      make(chan error, 1),
-		returnedResult:  &atomic.Bool{},
-		ctx:             s.GetContext(),
-		firstAppearance: time.Now(),
-		isTimeboosted:   false,
+		tx:                  tx,
+		txSize:              len(txBytes),
+		options:             nil,
+		resultChan:          make(chan error, 1),
+		returnedResult:      &atomic.Bool{},
+		ctx:                 s.GetContext(),
+		firstAppearance:     time.Now(),
+		isTimeboosted:       false,
+		isAuctionResolution: true,
 	}
 	return nil
 }
@@ -624,6 +635,7 @@ func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *
 
 func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error, isExpressLaneController bool) error {
 	config := s.config()
+	firstAppearance := time.Now()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
 	// And hard threshold was enabled, this prevents spamming of read locks when not needed
 	if s.l1Reader != nil && config.ExpectedSurplusHardThreshold != "default" {
@@ -677,8 +689,9 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		resultChan,
 		&atomic.Bool{},
 		queueCtx,
-		time.Now(),
+		firstAppearance,
 		isExpressLaneController,
+		false,
 		blockStamp,
 	}
 	select {
