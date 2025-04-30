@@ -52,8 +52,8 @@ var (
 	nonceFailureCacheOverflowCounter        = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/overflow", nil)
 	blockCreationTimer                      = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
 	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
-	nonTimeboostedTxInclusionTimer          = metrics.NewRegisteredTimer("arb/sequencer/tx/nontimeboosted/inclusion", nil)
-	timeboostedTxInclusionTimer             = metrics.NewRegisteredTimer("arb/sequencer/tx/timeboosted/inclusion", nil)
+	nonTimeboostedTxTimer                   = metrics.NewRegisteredTimer("arb/sequencer/tx/nontimeboosted", nil)
+	timeboostedTxTimer                      = metrics.NewRegisteredTimer("arb/sequencer/tx/timeboosted", nil)
 	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/rejected", nil)
 	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/accepted", nil)
 	l1GasPriceGauge                         = metrics.NewRegisteredGauge("arb/sequencer/l1gasprice", nil)
@@ -246,9 +246,9 @@ func (i *txQueueItem) returnResult(err error) {
 	}
 	if err == nil && !i.isAuctionResolution {
 		if i.isTimeboosted {
-			timeboostedTxInclusionTimer.UpdateSince(i.firstAppearance)
+			timeboostedTxTimer.UpdateSince(i.firstAppearance)
 		} else {
-			nonTimeboostedTxInclusionTimer.UpdateSince(i.firstAppearance)
+			nonTimeboostedTxTimer.UpdateSince(i.firstAppearance)
 		}
 	}
 	i.resultChan <- err
