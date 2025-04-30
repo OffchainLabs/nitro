@@ -83,7 +83,7 @@ var DefaultCachingConfig = CachingConfig{
 	SnapshotCache:                      400,
 	DatabaseCache:                      2048,
 	SnapshotRestoreGasLimit:            300_000_000_000,
-	HeadRewindBlocksLimit:              4 * 7 * 24 * 3600, // 4 blocks per second over 7 days (an arbitrary value, should be greater then number of blocks between state commits in full node; the state commit period depends both from chain activity and TrieTimeLimit)
+	HeadRewindBlocksLimit:              4 * 7 * 24 * 3600, // 4 blocks per second over 7 days (an arbitrary value, should be greater than the number of blocks between state commits in full node; the state commit period depends both on chain activity and TrieTimeLimit)
 	MaxNumberOfBlocksToSkipStateSaving: 0,
 	MaxAmountOfGasToSkipStateSaving:    0,
 	StylusLRUCacheCapacity:             256,
