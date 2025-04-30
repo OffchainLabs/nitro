@@ -10,10 +10,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/holiman/uint256"
-
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -34,6 +31,10 @@ type ArbOwner struct {
 
 var (
 	ErrOutOfBounds = errors.New("value out of bounds")
+)
+
+const (
+	nativeTokenNotSupportedArbOSVersion = "native token owners are not supported in ArbOS version %d"
 )
 
 // AddChainOwner adds account as a chain owner
@@ -58,6 +59,46 @@ func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 // GetAllChainOwners retrieves the list of chain owners
 func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
 	return c.State.ChainOwners().AllMembers(65536)
+}
+
+// AddChainOwner adds account as a native token owner
+func (con ArbOwner) AddNativeTokenOwner(c ctx, evm mech, newOwner addr) error {
+	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
+		return fmt.Errorf(nativeTokenNotSupportedArbOSVersion, c.State.ArbOSVersion())
+	}
+
+	return c.State.NativeTokenOwners().Add(newOwner)
+}
+
+// RemoveChainOwner removes account from the list of native token owners
+func (con ArbOwner) RemoveNativeTokenOwner(c ctx, evm mech, addr addr) error {
+	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
+		return fmt.Errorf(nativeTokenNotSupportedArbOSVersion, c.State.ArbOSVersion())
+	}
+
+	member, _ := con.IsNativeTokenOwner(c, evm, addr)
+	if !member {
+		return errors.New("tried to remove non native token owner")
+	}
+	return c.State.NativeTokenOwners().Remove(addr, c.State.ArbOSVersion())
+}
+
+// IsChainOwner checks if the account is a native token owner
+func (con ArbOwner) IsNativeTokenOwner(c ctx, evm mech, addr addr) (bool, error) {
+	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
+		return false, fmt.Errorf(nativeTokenNotSupportedArbOSVersion, c.State.ArbOSVersion())
+	}
+
+	return c.State.NativeTokenOwners().IsMember(addr)
+}
+
+// GetAllChainOwners retrieves the list of native token owners
+func (con ArbOwner) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, error) {
+	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
+		return nil, fmt.Errorf(nativeTokenNotSupportedArbOSVersion, c.State.ArbOSVersion())
+	}
+
+	return c.State.NativeTokenOwners().AllMembers(65536)
 }
 
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee
@@ -374,28 +415,28 @@ func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 	return c.State.Features().SetCalldataPriceIncrease(enable)
 }
 
-// Mints some amount of the native gas token for this chain to the given address
-func (con ArbOwner) MintNativeToken(c ctx, evm mech, to addr, amount huge) error {
-	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
-		return fmt.Errorf("minting native token is not supported in ArbOS version %d", c.State.ArbOSVersion())
-	}
-
-	evm.StateDB.ExpectBalanceMint(amount)
-	evm.StateDB.AddBalance(to, uint256.MustFromBig(amount), tracing.BalanceIncreaseMintNativeToken)
-	return nil
-}
-
-// Burns some amount of the native gas token for this chain from the given address
-func (con ArbOwner) BurnNativeToken(c ctx, evm mech, from addr, amount huge) error {
-	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
-		return fmt.Errorf("burning native token is not supported in ArbOS version %d", c.State.ArbOSVersion())
-	}
-
-	toSub := uint256.MustFromBig(amount)
-	if evm.StateDB.GetBalance(from).Cmp(toSub) < 0 {
-		return errors.New("burn amount exceeds balance")
-	}
-	evm.StateDB.ExpectBalanceBurn(amount)
-	evm.StateDB.SubBalance(from, toSub, tracing.BalanceDecreaseBurnNativeToken)
-	return nil
-}
+// // Mints some amount of the native gas token for this chain to the given address
+// func (con ArbOwner) MintNativeToken(c ctx, evm mech, to addr, amount huge) error {
+// 	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
+// 		return fmt.Errorf("minting native token is not supported in ArbOS version %d", c.State.ArbOSVersion())
+// 	}
+//
+// 	evm.StateDB.ExpectBalanceMint(amount)
+// 	evm.StateDB.AddBalance(to, uint256.MustFromBig(amount), tracing.BalanceIncreaseMintNativeToken)
+// 	return nil
+// }
+//
+// // Burns some amount of the native gas token for this chain from the given address
+// func (con ArbOwner) BurnNativeToken(c ctx, evm mech, from addr, amount huge) error {
+// 	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
+// 		return fmt.Errorf("burning native token is not supported in ArbOS version %d", c.State.ArbOSVersion())
+// 	}
+//
+// 	toSub := uint256.MustFromBig(amount)
+// 	if evm.StateDB.GetBalance(from).Cmp(toSub) < 0 {
+// 		return errors.New("burn amount exceeds balance")
+// 	}
+// 	evm.StateDB.ExpectBalanceBurn(amount)
+// 	evm.StateDB.SubBalance(from, toSub, tracing.BalanceDecreaseBurnNativeToken)
+// 	return nil
+// }

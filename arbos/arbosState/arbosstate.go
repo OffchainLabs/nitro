@@ -52,6 +52,7 @@ type ArbosState struct {
 	retryableState         *retryables.RetryableState
 	addressTable           *addressTable.AddressTable
 	chainOwners            *addressSet.AddressSet
+	nativeTokenOwners      *addressSet.AddressSet
 	sendMerkle             *merkleAccumulator.MerkleAccumulator
 	programs               *programs.Programs
 	features               *features.Features
@@ -452,6 +453,10 @@ func (state *ArbosState) AddressTable() *addressTable.AddressTable {
 
 func (state *ArbosState) ChainOwners() *addressSet.AddressSet {
 	return state.chainOwners
+}
+
+func (state *ArbosState) NativeTokenOwners() *addressSet.AddressSet {
+	return state.nativeTokenOwners
 }
 
 func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumulator {

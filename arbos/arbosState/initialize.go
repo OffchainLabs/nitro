@@ -110,6 +110,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 			return common.Hash{}, err
 		}
 	}
+	// TODO: add init data native token owner handling
 	addrTable := arbosState.AddressTable()
 	addrTableSize, err := addrTable.Size()
 	if err != nil {
