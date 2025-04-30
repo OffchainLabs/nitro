@@ -50,8 +50,8 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 
 	builder.L2Info.GenerateAccount("BackgroundUser")
 
-	// Create transactions till batch count is 20
-	createTransactionTillBatchCount(ctx, t, builder, 20)
+	// Create transactions till batch count is 15
+	createTransactionTillBatchCount(ctx, t, builder, 15)
 	// Wait for nodeB to sync up to the first node
 	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client)
 
@@ -77,8 +77,8 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 }
 
 func createNodeConfigWithRevalidationRange(builder *NodeBuilder) *arbnode.Config {
-	nodeConfig := builder.nodeConfig
-	nodeConfig.BlockValidator.Dangerous.Revalidation.StartBlock = 10
-	nodeConfig.BlockValidator.Dangerous.Revalidation.EndBlock = 15
-	return nodeConfig
+	nodeConfig := *builder.nodeConfig
+	nodeConfig.BlockValidator.Dangerous.Revalidation.StartBlock = 5
+	nodeConfig.BlockValidator.Dangerous.Revalidation.EndBlock = 10
+	return &nodeConfig
 }
