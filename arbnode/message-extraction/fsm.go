@@ -33,7 +33,7 @@ func (s FSMState) String() string {
 
 type action interface {
 	fmt.Stringer
-	isEdgeTrackerAction() bool
+	isFsmAction() bool
 }
 
 type backToStart struct{}
@@ -57,13 +57,13 @@ func (processNextBlock) String() string {
 func (saveMessages) String() string {
 	return "save_messages"
 }
-func (backToStart) isEdgeTrackerAction() bool {
+func (backToStart) isFsmAction() bool {
 	return true
 }
-func (processNextBlock) isEdgeTrackerAction() bool {
+func (processNextBlock) isFsmAction() bool {
 	return true
 }
-func (saveMessages) isEdgeTrackerAction() bool {
+func (saveMessages) isFsmAction() bool {
 	return true
 }
 

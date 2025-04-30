@@ -774,6 +774,11 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		batchMessageCounts[batchSeqNum] = currentpos
 		currentpos += 1
 	}
+	if len(messages) > 1 {
+		for _, mm := range messages {
+			fmt.Printf("Message: %+v and %+v\n", mm.Message.Header, mm.Message)
+		}
+	}
 
 	lastBatchMeta := prevbatchmeta
 	batchMetas := make(map[uint64]BatchMetadata, len(batches))

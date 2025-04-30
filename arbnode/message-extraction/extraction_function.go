@@ -117,44 +117,124 @@ func (m *MessageExtractor) extractMessages(
 			return nil, nil, nil, err
 		}
 
-		// TODO: This needs to extract more than one message. It needs to loop
-		// until we extracted all messages from the batch being processed.
-		msg, err := m.extractArbosMessage(ctx, state, rawSequencerMsg, m.melDB)
+		messagesInBatch, err := m.extractMessagesInBatch(
+			ctx,
+			state,
+			rawSequencerMsg,
+			m.melDB,
+		)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		report := batchPostingReports[i]
-		if report.Message.BatchGasCost == nil {
-			return nil, nil, nil, fmt.Errorf(
-				"batch posting report %+v does not have a batch gas cost",
-				report.Message,
-			)
+		for _, msg := range messagesInBatch {
+			report := batchPostingReports[i]
+			// This should not occur, but is added as an extra safety check
+			// to avoid dereferencing a nil pointer.
+			if report.Message.BatchGasCost == nil {
+				return nil, nil, nil, fmt.Errorf(
+					"batch posting report %+v does not have a batch gas cost",
+					report.Message,
+				)
+			}
+			// Fill in the message's batch gas cost from the batch posting report.
+			msg.Message.BatchGasCost = report.Message.BatchGasCost
+			messages = append(messages, msg)
+			state.MsgCount += 1
+			msgIdx := arbutil.MessageIndex(state.MsgCount) - 1
+			msgHash, err := msg.Hash(msgIdx, state.ParentChainId)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			state = state.AccumulateMessage(msgHash)
 		}
-		// Fill in the message's batch gas cost from the batch posting report.
-		msg.Message.BatchGasCost = report.Message.BatchGasCost
-		messages = append(messages, msg)
-		state.MsgCount += 1
-		msgIdx := arbutil.MessageIndex(state.MsgCount) - 1
-		msgHash, err := msg.Hash(msgIdx, state.ParentChainId)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		state = state.AccumulateMessage(msgHash)
 	}
 	return state, messages, delayedMessages, nil
 }
 
-func (m *MessageExtractor) extractArbosMessage(
+// Extracts a list of arbos messages from the sequencer batch, which looks at the
+// segments contained in a batch and extracts the correct ordering of messages
+// from the segments, possibly reading delayed messages when a delayed message
+// virtual segment in encountered.
+func (m *MessageExtractor) extractMessagesInBatch(
 	ctx context.Context,
 	melState *State,
 	seqMsg *arbstate.SequencerMessage,
 	melDB StateDatabase,
-) (*arbostypes.MessageWithMetadata, error) {
-	segmentNum := uint64(0)
-	submessageNumber := uint64(0)
-	targetSubMessage := uint64(0)
-	blockNumber := uint64(0)
-	timestamp := uint64(0)
+) ([]*arbostypes.MessageWithMetadata, error) {
+	var messages []*arbostypes.MessageWithMetadata
+	params := &arbosExtractionParams{
+		melState:         melState,
+		seqMsg:           seqMsg,
+		melDB:            melDB,
+		targetSubMessage: 0,
+		segmentNum:       0,
+		submessageNumber: 0,
+		blockNumber:      0,
+		timestamp:        0,
+	}
+	var msg *arbostypes.MessageWithMetadata
+	var err error
+	for {
+		if isLastSegment(params) {
+			break
+		}
+		msg, params, err = m.extractArbosMessage(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		if msg == nil {
+			msg = &arbostypes.MessageWithMetadata{
+				Message:             arbostypes.InvalidL1Message,
+				DelayedMessagesRead: params.melState.DelayedMessagesRead,
+			}
+		}
+		messages = append(messages, msg)
+		params.targetSubMessage += 1
+	}
+	return messages, nil
+}
+
+func isLastSegment(p *arbosExtractionParams) bool {
+	// we issue delayed messages until reaching afterDelayedMessages
+	if p.melState.DelayedMessagesRead < p.seqMsg.AfterDelayedMessages {
+		return false
+	}
+	for segmentNum := p.segmentNum + 1; segmentNum < uint64(len(p.seqMsg.Segments)); segmentNum++ {
+		segment := p.seqMsg.Segments[segmentNum]
+		if len(segment) == 0 {
+			continue
+		}
+		kind := segment[0]
+		if kind == arbstate.BatchSegmentKindL2Message || kind == arbstate.BatchSegmentKindL2MessageBrotli {
+			return false
+		}
+		if kind == arbstate.BatchSegmentKindDelayedMessages {
+			return false
+		}
+	}
+	return true
+}
+
+type arbosExtractionParams struct {
+	melState         *State
+	seqMsg           *arbstate.SequencerMessage
+	melDB            StateDatabase
+	targetSubMessage uint64
+	segmentNum       uint64
+	submessageNumber uint64
+	blockNumber      uint64
+	timestamp        uint64
+}
+
+func (m *MessageExtractor) extractArbosMessage(
+	ctx context.Context,
+	p *arbosExtractionParams,
+) (*arbostypes.MessageWithMetadata, *arbosExtractionParams, error) {
+	seqMsg := p.seqMsg
+	segmentNum := p.segmentNum
+	timestamp := p.timestamp
+	blockNumber := p.blockNumber
+	submessageNumber := p.submessageNumber
 	var segment []byte
 	for {
 		if segmentNum >= uint64(len(seqMsg.Segments)) {
@@ -180,13 +260,17 @@ func (m *MessageExtractor) extractArbosMessage(
 				blockNumber += advancing
 			}
 			segmentNum++
-		} else if submessageNumber < targetSubMessage {
+		} else if submessageNumber < p.targetSubMessage {
 			segmentNum++
 			submessageNumber++
 		} else {
 			break
 		}
 	}
+	p.segmentNum = segmentNum
+	p.timestamp = timestamp
+	p.blockNumber = blockNumber
+	p.submessageNumber = submessageNumber
 	if timestamp < seqMsg.MinTimestamp {
 		timestamp = seqMsg.MinTimestamp
 	} else if timestamp > seqMsg.MaxTimestamp {
@@ -206,7 +290,7 @@ func (m *MessageExtractor) extractArbosMessage(
 	}
 	if len(segment) == 0 {
 		log.Error("Empty sequencer message segment", "segmentNum", segmentNum)
-		return nil, nil
+		return nil, p, nil
 	}
 	kind := segment[0]
 	segment = segment[1:]
@@ -216,7 +300,7 @@ func (m *MessageExtractor) extractArbosMessage(
 			decompressed, err := arbcompress.Decompress(segment, arbostypes.MaxL2MessageSize)
 			if err != nil {
 				log.Info("dropping compressed message", "err", err)
-				return nil, nil
+				return nil, p, nil
 			}
 			segment = decompressed
 		}
@@ -233,14 +317,14 @@ func (m *MessageExtractor) extractArbosMessage(
 				},
 				L2msg: segment,
 			},
-			DelayedMessagesRead: melState.DelayedMessagesRead,
+			DelayedMessagesRead: p.melState.DelayedMessagesRead,
 		}
 	} else if kind == arbstate.BatchSegmentKindDelayedMessages {
-		if melState.DelayedMessagesRead >= seqMsg.AfterDelayedMessages {
+		if p.melState.DelayedMessagesRead >= seqMsg.AfterDelayedMessages {
 			if segmentNum < uint64(len(seqMsg.Segments)) {
 				log.Warn(
 					"Attempt to read past batch delayed message count",
-					"delayedMessagesRead", melState.DelayedMessagesRead,
+					"delayedMessagesRead", p.melState.DelayedMessagesRead,
 					"batchAfterDelayedMessages", seqMsg.AfterDelayedMessages,
 				)
 			}
@@ -249,25 +333,25 @@ func (m *MessageExtractor) extractArbosMessage(
 				DelayedMessagesRead: seqMsg.AfterDelayedMessages,
 			}
 		} else {
-			delayed, err := melDB.ReadDelayedMessage(ctx, melState.DelayedMessagesRead)
+			delayed, err := p.melDB.ReadDelayedMessage(ctx, p.melState.DelayedMessagesRead)
 			if err != nil {
-				return nil, err
+				return nil, p, err
 			}
 			if delayed == nil {
-				log.Error("No more delayed messages in queue", "delayedMessagesRead", melState.DelayedMessagesRead)
-				return nil, fmt.Errorf("no more delayed messages in queue")
+				log.Error("No more delayed messages in queue", "delayedMessagesRead", p.melState.DelayedMessagesRead)
+				return nil, p, fmt.Errorf("no more delayed messages in queue")
 			}
 			// TODO: Verify that this delayed message retrieved from an external source, such as a DB,
 			// is a child of the delayed message accumulator in the MEL state.
-			melState.DelayedMessagesRead += 1
+			p.melState.DelayedMessagesRead += 1
 			msg = &arbostypes.MessageWithMetadata{
 				Message:             delayed.Message,
-				DelayedMessagesRead: melState.DelayedMessagesRead,
+				DelayedMessagesRead: p.melState.DelayedMessagesRead,
 			}
 		}
 	} else {
 		log.Error("Bad sequencer message segment kind", "segmentNum", segmentNum, "kind", kind)
-		return nil, nil
+		return nil, p, nil
 	}
-	return msg, nil
+	return msg, p, nil
 }
