@@ -97,33 +97,7 @@ func TestGasDimensionLoggerBalanceCold(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.CallBalanceCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var balanceCount uint64 = 0
-	var balanceLog *DimensionLogRes
-
-	// there should only be one BALANCE in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "BALANCE" {
-			balanceCount++
-			balanceLog = &log
-		}
-	}
-	if balanceCount != 1 {
-		Fatal(t, "Expected 1 BALANCE, got %d", balanceCount)
-	}
-	if balanceLog == nil {
-		Fatal(t, "Expected BALANCE log, got nil")
-	}
+	balanceLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "BALANCE")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: ColdAccountAccessCost,
@@ -156,33 +130,7 @@ func TestGasDimensionLoggerBalanceWarm(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.CallBalanceWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var balanceCount uint64 = 0
-	var balanceLog *DimensionLogRes
-
-	// there should only be one BALANCE in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "BALANCE" {
-			balanceCount++
-			balanceLog = &log
-		}
-	}
-	if balanceCount != 1 {
-		Fatal(t, "Expected 1 BALANCE, got %d", balanceCount)
-	}
-	if balanceLog == nil {
-		Fatal(t, "Expected BALANCE log, got nil")
-	}
+	balanceLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "BALANCE")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: WarmStorageReadCost,
@@ -216,33 +164,7 @@ func TestGasDimensionLoggerExtCodeSizeCold(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var extCodeSizeCount uint64 = 0
-	var extCodeSizeLog *DimensionLogRes
-
-	// there should only be one EXTCODESIZE in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "EXTCODESIZE" {
-			extCodeSizeCount++
-			extCodeSizeLog = &log
-		}
-	}
-	if extCodeSizeCount != 1 {
-		Fatal(t, "Expected 1 EXTCODESIZE, got %d", extCodeSizeCount)
-	}
-	if extCodeSizeLog == nil {
-		Fatal(t, "Expected EXTCODESIZE log, got nil")
-	}
+	extCodeSizeLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODESIZE")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: ColdAccountAccessCost,
@@ -275,33 +197,7 @@ func TestGasDimensionLoggerExtCodeSizeWarm(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var extCodeSizeCount uint64 = 0
-	var extCodeSizeLog *DimensionLogRes
-
-	// there should only be one EXTCODESIZE in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "EXTCODESIZE" {
-			extCodeSizeCount++
-			extCodeSizeLog = &log
-		}
-	}
-	if extCodeSizeCount != 1 {
-		Fatal(t, "Expected 1 EXTCODESIZE, got %d", extCodeSizeCount)
-	}
-	if extCodeSizeLog == nil {
-		Fatal(t, "Expected EXTCODESIZE log, got nil")
-	}
+	extCodeSizeLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODESIZE")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: WarmStorageReadCost,
@@ -335,33 +231,7 @@ func TestGasDimensionLoggerExtCodeHashCold(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var extCodeHashCount uint64 = 0
-	var extCodeHashLog *DimensionLogRes
-
-	// there should only be one EXTCODEHASH in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "EXTCODEHASH" {
-			extCodeHashCount++
-			extCodeHashLog = &log
-		}
-	}
-	if extCodeHashCount != 1 {
-		Fatal(t, "Expected 1 EXTCODEHASH, got %d", extCodeHashCount)
-	}
-	if extCodeHashLog == nil {
-		Fatal(t, "Expected EXTCODEHASH log, got nil")
-	}
+	extCodeHashLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODEHASH")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: ColdAccountAccessCost,
@@ -394,33 +264,7 @@ func TestGasDimensionLoggerExtCodeHashWarm(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var extCodeHashCount uint64 = 0
-	var extCodeHashLog *DimensionLogRes
-
-	// there should only be one EXTCODEHASH in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "EXTCODEHASH" {
-			extCodeHashCount++
-			extCodeHashLog = &log
-		}
-	}
-	if extCodeHashCount != 1 {
-		Fatal(t, "Expected 1 EXTCODEHASH, got %d", extCodeHashCount)
-	}
-	if extCodeHashLog == nil {
-		Fatal(t, "Expected EXTCODEHASH log, got nil")
-	}
+	extCodeHashLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODEHASH")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: WarmStorageReadCost,
@@ -458,33 +302,7 @@ func TestGasDimensionLoggerSloadCold(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.ColdSload)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var sloadCount uint64 = 0
-	var sloadLog *DimensionLogRes
-
-	// there should only be one SLOAD in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "SLOAD" {
-			sloadCount++
-			sloadLog = &log
-		}
-	}
-	if sloadCount != 1 {
-		Fatal(t, "Expected 1 SLOAD, got %d", sloadCount)
-	}
-	if sloadLog == nil {
-		Fatal(t, "Expected SLOAD log, got nil")
-	}
+	sloadLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SLOAD")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: ColdSloadCost,
@@ -517,33 +335,7 @@ func TestGasDimensionLoggerSloadWarm(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.WarmSload)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var sloadCount uint64 = 0
-	var sloadLog *DimensionLogRes
-
-	// there should only be one SLOAD in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "SLOAD" {
-			sloadCount++
-			sloadLog = &log
-		}
-	}
-	if sloadCount != 1 {
-		Fatal(t, "Expected 1 SLOAD, got %d", sloadCount)
-	}
-	if sloadLog == nil {
-		Fatal(t, "Expected SLOAD log, got nil")
-	}
+	sloadLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SLOAD")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: WarmStorageReadCost,
@@ -645,33 +437,7 @@ func TestGasDimensionLoggerExtCodeCopyColdNoMemExpansion(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdNoMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var extCodeCopyCount uint64 = 0
-	var extCodeCopyLog *DimensionLogRes
-
-	// there should only be one EXTCODECOPY in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "EXTCODECOPY" {
-			extCodeCopyCount++
-			extCodeCopyLog = &log
-		}
-	}
-	if extCodeCopyCount != 1 {
-		Fatal(t, "Expected 1 EXTCODECOPY, got %d", extCodeCopyCount)
-	}
-	if extCodeCopyLog == nil {
-		Fatal(t, "Expected EXTCODECOPY log, got nil")
-	}
+	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: ColdAccountAccessCost + extCodeCopyMinimumWordCost,
@@ -709,33 +475,7 @@ func TestGasDimensionLoggerExtCodeCopyColdMemExpansion(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var extCodeCopyCount uint64 = 0
-	var extCodeCopyLog *DimensionLogRes
-
-	// there should only be one EXTCODECOPY in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "EXTCODECOPY" {
-			extCodeCopyCount++
-			extCodeCopyLog = &log
-		}
-	}
-	if extCodeCopyCount != 1 {
-		Fatal(t, "Expected 1 EXTCODECOPY, got %d", extCodeCopyCount)
-	}
-	if extCodeCopyLog == nil {
-		Fatal(t, "Expected EXTCODECOPY log, got nil")
-	}
+	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: ColdAccountAccessCost + extCodeCopyMemoryExpansionCost + extCodeCopyMinimumWordCost,
@@ -771,33 +511,7 @@ func TestGasDimensionLoggerExtCodeCopyWarmNoMemExpansion(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmNoMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var extCodeCopyCount uint64 = 0
-	var extCodeCopyLog *DimensionLogRes
-
-	// there should only be one EXTCODECOPY in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "EXTCODECOPY" {
-			extCodeCopyCount++
-			extCodeCopyLog = &log
-		}
-	}
-	if extCodeCopyCount != 1 {
-		Fatal(t, "Expected 1 EXTCODECOPY, got %d", extCodeCopyCount)
-	}
-	if extCodeCopyLog == nil {
-		Fatal(t, "Expected EXTCODECOPY log, got nil")
-	}
+	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: WarmStorageReadCost + extCodeCopyMinimumWordCost,
@@ -835,33 +549,7 @@ func TestGasDimensionLoggerExtCodeCopyWarmMemExpansion(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var extCodeCopyCount uint64 = 0
-	var extCodeCopyLog *DimensionLogRes
-
-	// there should only be one EXTCODECOPY in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "EXTCODECOPY" {
-			extCodeCopyCount++
-			extCodeCopyLog = &log
-		}
-	}
-	if extCodeCopyCount != 1 {
-		Fatal(t, "Expected 1 EXTCODECOPY, got %d", extCodeCopyCount)
-	}
-	if extCodeCopyLog == nil {
-		Fatal(t, "Expected EXTCODECOPY log, got nil")
-	}
+	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: WarmStorageReadCost + extCodeCopyMemoryExpansionCost + extCodeCopyMinimumWordCost,
@@ -928,33 +616,7 @@ func TestGasDimensionLoggerLog0Empty(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log0Count uint64 = 0
-	var log0Log *DimensionLogRes
-
-	// there should only be one LOG0 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG0" {
-			log0Count++
-			log0Log = &log
-		}
-	}
-	if log0Count != 1 {
-		Fatal(t, "Expected 1 LOG0, got %d", log0Count)
-	}
-	if log0Log == nil {
-		Fatal(t, "Expected LOG0 log, got nil")
-	}
+	log0Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG0")
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: LogStaticCost,
@@ -987,33 +649,7 @@ func TestGasDimensionLoggerLog0NonEmpty(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log0Count uint64 = 0
-	var log0Log *DimensionLogRes
-
-	// there should only be one LOG0 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG0" {
-			log0Count++
-			log0Log = &log
-		}
-	}
-	if log0Count != 1 {
-		Fatal(t, "Expected 1 LOG0, got %d", log0Count)
-	}
-	if log0Log == nil {
-		Fatal(t, "Expected LOG0 log, got nil")
-	}
+	log0Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG0")
 
 	var numBytesWritten uint64 = 7
 
@@ -1050,33 +686,7 @@ func TestGasDimensionLoggerLog1Empty(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log1Count uint64 = 0
-	var log1Log *DimensionLogRes
-
-	// there should only be one LOG1 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG1" {
-			log1Count++
-			log1Log = &log
-		}
-	}
-	if log1Count != 1 {
-		Fatal(t, "Expected 1 LOG1, got %d", log1Count)
-	}
-	if log1Log == nil {
-		Fatal(t, "Expected LOG1 log, got nil")
-	}
+	log1Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG1")
 	var numTopics uint64 = 1
 
 	expected := ExpectedGasCosts{
@@ -1112,33 +722,7 @@ func TestGasDimensionLoggerLog1NonEmpty(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log1Count uint64 = 0
-	var log1Log *DimensionLogRes
-
-	// there should only be one LOG1 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG1" {
-			log1Count++
-			log1Log = &log
-		}
-	}
-	if log1Count != 1 {
-		Fatal(t, "Expected 1 LOG1, got %d", log1Count)
-	}
-	if log1Log == nil {
-		Fatal(t, "Expected LOG1 log, got nil")
-	}
+	log1Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG1")
 
 	var numBytesWritten uint64 = 9
 	var numTopics uint64 = 1
@@ -1174,33 +758,8 @@ func TestGasDimensionLoggerLog2(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log2Count uint64 = 0
-	var log2Log *DimensionLogRes
+	log2Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG2")
 
-	// there should only be one LOG2 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG2" {
-			log2Count++
-			log2Log = &log
-		}
-	}
-	if log2Count != 1 {
-		Fatal(t, "Expected 1 LOG2, got %d", log2Count)
-	}
-	if log2Log == nil {
-		Fatal(t, "Expected LOG2 log, got nil")
-	}
 	var numTopics uint64 = 2
 
 	expected := ExpectedGasCosts{
@@ -1237,33 +796,7 @@ func TestGasDimensionLoggerLog2ExtraData(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log2Count uint64 = 0
-	var log2Log *DimensionLogRes
-
-	// there should only be one LOG2 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG2" {
-			log2Count++
-			log2Log = &log
-		}
-	}
-	if log2Count != 1 {
-		Fatal(t, "Expected 1 LOG2, got %d", log2Count)
-	}
-	if log2Log == nil {
-		Fatal(t, "Expected LOG2 log, got nil")
-	}
+	log2Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG2")
 
 	var numBytesWritten uint64 = 32 // address is 20 bytes, but encoded as a uint256 so 32 bytes
 	var numTopics uint64 = 2
@@ -1299,33 +832,8 @@ func TestGasDimensionLoggerLog3(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log3Count uint64 = 0
-	var log3Log *DimensionLogRes
+	log3Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG3")
 
-	// there should only be one LOG3 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG3" {
-			log3Count++
-			log3Log = &log
-		}
-	}
-	if log3Count != 1 {
-		Fatal(t, "Expected 1 LOG3, got %d", log3Count)
-	}
-	if log3Log == nil {
-		Fatal(t, "Expected LOG3 log, got nil")
-	}
 	var numTopics uint64 = 3
 
 	expected := ExpectedGasCosts{
@@ -1362,33 +870,7 @@ func TestGasDimensionLoggerLog3ExtraData(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log3Count uint64 = 0
-	var log3Log *DimensionLogRes
-
-	// there should only be one LOG3 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG3" {
-			log3Count++
-			log3Log = &log
-		}
-	}
-	if log3Count != 1 {
-		Fatal(t, "Expected 1 LOG3, got %d", log3Count)
-	}
-	if log3Log == nil {
-		Fatal(t, "Expected LOG3 log, got nil")
-	}
+	log3Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG3")
 
 	var numBytesWritten uint64 = 32
 	var numTopics uint64 = 3
@@ -1424,33 +906,8 @@ func TestGasDimensionLoggerLog4(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitFourTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log4Count uint64 = 0
-	var log4Log *DimensionLogRes
+	log4Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG4")
 
-	// there should only be one LOG4 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG4" {
-			log4Count++
-			log4Log = &log
-		}
-	}
-	if log4Count != 1 {
-		Fatal(t, "Expected 1 LOG4, got %d", log4Count)
-	}
-	if log4Log == nil {
-		Fatal(t, "Expected LOG4 log, got nil")
-	}
 	var numTopics uint64 = 4
 
 	expected := ExpectedGasCosts{
@@ -1487,33 +944,7 @@ func TestGasDimensionLoggerLog4ExtraData(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log4Count uint64 = 0
-	var log4Log *DimensionLogRes
-
-	// there should only be one LOG4 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG4" {
-			log4Count++
-			log4Log = &log
-		}
-	}
-	if log4Count != 1 {
-		Fatal(t, "Expected 1 LOG4, got %d", log4Count)
-	}
-	if log4Log == nil {
-		Fatal(t, "Expected LOG4 log, got nil")
-	}
+	log4Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG4")
 
 	var numBytesWritten uint64 = 32
 	var numTopics uint64 = 4
@@ -1570,33 +1001,7 @@ func TestGasDimensionLoggerLog0WithMemoryExpansion(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log0Count uint64 = 0
-	var log0Log *DimensionLogRes
-
-	// there should only be one LOG0 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG0" {
-			log0Count++
-			log0Log = &log
-		}
-	}
-	if log0Count != 1 {
-		Fatal(t, "Expected 1 LOG0, got %d", log0Count)
-	}
-	if log0Log == nil {
-		Fatal(t, "Expected LOG0 log, got nil")
-	}
+	log0Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG0")
 
 	var numBytesWritten uint64 = 64
 
@@ -1636,33 +1041,7 @@ func TestGasDimensionLoggerLog1WithMemoryExpansion(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log1Count uint64 = 0
-	var log1Log *DimensionLogRes
-
-	// there should only be one LOG1 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG1" {
-			log1Count++
-			log1Log = &log
-		}
-	}
-	if log1Count != 1 {
-		Fatal(t, "Expected 1 LOG1, got %d", log1Count)
-	}
-	if log1Log == nil {
-		Fatal(t, "Expected LOG1 log, got nil")
-	}
+	log1Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG1")
 
 	var numBytesWritten uint64 = 64
 	var numTopics uint64 = 1
@@ -1703,33 +1082,7 @@ func TestGasDimensionLoggerLog2WithMemoryExpansion(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log2Count uint64 = 0
-	var log2Log *DimensionLogRes
-
-	// there should only be one LOG2 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG2" {
-			log2Count++
-			log2Log = &log
-		}
-	}
-	if log2Count != 1 {
-		Fatal(t, "Expected 1 LOG2, got %d", log2Count)
-	}
-	if log2Log == nil {
-		Fatal(t, "Expected LOG2 log, got nil")
-	}
+	log2Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG2")
 
 	var numBytesWritten uint64 = 64
 	var numTopics uint64 = 2
@@ -1770,33 +1123,7 @@ func TestGasDimensionLoggerLog3WithMemoryExpansion(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log3Count uint64 = 0
-	var log3Log *DimensionLogRes
-
-	// there should only be one LOG3 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG3" {
-			log3Count++
-			log3Log = &log
-		}
-	}
-	if log3Count != 1 {
-		Fatal(t, "Expected 1 LOG3, got %d", log3Count)
-	}
-	if log3Log == nil {
-		Fatal(t, "Expected LOG3 log, got nil")
-	}
+	log3Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG3")
 
 	var numBytesWritten uint64 = 64
 	var numTopics uint64 = 3
@@ -1837,33 +1164,7 @@ func TestGasDimensionLoggerLog4WithMemoryExpansion(t *testing.T) {
 	receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	var log4Count uint64 = 0
-	var log4Log *DimensionLogRes
-
-	// there should only be one LOG4 in the entire trace
-	// go through and grab it and its data
-	for i, log := range traceResult.DimensionLogs {
-		// Basic field validation
-		if log.Op == "" {
-			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
-		}
-		if log.Depth < 1 {
-			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
-		}
-		if log.Err != nil {
-			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
-		}
-		if log.Op == "LOG4" {
-			log4Count++
-			log4Log = &log
-		}
-	}
-	if log4Count != 1 {
-		Fatal(t, "Expected 1 LOG4, got %d", log4Count)
-	}
-	if log4Log == nil {
-		Fatal(t, "Expected LOG4 log, got nil")
-	}
+	log4Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG4")
 
 	var numBytesWritten uint64 = 64
 	var numTopics uint64 = 4
@@ -2239,6 +1540,42 @@ func callDebugTraceTransactionWithLogger(
 		Fatal(t, "Expected non-empty dimension logs")
 	}
 	return traceResult
+}
+
+// highlight one specific dimension log you want to get out of the
+// dimension logs and return it. Make some basic field validation checks on the
+// log while you iterate through it.
+func getSpecificDimensionLog(t *testing.T, dimensionLogs []DimensionLogRes, expectedOpcode string) (
+	specificDimensionLog *DimensionLogRes,
+) {
+	t.Helper()
+	var expectedOpcodeCount uint64 = 0
+
+	// there should only be one BALANCE in the entire trace
+	// go through and grab it and its data
+	for i, log := range dimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry ", i, " Expected non-empty opcode")
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry ", i, " Expected depth >= 1, got", log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry ", i, " Unexpected error:", log.Err)
+		}
+		if log.Op == expectedOpcode {
+			expectedOpcodeCount++
+			specificDimensionLog = &log
+		}
+	}
+	if expectedOpcodeCount != 1 {
+		Fatal(t, "Expected 1 ", expectedOpcode, " got ", expectedOpcodeCount)
+	}
+	if specificDimensionLog == nil {
+		Fatal(t, "Expected ", expectedOpcode, " log, got nil")
+	}
+	return specificDimensionLog
 }
 
 // just to reduce visual clutter in parameters
