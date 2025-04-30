@@ -437,7 +437,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		if tx != nil {
 			log.Error("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex())
 		}
-		if time.Now().After(roundEndTime) || retryCount == retryLimit {
+		if retryCount == retryLimit {
 			return errors.New("could not resolve auction after multiple attempts")
 		}
 		tx, err = makeAuctionResolutionTx(true)
@@ -456,6 +456,10 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 // attempts. The function returns an error if all attempts fail.
 func retryUntil(ctx context.Context, operation func() error, retryInterval time.Duration, endTime time.Time) error {
 	for {
+		if time.Now().After(endTime) {
+			break
+		}
+
 		// Execute the operation
 		if err := operation(); err == nil {
 			return nil
@@ -463,10 +467,6 @@ func retryUntil(ctx context.Context, operation func() error, retryInterval time.
 
 		if ctx.Err() != nil {
 			return ctx.Err()
-		}
-
-		if time.Now().After(endTime) {
-			break
 		}
 
 		time.Sleep(retryInterval)
