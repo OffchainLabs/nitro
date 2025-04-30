@@ -3,6 +3,7 @@ package arbtest
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -45,7 +46,7 @@ func TestGasDimensionLoggerComputationOnlyOpcodes(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCounter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCounter)
 	receipt := callOnContract(t, builder, auth, contract.NoSpecials)
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 
@@ -93,7 +94,7 @@ func TestGasDimensionLoggerBalanceCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
 	receipt := callOnContract(t, builder, auth, contract.CallBalanceCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -126,7 +127,7 @@ func TestGasDimensionLoggerBalanceWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
 	receipt := callOnContract(t, builder, auth, contract.CallBalanceWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -160,7 +161,7 @@ func TestGasDimensionLoggerExtCodeSizeCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
 	receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -193,7 +194,7 @@ func TestGasDimensionLoggerExtCodeSizeWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
 	receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -227,7 +228,7 @@ func TestGasDimensionLoggerExtCodeHashCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
 	receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -260,7 +261,7 @@ func TestGasDimensionLoggerExtCodeHashWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
 	receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -298,7 +299,7 @@ func TestGasDimensionLoggerSloadCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
 	receipt := callOnContract(t, builder, auth, contract.ColdSload)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -331,7 +332,7 @@ func TestGasDimensionLoggerSloadWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
 	receipt := callOnContract(t, builder, auth, contract.WarmSload)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -433,7 +434,7 @@ func TestGasDimensionLoggerExtCodeCopyColdNoMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
 	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdNoMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -471,7 +472,7 @@ func TestGasDimensionLoggerExtCodeCopyColdMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
 	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -507,7 +508,7 @@ func TestGasDimensionLoggerExtCodeCopyWarmNoMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
 	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmNoMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -545,7 +546,7 @@ func TestGasDimensionLoggerExtCodeCopyWarmMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
 	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -612,7 +613,7 @@ func TestGasDimensionLoggerLog0Empty(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -645,7 +646,7 @@ func TestGasDimensionLoggerLog0NonEmpty(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -682,7 +683,7 @@ func TestGasDimensionLoggerLog1Empty(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -718,7 +719,7 @@ func TestGasDimensionLoggerLog1NonEmpty(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -754,7 +755,7 @@ func TestGasDimensionLoggerLog2(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -792,7 +793,7 @@ func TestGasDimensionLoggerLog2ExtraData(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -828,7 +829,7 @@ func TestGasDimensionLoggerLog3(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -866,7 +867,7 @@ func TestGasDimensionLoggerLog3ExtraData(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -902,7 +903,7 @@ func TestGasDimensionLoggerLog4(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitFourTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -940,7 +941,7 @@ func TestGasDimensionLoggerLog4ExtraData(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -997,7 +998,7 @@ func TestGasDimensionLoggerLog0WithMemoryExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1037,7 +1038,7 @@ func TestGasDimensionLoggerLog1WithMemoryExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1078,7 +1079,7 @@ func TestGasDimensionLoggerLog2WithMemoryExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1119,7 +1120,7 @@ func TestGasDimensionLoggerLog3WithMemoryExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1160,7 +1161,7 @@ func TestGasDimensionLoggerLog4WithMemoryExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
 	receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1274,7 +1275,7 @@ func TestGasDimensionLoggerSstoreColdZeroToZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreColdZeroToZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1304,7 +1305,7 @@ func TestGasDimensionLoggerSstoreColdZeroToNonZeroValue(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreColdZeroToNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1334,7 +1335,7 @@ func TestGasDimensionLoggerSstoreColdNonZeroValueToZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroValueToZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1365,7 +1366,7 @@ func TestGasDimensionLoggerSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroToSameNonZeroValue)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1396,7 +1397,7 @@ func TestGasDimensionLoggerSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroToDifferentNonZeroValue)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1425,7 +1426,7 @@ func TestGasDimensionLoggerSstoreWarmZeroToZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreWarmZeroToZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1454,7 +1455,7 @@ func TestGasDimensionLoggerSstoreWarmZeroToNonZeroValue(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreWarmZeroToNonZeroValue)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1484,7 +1485,7 @@ func TestGasDimensionLoggerSstoreWarmNonZeroValueToZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroValueToZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1514,7 +1515,7 @@ func TestGasDimensionLoggerSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroToSameNonZeroValue)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1544,7 +1545,7 @@ func TestGasDimensionLoggerSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroToDifferentNonZeroValue)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1577,7 +1578,7 @@ func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testin
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1611,7 +1612,7 @@ func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *te
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToSameNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1646,7 +1647,7 @@ func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1681,7 +1682,7 @@ func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testi
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToSameNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1714,7 +1715,7 @@ func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroToNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1748,7 +1749,7 @@ func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.
 	defer cancel()
 	defer cleanup()
 
-	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
 	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroBackToZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -1774,16 +1775,319 @@ func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.
 // warm or cold
 // code at target address
 // value transferred or no value transferred
+//
+// `value_to_empty_account_cost` is storage growth (25000)
+// `address_access_cost` for cold addresses is a read/write cost
+// since all this operation does is send ether at this point
+// then we assign the static gas of 5000 to read/write,
+// since in the non-state-growth case this would be a read/write
+// and the access cost is read/write
+// in the case where state growth happens due to sending funds to
+// a new empty account, then we assign that to state growth.
 
-func TestGasDimensionLoggerSelfdestructColdNoValueEmpty(t *testing.T)      { t.Fail() }
-func TestGasDimensionLoggerSelfdestructColdNoValueNonEmpty(t *testing.T)   { t.Fail() }
-func TestGasDimensionLoggerSelfdestructColdWithValueEmpty(t *testing.T)    { t.Fail() }
-func TestGasDimensionLoggerSelfdestructColdWithValueNonEmpty(t *testing.T) { t.Fail() }
+// in this test case, we self destruct and set the target of funds to be
+// an empty address that has no code or value at that address. Normally
+// that would trigger state growth, but we also have no money to send
+// as part of the selfdestruct, so we don't trigger state growth.
+//
+// in this case we expect the one-dimensional cost to be 5000 + 2600,
+// for the base selfdestruct cost and the access list cold read cost,
+// computation to be 100 (for the warm access list read),
+// state access to be 5000+2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSelfdestructColdNoValueEmpty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
 
-func TestGasDimensionLoggerSelfdestructWarmNoValueEmpty(t *testing.T)      { t.Fail() }
-func TestGasDimensionLoggerSelfdestructWarmNoValueNonEmpty(t *testing.T)   { t.Fail() }
-func TestGasDimensionLoggerSelfdestructWarmWithValueEmpty(t *testing.T)    { t.Fail() }
-func TestGasDimensionLoggerSelfdestructWarmWithValueNonEmpty(t *testing.T) { t.Fail() }
+	_, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
+	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
+}
+
+// in this test case, we self destruct and set the target of funds to be
+// an address that is not empty (i.e. it has code or value).
+// but we also self destruct with no funds to send, so it's kind of moot.
+//
+// in this case we expect the one-dimensional cost to be 5000 + 2600,
+// for the base selfdestruct cost and the access list cold read cost,
+// computation to be 100 (for the warm access list read),
+// state access to be 5000+2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSelfdestructColdNoValueNonEmpty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	payableCounterAddress, _ /*payableCounter*/ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployPayableCounter)
+
+	// prefund the selfDestructor and payableCounter with some funds
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", payableCounterAddress, big.NewInt(1e17), builder.L2Info)
+
+	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
+	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, payableCounterAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
+}
+
+// in this test case, we self destruct and set the target of funds to be
+// an address that has no code or value at that address.
+// this does trigger state growth.
+//
+// in this case we expect the one-dimensional cost to be 5000 + 2600 + 25000,
+// for the base selfdestruct cost and the access list cold read cost and the
+// value to empty account cost,
+// so we expect a computation of 100 (for the warm access list read),
+// state access to be 5000+2500, state growth to be 25000,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSelfdestructColdWithValueEmpty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
+
+	// call selfDestructor.SelfDestruct(emptyAccountAddress) - which is cold
+	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.SelfdestructGasEIP150 + params.CreateBySelfdestructGas + params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           params.CreateBySelfdestructGas,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
+}
+
+// in this test case, we self destruct and set the target of funds to be
+// an address that already has code or value at that address.
+// since the address already has code or value, the operation is a state read/write
+// rather than a state growth.
+//
+// in this case we expect the one-dimensional cost to be 5000 + 2600,
+// for the base selfdestruct cost and the access list cold read cost,
+// computation to be 100 (for the warm access list read),
+// state access to be 5000+2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSelfdestructColdWithValueNonEmpty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
+
+	// call selfDestructor.SelfDestruct(emptyAccountAddress) - which is cold
+	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.SelfdestructGasEIP150 + params.CreateBySelfdestructGas + params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           params.CreateBySelfdestructGas,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
+}
+
+// in this test case, we self destruct and set the target of funds to be
+// an empty address that has no code or value at that address. Normally
+// that would trigger state growth, but we also have no money to send
+// as part of the selfdestruct, so we don't trigger state growth.
+//
+// in this case we expect the one-dimensional cost to be 5000,
+// computation to be 100 (for the warm access list read),
+// state access to be 4900, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSelfdestructWarmNoValueEmpty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
+	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmEmptySelfDestructor, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.SelfdestructGasEIP150,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
+}
+
+// in this test case, we self destruct and set the target of funds to be
+// an address that has some code at that address and some eth value already,
+// but we don't have any funds to send, so we don't send any as part of the
+// selfdestruct
+//
+// for this transaction we expect a one-dimensional cost of 5000
+// computation to be 100 (for the warm access list read),
+// state access to be 4900, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSelfdestructWarmNoValueNonEmpty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_ /*selfDestructorAddress*/, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	payableCounterAddress, _ /*payableCounter*/ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployPayableCounter)
+
+	// prefund the payableCounter with some funds, but not the selfDestructor
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", payableCounterAddress, big.NewInt(1e17), builder.L2Info)
+
+	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
+	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmSelfDestructor, payableCounterAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.SelfdestructGasEIP150,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
+}
+
+// in this test case we self destruct and set the target of funds to be
+// an address that neither has code nor any eth value yet. Which means
+// the resulting selfdestruct will cause state growth, assigning value
+// to a new account.
+//
+// in this case we expect the one-dimensional cost to be 30000,
+// 5000 from static cost and 25000 from the value to empty account cost
+// 100 for warm access list read
+// that gives us a computation of 100, state access of 4900, state growth of 25000,
+// history growth of 0, and state growth refund of 0
+func TestGasDimensionLoggerSelfdestructWarmWithValueEmpty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
+
+	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
+	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmEmptySelfDestructor, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.SelfdestructGasEIP150 + params.CreateBySelfdestructGas,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           params.CreateBySelfdestructGas,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
+}
+
+// in this test case, we self destruct and set the target of funds to be
+// an address that has some code at that address and some eth value already
+//
+// for this transaction we expect a one-dimensional cost of 5000
+// computation to be 100 (for the warm access list read),
+// state access to be 4900, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSelfdestructWarmWithValueNonEmpty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	payableCounterAddress, _ /*payableCounter*/ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployPayableCounter)
+
+	// prefund the selfDestructor and payableCounter with some funds
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", payableCounterAddress, big.NewInt(1e17), builder.L2Info)
+
+	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
+	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmSelfDestructor, payableCounterAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.SelfdestructGasEIP150,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
+}
 
 // ############################################################
 //                         HELPER FUNCTIONS
@@ -1816,10 +2120,11 @@ func deployGasDimensionTestContract[C any](
 	auth bind.TransactOpts,
 	deployFunc func(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, C, error),
 ) (
+	address common.Address,
 	contract C,
 ) {
 	t.Helper()
-	_, tx, contract, err := deployFunc(
+	address, tx, contract, err := deployFunc(
 		&auth,             // Transaction options
 		builder.L2.Client, // Ethereum client
 	)
@@ -1829,7 +2134,7 @@ func deployGasDimensionTestContract[C any](
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	return contract
+	return address, contract
 }
 
 // call whatever test function is required for the test on the contract
@@ -1841,6 +2146,23 @@ func callOnContract[F func(auth *bind.TransactOpts) (*types.Transaction, error)]
 ) (receipt *types.Receipt) {
 	t.Helper()
 	tx, err := testFunc(&auth) // For write operations
+	Require(t, err)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	return receipt
+}
+
+// call whatever test function is required for the test on the contract
+// pass in the argument provided to the test function call as its first argument
+func callOnContractWithOneArg[A any, F func(auth *bind.TransactOpts, arg1 A) (*types.Transaction, error)](
+	t *testing.T,
+	builder *NodeBuilder,
+	auth bind.TransactOpts,
+	testFunc F,
+	arg1 A,
+) (receipt *types.Receipt) {
+	t.Helper()
+	tx, err := testFunc(&auth, arg1)
 	Require(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
