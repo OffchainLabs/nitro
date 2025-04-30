@@ -61,7 +61,7 @@ func TestGasDimensionLoggerComputationOnlyOpcodes(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 
 	// Validate each log entry
 	for i, log := range traceResult.DimensionLogs {
@@ -124,7 +124,7 @@ func TestGasDimensionLoggerBalanceCold(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var balanceCount uint64 = 0
 	var balanceLog *DimensionLogRes
 
@@ -197,7 +197,7 @@ func TestGasDimensionLoggerBalanceWarm(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var balanceCount uint64 = 0
 	var balanceLog *DimensionLogRes
 
@@ -271,7 +271,7 @@ func TestGasDimensionLoggerExtCodeSizeCold(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeSizeCount uint64 = 0
 	var extCodeSizeLog *DimensionLogRes
 
@@ -344,7 +344,7 @@ func TestGasDimensionLoggerExtCodeSizeWarm(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeSizeCount uint64 = 0
 	var extCodeSizeLog *DimensionLogRes
 
@@ -418,7 +418,7 @@ func TestGasDimensionLoggerExtCodeHashCold(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeHashCount uint64 = 0
 	var extCodeHashLog *DimensionLogRes
 
@@ -491,7 +491,7 @@ func TestGasDimensionLoggerExtCodeHashWarm(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeHashCount uint64 = 0
 	var extCodeHashLog *DimensionLogRes
 
@@ -569,7 +569,7 @@ func TestGasDimensionLoggerSloadCold(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var sloadCount uint64 = 0
 	var sloadLog *DimensionLogRes
 
@@ -642,7 +642,7 @@ func TestGasDimensionLoggerSloadWarm(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var sloadCount uint64 = 0
 	var sloadLog *DimensionLogRes
 
@@ -784,7 +784,7 @@ func TestGasDimensionLoggerExtCodeCopyColdNoMemExpansion(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeCopyCount uint64 = 0
 	var extCodeCopyLog *DimensionLogRes
 
@@ -862,7 +862,7 @@ func TestGasDimensionLoggerExtCodeCopyColdMemExpansion(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeCopyCount uint64 = 0
 	var extCodeCopyLog *DimensionLogRes
 
@@ -938,7 +938,7 @@ func TestGasDimensionLoggerExtCodeCopyWarmNoMemExpansion(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeCopyCount uint64 = 0
 	var extCodeCopyLog *DimensionLogRes
 
@@ -1016,7 +1016,7 @@ func TestGasDimensionLoggerExtCodeCopyWarmMemExpansion(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeCopyCount uint64 = 0
 	var extCodeCopyLog *DimensionLogRes
 
@@ -1123,7 +1123,7 @@ func TestGasDimensionLoggerLog0Empty(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log0Count uint64 = 0
 	var log0Log *DimensionLogRes
 
@@ -1196,7 +1196,7 @@ func TestGasDimensionLoggerLog0NonEmpty(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log0Count uint64 = 0
 	var log0Log *DimensionLogRes
 
@@ -1273,7 +1273,7 @@ func TestGasDimensionLoggerLog1Empty(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log1Count uint64 = 0
 	var log1Log *DimensionLogRes
 
@@ -1349,7 +1349,7 @@ func TestGasDimensionLoggerLog1NonEmpty(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log1Count uint64 = 0
 	var log1Log *DimensionLogRes
 
@@ -1425,7 +1425,7 @@ func TestGasDimensionLoggerLog2(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log2Count uint64 = 0
 	var log2Log *DimensionLogRes
 
@@ -1502,7 +1502,7 @@ func TestGasDimensionLoggerLog2ExtraData(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log2Count uint64 = 0
 	var log2Log *DimensionLogRes
 
@@ -1578,7 +1578,7 @@ func TestGasDimensionLoggerLog3(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log3Count uint64 = 0
 	var log3Log *DimensionLogRes
 
@@ -1655,7 +1655,7 @@ func TestGasDimensionLoggerLog3ExtraData(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log3Count uint64 = 0
 	var log3Log *DimensionLogRes
 
@@ -1731,7 +1731,7 @@ func TestGasDimensionLoggerLog4(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log4Count uint64 = 0
 	var log4Log *DimensionLogRes
 
@@ -1808,7 +1808,7 @@ func TestGasDimensionLoggerLog4ExtraData(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log4Count uint64 = 0
 	var log4Log *DimensionLogRes
 
@@ -1905,7 +1905,7 @@ func TestGasDimensionLoggerLog0WithMemoryExpansion(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log0Count uint64 = 0
 	var log0Log *DimensionLogRes
 
@@ -1985,7 +1985,7 @@ func TestGasDimensionLoggerLog1WithMemoryExpansion(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log1Count uint64 = 0
 	var log1Log *DimensionLogRes
 
@@ -2066,7 +2066,7 @@ func TestGasDimensionLoggerLog2WithMemoryExpansion(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log2Count uint64 = 0
 	var log2Log *DimensionLogRes
 
@@ -2147,7 +2147,7 @@ func TestGasDimensionLoggerLog3WithMemoryExpansion(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log3Count uint64 = 0
 	var log3Log *DimensionLogRes
 
@@ -2228,7 +2228,7 @@ func TestGasDimensionLoggerLog4WithMemoryExpansion(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log4Count uint64 = 0
 	var log4Log *DimensionLogRes
 
@@ -2344,17 +2344,173 @@ func TestGasDimensionLoggerCallCodeNonEmptyWarmWithValue(t *testing.T) { t.Fail(
 // non-zero -> non-zero (same value)
 // non-zero -> non-zero (different value)
 
-func TestGasDimensionLoggerSstoreColdZeroToZero(t *testing.T)                     { t.Fail() }
-func TestGasDimensionLoggerSstoreColdZeroToNonZeroValue(t *testing.T)             { t.Fail() }
-func TestGasDimensionLoggerSstoreColdNonZeroValueToZero(t *testing.T)             { t.Fail() }
-func TestGasDimensionLoggerSstoreColdNonZeroToSameNonZeroValue(t *testing.T)      { t.Fail() }
+// This test deployes a contract with a local variable that we can SSTORE to
+// in this test, we SSTORE a variable that starts at 0 and SSTORE it to 0
+//
+// we expect the gas cost of this operation to be 2200, 100 for the base sstore cost,
+// and 2100 for cold access set access.
+// we expect computation to be 100, state access to be 2000, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSstoreColdZeroToZero(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// in this test, we SSTORE a variable that starts at 0 and SSTORE it to a non-zero value
+//
+// we expect the gas cost of this operation to be 22100, 20000 for the sstore cost,
+// and 2100 for cold access set access.
+// we expect computation to be 100, state read/write to be 0, state growth to be 22000,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSstoreColdZeroToNonZeroValue(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// in this test, we SSTORE a variable that starts at a non-zero value and SSTORE it to 0
+//
+// we expect the gas cost of this operation to be 5000 and a gas refund of 4800.
+// this is from an sstore cost of 2900, and a cold access set cost of 2100.
+// we expect computation to be 100, state read/write to be 0, state growth to be 4900,
+// history growth to be 0, and state growth refund to be 4800
+func TestGasDimensionLoggerSstoreColdNonZeroValueToZero(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// in this test, we SSTORE a variable that starts at a non-zero value and SSTORE it to
+// the same non-zero value
+//
+// we expect the gas cost of this operation to be 2200, 100 for the base sstore cost,
+// and 2100 for cold access set access.
+// we expect computation to be 100, state read/write to be 0, state growth to be 2100,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSstoreColdNonZeroToSameNonZeroValue(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// in this test, we SSTORE a variable that starts at a non-zero value and SSTORE it to
+// a different non-zero value
+//
+// we expect the gas cost of this operation to be 5000, 2900 for the sstore cost,
+// and 2100 for cold access set access.
+// we expect computation to be 100, state read/write to be 0, state growth to be 4900,
+// history growth to be 0, and state growth refund to be 0
 func TestGasDimensionLoggerSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerSstoreWarmZeroToZero(t *testing.T)                     { t.Fail() }
-func TestGasDimensionLoggerSstoreWarmZeroToNonZeroValue(t *testing.T)             { t.Fail() }
-func TestGasDimensionLoggerSstoreWarmNonZeroValueToZero(t *testing.T)             { t.Fail() }
-func TestGasDimensionLoggerSstoreWarmNonZeroToSameNonZeroValue(t *testing.T)      { t.Fail() }
+// This test deployes a contract with a local variable that we can SSTORE to
+// in this test, we SSTORE a variable that starts at 0 and SSTORE it to 0
+//
+// we expect the gas cost of this operation to be 100, 100 for the base sstore cost,
+// we expect computation to be 0, state access to be 100, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSstoreWarmZeroToZero(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// in this test, we SSTORE a variable that starts at 0 and SSTORE it to a non-zero value
+//
+// we expect the gas cost of this operation to be 20000, 20000 for the sstore cost,
+// we expect computation to be 0, state access to be 0, state growth to be 20000,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSstoreWarmZeroToNonZeroValue(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// in this test, we SSTORE a variable that starts at a non-zero value and SSTORE it to 0
+//
+// we expect the gas cost of this operation to be 2900, with a gas refund of 4800
+// This is 2900 just for the sstore cost
+// we expect computation to be 0, state read/write to be 0, state growth to be 2900,
+// history growth to be 0, and state growth refund to be 4800
+func TestGasDimensionLoggerSstoreWarmNonZeroValueToZero(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// in this test, we SSTORE a variable that starts at a non-zero value and SSTORE it to
+// the same non-zero value
+//
+// we expect the gas cost of this operation to be 100 for the base sstore cost,
+// we expect computation to be 0, state read/write to be 0, state growth to be 100,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// in this test, we SSTORE a variable that starts at a non-zero value and SSTORE it to
+// a different non-zero value
+//
+// we expect the gas cost of this operation to be 2900 for the base sstore cost,
+// we expect computation to be 0, state read/write to be 0, state growth to be 2900,
+// history growth to be 0, and state growth refund to be 0
 func TestGasDimensionLoggerSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
+// in this test we test a change where the first SSTORE changed a value from non zero to non zero
+// in the past, and now we're evaluating the cost for this second sstore which is changing the value
+// again, to a different non zero value
+// for example, changing some value from 2->3->4
+//
+// we expect the gas cost of this operation to be 100 for the base sstore cost,
+// we expect computation to be 0, state read/write to be 0, state growth to be 100,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
+// in this test we test a change where the first SSTORE changed a value from non zero to non zero
+// in the past, and now we're evaluating the cost for this second sstore which is changing the value
+// again, to the same non zero value
+// for example, changing some value from 2->3->2
+//
+// we expect the gas cost of this operation to be 100 for the base sstore cost,
+// and to get a gas refund of 2800
+// we expect computation to be 0, state read/write to be 0, state growth to be 100,
+// history growth to be 0, and state growth refund to be 2800
+func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
+// in this test we test a change where the first SSTORE changed a value from non zero to zero
+// in the past, and now we're evaluating the cost for this second sstore which is changing the value
+// again, to a non zero value
+// for example, changing some value from 2->0->3
+//
+// we expect the gas cost of this operation to be 100 for the base sstore cost,
+// and to have a NEGATIVE gas refund of -4800, i.e. taking away from the previous gas refund
+// that was granted for changing the sstore from non zero to zero
+// we expect computation to be 0, state read/write to be 0, state growth to be 100,
+// history growth to be 0, and state growth refund to be -4800
+func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
+// in this test we test a change where the first SSTORE changed a value from non zero to zero
+// in the past, and now we're evaluating the cost for this second sstore which is changing the value
+// again, to the same non zero value
+// for example, changing some value from 2->0->2
+//
+// we expect the gas cost of this operation to be 100 for the base sstore cost,
+// and to have a NEGATIVE gas refund of -2000, i.e. taking away from the previous gas refund
+// that was granted for changing the sstore from non zero to zero
+// we expect computation to be 0, state read/write to be 0, state growth to be 100,
+// history growth to be 0, and state growth refund to be -2000
+func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
+// in this test we test a change where the first SSTORE changed a value from zero to non zero
+// in the past, and now we're evaluating the cost for this second sstore which is changing the value
+// again, to a different non zero value
+// for example, changing some value from 0->2->3
+//
+// We expect the gas cost of this operation to be 100 for the base sstore cost,
+// we expect computation to be 0, state read/write to be 0, state growth to be 100,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) { t.Fail() }
+
+// This test deployes a contract with a local variable that we can SSTORE to
+// we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
+// in this test we test a change where the first SSTORE changed a value from zero to non zero
+// in the past, and now we're evaluating the cost for this second sstore which is changing the value
+// again, back to zero
+// for example, changing some value from 0->3->0
+//
+// We expect the gas cost of this operation to be 100 for the base sstore cost,
+// we expect to get a gas refund of 19900
+// we expect computation to be 0, state read/write to be 0, state growth to be 100,
+// history growth to be 0, and state growth refund to be 19900
+func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) { t.Fail() }
 
 // ############################################################
 //                          SELFDESTRUCT
@@ -2400,7 +2556,7 @@ func gasDimensionLoggerSetup(t *testing.T) (
 
 // call debug_traceTransaction with txGasDimensionLogger tracer
 // do very light sanity checks on the result
-func callDebugTraceTransaction(
+func callDebugTraceTransactionWithLogger(
 	t *testing.T,
 	ctx context.Context,
 	builder *NodeBuilder,
