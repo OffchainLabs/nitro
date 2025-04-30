@@ -431,7 +431,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		}
 
 		// Check if the transaction was successful
-		if tx != nil && receipt != nil || receipt.Status == types.ReceiptStatusSuccessful {
+		if tx != nil && receipt != nil && receipt.Status == types.ReceiptStatusSuccessful {
 			break
 		}
 		if tx != nil {
