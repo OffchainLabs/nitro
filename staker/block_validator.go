@@ -845,7 +845,7 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	v.lastValidInfoPrinted = validated
 	revalidationConfig := v.config().Dangerous.Revalidation
 	if revalidationConfig.EndBlock > 0 && validated.GlobalState.Batch >= revalidationConfig.EndBlock {
-		log.Info("revalidation done from %d to %d", revalidationConfig.StartBlock, revalidationConfig.EndBlock)
+		log.Info("revalidation done", "startBlock", revalidationConfig.StartBlock, "endBlock", revalidationConfig.EndBlock)
 		if revalidationConfig.QuitAfterRevalidation {
 			// Sending nil to fatalErr channel to stop the node, but not report as an error
 			// since this is expected shutdown of the node.
