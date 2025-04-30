@@ -639,8 +639,16 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbOwner.methodsByName["SetWasmMaxSize"].arbosVersion = params.ArbosVersion_40
 
-	ArbOwner.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
-	ArbOwner.methodsByName["BurnNativeToken"].arbosVersion = params.ArbosVersion_41
+	ArbOwner.methodsByName["addNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
+	ArbOwner.methodsByName["removeNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
+	ArbOwner.methodsByName["isNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
+	ArbOwner.methodsByName["getAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
+
+	// TODO: properly set address
+	_, ArbNativeToken := MakePrecompile(pgen.ArbNativeTokenMetaData, &ArbNativeToken{Address: common.HexToAddress("0xff1")})
+	ArbNativeToken.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
+	ArbNativeToken.methodsByName["BurnNativeToken"].arbosVersion = params.ArbosVersion_41
+	insert(nativeTokenOnly(ArbNativeToken.address, ArbNativeToken))
 
 	return contracts
 }

@@ -88,6 +88,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		retryables.OpenRetryableState(backingStorage.OpenCachedSubStorage(retryablesSubspace), stateDB),
 		addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
+		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(nativeTokenOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
 		programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
 		features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
@@ -164,16 +165,17 @@ const (
 type SubspaceID []byte
 
 var (
-	l1PricingSubspace    SubspaceID = []byte{0}
-	l2PricingSubspace    SubspaceID = []byte{1}
-	retryablesSubspace   SubspaceID = []byte{2}
-	addressTableSubspace SubspaceID = []byte{3}
-	chainOwnerSubspace   SubspaceID = []byte{4}
-	sendMerkleSubspace   SubspaceID = []byte{5}
-	blockhashesSubspace  SubspaceID = []byte{6}
-	chainConfigSubspace  SubspaceID = []byte{7}
-	programsSubspace     SubspaceID = []byte{8}
-	featuresSubspace     SubspaceID = []byte{9}
+	l1PricingSubspace        SubspaceID = []byte{0}
+	l2PricingSubspace        SubspaceID = []byte{1}
+	retryablesSubspace       SubspaceID = []byte{2}
+	addressTableSubspace     SubspaceID = []byte{3}
+	chainOwnerSubspace       SubspaceID = []byte{4}
+	sendMerkleSubspace       SubspaceID = []byte{5}
+	blockhashesSubspace      SubspaceID = []byte{6}
+	chainConfigSubspace      SubspaceID = []byte{7}
+	programsSubspace         SubspaceID = []byte{8}
+	featuresSubspace         SubspaceID = []byte{9}
+	nativeTokenOwnerSubspace SubspaceID = []byte{10}
 )
 
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
@@ -232,6 +234,9 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	ownersStorage := sto.OpenCachedSubStorage(chainOwnerSubspace)
 	_ = addressSet.Initialize(ownersStorage)
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(initialChainOwner)
+
+	nativeTokenOwnersStorage := sto.OpenCachedSubStorage(nativeTokenOwnerSubspace)
+	_ = addressSet.Initialize(nativeTokenOwnersStorage)
 
 	aState, err := OpenArbosState(stateDB, burner)
 	if err != nil {

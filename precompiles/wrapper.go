@@ -117,3 +117,61 @@ func (wrapper *OwnerPrecompile) Precompile() *Precompile {
 	con := wrapper.precompile
 	return con.Precompile()
 }
+
+// NativeTokenPrecompile is a precompile wrapper for those only native token owners may use
+type NativeTokenPrecompile struct {
+	precompile ArbosPrecompile
+}
+
+func nativeTokenOnly(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
+	return address, &NativeTokenPrecompile{
+		precompile: impl,
+	}
+}
+
+func (wrapper *NativeTokenPrecompile) Call(
+	input []byte,
+	precompileAddress common.Address,
+	actingAsAddress common.Address,
+	caller common.Address,
+	value *big.Int,
+	readOnly bool,
+	gasSupplied uint64,
+	evm *vm.EVM,
+) ([]byte, uint64, error) {
+	con := wrapper.precompile
+
+	burner := &Context{
+		gasSupplied: gasSupplied,
+		gasLeft:     gasSupplied,
+		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
+	}
+	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
+	if err != nil {
+		return nil, burner.gasLeft, err
+	}
+
+	nativeTokenOwners := state.NativeTokenOwners()
+	isNativeTokenOwner, err := nativeTokenOwners.IsMember(caller)
+	if err != nil {
+		return nil, burner.gasLeft, err
+	}
+
+	if !isNativeTokenOwner {
+		return nil, burner.gasLeft, errors.New("unauthorized caller to access-controlled method")
+	}
+
+	output, _, err := con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+
+	// TODO: check if gas charging below is correct
+	if err != nil {
+		return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
+	}
+
+	return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
+}
+
+func (wrapper *NativeTokenPrecompile) Precompile() *Precompile {
+	con := wrapper.precompile
+	return con.Precompile()
+}

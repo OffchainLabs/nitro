@@ -472,6 +472,7 @@ func TestCurrentTxL1GasFees(t *testing.T) {
 	}
 }
 
+// TODO: fix mint and burn native token tests
 // func TestMintAndBurnNativeToken(t *testing.T) {
 // 	ctx, cancel := context.WithCancel(context.Background())
 // 	defer cancel()
