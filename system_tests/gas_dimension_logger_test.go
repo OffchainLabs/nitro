@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
@@ -44,23 +45,8 @@ func TestGasDimensionLoggerComputationOnlyOpcodes(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployCounter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.NoSpecials(&auth) // For write operations
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCounter)
+	receipt := callOnContract(t, builder, auth, contract.NoSpecials)
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 
 	// Validate each log entry
@@ -107,22 +93,8 @@ func TestGasDimensionLoggerBalanceCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployBalance(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.CallBalanceCold(&auth) // For write operations
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
+	receipt := callOnContract(t, builder, auth, contract.CallBalanceCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var balanceCount uint64 = 0
@@ -180,22 +152,8 @@ func TestGasDimensionLoggerBalanceWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployBalance(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.CallBalanceWarm(&auth) // For write operations
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
+	receipt := callOnContract(t, builder, auth, contract.CallBalanceWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var balanceCount uint64 = 0
@@ -254,22 +212,8 @@ func TestGasDimensionLoggerExtCodeSizeCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployExtCodeSize(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.GetExtCodeSizeCold(&auth) // For write operations
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
+	receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeSizeCount uint64 = 0
@@ -327,22 +271,8 @@ func TestGasDimensionLoggerExtCodeSizeWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployExtCodeSize(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.GetExtCodeSizeWarm(&auth) // For write operations
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
+	receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeSizeCount uint64 = 0
@@ -401,22 +331,8 @@ func TestGasDimensionLoggerExtCodeHashCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployExtCodeHash(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.GetExtCodeHashCold(&auth) // For write operations
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
+	receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeHashCount uint64 = 0
@@ -474,22 +390,8 @@ func TestGasDimensionLoggerExtCodeHashWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployExtCodeHash(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.GetExtCodeHashWarm(&auth) // For write operations
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
+	receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeHashCount uint64 = 0
@@ -552,22 +454,8 @@ func TestGasDimensionLoggerSloadCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeploySload(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.ColdSload(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
+	receipt := callOnContract(t, builder, auth, contract.ColdSload)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var sloadCount uint64 = 0
@@ -625,22 +513,8 @@ func TestGasDimensionLoggerSloadWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeploySload(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.WarmSload(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
+	receipt := callOnContract(t, builder, auth, contract.WarmSload)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var sloadCount uint64 = 0
@@ -767,22 +641,8 @@ func TestGasDimensionLoggerExtCodeCopyColdNoMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployExtCodeCopy(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.ExtCodeCopyColdNoMemExpansion(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdNoMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeCopyCount uint64 = 0
@@ -845,22 +705,8 @@ func TestGasDimensionLoggerExtCodeCopyColdMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployExtCodeCopy(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.ExtCodeCopyColdMemExpansion(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeCopyCount uint64 = 0
@@ -921,22 +767,8 @@ func TestGasDimensionLoggerExtCodeCopyWarmNoMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployExtCodeCopy(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.ExtCodeCopyWarmNoMemExpansion(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmNoMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeCopyCount uint64 = 0
@@ -999,22 +831,8 @@ func TestGasDimensionLoggerExtCodeCopyWarmMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployExtCodeCopy(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.ExtCodeCopyWarmMemExpansion(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var extCodeCopyCount uint64 = 0
@@ -1106,22 +924,8 @@ func TestGasDimensionLoggerLog0Empty(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitZeroTopicEmptyData(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log0Count uint64 = 0
@@ -1179,22 +983,8 @@ func TestGasDimensionLoggerLog0NonEmpty(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitZeroTopicNonEmptyData(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log0Count uint64 = 0
@@ -1256,22 +1046,8 @@ func TestGasDimensionLoggerLog1Empty(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitOneTopicEmptyData(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log1Count uint64 = 0
@@ -1332,22 +1108,8 @@ func TestGasDimensionLoggerLog1NonEmpty(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitOneTopicNonEmptyData(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log1Count uint64 = 0
@@ -1408,22 +1170,8 @@ func TestGasDimensionLoggerLog2(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitTwoTopics(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log2Count uint64 = 0
@@ -1485,22 +1233,8 @@ func TestGasDimensionLoggerLog2ExtraData(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitTwoTopicsExtraData(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log2Count uint64 = 0
@@ -1561,22 +1295,8 @@ func TestGasDimensionLoggerLog3(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitThreeTopics(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log3Count uint64 = 0
@@ -1638,22 +1358,8 @@ func TestGasDimensionLoggerLog3ExtraData(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitThreeTopicsExtraData(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log3Count uint64 = 0
@@ -1714,22 +1420,8 @@ func TestGasDimensionLoggerLog4(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitFourTopics(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitFourTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log4Count uint64 = 0
@@ -1791,22 +1483,8 @@ func TestGasDimensionLoggerLog4ExtraData(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitFourTopicsExtraData(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log4Count uint64 = 0
@@ -1834,7 +1512,7 @@ func TestGasDimensionLoggerLog4ExtraData(t *testing.T) {
 		Fatal(t, "Expected 1 LOG4, got %d", log4Count)
 	}
 	if log4Log == nil {
-		Fatal(t, "Expected LOG3 log, got nil")
+		Fatal(t, "Expected LOG4 log, got nil")
 	}
 
 	var numBytesWritten uint64 = 32
@@ -1888,22 +1566,8 @@ func TestGasDimensionLoggerLog0WithMemoryExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitZeroTopicNonEmptyDataAndMemExpansion(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log0Count uint64 = 0
@@ -1968,22 +1632,8 @@ func TestGasDimensionLoggerLog1WithMemoryExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitOneTopicNonEmptyDataAndMemExpansion(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log1Count uint64 = 0
@@ -2049,22 +1699,8 @@ func TestGasDimensionLoggerLog2WithMemoryExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitTwoTopicsExtraDataAndMemExpansion(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log2Count uint64 = 0
@@ -2130,22 +1766,8 @@ func TestGasDimensionLoggerLog3WithMemoryExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitThreeTopicsExtraDataAndMemExpansion(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log3Count uint64 = 0
@@ -2211,22 +1833,8 @@ func TestGasDimensionLoggerLog4WithMemoryExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	// 2. Deploy the contract
-	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
-		&auth,             // Transaction options
-		builder.L2.Client, // Ethereum client
-	)
-	Require(t, err)
-
-	// 3. Wait for deployment to succeed
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// 4. Now you can interact with the contract
-	tx, err = contract.EmitFourTopicsExtraDataAndMemExpansion(&auth)
-	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	var log4Count uint64 = 0
@@ -2552,6 +2160,45 @@ func gasDimensionLoggerSetup(t *testing.T) (
 	cleanup = builder.Build(t)
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	return ctx, cancel, builder, auth, cleanup
+}
+
+// deploy the contract we want to deploy for this test
+// wait for it to be included
+func deployGasDimensionTestContract[C any](
+	t *testing.T,
+	builder *NodeBuilder,
+	auth bind.TransactOpts,
+	deployFunc func(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, C, error),
+) (
+	contract C,
+) {
+	t.Helper()
+	_, tx, contract, err := deployFunc(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	return contract
+}
+
+// call whatever test function is required for the test on the contract
+func callOnContract[F func(auth *bind.TransactOpts) (*types.Transaction, error)](
+	t *testing.T,
+	builder *NodeBuilder,
+	auth bind.TransactOpts,
+	testFunc F,
+) (receipt *types.Receipt) {
+	t.Helper()
+	tx, err := testFunc(&auth) // For write operations
+	Require(t, err)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	return receipt
 }
 
 // call debug_traceTransaction with txGasDimensionLogger tracer
