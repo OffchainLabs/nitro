@@ -1572,7 +1572,28 @@ func TestGasDimensionLoggerSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T
 // we expect the gas cost of this operation to be 100 for the base sstore cost,
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be 0
-func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToNonZero)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           0,
+		StateAccess:           params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
+}
 
 // This test deployes a contract with a local variable that we can SSTORE to
 // we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
@@ -1585,7 +1606,28 @@ func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testin
 // and to get a gas refund of 2800
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be 2800
-func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToSameNonZero)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           0,
+		StateAccess:           params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     2800, // i didn't see anything in params directly for this case
+	}
+	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
+}
 
 // This test deployes a contract with a local variable that we can SSTORE to
 // we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
@@ -1599,7 +1641,28 @@ func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *te
 // that was granted for changing the sstore from non zero to zero
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be -4800
-func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToNonZero)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           0,
+		StateAccess:           params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     -4800,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
+}
 
 // This test deployes a contract with a local variable that we can SSTORE to
 // we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
@@ -1613,7 +1676,28 @@ func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T
 // that was granted for changing the sstore from non zero to zero
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be -2000
-func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToSameNonZero)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           0,
+		StateAccess:           params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     -2000,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
+}
 
 // This test deployes a contract with a local variable that we can SSTORE to
 // we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
@@ -1625,7 +1709,28 @@ func TestGasDimensionLoggerSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testi
 // We expect the gas cost of this operation to be 100 for the base sstore cost,
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be 0
-func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroToNonZero)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           0,
+		StateAccess:           params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
+}
 
 // This test deployes a contract with a local variable that we can SSTORE to
 // we test multiple SSTOREs and the interaction for the second SSTORE to an already changed value
@@ -1638,7 +1743,28 @@ func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T
 // we expect to get a gas refund of 19900
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be 19900
-func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroBackToZero)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           0,
+		StateAccess:           params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     19900,
+	}
+	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
+}
 
 // ############################################################
 //                          SELFDESTRUCT
@@ -1761,17 +1887,21 @@ func callDebugTraceTransactionWithLogger(
 	return traceResult
 }
 
-// highlight one specific dimension log you want to get out of the
-// dimension logs and return it. Make some basic field validation checks on the
-// log while you iterate through it.
-func getSpecificDimensionLog(t *testing.T, dimensionLogs []DimensionLogRes, expectedOpcode string) (
+// get dimension log at position index of that opcode
+// desiredIndex is 0-indexed
+func getSpecificDimensionLogAtIndex(
+	t *testing.T,
+	dimensionLogs []DimensionLogRes,
+	expectedOpcode string,
+	expectedCount uint64,
+	desiredIndex uint64,
+) (
 	specificDimensionLog *DimensionLogRes,
 ) {
 	t.Helper()
-	var expectedOpcodeCount uint64 = 0
+	specificDimensionLog = nil
+	var observedOpcodeCount uint64 = 0
 
-	// there should only be one BALANCE in the entire trace
-	// go through and grab it and its data
 	for i, log := range dimensionLogs {
 		// Basic field validation
 		if log.Op == "" {
@@ -1784,17 +1914,38 @@ func getSpecificDimensionLog(t *testing.T, dimensionLogs []DimensionLogRes, expe
 			Fatal(t, "Log entry ", i, " Unexpected error:", log.Err)
 		}
 		if log.Op == expectedOpcode {
-			expectedOpcodeCount++
-			specificDimensionLog = &log
+			if observedOpcodeCount == desiredIndex {
+				specificDimensionLog = &log
+			}
+			observedOpcodeCount++
 		}
 	}
-	if expectedOpcodeCount != 1 {
-		Fatal(t, "Expected 1 ", expectedOpcode, " got ", expectedOpcodeCount)
+	if observedOpcodeCount != expectedCount {
+		Fatal(t, "Expected ", expectedCount, " ", expectedOpcode, " got ", observedOpcodeCount)
 	}
 	if specificDimensionLog == nil {
-		Fatal(t, "Expected ", expectedOpcode, " log, got nil")
+		Fatal(t, "Expected to find log at index ", desiredIndex, " of ", expectedOpcode, " got nil")
 	}
 	return specificDimensionLog
+}
+
+// highlight one specific dimension log you want to get out of the
+// dimension logs and return it. Make some basic field validation checks on the
+// log while you iterate through it.
+func getSpecificDimensionLog(t *testing.T, dimensionLogs []DimensionLogRes, expectedOpcode string) (
+	specificDimensionLog *DimensionLogRes,
+) {
+	t.Helper()
+	return getSpecificDimensionLogAtIndex(t, dimensionLogs, expectedOpcode, 1, 0)
+}
+
+// for the sstore multiple tests, we need to get the second sstore in the transaction
+// but there should only ever be two sstores in the transaction.
+func getLastOfTwoDimensionLogs(t *testing.T, dimensionLogs []DimensionLogRes, expectedOpcode string) (
+	specificDimensionLog *DimensionLogRes,
+) {
+	t.Helper()
+	return getSpecificDimensionLogAtIndex(t, dimensionLogs, expectedOpcode, 2, 1)
 }
 
 // just to reduce visual clutter in parameters
