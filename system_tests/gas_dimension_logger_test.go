@@ -22,6 +22,10 @@ const (
 	ColdAccountAccessCost          = params.ColdAccountAccessCostEIP2929
 	ColdSloadCost                  = params.ColdSloadCostEIP2929
 	WarmStorageReadCost            = params.WarmStorageReadCostEIP2929
+	LogStaticCost                  = params.LogGas
+	LogDataGas                     = params.LogDataGas
+	LogTopicGasHistoryGrowth       = 256
+	LogTopicGasComputation         = params.LogTopicGas - LogTopicGasHistoryGrowth
 )
 
 // ############################################################
@@ -157,12 +161,12 @@ func TestGasDimensionLoggerBalanceCold(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, balanceLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		balanceLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, balanceLog)
 }
 
 // BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
@@ -230,12 +234,12 @@ func TestGasDimensionLoggerBalanceWarm(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, balanceLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		balanceLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, balanceLog)
 }
 
 // BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
@@ -304,12 +308,12 @@ func TestGasDimensionLoggerExtCodeSizeCold(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeSizeLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		extCodeSizeLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeSizeLog)
 }
 
 // BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
@@ -377,12 +381,12 @@ func TestGasDimensionLoggerExtCodeSizeWarm(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeSizeLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		extCodeSizeLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeSizeLog)
 }
 
 // BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
@@ -451,12 +455,12 @@ func TestGasDimensionLoggerExtCodeHashCold(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeHashLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		extCodeHashLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeHashLog)
 }
 
 // BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
@@ -524,12 +528,12 @@ func TestGasDimensionLoggerExtCodeHashWarm(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeHashLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		extCodeHashLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeHashLog)
 }
 
 // ############################################################
@@ -602,12 +606,12 @@ func TestGasDimensionLoggerSloadCold(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, sloadLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		sloadLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, sloadLog)
 }
 
 // In this test we deploy a contract with a function that all it does
@@ -675,12 +679,12 @@ func TestGasDimensionLoggerSloadWarm(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, sloadLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		sloadLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, sloadLog)
 }
 
 // ############################################################
@@ -817,12 +821,12 @@ func TestGasDimensionLoggerExtCodeCopyColdNoMemExpansion(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		extCodeCopyLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 }
 
 // EXTCODECOPY reads from state and copies code to memory
@@ -895,12 +899,12 @@ func TestGasDimensionLoggerExtCodeCopyColdMemExpansion(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		extCodeCopyLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 }
 
 // EXTCODECOPY reads from state and copies code to memory
@@ -971,12 +975,12 @@ func TestGasDimensionLoggerExtCodeCopyWarmNoMemExpansion(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		extCodeCopyLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 }
 
 // EXTCODECOPY reads from state and copies code to memory
@@ -1049,12 +1053,12 @@ func TestGasDimensionLoggerExtCodeCopyWarmMemExpansion(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 	checkDimensionLogGasCostsEqual(
 		t,
 		expected,
 		extCodeCopyLog,
 	)
+	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 }
 
 // ############################################################
@@ -1067,50 +1071,1210 @@ func TestGasDimensionLoggerExtCodeCopyWarmMemExpansion(t *testing.T) {
 // warm or cold
 // empty or non-empty code at target address
 
-func TestGasDimensionLoggerDelegateCallEmptyCold(t *testing.T) {
-}
-func TestGasDimensionLoggerDelegateCallEmptyWarm(t *testing.T) {
-}
-func TestGasDimensionLoggerDelegateCallNonEmptyCold(t *testing.T) {
-}
-func TestGasDimensionLoggerDelegateCallNonEmptyWarm(t *testing.T) {
-}
-func TestGasDimensionLoggerStaticCallEmptyCold(t *testing.T) {
-}
-func TestGasDimensionLoggerStaticCallEmptyWarm(t *testing.T) {
-}
-func TestGasDimensionLoggerStaticCallNonEmptyCold(t *testing.T) {
-}
-func TestGasDimensionLoggerStaticCallNonEmptyWarm(t *testing.T) {
-}
+func TestGasDimensionLoggerDelegateCallEmptyCold(t *testing.T)    { t.Fail() }
+func TestGasDimensionLoggerDelegateCallEmptyWarm(t *testing.T)    { t.Fail() }
+func TestGasDimensionLoggerDelegateCallNonEmptyCold(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerDelegateCallNonEmptyWarm(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerStaticCallEmptyCold(t *testing.T)      { t.Fail() }
+func TestGasDimensionLoggerStaticCallEmptyWarm(t *testing.T)      { t.Fail() }
+func TestGasDimensionLoggerStaticCallNonEmptyCold(t *testing.T)   { t.Fail() }
+func TestGasDimensionLoggerStaticCallNonEmptyWarm(t *testing.T)   { t.Fail() }
 
 // ############################################################
 //	             LOG0, LOG1, LOG2, LOG3, LOG4
 // ############################################################
+//
+// Logs are pretty straightforward, they have a static cost
+// we assign to computation, a linear size cost we assign directly
+// to history growth, and a topic data cost. The topic data cost
+// we subdivide, because some of the topic cost needs to pay for the
+// cryptography we do for the bloom filter.
+// 32 bytes per topic are stored in the history for the topic count.
+// since the other data is charged 8 gas per byte, then each of the 375
+// should in theory be charged 256 gas for the 32 bytes of topic data and 119 gas for computation
+// so we subdivide the 375 gas per topic count into 256 for the topic data and 119 for the computation.
 
+// This test deploys a contract that emits an empty LOG0
+//
+// since it has no data, we expect the gas cost to just be
+// the static cost of the LOG0 opcode, and we assign that to
+// computation.
+// Therefore we expect the one dimensional gas cost to be
+// 375, computation to be 375, and all other gas dimensions to be 0
 func TestGasDimensionLoggerLog0Empty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitZeroTopicEmptyData(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log0Count uint64 = 0
+	var log0Log *DimensionLogRes
+
+	// there should only be one LOG0 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG0" {
+			log0Count++
+			log0Log = &log
+		}
+	}
+	if log0Count != 1 {
+		Fatal(t, "Expected 1 LOG0, got %d", log0Count)
+	}
+	if log0Log == nil {
+		Fatal(t, "Expected LOG0 log, got nil")
+	}
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost,
+		Computation:           LogStaticCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log0Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log0Log)
 }
 
+// This test deploys a contract that emits a LOG0 with 7 bytes ("abcdefg") of data.
+//
+// since it has data, we expect the gas cost to be the static cost of the LOG0 opcode
+// plus the 8 * 7 bytes of data cost.
+// Therefore we expect the one dimensional gas cost to be 375 + the data gas cost,
+// computation to be 375, the history growth to be 8 * 7, and all other gas dimensions to be 0
 func TestGasDimensionLoggerLog0NonEmpty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitZeroTopicNonEmptyData(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log0Count uint64 = 0
+	var log0Log *DimensionLogRes
+
+	// there should only be one LOG0 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG0" {
+			log0Count++
+			log0Log = &log
+		}
+	}
+	if log0Count != 1 {
+		Fatal(t, "Expected 1 LOG0, got %d", log0Count)
+	}
+	if log0Log == nil {
+		Fatal(t, "Expected LOG0 log, got nil")
+	}
+
+	var numBytesWritten uint64 = 7
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + LogDataGas*numBytesWritten,
+		Computation:           LogStaticCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         LogDataGas * numBytesWritten,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log0Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log0Log)
 }
 
+// This test deploys a contract that a LOG1 with no data
+//
+// since it has no data, we expect the gas cost to be
+// the static cost of the LOG1 opcode + the topic gas cost.
+// Therefore we expect the one dimensional gas cost to be
+// 375 + 375, the computation to be 375 + 119,
+// the state access to be 0, the state growth to be 0,
+// the history growth to be 256, and the state growth refund to be 0
 func TestGasDimensionLoggerLog1Empty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitOneTopicEmptyData(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log1Count uint64 = 0
+	var log1Log *DimensionLogRes
+
+	// there should only be one LOG1 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG1" {
+			log1Count++
+			log1Log = &log
+		}
+	}
+	if log1Count != 1 {
+		Fatal(t, "Expected 1 LOG1, got %d", log1Count)
+	}
+	if log1Log == nil {
+		Fatal(t, "Expected LOG1 log, got nil")
+	}
+	var numTopics uint64 = 1
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation),
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics * LogTopicGasHistoryGrowth,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log1Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log1Log)
 }
 
+// This test deploys a contract that emits a LOG1 with 9 bytes ("hijklmnop") of data.
+//
+// since it has data, we expect the gas cost to be the static cost of the LOG1 opcode
+// plus the 8 * 9 bytes of data cost + the topic gas cost
+// split between history growth and computation for 1 topic
+// Therefore we expect the one dimensional gas cost to be 375 + 8 * 9 + 256 + 119,
+// computation to be 375 + 119, the state access to be 0, the state growth to be 0,
+// the history growth to be 256 + 8 * 9, and the state growth refund to be 0
 func TestGasDimensionLoggerLog1NonEmpty(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitOneTopicNonEmptyData(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log1Count uint64 = 0
+	var log1Log *DimensionLogRes
+
+	// there should only be one LOG1 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG1" {
+			log1Count++
+			log1Log = &log
+		}
+	}
+	if log1Count != 1 {
+		Fatal(t, "Expected 1 LOG1, got %d", log1Count)
+	}
+	if log1Log == nil {
+		Fatal(t, "Expected LOG1 log, got nil")
+	}
+
+	var numBytesWritten uint64 = 9
+	var numTopics uint64 = 1
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation) + LogDataGas*numBytesWritten,
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log1Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log1Log)
 }
 
-func TestGasDimensionLoggerLog2(t *testing.T) {}
+// This test checks the gas cost of a LOG2 with two topics, but no data
+//
+// since it has no data, we expect the one-dimensional gas cost to be the
+// static cost of the LOG2 opcode plus the 2 * 375 for the two topics
+// computation to be 375 + 2 * 119, the state access to be 0, the state growth to be 0,
+// the history growth to be 2 * 256, and the state growth refund to be 0
+func TestGasDimensionLoggerLog2(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
 
-func TestGasDimensionLoggerLog2ExtraData(t *testing.T) {}
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
 
-func TestGasDimensionLoggerLog3(t *testing.T) {}
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 
-func TestGasDimensionLoggerLog3ExtraData(t *testing.T) {}
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitTwoTopics(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 
-func TestGasDimensionLoggerLog4(t *testing.T) {}
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log2Count uint64 = 0
+	var log2Log *DimensionLogRes
 
-func TestGasDimensionLoggerLog4ExtraData(t *testing.T) {}
+	// there should only be one LOG2 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG2" {
+			log2Count++
+			log2Log = &log
+		}
+	}
+	if log2Count != 1 {
+		Fatal(t, "Expected 1 LOG2, got %d", log2Count)
+	}
+	if log2Log == nil {
+		Fatal(t, "Expected LOG2 log, got nil")
+	}
+	var numTopics uint64 = 2
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation),
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics * LogTopicGasHistoryGrowth,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log2Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log2Log)
+}
+
+// This test checks the gas cost of a LOG2 with two topics, and emitting an address as extra data
+//
+// since it has 32 bytes (an address encoded as a uint256) of data,
+// we expect the one-dimensional gas cost to be the static cost of the
+// LOG2 opcode plus the 2 * 375 for the two topics
+// plus the 32 bytes of data cost
+// therefore we expect computation to be 375 + 2 * 119,
+// the state access to be 0, the state growth to be 0,
+// the history growth to be 2 * 256 + 32*8, and the state growth refund to be 0
+func TestGasDimensionLoggerLog2ExtraData(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitTwoTopicsExtraData(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log2Count uint64 = 0
+	var log2Log *DimensionLogRes
+
+	// there should only be one LOG2 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG2" {
+			log2Count++
+			log2Log = &log
+		}
+	}
+	if log2Count != 1 {
+		Fatal(t, "Expected 1 LOG2, got %d", log2Count)
+	}
+	if log2Log == nil {
+		Fatal(t, "Expected LOG2 log, got nil")
+	}
+
+	var numBytesWritten uint64 = 32 // address is 20 bytes, but encoded as a uint256 so 32 bytes
+	var numTopics uint64 = 2
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation) + LogDataGas*numBytesWritten,
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log2Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log2Log)
+}
+
+// This test checks the gas cost of a LOG3 with three topics, but no data
+//
+// since it has no data, we expect the one-dimensional gas cost to be the
+// static cost of the LOG3 opcode plus the 3 * 375 for the three topics
+// computation to be 375 + 3 * 119, the state access to be 0, the state growth to be 0,
+// the history growth to be 3 * 256, and the state growth refund to be 0
+func TestGasDimensionLoggerLog3(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitThreeTopics(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log3Count uint64 = 0
+	var log3Log *DimensionLogRes
+
+	// there should only be one LOG3 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG3" {
+			log3Count++
+			log3Log = &log
+		}
+	}
+	if log3Count != 1 {
+		Fatal(t, "Expected 1 LOG3, got %d", log3Count)
+	}
+	if log3Log == nil {
+		Fatal(t, "Expected LOG3 log, got nil")
+	}
+	var numTopics uint64 = 3
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation),
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics * LogTopicGasHistoryGrowth,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log3Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log3Log)
+}
+
+// This test checks the gas cost of a LOG3 with three topics, and emitting bytes32 as extra data
+//
+// since it has 32 bytes (a bytes32) of data,
+// we expect the one-dimensional gas cost to be the static cost of the
+// LOG3 opcode plus the 3 * 375 for the three topics
+// plus the 32 bytes of data cost
+// therefore we expect computation to be 375 + 3 * 119,
+// the state access to be 0, the state growth to be 0,
+// the history growth to be 3 * 256 + 32*8, and the state growth refund to be 0
+func TestGasDimensionLoggerLog3ExtraData(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitThreeTopicsExtraData(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log3Count uint64 = 0
+	var log3Log *DimensionLogRes
+
+	// there should only be one LOG3 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG3" {
+			log3Count++
+			log3Log = &log
+		}
+	}
+	if log3Count != 1 {
+		Fatal(t, "Expected 1 LOG3, got %d", log3Count)
+	}
+	if log3Log == nil {
+		Fatal(t, "Expected LOG3 log, got nil")
+	}
+
+	var numBytesWritten uint64 = 32
+	var numTopics uint64 = 3
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation) + LogDataGas*numBytesWritten,
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log3Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log3Log)
+}
+
+// This test checks the gas cost of a LOG4 with four topics, but no data
+//
+// since it has no data, we expect the one-dimensional gas cost to be the
+// static cost of the LOG4 opcode plus the 4 * 375 for the four topics
+// computation to be 375 + 4 * 119, the state access to be 0, the state growth to be 0,
+// the history growth to be 4 * 256, and the state growth refund to be 0
+func TestGasDimensionLoggerLog4(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitFourTopics(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log4Count uint64 = 0
+	var log4Log *DimensionLogRes
+
+	// there should only be one LOG4 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG4" {
+			log4Count++
+			log4Log = &log
+		}
+	}
+	if log4Count != 1 {
+		Fatal(t, "Expected 1 LOG4, got %d", log4Count)
+	}
+	if log4Log == nil {
+		Fatal(t, "Expected LOG4 log, got nil")
+	}
+	var numTopics uint64 = 4
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation),
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics * LogTopicGasHistoryGrowth,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log4Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log4Log)
+}
+
+// This test checks the gas cost of a LOG4 with four topics, and emitting bytes32 as extra data
+//
+// since it has 32 bytes (a bytes32) of data,
+// we expect the one-dimensional gas cost to be the static cost of the
+// LOG4 opcode plus the 4 * 375 for the four topics
+// plus the 32 bytes of data cost
+// therefore we expect computation to be 375 + 4 * 119,
+// the state access to be 0, the state growth to be 0,
+// the history growth to be 4 * 256 + 32*8, and the state growth refund to be 0
+func TestGasDimensionLoggerLog4ExtraData(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitFourTopicsExtraData(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log4Count uint64 = 0
+	var log4Log *DimensionLogRes
+
+	// there should only be one LOG4 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG4" {
+			log4Count++
+			log4Log = &log
+		}
+	}
+	if log4Count != 1 {
+		Fatal(t, "Expected 1 LOG4, got %d", log4Count)
+	}
+	if log4Log == nil {
+		Fatal(t, "Expected LOG3 log, got nil")
+	}
+
+	var numBytesWritten uint64 = 32
+	var numTopics uint64 = 4
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation) + LogDataGas*numBytesWritten,
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log4Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log4Log)
+}
+
+// Comments about the memory expanstion test cases:
+// For all of the memory expansion tests, we set the
+// offset to the end of the memory and the length to 64.
+// The memory size at the time of the LOGN opcode is 96.
+// therefore we expect the memory expansion cost to be:
+//
+// memory_size_word = (memory_byte_size + 31) / 32
+// memory_cost = (memory_size_word ** 2) / 512 + (3 * memory_size_word)
+// memory_expansion_cost = new_memory_cost - last_memory_cost
+//
+// so we have 5**2 / 512 + (3 * 5) - (3**2)/512 - (3*3)
+// 15 - 9 = 6
+var logNMemoryExpansionCost uint64 = 6
+
+// This test checks the gas cost of a LOG0 with no topics, and with
+// data that is garbage, since it's doing memory expansion, and reading
+// past the end of the memory. In this test, we set up the memory of size
+// 96 and tell the LOG0 to read starting at position 96 and read 64 bytes.
+//
+// We expect the one-dimensional gas cost to be the static cost of the
+// LOG0 opcode plus the 64 bytes memory expansion cost, which at memory
+// length 96, is 6.
+//
+// we expect the computation gas cost to be the static cost of the LOG0 opcode
+// + the memory expansion cost
+// we expect the state access to be 0, the state growth to be 0,
+// the history growth to be 64*8, and the state growth refund to be 0
+func TestGasDimensionLoggerLog0WithMemoryExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitZeroTopicNonEmptyDataAndMemExpansion(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log0Count uint64 = 0
+	var log0Log *DimensionLogRes
+
+	// there should only be one LOG0 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG0" {
+			log0Count++
+			log0Log = &log
+		}
+	}
+	if log0Count != 1 {
+		Fatal(t, "Expected 1 LOG0, got %d", log0Count)
+	}
+	if log0Log == nil {
+		Fatal(t, "Expected LOG0 log, got nil")
+	}
+
+	var numBytesWritten uint64 = 64
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + LogDataGas*numBytesWritten + logNMemoryExpansionCost,
+		Computation:           LogStaticCost + logNMemoryExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         LogDataGas * numBytesWritten,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log0Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log0Log)
+}
+
+// This test checks the gas cost of a LOG1 with one topic, and with
+// data that is garbage, since it's doing memory expansion, and reading
+// past the end of the memory. In this test, we set up the memory of size
+// 96 and tell the LOG1 to read starting at position 96 and read 64 bytes.
+//
+// since it has data, we expect the gas cost to be the static cost of the LOG1 opcode
+// plus the 8 * 64 bytes of data cost + the topic gas cost
+// split between history growth and computation for 1 topic
+// Therefore we expect the one dimensional gas cost to be 375 + 8 * 64 + 256 + 119 + 6,
+// computation to be 375 + 119 + 6, the state access to be 0, the state growth to be 0,
+// the history growth to be 256 + 8 * 64, and the state growth refund to be 0
+func TestGasDimensionLoggerLog1WithMemoryExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitOneTopicNonEmptyDataAndMemExpansion(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log1Count uint64 = 0
+	var log1Log *DimensionLogRes
+
+	// there should only be one LOG1 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG1" {
+			log1Count++
+			log1Log = &log
+		}
+	}
+	if log1Count != 1 {
+		Fatal(t, "Expected 1 LOG1, got %d", log1Count)
+	}
+	if log1Log == nil {
+		Fatal(t, "Expected LOG1 log, got nil")
+	}
+
+	var numBytesWritten uint64 = 64
+	var numTopics uint64 = 1
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation) + LogDataGas*numBytesWritten + logNMemoryExpansionCost,
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation + logNMemoryExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log1Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log1Log)
+}
+
+// This test checks the gas cost of a LOG2 with two topics, and with
+// data that is garbage, since it's doing memory expansion, and reading
+// past the end of the memory. In this test, we set up the memory of size
+// 96 and tell the LOG2 to read starting at position 96 and read 64 bytes.
+//
+// since it has data, we expect the gas cost to be the static cost of the LOG2 opcode
+// plus the 8 * 64 bytes of data cost + the topic gas cost
+// split between history growth and computation for 2 topics
+// Therefore we expect the one dimensional gas cost to be 375 + 8 * 64 + 2*(256 + 119) + 6,
+// computation to be 375 + 2*119 + 6, the state access to be 0, the state growth to be 0,
+// the history growth to be 2*256 + 8 * 64, and the state growth refund to be 0
+func TestGasDimensionLoggerLog2WithMemoryExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitTwoTopicsExtraDataAndMemExpansion(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log2Count uint64 = 0
+	var log2Log *DimensionLogRes
+
+	// there should only be one LOG2 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG2" {
+			log2Count++
+			log2Log = &log
+		}
+	}
+	if log2Count != 1 {
+		Fatal(t, "Expected 1 LOG2, got %d", log2Count)
+	}
+	if log2Log == nil {
+		Fatal(t, "Expected LOG2 log, got nil")
+	}
+
+	var numBytesWritten uint64 = 64
+	var numTopics uint64 = 2
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation) + LogDataGas*numBytesWritten + logNMemoryExpansionCost,
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation + logNMemoryExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log2Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log2Log)
+}
+
+// This test checks the gas cost of a LOG3 with three topics, and with
+// data that is garbage, since it's doing memory expansion, and reading
+// past the end of the memory. In this test, we set up the memory of size
+// 96 and tell the LOG3 to read starting at position 96 and read 64 bytes.
+//
+// since it has data, we expect the gas cost to be the static cost of the LOG3 opcode
+// plus the 8 * 64 bytes of data cost + the topic gas cost
+// split between history growth and computation for 3 topics
+// Therefore we expect the one dimensional gas cost to be 375 + 8 * 64 + 3*(256 + 119) + 6,
+// computation to be 375 + 3*119 + 6, the state access to be 0, the state growth to be 0,
+// the history growth to be 3*256 + 8 * 64, and the state growth refund to be 0
+func TestGasDimensionLoggerLog3WithMemoryExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitThreeTopicsExtraDataAndMemExpansion(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log3Count uint64 = 0
+	var log3Log *DimensionLogRes
+
+	// there should only be one LOG3 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG3" {
+			log3Count++
+			log3Log = &log
+		}
+	}
+	if log3Count != 1 {
+		Fatal(t, "Expected 1 LOG3, got %d", log3Count)
+	}
+	if log3Log == nil {
+		Fatal(t, "Expected LOG3 log, got nil")
+	}
+
+	var numBytesWritten uint64 = 64
+	var numTopics uint64 = 3
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation) + LogDataGas*numBytesWritten + logNMemoryExpansionCost,
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation + logNMemoryExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log3Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log3Log)
+}
+
+// This test checks the gas cost of a LOG4 with four topics, and with
+// data that is garbage, since it's doing memory expansion, and reading
+// past the end of the memory. In this test, we set up the memory of size
+// 96 and tell the LOG4 to read starting at position 96 and read 64 bytes.
+//
+// since it has data, we expect the gas cost to be the static cost of the LOG4 opcode
+// plus the 8 * 64 bytes of data cost + the topic gas cost
+// split between history growth and computation for 4 topics
+// Therefore we expect the one dimensional gas cost to be 375 + 8 * 64 + 4*(256 + 119) + 6,
+// computation to be 375 + 4*119 + 6, the state access to be 0, the state growth to be 0,
+// the history growth to be 4*256 + 8 * 64, and the state growth refund to be 0
+func TestGasDimensionLoggerLog4WithMemoryExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	// 2. Deploy the contract
+	_, tx, contract, err := gasdimensionsgen.DeployLogEmitter(
+		&auth,             // Transaction options
+		builder.L2.Client, // Ethereum client
+	)
+	Require(t, err)
+
+	// 3. Wait for deployment to succeed
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// 4. Now you can interact with the contract
+	tx, err = contract.EmitFourTopicsExtraDataAndMemExpansion(&auth)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	traceResult := callDebugTraceTransaction(t, ctx, builder, receipt.TxHash)
+	var log4Count uint64 = 0
+	var log4Log *DimensionLogRes
+
+	// there should only be one LOG4 in the entire trace
+	// go through and grab it and its data
+	for i, log := range traceResult.DimensionLogs {
+		// Basic field validation
+		if log.Op == "" {
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
+		}
+		if log.Depth < 1 {
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+		}
+		if log.Err != nil {
+			Fatal(t, "Log entry %d: Unexpected error: %v", i, log.Err)
+		}
+		if log.Op == "LOG4" {
+			log4Count++
+			log4Log = &log
+		}
+	}
+	if log4Count != 1 {
+		Fatal(t, "Expected 1 LOG4, got %d", log4Count)
+	}
+	if log4Log == nil {
+		Fatal(t, "Expected LOG4 log, got nil")
+	}
+
+	var numBytesWritten uint64 = 64
+	var numTopics uint64 = 4
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: LogStaticCost + numTopics*(LogTopicGasHistoryGrowth+LogTopicGasComputation) + LogDataGas*numBytesWritten + logNMemoryExpansionCost,
+		Computation:           LogStaticCost + numTopics*LogTopicGasComputation + logNMemoryExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqual(
+		t,
+		expected,
+		log4Log,
+	)
+	checkGasDimensionsEqualOneDimensionalGas(t, log4Log)
+}
 
 // ############################################################
 //	                    CREATE & CREATE2
@@ -1119,13 +2283,13 @@ func TestGasDimensionLoggerLog4ExtraData(t *testing.T) {}
 // CREATE and CREATE2 only have two permutations, whether or not you
 // transfer value with the creation
 
-func TestGasDimensionLoggerCreate(t *testing.T) {}
+func TestGasDimensionLoggerCreate(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCreateWithValue(t *testing.T) {}
+func TestGasDimensionLoggerCreateWithValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCreate2(t *testing.T) {}
+func TestGasDimensionLoggerCreate2(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCreate2WithValue(t *testing.T) {}
+func TestGasDimensionLoggerCreate2WithValue(t *testing.T) { t.Fail() }
 
 // ############################################################
 //                      CALL and CALLCODE
@@ -1136,37 +2300,37 @@ func TestGasDimensionLoggerCreate2WithValue(t *testing.T) {}
 // no value or value transfer with the call
 // empty or non-empty code at target address
 
-func TestGasDimensionLoggerCallEmptyColdNoValue(t *testing.T) {}
+func TestGasDimensionLoggerCallEmptyColdNoValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallEmptyColdWithValue(t *testing.T) {}
+func TestGasDimensionLoggerCallEmptyColdWithValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallEmptyWarmNoValue(t *testing.T) {}
+func TestGasDimensionLoggerCallEmptyWarmNoValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallEmptyWarmWithValue(t *testing.T) {}
+func TestGasDimensionLoggerCallEmptyWarmWithValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallNonEmptyColdNoValue(t *testing.T) {}
+func TestGasDimensionLoggerCallNonEmptyColdNoValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallNonEmptyColdWithValue(t *testing.T) {}
+func TestGasDimensionLoggerCallNonEmptyColdWithValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallNonEmptyWarmNoValue(t *testing.T) {}
+func TestGasDimensionLoggerCallNonEmptyWarmNoValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallNonEmptyWarmWithValue(t *testing.T) {}
+func TestGasDimensionLoggerCallNonEmptyWarmWithValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallCodeEmptyColdNoValue(t *testing.T) {}
+func TestGasDimensionLoggerCallCodeEmptyColdNoValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallCodeEmptyColdWithValue(t *testing.T) {}
+func TestGasDimensionLoggerCallCodeEmptyColdWithValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallCodeEmptyWarmNoValue(t *testing.T) {}
+func TestGasDimensionLoggerCallCodeEmptyWarmNoValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallCodeEmptyWarmWithValue(t *testing.T) {}
+func TestGasDimensionLoggerCallCodeEmptyWarmWithValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallCodeNonEmptyColdNoValue(t *testing.T) {}
+func TestGasDimensionLoggerCallCodeNonEmptyColdNoValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallCodeNonEmptyColdWithValue(t *testing.T) {}
+func TestGasDimensionLoggerCallCodeNonEmptyColdWithValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallCodeNonEmptyWarmNoValue(t *testing.T) {}
+func TestGasDimensionLoggerCallCodeNonEmptyWarmNoValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallCodeNonEmptyWarmWithValue(t *testing.T) {}
+func TestGasDimensionLoggerCallCodeNonEmptyWarmWithValue(t *testing.T) { t.Fail() }
 
 // ############################################################
 //                           SSTORE
@@ -1180,17 +2344,17 @@ func TestGasDimensionLoggerCallCodeNonEmptyWarmWithValue(t *testing.T) {}
 // non-zero -> non-zero (same value)
 // non-zero -> non-zero (different value)
 
-func TestGasDimensionLoggerSstoreColdZeroToZero(t *testing.T)                     {}
-func TestGasDimensionLoggerSstoreColdZeroToNonZeroValue(t *testing.T)             {}
-func TestGasDimensionLoggerSstoreColdNonZeroValueToZero(t *testing.T)             {}
-func TestGasDimensionLoggerSstoreColdNonZeroToSameNonZeroValue(t *testing.T)      {}
-func TestGasDimensionLoggerSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {}
+func TestGasDimensionLoggerSstoreColdZeroToZero(t *testing.T)                     { t.Fail() }
+func TestGasDimensionLoggerSstoreColdZeroToNonZeroValue(t *testing.T)             { t.Fail() }
+func TestGasDimensionLoggerSstoreColdNonZeroValueToZero(t *testing.T)             { t.Fail() }
+func TestGasDimensionLoggerSstoreColdNonZeroToSameNonZeroValue(t *testing.T)      { t.Fail() }
+func TestGasDimensionLoggerSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerSstoreWarmZeroToZero(t *testing.T)                     {}
-func TestGasDimensionLoggerSstoreWarmZeroToNonZeroValue(t *testing.T)             {}
-func TestGasDimensionLoggerSstoreWarmNonZeroValueToZero(t *testing.T)             {}
-func TestGasDimensionLoggerSstoreWarmNonZeroToSameNonZeroValue(t *testing.T)      {}
-func TestGasDimensionLoggerSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {}
+func TestGasDimensionLoggerSstoreWarmZeroToZero(t *testing.T)                     { t.Fail() }
+func TestGasDimensionLoggerSstoreWarmZeroToNonZeroValue(t *testing.T)             { t.Fail() }
+func TestGasDimensionLoggerSstoreWarmNonZeroValueToZero(t *testing.T)             { t.Fail() }
+func TestGasDimensionLoggerSstoreWarmNonZeroToSameNonZeroValue(t *testing.T)      { t.Fail() }
+func TestGasDimensionLoggerSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) { t.Fail() }
 
 // ############################################################
 //                          SELFDESTRUCT
@@ -1201,15 +2365,15 @@ func TestGasDimensionLoggerSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T
 // code at target address
 // value transferred or no value transferred
 
-func TestGasDimensionLoggerSelfdestructColdNoValueEmpty(t *testing.T)      {}
-func TestGasDimensionLoggerSelfdestructColdNoValueNonEmpty(t *testing.T)   {}
-func TestGasDimensionLoggerSelfdestructColdWithValueEmpty(t *testing.T)    {}
-func TestGasDimensionLoggerSelfdestructColdWithValueNonEmpty(t *testing.T) {}
+func TestGasDimensionLoggerSelfdestructColdNoValueEmpty(t *testing.T)      { t.Fail() }
+func TestGasDimensionLoggerSelfdestructColdNoValueNonEmpty(t *testing.T)   { t.Fail() }
+func TestGasDimensionLoggerSelfdestructColdWithValueEmpty(t *testing.T)    { t.Fail() }
+func TestGasDimensionLoggerSelfdestructColdWithValueNonEmpty(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerSelfdestructWarmNoValueEmpty(t *testing.T)      {}
-func TestGasDimensionLoggerSelfdestructWarmNoValueNonEmpty(t *testing.T)   {}
-func TestGasDimensionLoggerSelfdestructWarmWithValueEmpty(t *testing.T)    {}
-func TestGasDimensionLoggerSelfdestructWarmWithValueNonEmpty(t *testing.T) {}
+func TestGasDimensionLoggerSelfdestructWarmNoValueEmpty(t *testing.T)      { t.Fail() }
+func TestGasDimensionLoggerSelfdestructWarmNoValueNonEmpty(t *testing.T)   { t.Fail() }
+func TestGasDimensionLoggerSelfdestructWarmWithValueEmpty(t *testing.T)    { t.Fail() }
+func TestGasDimensionLoggerSelfdestructWarmWithValueNonEmpty(t *testing.T) { t.Fail() }
 
 // ############################################################
 //                         HELPER FUNCTIONS
@@ -1291,23 +2455,23 @@ func checkDimensionLogGasCostsEqual(
 	actual *DimensionLogRes,
 ) {
 	t.Helper()
-	if actual.OneDimensionalGasCost != expected.OneDimensionalGasCost {
-		Fatal(t, "Expected OneDimensionalGasCost ", expected.OneDimensionalGasCost, " got ", actual.OneDimensionalGasCost)
-	}
 	if actual.Computation != expected.Computation {
-		Fatal(t, "Expected Computation ", expected.Computation, " got ", actual.Computation)
+		Fatal(t, "Expected Computation ", expected.Computation, " got ", actual.Computation, " actual: ", actual.DebugString())
 	}
 	if actual.StateAccess != expected.StateAccess {
-		Fatal(t, "Expected StateAccess ", expected.StateAccess, " got ", actual.StateAccess)
+		Fatal(t, "Expected StateAccess ", expected.StateAccess, " got ", actual.StateAccess, " actual: ", actual.DebugString())
 	}
 	if actual.StateGrowth != expected.StateGrowth {
-		Fatal(t, "Expected StateGrowth ", expected.StateGrowth, " got ", actual.StateGrowth)
+		Fatal(t, "Expected StateGrowth ", expected.StateGrowth, " got ", actual.StateGrowth, " actual: ", actual.DebugString())
 	}
 	if actual.HistoryGrowth != expected.HistoryGrowth {
-		Fatal(t, "Expected HistoryGrowth ", expected.HistoryGrowth, " got ", actual.HistoryGrowth)
+		Fatal(t, "Expected HistoryGrowth ", expected.HistoryGrowth, " got ", actual.HistoryGrowth, " actual: ", actual.DebugString())
 	}
 	if actual.StateGrowthRefund != expected.StateGrowthRefund {
-		Fatal(t, "Expected StateGrowthRefund ", expected.StateGrowthRefund, " got ", actual.StateGrowthRefund)
+		Fatal(t, "Expected StateGrowthRefund ", expected.StateGrowthRefund, " got ", actual.StateGrowthRefund, " actual: ", actual.DebugString())
+	}
+	if actual.OneDimensionalGasCost != expected.OneDimensionalGasCost {
+		Fatal(t, "Expected OneDimensionalGasCost ", expected.OneDimensionalGasCost, " got ", actual.OneDimensionalGasCost, " actual: ", actual.DebugString())
 	}
 }
 
@@ -1318,6 +2482,6 @@ func checkGasDimensionsEqualOneDimensionalGas(
 ) {
 	t.Helper()
 	if l.OneDimensionalGasCost != l.Computation+l.StateAccess+l.StateGrowth+l.HistoryGrowth {
-		Fatal(t, "Expected OneDimensionalGasCost to equal sum of gas dimensions", l)
+		Fatal(t, "Expected OneDimensionalGasCost to equal sum of gas dimensions", l.DebugString())
 	}
 }
