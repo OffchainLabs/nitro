@@ -336,10 +336,14 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	result := a.bidCache.topTwoBids()
 	first := result.firstPlace
 	second := result.secondPlace
-	var tx *types.Transaction
-	var err error
-	opts := copyTxOpts(a.txOpts)
-	opts.NoSend = true
+	if first == nil { // No bids received
+		if second == nil {
+			log.Info("No bids received for auction resolution", "round", upcomingRound)
+			return nil
+		} else {
+			return errors.New("invalid auctionResult, first place bid is not present but second place bid is") // this should ideally never happen
+		}
+	}
 
 	sequencerRpc, newRpc, err := a.endpointManager.GetSequencerRPC(ctx)
 	if err != nil {
@@ -353,41 +357,51 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		}
 	}
 
-	switch {
-	case first != nil && second != nil: // Both bids are present
-		tx, err = a.auctionContract.ResolveMultiBidAuction(
+	makeAuctionResolutionTx := func(onRetry bool) (*types.Transaction, error) {
+		opts := copyTxOpts(a.txOpts)
+		opts.GasMargin = 1000 // Add a 10% buffer to GasLimit to avoid running out of gas
+		opts.NoSend = true
+
+		// Both bids are present
+		if second != nil {
+			if !onRetry {
+				FirstBidValueGauge.Update(first.Amount.Int64())
+				SecondBidValueGauge.Update(second.Amount.Int64())
+				log.Info("Resolving auction with two bids", "round", upcomingRound)
+			}
+			return a.auctionContract.ResolveMultiBidAuction(
+				opts,
+				express_lane_auctiongen.Bid{
+					ExpressLaneController: first.ExpressLaneController,
+					Amount:                first.Amount,
+					Signature:             first.Signature,
+				},
+				express_lane_auctiongen.Bid{
+					ExpressLaneController: second.ExpressLaneController,
+					Amount:                second.Amount,
+					Signature:             second.Signature,
+				},
+			)
+		}
+
+		// Single bid is present
+		if !onRetry {
+			FirstBidValueGauge.Update(first.Amount.Int64())
+			log.Info("Resolving auction with single bid", "round", upcomingRound)
+		}
+		return a.auctionContract.ResolveSingleBidAuction(
 			opts,
 			express_lane_auctiongen.Bid{
 				ExpressLaneController: first.ExpressLaneController,
 				Amount:                first.Amount,
 				Signature:             first.Signature,
 			},
-			express_lane_auctiongen.Bid{
-				ExpressLaneController: second.ExpressLaneController,
-				Amount:                second.Amount,
-				Signature:             second.Signature,
-			},
 		)
-		FirstBidValueGauge.Update(first.Amount.Int64())
-		SecondBidValueGauge.Update(second.Amount.Int64())
-		log.Info("Resolving auction with two bids", "round", upcomingRound)
-
-	case first != nil: // Single bid is present
-		tx, err = a.auctionContract.ResolveSingleBidAuction(
-			opts,
-			express_lane_auctiongen.Bid{
-				ExpressLaneController: first.ExpressLaneController,
-				Amount:                first.Amount,
-				Signature:             first.Signature,
-			},
-		)
-		FirstBidValueGauge.Update(first.Amount.Int64())
-		log.Info("Resolving auction with single bid", "round", upcomingRound)
-
-	case second == nil: // No bids received
-		log.Info("No bids received for auction resolution", "round", upcomingRound)
-		return nil
 	}
+
+	var tx *types.Transaction
+	var receipt *types.Receipt
+	tx, err = makeAuctionResolutionTx(false)
 	if err != nil {
 		log.Error("Error resolving auction", "error", err)
 		return err
@@ -396,30 +410,41 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	roundEndTime := a.roundTimingInfo.TimeOfNextRound()
 	retryInterval := 1 * time.Second
 
-	if err := retryUntil(ctx, func() error {
-		if err := sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx); err != nil {
-			log.Error("Error submitting auction resolution to sequencer endpoint", "error", err)
+	retryLimit := 5
+	for retryCount := 0; ; retryCount++ {
+		if err = retryUntil(ctx, func() error {
+			if err := sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx); err != nil {
+				log.Error("Error submitting auction resolution to sequencer endpoint", "error", err)
+				return err
+			}
+			return nil
+		}, retryInterval, roundEndTime); err != nil {
 			return err
 		}
 
-		// Wait for the transaction to be mined
-		receipt, err := bind.WaitMined(ctx, ethclient.NewClient(sequencerRpc), tx)
-		if err != nil {
-			log.Error("Error waiting for transaction to be mined", "error", err)
-			return err
+		// Wait for the transaction to be mined until this round ends
+		waitMinedCtx, cancel := context.WithTimeout(ctx, time.Until(roundEndTime))
+		receipt, err = bind.WaitMined(waitMinedCtx, ethclient.NewClient(sequencerRpc), tx)
+		cancel()
+		if err != nil { // error is only returned when context expires i.e the current round has ended so no point in retrying
+			return fmt.Errorf("error waiting for transaction to be mined: %w", err)
 		}
 
 		// Check if the transaction was successful
-		if tx == nil || receipt == nil || receipt.Status != types.ReceiptStatusSuccessful {
-			if tx != nil {
-				log.Error("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex())
-			}
-			return errors.New("transaction failed or did not finalize successfully")
+		if tx != nil && receipt != nil && receipt.Status == types.ReceiptStatusSuccessful {
+			break
 		}
-
-		return nil
-	}, retryInterval, roundEndTime); err != nil {
-		return err
+		if tx != nil {
+			log.Error("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex())
+		}
+		if retryCount == retryLimit {
+			return errors.New("could not resolve auction after multiple attempts")
+		}
+		tx, err = makeAuctionResolutionTx(true)
+		if err != nil {
+			log.Error("Error resolving auction", "error", err)
+			return err
+		}
 	}
 
 	log.Info("Auction resolved successfully", "txHash", tx.Hash().Hex())
@@ -431,6 +456,10 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 // attempts. The function returns an error if all attempts fail.
 func retryUntil(ctx context.Context, operation func() error, retryInterval time.Duration, endTime time.Time) error {
 	for {
+		if time.Now().After(endTime) {
+			break
+		}
+
 		// Execute the operation
 		if err := operation(); err == nil {
 			return nil
@@ -438,10 +467,6 @@ func retryUntil(ctx context.Context, operation func() error, retryInterval time.
 
 		if ctx.Err() != nil {
 			return ctx.Err()
-		}
-
-		if time.Now().After(endTime) {
-			break
 		}
 
 		time.Sleep(retryInterval)
