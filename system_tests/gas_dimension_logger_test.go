@@ -577,15 +577,361 @@ func TestGasDimensionLoggerExtCodeCopyWarmMemExpansion(t *testing.T) {
 // DELEGATECALL and STATICCALL have many permutations
 // warm or cold
 // empty or non-empty code at target address
+// memory expanded, or no memory expansion
+//
+// static_gas = 0
+// dynamic_gas = memory_expansion_cost + code_execution_cost + address_access_cost
+// we do not consider the code_execution_cost as part of the cost of the call itself
+// since those costs are counted and incurred by the children of the call.
 
-func TestGasDimensionLoggerDelegateCallEmptyCold(t *testing.T)    { t.Fail() }
-func TestGasDimensionLoggerDelegateCallEmptyWarm(t *testing.T)    { t.Fail() }
-func TestGasDimensionLoggerDelegateCallNonEmptyCold(t *testing.T) { t.Fail() }
-func TestGasDimensionLoggerDelegateCallNonEmptyWarm(t *testing.T) { t.Fail() }
-func TestGasDimensionLoggerStaticCallEmptyCold(t *testing.T)      { t.Fail() }
-func TestGasDimensionLoggerStaticCallEmptyWarm(t *testing.T)      { t.Fail() }
-func TestGasDimensionLoggerStaticCallNonEmptyCold(t *testing.T)   { t.Fail() }
-func TestGasDimensionLoggerStaticCallNonEmptyWarm(t *testing.T)   { t.Fail() }
+// this test does the case where the target address being delegatecalled to
+// is empty - i.e. no address code at that location. The address being called
+// to is also cold, therefore incurring the access list cold read cost.
+// the solidity compiler forces no memory expansion for us.
+//
+// since it's a call, the call itself does not incur the computation cost
+// but rather its children incur various costs. Therefore, we expect the
+// one-dimensional gas cost to be 2600, for the access list cold read cost,
+// computation to be 100 (for the warm access list read),
+// state access to be 2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerDelegateCallEmptyCold(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyCold, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
+}
+
+// this test does the case where the target address being delegatecalled to
+// is empty - i.e. no address code at that location.
+// the solidity compiler forces no memory expansion for us.
+//
+// since it's a call, the call itself does not incur the computation cost
+// but rather its children incur various costs. Therefore, we expect the
+// one-dimensional gas cost to be 100, for the warm access list read,
+// computation to be 100 (for the warm access list read),
+// state access to be 0, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerDelegateCallEmptyWarm(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyWarm, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
+}
+
+// in this test, the target address being delegatecalled to
+// is non-empty, there is code at that location that will be executed,
+// and the address being called is cold.
+// the solidity compiler forces no memory expansion for us.
+//
+// since it's a call, the call itself does not incur the computation cost
+// but rather its children incur various costs. Therefore, we expect the
+// call to have a one-dimensional gas cost of 2600 + the child execution gas,
+// due to the access list cold read cost,
+// computation to be 100 (for the warm access list read),
+// state access to be 2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerDelegateCallNonEmptyCold(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCallee)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyCold, delegateCalleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	// this is a magic value from the trace of DelegateCallee contract
+	var expectedChildGasExecutionCost uint64 = 22712
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, delegateCallLog, expectedChildGasExecutionCost)
+}
+
+// in this test, the target address being delegatecalled to
+// is non-empty, there is code at that location that will be executed,
+// and the address being called is warm.
+// the solidity compiler forces no memory expansion for us.
+//
+// since it's a call, the call itself does not incur the computation cost
+// but rather its children incur various costs. Therefore, we expect the
+// call to have a one-dimensional gas cost of 100 + the child execution gas,
+// due to the warm access list read cost,
+// computation to be 100 (for the warm access list read),
+// state access to be 0, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerDelegateCallNonEmptyWarm(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCallee)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyWarm, delegateCalleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	// this is a magic value from the trace of DelegateCallee contract
+	var expectedChildGasExecutionCost uint64 = 22712
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, delegateCallLog, expectedChildGasExecutionCost)
+}
+
+// this test does the case where the target address being delegatecalled to
+// is empty - i.e. no address code at that location. The address being called
+// to is also cold, therefore incurring the access list cold read cost.
+// in this case we force memory expansion for the call in the solidity
+// assembly. By staring at the traces and debugging, we find that the
+// memory expansion cost is 6.
+//
+// since it's a call, the call itself does not incur the computation cost
+// but rather its children incur various costs. Therefore, we expect the
+// one-dimensional gas cost to be 2600, for the access list cold read cost,
+// computation to be 100 + 6 (warm access list read + memory expansion),
+// state access to be 2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerDelegateCallEmptyColdMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyColdMemExpansion, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
+
+	var memoryExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
+}
+
+// this test does the case where the target address being delegatecalled to
+// is empty - i.e. no address code at that location.
+// we force memory expansion for the call in the solidity assembly.
+// from staring at the traces and debugging,the memory expansion cost is 6.
+//
+// since it's a call, the call itself does not incur the computation cost
+// but rather its children incur various costs. Therefore, we expect the
+// one-dimensional gas cost to be 100 + 6, for the warm access list read + memory expansion,
+// computation to be 100 + 6 (for the warm access list read + memory expansion),
+// state access to be 0, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerDelegateCallEmptyWarmMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyWarmMemExpansion, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
+
+	var memoryExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
+}
+
+// in this test, the target address being delegatecalled to
+// is non-empty, there is code at that location that will be executed,
+// and the address being called is cold.
+// we force memory expansion for the call in the solidity assembly.
+// from staring at the traces and debugging,the memory expansion cost is 6.
+//
+// since it's a call, the call itself does not incur the computation cost
+// but rather its children incur various costs. Therefore, we expect the
+// call to have a one-dimensional gas cost of 2600 + 6 + the child execution gas,
+// due to the access list cold read cost and memory expansion cost,
+// computation to be 100 + 6 (for the warm access list read + memory expansion),
+// state access to be 2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerDelegateCallNonEmptyColdMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCallee)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyColdMemExpansion, delegateCalleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
+
+	var memoryExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	// this is a magic value from the trace of DelegateCallee contract
+	var expectedChildGasExecutionCost uint64 = 22712
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, delegateCallLog, expectedChildGasExecutionCost)
+}
+
+// in this test, the target address being delegatecalled to
+// is non-empty, there is code at that location that will be executed,
+// and the address being called is warm.
+// we force memory expansion for the call in the solidity assembly.
+// from staring at the traces and debugging,the memory expansion cost is 6.
+//
+// since it's a call, the call itself does not incur the computation cost
+// but rather its children incur various costs. Therefore, we expect the
+// call to have a one-dimensional gas cost of 100 + 6 + the child execution gas,
+// due to the warm access list read cost and memory expansion cost,
+// computation to be 100 + 6 (for the warm access list read + memory expansion),
+// state access to be 0, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerDelegateCallNonEmptyWarmMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCallee)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyWarmMemExpansion, delegateCalleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
+
+	var memoryExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	// this is a magic value from the trace of DelegateCallee contract
+	var expectedChildGasExecutionCost uint64 = 22712
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, delegateCallLog, expectedChildGasExecutionCost)
+}
+
+func TestGasDimensionLoggerStaticCallEmptyCold(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerStaticCallEmptyWarm(t *testing.T) {
+	t.Fail()
+	// ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	// defer cancel()
+	// defer cleanup()
+
+	// emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	// _, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+
+	// receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.ForceEmptyStaticCallWarmAddress, emptyAccountAddress)
+
+	// traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	// staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
+
+	// expected := ExpectedGasCosts{
+	// 	OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+	// 	Computation:           params.WarmStorageReadCostEIP2929,
+	// 	StateAccess:           0,
+	// 	StateGrowth:           0,
+	// 	HistoryGrowth:         0,
+	// 	StateGrowthRefund:     0,
+	// }
+	// checkDimensionLogGasCostsEqual(t, expected, staticCallLog)
+	// checkGasDimensionsEqualOneDimensionalGas(t, staticCallLog)
+}
+func TestGasDimensionLoggerStaticCallNonEmptyCold(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerStaticCallNonEmptyWarm(t *testing.T) { t.Fail() }
+
+func TestGasDimensionLoggerStaticCallEmptyColdMemExpansion(t *testing.T)    { t.Fail() }
+func TestGasDimensionLoggerStaticCallEmptyWarmMemExpansion(t *testing.T)    { t.Fail() }
+func TestGasDimensionLoggerStaticCallNonEmptyColdMemExpansion(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerStaticCallNonEmptyWarmMemExpansion(t *testing.T) { t.Fail() }
 
 // ############################################################
 //	             LOG0, LOG1, LOG2, LOG3, LOG4
@@ -2280,12 +2626,7 @@ type ExpectedGasCosts struct {
 	StateGrowthRefund     int64
 }
 
-// checks that all of the fields of the expected and actual dimension logs are equal
-func checkDimensionLogGasCostsEqual(
-	t *testing.T,
-	expected ExpectedGasCosts,
-	actual *DimensionLogRes,
-) {
+func checkGasDimensionsMatch(t *testing.T, expected ExpectedGasCosts, actual *DimensionLogRes) {
 	t.Helper()
 	if actual.Computation != expected.Computation {
 		Fatal(t, "Expected Computation ", expected.Computation, " got ", actual.Computation, " actual: ", actual.DebugString())
@@ -2302,8 +2643,35 @@ func checkDimensionLogGasCostsEqual(
 	if actual.StateGrowthRefund != expected.StateGrowthRefund {
 		Fatal(t, "Expected StateGrowthRefund ", expected.StateGrowthRefund, " got ", actual.StateGrowthRefund, " actual: ", actual.DebugString())
 	}
+}
+
+// checks that all of the fields of the expected and actual dimension logs are equal
+func checkDimensionLogGasCostsEqual(
+	t *testing.T,
+	expected ExpectedGasCosts,
+	actual *DimensionLogRes,
+) {
+	t.Helper()
+	checkGasDimensionsMatch(t, expected, actual)
 	if actual.OneDimensionalGasCost != expected.OneDimensionalGasCost {
 		Fatal(t, "Expected OneDimensionalGasCost ", expected.OneDimensionalGasCost, " got ", actual.OneDimensionalGasCost, " actual: ", actual.DebugString())
+	}
+}
+
+// for the special case of opcodes that increase the stack depth,
+// the one-dimensional gas cost is the sum of the gas dimension
+// and the gas cost of all of the the child opcodes, instead of
+// just the gas dimensions
+func checkDimensionLogGasCostsEqualCallGas(
+	t *testing.T,
+	expected ExpectedGasCosts,
+	expectedCallChildExecutionGas uint64,
+	actual *DimensionLogRes,
+) {
+	t.Helper()
+	checkGasDimensionsMatch(t, expected, actual)
+	if actual.OneDimensionalGasCost != expected.OneDimensionalGasCost+expectedCallChildExecutionGas {
+		Fatal(t, "Expected OneDimensionalGasCost (", expected.OneDimensionalGasCost, " + ", expectedCallChildExecutionGas, " = ", expected.OneDimensionalGasCost+expectedCallChildExecutionGas, ") got ", actual.OneDimensionalGasCost, " actual: ", actual.DebugString())
 	}
 }
 
@@ -2315,5 +2683,18 @@ func checkGasDimensionsEqualOneDimensionalGas(
 	t.Helper()
 	if l.OneDimensionalGasCost != l.Computation+l.StateAccess+l.StateGrowth+l.HistoryGrowth {
 		Fatal(t, "Expected OneDimensionalGasCost to equal sum of gas dimensions", l.DebugString())
+	}
+}
+
+// checks that the one dimensional gas cost is equal
+// to the child execution gas + sum of the other gas dimensions
+func checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(
+	t *testing.T,
+	l *DimensionLogRes,
+	expectedChildExecutionGas uint64,
+) {
+	t.Helper()
+	if l.OneDimensionalGasCost != l.Computation+l.StateAccess+l.StateGrowth+l.HistoryGrowth+expectedChildExecutionGas {
+		Fatal(t, "Expected OneDimensionalGasCost to equal sum of gas dimensions: ", l.DebugString(), " + ", expectedChildExecutionGas)
 	}
 }
