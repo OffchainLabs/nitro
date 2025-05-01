@@ -134,35 +134,35 @@ func (b *BlockMetadataFetcher) fetch(ctx context.Context, fromBlock, toBlock uin
 	return result, nil
 }
 
-func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query []uint64, result []gethexec.NumberAndBlockMetadata) (bool, error) {
+func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query []uint64, result []gethexec.NumberAndBlockMetadata) error {
 	batch := b.db.NewBatch()
 	queryMap := util.ArrayToSet(query)
 	for _, elem := range result {
 		if (b.syncUntilBlock != 0) && (elem.BlockNumber > b.syncUntilBlock) {
 			b.StopWaiterSafe.StopOnly()
-			return true, nil
+			return nil
 		}
 		pos, err := b.exec.BlockNumberToMessageIndex(elem.BlockNumber).Await(ctx)
 		if err != nil {
-			return false, err
+			return err
 		}
 		if _, ok := queryMap[uint64(pos)]; ok {
 			if err := batch.Put(dbKey(blockMetadataInputFeedPrefix, uint64(pos)), elem.RawMetadata); err != nil {
-				return false, err
+				return err
 			}
 			if err := batch.Delete(dbKey(missingBlockMetadataInputFeedPrefix, uint64(pos))); err != nil {
-				return false, err
+				return err
 			}
 			// If we reached the ideal batch size, commit and reset
 			if batch.ValueSize() >= ethdb.IdealBatchSize {
 				if err := batch.Write(); err != nil {
-					return false, err
+					return err
 				}
 				batch.Reset()
 			}
 		}
 	}
-	return false, batch.Write()
+	return batch.Write()
 }
 
 func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
@@ -174,16 +174,16 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 		b.chainIdChecked = true
 	}
 
-	handleQuery := func(query []uint64) (bool, bool) {
+	handleQuery := func(query []uint64) bool {
 		fromBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])).Await(ctx)
 		if err != nil {
 			log.Error("Error getting fromBlock", "err", err)
-			return false, false
+			return false
 		}
 		toBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1])).Await(ctx)
 		if err != nil {
 			log.Error("Error getting toBlock", "err", err)
-			return false, false
+			return false
 		}
 
 		result, err := b.fetch(
@@ -193,16 +193,15 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 		)
 		if err != nil {
 			log.Error("Error getting result from bulk blockMetadata API", "err", err)
-			return false, false
+			return false
 		}
-		var done bool
-		done, err = b.persistBlockMetadata(ctx, query, result)
+		err = b.persistBlockMetadata(ctx, query, result)
 		if err != nil {
 			log.Error("Error committing result from bulk blockMetadata API to ArbDB", "err", err)
-			return false, false
+			return false
 		}
 
-		return done, true
+		return true
 	}
 	var start []byte
 	if b.trackBlockMetadataFrom != 0 {
@@ -219,11 +218,15 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 			if query[end]-query[0]+1 > uint64(b.config.APIBlocksLimit) && len(query) >= 2 {
 				end -= 1
 			}
-			if done, success := handleQuery(query[:end+1]); done || !success {
+			if success := handleQuery(query[:end+1]); !success {
 				b.currentSyncInterval *= 2
 				if b.currentSyncInterval > b.config.MaxSyncInterval {
 					b.currentSyncInterval = b.config.MaxSyncInterval
 				}
+				return b.currentSyncInterval
+			}
+			if b.Stopped() {
+				// Nothing left to sync
 				return b.currentSyncInterval
 			}
 			if b.currentSyncInterval > b.config.SyncInterval {
@@ -236,7 +239,7 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 		}
 	}
 	if len(query) > 0 {
-		_, _ = handleQuery(query)
+		_ = handleQuery(query)
 	}
 	return b.config.SyncInterval
 }
