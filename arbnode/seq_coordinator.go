@@ -426,6 +426,14 @@ func (c *SeqCoordinator) wantsLockoutUpdateWithMutex(ctx context.Context, client
 	return nil
 }
 
+func (c *SeqCoordinator) CurrentChosenSequencer(ctx context.Context) (string, error) {
+	current, err := c.RedisCoordinator().Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", nil
+	}
+	return current, err
+}
+
 func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 	atomicTimeWrite(&c.lockoutUntil, time.Time{})
 	isActiveSequencer.Update(0)
@@ -452,10 +460,7 @@ func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 		return nil
 	}
 	// got error - was it still released?
-	current, readErr := c.RedisCoordinator().Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
-	if errors.Is(readErr, redis.Nil) {
-		return nil
-	}
+	current, _ := c.CurrentChosenSequencer(ctx) //nolint:errcheck
 	if current != c.config.Url() {
 		return nil
 	}
@@ -966,18 +971,13 @@ func (c *SeqCoordinator) trySwitchingRedis(ctx context.Context, newRedisCoordina
 	if err != nil {
 		return err
 	}
-	current, err := c.RedisCoordinator().Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
-	var wasEmpty bool
-	if errors.Is(err, redis.Nil) {
-		wasEmpty = true
-		err = nil
-	}
+	current, err := c.CurrentChosenSequencer(ctx)
 	if err != nil {
 		log.Warn("failed to get current chosen sequencer", "err", err)
 		return err
 	}
 	// If the chosen key is set to switch, we need to switch to the new redis coordinator.
-	if !wasEmpty && (current == redisutil.SWITCHED_REDIS) {
+	if current == redisutil.SWITCHED_REDIS {
 		err = c.wantsLockoutUpdate(ctx, c.RedisCoordinator().Client)
 		if err != nil {
 			return err
@@ -1076,7 +1076,17 @@ func (c *SeqCoordinator) TryToHandoffChosenOne(ctx context.Context) bool {
 	if c.CurrentlyChosen() {
 		log.Info("waiting for another sequencer to become chosen...", "timeout", c.config.HandoffTimeout, "myUrl", c.config.Url())
 		success := c.waitFor(ctx, func() bool {
-			return !c.CurrentlyChosen()
+			current, err := c.CurrentChosenSequencer(ctx)
+			if err != nil {
+				return false
+			}
+			if current == "" {
+				return false
+			}
+			if current == c.config.Url() {
+				return false
+			}
+			return true
 		})
 		if success {
 			wantsLockout, err := c.RedisCoordinator().RecommendSequencerWantingLockout(ctx)
