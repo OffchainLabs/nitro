@@ -20,7 +20,7 @@ Sign in to your GitHub account or create a new account if you do not have one al
 **3. Create a local clone of Nitro.**
 
 ```
-$ git clone https://github.com/OffchainLabs/nitro.git
+$ git clone https://github.com/OffchainLabs/nitro
 ```
 
 **4. Link your local clone to the fork on your GitHub repo.**
@@ -32,7 +32,7 @@ $ git remote add mynitrorepo https://github.com/<your_github_user_name>/nitro.gi
 **5. Link your local clone to the Nitro repo so that you can easily fetch future changes.**
 
 ```
-$ git remote add upstream https://github.com/offchainlabs/nitro.git
+$ git remote add upstream https://github.com/offchainlabs/nitro
 $ git remote -v (you should see mynitrorepo and upstream in the list of remotes)
 ```
 
