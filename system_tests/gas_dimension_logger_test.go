@@ -30,9 +30,11 @@ const (
 	LogTopicGasComputation         = params.LogTopicGas - LogTopicGasHistoryGrowth
 )
 
-// ############################################################
-//      REGULAR COMPUTATION OPCODES (ADD, SWAP, ETC)
-// ############################################################
+// #########################################################################################################
+// #########################################################################################################
+//                          REGULAR COMPUTATION OPCODES (ADD, SWAP, ETC)
+// #########################################################################################################
+// #########################################################################################################
 
 // Run a test where we set up an L2, then send a transaction
 // that only has computation-only opcodes. Then call debug_traceTransaction
@@ -78,9 +80,11 @@ func TestGasDimensionLoggerComputationOnlyOpcodes(t *testing.T) {
 	}
 }
 
-// ############################################################
-// SIMPLE STATE ACCESS OPCODES (BALANCE, EXTCODESIZE, EXTCODEHASH)
-// ############################################################
+// #########################################################################################################
+// #########################################################################################################
+//                SIMPLE STATE ACCESS OPCODES (BALANCE, EXTCODESIZE, EXTCODEHASH)
+// #########################################################################################################
+// #########################################################################################################
 
 // BALANCE, EXTCODESIZE, EXTCODEHASH are all read-only operations on state access
 // this test deployes a contract that calls BALANCE on a cold access list address
@@ -354,9 +358,11 @@ func TestGasDimensionLoggerSloadWarm(t *testing.T) {
 	checkGasDimensionsEqualOneDimensionalGas(t, sloadLog)
 }
 
-// ############################################################
-//                        EXTCODECOPY
-// ############################################################
+// #########################################################################################################
+// #########################################################################################################
+//                                               EXTCODECOPY
+// #########################################################################################################
+// #########################################################################################################
 
 // EXTCODECOPY reads from state and copies code to memory
 // for gas dimensions, we don't care about expanding memory, but
@@ -568,11 +574,11 @@ func TestGasDimensionLoggerExtCodeCopyWarmMemExpansion(t *testing.T) {
 	checkGasDimensionsEqualOneDimensionalGas(t, extCodeCopyLog)
 }
 
-// ############################################################
-//
-//	DELEGATECALL & STATICCALL
-//
-// ############################################################
+// #########################################################################################################
+// #########################################################################################################
+//	                                    DELEGATECALL & STATICCALL
+// #########################################################################################################
+// #########################################################################################################
 //
 // DELEGATECALL and STATICCALL have many permutations
 // warm or cold
@@ -1144,6 +1150,16 @@ func TestGasDimensionLoggerStaticCallNonEmptyColdMemExpansion(t *testing.T) {
 	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, staticCallLog, expectedChildGasExecutionCost)
 }
 
+// this test does the case where a contract calls another contract via staticcall
+// the target address is non-empty, so there is code at that location that will be executed,
+// and the address being called is warm.
+// memory expansion occurs in this case.
+//
+// we expect the one-dimensional gas cost to be 100, for the warm access list read cost,
+// plus the memory expansion cost, which via debugging and tracing, we know is 6 gas.
+// we also know the child execution gas is 2409 from debugging and tracing.
+// computation to be 100+6 for the warm access list read cost, state access to be 0, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
 func TestGasDimensionLoggerStaticCallNonEmptyWarmMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
 	defer cancel()
@@ -1171,9 +1187,11 @@ func TestGasDimensionLoggerStaticCallNonEmptyWarmMemExpansion(t *testing.T) {
 	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, staticCallLog, expectedChildGasExecutionCost)
 }
 
-// ############################################################
-//	             LOG0, LOG1, LOG2, LOG3, LOG4
-// ############################################################
+// #########################################################################################################
+// #########################################################################################################
+//	              					LOG0, LOG1, LOG2, LOG3, LOG4
+// #########################################################################################################
+// #########################################################################################################
 //
 // Logs are pretty straightforward, they have a static cost
 // we assign to computation, a linear size cost we assign directly
@@ -1770,9 +1788,11 @@ func TestGasDimensionLoggerLog4WithMemoryExpansion(t *testing.T) {
 	checkGasDimensionsEqualOneDimensionalGas(t, log4Log)
 }
 
-// ############################################################
-//	                    CREATE & CREATE2
-// ############################################################
+// #########################################################################################################
+// #########################################################################################################
+//	                                             CREATE & CREATE2
+// #########################################################################################################
+// #########################################################################################################
 //
 // CREATE and CREATE2 only have two permutations, whether or not you
 // transfer value with the creation
@@ -1785,9 +1805,11 @@ func TestGasDimensionLoggerCreate2(t *testing.T) { t.Fail() }
 
 func TestGasDimensionLoggerCreate2WithValue(t *testing.T) { t.Fail() }
 
-// ############################################################
-//                      CALL and CALLCODE
-// ############################################################
+// #########################################################################################################
+// #########################################################################################################
+//                                             CALL and CALLCODE
+// #########################################################################################################
+// #########################################################################################################
 //
 // CALL and CALLCODE have many permutations
 // warm or cold
@@ -1796,39 +1818,147 @@ func TestGasDimensionLoggerCreate2WithValue(t *testing.T) { t.Fail() }
 
 func TestGasDimensionLoggerCallEmptyColdNoValue(t *testing.T) { t.Fail() }
 
+func TestGasDimensionLoggerCallEmptyColdNoValueMemExpansion(t *testing.T) { t.Fail() }
+
 func TestGasDimensionLoggerCallEmptyColdWithValue(t *testing.T) { t.Fail() }
+
+func TestGasDimensionLoggerCallEmptyColdWithValueMemExpansion(t *testing.T) { t.Fail() }
 
 func TestGasDimensionLoggerCallEmptyWarmNoValue(t *testing.T) { t.Fail() }
 
+func TestGasDimensionLoggerCallEmptyWarmNoValueMemExpansion(t *testing.T) { t.Fail() }
+
 func TestGasDimensionLoggerCallEmptyWarmWithValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallNonEmptyColdNoValue(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerCallEmptyWarmWithValueMemExpansion(t *testing.T) { t.Fail() }
+
+// this test is the case where we do a CALL to a target contract that does have code
+// the contract is cold in the access list, we send no eth value with the call
+// and there is no memory expansion in this case.
+//
+// we expect the one dimensional gas to be 2600 + the child execution gas.
+// we happen to know from debugging and tracing that the child execution gas is 22468
+// 2600 because of the cold account access cost
+// the computation to be 100 for the warm storage read cost
+// the state access to be 2500, the state growth to be 0,
+// the history growth to be 0, and the state growth refund to be 0
+func TestGasDimensionLoggerCallNonEmptyColdNoValue(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.CallCalleeColdCodeZeroValue, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 22468
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+func TestGasDimensionLoggerCallNonEmptyColdNoValueMemExpansion(t *testing.T) { t.Fail() }
 
 func TestGasDimensionLoggerCallNonEmptyColdWithValue(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerCallNonEmptyWarmNoValue(t *testing.T) { t.Fail() }
+func TestGasDimensionLoggerCallNonEmptyColdWithValueMemExpansion(t *testing.T) { t.Fail() }
+
+// this test is the case where we do a CALL to a target contract that does have code
+// the contract is warm in the access list, we send no eth value with the call
+// and there is no memory expansion in this case.
+//
+// we expect the one dimensional gas to be the child execution gas + the warm storage read cost
+// we happen to know from debugging and tracing that the child execution gas is 22468
+// the computation to be 100 for the warm storage read cost
+// the state access to be 0, the state growth to be 0,
+// the history growth to be 0, and the state growth refund to be 0
+func TestGasDimensionLoggerCallNonEmptyWarmNoValue(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.CallCalleeWarmCodeZeroValue, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 22468
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+
+}
+
+func TestGasDimensionLoggerCallNonEmptyWarmNoValueMemExpansion(t *testing.T) { t.Fail() }
 
 func TestGasDimensionLoggerCallNonEmptyWarmWithValue(t *testing.T) { t.Fail() }
 
+func TestGasDimensionLoggerCallNonEmptyWarmWithValueMemExpansion(t *testing.T) { t.Fail() }
+
+// #########################################################################################################
+// #########################################################################################################
+//                                             CALLCODE
+// #########################################################################################################
+// #########################################################################################################
+
 func TestGasDimensionLoggerCallCodeEmptyColdNoValue(t *testing.T) { t.Fail() }
+
+func TestGasDimensionLoggerCallCodeEmptyColdNoValueMemExpansion(t *testing.T) { t.Fail() }
 
 func TestGasDimensionLoggerCallCodeEmptyColdWithValue(t *testing.T) { t.Fail() }
 
+func TestGasDimensionLoggerCallCodeEmptyColdWithValueMemExpansion(t *testing.T) { t.Fail() }
+
 func TestGasDimensionLoggerCallCodeEmptyWarmNoValue(t *testing.T) { t.Fail() }
+
+func TestGasDimensionLoggerCallCodeEmptyWarmNoValueMemExpansion(t *testing.T) { t.Fail() }
 
 func TestGasDimensionLoggerCallCodeEmptyWarmWithValue(t *testing.T) { t.Fail() }
 
+func TestGasDimensionLoggerCallCodeEmptyWarmWithValueMemExpansion(t *testing.T) { t.Fail() }
+
 func TestGasDimensionLoggerCallCodeNonEmptyColdNoValue(t *testing.T) { t.Fail() }
+
+func TestGasDimensionLoggerCallCodeNonEmptyColdNoValueMemExpansion(t *testing.T) { t.Fail() }
 
 func TestGasDimensionLoggerCallCodeNonEmptyColdWithValue(t *testing.T) { t.Fail() }
 
+func TestGasDimensionLoggerCallCodeNonEmptyColdWithValueMemExpansion(t *testing.T) { t.Fail() }
+
 func TestGasDimensionLoggerCallCodeNonEmptyWarmNoValue(t *testing.T) { t.Fail() }
+
+func TestGasDimensionLoggerCallCodeNonEmptyWarmNoValueMemExpansion(t *testing.T) { t.Fail() }
 
 func TestGasDimensionLoggerCallCodeNonEmptyWarmWithValue(t *testing.T) { t.Fail() }
 
-// ############################################################
-//                           SSTORE
-// ############################################################
+func TestGasDimensionLoggerCallCodeNonEmptyWarmWithValueMemExpansion(t *testing.T) { t.Fail() }
+
+// #########################################################################################################
+// #########################################################################################################
+//                                               SSTORE
+// #########################################################################################################
+// #########################################################################################################
 //
 // SSTORE has many permutations
 // warm or cold
@@ -2351,9 +2481,11 @@ func TestGasDimensionLoggerSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
-// ############################################################
-//                          SELFDESTRUCT
-// ############################################################
+// #########################################################################################################
+// #########################################################################################################
+//                                              SELFDESTRUCT
+// #########################################################################################################
+// #########################################################################################################
 //
 // SELFDESTRUCT has many permutations
 // warm or cold
@@ -2673,9 +2805,11 @@ func TestGasDimensionLoggerSelfdestructWarmWithValueNonEmpty(t *testing.T) {
 	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
 }
 
-// ############################################################
-//                         HELPER FUNCTIONS
-// ############################################################
+// #########################################################################################################
+// #########################################################################################################
+//                                            HELPER FUNCTIONS
+// #########################################################################################################
+// #########################################################################################################
 
 // common setup for all gas_dimension_logger tests
 func gasDimensionLoggerSetup(t *testing.T) (
