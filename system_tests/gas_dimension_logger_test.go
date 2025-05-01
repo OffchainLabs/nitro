@@ -618,7 +618,7 @@ func TestGasDimensionLoggerDelegateCallEmptyCold(t *testing.T) {
 	}
 	var expectedChildGasExecutionCost uint64 = 0
 	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
-	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, delegateCallLog, expectedChildGasExecutionCost)
 }
 
 // this test does the case where the target address being delegatecalled to
@@ -654,7 +654,7 @@ func TestGasDimensionLoggerDelegateCallEmptyWarm(t *testing.T) {
 	}
 	var expectedChildGasExecutionCost uint64 = 0
 	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
-	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, delegateCallLog, expectedChildGasExecutionCost)
 }
 
 // in this test, the target address being delegatecalled to
@@ -773,7 +773,7 @@ func TestGasDimensionLoggerDelegateCallEmptyColdMemExpansion(t *testing.T) {
 	}
 	var expectedChildGasExecutionCost uint64 = 0
 	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
-	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, delegateCallLog, expectedChildGasExecutionCost)
 }
 
 // this test does the case where the target address being delegatecalled to
@@ -812,7 +812,7 @@ func TestGasDimensionLoggerDelegateCallEmptyWarmMemExpansion(t *testing.T) {
 	}
 	var expectedChildGasExecutionCost uint64 = 0
 	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, delegateCallLog)
-	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, delegateCallLog, expectedChildGasExecutionCost)
 }
 
 // in this test, the target address being delegatecalled to
@@ -899,39 +899,277 @@ func TestGasDimensionLoggerDelegateCallNonEmptyWarmMemExpansion(t *testing.T) {
 	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, delegateCallLog, expectedChildGasExecutionCost)
 }
 
-func TestGasDimensionLoggerStaticCallEmptyCold(t *testing.T) { t.Fail() }
-func TestGasDimensionLoggerStaticCallEmptyWarm(t *testing.T) {
-	t.Fail()
-	// ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
-	// defer cancel()
-	// defer cleanup()
+// this test does the case where the a contract calls another contract via staticcall
+// the target address is empty (does not actually have code at that address),
+// and the address being called is cold.
+// there is no memory expansion in this case.
+//
+// we expect the one-dimensional gas cost to be 2500, for the cold access list read cost,
+// computation to be 100 for the warm access list read cost, state access to be 2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerStaticCallEmptyCold(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
 
-	// emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	// _, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
 
-	// receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.ForceEmptyStaticCallWarmAddress, emptyAccountAddress)
+	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyCold, emptyAccountAddress)
 
-	// traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	// staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
-	// expected := ExpectedGasCosts{
-	// 	OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
-	// 	Computation:           params.WarmStorageReadCostEIP2929,
-	// 	StateAccess:           0,
-	// 	StateGrowth:           0,
-	// 	HistoryGrowth:         0,
-	// 	StateGrowthRefund:     0,
-	// }
-	// checkDimensionLogGasCostsEqual(t, expected, staticCallLog)
-	// checkGasDimensionsEqualOneDimensionalGas(t, staticCallLog)
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, staticCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, staticCallLog, expectedChildGasExecutionCost)
 }
-func TestGasDimensionLoggerStaticCallNonEmptyCold(t *testing.T) { t.Fail() }
-func TestGasDimensionLoggerStaticCallNonEmptyWarm(t *testing.T) { t.Fail() }
 
-func TestGasDimensionLoggerStaticCallEmptyColdMemExpansion(t *testing.T)    { t.Fail() }
-func TestGasDimensionLoggerStaticCallEmptyWarmMemExpansion(t *testing.T)    { t.Fail() }
-func TestGasDimensionLoggerStaticCallNonEmptyColdMemExpansion(t *testing.T) { t.Fail() }
-func TestGasDimensionLoggerStaticCallNonEmptyWarmMemExpansion(t *testing.T) { t.Fail() }
+// this test does the case where the a contract calls another contract via staticcall
+// the target address is empty (does not actually have code at that address),
+// and the address being called is warm.
+// there is no memory expansion in this case.
+//
+// we expect the one-dimensional gas cost to be 100, for the warm access list read cost,
+// computation to be 100 for the warm access list read cost, state access to be 0, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerStaticCallEmptyWarm(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyWarm, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, staticCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, staticCallLog, expectedChildGasExecutionCost)
+}
+
+// this test does the case where the a contract calls another contract via staticcall
+// the target address is non-empty, so there is code at that location that will be executed,
+// and the address being called is cold.
+// there is no memory expansion in this case.
+//
+// we expect the one-dimensional gas cost to be 2500, for the cold access list read cost,
+// computation to be 100 for the warm access list read cost, state access to be 2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerStaticCallNonEmptyCold(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCallee)
+	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyCold, staticCalleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 2409
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, staticCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, staticCallLog, expectedChildGasExecutionCost)
+}
+
+// this test does the case where the a contract calls another contract via staticcall
+// the target address is non-empty, so there is code at that location that will be executed,
+// and the address being called is warm.
+// there is no memory expansion in this case.
+//
+// we expect the one-dimensional gas cost to be 100, for the warm access list read cost,
+// computation to be 100 for the warm access list read cost, state access to be 0, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerStaticCallNonEmptyWarm(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCallee)
+	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyWarm, staticCalleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 2409
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, staticCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, staticCallLog, expectedChildGasExecutionCost)
+}
+
+// this test does the case where a contract calls another contract via staticcall
+// the target address is empty, so there is no code at that location that will be executed,
+// and the address being called is cold.
+// memory expansion occurs in this case.
+//
+// we expect the one-dimensional gas cost to be 2600, for the cold access list read cost,
+// plus the memory expansion cost, which via debugging and tracing, we know is 6 gas.
+// computation to be 100+6 for the warm access list read cost, state access to be 2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerStaticCallEmptyColdMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyColdMemExpansion, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
+
+	var memoryExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, staticCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, staticCallLog, expectedChildGasExecutionCost)
+}
+
+// this test does the case where a contract calls another contract via staticcall
+// the target address is empty, so there is no code at that location that will be executed,
+// and the address being called is warm.
+// memory expansion occurs in this case.
+//
+// we expect the one-dimensional gas cost to be 100, for the warm access list read cost,
+// plus the memory expansion cost, which via debugging and tracing, we know is 6 gas.
+// computation to be 100+6 for the warm access list read cost, state access to be 0, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerStaticCallEmptyWarmMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyWarmMemExpansion, emptyAccountAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
+
+	var memoryExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, staticCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, staticCallLog, expectedChildGasExecutionCost)
+}
+
+// this test does the case where a contract calls another contract via staticcall
+// the target address is non-empty, so there is code at that location that will be executed,
+// and the address being called is cold.
+// memory expansion occurs in this case.
+//
+// we expect the one-dimensional gas cost to be 2600, for the cold access list read cost,
+// plus the memory expansion cost, which via debugging and tracing, we know is 6 gas.
+// we also know the child execution gas is 2409 from debugging and tracing.
+// computation to be 100+6 for the warm access list read cost, state access to be 2500, state growth to be 0,
+// history growth to be 0, and state growth refund to be 0
+func TestGasDimensionLoggerStaticCallNonEmptyColdMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCallee)
+	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyColdMemExpansion, staticCalleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
+
+	var memoryExpansionCost uint64 = 6
+	var expectedChildGasExecutionCost uint64 = 2409
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, staticCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, staticCallLog, expectedChildGasExecutionCost)
+}
+
+func TestGasDimensionLoggerStaticCallNonEmptyWarmMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCallee)
+	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyWarmMemExpansion, staticCalleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
+
+	var memoryExpansionCost uint64 = 6
+	var expectedChildGasExecutionCost uint64 = 2409
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, staticCallLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, staticCallLog, expectedChildGasExecutionCost)
+}
 
 // ############################################################
 //	             LOG0, LOG1, LOG2, LOG3, LOG4
