@@ -13,6 +13,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -144,7 +145,7 @@ func (m limitedArgumentsMarshal) String() string {
 // This check is based on the error's string form and is not precise.
 func IsAlreadyKnownError(err error) bool {
 	s := err.Error()
-	if strings.Contains(s, "already known") || strings.Contains(s, "AlreadyKnown") {
+	if strings.Contains(s, txpool.ErrAlreadyKnown.Error()) || strings.Contains(s, "AlreadyKnown") {
 		return true
 	}
 	return false
