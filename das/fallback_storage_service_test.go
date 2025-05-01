@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package das
 
@@ -7,9 +7,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 	"testing"
-
-	"github.com/ethereum/go-ethereum/common/math"
 
 	"github.com/offchainlabs/nitro/das/dastree"
 )

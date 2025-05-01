@@ -1,8 +1,8 @@
 package timeboost
 
 import (
+	"encoding/hex"
 	"math/big"
-	"os"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -16,11 +16,7 @@ import (
 func TestInsertAndFetchBids(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, err := os.MkdirTemp("", "*")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
+	tmpDir := t.TempDir()
 	db, err := NewDatabase(tmpDir)
 	require.NoError(t, err)
 
@@ -93,7 +89,7 @@ func TestInsertBids(t *testing.T) {
 			bid.AuctionContractAddress.Hex(),
 			bid.Round,
 			bid.Amount.String(),
-			bid.Signature,
+			hex.EncodeToString(bid.Signature),
 		).WillReturnResult(sqlmock.NewResult(1, 1))
 	}
 

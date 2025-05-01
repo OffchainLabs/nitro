@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package chaininfo
 
@@ -29,6 +29,7 @@ type ChainInfo struct {
 	SecondaryFeedUrl          string              `json:"secondary-feed-url"`
 	DasIndexUrl               string              `json:"das-index-url"`
 	HasGenesisState           bool                `json:"has-genesis-state"`
+	BlockMetadataUrl          string              `json:"block-metadata-url"`
 	TrackBlockMetadataFrom    uint64              `json:"track-block-metadata-from,omitempty"`
 	ChainConfig               *params.ChainConfig `json:"chain-config"`
 	RollupAddresses           *RollupAddresses    `json:"rollup"`

@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package programs
 
@@ -16,20 +16,20 @@ import (
 	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
-const MaxWasmSize = 128 * 1024      // max decompressed wasm size (programs are also bounded by compressed size)
-const initialStackDepth = 4 * 65536 // 4 page stack.
-const InitialFreePages = 2          // 2 pages come free (per tx).
-const InitialPageGas = 1000         // linear cost per allocation.
-const initialPageRamp = 620674314   // targets 8MB costing 32 million gas, minus the linear term.
-const initialPageLimit = 128        // reject wasms with memories larger than 8MB.
-const initialInkPrice = 10000       // 1 evm gas buys 10k ink.
-const initialMinInitGas = 72        // charge 72 * 128 = 9216 gas.
-const initialMinCachedGas = 11      // charge 11 *  32 = 352 gas.
-const initialInitCostScalar = 50    // scale costs 1:1 (100%)
-const initialCachedCostScalar = 50  // scale costs 1:1 (100%)
-const initialExpiryDays = 365       // deactivate after 1 year.
-const initialKeepaliveDays = 31     // wait a month before allowing reactivation.
-const initialRecentCacheSize = 32   // cache the 32 most recent programs.
+const initialMaxWasmSize = 128 * 1024 // max decompressed wasm size (programs are also bounded by compressed size)
+const initialStackDepth = 4 * 65536   // 4 page stack.
+const InitialFreePages = 2            // 2 pages come free (per tx).
+const InitialPageGas = 1000           // linear cost per allocation.
+const initialPageRamp = 620674314     // targets 8MB costing 32 million gas, minus the linear term.
+const initialPageLimit = 128          // reject wasms with memories larger than 8MB.
+const initialInkPrice = 10000         // 1 evm gas buys 10k ink.
+const initialMinInitGas = 72          // charge 72 * 128 = 9216 gas.
+const initialMinCachedGas = 11        // charge 11 *  32 = 352 gas.
+const initialInitCostScalar = 50      // scale costs 1:1 (100%)
+const initialCachedCostScalar = 50    // scale costs 1:1 (100%)
+const initialExpiryDays = 365         // deactivate after 1 year.
+const initialKeepaliveDays = 31       // wait a month before allowing reactivation.
+const initialRecentCacheSize = 32     // cache the 32 most recent programs.
 
 const v2MinInitGas = 69 // charge 69 * 128 = 8832 gas (minCachedGas will also be charged in v2).
 
@@ -41,6 +41,7 @@ const CostScalarPercent = 2  // 2% for each unit
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
 type StylusParams struct {
 	backingStorage   *storage.Storage
+	arbosVersion     uint64 // not stored
 	Version          uint16 // must only be changed during ArbOS upgrades
 	InkPrice         uint24
 	MaxStackDepth    uint32
@@ -55,6 +56,7 @@ type StylusParams struct {
 	ExpiryDays       uint16
 	KeepaliveDays    uint16
 	BlockCacheSize   uint16
+	MaxWasmSize      uint32
 }
 
 // Provides a view of the Stylus parameters. Call Save() to persist.
@@ -82,8 +84,9 @@ func (p Programs) Params() (*StylusParams, error) {
 	}
 
 	// order matters!
-	return &StylusParams{
+	stylusParams := &StylusParams{
 		backingStorage:   sto,
+		arbosVersion:     p.ArbosVersion,
 		Version:          am.BytesToUint16(take(2)),
 		InkPrice:         am.BytesToUint24(take(3)),
 		MaxStackDepth:    am.BytesToUint32(take(4)),
@@ -98,7 +101,13 @@ func (p Programs) Params() (*StylusParams, error) {
 		ExpiryDays:       am.BytesToUint16(take(2)),
 		KeepaliveDays:    am.BytesToUint16(take(2)),
 		BlockCacheSize:   am.BytesToUint16(take(2)),
-	}, nil
+	}
+	if p.ArbosVersion >= params.ArbosVersion_40 {
+		stylusParams.MaxWasmSize = am.BytesToUint32(take(4))
+	} else {
+		stylusParams.MaxWasmSize = initialMaxWasmSize
+	}
+	return stylusParams, nil
 }
 
 // Writes the params to permanent storage.
@@ -124,6 +133,9 @@ func (p *StylusParams) Save() error {
 		am.Uint16ToBytes(p.KeepaliveDays),
 		am.Uint16ToBytes(p.BlockCacheSize),
 	)
+	if p.arbosVersion >= params.ArbosVersion_40 {
+		data = append(data, am.Uint32ToBytes(p.MaxWasmSize)...)
+	}
 
 	slot := uint64(0)
 	for len(data) != 0 {
@@ -142,20 +154,37 @@ func (p *StylusParams) Save() error {
 }
 
 func (p *StylusParams) UpgradeToVersion(version uint16) error {
-	if version != 2 {
-		return fmt.Errorf("dest version not supported for upgrade")
+	switch version {
+	case 2:
+		if p.Version != 1 {
+			return fmt.Errorf("unexpected upgrade from %d to %d", p.Version, version)
+		}
+		p.Version = 2
+		p.MinInitGas = v2MinInitGas
+		return nil
+	default:
+		return fmt.Errorf("unsupported upgrade to %d. Only 2 is supported", version)
 	}
-	if p.Version != 1 {
-		return fmt.Errorf("existing version not supported for upgrade")
+}
+
+func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
+	if newArbosVersion == params.ArbosVersion_40 {
+		if p.arbosVersion >= params.ArbosVersion_40 {
+			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)
+		}
+		if p.Version != 2 {
+			return fmt.Errorf("unexpected arbosVersion upgrade to %d while stylus version %d", newArbosVersion, p.Version)
+		}
+		p.MaxWasmSize = initialMaxWasmSize
 	}
-	p.Version = 2
-	p.MinInitGas = v2MinInitGas
+	p.arbosVersion = newArbosVersion
 	return nil
 }
 
-func initStylusParams(sto *storage.Storage) {
-	params := &StylusParams{
+func initStylusParams(arbosVersion uint64, sto *storage.Storage) {
+	stylusParams := &StylusParams{
 		backingStorage:   sto,
+		arbosVersion:     arbosVersion,
 		Version:          1,
 		InkPrice:         initialInkPrice,
 		MaxStackDepth:    initialStackDepth,
@@ -171,5 +200,8 @@ func initStylusParams(sto *storage.Storage) {
 		KeepaliveDays:    initialKeepaliveDays,
 		BlockCacheSize:   initialRecentCacheSize,
 	}
-	_ = params.Save()
+	if arbosVersion >= params.ArbosVersion_40 {
+		stylusParams.MaxWasmSize = initialMaxWasmSize
+	}
+	_ = stylusParams.Save()
 }

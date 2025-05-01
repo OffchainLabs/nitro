@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
@@ -65,4 +65,10 @@ func (con ArbOwnerPublic) GetScheduledUpgrade(c ctx, evm mech) (uint64, uint64, 
 		return 0, 0, nil
 	}
 	return version, timestamp, nil
+}
+
+// IsCalldataPriceIncreaseEnabled checks if the increased calldata price feature
+// (EIP-7623) is enabled
+func (con ArbOwnerPublic) IsCalldataPriceIncreaseEnabled(c ctx, _ mech) (bool, error) {
+	return c.State.Features().IsIncreasedCalldataPriceEnabled()
 }

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package das
 
@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
@@ -243,25 +244,22 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 func initTest(t *testing.T) int {
 	t.Parallel()
 	seed := time.Now().UnixNano()
-	seedStr := os.Getenv("SEED")
-	if len(seedStr) > 0 {
+	if len(*testflag.SeedFlag) > 0 {
 		var err error
-		intSeed, err := strconv.Atoi(seedStr)
+		intSeed, err := strconv.Atoi(*testflag.SeedFlag)
 		Require(t, err, "Failed to parse string")
 		seed = int64(intSeed)
 	}
 	rand.Seed(seed)
 
-	runsStr := os.Getenv("RUNS")
 	runs := 2 ^ 32
-	if len(runsStr) > 0 {
+	if len(*testflag.RunsFlag) > 0 {
 		var err error
-		runs, err = strconv.Atoi(runsStr)
+		runs, err = strconv.Atoi(*testflag.RunsFlag)
 		Require(t, err, "Failed to parse string")
 	}
 
-	loggingStr := os.Getenv("LOGGING")
-	if len(loggingStr) > 0 {
+	if len(*testflag.LoggingFlag) > 0 {
 		enableLogging()
 	}
 

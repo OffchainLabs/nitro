@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package stopwaiter
 
@@ -229,6 +229,7 @@ func CallIterativelyWith[T any](
 	return s.LaunchThreadSafe(func(ctx context.Context) {
 		var defaultVal T
 		var val T
+		var ok bool
 		for {
 			interval := foo(ctx, val)
 			if ctx.Err() != nil {
@@ -244,7 +245,10 @@ func CallIterativelyWith[T any](
 				timer.Stop()
 				return
 			case <-timer.C:
-			case val = <-triggerChan:
+			case val, ok = <-triggerChan:
+				if !ok {
+					return
+				}
 			}
 		}
 	})

@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{ARGS, EVER_PAGES, EVM_DATA, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{
@@ -196,7 +196,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         unimplemented!()
     }
 
-    fn account_code(&mut self, _address: Bytes20, _gas_left: Gas) -> (VecReader, Gas) {
+    fn account_code(&mut self, _arbos_version: u64, _address: Bytes20, _gas_left: Gas) -> (VecReader, Gas) {
         unimplemented!()
     }
 

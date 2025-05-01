@@ -1,6 +1,6 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see
-// https://github.com/offchainlabs/bold/blob/main/LICENSE
+// https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package bold
 
 import (
@@ -9,20 +9,19 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/state-commitments/history"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
@@ -35,8 +34,6 @@ var (
 	_ l2stateprovider.MachineHashCollector    = (*BOLDStateProvider)(nil)
 	_ l2stateprovider.ExecutionProvider       = (*BOLDStateProvider)(nil)
 )
-
-var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
 
 type BOLDStateProvider struct {
 	validator                *staker.BlockValidator
@@ -211,9 +208,12 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 		if ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
-		executionResult, err := s.statelessValidator.InboxStreamer().ResultAtCount(arbutil.MessageIndex(pos))
-		if err != nil {
-			return nil, nil, err
+		executionResult := &execution.MessageResult{}
+		if pos > 0 {
+			executionResult, err = s.statelessValidator.InboxStreamer().ResultAtMessageIndex(pos - 1)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 		state := validator.GoGlobalState{
 			BlockHash:  executionResult.BlockHash,
@@ -271,9 +271,12 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 			return validator.GoGlobalState{}, fmt.Errorf("message count %v is past end of batch %v message count %v", count, batchIndex, batchMsgCount)
 		}
 	}
-	res, err := s.statelessValidator.InboxStreamer().ResultAtCount(count)
-	if err != nil {
-		return validator.GoGlobalState{}, fmt.Errorf("%s: could not check if we have result at count %d: %w", s.stateProviderConfig.ValidatorName, count, err)
+	res := &execution.MessageResult{}
+	if count > 0 {
+		res, err = s.statelessValidator.InboxStreamer().ResultAtMessageIndex(count - 1)
+		if err != nil {
+			return validator.GoGlobalState{}, fmt.Errorf("%s: could not check if we have result at count %d: %w", s.stateProviderConfig.ValidatorName, count, err)
+		}
 	}
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
@@ -332,7 +335,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	for i, h := range cfg.StepHeights {
 		stepHeights[i] = uint64(h)
 	}
-	messageResult, err := s.statelessValidator.InboxStreamer().ResultAtCount(arbutil.MessageIndex(messageNum + 1))
+	messageResult, err := s.statelessValidator.InboxStreamer().ResultAtMessageIndex(messageNum)
 	if err != nil {
 		return nil, err
 	}
@@ -366,16 +369,14 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		return nil, err
 	}
 	// TODO: Enable Redis streams.
-	wasmModRoot := cfg.AssertionMetadata.WasmModuleRoot
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input, true).Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer execRun.Close()
-	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
-	defer cancelCheckAlive()
-	stepLeaves := execRun.GetMachineHashesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
-	result, err := stepLeaves.Await(ctxCheckAlive)
+	result, err := s.statelessValidator.BOLDExecutionSpawners()[0].GetMachineHashesWithStepSize(
+		ctx,
+		cfg.AssertionMetadata.WasmModuleRoot,
+		input,
+		uint64(cfg.MachineStartIndex),
+		uint64(cfg.StepSize),
+		cfg.NumDesiredHashes,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -431,9 +432,12 @@ func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit l2st
 		return gs, fmt.Errorf("could not get limitMsgCount at %d: %w", limit, err)
 	}
 	if msgNum >= limitMsgCount {
-		result, err := s.statelessValidator.InboxStreamer().ResultAtCount(arbutil.MessageIndex(limitMsgCount))
-		if err != nil {
-			return gs, fmt.Errorf("could not get global state at limitMsgCount %d: %w", limitMsgCount, err)
+		result := &execution.MessageResult{}
+		if limitMsgCount > 0 {
+			result, err = s.statelessValidator.InboxStreamer().ResultAtMessageIndex(limitMsgCount - 1)
+			if err != nil {
+				return gs, fmt.Errorf("could not get global state at limitMsgCount %d: %w", limitMsgCount, err)
+			}
 		}
 		gs = option.Some(validator.GoGlobalState{
 			BlockHash:  result.BlockHash,
@@ -443,40 +447,6 @@ func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit l2st
 		})
 	}
 	return gs, nil
-}
-
-// CtxWithCheckAlive Creates a context with a check alive routine that will
-// cancel the context if the check alive routine fails.
-func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (context.Context, context.CancelFunc) {
-	// Create a context that will cancel if the check alive routine fails.
-	// This is to ensure that we do not have the validator froze indefinitely if
-	// the execution run is no longer alive.
-	ctx, cancel := context.WithCancel(ctxIn)
-	go func() {
-		// Call cancel so that the calling function is canceled if the check alive
-		// routine fails/returns.
-		defer cancel()
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				// Create a context with a timeout, so that the check alive routine does
-				// not run indefinitely.
-				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctx, 5*time.Second)
-				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
-				if err != nil {
-					executionNodeOfflineGauge.Inc(1)
-					cancelCheckAliveWithTimeout()
-					return
-				}
-				cancelCheckAliveWithTimeout()
-			}
-		}
-	}()
-	return ctx, cancel
 }
 
 // CollectProof collects a one-step proof at a message number and OpcodeIndex.
@@ -525,14 +495,10 @@ func (s *BOLDStateProvider) CollectProof(
 		"machineIndex", machineIndex,
 		"startState", fmt.Sprintf("%+v", input.StartState),
 	)
-	wasmModRoot := assertionMetadata.WasmModuleRoot
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input, true).Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer execRun.Close()
-	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
-	defer cancelCheckAlive()
-	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
-	return oneStepProofPromise.Await(ctxCheckAlive)
+	return s.statelessValidator.BOLDExecutionSpawners()[0].GetProofAt(
+		ctx,
+		assertionMetadata.WasmModuleRoot,
+		input,
+		uint64(machineIndex),
+	)
 }

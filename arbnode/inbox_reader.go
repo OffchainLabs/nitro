@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -119,17 +120,28 @@ func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *h
 func (r *InboxReader) Start(ctxIn context.Context) error {
 	r.StopWaiter.Start(ctxIn, r)
 	hadError := false
-	r.CallIteratively(func(ctx context.Context) time.Duration {
-		err := r.run(ctx, hadError)
-		if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
-			log.Warn("error reading inbox", "err", err)
-			hadError = true
-		} else {
-			hadError = false
-		}
-		return time.Second
-	})
-
+	runChan := make(chan struct{}, 1)
+	err := stopwaiter.CallIterativelyWith[struct{}](
+		&r.StopWaiterSafe,
+		func(ctx context.Context, ignored struct{}) time.Duration {
+			err := r.run(ctx, hadError)
+			if errors.Is(err, broadcastclient.TransactionStreamerBlockCreationStopped) {
+				log.Info("stopping block creation in inbox reader because transaction streamer has stopped")
+				close(runChan)
+			}
+			if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
+				log.Warn("error reading inbox", "err", err)
+				hadError = true
+			} else {
+				hadError = false
+			}
+			return time.Second
+		},
+		runChan,
+	)
+	if err != nil {
+		return err
+	}
 	// Ensure we read the init message before other things start up
 	for i := 0; ; i++ {
 		batchCount, err := r.tracker.GetBatchCount()

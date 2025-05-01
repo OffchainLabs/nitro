@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
 
@@ -156,7 +156,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 }
 
 func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	maxNumBlocks := uint64(1 << 14)
@@ -290,7 +290,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 
 		// Check if we agree with the last posted batch to the inbox.
-		result, err := l2node.TxStreamer.ResultAtCount(totalMessageCount)
+		result, err := l2node.TxStreamer.ResultAtMessageIndex(totalMessageCount - 1)
 		Require(t, err)
 		_ = result
 
@@ -358,6 +358,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	sconf := setup.RollupStackConfig{
 		UseMockBridge:          false,
 		UseMockOneStepProver:   false,
+		UseBlobs:               true,
 		MinimumAssertionPeriod: 0,
 	}
 
@@ -380,11 +381,12 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		l2node.InboxReader,
 		l2node.InboxTracker,
 		l2node.TxStreamer,
-		l2node.Execution,
+		l2node.ExecutionRecorder,
 		l2node.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		valnode.TestValidationConfig.Wasm.RootPath,
 	)
 	Require(t, err)
 	Require(t, stateless.Start(ctx))

@@ -59,6 +59,8 @@ func main() {
 	}
 
 	if config.Metrics {
+		log.Info("Enabling metrics collection")
+		metrics.Enable()
 		go metrics.CollectProcessMetrics(config.MetricsServer.UpdateInterval)
 		exp.Setup(fmt.Sprintf("%v:%v", config.MetricsServer.Addr, config.MetricsServer.Port))
 	}
