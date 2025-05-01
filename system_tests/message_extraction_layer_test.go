@@ -116,8 +116,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithBoldDeployment().
-		WithDelayBuffer(0)
+		WithBoldDeployment()
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
@@ -516,7 +515,7 @@ func forceBlobSequencerMessageBatchPosting(
 	Require(t, err)
 	inner := &types.BlobTx{
 		Nonce: nonce,
-		Gas:   4_000_000,
+		Gas:   1_000_000,
 		To:    seqInboxAddr,
 		Value: uint256.MustFromBig(big.NewInt(0)),
 		Data:  fullCalldata,

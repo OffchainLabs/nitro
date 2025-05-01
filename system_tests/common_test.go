@@ -285,7 +285,6 @@ func L3NitroConfigDefaultTest(t *testing.T) *NitroConfig {
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
-		CancunTime:          0,
 		ArbitrumChainParams: chaininfo.ArbitrumDevTestParams(),
 		Clique: &params.CliqueConfig{
 			Period: 0,

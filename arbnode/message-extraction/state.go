@@ -19,6 +19,7 @@ type State struct {
 	ParentChainBlockHash         common.Hash
 	ParentChainPreviousBlockHash common.Hash
 	MessageAccumulator           common.Hash
+	DelayedMessageAccumulator    common.Hash
 	MsgCount                     uint64
 	DelayedMessagesRead          uint64
 	DelayedMessagedSeen          uint64
