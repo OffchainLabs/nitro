@@ -156,18 +156,11 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header,
-		txes,
-		delayedMessagesRead,
-		lastBlockHeader,
-		statedb,
-		chainContext,
-		hooks,
-		isMsgForPrefetch,
-		runMode,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runMode,
 	)
 }
 
+// A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
 	l1Header *arbostypes.L1IncomingMessageHeader,
 	txes types.Transactions,
@@ -323,9 +316,7 @@ func ProduceBlockAdvanced(
 
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
-
 			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
-
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
 				&gasPool,
