@@ -28,12 +28,20 @@ var (
 	ErrInvalidParentChainBlock = errors.New("invalid parent chain block")
 )
 
+type SequencerBatchParser interface {
+	LookupBatchesInRange(
+		ctx context.Context,
+		startBlock *big.Int,
+		endBlock *big.Int,
+	) ([]*arbnode.SequencerInboxBatch, error)
+}
+
 type DelayedMessageParser interface {
 	LookupMessagesInRange(
 		ctx context.Context,
 		startBlock *big.Int,
 		endBlock *big.Int,
-		fetchMessage func(uint64) ([]byte, error),
+		fetchMessage arbostypes.FallibleBatchFetcher,
 	) ([]*arbnode.DelayedInboxMessage, error)
 }
 
@@ -64,6 +72,7 @@ func ExtractMessages(
 	inputState *meltypes.State,
 	parentChainBlock *types.Block,
 	dataProviders []daprovider.Reader,
+	sequencerBatchParser SequencerBatchParser,
 	delayedMsgParser DelayedMessageParser,
 	delayedMsgDatabase DelayedMessageDatabase,
 	eventParser BatchEventParser,
@@ -91,13 +100,15 @@ func ExtractMessages(
 	// included in the parent chain block.
 	blockNum := parentChainBlock.Number()
 
-	batches, err := parseBatchesFromBlock(
+	batches, err := sequencerBatchParser.LookupBatchesInRange(
 		ctx,
-		state,
-		parentChainBlock,
-		eventParser,
-		receiptFetcher,
-		batchDeliveredEventID,
+		blockNum,
+		blockNum,
+		// state,
+		// parentChainBlock,
+		// eventParser,
+		// receiptFetcher,
+		// batchDeliveredEventID,
 	)
 	if err != nil {
 		return nil, nil, nil, err

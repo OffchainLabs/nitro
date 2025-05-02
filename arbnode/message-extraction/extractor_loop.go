@@ -6,9 +6,35 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/arbnode"
+	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/staker/bold"
 )
+
+var batchDeliveredID common.Hash
+
+func init() {
+	var err error
+	sequencerBridgeABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
+}
+
+type BatchSerializer interface {
+	Serialize(
+		ctx context.Context,
+		batch *arbnode.SequencerInboxBatch,
+	) ([]byte, error)
+}
+
+func (m *MessageExtractor) Serialize(ctx context.Context, batch *arbnode.SequencerInboxBatch) ([]byte, error) {
+	return batch.Serialize(ctx, m.l1Reader.Client())
+}
 
 func (m *MessageExtractor) CurrentFSMState() FSMState {
 	return m.fsm.Current().State
@@ -83,10 +109,18 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 			}
 			return err
 		}
-		postState, msgs, delayedMsgs, err := m.extractMessages(
+		postState, msgs, delayedMsgs, err := extractionfunction.ExtractMessages(
 			ctx,
 			preState,
 			parentChainBlock,
+			m.dataProviders,
+			m.sequencerInbox,
+			m.delayedBridge,
+			m.melDB,
+			m.sequencerInboxBindings,
+			m.l1Reader.Client(),
+			m,
+			batchDeliveredID,
 		)
 		if err != nil {
 			return err
