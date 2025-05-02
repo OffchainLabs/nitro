@@ -40,8 +40,8 @@ func TestDimLogBalanceCold(t *testing.T) {
 	balanceLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "BALANCE")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: ColdAccountAccessCost,
-		Computation:           WarmStorageReadCost,
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
 		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
@@ -72,8 +72,8 @@ func TestDimLogBalanceWarm(t *testing.T) {
 	balanceLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "BALANCE")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: WarmStorageReadCost,
-		Computation:           WarmStorageReadCost,
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
 		StateAccess:           0,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
@@ -109,8 +109,8 @@ func TestDimLogExtCodeSizeCold(t *testing.T) {
 	extCodeSizeLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODESIZE")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: ColdAccountAccessCost,
-		Computation:           WarmStorageReadCost,
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
 		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
@@ -141,8 +141,8 @@ func TestDimLogExtCodeSizeWarm(t *testing.T) {
 	extCodeSizeLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODESIZE")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: WarmStorageReadCost,
-		Computation:           WarmStorageReadCost,
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
 		StateAccess:           0,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
@@ -178,8 +178,8 @@ func TestDimLogExtCodeHashCold(t *testing.T) {
 	extCodeHashLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODEHASH")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: ColdAccountAccessCost,
-		Computation:           WarmStorageReadCost,
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
 		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
@@ -210,8 +210,8 @@ func TestDimLogExtCodeHashWarm(t *testing.T) {
 	extCodeHashLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODEHASH")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: WarmStorageReadCost,
-		Computation:           WarmStorageReadCost,
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
 		StateAccess:           0,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
@@ -251,7 +251,7 @@ func TestDimLogSloadCold(t *testing.T) {
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: ColdSloadCost,
-		Computation:           WarmStorageReadCost,
+		Computation:           params.WarmStorageReadCostEIP2929,
 		StateAccess:           ColdMinusWarmSloadCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
@@ -283,8 +283,8 @@ func TestDimLogSloadWarm(t *testing.T) {
 	sloadLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SLOAD")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: WarmStorageReadCost,
-		Computation:           WarmStorageReadCost,
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
 		StateAccess:           0,
 		StateGrowth:           0,
 		HistoryGrowth:         0,

@@ -1,6 +1,7 @@
 package arbtest
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -47,8 +48,8 @@ func TestDimLogCallColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 
-	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	receipt := callOnContractWithOneArg(t, builder, auth, caller.CallCalleeColdEmptyCodeZeroValue, emptyAccountAddress)
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, noCodeVirginAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
@@ -56,7 +57,7 @@ func TestDimLogCallColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -77,7 +78,31 @@ func TestDimLogCallColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 // the state access to be 2500, the state growth to be 0,
 // the history growth to be 0, and the state growth refund to be 0
 func TestDimLogCallColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
-	t.Fail()
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
 }
 
 // this test is the case where we do a CALL to a target contract
@@ -95,10 +120,12 @@ func TestDimLogCallColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
-
-	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	receipt := callOnContractWithOneArg(t, builder, auth, caller.CallCalleeColdEmptyCodePositiveValue, emptyAccountAddress)
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	// prefund the caller with some funds
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, noCodeVirginAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
@@ -106,7 +133,7 @@ func TestDimLogCallColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + params.CallValueTransferGas - params.CallStipend + params.CallNewAccountGas,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas - params.CallStipend,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
 		StateGrowth:           params.CallNewAccountGas,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -127,7 +154,31 @@ func TestDimLogCallColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
 // the state access to be 2500, the state growth to be 0,
 // the history growth to be 0, and the state growth refund to be 0
 func TestDimLogCallColdPayingNoCodeFundedMemUnchanged(t *testing.T) {
-	t.Fail()
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	// prefund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	noCodeFundedAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, noCodeFundedAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
 }
 
 // this test is the case where we do a CALL to a target contract
@@ -141,7 +192,34 @@ func TestDimLogCallColdPayingNoCodeFundedMemUnchanged(t *testing.T) {
 // the computation to be 100+6 for the warm storage read cost
 // the state access to be 2500+9000-2300, the state growth to be 25000,
 // the history growth to be 0, and the state growth refund to be 0
-func TestDimLogCallColdPayingNoCodeVirginMemExpansion(t *testing.T) { t.Fail() }
+func TestDimLogCallColdPayingNoCodeVirginMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	// prefund the caller with some funds
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + params.CallValueTransferGas - params.CallStipend + params.CallNewAccountGas + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           params.CallNewAccountGas,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
 
 // this test is the case where we do a CALL to a target contract
 // that has some value in the account already, but no code, e.g. it's an EOA
@@ -154,7 +232,35 @@ func TestDimLogCallColdPayingNoCodeVirginMemExpansion(t *testing.T) { t.Fail() }
 // the computation to be 100+6 for the warm storage read cost
 // the state access to be 2500+9000-2300, the state growth to be 0,
 // the history growth to be 0, and the state growth refund to be 0
-func TestDimLogCallColdPayingNoCodeFundedMemExpansion(t *testing.T) { t.Fail() }
+func TestDimLogCallColdPayingNoCodeFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	// prefund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	noCodeFundedAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, noCodeFundedAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + params.CallValueTransferGas - params.CallStipend + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
 
 // this test is the case where we do a CALL to a target contract
 // that does not have any code or value already in the account
@@ -170,10 +276,10 @@ func TestDimLogCallWarmNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 
-	receipt := callOnContractWithOneArg(t, builder, auth, caller.CallCalleeWarmEmptyCodeZeroValue, emptyAccountAddress)
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, noCodeVirginAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
@@ -201,8 +307,31 @@ func TestDimLogCallWarmNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 // the state access to be 0, the state growth to be 0,
 // the history growth to be 0, and the state growth refund to be 0
 func TestDimLogCallWarmNoTransferNoCodeVirginMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
 
-	t.Fail()
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
 }
 
 // this test is the case where we do a CALL to a target contract
@@ -220,10 +349,14 @@ func TestDimLogCallWarmPayingNoCodeVirginMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 
-	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	receipt := callOnContractWithOneArg(t, builder, auth, caller.CallCalleeWarmEmptyCodePositiveValue, emptyAccountAddress)
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	// prefund the caller with some funds
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, noCodeVirginAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
@@ -251,7 +384,36 @@ func TestDimLogCallWarmPayingNoCodeVirginMemUnchanged(t *testing.T) {
 // the computation to be 100 for the warm storage read cost
 // the state access to be 9000-2300, the state growth to be 0,
 // the history growth to be 0, and the state growth refund to be 0
-func TestDimLogCallWarmPayingNoCodeFundedMemUnchanged(t *testing.T) { t.Fail() }
+func TestDimLogCallWarmPayingNoCodeFundedMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+
+	noCodeFundedAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	// prefund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// prefund the callee with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, noCodeFundedAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
 
 // this test is the case where we do a CALL to a target contract
 // that does not have any code or value already in the account
@@ -264,7 +426,37 @@ func TestDimLogCallWarmPayingNoCodeFundedMemUnchanged(t *testing.T) { t.Fail() }
 // the computation to be 100+6 for the warm storage read cost
 // the state access to be 9000-2300, the state growth to be 25000,
 // the history growth to be 0, and the state growth refund to be 0
-func TestDimLogCallWarmPayingNoCodeVirginMemExpansion(t *testing.T) { t.Fail() }
+func TestDimLogCallWarmPayingNoCodeVirginMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	// prefund the caller with some funds
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas - params.CallStipend + params.CallNewAccountGas + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           params.CallNewAccountGas,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+
+}
 
 // this test is the case where we do a CALL to a target contract
 // that has some value in the account already, but no code, e.g. it's an EOA
@@ -277,7 +469,37 @@ func TestDimLogCallWarmPayingNoCodeVirginMemExpansion(t *testing.T) { t.Fail() }
 // the computation to be 100+6 for the warm storage read cost
 // the state access to be 9000-2300, the state growth to be 0,
 // the history growth to be 0, and the state growth refund to be 0
-func TestDimLogCallWarmPayingNoCodeFundedMemExpansion(t *testing.T) { t.Fail() }
+func TestDimLogCallWarmPayingNoCodeFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+
+	noCodeFundedAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	// prefund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// prefund the callee with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, noCodeFundedAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas - params.CallStipend + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
 
 // this test is the case where we do a CALL to a target contract that does have code
 // the contract is cold in the access list, we send no eth value with the call
@@ -297,7 +519,7 @@ func TestDimLogCallColdNoTransferContractFundedMemUnchanged(t *testing.T) {
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
 
-	receipt := callOnContractWithOneArg(t, builder, auth, caller.CallCalleeColdCodeZeroValue, calleeAddress)
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, calleeAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
@@ -305,7 +527,7 @@ func TestDimLogCallColdNoTransferContractFundedMemUnchanged(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -324,7 +546,33 @@ func TestDimLogCallColdNoTransferContractFundedMemUnchanged(t *testing.T) {
 // the computation to be 100+6 for the warm storage read cost
 // the state access to be 2500, the state growth to be 0,
 // the history growth to be 0, and the state growth refund to be 0
-func TestDimLogCallColdNoTransferContractFundedMemExpansion(t *testing.T) { t.Fail() }
+func TestDimLogCallColdNoTransferContractFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 22468
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
 
 // this test is the case where we do a CALL to a target contract
 // that has code at the target address already. We send some eth value
@@ -336,7 +584,37 @@ func TestDimLogCallColdNoTransferContractFundedMemExpansion(t *testing.T) { t.Fa
 // the computation to be 100+6 for the warm storage read cost
 // the state access to be 9000-2300, the state growth to be 0,
 // the history growth to be 0, and the state growth refund to be 0
-func TestDimLogCallColdPayingContractFundedMemExpansion(t *testing.T) { t.Fail() }
+func TestDimLogCallColdPayingContractFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
+	// fund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// fund the callee with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + expectedMemExpansionCost + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 22468
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
 
 // this test is the case where we do a CALL to a target contract
 // that has code at the target address already. We send some eth value
@@ -356,7 +634,7 @@ func TestDimLogCallWarmNoTransferContractFundedMemUnchanged(t *testing.T) {
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
 
-	receipt := callOnContractWithOneArg(t, builder, auth, caller.CallCalleeWarmCodeZeroValue, calleeAddress)
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, calleeAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
@@ -384,7 +662,36 @@ func TestDimLogCallWarmNoTransferContractFundedMemUnchanged(t *testing.T) {
 // the computation to be 100+6 for the warm storage read cost
 // the state access to be 0, the state growth to be 0,
 // the history growth to be 0, and the state growth refund to be 0
-func TestDimLogCallWarmNoTransferContractFundedMemExpansion(t *testing.T) { t.Fail() }
+func TestDimLogCallWarmNoTransferContractFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
+
+	// fund the callee address with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 22468
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
 
 // this test is the case where we do a CALL to a target contract
 // that has code at the target address already. We send some eth value
@@ -401,10 +708,15 @@ func TestDimLogCallWarmPayingContractFundedMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
 
-	receipt := callOnContractWithOneArg(t, builder, auth, caller.CallCalleeWarmCodePositiveValue, calleeAddress)
+	// prefund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// prefund the callee with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, calleeAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
@@ -434,36 +746,192 @@ func TestDimLogCallWarmPayingContractFundedMemUnchanged(t *testing.T) {
 // the computation to be 100+6 for the warm storage read cost
 // the state access to be 9000-2300, the state growth to be 0,
 // the history growth to be 0, and the state growth refund to be 0
-func TestDimLogCallWarmPayingContractFundedMemExpansion(t *testing.T) { t.Fail() }
+func TestDimLogCallWarmPayingContractFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
+
+	// fund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// fund the callee address with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 22468
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
 
 // Missing permutation: Cold, NoTransfer, NoCode, Funded, MemUnchanged
 func TestDimLogCallColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
-	// This test covers: Cold access, NoTransfer, NoCode (EOA), Funded account, MemUnchanged
-	t.Fail()
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	//prefund callee address
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
 }
 
 // Missing permutation: Cold, NoTransfer, NoCode, Funded, MemExpansion
 func TestDimLogCallColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
-	// This test covers: Cold access, NoTransfer, NoCode (EOA), Funded account, MemExpansion
-	t.Fail()
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	//prefund callee address
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
 }
 
 // Missing permutation: Warm, NoTransfer, NoCode, Funded, MemUnchanged
 func TestDimLogCallWarmNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
-	// This test covers: Warm access, NoTransfer, NoCode (EOA), Funded account, MemUnchanged
-	t.Fail()
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	//prefund callee address
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
 }
 
 // Missing permutation: Warm, NoTransfer, NoCode, Funded, MemExpansion
 func TestDimLogCallWarmNoTransferNoCodeFundedMemExpansion(t *testing.T) {
-	// This test covers: Warm access, NoTransfer, NoCode (EOA), Funded account, MemExpansion
-	t.Fail()
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	//prefund callee address
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
 }
 
 // Missing permutation: Cold, Paying, Contract, Funded, MemUnchanged
 func TestDimLogCallColdPayingContractFundedMemUnchanged(t *testing.T) {
-	// This test covers: Cold access, Paying, Contract, Funded account, MemUnchanged
-	t.Fail()
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
+
+	//fund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// fund the callee address with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 22468
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
 }
 
 // #########################################################################################################
@@ -472,7 +940,7 @@ func TestDimLogCallColdPayingContractFundedMemUnchanged(t *testing.T) {
 // #########################################################################################################
 // #########################################################################################################
 
-// Todo: implement all callcode tests by copying call lol
-func TestDimLogCallCode(t *testing.T) {
-	t.Fail()
-}
+//// Todo: implement all callcode tests by copying call lol
+//func TestDimLogCallCode(t *testing.T) {
+//	t.Fail()
+//}
