@@ -20,8 +20,6 @@ type TraceResult = native.ExecutionResult
 const (
 	ColdMinusWarmAccountAccessCost = params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929
 	ColdMinusWarmSloadCost         = params.ColdSloadCostEIP2929 - params.WarmStorageReadCostEIP2929
-	ColdAccountAccessCost          = params.ColdAccountAccessCostEIP2929
-	WarmStorageReadCost            = params.WarmStorageReadCostEIP2929
 )
 
 // #########################################################################################################

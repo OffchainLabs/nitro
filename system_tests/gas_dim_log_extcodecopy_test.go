@@ -3,6 +3,7 @@ package arbtest
 import (
 	"testing"
 
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
 )
 
@@ -99,8 +100,8 @@ func TestDimLogExtCodeCopyColdMemUnchanged(t *testing.T) {
 	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: ColdAccountAccessCost + extCodeCopyMinimumWordCost,
-		Computation:           WarmStorageReadCost,
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + extCodeCopyMinimumWordCost,
+		Computation:           params.WarmStorageReadCostEIP2929,
 		StateAccess:           ColdMinusWarmAccountAccessCost + extCodeCopyMinimumWordCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
@@ -137,8 +138,8 @@ func TestDimLogExtCodeCopyColdMemExpansion(t *testing.T) {
 	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: ColdAccountAccessCost + extCodeCopyMemoryExpansionCost + extCodeCopyMinimumWordCost,
-		Computation:           WarmStorageReadCost + extCodeCopyMemoryExpansionCost,
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + extCodeCopyMemoryExpansionCost + extCodeCopyMinimumWordCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + extCodeCopyMemoryExpansionCost,
 		StateAccess:           ColdMinusWarmAccountAccessCost + extCodeCopyMinimumWordCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
@@ -173,8 +174,8 @@ func TestDimLogExtCodeCopyWarmMemUnchanged(t *testing.T) {
 	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: WarmStorageReadCost + extCodeCopyMinimumWordCost,
-		Computation:           WarmStorageReadCost,
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + extCodeCopyMinimumWordCost,
+		Computation:           params.WarmStorageReadCostEIP2929,
 		StateAccess:           extCodeCopyMinimumWordCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
@@ -211,8 +212,8 @@ func TestDimLogExtCodeCopyWarmMemExpansion(t *testing.T) {
 	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: WarmStorageReadCost + extCodeCopyMemoryExpansionCost + extCodeCopyMinimumWordCost,
-		Computation:           WarmStorageReadCost + extCodeCopyMemoryExpansionCost,
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + extCodeCopyMemoryExpansionCost + extCodeCopyMinimumWordCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + extCodeCopyMemoryExpansionCost,
 		StateAccess:           extCodeCopyMinimumWordCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
