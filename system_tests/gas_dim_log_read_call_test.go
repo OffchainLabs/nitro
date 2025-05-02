@@ -53,7 +53,7 @@ func TestDimLogDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -127,7 +127,7 @@ func TestDimLogDelegateCallColdContractMemUnchanged(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -208,7 +208,7 @@ func TestDimLogDelegateCallColdNoCodeMemExpansion(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
 		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -288,7 +288,7 @@ func TestDimLogDelegateCallColdContractMemExpansion(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
 		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -365,7 +365,7 @@ func TestDimLogStaticCallColdNoCodeMemUnchanged(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -432,7 +432,7 @@ func TestDimLogStaticCallColdContractMemUnchanged(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -502,7 +502,7 @@ func TestDimLogStaticCallColdNoCodeMemExpansion(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
 		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -577,7 +577,7 @@ func TestDimLogStaticCallColdContractMemExpansion(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
 		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
-		StateAccess:           params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
