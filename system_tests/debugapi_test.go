@@ -464,7 +464,7 @@ func TestPrestateTracerRegistersArbitrumStorage(t *testing.T) {
 	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), builder.L2.Client)
 	Require(t, err, "could not bind ArbOwner contract")
 
-	// Schedule a testTracer upgrade
+	// Schedule a noop upgrade
 	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, 1, 1)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
