@@ -67,6 +67,10 @@ func (con ArbOwner) AddNativeTokenOwner(c ctx, evm mech, newOwner addr) error {
 		return fmt.Errorf(nativeTokenNotSupportedArbOSVersion, c.State.ArbOSVersion())
 	}
 
+	if !evm.ChainConfig().ArbNativeTokenOwnerEnabled(evm.Context.Time) {
+		return errors.New("native token owners not enabled in this chain")
+	}
+
 	return c.State.NativeTokenOwners().Add(newOwner)
 }
 
