@@ -24,7 +24,7 @@ RUN apt-get update && \
 FROM scratch AS brotli-library-export
 COPY --from=brotli-library-builder /workspace/install/ /
 
-FROM node:18-bookworm-slim AS contracts-builder
+FROM node:20-bookworm-slim AS contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
 RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup
