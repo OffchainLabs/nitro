@@ -114,6 +114,17 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	if err != nil {
 		return nil, err
 	}
+
+	if c.State.ArbOSVersion() < params.ArbosVersion_41 && value.BitLen() != 0 {
+		numOwners, err := c.State.NativeTokenOwners().Size()
+		if err != nil {
+			return nil, err
+		}
+		if numOwners > 0 {
+			return nil, errors.New("not allowed to send value when native token owners exist")
+		}
+	}
+
 	bigL1BlockNum := arbmath.UintToBig(l1BlockNum)
 
 	arbosState := c.State
