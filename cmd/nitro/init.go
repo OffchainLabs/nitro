@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
 
@@ -51,6 +51,34 @@ import (
 )
 
 var notFoundError = errors.New("file not found")
+
+func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
+	cleanUpTmp := func() {}
+	if initConfig.DownloadPath == "" {
+		tmpPath := filepath.Join(stack.InstanceDir(), "tmp")
+		_, err := os.Stat(tmpPath)
+		if err == nil {
+			return "", cleanUpTmp, fmt.Errorf("tmp directory for downloading init file already exists")
+		}
+		if !os.IsNotExist(err) {
+			return "", cleanUpTmp, fmt.Errorf("error checking if tmp directory for downloading init file already exists: %w", err)
+		}
+		if err := os.MkdirAll(tmpPath, os.ModePerm); err != nil {
+			return "", cleanUpTmp, fmt.Errorf("failed to create tmp directory for downloading init file: %w", err)
+		}
+		initConfig.DownloadPath = tmpPath
+		cleanUpTmp = func() {
+			if err := os.RemoveAll(tmpPath); err != nil {
+				log.Error("Failed to clean up tmp directory after downloading init file", "err", err)
+			}
+		}
+	}
+	initFile, err := downloadInit(ctx, initConfig)
+	if err != nil {
+		return "", cleanUpTmp, err
+	}
+	return initFile, cleanUpTmp, nil
+}
 
 func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, error) {
 	if initConfig.Url == "" {
@@ -618,7 +646,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return nil, nil, err
 	}
 
-	initFile, err := downloadInit(ctx, &config.Init)
+	initFile, cleanUpTmp, err := initializeAndDownloadInit(ctx, &config.Init, stack)
+	defer cleanUpTmp()
 	if err != nil {
 		return nil, nil, err
 	}

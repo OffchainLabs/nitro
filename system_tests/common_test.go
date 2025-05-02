@@ -1,5 +1,5 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -81,6 +81,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -110,6 +111,7 @@ type TestClient struct {
 	Stack         *node.Node
 	ConsensusNode *arbnode.Node
 	ExecNode      *gethexec.ExecutionNode
+	ClientWrapper *ClientWrapper
 
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
@@ -167,23 +169,6 @@ func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transactio
 	return EnsureTxSucceededWithTimeout(tc.ctx, tc.Client, transaction, timeout)
 }
 
-var TestCachingConfig = gethexec.CachingConfig{
-	Archive:                             false,
-	BlockCount:                          128,
-	BlockAge:                            30 * time.Minute,
-	TrieTimeLimit:                       time.Hour,
-	TrieDirtyCache:                      1024,
-	TrieCleanCache:                      600,
-	SnapshotCache:                       400,
-	DatabaseCache:                       2048,
-	SnapshotRestoreGasLimit:             300_000_000_000,
-	MaxNumberOfBlocksToSkipStateSaving:  0,
-	MaxAmountOfGasToSkipStateSaving:     0,
-	StylusLRUCacheCapacity:              0,
-	DisableStylusCacheMetricsCollection: true,
-	StateScheme:                         env.GetTestStateScheme(),
-}
-
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
@@ -213,7 +198,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 
 func ExecConfigDefaultNonSequencerTest(t *testing.T) *gethexec.Config {
 	config := gethexec.ConfigDefault
-	config.Caching = TestCachingConfig
+	config.Caching.StateScheme = env.GetTestStateScheme()
 	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
@@ -227,7 +212,7 @@ func ExecConfigDefaultNonSequencerTest(t *testing.T) *gethexec.Config {
 
 func ExecConfigDefaultTest(t *testing.T) *gethexec.Config {
 	config := gethexec.ConfigDefault
-	config.Caching = TestCachingConfig
+	config.Caching.StateScheme = env.GetTestStateScheme()
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
@@ -266,6 +251,7 @@ type NodeBuilder struct {
 	wasmCacheTag                uint32
 	delayBufferThreshold        uint64
 	useFreezer                  bool
+	withL1ClientWrapper         bool
 
 	// Created nodes
 	L1 *TestClient
@@ -392,6 +378,15 @@ func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
 	return b
 }
 
+// WithL1ClientWrapper creates a ClientWrapper for the L1 RPC client before passing it to the L2 node.
+func (b *NodeBuilder) WithL1ClientWrapper(t *testing.T) *NodeBuilder {
+	if !b.withL1 {
+		Fatal(t, "WithL1ClientWrapper only works when L1 is enabled")
+	}
+	b.withL1ClientWrapper = true
+	return b
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
@@ -428,7 +423,7 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack = createTestL1BlockChain(t, b.L1Info)
+	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	b.addresses, b.initMessage = deployOnParentChain(
@@ -507,13 +502,13 @@ func buildOnParentChain(
 	Require(t, execConfig.Validate())
 	execConfigToBeUsedInConfigFetcher := execConfig
 	execConfigFetcher := func() *gethexec.Config { return execConfigToBeUsedInConfigFetcher }
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher, 0)
 	Require(t, err)
 
 	fatalErrChan := make(chan error, 10)
 	chainTestClient.ConsensusNode, err = arbnode.CreateNodeFullExecutionClient(
 		ctx, chainTestClient.Stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainTestClient.Client,
-		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil)
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil, valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 
 	err = chainTestClient.ConsensusNode.Start(ctx)
@@ -625,19 +620,19 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	var chainDb ethdb.Database
 	var arbDb ethdb.Database
 	var blockchain *core.BlockChain
-	b.L2Info, b.L2.Stack, chainDb, arbDb, blockchain = createL2BlockChain(
-		t, b.L2Info, b.dataDir, b.chainConfig, b.execConfig, b.wasmCacheTag, b.useFreezer)
+	b.L2Info, b.L2.Stack, chainDb, arbDb, blockchain = createNonL1BlockChainWithStackConfig(
+		t, b.L2Info, b.dataDir, b.chainConfig, nil, b.l2StackConfig, b.execConfig, b.wasmCacheTag, b.useFreezer)
 
 	Require(t, b.execConfig.Validate())
 	execConfig := b.execConfig
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, 0)
 	Require(t, err)
 
 	fatalErrChan := make(chan error, 10)
 	b.L2.ConsensusNode, err = arbnode.CreateNodeFullExecutionClient(
 		b.ctx, b.L2.Stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(),
-		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil)
+		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 
 	// Give the node an init message
@@ -680,11 +675,11 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.execConfig, b.wasmCacheTag, b.useFreezer)
 
 	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher, 0)
 	Require(t, err)
 
 	feedErrChan := make(chan error, 10)
-	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, big.NewInt(1337), nil)
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, big.NewInt(1337), nil, b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 
 	Require(t, currentNode.Start(b.ctx))
@@ -1208,7 +1203,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	configByValidationNode(nodeConfig, valStack)
 }
 
-func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
+func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
@@ -1261,11 +1256,16 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 
 	Require(t, stack.Start())
 
-	rpcClient := stack.Attach()
+	var rpcClient rpc.ClientInterface = stack.Attach()
+	var clientWrapper *ClientWrapper
+	if withClientWrapper {
+		clientWrapper = NewClientWrapper(rpcClient, l1info)
+		rpcClient = clientWrapper
+	}
 
 	l1Client := ethclient.NewClient(rpcClient)
 
-	return l1info, l1Client, l1backend, stack
+	return l1info, l1Client, l1backend, stack, clientWrapper
 }
 
 func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
@@ -1385,6 +1385,7 @@ func deployOnParentChain(
 			setup.RollupStackConfig{
 				UseMockBridge:          false,
 				UseMockOneStepProver:   false,
+				UseBlobs:               chainSupportsBlobs,
 				MinimumAssertionPeriod: 0,
 			},
 		)
@@ -1422,12 +1423,6 @@ func deployOnParentChain(
 	parentChainInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 	initMessage := getInitMessage(ctx, t, parentChainClient, addresses)
 	return addresses, initMessage
-}
-
-func createL2BlockChain(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, execConfig *gethexec.Config, wasmCacheTag uint32, useFreezer bool,
-) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	return createNonL1BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil, nil, execConfig, wasmCacheTag, useFreezer)
 }
 
 func createNonL1BlockChainWithStackConfig(
@@ -1580,14 +1575,14 @@ func Create2ndNodeWithConfig(
 
 	Require(t, nodeConfig.Validate())
 	configFetcher := func() *gethexec.Config { return execConfig }
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher, 0)
 	Require(t, err)
 
 	var currentNode *arbnode.Node
 	if useExecutionClientOnly {
-		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
+		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, valnodeConfig.Wasm.RootPath)
 	} else {
-		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
+		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, valnodeConfig.Wasm.RootPath)
 	}
 
 	Require(t, err)
@@ -1833,11 +1828,11 @@ func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
 }
 
 func TestMain(m *testing.M) {
-	logLevelEnv := os.Getenv("TEST_LOGLEVEL")
-	if logLevelEnv != "" {
-		logLevel, err := strconv.ParseInt(logLevelEnv, 10, 32)
+	flag.Parse()
+	if *testflag.LogLevelFlag != "" {
+		logLevel, err := strconv.ParseInt(*testflag.LogLevelFlag, 10, 32)
 		if err != nil || logLevel > int64(log.LevelCrit) {
-			log.Warn("TEST_LOGLEVEL exists but out of bound, ignoring", "logLevel", logLevelEnv, "max", log.LvlTrace)
+			log.Warn("-test_loglevel exists but out of bound, ignoring", "logLevel", *testflag.LogLevelFlag, "max", log.LvlTrace)
 		}
 		glogger := log.NewGlogHandler(
 			log.NewTerminalHandler(io.Writer(os.Stderr), false))
@@ -1867,21 +1862,12 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 	}
 }
 
-var (
-	recordBlockInputsEnable                       = flag.Bool("recordBlockInputs.enable", true, "Whether to record block inputs as a json file")
-	recordBlockInputsWithSlug                     = flag.String("recordBlockInputs.WithSlug", "", "Slug directory for validationInputsWriter")
-	recordBlockInputsWithBaseDir                  = flag.String("recordBlockInputs.WithBaseDir", "", "Base directory for validationInputsWriter")
-	recordBlockInputsWithTimestampDirEnabled      = flag.Bool("recordBlockInputs.WithTimestampDirEnabled", true, "Whether to add timestamp directory while recording block inputs")
-	recordBlockInputsWithBlockIdInFileNameEnabled = flag.Bool("recordBlockInputs.WithBlockIdInFileNameEnabled", true, "Whether to record block inputs using test specific block_id")
-)
-
 // recordBlock writes a json file with all of the data needed to validate a block.
 //
 // This can be used as an input to the arbitrator prover to validate a block.
 func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ethdb.WasmTarget) {
 	t.Helper()
-	flag.Parse()
-	if !*recordBlockInputsEnable {
+	if !*testflag.RecordBlockInputsEnable {
 		return
 	}
 	ctx := builder.ctx
@@ -1897,13 +1883,13 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...et
 		}
 	}
 	var options []inputs.WriterOption
-	options = append(options, inputs.WithTimestampDirEnabled(*recordBlockInputsWithTimestampDirEnabled))
-	options = append(options, inputs.WithBlockIdInFileNameEnabled(*recordBlockInputsWithBlockIdInFileNameEnabled))
-	if *recordBlockInputsWithBaseDir != "" {
-		options = append(options, inputs.WithBaseDir(*recordBlockInputsWithBaseDir))
+	options = append(options, inputs.WithTimestampDirEnabled(*testflag.RecordBlockInputsWithTimestampDirEnabled))
+	options = append(options, inputs.WithBlockIdInFileNameEnabled(*testflag.RecordBlockInputsWithBlockIdInFileNameEnabled))
+	if *testflag.RecordBlockInputsWithBaseDir != "" {
+		options = append(options, inputs.WithBaseDir(*testflag.RecordBlockInputsWithBaseDir))
 	}
-	if *recordBlockInputsWithSlug != "" {
-		options = append(options, inputs.WithSlug(*recordBlockInputsWithSlug))
+	if *testflag.RecordBlockInputsWithSlug != "" {
+		options = append(options, inputs.WithSlug(*testflag.RecordBlockInputsWithSlug))
 	} else {
 		options = append(options, inputs.WithSlug(t.Name()))
 	}

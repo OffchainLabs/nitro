@@ -1,5 +1,5 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbos
 
@@ -149,20 +149,20 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if tracer == nil {
 			return func() {}
 		}
-		evm.IncrementDepth() // fake a call
 		from := p.msg.From
 		if tracer.OnEnter != nil {
 			tracer.OnEnter(evm.Depth(), byte(vm.CALL), from, *p.msg.To, p.msg.Data, p.msg.GasLimit, p.msg.Value)
 		}
+		evm.IncrementDepth() // fake a call
 
 		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingDuringEVM)
 		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 
 		return func() {
+			evm.DecrementDepth() // fake the return to the first faked call
 			if tracer.OnExit != nil {
 				tracer.OnExit(evm.Depth(), nil, p.state.Burner.Burned(), nil, false)
 			}
-			evm.DecrementDepth() // fake the return to the first faked call
 
 			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingAfterEVM)
 			p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
@@ -189,7 +189,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
 		if p.msg.From != arbosAddress {
-			return false, 0, errors.New("internal tx not from arbAddress"), nil
+			return true, 0, errors.New("internal tx not from arbAddress"), nil
 		}
 		err = ApplyInternalTxUpdate(tx, p.state, evm)
 		return true, 0, err, nil
@@ -384,6 +384,13 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		return true, usergas, nil, ticketId.Bytes()
 	case *types.ArbitrumRetryTx:
+		retryable, err := p.state.RetryableState().OpenRetryable(tx.TicketId, p.evm.Context.Time)
+		if err != nil {
+			return true, 0, err, nil
+		}
+		if retryable == nil {
+			return true, 0, fmt.Errorf("retryable with ticketId: %v not found", tx.TicketId), nil
+		}
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)

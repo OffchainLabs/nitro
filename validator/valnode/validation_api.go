@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package valnode
 
@@ -102,10 +102,6 @@ func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot c
 	a.nextId++
 	a.runs[newId] = &execRunEntry{execRun, time.Now()}
 	return newId, nil
-}
-
-func (a *ExecServerAPI) LatestWasmModuleRoot(ctx context.Context) (common.Hash, error) {
-	return a.execSpawner.LatestWasmModuleRoot().Await(ctx)
 }
 
 func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {

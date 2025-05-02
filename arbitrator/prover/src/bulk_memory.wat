@@ -1,5 +1,5 @@
 ;; Copyright 2023, Offchain Labs, Inc.
-;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 ;;
 ;; This file implements the bulk memory instructions as per the specification below
 ;; https://github.com/WebAssembly/bulk-memory-operations/blob/master/proposals/bulk-memory-operations/Overview.md

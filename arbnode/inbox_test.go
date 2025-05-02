@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -71,7 +71,12 @@ func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]
 	w.t.Error("not supported")
 	return nil
 }
-func (w *execClientWrapper) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
+func (w *execClientWrapper) SetFinalityData(
+	ctx context.Context,
+	safeFinalityData *arbutil.FinalityData,
+	finalizedFinalityData *arbutil.FinalityData,
+	validatedFinalityData *arbutil.FinalityData,
+) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
@@ -131,7 +136,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := gethexec.NewExecutionEngine(bc)
+	execEngine, err := gethexec.NewExecutionEngine(bc, 0)
 	if err != nil {
 		Fail(t, err)
 	}

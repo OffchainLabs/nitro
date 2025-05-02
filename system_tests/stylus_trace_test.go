@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -446,7 +446,7 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	args := multicallEmptyArgs()
 	// We have to load first; otherwise, Stylus optimize-out the load after a store.
 	args = multicallAppendLoad(args, key, true)
-	args = multicallAppendStore(args, key, value, true)
+	args = multicallAppendStore(args, key, value, true, false)
 
 	// Trace recursive call in wasm
 	wasmMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))

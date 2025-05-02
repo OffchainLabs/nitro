@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcastclient
 
@@ -38,6 +38,8 @@ var (
 	sourcesConnectedGauge    = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
 	sourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
 )
+
+var TransactionStreamerBlockCreationStopped = errors.New("block creation stopped in transaction streamer")
 
 type FeedConfig struct {
 	Output wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
@@ -371,6 +373,8 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 		sourcesDisconnectedGauge.Inc(1)
 		backoffDuration := bc.config().ReconnectInitialBackoff
 		flateReader := wsbroadcastserver.NewFlateReader()
+		// Log should be error instead of debug if first attempt fails
+		lastConnectionResetByPeerErrorTime := time.Now().Add(-2 * time.Minute)
 		for {
 			select {
 			case <-ctx.Done():
@@ -391,6 +395,13 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					log.Error("Server connection timed out without receiving data", "url", bc.websocketUrl, "err", err)
 				} else if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 					log.Warn("readData returned EOF", "url", bc.websocketUrl, "opcode", int(op), "err", err)
+				} else if strings.Contains(err.Error(), "connection reset by peer") {
+					logLevel := log.Warn
+					if time.Since(lastConnectionResetByPeerErrorTime) <= time.Minute {
+						logLevel = log.Error
+					}
+					lastConnectionResetByPeerErrorTime = time.Now()
+					logLevel("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				} else {
 					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				}
@@ -455,6 +466,10 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							bc.nextSeqNum = message.SequenceNumber + 1
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
+							if errors.Is(err, TransactionStreamerBlockCreationStopped) {
+								log.Info("stopping block creation in broadcast client because transaction streamer has stopped")
+								return
+							}
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}

@@ -1,5 +1,5 @@
 // Copyright 2024-2025, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
 
@@ -99,8 +99,8 @@ func newExpressLaneService(
 ) (*expressLaneService, error) {
 	var err error
 	var redisCoordinator *timeboost.RedisCoordinator
-	if seqConfig().Dangerous.Timeboost.RedisUrl != "" {
-		redisCoordinator, err = timeboost.NewRedisCoordinator(seqConfig().Dangerous.Timeboost.RedisUrl, roundTimingInfo, seqConfig().Dangerous.Timeboost.RedisUpdateEventsChannelSize)
+	if seqConfig().Timeboost.RedisUrl != "" {
+		redisCoordinator, err = timeboost.NewRedisCoordinator(seqConfig().Timeboost.RedisUrl, roundTimingInfo, seqConfig().Timeboost.RedisUpdateEventsChannelSize)
 		if err != nil {
 			return nil, fmt.Errorf("error initializing expressLaneService redis: %w", err)
 		}
@@ -184,8 +184,8 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 
 	// Log an informational warning if the message's sequence number is in the future.
 	if msg.SequenceNumber > roundInfo.sequence {
-		if msg.SequenceNumber > roundInfo.sequence+seqConfig.Dangerous.Timeboost.MaxFutureSequenceDistance {
-			return fmt.Errorf("message sequence number has reached max allowed limit. SequenceNumber: %d, ExpectedSequenceNumber: %d, Limit: %d", msg.SequenceNumber, roundInfo.sequence, roundInfo.sequence+seqConfig.Dangerous.Timeboost.MaxFutureSequenceDistance)
+		if msg.SequenceNumber > roundInfo.sequence+seqConfig.Timeboost.MaxFutureSequenceDistance {
+			return fmt.Errorf("message sequence number has reached max allowed limit. SequenceNumber: %d, ExpectedSequenceNumber: %d, Limit: %d", msg.SequenceNumber, roundInfo.sequence, roundInfo.sequence+seqConfig.Timeboost.MaxFutureSequenceDistance)
 		}
 		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
@@ -213,7 +213,12 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		timeout := min(es.roundTimingInfo.TimeTilNextRound(), queueTimeout)
 		queueCtx, _ := ctxWithTimeout(es.GetContext(), timeout)
 		if err := es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, nextMsg.Transaction, nextMsg.Options); err != nil {
-			log.Error("Error queuing expressLane transaction", "seqNum", nextMsg.SequenceNumber, "txHash", nextMsg.Transaction.Hash(), "err", err)
+			logLevel := log.Error
+			// If tx sequencing was attempted right around the edge of a round then an error due to context timing out is expected, so we log a warning in such a case
+			if errors.Is(err, queueCtx.Err()) && timeout < time.Second {
+				logLevel = log.Warn
+			}
+			logLevel("Error queuing expressLane transaction", "seqNum", nextMsg.SequenceNumber, "txHash", nextMsg.Transaction.Hash(), "err", err)
 			if nextMsg.SequenceNumber == msg.SequenceNumber {
 				retErr = err
 			}
@@ -257,7 +262,7 @@ func (es *expressLaneService) syncFromRedis() {
 	sequenceCount := roundInfo.sequence
 	es.roundInfoMutex.Unlock()
 
-	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, sequenceCount, sequenceCount+es.seqConfig().Dangerous.Timeboost.MaxFutureSequenceDistance)
+	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, sequenceCount, sequenceCount+es.seqConfig().Timeboost.MaxFutureSequenceDistance)
 	log.Info("Attempting to sequence pending expressLane transactions from redis", "count", len(pendingMsgs))
 	for _, msg := range pendingMsgs {
 		if err := es.sequenceExpressLaneSubmission(msg); err != nil {
