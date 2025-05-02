@@ -182,9 +182,6 @@ func mainImpl() int {
 	nodeConfig.Auth.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
 	nodeConfig.GraphQL.Apply(&stackConf)
-	if nodeConfig.WS.ExposeAll {
-		stackConf.WSModules = append(stackConf.WSModules, "personal")
-	}
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
@@ -555,6 +552,7 @@ func mainImpl() int {
 		fatalErrChan,
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
+		liveNodeConfig.Get().Validation.Wasm.RootPath,
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)
@@ -1022,6 +1020,10 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	}
 	// 0 is default for any chain unless specified in the chain_defaults
 	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom
+	chainDefaults["node.block-metadata-fetcher.source.url"] = chainInfo.BlockMetadataUrl
+	if chainInfo.TrackBlockMetadataFrom > 0 && chainInfo.BlockMetadataUrl != "" {
+		chainDefaults["node.block-metadata-fetcher.enable"] = true
+	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err

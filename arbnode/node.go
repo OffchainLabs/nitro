@@ -511,13 +511,14 @@ func getBlockMetadataFetcher(
 	configFetcher ConfigFetcher,
 	arbDb ethdb.Database,
 	exec execution.ExecutionClient,
+	expectedChainId uint64,
 ) (*BlockMetadataFetcher, error) {
 	config := configFetcher.Get()
 
 	var blockMetadataFetcher *BlockMetadataFetcher
 	if config.BlockMetadataFetcher.Enable {
 		var err error
-		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec, config.TransactionStreamer.TrackBlockMetadataFrom)
+		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec, config.TransactionStreamer.TrackBlockMetadataFrom, expectedChainId)
 		if err != nil {
 			return nil, err
 		}
@@ -818,6 +819,7 @@ func getStatelessBlockValidator(
 	arbDb ethdb.Database,
 	dapReaders []daprovider.Reader,
 	stack *node.Node,
+	wasmRootPath string,
 ) (*staker.StatelessBlockValidator, error) {
 	var err error
 	var statelessBlockValidator *staker.StatelessBlockValidator
@@ -835,6 +837,7 @@ func getStatelessBlockValidator(
 			dapReaders,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
+			wasmRootPath,
 		)
 	} else {
 		err = errors.New("no validator url specified")
@@ -1005,6 +1008,7 @@ func createNodeImpl(
 	fatalErrChan chan error,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
+	wasmRootPath string,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -1050,7 +1054,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, executionClient)
+	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, executionClient, l2Config.ChainID.Uint64())
 	if err != nil {
 		return nil, err
 	}
@@ -1076,7 +1080,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack)
+	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack, wasmRootPath)
 	if err != nil {
 		return nil, err
 	}
@@ -1238,11 +1242,12 @@ func CreateNodeExecutionClient(
 	fatalErrChan chan error,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
+	wasmRootPath string,
 ) (*Node, error) {
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, wasmRootPath)
 	if err != nil {
 		return nil, err
 	}
@@ -1268,11 +1273,12 @@ func CreateNodeFullExecutionClient(
 	fatalErrChan chan error,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
+	wasmRootPath string,
 ) (*Node, error) {
 	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (executionBatchPoster == nil) {
 		return nil, errors.New("execution client, sequencer, recorder, and batch poster must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, wasmRootPath)
 	if err != nil {
 		return nil, err
 	}

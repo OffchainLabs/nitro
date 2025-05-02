@@ -34,18 +34,21 @@ type BidValidatorConfig struct {
 	// Timeout on polling for existence of each redis stream.
 	SequencerEndpoint      string `koanf:"sequencer-endpoint"`
 	AuctionContractAddress string `koanf:"auction-contract-address"`
+	MaxBidsPerSender       uint8  `koanf:"max-bids-per-sender"`
 }
 
 var DefaultBidValidatorConfig = BidValidatorConfig{
-	Enable:         true,
-	RedisURL:       "",
-	ProducerConfig: pubsub.DefaultProducerConfig,
+	Enable:           true,
+	RedisURL:         "",
+	ProducerConfig:   pubsub.DefaultProducerConfig,
+	MaxBidsPerSender: 5,
 }
 
 var TestBidValidatorConfig = BidValidatorConfig{
-	Enable:         true,
-	RedisURL:       "",
-	ProducerConfig: pubsub.TestProducerConfig,
+	Enable:           true,
+	RedisURL:         "",
+	ProducerConfig:   pubsub.TestProducerConfig,
+	MaxBidsPerSender: 5,
 }
 
 func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -54,6 +57,8 @@ func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
+	f.Uint8(prefix+".max-bids-per-sender", DefaultBidValidatorConfig.MaxBidsPerSender, "maximum number of bids a sender can submit per round")
+
 }
 
 type BidValidator struct {
@@ -142,7 +147,7 @@ func NewBidValidator(
 		reservePrice:                   reservePrice,
 		domainValue:                    domainValue,
 		bidsPerSenderInRound:           make(map[common.Address]uint8),
-		maxBidsPerSenderInRound:        5, // 5 max bids per sender address in a round.
+		maxBidsPerSenderInRound:        cfg.MaxBidsPerSender,
 		producerCfg:                    &cfg.ProducerConfig,
 	}
 	api := &BidValidatorAPI{bidValidator}
@@ -272,6 +277,23 @@ func (bv *BidValidator) fetchReservePrice() *big.Int {
 	return bv.reservePrice
 }
 
+// Check time-related constraints for bid.
+// It's useful to split out to be able to re-check just these contraints after
+// time has elapsed.
+func validateBidTimeConstraints(roundTimingInfo *RoundTimingInfo, bidRound uint64) error {
+	// Check if the bid is intended for upcoming round.
+	upcomingRound := roundTimingInfo.RoundNumber() + 1
+	if bidRound != upcomingRound {
+		return errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bidRound)
+	}
+
+	// Check if the auction is closed.
+	if roundTimingInfo.isAuctionRoundClosed() {
+		return errors.Wrap(ErrBadRoundNumber, "auction is closed")
+	}
+	return nil
+}
+
 func (bv *BidValidator) validateBid(
 	bid *Bid,
 	balanceCheckerFn func(opts *bind.CallOpts, account common.Address) (*big.Int, error)) (*JsonValidatedBid, error) {
@@ -294,15 +316,8 @@ func (bv *BidValidator) validateBid(
 		return nil, errors.Wrapf(ErrWrongChainId, "can not auction for chain id: %d", bid.ChainId)
 	}
 
-	// Check if the bid is intended for upcoming round.
-	upcomingRound := bv.roundTimingInfo.RoundNumber() + 1
-	if bid.Round != upcomingRound {
-		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
-	}
-
-	// Check if the auction is closed.
-	if bv.roundTimingInfo.isAuctionRoundClosed() {
-		return nil, errors.Wrap(ErrBadRoundNumber, "auction is closed")
+	if err := validateBidTimeConstraints(&bv.roundTimingInfo, (uint64)(bid.Round)); err != nil {
+		return nil, err
 	}
 
 	// Check bid is higher than or equal to reserve price.
@@ -322,9 +337,10 @@ func (bv *BidValidator) validateBid(
 	// Signature verification expects the last byte of the signature to have 27 subtracted,
 	// as it represents the recovery ID. If the last byte is greater than or equal to 27, it indicates a recovery ID that hasn't been adjusted yet,
 	// it's needed for internal signature verification logic.
-	if sigItem[len(sigItem)-1] >= 27 {
-		sigItem[len(sigItem)-1] -= 27
+	if sigItem[len(sigItem)-1] != 27 && sigItem[len(sigItem)-1] != 28 {
+		return nil, errors.New("invalid Ethereum signature (V is not 27 or 28)")
 	}
+	sigItem[len(sigItem)-1] -= 27
 
 	bidHash, err := bid.ToEIP712Hash(bv.auctionContractDomainSeparator)
 	if err != nil {
@@ -336,6 +352,9 @@ func (bv *BidValidator) validateBid(
 	}
 	// Check how many bids the bidder has sent in this round and cap according to a limit.
 	bidder := crypto.PubkeyToAddress(*pubkey)
+	if !crypto.VerifySignature(crypto.CompressPubkey(pubkey), bidHash[:], sigItem[:64]) {
+		return nil, errors.New("invalid signature")
+	}
 	bv.Lock()
 	numBids, ok := bv.bidsPerSenderInRound[bidder]
 	if !ok {

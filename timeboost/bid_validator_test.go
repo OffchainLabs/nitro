@@ -2,6 +2,7 @@ package timeboost
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"math/big"
 	"testing"
 	"time"
@@ -157,9 +158,7 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 	bidHash, err := bid.ToEIP712Hash(bv.auctionContractDomainSeparator)
 	require.NoError(t, err)
 
-	signature, err := crypto.Sign(bidHash[:], privateKey)
-	require.NoError(t, err)
-
+	signature := makeValidSignature(t, err, bidHash, privateKey)
 	bid.Signature = signature
 	for i := 0; i < int(bv.maxBidsPerSenderInRound); i++ {
 		_, err := bv.validateBid(bid, balanceCheckerFn)
@@ -168,6 +167,14 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 	_, err = bv.validateBid(bid, balanceCheckerFn)
 	require.ErrorIs(t, err, ErrTooManyBids)
 
+}
+
+func makeValidSignature(t *testing.T, err error, bidHash common.Hash, privateKey *ecdsa.PrivateKey) []byte {
+	signature, err := crypto.Sign(bidHash[:], privateKey)
+	require.NoError(t, err)
+
+	signature[len(signature)-1] = 27
+	return signature
 }
 
 func buildValidBid(t *testing.T, auctionContractAddr common.Address) *Bid {
@@ -185,10 +192,7 @@ func buildValidBid(t *testing.T, auctionContractAddr common.Address) *Bid {
 	bidHash, err := bid.ToEIP712Hash(common.Hash{})
 	require.NoError(t, err)
 
-	signature, err := crypto.Sign(bidHash[:], privateKey)
-	require.NoError(t, err)
-
-	bid.Signature = signature
+	bid.Signature = makeValidSignature(t, err, bidHash, privateKey)
 
 	return bid
 }

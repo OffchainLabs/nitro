@@ -52,6 +52,11 @@ type Consumer[Request any, Response any] struct {
 	redisStream string
 	redisGroup  string
 	cfg         *ConsumerConfig
+
+	// Idle messages will be reclaimed randomly from the oldest idle N messages.
+	// Note: Not exposed as a configuration option because it affects semantic
+	// correctness for for some use cases.
+	claimAmongOldestIdleN int64
 }
 
 type Message[Request any] struct {
@@ -70,7 +75,14 @@ func NewConsumer[Request any, Response any](client redis.UniversalClient, stream
 		redisStream: streamName,
 		redisGroup:  streamName, // There is 1-1 mapping of redis stream and consumer group.
 		cfg:         cfg,
+
+		claimAmongOldestIdleN: 50, // Default for most use cases.
 	}, nil
+}
+
+// Set the Consumer to reprocess idle messages in a deterministic order.
+func (c *Consumer[Request, Response]) EnableDeterministicReprocessing() {
+	c.claimAmongOldestIdleN = 1
 }
 
 // Start starts the consumer to iteratively perform heartbeat in configured intervals.
@@ -119,7 +131,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 		Group:  c.redisGroup,
 		Start:  "-",
 		End:    "+",
-		Count:  50,
+		Count:  c.claimAmongOldestIdleN,
 		Idle:   c.cfg.IdletimeToAutoclaim,
 	}).Result(); err != nil {
 		if !errors.Is(err, redis.Nil) {
@@ -203,7 +215,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 					}
 				}
 				return
-			case <-time.After(c.cfg.IdletimeToAutoclaim / 10):
+			case <-time.After(c.cfg.IdletimeToAutoclaim / 2):
 			}
 		}
 	})

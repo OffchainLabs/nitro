@@ -18,11 +18,11 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
 	modes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -31,7 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/staker/bold"
 )
 
-func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
+func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -67,8 +67,8 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 	secondNodeNodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	secondNodeNodeConfig.BlockValidator.Enable = true
 	secondNodeNodeConfig.Staker.Enable = true
-	secondNodeNodeConfig.Staker.Strategy = "MakeNodes"
-	secondNodeNodeConfig.Bold.Strategy = "MakeNodes"
+	secondNodeNodeConfig.Staker.Strategy = "Watchtower"
+	secondNodeNodeConfig.Bold.Strategy = "Watchtower"
 	secondNodeNodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
 	secondNodeNodeConfig.Bold.StateProviderConfig.ValidatorName = "Second-L2-validator"
 	secondNodeNodeConfig.Bold.RPCBlockNumber = "latest"
@@ -101,17 +101,24 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 	TransferBalance(t, "Faucet", "Faucet", common.Big0, builder.L3Info, builder.L3.Client, ctx)
 
 	// Everything's setup, now just wait for the challenge to complete and ensure the honest party won
-	filterer, err := rollupgen.NewRollupUserLogicFilterer(builder.l3Addresses.Rollup, builder.L2.Client)
+	rollupUserLogic, err := rollupgen.NewRollupUserLogic(builder.l3Addresses.Rollup, builder.L2.Client)
+	Require(t, err)
+	chalManagerAddr, err := rollupUserLogic.ChallengeManager(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManagerAddr, builder.L2.Client)
 	Require(t, err)
 
 	fromBlock := uint64(0)
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
 			latestBlock, err := builder.L2.Client.HeaderByNumber(ctx, nil)
-			Require(t, err)
+			if err != nil {
+				t.Logf("Error getting latest block: %v", err)
+				continue
+			}
 			toBlock := latestBlock.Number.Uint64()
 			if fromBlock == toBlock {
 				continue
@@ -121,41 +128,30 @@ func TestChallengeProtocolBOLD_L3Support(t *testing.T) {
 				End:     &toBlock,
 				Context: ctx,
 			}
-			it, err := filterer.FilterAssertionConfirmed(filterOpts, nil)
-			Require(t, err)
+			it, err := filterer.FilterEdgeConfirmedByOneStepProof(filterOpts, nil, nil)
+			if err != nil {
+				t.Logf("Error creating filter: %v", err)
+				continue
+			}
 			for it.Next() {
 				if it.Error() != nil {
 					t.Fatalf("Error in filter iterator: %v", it.Error())
 				}
-				t.Log("Received event of assertion confirmation")
-				assertion, err := assertionChain.GetAssertion(ctx, &bind.CallOpts{}, protocol.AssertionHash{
-					Hash: it.Event.AssertionHash,
-				})
-				Require(t, err)
-				creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, assertion.Id())
-				Require(t, err)
-				parentAssertionHash := creationInfo.ParentAssertionHash
-				parentAssertion, err := assertionChain.GetAssertion(ctx, &bind.CallOpts{}, parentAssertionHash)
-				Require(t, err)
-				hasSecondChild, err := parentAssertion.HasSecondChild(ctx, &bind.CallOpts{})
-				Require(t, err)
-				if !hasSecondChild {
-					t.Log("Assertion did not have a second child")
+				tx, _, err := builder.L2.Client.TransactionByHash(ctx, it.Event.Raw.TxHash)
+				if err != nil {
+					t.Logf("Error getting transaction: %v", err)
 					continue
 				}
-				// If the parent assertion has a second child, it means the child was a confirmed assertion
-				// by challenge winner, so then we assert the winner was indeed the honest asserter.
-				tx, _, err := builder.L2.Client.TransactionByHash(ctx, it.Event.Raw.TxHash)
-				Require(t, err)
 				signer := types.NewCancunSigner(tx.ChainId())
 				address, err := signer.Sender(tx)
-				Require(t, err)
-				if address == builder.L2Info.GetAddress("HonestAsserter") {
-					t.Log("Honest party confirmed an assertion by challenge win")
+				if err != nil {
+					t.Logf("Error getting sender address: %v", err)
+					continue
+				}
+				if address == builder.L2Info.GetAddress("Validator") {
+					t.Log("Honest party confirmed a challenge edge by one step proof")
 					Require(t, it.Close())
 					return
-				} else {
-					t.Fatal("Evil party won a challenge")
 				}
 			}
 			fromBlock = toBlock

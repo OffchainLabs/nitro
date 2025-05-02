@@ -36,6 +36,7 @@ type CachingConfig struct {
 	SnapshotCache                       int           `koanf:"snapshot-cache"`
 	DatabaseCache                       int           `koanf:"database-cache"`
 	SnapshotRestoreGasLimit             uint64        `koanf:"snapshot-restore-gas-limit"`
+	HeadRewindBlocksLimit               uint64        `koanf:"head-rewind-blocks-limit"`
 	MaxNumberOfBlocksToSkipStateSaving  uint32        `koanf:"max-number-of-blocks-to-skip-state-saving"`
 	MaxAmountOfGasToSkipStateSaving     uint64        `koanf:"max-amount-of-gas-to-skip-state-saving"`
 	StylusLRUCacheCapacity              uint32        `koanf:"stylus-lru-cache-capacity"`
@@ -56,6 +57,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".database-cache", DefaultCachingConfig.DatabaseCache, "amount of memory in megabytes to cache database contents with")
 	f.Uint32(prefix+".trie-cap-limit", DefaultCachingConfig.TrieCapLimit, "amount of memory in megabytes to be used in the TrieDB Cap operation during maintenance")
 	f.Uint64(prefix+".snapshot-restore-gas-limit", DefaultCachingConfig.SnapshotRestoreGasLimit, "maximum gas rolled back to recover snapshot")
+	f.Uint64(prefix+".head-rewind-blocks-limit", DefaultCachingConfig.HeadRewindBlocksLimit, "maximum number of blocks rolled back to recover chain head (0 = use geth default limit)")
 	f.Uint32(prefix+".max-number-of-blocks-to-skip-state-saving", DefaultCachingConfig.MaxNumberOfBlocksToSkipStateSaving, "maximum number of blocks to skip state saving to persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint64(prefix+".max-amount-of-gas-to-skip-state-saving", DefaultCachingConfig.MaxAmountOfGasToSkipStateSaving, "maximum amount of gas in blocks to skip saving state to Persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint32(prefix+".stylus-lru-cache-capacity", DefaultCachingConfig.StylusLRUCacheCapacity, "capacity, in megabytes, of the LRU cache that keeps initialized stylus programs")
@@ -81,6 +83,7 @@ var DefaultCachingConfig = CachingConfig{
 	SnapshotCache:                      400,
 	DatabaseCache:                      2048,
 	SnapshotRestoreGasLimit:            300_000_000_000,
+	HeadRewindBlocksLimit:              4 * 7 * 24 * 3600, // 4 blocks per second over 7 days (an arbitrary value, should be greater than the number of blocks between state commits in full node; the state commit period depends both on chain activity and TrieTimeLimit)
 	MaxNumberOfBlocksToSkipStateSaving: 0,
 	MaxAmountOfGasToSkipStateSaving:    0,
 	StylusLRUCacheCapacity:             256,
@@ -107,6 +110,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		SnapshotLimit:                      cachingConfig.SnapshotCache,
 		Preimages:                          baseConf.Preimages,
 		SnapshotRestoreMaxGas:              cachingConfig.SnapshotRestoreGasLimit,
+		HeadRewindBlocksLimit:              cachingConfig.HeadRewindBlocksLimit,
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
 		StateScheme:                        cachingConfig.StateScheme,

@@ -190,6 +190,7 @@ func setupBidValidator(t testing.TB, ctx context.Context, redisURL string, testS
 		AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 		RedisURL:               redisURL,
 		ProducerConfig:         pubsub.TestProducerConfig,
+		MaxBidsPerSender:       5,
 	}
 	fetcher := func() *BidValidatorConfig {
 		return cfg

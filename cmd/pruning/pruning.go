@@ -158,9 +158,9 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 				log.Warn("missing latest validated block", "hash", lastValidated.GlobalState.BlockHash)
 			}
 		}
-	} else if initConfig.Prune == "full" {
+	} else if initConfig.Prune == "full" || initConfig.Prune == "minimal" {
 		if validatorRequired {
-			return nil, errors.New("refusing to prune to full-node level when validator is enabled (you should prune in validator mode)")
+			return nil, fmt.Errorf("refusing to prune in %s mode when validator is enabled (you should use \"validator\" pruning mode)", initConfig.Prune)
 		}
 	} else if hashListRegex.MatchString(initConfig.Prune) {
 		parts := strings.Split(initConfig.Prune, ",")
@@ -177,8 +177,8 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	} else {
 		return nil, fmt.Errorf("unknown pruning mode: \"%v\"", initConfig.Prune)
 	}
-	if l1Client != nil {
-		// Find the latest finalized block and add it as a pruning target
+	if initConfig.Prune != "minimal" && l1Client != nil {
+		// in pruning modes other then "minimal", find the latest finalized block and add it as a pruning target
 		l1Block, err := l1Client.BlockByNumber(ctx, big.NewInt(int64(rpc.FinalizedBlockNumber)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get finalized block: %w", err)
