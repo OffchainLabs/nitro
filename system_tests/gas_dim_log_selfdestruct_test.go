@@ -56,7 +56,7 @@ func TestDimLogSelfdestructColdNoTransferVirgin(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 + ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -95,7 +95,7 @@ func TestDimLogSelfdestructColdNoTransferFunded(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 + ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -134,7 +134,7 @@ func TestDimLogSelfdestructColdPayingVirgin(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.SelfdestructGasEIP150 + params.CreateBySelfdestructGas + params.ColdAccountAccessCostEIP2929,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 + ColdMinusWarmAccountAccessCost,
 		StateGrowth:           params.CreateBySelfdestructGas,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -174,7 +174,7 @@ func TestDimLogSelfdestructColdPayingFunded(t *testing.T) {
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.SelfdestructGasEIP150 + params.CreateBySelfdestructGas + params.ColdAccountAccessCostEIP2929,
 		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.SelfdestructGasEIP150 + params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.SelfdestructGasEIP150 + ColdMinusWarmAccountAccessCost,
 		StateGrowth:           params.CreateBySelfdestructGas,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
