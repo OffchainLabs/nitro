@@ -5,6 +5,7 @@ import (
 
 	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode"
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
@@ -39,11 +40,11 @@ type action interface {
 type backToStart struct{}
 
 type processNextBlock struct {
-	melState *State
+	melState *meltypes.State
 }
 
 type saveMessages struct {
-	postState       *State
+	postState       *meltypes.State
 	messages        []*arbostypes.MessageWithMetadata
 	delayedMessages []*arbnode.DelayedInboxMessage
 }

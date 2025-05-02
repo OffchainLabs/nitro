@@ -1,4 +1,4 @@
-package mel
+package meltypes
 
 import (
 	"context"
@@ -16,6 +16,7 @@ type State struct {
 	Version                      uint16
 	ParentChainId                uint64
 	ParentChainBlockNumber       uint64
+	BatchPostingTargetAddress    common.Address
 	ParentChainBlockHash         common.Hash
 	ParentChainPreviousBlockHash common.Hash
 	MessageAccumulator           common.Hash

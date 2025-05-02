@@ -13,8 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode"
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -47,22 +49,23 @@ var TestMELConfig = MELConfig{
 
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
-	config         MELConfigFetcher
-	l1Reader       *headerreader.HeaderReader
-	stateFetcher   StateFetcher
-	addrs          *chaininfo.RollupAddresses
-	melDB          StateDatabase
-	sequencerInbox *arbnode.SequencerInbox
-	delayedBridge  *arbnode.DelayedBridge
-	dataProviders  []daprovider.Reader
-	fsm            *fsm.Fsm[action, FSMState]
+	config                 MELConfigFetcher
+	l1Reader               *headerreader.HeaderReader
+	stateFetcher           meltypes.StateFetcher
+	addrs                  *chaininfo.RollupAddresses
+	melDB                  meltypes.StateDatabase
+	sequencerInbox         *arbnode.SequencerInbox
+	sequencerInboxBindings *bridgegen.SequencerInbox
+	delayedBridge          *arbnode.DelayedBridge
+	dataProviders          []daprovider.Reader
+	fsm                    *fsm.Fsm[action, FSMState]
 }
 
 func NewMessageExtractor(
 	l1Reader *headerreader.HeaderReader,
 	rollupAddrs *chaininfo.RollupAddresses,
-	stateFetcher StateFetcher,
-	melDB StateDatabase,
+	stateFetcher meltypes.StateFetcher,
+	melDB meltypes.StateDatabase,
 	sequencerInbox *arbnode.SequencerInbox,
 	delayedBridge *arbnode.DelayedBridge,
 	dataProviders []daprovider.Reader,
@@ -75,16 +78,21 @@ func NewMessageExtractor(
 	if err != nil {
 		return nil, err
 	}
+	sequencerInboxBindings, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Reader.Client())
+	if err != nil {
+		return nil, err
+	}
 	return &MessageExtractor{
-		l1Reader:       l1Reader,
-		addrs:          rollupAddrs,
-		stateFetcher:   stateFetcher,
-		melDB:          melDB,
-		sequencerInbox: sequencerInbox,
-		delayedBridge:  delayedBridge,
-		dataProviders:  dataProviders,
-		config:         config,
-		fsm:            fsm,
+		l1Reader:               l1Reader,
+		addrs:                  rollupAddrs,
+		stateFetcher:           stateFetcher,
+		melDB:                  melDB,
+		sequencerInbox:         sequencerInbox,
+		delayedBridge:          delayedBridge,
+		dataProviders:          dataProviders,
+		sequencerInboxBindings: sequencerInboxBindings,
+		config:                 config,
+		fsm:                    fsm,
 	}, nil
 }
 

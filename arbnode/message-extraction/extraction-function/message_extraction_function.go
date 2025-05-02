@@ -1,4 +1,4 @@
-package mel
+package extractionfunction
 
 import (
 	"bytes"
@@ -22,27 +22,54 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
-var batchDeliveredID common.Hash
-
-func init() {
-	var err error
-	sequencerBridgeABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
-	if err != nil {
-		panic(err)
-	}
-	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
-}
-
 var (
 	// ErrInvalidParentChainBlock is returned when the parent chain block
 	// hash does not match the expected hash in the state.
 	ErrInvalidParentChainBlock = errors.New("invalid parent chain block")
 )
 
-func (m *MessageExtractor) extractMessages(
+type DelayedMessageParser interface {
+	LookupMessagesInRange(
+		ctx context.Context,
+		startBlock *big.Int,
+		endBlock *big.Int,
+		fetchMessage func(uint64) ([]byte, error),
+	) ([]*arbnode.DelayedInboxMessage, error)
+}
+
+type DelayedMessageDatabase interface {
+	ReadDelayedMessage(
+		ctx context.Context,
+		index uint64,
+	) (*arbnode.DelayedInboxMessage, error)
+}
+
+type BatchSerializer interface {
+	Serialize(
+		ctx context.Context,
+		batch *arbnode.SequencerInboxBatch,
+	) ([]byte, error)
+}
+
+type BatchEventParser interface {
+	ParseSequencerBatchDelivered(log types.Log) (*bridgegen.SequencerInboxSequencerBatchDelivered, error)
+}
+
+type ReceiptFetcher interface {
+	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+}
+
+func ExtractMessages(
 	ctx context.Context,
 	inputState *meltypes.State,
 	parentChainBlock *types.Block,
+	dataProviders []daprovider.Reader,
+	delayedMsgParser DelayedMessageParser,
+	delayedMsgDatabase DelayedMessageDatabase,
+	eventParser BatchEventParser,
+	receiptFetcher ReceiptFetcher,
+	batchSerializer BatchSerializer,
+	batchDeliveredEventID common.Hash,
 ) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
 	state := inputState.Clone()
 	// Clones the state to avoid mutating the input pointer in case of errors.
@@ -68,13 +95,14 @@ func (m *MessageExtractor) extractMessages(
 		ctx,
 		state,
 		parentChainBlock,
-		m.sequencerInboxBindings,
-		m.l1Reader.Client(),
+		eventParser,
+		receiptFetcher,
+		batchDeliveredEventID,
 	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	delayedMessages, err := m.delayedBridge.LookupMessagesInRange(
+	delayedMessages, err := delayedMsgParser.LookupMessagesInRange(
 		ctx,
 		blockNum,
 		blockNum,
@@ -82,7 +110,7 @@ func (m *MessageExtractor) extractMessages(
 			if len(batches) > 0 && batchNum >= batches[0].SequenceNumber {
 				idx := batchNum - batches[0].SequenceNumber
 				if idx < uint64(len(batches)) {
-					return batches[idx].Serialize(ctx, m.l1Reader.Client())
+					return batchSerializer.Serialize(ctx, batches[idx])
 				}
 				return nil, fmt.Errorf("missing batch %d", batchNum)
 			}
@@ -118,7 +146,7 @@ func (m *MessageExtractor) extractMessages(
 
 	var messages []*arbostypes.MessageWithMetadata
 	for i, batch := range batches {
-		serialized, err := batch.Serialize(ctx, m.l1Reader.Client())
+		serialized, err := batchSerializer.Serialize(ctx, batch)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -127,18 +155,18 @@ func (m *MessageExtractor) extractMessages(
 			batch.SequenceNumber,
 			batch.BlockHash,
 			serialized,
-			m.dataProviders,
+			dataProviders,
 			daprovider.KeysetValidate,
 		)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		messagesInBatch, err := m.extractMessagesInBatch(
+		messagesInBatch, err := extractMessagesInBatch(
 			ctx,
 			state,
 			rawSequencerMsg,
-			m.melDB,
+			delayedMsgDatabase,
 		)
 		if err != nil {
 			return nil, nil, nil, err
@@ -168,20 +196,13 @@ func (m *MessageExtractor) extractMessages(
 	return state, messages, delayedMessages, nil
 }
 
-type BatchEventParser interface {
-	ParseSequencerBatchDelivered(log types.Log) (*bridgegen.SequencerInboxSequencerBatchDelivered, error)
-}
-
-type ReceiptFetcher interface {
-	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
-}
-
 func parseBatchesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
 	block *types.Block,
 	eventParser BatchEventParser,
 	receiptFetcher ReceiptFetcher,
+	batchDeliveredEventID common.Hash,
 ) ([]*arbnode.SequencerInboxBatch, error) {
 	allBatches := make([]*arbnode.SequencerInboxBatch, 0)
 	for _, tx := range block.Transactions() {
@@ -202,7 +223,7 @@ func parseBatchesFromBlock(
 		batches := make([]*arbnode.SequencerInboxBatch, 0, len(receipt.Logs))
 		var lastSeqNum *uint64
 		for _, log := range receipt.Logs {
-			if log.Topics[0] != batchDeliveredID {
+			if log.Topics[0] != batchDeliveredEventID {
 				return nil, errors.New("unexpected log selector")
 			}
 			parsedLog, err := eventParser.ParseSequencerBatchDelivered(*log)
@@ -247,17 +268,17 @@ func parseBatchesFromBlock(
 // segments contained in a batch and extracts the correct ordering of messages
 // from the segments, possibly reading delayed messages when a delayed message
 // virtual segment in encountered.
-func (m *MessageExtractor) extractMessagesInBatch(
+func extractMessagesInBatch(
 	ctx context.Context,
 	melState *meltypes.State,
 	seqMsg *arbstate.SequencerMessage,
-	melDB meltypes.StateDatabase,
+	delayedMsgDB DelayedMessageDatabase,
 ) ([]*arbostypes.MessageWithMetadata, error) {
 	var messages []*arbostypes.MessageWithMetadata
 	params := &arbosExtractionParams{
 		melState:         melState,
 		seqMsg:           seqMsg,
-		melDB:            melDB,
+		delayedMsgDB:     delayedMsgDB,
 		targetSubMessage: 0,
 		segmentNum:       0,
 		submessageNumber: 0,
@@ -270,7 +291,7 @@ func (m *MessageExtractor) extractMessagesInBatch(
 		if isLastSegment(params) {
 			break
 		}
-		msg, params, err = m.extractArbosMessage(ctx, params)
+		msg, params, err = extractArbosMessage(ctx, params)
 		if err != nil {
 			return nil, err
 		}
@@ -310,7 +331,7 @@ func isLastSegment(p *arbosExtractionParams) bool {
 type arbosExtractionParams struct {
 	melState         *meltypes.State
 	seqMsg           *arbstate.SequencerMessage
-	melDB            meltypes.StateDatabase
+	delayedMsgDB     DelayedMessageDatabase
 	targetSubMessage uint64
 	segmentNum       uint64
 	submessageNumber uint64
@@ -318,7 +339,7 @@ type arbosExtractionParams struct {
 	timestamp        uint64
 }
 
-func (m *MessageExtractor) extractArbosMessage(
+func extractArbosMessage(
 	ctx context.Context,
 	p *arbosExtractionParams,
 ) (*arbostypes.MessageWithMetadata, *arbosExtractionParams, error) {
@@ -425,7 +446,7 @@ func (m *MessageExtractor) extractArbosMessage(
 				DelayedMessagesRead: seqMsg.AfterDelayedMessages,
 			}
 		} else {
-			delayed, err := p.melDB.ReadDelayedMessage(ctx, p.melState.DelayedMessagesRead)
+			delayed, err := p.delayedMsgDB.ReadDelayedMessage(ctx, p.melState.DelayedMessagesRead)
 			if err != nil {
 				return nil, p, err
 			}
