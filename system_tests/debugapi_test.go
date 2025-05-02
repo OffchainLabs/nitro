@@ -32,14 +32,19 @@ import (
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
-var txsSeenByTracer map[common.Hash]struct{}
+var (
+	txsSeenByTracer    map[common.Hash]struct{}
+	blocksSeenByTracer uint64
+)
 
 type testTracer struct{}
 
 func newTestTracer(_ json.RawMessage) (*tracing.Hooks, error) {
 	t := &testTracer{}
 	return &tracing.Hooks{
-		OnTxStart: t.OnTxStart,
+		OnTxStart:    t.OnTxStart,
+		OnBlockStart: t.OnBlockStart,
+		OnBlockEnd:   t.OnBlockEnd,
 	}, nil
 }
 
@@ -48,6 +53,15 @@ func (t *testTracer) OnTxStart(vm *tracing.VMContext, tx *types.Transaction, fro
 		txsSeenByTracer[tx.Hash()] = struct{}{}
 	}
 	log.Info("TestTracerLogging", "txHash", tx.Hash(), "from", from)
+}
+
+func (t *testTracer) OnBlockStart(ev tracing.BlockEvent) {
+	blocksSeenByTracer++
+	log.Info("TestTracerLogging OnBlockStart")
+}
+
+func (t *testTracer) OnBlockEnd(err error) {
+	log.Info("TestTracerLogging OnBlockEnd")
 }
 
 // TestLiveTracingInNode: currently live tracing is only available when building a 2nd node
@@ -90,6 +104,12 @@ func TestLiveTracingInNode(t *testing.T) {
 		if _, ok := txsSeenByTracer[txHash]; !ok {
 			t.Fatalf("transaction: %s not seen by testTracer", txHash.String())
 		}
+	}
+
+	totalBlocks, err := testClientB.Client.BlockNumber(ctx)
+	Require(t, err)
+	if blocksSeenByTracer != totalBlocks {
+		t.Fatalf("unexpected number of txs seen by testTracer. Want: %d, Got: %d", totalBlocks, blocksSeenByTracer)
 	}
 }
 
