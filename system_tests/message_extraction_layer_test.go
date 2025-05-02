@@ -45,7 +45,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	melState := createInitialMELState(t, ctx, builder.addresses.Rollup, builder.L1.Client)
+	melState := createInitialMELState(t, ctx, builder.addresses.Rollup, builder.L1.Client, builder.addresses.SequencerInbox)
 
 	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
 	Require(t, err)
@@ -125,7 +125,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	melState := createInitialMELState(t, ctx, builder.addresses.Rollup, builder.L1.Client)
+	melState := createInitialMELState(t, ctx, builder.addresses.Rollup, builder.L1.Client, builder.addresses.SequencerInbox)
 
 	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
 	Require(t, err)
@@ -218,7 +218,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
 
 	// Create an initial MEL state from the latest confirmed assertion.
-	melState := createInitialMELState(t, ctx, builder.addresses.Rollup, builder.L1.Client)
+	melState := createInitialMELState(t, ctx, builder.addresses.Rollup, builder.L1.Client, builder.addresses.SequencerInbox)
 
 	// Construct a new MEL service and provide with an initial MEL state
 	// to begin extracting messages from the parent chain.
@@ -355,6 +355,7 @@ func createInitialMELState(
 	ctx context.Context,
 	rollupAddr common.Address,
 	client *ethclient.Client,
+	seqInboxAddr common.Address,
 ) *meltypes.State {
 	// Create an initial MEL state from the latest confirmed assertion.
 	rollup, err := rollupgen.NewRollupUserLogic(rollupAddr, client)
@@ -377,6 +378,7 @@ func createInitialMELState(
 	// TODO: Construct the correct MEL state from the latest confirmed assertion.
 	return &meltypes.State{
 		Version:                      0,
+		BatchPostingTargetAddress:    seqInboxAddr,
 		ParentChainId:                chainId.Uint64(),
 		ParentChainBlockNumber:       startBlock.NumberU64(),
 		ParentChainBlockHash:         startBlock.Hash(),

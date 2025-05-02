@@ -114,7 +114,6 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 			preState,
 			parentChainBlock,
 			m.dataProviders,
-			m.sequencerInbox,
 			m.delayedBridge,
 			m.melDB,
 			m.sequencerInboxBindings,
