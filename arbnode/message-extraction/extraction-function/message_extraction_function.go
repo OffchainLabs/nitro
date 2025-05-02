@@ -55,6 +55,10 @@ type BatchEventParser interface {
 	ParseSequencerBatchDelivered(log types.Log) (*bridgegen.SequencerInboxSequencerBatchDelivered, error)
 }
 
+type BridgeEventParser interface {
+	ParseMessageDelivered(log types.Log) (*bridgegen.IBridgeMessageDelivered, error)
+}
+
 type ReceiptFetcher interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 }
@@ -67,9 +71,11 @@ func ExtractMessages(
 	delayedMsgParser DelayedMessageParser,
 	delayedMsgDatabase DelayedMessageDatabase,
 	eventParser BatchEventParser,
+	bridgeEventParser BridgeEventParser,
 	receiptFetcher ReceiptFetcher,
 	batchSerializer BatchSerializer,
 	batchDeliveredEventID common.Hash,
+	messageDeliveredEventID common.Hash,
 ) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
 	state := inputState.Clone()
 	// Clones the state to avoid mutating the input pointer in case of errors.

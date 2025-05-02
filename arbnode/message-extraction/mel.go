@@ -56,6 +56,7 @@ type MessageExtractor struct {
 	melDB                  meltypes.StateDatabase
 	sequencerInbox         *arbnode.SequencerInbox
 	sequencerInboxBindings *bridgegen.SequencerInbox
+	delayedBridgeBindings  *bridgegen.IBridge
 	delayedBridge          *arbnode.DelayedBridge
 	dataProviders          []daprovider.Reader
 	fsm                    *fsm.Fsm[action, FSMState]
@@ -82,6 +83,10 @@ func NewMessageExtractor(
 	if err != nil {
 		return nil, err
 	}
+	delayedInboxBindings, err := bridgegen.NewIBridge(rollupAddrs.Bridge, l1Reader.Client())
+	if err != nil {
+		return nil, err
+	}
 	return &MessageExtractor{
 		l1Reader:               l1Reader,
 		addrs:                  rollupAddrs,
@@ -89,6 +94,7 @@ func NewMessageExtractor(
 		melDB:                  melDB,
 		sequencerInbox:         sequencerInbox,
 		delayedBridge:          delayedBridge,
+		delayedBridgeBindings:  delayedInboxBindings,
 		dataProviders:          dataProviders,
 		sequencerInboxBindings: sequencerInboxBindings,
 		config:                 config,

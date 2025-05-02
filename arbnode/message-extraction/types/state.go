@@ -13,17 +13,18 @@ import (
 // be deterministically constructed from any start state and parent chain blocks from
 // that point onwards.
 type State struct {
-	Version                      uint16
-	ParentChainId                uint64
-	ParentChainBlockNumber       uint64
-	BatchPostingTargetAddress    common.Address
-	ParentChainBlockHash         common.Hash
-	ParentChainPreviousBlockHash common.Hash
-	MessageAccumulator           common.Hash
-	DelayedMessageAccumulator    common.Hash
-	MsgCount                     uint64
-	DelayedMessagesRead          uint64
-	DelayedMessagedSeen          uint64
+	Version                            uint16
+	ParentChainId                      uint64
+	ParentChainBlockNumber             uint64
+	BatchPostingTargetAddress          common.Address
+	DelayedMessagePostingTargetAddress common.Address
+	ParentChainBlockHash               common.Hash
+	ParentChainPreviousBlockHash       common.Hash
+	MessageAccumulator                 common.Hash
+	DelayedMessageAccumulator          common.Hash
+	MsgCount                           uint64
+	DelayedMessagesRead                uint64
+	DelayedMessagedSeen                uint64
 }
 
 type StateDatabase interface {

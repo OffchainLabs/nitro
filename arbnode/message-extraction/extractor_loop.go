@@ -15,6 +15,7 @@ import (
 )
 
 var batchDeliveredID common.Hash
+var messageDeliveredID common.Hash
 
 func init() {
 	var err error
@@ -23,6 +24,11 @@ func init() {
 		panic(err)
 	}
 	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
+	parsedIBridgeABI, err := bridgegen.IBridgeMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
 }
 
 type BatchSerializer interface {
@@ -117,9 +123,11 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 			m.delayedBridge,
 			m.melDB,
 			m.sequencerInboxBindings,
+			m.delayedBridgeBindings,
 			m.l1Reader.Client(),
 			m,
 			batchDeliveredID,
+			messageDeliveredID,
 		)
 		if err != nil {
 			return err
