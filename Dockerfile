@@ -27,8 +27,13 @@ COPY --from=brotli-library-builder /workspace/install/ /
 FROM node:18-bookworm-slim AS contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
-#Install foundry pinned to 1.0.0
-RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -C 8692e926198056d0228c1e166b1b6c34a5bed66c
+# Install Rust and Cargo
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+# Add cargo to PATH and then install Foundry 1.0.0
+RUN . ~/.cargo/env && \
+    curl -L https://foundry.paradigm.xyz | bash && \
+    . ~/.bashrc && \
+    ~/.foundry/bin/foundryup -C 8692e926198056d0228c1e166b1b6c34a5bed66c
 WORKDIR /workspace
 COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
 RUN cd contracts-legacy && yarn install
