@@ -186,9 +186,6 @@ func mainImpl() int {
 	nodeConfig.Auth.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
 	nodeConfig.GraphQL.Apply(&stackConf)
-	if nodeConfig.WS.ExposeAll {
-		stackConf.WSModules = append(stackConf.WSModules, "personal")
-	}
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
