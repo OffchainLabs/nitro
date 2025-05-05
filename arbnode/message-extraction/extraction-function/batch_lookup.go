@@ -21,13 +21,13 @@ type BatchLookupParams struct {
 func parseBatchesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
-	block *types.Block,
+	parentChainBlock *types.Block,
 	receiptFetcher ReceiptFetcher,
 	params *BatchLookupParams,
 ) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, error) {
 	allBatches := make([]*arbnode.SequencerInboxBatch, 0)
 	allBatchTxs := make([]*types.Transaction, 0)
-	for _, tx := range block.Transactions() {
+	for i, tx := range parentChainBlock.Transactions() {
 		if tx.To() == nil {
 			continue
 		}
@@ -35,7 +35,8 @@ func parseBatchesFromBlock(
 			continue
 		}
 		// Fetch the receipts for the transaction to get the logs.
-		receipt, err := receiptFetcher.TransactionReceipt(ctx, tx.Hash())
+		txIndex := uint64(i)
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -8,8 +8,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/arbnode"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -55,15 +55,12 @@ func init() {
 	iInboxABI = parsedIInboxABI
 }
 
-type BatchSerializer interface {
-	Serialize(
-		ctx context.Context,
-		batch *arbnode.SequencerInboxBatch,
-	) ([]byte, error)
-}
-
-func (m *MessageExtractor) Serialize(ctx context.Context, batch *arbnode.SequencerInboxBatch) ([]byte, error) {
-	return batch.Serialize(ctx, m.l1Reader.Client())
+func (m *MessageExtractor) ReceiptForTransactionIndex(
+	ctx context.Context,
+	parentChainBlock *types.Block,
+	txIndex uint64,
+) (*types.Receipt, error) {
+	return nil, nil
 }
 
 func (m *MessageExtractor) CurrentFSMState() FSMState {
@@ -145,7 +142,7 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 			parentChainBlock,
 			m.dataProviders,
 			m.melDB,
-			m.l1Reader.Client(),
+			m,
 			&extractionfunction.BatchLookupParams{
 				BatchDeliveredEventID: batchDeliveredID,
 				SequencerInboxABI:     seqInboxABI,

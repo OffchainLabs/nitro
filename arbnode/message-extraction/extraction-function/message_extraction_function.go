@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -35,7 +34,11 @@ type DelayedMessageDatabase interface {
 }
 
 type ReceiptFetcher interface {
-	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+	ReceiptForTransactionIndex(
+		ctx context.Context,
+		parentChainBlock *types.Block,
+		txIndex uint64,
+	) (*types.Receipt, error)
 }
 
 func ExtractMessages(
