@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -15,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/eth/tracers"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -22,11 +24,94 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 )
+
+var (
+	txsSeenByTracer    map[common.Hash]struct{}
+	blocksSeenByTracer uint64
+)
+
+type testTracer struct{}
+
+func newTestTracer(_ json.RawMessage) (*tracing.Hooks, error) {
+	t := &testTracer{}
+	return &tracing.Hooks{
+		OnTxStart:    t.OnTxStart,
+		OnBlockStart: t.OnBlockStart,
+		OnBlockEnd:   t.OnBlockEnd,
+	}, nil
+}
+
+func (t *testTracer) OnTxStart(vm *tracing.VMContext, tx *types.Transaction, from common.Address) {
+	if from != types.ArbosAddress {
+		txsSeenByTracer[tx.Hash()] = struct{}{}
+	}
+	log.Info("TestTracerLogging", "txHash", tx.Hash(), "from", from)
+}
+
+func (t *testTracer) OnBlockStart(ev tracing.BlockEvent) {
+	blocksSeenByTracer++
+	log.Info("TestTracerLogging OnBlockStart")
+}
+
+func (t *testTracer) OnBlockEnd(err error) {
+	log.Info("TestTracerLogging OnBlockEnd")
+}
+
+// TestLiveTracingInNode: currently live tracing is only available when building a 2nd node
+func TestLiveTracingInNode(t *testing.T) {
+	txsSeenByTracer = make(map[common.Hash]struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User")
+	user := builder.L2Info.GetDefaultTransactOpts("User", ctx)
+
+	// Create transactions to progress blockchain
+	var err error
+	var lastTx *types.Transaction
+	numTxs := 20
+	txs := make(map[common.Hash]struct{})
+	for i := 0; i < numTxs; i++ {
+		lastTx, _ = builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+		txs[lastTx.Hash()] = struct{}{}
+	}
+
+	// Start second node with live tracing
+	execConfig := builder.execConfig
+	execConfig.VmTrace = gethexec.LiveTracingConfig{TracerName: "testTracer"}
+	tracers.LiveDirectory.Register("testTracer", newTestTracer)
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfig})
+	defer cleanupB()
+
+	// Wait for second node to catchup
+	_, err = WaitForTx(ctx, testClientB.Client, lastTx.Hash(), time.Second*5)
+	Require(t, err)
+	if len(txsSeenByTracer) != numTxs {
+		t.Fatalf("unexpected number of txs seen by testTracer. Want: %d, Got: %d", numTxs, len(txsSeenByTracer))
+	}
+	for txHash := range txs {
+		if _, ok := txsSeenByTracer[txHash]; !ok {
+			t.Fatalf("transaction: %s not seen by testTracer", txHash.String())
+		}
+	}
+
+	totalBlocks, err := testClientB.Client.BlockNumber(ctx)
+	Require(t, err)
+	if blocksSeenByTracer != totalBlocks {
+		t.Fatalf("unexpected number of txs seen by testTracer. Want: %d, Got: %d", totalBlocks, blocksSeenByTracer)
+	}
+}
 
 func TestDebugAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
