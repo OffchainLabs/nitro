@@ -37,7 +37,7 @@ type ReceiptFetcher interface {
 	ReceiptForTransactionIndex(
 		ctx context.Context,
 		parentChainBlock *types.Block,
-		txIndex uint64,
+		txIndex uint,
 	) (*types.Receipt, error)
 }
 

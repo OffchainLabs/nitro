@@ -24,10 +24,10 @@ func parseBatchesFromBlock(
 	parentChainBlock *types.Block,
 	receiptFetcher ReceiptFetcher,
 	params *BatchLookupParams,
-) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint64, error) {
+) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 	allBatches := make([]*arbnode.SequencerInboxBatch, 0)
 	allBatchTxs := make([]*types.Transaction, 0)
-	allBatchTxIndices := make([]uint64, 0)
+	allBatchTxIndices := make([]uint, 0)
 	for i, tx := range parentChainBlock.Transactions() {
 		if tx.To() == nil {
 			continue
@@ -36,7 +36,7 @@ func parseBatchesFromBlock(
 			continue
 		}
 		// Fetch the receipts for the transaction to get the logs.
-		txIndex := uint64(i)
+		txIndex := uint(i)
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, nil, nil, err
@@ -46,7 +46,7 @@ func parseBatchesFromBlock(
 		}
 		batches := make([]*arbnode.SequencerInboxBatch, 0, len(receipt.Logs))
 		txs := make([]*types.Transaction, 0, len(receipt.Logs))
-		txIndices := make([]uint64, 0, len(receipt.Logs))
+		txIndices := make([]uint, 0, len(receipt.Logs))
 		var lastSeqNum *uint64
 		for _, log := range receipt.Logs {
 			if log == nil {
@@ -88,7 +88,7 @@ func parseBatchesFromBlock(
 			}
 			batches = append(batches, batch)
 			txs = append(txs, tx)
-			txIndices = append(txIndices, uint64(i))
+			txIndices = append(txIndices, uint(i))
 		}
 		allBatches = append(allBatches, batches...)
 		allBatchTxs = append(allBatchTxs, txs...)

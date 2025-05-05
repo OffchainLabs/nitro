@@ -19,7 +19,7 @@ func serializeBatch(
 	batch *arbnode.SequencerInboxBatch,
 	parentChainBlock *types.Block,
 	tx *types.Transaction,
-	txIndex uint64,
+	txIndex uint,
 	seqInboxAbi *abi.ABI,
 	receiptFetcher ReceiptFetcher,
 ) ([]byte, error) {
@@ -67,7 +67,7 @@ func getSequencerBatchData(
 	batch *arbnode.SequencerInboxBatch,
 	parentChainBlock *types.Block,
 	tx *types.Transaction,
-	txIndex uint64,
+	txIndex uint,
 	seqInboxAbi *abi.ABI,
 	receiptFetcher ReceiptFetcher,
 ) ([]byte, error) {

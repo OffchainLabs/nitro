@@ -58,9 +58,13 @@ func init() {
 func (m *MessageExtractor) ReceiptForTransactionIndex(
 	ctx context.Context,
 	parentChainBlock *types.Block,
-	txIndex uint64,
+	txIndex uint,
 ) (*types.Receipt, error) {
-	return nil, nil
+	tx, err := m.l1Reader.Client().TransactionInBlock(ctx, parentChainBlock.Hash(), txIndex)
+	if err != nil {
+		return nil, err
+	}
+	return m.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
 }
 
 func (m *MessageExtractor) CurrentFSMState() FSMState {

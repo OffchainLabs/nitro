@@ -45,7 +45,7 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		// Fetch the receipts for the transaction to get the logs.
-		txIndex := uint64(i)
+		txIndex := uint(i)
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, err
@@ -78,7 +78,7 @@ func parseDelayedMessagesFromBlock(
 		if !ok {
 			continue
 		}
-		txIndex := uint64(i)
+		txIndex := uint(i)
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, err
