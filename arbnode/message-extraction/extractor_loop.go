@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -16,6 +17,9 @@ import (
 
 var batchDeliveredID common.Hash
 var messageDeliveredID common.Hash
+var inboxMessageDeliveredID common.Hash
+var inboxMessageFromOriginID common.Hash
+var l2MessageFromOriginCallABI abi.Method
 
 func init() {
 	var err error
@@ -28,7 +32,19 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	parsedIMessageProviderABI, err := bridgegen.IDelayedMessageProviderMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
 	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
+	inboxMessageDeliveredID = parsedIMessageProviderABI.Events["InboxMessageDelivered"].ID
+	inboxMessageFromOriginID = parsedIMessageProviderABI.Events["InboxMessageDeliveredFromOrigin"].ID
+
+	parsedIInboxABI, err := bridgegen.IInboxMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	l2MessageFromOriginCallABI = parsedIInboxABI.Methods["sendL2MessageFromOrigin"]
 }
 
 type BatchSerializer interface {

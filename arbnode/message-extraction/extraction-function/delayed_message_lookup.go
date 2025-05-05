@@ -1,13 +1,17 @@
 package extractionfunction
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
-	"slices"
+	"sort"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -21,7 +25,10 @@ func parseDelayedMessagesFromBlock(
 	block *types.Block,
 	eventParser BridgeEventParser,
 	receiptFetcher ReceiptFetcher,
-	batchDeliveredEventID common.Hash,
+	messageDeliveredID common.Hash,
+	inboxMessageDeliveredID common.Hash,
+	inboxMessageFromOriginID common.Hash,
+	l2MessageFromOriginCallABI abi.Method,
 ) ([]*arbnode.DelayedInboxMessage, error) {
 	msgScaffolds := make([]*arbnode.DelayedInboxMessage, 0)
 	messageDeliveredEvents := make([]*bridgegen.IBridgeMessageDelivered, 0)
@@ -47,17 +54,22 @@ func parseDelayedMessagesFromBlock(
 		msgScaffolds = append(msgScaffolds, delayedMessageScaffolds...)
 		messageDeliveredEvents = append(messageDeliveredEvents, parsedLogs...)
 	}
-
-	inboxAddrs := make(map[common.Address]struct{})
+	messageIds := make([]common.Hash, 0, len(messageDeliveredEvents))
+	inboxAddressSet := make(map[common.Address]struct{})
 	for _, event := range messageDeliveredEvents {
-		inboxAddrs[event.Inbox] = struct{}{}
+		inboxAddressSet[event.Inbox] = struct{}{}
+		messageIds = append(messageIds, common.BigToHash(event.MessageIndex))
 	}
-
+	inboxAddressList := make([]common.Address, 0, len(inboxAddressSet))
+	for addr := range inboxAddressSet {
+		inboxAddressList = append(inboxAddressList, addr)
+	}
+	messageData := make(map[common.Hash][]byte)
 	for _, tx := range txes {
 		if tx.To() == nil {
 			continue
 		}
-		_, ok := inboxAddrs[*tx.To()]
+		_, ok := inboxAddressSet[*tx.To()]
 		if !ok {
 			continue
 		}
@@ -68,18 +80,39 @@ func parseDelayedMessagesFromBlock(
 		if len(receipt.Logs) == 0 {
 			continue
 		}
-		for _, log := range receipt.Logs {
-			// TODO: Check these topics:
-			// inboxMessageDeliveredID, inboxMessageFromOriginID}, messageIds
-			if !slices.Contains(log.Topics, batchDeliveredEventID) {
-				continue
+		topics := [][]common.Hash{
+			{inboxMessageDeliveredID, inboxMessageFromOriginID}, // matches either of these IDs.
+			messageIds, // matches any of the message IDs.
+		}
+		filteredInboxMessageLogs := filterLogs(receipt.Logs, inboxAddressList, topics)
+		for _, inboxMsgLog := range filteredInboxMessageLogs {
+			msgNum, msg, err := parseDelayedMessage(
+				ctx,
+				inboxMsgLog,
+				inboxMessageDeliveredID,
+				inboxMessageFromOriginID,
+				l2MessageFromOriginCallABI)
+			if err != nil {
+				return nil, err
 			}
-
-			// messageData[common.BigToHash(msgNum)] = msg
+			messageData[common.BigToHash(msgNum)] = msg
 		}
 	}
-
-	return nil, nil
+	for i, parsedLog := range messageDeliveredEvents {
+		msgKey := common.BigToHash(parsedLog.MessageIndex)
+		data, ok := messageData[msgKey]
+		if !ok {
+			return nil, fmt.Errorf("message %v data not found", parsedLog.MessageIndex)
+		}
+		if crypto.Keccak256Hash(data) != parsedLog.MessageDataHash {
+			return nil, fmt.Errorf("found message %v data with mismatched hash", parsedLog.MessageIndex)
+		}
+		// Fill in the message data for the delayed message scaffolds.
+		msgScaffolds[i].Message.L2msg = data
+	}
+	// Finally, we sort the messages by their request id.
+	sort.Sort(sortableMessageList(msgScaffolds))
+	return msgScaffolds, nil
 }
 
 func delayedMessageScaffoldsFromLogs(
@@ -100,6 +133,8 @@ func delayedMessageScaffoldsFromLogs(
 		parsedLogs = append(parsedLogs, parsedLog)
 	}
 
+	// A list of delayed messages that do not have nil L2msg data within, which
+	// will be filled in later after another pass over logs.
 	delayedMessageScaffolds := make([]*arbnode.DelayedInboxMessage, 0, len(parsedLogs))
 
 	// Next, we construct the messages themselves from the parsed logs.
@@ -128,29 +163,33 @@ func delayedMessageScaffoldsFromLogs(
 	return delayedMessageScaffolds, parsedLogs, nil
 }
 
-func parseDelayedMessage(ctx context.Context, ethLog types.Log) (*big.Int, []byte, error) {
-	// con, ok := b.messageProviders[ethLog.Address]
-	// if !ok {
-	// 	var err error
-	// 	con, err = bridgegen.NewIDelayedMessageProvider(ethLog.Address, b.client)
-	// 	if err != nil {
-	// 		return nil, nil, err
-	// 	}
-	// 	b.messageProviders[ethLog.Address] = con
-	// }
+func parseDelayedMessage(
+	ctx context.Context,
+	ethLog *types.Log,
+	inboxMessageDeliveredID common.Hash,
+	inboxMessageFromOriginID common.Hash,
+	l2MessageFromOriginCallABI abi.Method,
+) (*big.Int, []byte, error) {
+	if ethLog == nil {
+		return nil, nil, nil
+	}
+	con, err := bridgegen.NewIDelayedMessageProvider(ethLog.Address, nil)
+	if err != nil {
+		return nil, nil, err
+	}
 	switch {
 	case ethLog.Topics[0] == inboxMessageDeliveredID:
-		parsedLog, err := con.ParseInboxMessageDelivered(ethLog)
+		parsedLog, err := con.ParseInboxMessageDelivered(*ethLog)
 		if err != nil {
 			return nil, nil, err
 		}
 		return parsedLog.MessageNum, parsedLog.Data, nil
 	case ethLog.Topics[0] == inboxMessageFromOriginID:
-		parsedLog, err := con.ParseInboxMessageDeliveredFromOrigin(ethLog)
+		parsedLog, err := con.ParseInboxMessageDeliveredFromOrigin(*ethLog)
 		if err != nil {
 			return nil, nil, err
 		}
-		data, err := arbutil.GetLogEmitterTxData(ctx, b.client, ethLog)
+		data, err := arbutil.GetLogEmitterTxData(ctx, nil, *ethLog)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -167,4 +206,70 @@ func parseDelayedMessage(ctx context.Context, ethLog types.Log) (*big.Int, []byt
 	default:
 		return nil, nil, errors.New("unexpected log type")
 	}
+}
+
+func filterLogs(logs []*types.Log, addresses []common.Address, topics [][]common.Hash) []*types.Log {
+	var filteredLogs []*types.Log
+	for _, log := range logs {
+		// Filter by address if addresses are specified.
+		if len(addresses) > 0 {
+			addressMatch := false
+			for _, address := range addresses {
+				if log.Address == address {
+					addressMatch = true
+					break
+				}
+			}
+			if !addressMatch {
+				continue
+			}
+		}
+		// Filter by topics.
+		if len(topics) > 0 {
+			topicMatch := true
+			// We can only match as many topics as the log has.
+			maxTopics := len(log.Topics)
+			if maxTopics > len(topics) {
+				maxTopics = len(topics)
+			}
+			for i := 0; i < maxTopics; i++ {
+				// Empty topic list (nil or {}) matches anything.
+				if len(topics[i]) == 0 {
+					continue
+				}
+				// Check if current topic matches any of the options for this position.
+				positionMatch := false
+				for _, topic := range topics[i] {
+					if log.Topics[i] == topic {
+						positionMatch = true
+						break
+					}
+				}
+				if !positionMatch {
+					topicMatch = false
+					break
+				}
+			}
+			if !topicMatch {
+				continue
+			}
+		}
+
+		filteredLogs = append(filteredLogs, log)
+	}
+	return filteredLogs
+}
+
+type sortableMessageList []*arbnode.DelayedInboxMessage
+
+func (l sortableMessageList) Len() int {
+	return len(l)
+}
+
+func (l sortableMessageList) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
+}
+
+func (l sortableMessageList) Less(i, j int) bool {
+	return bytes.Compare(l[i].Message.Header.RequestId.Bytes(), l[j].Message.Header.RequestId.Bytes()) < 0
 }
