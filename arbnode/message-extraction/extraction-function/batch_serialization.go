@@ -1,9 +1,113 @@
 package extractionfunction
 
-import "github.com/offchainlabs/nitro/arbnode"
+import (
+	"context"
+	"encoding/binary"
+	"errors"
+	"fmt"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+)
 
 func serializeBatch(
 	batch *arbnode.SequencerInboxBatch,
+	tx *types.Transaction,
 ) ([]byte, error) {
-	return nil, nil
+	if batch.Serialized != nil {
+		return batch.Serialized, nil
+	}
+
+	var fullData []byte
+
+	// Serialize the header
+	headerVals := []uint64{
+		batch.TimeBounds.MinTimestamp,
+		batch.TimeBounds.MaxTimestamp,
+		batch.TimeBounds.MinBlockNumber,
+		batch.TimeBounds.MaxBlockNumber,
+		batch.AfterDelayedCount,
+	}
+	for _, bound := range headerVals {
+		var intData [8]byte
+		binary.BigEndian.PutUint64(intData[:], bound)
+		fullData = append(fullData, intData[:]...)
+	}
+
+	// Append the batch data
+	data, err := getSequencerBatchData(batch, tx)
+	if err != nil {
+		return nil, err
+	}
+	fullData = append(fullData, data...)
+
+	batch.Serialized = fullData
+	return fullData, nil
+}
+
+func getSequencerBatchData(
+	ctx context.Context,
+	batch *arbnode.SequencerInboxBatch,
+	tx *types.Transaction,
+	seqInboxAbi *abi.ABI,
+	receiptFetcher ReceiptFetcher,
+) ([]byte, error) {
+	switch batch.DataLocation {
+	case arbnode.BatchDataTxInput:
+		data := tx.Data()
+		if len(data) < 4 {
+			return nil, errors.New("transaction data too short")
+		}
+		args := make(map[string]interface{})
+		if err := addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:]); err != nil {
+			return nil, err
+		}
+		dataBytes, ok := args["data"].([]byte)
+		if !ok {
+			return nil, errors.New("args[\"data\"] not a byte array")
+		}
+		return dataBytes, nil
+	case arbnode.BatchDataSeparateEvent:
+		receipt, err := receiptFetcher.TransactionReceipt(ctx, tx.Hash())
+		if err != nil {
+			return nil, err
+		}
+		if len(receipt.Logs) == 0 {
+			return nil, errors.New("no logs found in transaction receipt")
+		}
+		topics := [][]common.Hash{{sequencerBatchDataABI.ID}, {numberAsHash}}
+		filteredLogs := filterLogs(receipt.Logs, []common.Address{batch.BridgeAddress}, topics)
+		var numberAsHash common.Hash
+		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
+		if len(filteredLogs) == 0 {
+			return nil, errors.New("expected to find sequencer batch data")
+		}
+		if len(filteredLogs) > 1 {
+			return nil, errors.New("expected to find only one matching sequencer batch data")
+		}
+		event := new(bridgegen.SequencerInboxSequencerBatchData)
+		err = seqInboxAbi.UnpackIntoInterface(event, sequencerBatchDataEvent, filteredLogs[0].Data)
+		if err != nil {
+			return nil, err
+		}
+		return event.Data, nil
+	case arbnode.BatchDataNone:
+		// No data when in a force inclusion batch
+		return nil, nil
+	case arbnode.BatchDataBlobHashes:
+		if len(tx.BlobHashes()) == 0 {
+			return nil, fmt.Errorf("blob batch transaction %v has no blobs", tx.Hash())
+		}
+		data := []byte{daprovider.BlobHashesHeaderFlag}
+		for _, h := range tx.BlobHashes() {
+			data = append(data, h[:]...)
+		}
+		return data, nil
+	default:
+		return nil, fmt.Errorf("batch has invalid data location %v", batch.DataLocation)
+	}
 }

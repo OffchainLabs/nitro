@@ -32,10 +32,10 @@ const sequencerBatchDataEvent = "SequencerBatchData"
 type BatchDataLocation uint8
 
 const (
-	batchDataTxInput BatchDataLocation = iota
-	batchDataSeparateEvent
-	batchDataNone
-	batchDataBlobHashes
+	BatchDataTxInput BatchDataLocation = iota
+	BatchDataSeparateEvent
+	BatchDataNone
+	BatchDataBlobHashes
 )
 
 func init() {
@@ -114,7 +114,7 @@ type SequencerInboxBatch struct {
 
 func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethclient.Client) ([]byte, error) {
 	switch m.DataLocation {
-	case batchDataTxInput:
+	case BatchDataTxInput:
 		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.RawLog)
 		if err != nil {
 			return nil, err
@@ -129,7 +129,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 			return nil, errors.New("args[\"data\"] not a byte array")
 		}
 		return dataBytes, nil
-	case batchDataSeparateEvent:
+	case BatchDataSeparateEvent:
 		var numberAsHash common.Hash
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], m.SequenceNumber)
 		query := ethereum.FilterQuery{
@@ -153,10 +153,10 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 			return nil, err
 		}
 		return event.Data, nil
-	case batchDataNone:
+	case BatchDataNone:
 		// No data when in a force inclusion batch
 		return nil, nil
-	case batchDataBlobHashes:
+	case BatchDataBlobHashes:
 		tx, err := arbutil.GetLogTransaction(ctx, client, m.RawLog)
 		if err != nil {
 			return nil, err
