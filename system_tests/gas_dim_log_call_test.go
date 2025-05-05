@@ -884,8 +884,858 @@ func TestDimLogCallWarmPayingContractFundedMemExpansion(t *testing.T) {
 //                                             CALLCODE
 // #########################################################################################################
 // #########################################################################################################
+// CALLCODE is deprecated and also weird.
+// It operates identically to DELEGATECALL but allows you to send funds with the call
+// if you send those funds, it will send them to the library address rather than yourself.
+// So it has a positive_value_cost just like CALL,
+// but it does NOT have the positive_value_to_new_account cost (params.CallNewAccountGas)
+// so all of the test cases for CALLCODE are identical to CALL, EXCEPT FOR
+// the NoCodeVirgin test cases, where there is no cost to positive_value_to_new_account
+// (which tbh sounds like an EVM mispricing bug)
 
-//// Todo: implement all callcode tests by copying call lol
-//func TestDimLogCallCode(t *testing.T) {
-//	t.Fail()
-//}
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee is virgin (has never been seen before on the network)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee is virgin (has never been seen before on the network)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee has been funded before (someone sent it money in the past)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	//prefund callee address
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee has been funded before (someone sent it money in the past)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	//prefund callee address
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has contract code
+// the callee has been funded before (someone sent it money in the past)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeColdNoTransferContractFundedMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCodee)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 490
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has contract code
+// the callee has been funded before (someone sent it money in the past)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeColdNoTransferContractFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCodee)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 490
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee is virgin (has never been seen before on the network)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	// prefund the caller with some funds
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee is virgin (has never been seen before on the network)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeColdPayingNoCodeVirginMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	// prefund the caller with some funds
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + params.CallValueTransferGas - params.CallStipend + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee has been funded before (someone sent it money in the past)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeColdPayingNoCodeFundedMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	// prefund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	noCodeFundedAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, noCodeFundedAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee has been funded before (someone sent it money in the past)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeColdPayingNoCodeFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	// prefund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	noCodeFundedAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, noCodeFundedAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + params.CallValueTransferGas - params.CallStipend + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// ether is being sent with the call
+// the callee has contract code
+// the callee has been funded before (someone sent it money in the past)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeColdPayingContractFundedMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCodee)
+
+	//fund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// fund the callee address with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 490
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is cold in the access list at the time of the call
+// ether is being sent with the call
+// the callee has contract code
+// the callee has been funded before (someone sent it money in the past)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeColdPayingContractFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCodee)
+
+	// fund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// fund the callee address with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + expectedMemExpansionCost + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           ColdMinusWarmAccountAccessCost + params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 490
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee is virgin (has never been seen before on the network)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeWarmNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee is virgin (has never been seen before on the network)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeWarmNoTransferNoCodeVirginMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee has been funded before (someone sent it money in the past)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeWarmNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	//prefund callee address
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee has been funded before (someone sent it money in the past)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeWarmNoTransferNoCodeFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+
+	//prefund callee address
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has contract code
+// the callee has been funded before (someone sent it money in the past)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeWarmNoTransferContractFundedMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCodee)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 490
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// no ether is being sent with the call
+// the callee has contract code
+// the callee has been funded before (someone sent it money in the past)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeWarmNoTransferContractFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCodee)
+
+	// fund the callee address with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 490
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee is virgin (has never been seen before on the network)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeWarmPayingNoCodeVirginMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	// prefund the caller with some funds
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// ether is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee is virgin (has never been seen before on the network)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeWarmPayingNoCodeVirginMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+
+	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	// prefund the caller with some funds
+	// the TransferBalanceTo helper function does the require statements and waiting etc for us
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, noCodeVirginAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas - params.CallStipend + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// ether value is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee has been funded before (someone sent it money in the past)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeWarmPayingNoCodeFundedMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+
+	noCodeFundedAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	// prefund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// prefund the callee with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, noCodeFundedAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// ether value is being sent with the call
+// the callee has no code (either it is an EOA, or has never been seen on the network)
+// the callee has been funded before (someone sent it money in the past)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeWarmPayingNoCodeFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+
+	noCodeFundedAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
+	// prefund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// prefund the callee with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, noCodeFundedAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas - params.CallStipend + expectedMemExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 0
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// ether value is being sent with the call
+// the callee has contract code
+// the callee has been funded before (someone sent it money in the past)
+// there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
+func TestDimLogCallCodeWarmPayingContractFundedMemUnchanged(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCodee)
+
+	// prefund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// prefund the callee with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 490
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
+
+// Perform a CALLCODE from caller to callee where:
+// callee is warm in the access list at the time of the call
+// ether value is being sent with the call
+// the callee has contract code
+// the callee has been funded before (someone sent it money in the past)
+// there is memory expansion, the CALL writes to memory outside the bounds of the original memory
+func TestDimLogCallCodeWarmPayingContractFundedMemExpansion(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	defer cancel()
+	defer cleanup()
+
+	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCodee)
+
+	// fund the caller with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
+	// fund the callee address with some funds
+	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALLCODE")
+	var expectedMemExpansionCost uint64 = 6
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost + params.CallValueTransferGas - params.CallStipend,
+		Computation:           params.WarmStorageReadCostEIP2929 + expectedMemExpansionCost,
+		StateAccess:           params.CallValueTransferGas - params.CallStipend,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+	}
+	var expectedChildGasExecutionCost uint64 = 490
+	checkDimensionLogGasCostsEqualCallGas(t, expected, expectedChildGasExecutionCost, callLog)
+	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, callLog, expectedChildGasExecutionCost)
+}
