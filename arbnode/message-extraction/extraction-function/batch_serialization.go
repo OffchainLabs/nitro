@@ -15,8 +15,11 @@ import (
 )
 
 func serializeBatch(
+	ctx context.Context,
 	batch *arbnode.SequencerInboxBatch,
 	tx *types.Transaction,
+	seqInboxAbi *abi.ABI,
+	receiptFetcher ReceiptFetcher,
 ) ([]byte, error) {
 	if batch.Serialized != nil {
 		return batch.Serialized, nil
@@ -39,7 +42,7 @@ func serializeBatch(
 	}
 
 	// Append the batch data
-	data, err := getSequencerBatchData(batch, tx)
+	data, err := getSequencerBatchData(ctx, batch, tx, seqInboxAbi, receiptFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -56,6 +59,7 @@ func getSequencerBatchData(
 	seqInboxAbi *abi.ABI,
 	receiptFetcher ReceiptFetcher,
 ) ([]byte, error) {
+	addSequencerL2BatchFromOriginCallABI := seqInboxAbi.Methods["addSequencerL2BatchFromOrigin0"]
 	switch batch.DataLocation {
 	case arbnode.BatchDataTxInput:
 		data := tx.Data()
@@ -72,6 +76,9 @@ func getSequencerBatchData(
 		}
 		return dataBytes, nil
 	case arbnode.BatchDataSeparateEvent:
+		sequencerBatchDataABI := seqInboxAbi.Events["SequencerBatchData"].ID
+		var numberAsHash common.Hash
+		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
 		receipt, err := receiptFetcher.TransactionReceipt(ctx, tx.Hash())
 		if err != nil {
 			return nil, err
@@ -79,10 +86,8 @@ func getSequencerBatchData(
 		if len(receipt.Logs) == 0 {
 			return nil, errors.New("no logs found in transaction receipt")
 		}
-		topics := [][]common.Hash{{sequencerBatchDataABI.ID}, {numberAsHash}}
+		topics := [][]common.Hash{{sequencerBatchDataABI}, {numberAsHash}}
 		filteredLogs := filterLogs(receipt.Logs, []common.Address{batch.BridgeAddress}, topics)
-		var numberAsHash common.Hash
-		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
 		if len(filteredLogs) == 0 {
 			return nil, errors.New("expected to find sequencer batch data")
 		}
@@ -90,7 +95,7 @@ func getSequencerBatchData(
 			return nil, errors.New("expected to find only one matching sequencer batch data")
 		}
 		event := new(bridgegen.SequencerInboxSequencerBatchData)
-		err = seqInboxAbi.UnpackIntoInterface(event, sequencerBatchDataEvent, filteredLogs[0].Data)
+		err = seqInboxAbi.UnpackIntoInterface(event, "SequencerBatchData", filteredLogs[0].Data)
 		if err != nil {
 			return nil, err
 		}

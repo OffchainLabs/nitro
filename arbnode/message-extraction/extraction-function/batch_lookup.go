@@ -24,8 +24,9 @@ func parseBatchesFromBlock(
 	block *types.Block,
 	receiptFetcher ReceiptFetcher,
 	params *BatchLookupParams,
-) ([]*arbnode.SequencerInboxBatch, error) {
+) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, error) {
 	allBatches := make([]*arbnode.SequencerInboxBatch, 0)
+	allBatchTxs := make([]*types.Transaction, 0)
 	for _, tx := range block.Transactions() {
 		if tx.To() == nil {
 			continue
@@ -36,12 +37,13 @@ func parseBatchesFromBlock(
 		// Fetch the receipts for the transaction to get the logs.
 		receipt, err := receiptFetcher.TransactionReceipt(ctx, tx.Hash())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if len(receipt.Logs) == 0 {
 			continue
 		}
 		batches := make([]*arbnode.SequencerInboxBatch, 0, len(receipt.Logs))
+		txs := make([]*types.Transaction, 0, len(receipt.Logs))
 		var lastSeqNum *uint64
 		for _, log := range receipt.Logs {
 			if log == nil {
@@ -52,19 +54,19 @@ func parseBatchesFromBlock(
 			}
 			event := new(bridgegen.SequencerInboxSequencerBatchDelivered)
 			if err := unpackLogTo(event, params.SequencerInboxABI, "SequencerBatchDelivered", *log); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if !event.BatchSequenceNumber.IsUint64() {
-				return nil, errors.New("sequencer inbox event has non-uint64 sequence number")
+				return nil, nil, errors.New("sequencer inbox event has non-uint64 sequence number")
 			}
 			if !event.AfterDelayedMessagesRead.IsUint64() {
-				return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
+				return nil, nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
 			}
 
 			seqNum := event.BatchSequenceNumber.Uint64()
 			if lastSeqNum != nil {
 				if seqNum != *lastSeqNum+1 {
-					return nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", *lastSeqNum, seqNum)
+					return nil, nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", *lastSeqNum, seqNum)
 				}
 			}
 			lastSeqNum = &seqNum
@@ -82,8 +84,10 @@ func parseBatchesFromBlock(
 				BridgeAddress:          log.Address,
 			}
 			batches = append(batches, batch)
+			txs = append(txs, tx)
 		}
 		allBatches = append(allBatches, batches...)
+		allBatchTxs = append(allBatchTxs, txs...)
 	}
-	return allBatches, nil
+	return allBatches, allBatchTxs, nil
 }

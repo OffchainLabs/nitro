@@ -66,7 +66,7 @@ func ExtractMessages(
 	state.ParentChainPreviousBlockHash = parentChainBlock.ParentHash()
 	// Now, check for any logs emitted by the sequencer inbox by txs
 	// included in the parent chain block.
-	batches, err := parseBatchesFromBlock(
+	batches, batchTxs, err := parseBatchesFromBlock(
 		ctx,
 		state,
 		parentChainBlock,
@@ -113,7 +113,14 @@ func ExtractMessages(
 
 	var messages []*arbostypes.MessageWithMetadata
 	for i, batch := range batches {
-		serialized, err := serializeBatch(batch)
+		batchTx := batchTxs[i]
+		serialized, err := serializeBatch(
+			ctx,
+			batch,
+			batchTx,
+			batchLookupParams.SequencerInboxABI,
+			receiptFetcher,
+		)
 		if err != nil {
 			return nil, nil, nil, err
 		}
