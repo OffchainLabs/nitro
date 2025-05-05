@@ -19,7 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
 var (
@@ -28,35 +27,11 @@ var (
 	ErrInvalidParentChainBlock = errors.New("invalid parent chain block")
 )
 
-type DelayedMessageParser interface {
-	LookupMessagesInRange(
-		ctx context.Context,
-		startBlock *big.Int,
-		endBlock *big.Int,
-		fetchMessage arbostypes.FallibleBatchFetcher,
-	) ([]*arbnode.DelayedInboxMessage, error)
-}
-
 type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
 		ctx context.Context,
 		index uint64,
 	) (*arbnode.DelayedInboxMessage, error)
-}
-
-type BatchSerializer interface {
-	Serialize(
-		ctx context.Context,
-		batch *arbnode.SequencerInboxBatch,
-	) ([]byte, error)
-}
-
-type BatchEventParser interface {
-	ParseSequencerBatchDelivered(log types.Log) (*bridgegen.SequencerInboxSequencerBatchDelivered, error)
-}
-
-type BridgeEventParser interface {
-	ParseMessageDelivered(log types.Log) (*bridgegen.IBridgeMessageDelivered, error)
 }
 
 type ReceiptFetcher interface {
@@ -68,14 +43,10 @@ func ExtractMessages(
 	inputState *meltypes.State,
 	parentChainBlock *types.Block,
 	dataProviders []daprovider.Reader,
-	delayedMsgParser DelayedMessageParser,
 	delayedMsgDatabase DelayedMessageDatabase,
-	eventParser BatchEventParser,
-	bridgeEventParser BridgeEventParser,
 	receiptFetcher ReceiptFetcher,
-	batchSerializer BatchSerializer,
-	batchDeliveredEventID common.Hash,
-	messageDeliveredEventID common.Hash,
+	batchLookupParams *BatchLookupParams,
+	delayedMessageLookupParams *DelayedMessageLookupParams,
 ) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
 	state := inputState.Clone()
 	// Clones the state to avoid mutating the input pointer in case of errors.
@@ -95,33 +66,23 @@ func ExtractMessages(
 	state.ParentChainPreviousBlockHash = parentChainBlock.ParentHash()
 	// Now, check for any logs emitted by the sequencer inbox by txs
 	// included in the parent chain block.
-	blockNum := parentChainBlock.Number()
-
 	batches, err := parseBatchesFromBlock(
 		ctx,
 		state,
 		parentChainBlock,
-		eventParser,
 		receiptFetcher,
-		batchDeliveredEventID,
+		batchLookupParams,
 	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	delayedMessages, err := delayedMsgParser.LookupMessagesInRange(
+	delayedMessages, err := parseDelayedMessagesFromBlock(
 		ctx,
-		blockNum,
-		blockNum,
-		func(batchNum uint64) ([]byte, error) {
-			if len(batches) > 0 && batchNum >= batches[0].SequenceNumber {
-				idx := batchNum - batches[0].SequenceNumber
-				if idx < uint64(len(batches)) {
-					return batchSerializer.Serialize(ctx, batches[idx])
-				}
-				return nil, fmt.Errorf("missing batch %d", batchNum)
-			}
-			return nil, fmt.Errorf("batch %d not found", batchNum)
-		})
+		state,
+		parentChainBlock,
+		receiptFetcher,
+		delayedMessageLookupParams,
+	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -152,7 +113,7 @@ func ExtractMessages(
 
 	var messages []*arbostypes.MessageWithMetadata
 	for i, batch := range batches {
-		serialized, err := batchSerializer.Serialize(ctx, batch)
+		serialized, err := serializeBatch(batch)
 		if err != nil {
 			return nil, nil, nil, err
 		}

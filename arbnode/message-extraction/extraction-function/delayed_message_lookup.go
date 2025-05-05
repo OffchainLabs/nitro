@@ -15,20 +15,24 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
+
+type DelayedMessageLookupParams struct {
+	MessageDeliveredID         common.Hash
+	InboxMessageDeliveredID    common.Hash
+	InboxMessageFromOriginID   common.Hash
+	IDelayedMessageProviderABI *abi.ABI
+	IBridgeABI                 *abi.ABI
+	IInboxABI                  *abi.ABI
+}
 
 func parseDelayedMessagesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
 	block *types.Block,
-	eventParser BridgeEventParser,
 	receiptFetcher ReceiptFetcher,
-	messageDeliveredID common.Hash,
-	inboxMessageDeliveredID common.Hash,
-	inboxMessageFromOriginID common.Hash,
-	l2MessageFromOriginCallABI abi.Method,
+	params *DelayedMessageLookupParams,
 ) ([]*arbnode.DelayedInboxMessage, error) {
 	msgScaffolds := make([]*arbnode.DelayedInboxMessage, 0)
 	messageDeliveredEvents := make([]*bridgegen.IBridgeMessageDelivered, 0)
@@ -46,7 +50,7 @@ func parseDelayedMessagesFromBlock(
 			return nil, err
 		}
 		delayedMessageScaffolds, parsedLogs, err := delayedMessageScaffoldsFromLogs(
-			receipt.Logs, eventParser,
+			receipt.Logs, params,
 		)
 		if err != nil {
 			return nil, err
@@ -81,17 +85,16 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		topics := [][]common.Hash{
-			{inboxMessageDeliveredID, inboxMessageFromOriginID}, // matches either of these IDs.
+			{params.InboxMessageDeliveredID, params.InboxMessageFromOriginID}, // matches either of these IDs.
 			messageIds, // matches any of the message IDs.
 		}
 		filteredInboxMessageLogs := filterLogs(receipt.Logs, inboxAddressList, topics)
 		for _, inboxMsgLog := range filteredInboxMessageLogs {
 			msgNum, msg, err := parseDelayedMessage(
-				ctx,
 				inboxMsgLog,
-				inboxMessageDeliveredID,
-				inboxMessageFromOriginID,
-				l2MessageFromOriginCallABI)
+				tx,
+				params,
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -116,7 +119,7 @@ func parseDelayedMessagesFromBlock(
 }
 
 func delayedMessageScaffoldsFromLogs(
-	logs []*types.Log, eventParser BridgeEventParser,
+	logs []*types.Log, params *DelayedMessageLookupParams,
 ) ([]*arbnode.DelayedInboxMessage, []*bridgegen.IBridgeMessageDelivered, error) {
 	if len(logs) == 0 {
 		return nil, nil, nil
@@ -126,11 +129,14 @@ func delayedMessageScaffoldsFromLogs(
 	// First, do a pass over the logs to extract message delivered events, which
 	// contain an inbox address and a message index.
 	for _, ethLog := range logs {
-		parsedLog, err := eventParser.ParseMessageDelivered(*ethLog)
-		if err != nil {
+		if ethLog == nil {
+			continue
+		}
+		event := new(bridgegen.IBridgeMessageDelivered)
+		if err := unpackLogTo(event, params.IBridgeABI, "MessageDelivered", *ethLog); err != nil {
 			return nil, nil, err
 		}
-		parsedLogs = append(parsedLogs, parsedLog)
+		parsedLogs = append(parsedLogs, event)
 	}
 
 	// A list of delayed messages that do not have nil L2msg data within, which
@@ -164,45 +170,39 @@ func delayedMessageScaffoldsFromLogs(
 }
 
 func parseDelayedMessage(
-	ctx context.Context,
 	ethLog *types.Log,
-	inboxMessageDeliveredID common.Hash,
-	inboxMessageFromOriginID common.Hash,
-	l2MessageFromOriginCallABI abi.Method,
+	tx *types.Transaction,
+	params *DelayedMessageLookupParams,
 ) (*big.Int, []byte, error) {
 	if ethLog == nil {
 		return nil, nil, nil
 	}
-	con, err := bridgegen.NewIDelayedMessageProvider(ethLog.Address, nil)
-	if err != nil {
-		return nil, nil, err
-	}
 	switch {
-	case ethLog.Topics[0] == inboxMessageDeliveredID:
-		parsedLog, err := con.ParseInboxMessageDelivered(*ethLog)
-		if err != nil {
+	case ethLog.Topics[0] == params.InboxMessageDeliveredID:
+		event := new(bridgegen.IDelayedMessageProviderInboxMessageDelivered)
+		if err := unpackLogTo(event, params.IDelayedMessageProviderABI, "InboxMessageDelivered", *ethLog); err != nil {
 			return nil, nil, err
 		}
-		return parsedLog.MessageNum, parsedLog.Data, nil
-	case ethLog.Topics[0] == inboxMessageFromOriginID:
-		parsedLog, err := con.ParseInboxMessageDeliveredFromOrigin(*ethLog)
-		if err != nil {
-			return nil, nil, err
-		}
-		data, err := arbutil.GetLogEmitterTxData(ctx, nil, *ethLog)
-		if err != nil {
+		return event.MessageNum, event.Data, nil
+	case ethLog.Topics[0] == params.InboxMessageFromOriginID:
+		event := new(bridgegen.IDelayedMessageProviderInboxMessageDeliveredFromOrigin)
+		if err := unpackLogTo(event, params.IDelayedMessageProviderABI, "InboxMessageDeliveredFromOrigin", *ethLog); err != nil {
 			return nil, nil, err
 		}
 		args := make(map[string]interface{})
-		err = l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:])
-		if err != nil {
+		data := tx.Data()
+		if len(data) < 4 {
+			return nil, nil, errors.New("tx data too short") // TODO: Add a hash of the tx that was too short.
+		}
+		l2MessageFromOriginCallABI := params.IInboxABI.Methods["sendL2MessageFromOrigin"]
+		if err := l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:]); err != nil {
 			return nil, nil, err
 		}
 		dataBytes, ok := args["messageData"].([]byte)
 		if !ok {
 			return nil, nil, errors.New("messageData not a byte array")
 		}
-		return parsedLog.MessageNum, dataBytes, nil
+		return event.MessageNum, dataBytes, nil
 	default:
 		return nil, nil, errors.New("unexpected log type")
 	}
@@ -272,4 +272,27 @@ func (l sortableMessageList) Swap(i, j int) {
 
 func (l sortableMessageList) Less(i, j int) bool {
 	return bytes.Compare(l[i].Message.Header.RequestId.Bytes(), l[j].Message.Header.RequestId.Bytes()) < 0
+}
+
+// Unpacks a log into the given struct with an event name string that is
+// present in the specified ABI.
+func unpackLogTo(out any, contractABI *abi.ABI, event string, log types.Log) error {
+	if len(log.Topics) == 0 {
+		return errors.New("no event signature")
+	}
+	if log.Topics[0] != contractABI.Events[event].ID {
+		return fmt.Errorf("event signature mismatch: expected %s, got %s", contractABI.Events[event].ID.Hex(), log.Topics[0].Hex())
+	}
+	if len(log.Data) > 0 {
+		if err := contractABI.UnpackIntoInterface(out, event, log.Data); err != nil {
+			return err
+		}
+	}
+	var indexed abi.Arguments
+	for _, arg := range contractABI.Events[event].Inputs {
+		if arg.Indexed {
+			indexed = append(indexed, arg)
+		}
+	}
+	return abi.ParseTopics(out, indexed, log.Topics[1:])
 }

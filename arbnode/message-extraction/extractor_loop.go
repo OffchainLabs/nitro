@@ -19,7 +19,10 @@ var batchDeliveredID common.Hash
 var messageDeliveredID common.Hash
 var inboxMessageDeliveredID common.Hash
 var inboxMessageFromOriginID common.Hash
-var l2MessageFromOriginCallABI abi.Method
+var seqInboxABI *abi.ABI
+var iBridgeABI *abi.ABI
+var iInboxABI *abi.ABI
+var iDelayedMessageProviderABI *abi.ABI
 
 func init() {
 	var err error
@@ -32,19 +35,24 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	iBridgeABI = parsedIBridgeABI
 	parsedIMessageProviderABI, err := bridgegen.IDelayedMessageProviderMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
+	iDelayedMessageProviderABI = parsedIMessageProviderABI
 	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
 	inboxMessageDeliveredID = parsedIMessageProviderABI.Events["InboxMessageDelivered"].ID
 	inboxMessageFromOriginID = parsedIMessageProviderABI.Events["InboxMessageDeliveredFromOrigin"].ID
-
+	seqInboxABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
 	parsedIInboxABI, err := bridgegen.IInboxMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
-	l2MessageFromOriginCallABI = parsedIInboxABI.Methods["sendL2MessageFromOrigin"]
+	iInboxABI = parsedIInboxABI
 }
 
 type BatchSerializer interface {
@@ -136,14 +144,20 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 			preState,
 			parentChainBlock,
 			m.dataProviders,
-			m.delayedBridge,
 			m.melDB,
-			m.sequencerInboxBindings,
-			m.delayedBridgeBindings,
 			m.l1Reader.Client(),
-			m,
-			batchDeliveredID,
-			messageDeliveredID,
+			&extractionfunction.BatchLookupParams{
+				BatchDeliveredEventID: batchDeliveredID,
+				SequencerInboxABI:     seqInboxABI,
+			},
+			&extractionfunction.DelayedMessageLookupParams{
+				MessageDeliveredID:         messageDeliveredID,
+				InboxMessageDeliveredID:    inboxMessageDeliveredID,
+				InboxMessageFromOriginID:   inboxMessageFromOriginID,
+				IDelayedMessageProviderABI: iDelayedMessageProviderABI,
+				IBridgeABI:                 iBridgeABI,
+				IInboxABI:                  iInboxABI,
+			},
 		)
 		if err != nil {
 			return err

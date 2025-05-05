@@ -5,19 +5,25 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
+
+type BatchLookupParams struct {
+	BatchDeliveredEventID common.Hash
+	SequencerInboxABI     *abi.ABI
+}
 
 func parseBatchesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
 	block *types.Block,
-	eventParser BatchEventParser,
 	receiptFetcher ReceiptFetcher,
-	batchDeliveredEventID common.Hash,
+	params *BatchLookupParams,
 ) ([]*arbnode.SequencerInboxBatch, error) {
 	allBatches := make([]*arbnode.SequencerInboxBatch, 0)
 	for _, tx := range block.Transactions() {
@@ -38,21 +44,24 @@ func parseBatchesFromBlock(
 		batches := make([]*arbnode.SequencerInboxBatch, 0, len(receipt.Logs))
 		var lastSeqNum *uint64
 		for _, log := range receipt.Logs {
-			if log.Topics[0] != batchDeliveredEventID {
+			if log == nil {
 				continue
 			}
-			parsedLog, err := eventParser.ParseSequencerBatchDelivered(*log)
-			if err != nil {
+			if log.Topics[0] != params.BatchDeliveredEventID {
+				continue
+			}
+			event := new(bridgegen.SequencerInboxSequencerBatchDelivered)
+			if err := unpackLogTo(event, params.SequencerInboxABI, "SequencerBatchDelivered", *log); err != nil {
 				return nil, err
 			}
-			if !parsedLog.BatchSequenceNumber.IsUint64() {
+			if !event.BatchSequenceNumber.IsUint64() {
 				return nil, errors.New("sequencer inbox event has non-uint64 sequence number")
 			}
-			if !parsedLog.AfterDelayedMessagesRead.IsUint64() {
+			if !event.AfterDelayedMessagesRead.IsUint64() {
 				return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
 			}
 
-			seqNum := parsedLog.BatchSequenceNumber.Uint64()
+			seqNum := event.BatchSequenceNumber.Uint64()
 			if lastSeqNum != nil {
 				if seqNum != *lastSeqNum+1 {
 					return nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", *lastSeqNum, seqNum)
@@ -63,13 +72,13 @@ func parseBatchesFromBlock(
 				BlockHash:              log.BlockHash,
 				ParentChainBlockNumber: log.BlockNumber,
 				SequenceNumber:         seqNum,
-				BeforeInboxAcc:         parsedLog.BeforeAcc,
-				AfterInboxAcc:          parsedLog.AfterAcc,
-				AfterDelayedAcc:        parsedLog.DelayedAcc,
-				AfterDelayedCount:      parsedLog.AfterDelayedMessagesRead.Uint64(),
+				BeforeInboxAcc:         event.BeforeAcc,
+				AfterInboxAcc:          event.AfterAcc,
+				AfterDelayedAcc:        event.DelayedAcc,
+				AfterDelayedCount:      event.AfterDelayedMessagesRead.Uint64(),
 				RawLog:                 *log,
-				TimeBounds:             parsedLog.TimeBounds,
-				DataLocation:           arbnode.BatchDataLocation(parsedLog.DataLocation),
+				TimeBounds:             event.TimeBounds,
+				DataLocation:           arbnode.BatchDataLocation(event.DataLocation),
 				BridgeAddress:          log.Address,
 			}
 			batches = append(batches, batch)
