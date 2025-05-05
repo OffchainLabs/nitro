@@ -24,9 +24,10 @@ func parseBatchesFromBlock(
 	parentChainBlock *types.Block,
 	receiptFetcher ReceiptFetcher,
 	params *BatchLookupParams,
-) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, error) {
+) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint64, error) {
 	allBatches := make([]*arbnode.SequencerInboxBatch, 0)
 	allBatchTxs := make([]*types.Transaction, 0)
+	allBatchTxIndices := make([]uint64, 0)
 	for i, tx := range parentChainBlock.Transactions() {
 		if tx.To() == nil {
 			continue
@@ -38,13 +39,14 @@ func parseBatchesFromBlock(
 		txIndex := uint64(i)
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if len(receipt.Logs) == 0 {
 			continue
 		}
 		batches := make([]*arbnode.SequencerInboxBatch, 0, len(receipt.Logs))
 		txs := make([]*types.Transaction, 0, len(receipt.Logs))
+		txIndices := make([]uint64, 0, len(receipt.Logs))
 		var lastSeqNum *uint64
 		for _, log := range receipt.Logs {
 			if log == nil {
@@ -55,19 +57,19 @@ func parseBatchesFromBlock(
 			}
 			event := new(bridgegen.SequencerInboxSequencerBatchDelivered)
 			if err := unpackLogTo(event, params.SequencerInboxABI, "SequencerBatchDelivered", *log); err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			if !event.BatchSequenceNumber.IsUint64() {
-				return nil, nil, errors.New("sequencer inbox event has non-uint64 sequence number")
+				return nil, nil, nil, errors.New("sequencer inbox event has non-uint64 sequence number")
 			}
 			if !event.AfterDelayedMessagesRead.IsUint64() {
-				return nil, nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
+				return nil, nil, nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
 			}
 
 			seqNum := event.BatchSequenceNumber.Uint64()
 			if lastSeqNum != nil {
 				if seqNum != *lastSeqNum+1 {
-					return nil, nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", *lastSeqNum, seqNum)
+					return nil, nil, nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", *lastSeqNum, seqNum)
 				}
 			}
 			lastSeqNum = &seqNum
@@ -86,9 +88,11 @@ func parseBatchesFromBlock(
 			}
 			batches = append(batches, batch)
 			txs = append(txs, tx)
+			txIndices = append(txIndices, uint64(i))
 		}
 		allBatches = append(allBatches, batches...)
 		allBatchTxs = append(allBatchTxs, txs...)
+		allBatchTxIndices = append(allBatchTxIndices, txIndices...)
 	}
-	return allBatches, allBatchTxs, nil
+	return allBatches, allBatchTxs, allBatchTxIndices, nil
 }

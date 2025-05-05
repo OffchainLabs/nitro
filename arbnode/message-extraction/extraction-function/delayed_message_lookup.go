@@ -30,14 +30,14 @@ type DelayedMessageLookupParams struct {
 func parseDelayedMessagesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
-	block *types.Block,
+	parentChainBlock *types.Block,
 	receiptFetcher ReceiptFetcher,
 	params *DelayedMessageLookupParams,
 ) ([]*arbnode.DelayedInboxMessage, error) {
 	msgScaffolds := make([]*arbnode.DelayedInboxMessage, 0)
 	messageDeliveredEvents := make([]*bridgegen.IBridgeMessageDelivered, 0)
-	txes := block.Transactions()
-	for _, tx := range txes {
+	txes := parentChainBlock.Transactions()
+	for i, tx := range txes {
 		if tx.To() == nil {
 			continue
 		}
@@ -45,7 +45,8 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		// Fetch the receipts for the transaction to get the logs.
-		receipt, err := receiptFetcher.TransactionReceipt(ctx, tx.Hash())
+		txIndex := uint64(i)
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +70,7 @@ func parseDelayedMessagesFromBlock(
 		inboxAddressList = append(inboxAddressList, addr)
 	}
 	messageData := make(map[common.Hash][]byte)
-	for _, tx := range txes {
+	for i, tx := range txes {
 		if tx.To() == nil {
 			continue
 		}
@@ -77,7 +78,8 @@ func parseDelayedMessagesFromBlock(
 		if !ok {
 			continue
 		}
-		receipt, err := receiptFetcher.TransactionReceipt(ctx, tx.Hash())
+		txIndex := uint64(i)
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, err
 		}

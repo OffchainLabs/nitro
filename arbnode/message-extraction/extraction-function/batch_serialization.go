@@ -17,7 +17,9 @@ import (
 func serializeBatch(
 	ctx context.Context,
 	batch *arbnode.SequencerInboxBatch,
+	parentChainBlock *types.Block,
 	tx *types.Transaction,
+	txIndex uint64,
 	seqInboxAbi *abi.ABI,
 	receiptFetcher ReceiptFetcher,
 ) ([]byte, error) {
@@ -42,7 +44,15 @@ func serializeBatch(
 	}
 
 	// Append the batch data
-	data, err := getSequencerBatchData(ctx, batch, tx, seqInboxAbi, receiptFetcher)
+	data, err := getSequencerBatchData(
+		ctx,
+		batch,
+		parentChainBlock,
+		tx,
+		txIndex,
+		seqInboxAbi,
+		receiptFetcher,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +65,9 @@ func serializeBatch(
 func getSequencerBatchData(
 	ctx context.Context,
 	batch *arbnode.SequencerInboxBatch,
+	parentChainBlock *types.Block,
 	tx *types.Transaction,
+	txIndex uint64,
 	seqInboxAbi *abi.ABI,
 	receiptFetcher ReceiptFetcher,
 ) ([]byte, error) {
@@ -79,7 +91,7 @@ func getSequencerBatchData(
 		sequencerBatchDataABI := seqInboxAbi.Events["SequencerBatchData"].ID
 		var numberAsHash common.Hash
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
-		receipt, err := receiptFetcher.TransactionReceipt(ctx, tx.Hash())
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, err
 		}
