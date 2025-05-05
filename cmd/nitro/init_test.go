@@ -47,6 +47,55 @@ const (
 	dirPerm     = 0700
 )
 
+func TestInitializeAndDownloadInit(t *testing.T) {
+	// Create archive with random data
+	serverDir := t.TempDir()
+	data := testhelpers.RandomSlice(dataSize)
+
+	// Write archive file
+	archiveFile := fmt.Sprintf("%s/%s", serverDir, archiveName)
+	err := os.WriteFile(archiveFile, data, filePerm)
+	Require(t, err, "failed to write archive")
+
+	// Start HTTP server
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	addr := startFileServer(t, ctx, serverDir)
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	// Download file
+	initConfig := conf.InitConfigDefault
+	initConfig.Url = fmt.Sprintf("http://%s/%s", addr, archiveName)
+	initConfig.ValidateChecksum = false
+	initConfig.DownloadPath = ""
+	receivedArchive, cleanUpTmp, err := initializeAndDownloadInit(ctx, &initConfig, stack)
+	Require(t, err, "failed to download")
+
+	// Check archive contents
+	receivedData, err := os.ReadFile(receivedArchive)
+	Require(t, err, "failed to read received archive")
+	if !bytes.Equal(receivedData, data) {
+		t.Error("downloaded archive is different from generated one")
+	}
+
+	// Check if initConfig.DownloadPath is as expected and that the cleanup function deletes temporary directory (tmp) inside chain directory
+	expectedDownloadPath := filepath.Join(stack.InstanceDir(), "tmp")
+	if initConfig.DownloadPath != expectedDownloadPath {
+		t.Errorf("unexpected default download path. Want: %s Got: %s", expectedDownloadPath, initConfig.DownloadPath)
+	}
+	_, err = os.Stat(initConfig.DownloadPath)
+	Require(t, err)
+	cleanUpTmp()
+	_, err = os.Stat(initConfig.DownloadPath)
+	if !os.IsNotExist(err) {
+		t.Errorf("expecting os.stat to return os.ErrNotExist error after tmp directory cleanup, found: %s", err.Error())
+	}
+}
+
 func TestDownloadInitWithoutChecksum(t *testing.T) {
 	// Create archive with random data
 	serverDir := t.TempDir()
@@ -390,6 +439,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
+		nil,
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
@@ -407,6 +457,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
+		nil,
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
@@ -425,6 +476,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
+		nil,
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
@@ -561,6 +613,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
+		nil,
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
