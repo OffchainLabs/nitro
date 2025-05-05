@@ -24,10 +24,10 @@ RUN apt-get update && \
 FROM scratch AS brotli-library-export
 COPY --from=brotli-library-builder /workspace/install/ /
 
-FROM node:18-bookworm-slim AS contracts-builder
+FROM node:20-bookworm-slim AS contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
-RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup
+RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.0.0
 WORKDIR /workspace
 COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
 RUN cd contracts-legacy && yarn install
@@ -36,7 +36,7 @@ RUN cd contracts && yarn install
 COPY contracts-legacy contracts-legacy/
 COPY contracts contracts/
 COPY safe-smart-account safe-smart-account/
-RUN cd safe-smart-account && yarn install
+RUN cd safe-smart-account && yarn add hardhat@2.22.12 --dev && yarn install
 COPY Makefile .
 RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
