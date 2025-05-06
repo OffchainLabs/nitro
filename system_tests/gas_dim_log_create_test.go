@@ -47,7 +47,7 @@ import (
 // the history growth to be 0
 // the state growth refund to be 0
 func TestDimLogCreateNoTransferMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -88,7 +88,7 @@ func TestDimLogCreateNoTransferMemUnchanged(t *testing.T) {
 // in this test, we do a CREATE of a new contract with no transfer of value
 // and the creation writes to new additional memory, causing memory expansion
 func TestDimLogCreateNoTransferMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -132,7 +132,7 @@ func TestDimLogCreateNoTransferMemExpansion(t *testing.T) {
 // The gas costs are identical to the case with NoTransfer, see
 // the comments for TestDimLogCreateNoTransferMemUnchanged above
 func TestDimLogCreatePayingMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -175,7 +175,7 @@ func TestDimLogCreatePayingMemUnchanged(t *testing.T) {
 // in this test, we do a CREATE of a new contract with transfer of value
 // and the creation writes to new additional memory, causing memory expansion
 func TestDimLogCreatePayingMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -247,7 +247,7 @@ func TestDimLogCreatePayingMemExpansion(t *testing.T) {
 // the history growth to be 0
 // the state growth refund to be 0
 func TestDimLogCreate2NoTransferMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -289,7 +289,7 @@ func TestDimLogCreate2NoTransferMemUnchanged(t *testing.T) {
 // in this test, we do a CREATE2 of a new contract with no transfer of value
 // and the creation writes to new additional memory, causing memory expansion
 func TestDimLogCreate2NoTransferMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -334,7 +334,7 @@ func TestDimLogCreate2NoTransferMemExpansion(t *testing.T) {
 // The gas costs are identical to the case with NoTransfer, see
 // the comments for TestDimLogCreateNoTransferMemUnchanged above
 func TestDimLogCreate2PayingMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -376,7 +376,7 @@ func TestDimLogCreate2PayingMemUnchanged(t *testing.T) {
 // in this test, we do a CREATE2 of a new contract with transfer of value
 // and the creation writes to new additional memory, causing memory expansion
 func TestDimLogCreate2PayingMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 

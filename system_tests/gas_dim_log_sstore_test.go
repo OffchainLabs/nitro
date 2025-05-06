@@ -38,7 +38,7 @@ import (
 // we expect computation to be 0, state access to be 2200, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSstoreColdZeroToZero(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -68,7 +68,7 @@ func TestDimLogSstoreColdZeroToZero(t *testing.T) {
 // we expect computation to be 0, state read/write to be 2100, state growth to be 20000,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSstoreColdZeroToNonZeroValue(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -98,7 +98,7 @@ func TestDimLogSstoreColdZeroToNonZeroValue(t *testing.T) {
 // we expect computation to be 100, state read/write to be 0, state growth to be 4900,
 // history growth to be 0, and state growth refund to be 4800
 func TestDimLogSstoreColdNonZeroValueToZero(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -129,7 +129,7 @@ func TestDimLogSstoreColdNonZeroValueToZero(t *testing.T) {
 // we expect computation to be 0, state read/write to be 2200, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -160,7 +160,7 @@ func TestDimLogSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
 // we expect computation to be 0, state read/write to be 5000, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -189,7 +189,7 @@ func TestDimLogSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {
 // we expect computation to be 0, state access to be 100, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSstoreWarmZeroToZero(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -218,7 +218,7 @@ func TestDimLogSstoreWarmZeroToZero(t *testing.T) {
 // we expect computation to be 0, state access to be 0, state growth to be 20000,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSstoreWarmZeroToNonZeroValue(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -248,7 +248,7 @@ func TestDimLogSstoreWarmZeroToNonZeroValue(t *testing.T) {
 // we expect computation to be 0, state read/write to be 2900, state growth to be 0,
 // history growth to be 0, and state growth refund to be 4800
 func TestDimLogSstoreWarmNonZeroValueToZero(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -278,7 +278,7 @@ func TestDimLogSstoreWarmNonZeroValueToZero(t *testing.T) {
 // we expect computation to be 0, state read/write to be 100, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -308,7 +308,7 @@ func TestDimLogSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
 // we expect computation to be 0, state read/write to be 2900, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -341,7 +341,7 @@ func TestDimLogSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -375,7 +375,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be 2800
 func TestDimLogSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -410,7 +410,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be -4800
 func TestDimLogSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -445,7 +445,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be -2000
 func TestDimLogSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -478,7 +478,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -512,7 +512,7 @@ func TestDimLogSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
 // we expect computation to be 0, state read/write to be 0, state growth to be 100,
 // history growth to be 0, and state growth refund to be 19900
 func TestDimLogSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
