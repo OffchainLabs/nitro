@@ -38,7 +38,7 @@ import (
 // state access to be 2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -74,7 +74,7 @@ func TestDimLogDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
 // state access to be 0, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -112,7 +112,7 @@ func TestDimLogDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
 // state access to be 2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogDelegateCallColdContractMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -151,7 +151,7 @@ func TestDimLogDelegateCallColdContractMemUnchanged(t *testing.T) {
 // state access to be 0, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogDelegateCallWarmContractMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -191,7 +191,7 @@ func TestDimLogDelegateCallWarmContractMemUnchanged(t *testing.T) {
 // state access to be 2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogDelegateCallColdNoCodeMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -230,7 +230,7 @@ func TestDimLogDelegateCallColdNoCodeMemExpansion(t *testing.T) {
 // state access to be 0, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -271,7 +271,7 @@ func TestDimLogDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
 // state access to be 2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogDelegateCallColdContractMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -313,7 +313,7 @@ func TestDimLogDelegateCallColdContractMemExpansion(t *testing.T) {
 // state access to be 0, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogDelegateCallWarmContractMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -350,7 +350,7 @@ func TestDimLogDelegateCallWarmContractMemExpansion(t *testing.T) {
 // computation to be 100 for the warm access list read cost, state access to be 2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogStaticCallColdNoCodeMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -384,7 +384,7 @@ func TestDimLogStaticCallColdNoCodeMemUnchanged(t *testing.T) {
 // computation to be 100 for the warm access list read cost, state access to be 0, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -418,7 +418,7 @@ func TestDimLogStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
 // computation to be 100 for the warm access list read cost, state access to be 2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogStaticCallColdContractMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -451,7 +451,7 @@ func TestDimLogStaticCallColdContractMemUnchanged(t *testing.T) {
 // computation to be 100 for the warm access list read cost, state access to be 0, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogStaticCallWarmContractMemUnchanged(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -485,7 +485,7 @@ func TestDimLogStaticCallWarmContractMemUnchanged(t *testing.T) {
 // computation to be 100+6 for the warm access list read cost, state access to be 2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogStaticCallColdNoCodeMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -522,7 +522,7 @@ func TestDimLogStaticCallColdNoCodeMemExpansion(t *testing.T) {
 // computation to be 100+6 for the warm access list read cost, state access to be 0, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogStaticCallWarmNoCodeMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -560,7 +560,7 @@ func TestDimLogStaticCallWarmNoCodeMemExpansion(t *testing.T) {
 // computation to be 100+6 for the warm access list read cost, state access to be 2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogStaticCallColdContractMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -597,7 +597,7 @@ func TestDimLogStaticCallColdContractMemExpansion(t *testing.T) {
 // computation to be 100+6 for the warm access list read cost, state access to be 0, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogStaticCallWarmContractMemExpansion(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
