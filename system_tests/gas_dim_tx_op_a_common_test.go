@@ -73,8 +73,17 @@ func callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(
 	}
 
 	// Validate basic structure
-	if traceResult.Gas == 0 {
+	if traceResult.GasUsed == 0 {
 		Fatal(t, "Expected non-zero gas usage")
+	}
+	if traceResult.GasUsedForL1 == 0 {
+		Fatal(t, "Expected non-zero gas usage for L1")
+	}
+	if traceResult.GasUsedForL2 == 0 {
+		Fatal(t, "Expected non-zero gas usage for L2")
+	}
+	if traceResult.IntrinsicGas == 0 {
+		Fatal(t, "Expected non-zero intrinsic gas")
 	}
 	if traceResult.Failed {
 		Fatal(t, "Transaction should not have failed")

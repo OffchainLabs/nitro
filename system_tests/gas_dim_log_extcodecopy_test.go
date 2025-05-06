@@ -107,7 +107,7 @@ func TestDimLogExtCodeCopyColdMemUnchanged(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		extCodeCopyLog,
@@ -145,7 +145,7 @@ func TestDimLogExtCodeCopyColdMemExpansion(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		extCodeCopyLog,
@@ -181,7 +181,7 @@ func TestDimLogExtCodeCopyWarmMemUnchanged(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		extCodeCopyLog,
@@ -219,7 +219,7 @@ func TestDimLogExtCodeCopyWarmMemExpansion(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		extCodeCopyLog,
