@@ -101,6 +101,7 @@ type Config struct {
 	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
 	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
 	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
 
 	forwardingTarget string
 }
@@ -145,6 +146,22 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
+	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
+}
+
+type LiveTracingConfig struct {
+	TracerName string `koanf:"tracer-name"`
+	JSONConfig string `koanf:"json-config"`
+}
+
+var DefaultLiveTracingConfig = LiveTracingConfig{
+	TracerName: "",
+	JSONConfig: "{}",
+}
+
+func LiveTracingConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".tracer-name", DefaultLiveTracingConfig.TracerName, "Name of tracer which should record internal VM operations (costly)")
+	f.String(prefix+".json-config", DefaultLiveTracingConfig.JSONConfig, "Tracer configuration in JSON format")
 }
 
 var ConfigDefault = Config{
@@ -162,6 +179,7 @@ var ConfigDefault = Config{
 	StylusTarget:                DefaultStylusTargetConfig,
 	BlockMetadataApiCacheSize:   100 * 1024 * 1024,
 	BlockMetadataApiBlocksLimit: 100,
+	VmTrace:                     DefaultLiveTracingConfig,
 }
 
 type ConfigFetcher func() *Config
