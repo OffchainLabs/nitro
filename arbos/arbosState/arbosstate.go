@@ -4,6 +4,7 @@
 package arbosState
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -513,6 +514,26 @@ func (state *ArbosState) ChainId() (*big.Int, error) {
 
 func (state *ArbosState) ChainConfig() ([]byte, error) {
 	return state.chainConfig.Get()
+}
+
+func (state *ArbosState) ParsedChainConfig() (*params.ChainConfig, error) {
+	marshalled, err := state.ChainConfig()
+	if err != nil {
+		return nil, err
+	}
+	if len(marshalled) == 0 {
+		chainId, err := state.ChainId()
+		if err != nil {
+			return nil, err
+		}
+		return chaininfo.GetChainConfig(chainId, "", 0, []string{}, "")
+	}
+	var parsedConfig params.ChainConfig
+	err = json.Unmarshal(marshalled, &parsedConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing internal chainConfig: %w", err)
+	}
+	return &parsedConfig, nil
 }
 
 func (state *ArbosState) SetChainConfig(serializedChainConfig []byte) error {

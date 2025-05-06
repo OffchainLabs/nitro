@@ -4,7 +4,6 @@
 package precompiles
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,7 +66,11 @@ func (con ArbOwner) AddNativeTokenOwner(c ctx, evm mech, newOwner addr) error {
 		return fmt.Errorf(nativeTokenNotSupportedArbOSVersion, c.State.ArbOSVersion())
 	}
 
-	if !evm.ChainConfig().ArbNativeTokenOwnerEnabled(evm.Context.Time) {
+	chainConfig, err := c.State.ParsedChainConfig()
+	if err != nil {
+		return nil
+	}
+	if chainConfig.ArbNativeTokenOwnerEnabled(evm.Context.Time) {
 		return errors.New("native token owners not enabled in this chain")
 	}
 
@@ -388,25 +391,11 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 		if newConfig.ChainID.Cmp(chainId) != 0 {
 			return fmt.Errorf("invalid chain config, chain id mismatch, want: %v, have: %v", chainId, newConfig.ChainID)
 		}
-		oldSerializedConfig, err := c.State.ChainConfig()
+		oldConfig, err := c.State.ParsedChainConfig()
 		if err != nil {
-			return fmt.Errorf("failed to get old chain config from ArbOS state: %w", err)
+			return err
 		}
-		if bytes.Equal(oldSerializedConfig, serializedChainConfig) {
-			return errors.New("new chain config is the same as old one in ArbOS state")
-		}
-		if len(oldSerializedConfig) != 0 {
-			var oldConfig params.ChainConfig
-			err = json.Unmarshal(oldSerializedConfig, &oldConfig)
-			if err != nil {
-				return fmt.Errorf("failed to deserialize old chain config: %w", err)
-			}
-			if err := oldConfig.CheckCompatible(&newConfig, evm.Context.BlockNumber.Uint64(), evm.Context.Time); err != nil {
-				return fmt.Errorf("invalid chain config, not compatible with previous: %w", err)
-			}
-		}
-		currentConfig := evm.ChainConfig()
-		if err := currentConfig.CheckCompatible(&newConfig, evm.Context.BlockNumber.Uint64(), evm.Context.Time); err != nil {
+		if err := oldConfig.CheckCompatible(&newConfig, evm.Context.BlockNumber.Uint64(), evm.Context.Time); err != nil {
 			return fmt.Errorf("invalid chain config, not compatible with EVM's chain config: %w", err)
 		}
 	}
