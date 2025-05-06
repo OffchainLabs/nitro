@@ -18,7 +18,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/dbutil"
 )
@@ -916,7 +916,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 	}
 
 	var localWg sync.WaitGroup
-	threads := runtime.NumCPU()
+	threads := util.GoMaxProcs()
 	var failedTxIndiciesMutex sync.Mutex
 	failedTxIndicies := make(map[common.Hash]uint64)
 	for thread := 0; thread < threads; thread++ {
