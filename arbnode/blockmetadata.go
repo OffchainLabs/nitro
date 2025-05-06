@@ -76,6 +76,7 @@ type BlockMetadataFetcher struct {
 
 	chainIdChecked      bool
 	currentSyncInterval time.Duration
+	lastRequestTime     time.Time
 }
 
 func NewBlockMetadataFetcher(
@@ -122,9 +123,24 @@ func NewBlockMetadataFetcher(
 }
 
 func (b *BlockMetadataFetcher) fetch(ctx context.Context, fromBlock, toBlock uint64) ([]gethexec.NumberAndBlockMetadata, error) {
+	// Rate limit: 1 request per second
+	now := time.Now()
+	if !b.lastRequestTime.IsZero() {
+		waitTime := time.Second - now.Sub(b.lastRequestTime)
+		if waitTime > 0 {
+			select {
+			case <-time.After(waitTime):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+
 	var result []gethexec.NumberAndBlockMetadata
 	// #nosec G115
 	err := b.client.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(fromBlock), rpc.BlockNumber(toBlock))
+	b.lastRequestTime = time.Now()
+
 	if err != nil {
 		return nil, err
 	}

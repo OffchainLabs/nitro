@@ -3,7 +3,6 @@ package redis
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -12,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/pubsub"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -64,7 +64,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	}
 	workers := s.config.Workers
 	if workers == 0 {
-		workers = runtime.NumCPU()
+		workers = util.GoMaxProcs()
 	}
 	workQueue := make(chan workUnit, workers)
 	tokensCount := workers

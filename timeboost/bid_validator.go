@@ -277,6 +277,23 @@ func (bv *BidValidator) fetchReservePrice() *big.Int {
 	return bv.reservePrice
 }
 
+// Check time-related constraints for bid.
+// It's useful to split out to be able to re-check just these contraints after
+// time has elapsed.
+func validateBidTimeConstraints(roundTimingInfo *RoundTimingInfo, bidRound uint64) error {
+	// Check if the bid is intended for upcoming round.
+	upcomingRound := roundTimingInfo.RoundNumber() + 1
+	if bidRound != upcomingRound {
+		return errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bidRound)
+	}
+
+	// Check if the auction is closed.
+	if roundTimingInfo.isAuctionRoundClosed() {
+		return errors.Wrap(ErrBadRoundNumber, "auction is closed")
+	}
+	return nil
+}
+
 func (bv *BidValidator) validateBid(
 	bid *Bid,
 	balanceCheckerFn func(opts *bind.CallOpts, account common.Address) (*big.Int, error)) (*JsonValidatedBid, error) {
@@ -299,15 +316,8 @@ func (bv *BidValidator) validateBid(
 		return nil, errors.Wrapf(ErrWrongChainId, "can not auction for chain id: %d", bid.ChainId)
 	}
 
-	// Check if the bid is intended for upcoming round.
-	upcomingRound := bv.roundTimingInfo.RoundNumber() + 1
-	if bid.Round != upcomingRound {
-		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
-	}
-
-	// Check if the auction is closed.
-	if bv.roundTimingInfo.isAuctionRoundClosed() {
-		return nil, errors.Wrap(ErrBadRoundNumber, "auction is closed")
+	if err := validateBidTimeConstraints(&bv.roundTimingInfo, (uint64)(bid.Round)); err != nil {
+		return nil, err
 	}
 
 	// Check bid is higher than or equal to reserve price.

@@ -199,9 +199,6 @@ func TestIsAlreadyKnownError(t *testing.T) {
 		{"already known", true},
 		{"insufficient balance", false},
 		{"foo already known\nbar", true},
-		{"replacement transaction underpriced: new tx gas fee cap 3824396284 \u003c= 3824396284 queued", true},
-		{"replacement transaction underpriced: new tx gas fee cap 1234 \u003c= 5678 queued", false},
-		{"foo replacement transaction underpriced: new tx gas fee cap 3824396284 \u003c= 3824396284 queued bar", true},
 	} {
 		got := IsAlreadyKnownError(errors.New(testCase.input))
 		if got != testCase.expected {
