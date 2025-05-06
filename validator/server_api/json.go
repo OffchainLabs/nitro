@@ -6,7 +6,6 @@ package server_api
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -56,15 +55,16 @@ type Request struct {
 }
 
 type InputJSON struct {
-	Id            uint64
-	HasDelayedMsg bool
-	DelayedMsgNr  uint64
-	PreimagesB64  map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
-	BatchInfo     []BatchInfoJson
-	DelayedMsgB64 string
-	StartState    validator.GoGlobalState
-	UserWasms     map[ethdb.WasmTarget]map[common.Hash]string
-	DebugChain    bool
+	Id              uint64
+	HasDelayedMsg   bool
+	DelayedMsgNr    uint64
+	PreimagesB64    map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
+	BatchInfo       []BatchInfoJson
+	DelayedMsgB64   string
+	StartState      validator.GoGlobalState
+	UserWasms       map[ethdb.WasmTarget]map[common.Hash]string
+	DebugChain      bool
+	MaxUserWasmSize uint `json:"max-user-wasmSize,omitempty"`
 }
 
 // Marshal returns the JSON encoding of the InputJSON.
@@ -96,9 +96,13 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
 	}
+	maxWasmSize := 0
 	for target, wasms := range entry.UserWasms {
 		archWasms := make(map[common.Hash]string)
 		for moduleHash, data := range wasms {
+			if len(data) > maxWasmSize {
+				maxWasmSize = len(data)
+			}
 			compressed, err := arbcompress.CompressLevel(data, 1)
 			if err != nil {
 				continue
@@ -107,6 +111,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		}
 		res.UserWasms[target] = archWasms
 	}
+	res.MaxUserWasmSize = uint(maxWasmSize)
 	return res
 }
 
@@ -140,6 +145,13 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}
+	maxWasmSize := entry.MaxUserWasmSize + 10_000
+	if maxWasmSize < 2_000_000 {
+		maxWasmSize = 2_000_000
+	}
+	if maxWasmSize > 256_000_000 {
+		return nil, fmt.Errorf("refusing maxWasmSize: %d", maxWasmSize)
+	}
 	for target, wasms := range entry.UserWasms {
 		archWasms := make(map[common.Hash][]byte)
 		for moduleHash, encoded := range wasms {
@@ -147,21 +159,9 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 			if err != nil {
 				return nil, err
 			}
-			maxSize := 2_000_000
-			var uncompressed []byte
-			for {
-				uncompressed, err = arbcompress.Decompress(decoded, maxSize)
-				if errors.Is(err, arbcompress.ErrOutputWontFit) {
-					if maxSize >= 512_000_000 {
-						return nil, errors.New("failed decompression: too large")
-					}
-					maxSize = maxSize * 4
-					continue
-				}
-				if err != nil {
-					return nil, err
-				}
-				break
+			uncompressed, err := arbcompress.Decompress(decoded, int(maxWasmSize))
+			if err != nil {
+				return nil, err
 			}
 			archWasms[moduleHash] = uncompressed
 		}
