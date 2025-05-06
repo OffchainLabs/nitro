@@ -63,7 +63,7 @@ func TestDimLogLog0TopicsOnlyMemUnchanged(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log0Log,
@@ -98,7 +98,7 @@ func TestDimLogLog0ExtraDataMemUnchanged(t *testing.T) {
 		HistoryGrowth:         LogDataGas * numBytesWritten,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log0Log,
@@ -134,7 +134,7 @@ func TestDimLogLog1TopicsOnlyMemUnchanged(t *testing.T) {
 		HistoryGrowth:         numTopics * LogTopicGasHistoryGrowth,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log1Log,
@@ -172,7 +172,7 @@ func TestDimLogLog1ExtraDataMemUnchanged(t *testing.T) {
 		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log1Log,
@@ -207,7 +207,7 @@ func TestDimLogLog2TopicsOnlyMemUnchanged(t *testing.T) {
 		HistoryGrowth:         numTopics * LogTopicGasHistoryGrowth,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log2Log,
@@ -246,7 +246,7 @@ func TestDimLogLog2ExtraDataMemUnchanged(t *testing.T) {
 		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log2Log,
@@ -281,7 +281,7 @@ func TestDimLogLog3TopicsOnlyMemUnchanged(t *testing.T) {
 		HistoryGrowth:         numTopics * LogTopicGasHistoryGrowth,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log3Log,
@@ -320,7 +320,7 @@ func TestDimLogLog3ExtraDataMemUnchanged(t *testing.T) {
 		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log3Log,
@@ -355,7 +355,7 @@ func TestDimLogLog4TopicsOnlyMemUnchanged(t *testing.T) {
 		HistoryGrowth:         numTopics * LogTopicGasHistoryGrowth,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log4Log,
@@ -394,7 +394,7 @@ func TestDimLogLog4ExtraDataMemUnchanged(t *testing.T) {
 		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log4Log,
@@ -450,7 +450,7 @@ func TestDimLogLog0ExtraDataMemExpansion(t *testing.T) {
 		HistoryGrowth:         LogDataGas * numBytesWritten,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log0Log,
@@ -491,7 +491,7 @@ func TestDimLogLog1ExtraDataMemExpansion(t *testing.T) {
 		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log1Log,
@@ -532,7 +532,7 @@ func TestDimLogLog2ExtraDataMemExpansion(t *testing.T) {
 		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log2Log,
@@ -573,7 +573,7 @@ func TestDimLogLog3ExtraDataMemExpansion(t *testing.T) {
 		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log3Log,
@@ -614,7 +614,7 @@ func TestDimLogLog4ExtraDataMemExpansion(t *testing.T) {
 		HistoryGrowth:         numTopics*LogTopicGasHistoryGrowth + LogDataGas*numBytesWritten,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		log4Log,

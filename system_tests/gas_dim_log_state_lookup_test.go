@@ -47,7 +47,7 @@ func TestDimLogBalanceCold(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		balanceLog,
@@ -79,7 +79,7 @@ func TestDimLogBalanceWarm(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		balanceLog,
@@ -116,7 +116,7 @@ func TestDimLogExtCodeSizeCold(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		extCodeSizeLog,
@@ -148,7 +148,7 @@ func TestDimLogExtCodeSizeWarm(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		extCodeSizeLog,
@@ -185,7 +185,7 @@ func TestDimLogExtCodeHashCold(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		extCodeHashLog,
@@ -217,7 +217,7 @@ func TestDimLogExtCodeHashWarm(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		extCodeHashLog,
@@ -257,7 +257,7 @@ func TestDimLogSloadCold(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		sloadLog,
@@ -290,7 +290,7 @@ func TestDimLogSloadWarm(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(
+	checkGasDimensionsMatch(
 		t,
 		expected,
 		sloadLog,
