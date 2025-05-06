@@ -43,7 +43,7 @@ func TestDimLogSstoreColdZeroToZero(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreColdZeroToZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdZeroToZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SSTORE")
@@ -73,7 +73,7 @@ func TestDimLogSstoreColdZeroToNonZeroValue(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreColdZeroToNonZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdZeroToNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SSTORE")
@@ -103,7 +103,7 @@ func TestDimLogSstoreColdNonZeroValueToZero(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroValueToZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroValueToZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SSTORE")
@@ -134,7 +134,7 @@ func TestDimLogSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroToSameNonZeroValue)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroToSameNonZeroValue)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SSTORE")
@@ -165,7 +165,7 @@ func TestDimLogSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroToDifferentNonZeroValue)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroToDifferentNonZeroValue)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SSTORE")
@@ -194,7 +194,7 @@ func TestDimLogSstoreWarmZeroToZero(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreWarmZeroToZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmZeroToZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SSTORE")
@@ -223,7 +223,7 @@ func TestDimLogSstoreWarmZeroToNonZeroValue(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreWarmZeroToNonZeroValue)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmZeroToNonZeroValue)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SSTORE")
@@ -253,7 +253,7 @@ func TestDimLogSstoreWarmNonZeroValueToZero(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroValueToZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroValueToZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SSTORE")
@@ -283,7 +283,7 @@ func TestDimLogSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroToSameNonZeroValue)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroToSameNonZeroValue)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SSTORE")
@@ -313,7 +313,7 @@ func TestDimLogSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroToDifferentNonZeroValue)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroToDifferentNonZeroValue)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SSTORE")
@@ -346,7 +346,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToNonZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
@@ -380,7 +380,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToSameNonZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToSameNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
@@ -415,7 +415,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToNonZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
@@ -450,7 +450,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToSameNonZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToSameNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
@@ -483,7 +483,7 @@ func TestDimLogSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroToNonZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroToNonZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")
@@ -517,7 +517,7 @@ func TestDimLogSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
-	receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroBackToZero)
+	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroBackToZero)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	sstoreLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SSTORE")

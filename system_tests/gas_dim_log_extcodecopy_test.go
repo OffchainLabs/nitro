@@ -94,7 +94,7 @@ func TestDimLogExtCodeCopyColdMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
-	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdNoMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdNoMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
@@ -132,7 +132,7 @@ func TestDimLogExtCodeCopyColdMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
-	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
@@ -168,7 +168,7 @@ func TestDimLogExtCodeCopyWarmMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
-	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmNoMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmNoMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")
@@ -206,7 +206,7 @@ func TestDimLogExtCodeCopyWarmMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
-	receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	extCodeCopyLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODECOPY")

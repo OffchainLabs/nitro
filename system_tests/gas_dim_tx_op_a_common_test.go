@@ -7,13 +7,14 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
 )
 
 type OpcodeSumTraceResult = native.TxGasDimensionByOpcodeExecutionResult
 
-//                   this file tests the tx_gas_dimension_by_opcode.go tracer
 // #########################################################################################################
 // #########################################################################################################
 //                          REGULAR COMPUTATION OPCODES (ADD, SWAP, ETC)
@@ -29,19 +30,19 @@ func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCounter)
-	receipt := callOnContract(t, builder, auth, contract.NoSpecials)
+	tx, receipt := callOnContract(t, builder, auth, contract.NoSpecials)
+	intrinsicTxCost := getIntrinsicTxCost(t, tx)
 	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
-	// test: We expect that the one dimensional gas cost of all of the opcodes is equal to the total gas used
-	// by the transaction
 	expectedGasUsed := receipt.GasUsedForL2()
 	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions)
+	sumOneDimensionalGasCosts += intrinsicTxCost
+	sumAllGasCosts += intrinsicTxCost
+
 	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
 		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
-	// test: We expect that the n-dimensional gas cost of all the opcodes, when added together is equal to the
-	// total gas used by the transaction
 	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
-		fmt.Sprintf("expected gas used: %d, all used: %d", expectedGasUsed, sumAllGasCosts))
+		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
 }
 
 // #########################################################################################################
@@ -98,7 +99,7 @@ func sumUpDimensionalGasCosts(
 	var sumRefunds int64 = 0
 	for _, gasByDimension := range gasesByDimension {
 		oneDimensionSum += gasByDimension.OneDimensionalGasCost
-		allDimensionsSum += gasByDimension.OneDimensionalGasCost + gasByDimension.Computation + gasByDimension.StateAccess + gasByDimension.StateGrowth + gasByDimension.HistoryGrowth
+		allDimensionsSum += gasByDimension.Computation + gasByDimension.StateAccess + gasByDimension.StateGrowth + gasByDimension.HistoryGrowth
 		sumRefunds += gasByDimension.StateGrowthRefund
 	}
 	if sumRefunds < 0 {
@@ -114,4 +115,18 @@ func sumUpDimensionalGasCosts(
 	}
 	allDimensionsSum -= sumRefundsUint64
 	return oneDimensionSum, allDimensionsSum
+}
+
+func getIntrinsicTxCost(t *testing.T, tx *types.Transaction) uint64 {
+	t.Helper()
+	data := tx.Data()
+	var zeroBytes, nonZeroBytes uint64 = 0, 0
+	for _, b := range data {
+		if b == 0 {
+			zeroBytes++
+		} else {
+			nonZeroBytes++
+		}
+	}
+	return params.TxDataZeroGas*zeroBytes + params.TxDataNonZeroGasEIP2028*nonZeroBytes + params.TxGas
 }
