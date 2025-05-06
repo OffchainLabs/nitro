@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
 
@@ -140,6 +140,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	defer l2nodeB.StopAndWait()
 
 	genesisA, err := l2nodeA.ExecutionClient.ResultAtMessageIndex(0).Await(ctx)
+	Require(t, err)
 	genesisB, err := l2nodeB.ExecutionClient.ResultAtMessageIndex(0).Await(ctx)
 	Require(t, err)
 	if genesisA.BlockHash != genesisB.BlockHash {
@@ -165,6 +166,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		valCfg.Wasm.RootPath,
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -180,6 +182,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStackB,
+		valCfg.Wasm.RootPath,
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)
@@ -498,14 +501,15 @@ func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestIn
 			if ctx.Err() != nil {
 				break
 			}
-			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1Info, client, ctx)
-			latestBlock, err := client.BlockNumber(ctx)
-			if ctx.Err() != nil {
-				break
+			to := l1Info.GetAddress("Faucet")
+			tx := l1Info.PrepareTxTo("Faucet", &to, l1Info.TransferGas, common.Big0, nil)
+			if err := client.SendTransaction(ctx, tx); err != nil {
+				t.Log("Error sending tx:", err)
+				continue
 			}
-			Require(t, err)
-			if latestBlock > 150 {
-				delay = time.Second
+			if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+				t.Log("Error ensuring tx succeeded:", err)
+				continue
 			}
 		}
 	}
@@ -534,7 +538,8 @@ func createTestNodeOnL1ForBoldProtocol(
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	fatalErrChan := make(chan error, 10)
-	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
+	withoutClientWrapper := false
+	l1info, l1client, l1backend, l1stack, _ = createTestL1BlockChain(t, nil, withoutClientWrapper)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
@@ -621,6 +626,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
 		nil, // Blob reader.
+		"",  // Wasm root path.
 	)
 	Require(t, err)
 
@@ -819,7 +825,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, execConfig.Validate())
 	execConfig.Caching.StateScheme = rawdb.HashScheme
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, execConfig.TxLookupLimit, 0)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, nil, initMessage, execConfig.TxLookupLimit, 0)
 	Require(t, err)
 
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
@@ -827,7 +833,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */)
+	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, "" /* wasm root path */)
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack)

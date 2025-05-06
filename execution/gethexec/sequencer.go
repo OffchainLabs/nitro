@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
 
@@ -581,7 +581,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		returnedResult:  &atomic.Bool{},
 		ctx:             s.GetContext(),
 		firstAppearance: time.Now(),
-		isTimeboosted:   true,
+		isTimeboosted:   false,
 	}
 	return nil
 }

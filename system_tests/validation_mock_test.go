@@ -93,10 +93,6 @@ func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *vali
 	}, nil)
 }
 
-func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoots[0], nil)
-}
-
 type mockValRun struct {
 	containers.Promise[validator.GoGlobalState]
 	root common.Hash
@@ -215,13 +211,6 @@ func TestValidationServerAPI(t *testing.T) {
 	err := client.Start(ctx)
 	Require(t, err)
 
-	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
-	Require(t, err)
-
-	if wasmRoot != mockWasmModuleRoots[0] {
-		t.Error("unexpected mock wasmModuleRoot")
-	}
-
 	roots, err := client.WasmModuleRoots()
 	Require(t, err)
 	if len(roots) != len(mockWasmModuleRoots) {
@@ -255,13 +244,13 @@ func TestValidationServerAPI(t *testing.T) {
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
 	}
-	valRun := client.Launch(&valInput, wasmRoot)
+	valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 	res, err := valRun.Await(ctx)
 	Require(t, err)
 	if res != endState {
 		t.Error("unexpected mock validation run")
 	}
-	execRun, err := client.CreateExecutionRun(wasmRoot, &valInput, false).Await(ctx)
+	execRun, err := client.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
 	step0 := execRun.GetStepAt(0)
 	step0Res, err := step0.Await(ctx)
@@ -290,9 +279,6 @@ func TestValidationClientRoom(t *testing.T) {
 	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
 	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
 	err := client.Start(ctx)
-	Require(t, err)
-
-	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
 	Require(t, err)
 
 	if client.Room() != 4 {
@@ -325,7 +311,7 @@ func TestValidationClientRoom(t *testing.T) {
 	valRuns := make([]validator.ValidationRun, 0, 4)
 
 	for i := 0; i < 4; i++ {
-		valRun := client.Launch(&valInput, wasmRoot)
+		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 		valRuns = append(valRuns, valRun)
 	}
 
@@ -343,7 +329,7 @@ func TestValidationClientRoom(t *testing.T) {
 	valRuns = make([]validator.ValidationRun, 0, 3)
 
 	for i := 0; i < 4; i++ {
-		valRun := client.Launch(&valInput, wasmRoot)
+		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 		valRuns = append(valRuns, valRun)
 		room := client.Room()
 		if room != 3-i {
@@ -382,13 +368,10 @@ func TestExecutionKeepAlive(t *testing.T) {
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 
-	wasmRoot, err := clientDefault.LatestWasmModuleRoot().Await(ctx)
-	Require(t, err)
-
 	valInput := validator.ValidationInput{}
-	runDefault, err := clientDefault.CreateExecutionRun(wasmRoot, &valInput, false).Await(ctx)
+	runDefault, err := clientDefault.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
-	runShortTO, err := clientShortTO.CreateExecutionRun(wasmRoot, &valInput, false).Await(ctx)
+	runShortTO, err := clientShortTO.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
 	<-time.After(time.Second * 10)
 	stepDefault := runDefault.GetStepAt(0)

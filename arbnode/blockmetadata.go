@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"time"
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -21,25 +23,43 @@ import (
 )
 
 type BlockMetadataFetcherConfig struct {
-	Enable         bool                   `koanf:"enable"`
-	Source         rpcclient.ClientConfig `koanf:"source" reload:"hot"`
-	SyncInterval   time.Duration          `koanf:"sync-interval"`
-	APIBlocksLimit uint64                 `koanf:"api-blocks-limit"`
+	Enable          bool                   `koanf:"enable"`
+	Source          rpcclient.ClientConfig `koanf:"source" reload:"hot"`
+	SyncInterval    time.Duration          `koanf:"sync-interval"`
+	MaxSyncInterval time.Duration          `koanf:"max-sync-interval"`
+	APIBlocksLimit  uint64                 `koanf:"api-blocks-limit"`
 }
 
 var DefaultBlockMetadataFetcherConfig = BlockMetadataFetcherConfig{
-	Enable:         false,
-	Source:         rpcclient.DefaultClientConfig,
-	SyncInterval:   time.Minute * 5,
-	APIBlocksLimit: 100,
+	Enable:          false,
+	Source:          rpcclient.DefaultClientConfig,
+	SyncInterval:    time.Minute * 1,
+	MaxSyncInterval: time.Minute * 32,
+	APIBlocksLimit:  100,
 }
 
 func BlockMetadataFetcherConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBlockMetadataFetcherConfig.Enable, "enable syncing blockMetadata using a bulk blockMetadata api. If the source doesn't have the missing blockMetadata, we keep retyring in every sync-interval (default=5mins) duration")
+	f.Bool(prefix+".enable", DefaultBlockMetadataFetcherConfig.Enable, "enable syncing blockMetadata using a bulk blockMetadata api")
 	rpcclient.RPCClientAddOptions(prefix+".source", f, &DefaultBlockMetadataFetcherConfig.Source)
-	f.Duration(prefix+".sync-interval", DefaultBlockMetadataFetcherConfig.SyncInterval, "interval at which blockMetadata are synced regularly")
-	f.Uint64(prefix+".api-blocks-limit", DefaultBlockMetadataFetcherConfig.APIBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query.\n"+
-		"This should be set lesser than or equal to the limit on the api provider side")
+	f.Duration(prefix+".sync-interval", DefaultBlockMetadataFetcherConfig.SyncInterval, "minimum time between blockMetadata requests")
+	f.Duration(prefix+".max-sync-interval", DefaultBlockMetadataFetcherConfig.MaxSyncInterval, "maximum time between blockMetadata requests")
+	f.Uint64(prefix+".api-blocks-limit", DefaultBlockMetadataFetcherConfig.APIBlocksLimit, "maximum number of blocks per arb_getRawBlockMetadata query")
+}
+
+var wrongChainIdErr = errors.New("wrong chain id")
+
+func checkMetadataBackendChainId(ctx context.Context, client *rpcclient.RpcClient, sourceUrl string, expectedChainId uint64) error {
+	ethClient := ethclient.NewClient(client)
+	chainId, err := ethClient.ChainID(ctx)
+	if err != nil {
+		log.Error("error when getting ChainId from backend configured with --node.block-metadata-fetcher.source.url", "url", sourceUrl, "err", err)
+		return errors.New("failed to get chainid")
+	}
+	if chainId.Uint64() != expectedChainId {
+		log.Error("ChainId from backend configured with --node.block-metadata-fetcher.source.url does not match expected ChainId", "backendChainId", chainId.Uint64(), "expectedChainId", expectedChainId, "url", sourceUrl)
+		return wrongChainIdErr
+	}
+	return nil
 }
 
 // BlockMetadataFetcher looks for missing blockMetadata of block numbers starting from trackBlockMetadataFrom (config option of tx streamer)
@@ -52,9 +72,21 @@ type BlockMetadataFetcher struct {
 	client                 *rpcclient.RpcClient
 	exec                   execution.ExecutionClient
 	trackBlockMetadataFrom arbutil.MessageIndex
+	expectedChainId        uint64
+
+	chainIdChecked      bool
+	currentSyncInterval time.Duration
+	lastRequestTime     time.Time
 }
 
-func NewBlockMetadataFetcher(ctx context.Context, c BlockMetadataFetcherConfig, db ethdb.Database, exec execution.ExecutionClient, startPos uint64) (*BlockMetadataFetcher, error) {
+func NewBlockMetadataFetcher(
+	ctx context.Context,
+	c BlockMetadataFetcherConfig,
+	db ethdb.Database,
+	exec execution.ExecutionClient,
+	startPos uint64,
+	expectedChainId uint64,
+) (*BlockMetadataFetcher, error) {
 	var trackBlockMetadataFrom arbutil.MessageIndex
 	var err error
 	if startPos != 0 {
@@ -67,19 +99,48 @@ func NewBlockMetadataFetcher(ctx context.Context, c BlockMetadataFetcherConfig, 
 	if err = client.Start(ctx); err != nil {
 		return nil, err
 	}
-	return &BlockMetadataFetcher{
+
+	chainIdChecked := false
+	if err = checkMetadataBackendChainId(ctx, client, c.Source.URL, expectedChainId); err != nil {
+		if errors.Is(err, wrongChainIdErr) {
+			return nil, err
+		}
+	} else {
+		chainIdChecked = true
+	}
+
+	fetcher := &BlockMetadataFetcher{
 		config:                 c,
 		db:                     db,
 		client:                 client,
 		exec:                   exec,
 		trackBlockMetadataFrom: trackBlockMetadataFrom,
-	}, nil
+		expectedChainId:        expectedChainId,
+		chainIdChecked:         chainIdChecked,
+		currentSyncInterval:    c.SyncInterval,
+	}
+	return fetcher, nil
 }
 
 func (b *BlockMetadataFetcher) fetch(ctx context.Context, fromBlock, toBlock uint64) ([]gethexec.NumberAndBlockMetadata, error) {
+	// Rate limit: 1 request per second
+	now := time.Now()
+	if !b.lastRequestTime.IsZero() {
+		waitTime := time.Second - now.Sub(b.lastRequestTime)
+		if waitTime > 0 {
+			select {
+			case <-time.After(waitTime):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+
 	var result []gethexec.NumberAndBlockMetadata
 	// #nosec G115
 	err := b.client.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(fromBlock), rpc.BlockNumber(toBlock))
+	b.lastRequestTime = time.Now()
+
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +175,14 @@ func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query [
 }
 
 func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
+	if !b.chainIdChecked {
+		if err := checkMetadataBackendChainId(ctx, b.client, b.config.Source.URL, b.expectedChainId); err != nil {
+			log.Error("Error running the BlockMetadataFetcher", "err", err)
+			return time.Minute * 10
+		}
+		b.chainIdChecked = true
+	}
+
 	handleQuery := func(query []uint64) bool {
 		fromBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])).Await(ctx)
 		if err != nil {
@@ -157,7 +226,17 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 				end -= 1
 			}
 			if success := handleQuery(query[:end+1]); !success {
-				return b.config.SyncInterval
+				b.currentSyncInterval *= 2
+				if b.currentSyncInterval > b.config.MaxSyncInterval {
+					b.currentSyncInterval = b.config.MaxSyncInterval
+				}
+				return b.currentSyncInterval
+			}
+			if b.currentSyncInterval > b.config.SyncInterval {
+				b.currentSyncInterval /= 2
+				if b.currentSyncInterval < b.config.SyncInterval {
+					b.currentSyncInterval = b.config.SyncInterval
+				}
 			}
 			query = query[end+1:]
 		}

@@ -478,21 +478,32 @@ func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
 	bobExpressLaneClient.Unlock()
 
 	// Send bunch of future txs so that they are queued up waiting for the unblocking seq num tx
+	// endFloodingDuration represents the duration before which at the end of this round that we would like to stop flooding with txs
+	endFloodingDuration := time.Second
 	var bobExpressLaneTxs types.Transactions
-	for i := currSeq + 1; i < 1000; i++ {
-		futureSeqTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
-		bobExpressLaneTxs = append(bobExpressLaneTxs, futureSeqTx)
-		Require(t, bobExpressLaneClient.QueueTransactionWithSequence(ctx, futureSeqTx, i))
-	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func(w *sync.WaitGroup) {
+		for i := currSeq + 1; i < 1000; i++ {
+			if roundTimingInfo.TimeTilNextRound() < endFloodingDuration {
+				break
+			}
+			futureSeqTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
+			bobExpressLaneTxs = append(bobExpressLaneTxs, futureSeqTx)
+			Require(t, bobExpressLaneClient.QueueTransactionWithSequence(ctx, futureSeqTx, i))
+		}
+		w.Done()
+	}(&wg)
 
 	// Alice will win the auction for next round = x+1
 	placeBidsAndDecideWinner(t, ctx, seqClient, seqInfo, auctionContract, "Alice", "Bob", aliceBidderClient, bobBidderClient, roundDuration)
 
-	time.Sleep(roundTimingInfo.TimeTilNextRound() - 500*time.Millisecond) // we'll wait till the 1/2 second mark to the next round and then send the unblocking tx
+	time.Sleep(roundTimingInfo.TimeTilNextRound() - endFloodingDuration/2) // we'll wait till the endFloodingDuration/2 duration to the next round and then send the unblocking tx
+	wg.Wait()
 
 	Require(t, bobExpressLaneClient.SendTransactionWithSequence(ctx, unblockingTx, currSeq)) // the unblockingTx itself should ideally pass, but the released 1000 txs shouldn't affect the round for which alice has won the bid for
 
-	time.Sleep(roundTimingInfo.TimeTilNextRound()) // Wait for controller change after the current round's end
+	time.Sleep(endFloodingDuration / 2) // Wait for controller change after the current round's end
 
 	// Check that Alice's tx gets priority since she's the controller
 	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
@@ -752,7 +763,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 
 	// Rebuild blockMetadata and cleanup trackers from ArbDB
 	rebuildStartPos := uint64(5)
-	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, newNode.ExecNode, rebuildStartPos)
+	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, newNode.ExecNode, rebuildStartPos, builder.chainConfig.ChainID.Uint64())
 	Require(t, err)
 	blockMetadataFetcher.Update(ctx)
 
@@ -1741,6 +1752,7 @@ func setupExpressLaneAuction(
 		AuctionContractAddress: proxyAddr.Hex(),
 		RedisURL:               redisURL,
 		ProducerConfig:         pubsub.TestProducerConfig,
+		MaxBidsPerSender:       5,
 	}
 	fetcher := func() *timeboost.BidValidatorConfig {
 		return cfg

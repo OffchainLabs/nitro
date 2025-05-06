@@ -1,5 +1,5 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -110,6 +111,7 @@ type TestClient struct {
 	Stack         *node.Node
 	ConsensusNode *arbnode.Node
 	ExecNode      *gethexec.ExecutionNode
+	ClientWrapper *ClientWrapper
 
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
@@ -249,6 +251,7 @@ type NodeBuilder struct {
 	wasmCacheTag                uint32
 	delayBufferThreshold        uint64
 	useFreezer                  bool
+	withL1ClientWrapper         bool
 
 	// Created nodes
 	L1 *TestClient
@@ -375,6 +378,15 @@ func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
 	return b
 }
 
+// WithL1ClientWrapper creates a ClientWrapper for the L1 RPC client before passing it to the L2 node.
+func (b *NodeBuilder) WithL1ClientWrapper(t *testing.T) *NodeBuilder {
+	if !b.withL1 {
+		Fatal(t, "WithL1ClientWrapper only works when L1 is enabled")
+	}
+	b.withL1ClientWrapper = true
+	return b
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
@@ -411,7 +423,7 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack = createTestL1BlockChain(t, b.L1Info)
+	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	b.addresses, b.initMessage = deployOnParentChain(
@@ -496,7 +508,7 @@ func buildOnParentChain(
 	fatalErrChan := make(chan error, 10)
 	chainTestClient.ConsensusNode, err = arbnode.CreateNodeFullExecutionClient(
 		ctx, chainTestClient.Stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainTestClient.Client,
-		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil)
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil, valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 
 	err = chainTestClient.ConsensusNode.Start(ctx)
@@ -620,7 +632,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	fatalErrChan := make(chan error, 10)
 	b.L2.ConsensusNode, err = arbnode.CreateNodeFullExecutionClient(
 		b.ctx, b.L2.Stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(),
-		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil)
+		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 
 	// Give the node an init message
@@ -667,7 +679,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	Require(t, err)
 
 	feedErrChan := make(chan error, 10)
-	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, big.NewInt(1337), nil)
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, big.NewInt(1337), nil, b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 
 	Require(t, currentNode.Start(b.ctx))
@@ -1191,7 +1203,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	configByValidationNode(nodeConfig, valStack)
 }
 
-func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
+func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
@@ -1244,11 +1256,16 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 
 	Require(t, stack.Start())
 
-	rpcClient := stack.Attach()
+	var rpcClient rpc.ClientInterface = stack.Attach()
+	var clientWrapper *ClientWrapper
+	if withClientWrapper {
+		clientWrapper = NewClientWrapper(rpcClient, l1info)
+		rpcClient = clientWrapper
+	}
 
 	l1Client := ethclient.NewClient(rpcClient)
 
-	return l1info, l1Client, l1backend, stack
+	return l1info, l1Client, l1backend, stack, clientWrapper
 }
 
 func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
@@ -1452,7 +1469,7 @@ func createNonL1BlockChainWithStackConfig(
 		}
 	}
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &execConfig.Caching)
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, nil, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
 	Require(t, err)
 
 	return info, stack, chainDb, arbDb, blockchain
@@ -1546,7 +1563,12 @@ func Create2ndNodeWithConfig(
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
 
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(chainStack, &execConfig.Caching)
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
+	var tracer *tracing.Hooks
+	if execConfig.VmTrace.TracerName != "" {
+		tracer, err = tracers.LiveDirectory.New(execConfig.VmTrace.TracerName, json.RawMessage(execConfig.VmTrace.JSONConfig))
+		Require(t, err)
+	}
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, tracer, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
 	Require(t, err)
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
@@ -1558,9 +1580,9 @@ func Create2ndNodeWithConfig(
 
 	var currentNode *arbnode.Node
 	if useExecutionClientOnly {
-		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
+		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, valnodeConfig.Wasm.RootPath)
 	} else {
-		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
+		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, valnodeConfig.Wasm.RootPath)
 	}
 
 	Require(t, err)

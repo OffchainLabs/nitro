@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package das
 
@@ -98,7 +98,7 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key common.Hash)
 }
 
 func (f *FallbackStorageService) String() string {
-	return "FallbackStorageService(stoargeService:" + f.StorageService.String() + ")"
+	return "FallbackStorageService(storageService:" + f.StorageService.String() + ")"
 }
 
 func (f *FallbackStorageService) HealthCheck(ctx context.Context) error {

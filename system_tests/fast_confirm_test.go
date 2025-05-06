@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -273,6 +273,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		valnode.TestValidationConfig.Wasm.RootPath,
 	)
 	Require(t, err)
 	err = stateless.Start(ctx)
@@ -461,6 +462,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		valnode.TestValidationConfig.Wasm.RootPath,
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -513,6 +515,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		valnode.TestValidationConfig.Wasm.RootPath,
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)

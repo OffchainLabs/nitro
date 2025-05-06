@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -29,12 +30,14 @@ type CachingConfig struct {
 	BlockCount                          uint64        `koanf:"block-count"`
 	BlockAge                            time.Duration `koanf:"block-age"`
 	TrieTimeLimit                       time.Duration `koanf:"trie-time-limit"`
+	TrieTimeLimitRandomOffset           time.Duration `koanf:"trie-time-limit-random-offset"`
 	TrieDirtyCache                      int           `koanf:"trie-dirty-cache"`
 	TrieCleanCache                      int           `koanf:"trie-clean-cache"`
 	TrieCapLimit                        uint32        `koanf:"trie-cap-limit"`
 	SnapshotCache                       int           `koanf:"snapshot-cache"`
 	DatabaseCache                       int           `koanf:"database-cache"`
 	SnapshotRestoreGasLimit             uint64        `koanf:"snapshot-restore-gas-limit"`
+	HeadRewindBlocksLimit               uint64        `koanf:"head-rewind-blocks-limit"`
 	MaxNumberOfBlocksToSkipStateSaving  uint32        `koanf:"max-number-of-blocks-to-skip-state-saving"`
 	MaxAmountOfGasToSkipStateSaving     uint64        `koanf:"max-amount-of-gas-to-skip-state-saving"`
 	StylusLRUCacheCapacity              uint32        `koanf:"stylus-lru-cache-capacity"`
@@ -48,12 +51,14 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age of recent blocks to keep in memory")
 	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
+	f.Duration(prefix+".trie-time-limit-random-offset", DefaultCachingConfig.TrieTimeLimitRandomOffset, "if greater then 0, the block processing time period of each trie write to hard-disk is shortened by a random value from range [0, trie-time-limit-random-offset)")
 	f.Int(prefix+".trie-dirty-cache", DefaultCachingConfig.TrieDirtyCache, "amount of memory in megabytes to cache state diffs against disk with (larger cache lowers database growth)")
 	f.Int(prefix+".trie-clean-cache", DefaultCachingConfig.TrieCleanCache, "amount of memory in megabytes to cache unchanged state trie nodes with")
 	f.Int(prefix+".snapshot-cache", DefaultCachingConfig.SnapshotCache, "amount of memory in megabytes to cache state snapshots with")
 	f.Int(prefix+".database-cache", DefaultCachingConfig.DatabaseCache, "amount of memory in megabytes to cache database contents with")
 	f.Uint32(prefix+".trie-cap-limit", DefaultCachingConfig.TrieCapLimit, "amount of memory in megabytes to be used in the TrieDB Cap operation during maintenance")
 	f.Uint64(prefix+".snapshot-restore-gas-limit", DefaultCachingConfig.SnapshotRestoreGasLimit, "maximum gas rolled back to recover snapshot")
+	f.Uint64(prefix+".head-rewind-blocks-limit", DefaultCachingConfig.HeadRewindBlocksLimit, "maximum number of blocks rolled back to recover chain head (0 = use geth default limit)")
 	f.Uint32(prefix+".max-number-of-blocks-to-skip-state-saving", DefaultCachingConfig.MaxNumberOfBlocksToSkipStateSaving, "maximum number of blocks to skip state saving to persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint64(prefix+".max-amount-of-gas-to-skip-state-saving", DefaultCachingConfig.MaxAmountOfGasToSkipStateSaving, "maximum amount of gas in blocks to skip saving state to Persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint32(prefix+".stylus-lru-cache-capacity", DefaultCachingConfig.StylusLRUCacheCapacity, "capacity, in megabytes, of the LRU cache that keeps initialized stylus programs")
@@ -72,12 +77,14 @@ var DefaultCachingConfig = CachingConfig{
 	BlockCount:                         128,
 	BlockAge:                           30 * time.Minute,
 	TrieTimeLimit:                      time.Hour,
+	TrieTimeLimitRandomOffset:          0,
 	TrieDirtyCache:                     1024,
 	TrieCleanCache:                     600,
 	TrieCapLimit:                       100,
 	SnapshotCache:                      400,
 	DatabaseCache:                      2048,
 	SnapshotRestoreGasLimit:            300_000_000_000,
+	HeadRewindBlocksLimit:              4 * 7 * 24 * 3600, // 4 blocks per second over 7 days (an arbitrary value, should be greater than the number of blocks between state commits in full node; the state commit period depends both on chain activity and TrieTimeLimit)
 	MaxNumberOfBlocksToSkipStateSaving: 0,
 	MaxAmountOfGasToSkipStateSaving:    0,
 	StylusLRUCacheCapacity:             256,
@@ -98,11 +105,13 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		TrieDirtyLimit:                     cachingConfig.TrieDirtyCache,
 		TrieDirtyDisabled:                  cachingConfig.Archive,
 		TrieTimeLimit:                      cachingConfig.TrieTimeLimit,
+		TrieTimeLimitRandomOffset:          cachingConfig.TrieTimeLimitRandomOffset,
 		TriesInMemory:                      cachingConfig.BlockCount,
 		TrieRetention:                      cachingConfig.BlockAge,
 		SnapshotLimit:                      cachingConfig.SnapshotCache,
 		Preimages:                          baseConf.Preimages,
 		SnapshotRestoreMaxGas:              cachingConfig.SnapshotRestoreGasLimit,
+		HeadRewindBlocksLimit:              cachingConfig.HeadRewindBlocksLimit,
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
 		StateScheme:                        cachingConfig.StateScheme,
@@ -207,25 +216,41 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	return nil
 }
 
-func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, txLookupLimit uint64) (*core.BlockChain, error) {
+func GetBlockChain(
+	chainDb ethdb.Database,
+	cacheConfig *core.CacheConfig,
+	chainConfig *params.ChainConfig,
+	tracer *tracing.Hooks,
+	txLookupLimit uint64,
+) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
 	}
 
 	vmConfig := vm.Config{
 		EnablePreimageRecording: false,
+		Tracer:                  tracer,
 	}
 
 	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, &txLookupLimit)
 }
 
-func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, txLookupLimit uint64, accountsPerSync uint) (*core.BlockChain, error) {
+func WriteOrTestBlockChain(
+	chainDb ethdb.Database,
+	cacheConfig *core.CacheConfig,
+	initData statetransfer.InitDataReader,
+	chainConfig *params.ChainConfig,
+	tracer *tracing.Hooks,
+	initMessage *arbostypes.ParsedInitMessage,
+	txLookupLimit uint64,
+	accountsPerSync uint,
+) (*core.BlockChain, error) {
 	emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil
 	if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) {
 		// When using path scheme, and the stored state trie is not empty,
 		// WriteOrTestGenBlock is not able to recover EmptyRootHash state trie node.
 		// In that case Nitro doesn't test genblock, but just returns the BlockChain.
-		return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit)
+		return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
 	}
 
 	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, initMessage, accountsPerSync)
@@ -236,7 +261,7 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit)
+	return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
 }
 
 func init() {

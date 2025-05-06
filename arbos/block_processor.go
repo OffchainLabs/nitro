@@ -1,5 +1,5 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbos
 
@@ -117,7 +117,7 @@ type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 type SequencingHooks struct {
 	TxErrors                []error                                                                                                                                                                 // This can be unset
 	DiscardInvalidTxsEarly  bool                                                                                                                                                                    // This can be unset
-	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error // This has to be set
+	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error // This has to be set. Writes to *state.StateDB object should be avoided to prevent invalid state from permeating
 	PostTxFilter            func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error                                    // This has to be set
 	BlockFilter             func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error                                                                                           // This can be unset
 	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions                                                                                                                                    // This can be unset
@@ -266,11 +266,13 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
+			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
 			if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
 			}
 
 			// Additional pre-transaction validity check
+			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
 			if err = extraPreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
 			}
