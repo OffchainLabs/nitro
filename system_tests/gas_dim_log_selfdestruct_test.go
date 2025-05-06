@@ -61,7 +61,7 @@ func TestDimLogSelfdestructColdNoTransferVirgin(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsMatch(t, expected, selfDestructLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
 }
 
@@ -100,7 +100,7 @@ func TestDimLogSelfdestructColdNoTransferFunded(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsMatch(t, expected, selfDestructLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
 }
 
@@ -139,7 +139,7 @@ func TestDimLogSelfdestructColdPayingVirgin(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsMatch(t, expected, selfDestructLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
 }
 
@@ -179,7 +179,7 @@ func TestDimLogSelfdestructColdPayingFunded(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsMatch(t, expected, selfDestructLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
 }
 
@@ -214,7 +214,7 @@ func TestDimLogSelfdestructWarmNoTransferVirgin(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsMatch(t, expected, selfDestructLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
 }
 
@@ -253,7 +253,7 @@ func TestDimLogSelfdestructWarmNoTransferFunded(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsMatch(t, expected, selfDestructLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
 }
 
@@ -292,7 +292,7 @@ func TestDimLogSelfdestructWarmPayingVirgin(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsMatch(t, expected, selfDestructLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
 }
 
@@ -330,6 +330,6 @@ func TestDimLogSelfdestructWarmPayingFunded(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, selfDestructLog)
+	checkGasDimensionsMatch(t, expected, selfDestructLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, selfDestructLog)
 }
