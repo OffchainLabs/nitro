@@ -36,7 +36,7 @@ const (
 // containing only the computation-only opcodes and that the gas in the computation
 // only opcodes is equal to the OneDimensionalGasCost.
 func TestDimLogComputationOnlyOpcodes(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionLoggerSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
@@ -79,7 +79,7 @@ func TestDimLogComputationOnlyOpcodes(t *testing.T) {
 // #########################################################################################################
 
 // common setup for all gas_dimension_logger tests
-func gasDimensionLoggerSetup(t *testing.T) (
+func gasDimensionTestSetup(t *testing.T) (
 	ctx context.Context,
 	cancel context.CancelFunc,
 	builder *NodeBuilder,
