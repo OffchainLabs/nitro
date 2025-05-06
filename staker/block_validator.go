@@ -171,11 +171,21 @@ func (c *BlockValidatorConfig) Validate() error {
 			}
 		}
 	}
+	if c.Dangerous.Revalidation.EndBlock > 0 && c.Dangerous.Revalidation.EndBlock < c.Dangerous.Revalidation.StartBlock {
+		return fmt.Errorf("revalidation end block %d is before start block %d", c.Dangerous.Revalidation.EndBlock, c.Dangerous.Revalidation.StartBlock)
+	}
 	return nil
 }
 
 type BlockValidatorDangerousConfig struct {
-	ResetBlockValidation bool `koanf:"reset-block-validation"`
+	ResetBlockValidation bool               `koanf:"reset-block-validation"`
+	Revalidation         RevalidationConfig `koanf:"revalidation"`
+}
+
+type RevalidationConfig struct {
+	StartBlock            uint64 `koanf:"start-block"`
+	EndBlock              uint64 `koanf:"end-block"`
+	QuitAfterRevalidation bool   `koanf:"quit-after-revalidation"`
 }
 
 type BlockValidatorConfigFetcher func() *BlockValidatorConfig
@@ -201,6 +211,13 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
+	RevalidationConfigAddOptions(prefix+".revalidation", f)
+}
+
+func RevalidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Uint64(prefix+".start-block", DefaultBlockValidatorDangerousConfig.Revalidation.StartBlock, "start revalidation from this block")
+	f.Uint64(prefix+".end-block", DefaultBlockValidatorDangerousConfig.Revalidation.EndBlock, "end revalidation at this block")
+	f.Bool(prefix+".quit-after-revalidation", DefaultBlockValidatorDangerousConfig.Revalidation.QuitAfterRevalidation, "exit node after revalidation is done")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
@@ -243,6 +260,13 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
 	ResetBlockValidation: false,
+	Revalidation:         DefaultRevalidationConfig,
+}
+
+var DefaultRevalidationConfig = RevalidationConfig{
+	StartBlock:            0,
+	EndBlock:              0,
+	QuitAfterRevalidation: false,
 }
 
 type valStatusField uint32
@@ -337,6 +361,29 @@ func NewBlockValidator(
 			SendRoot:   genesis.SendRoot,
 			Batch:      1,
 			PosInBatch: 0,
+		}
+	}
+	if config().Dangerous.Revalidation.StartBlock > 0 {
+		startBlock := config().Dangerous.Revalidation.StartBlock
+		messageCount, err := inbox.GetBatchMessageCount(startBlock - 1)
+		if err != nil {
+			return nil, err
+		}
+		res := &execution.MessageResult{}
+		if messageCount > 0 {
+			res, err = streamer.ResultAtMessageIndex(messageCount - 1)
+			if err != nil {
+				return nil, err
+			}
+		}
+		_, endPos, err := statelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
+		if err != nil {
+			return nil, err
+		}
+		gs := BuildGlobalState(*res, endPos)
+		err = ret.writeLastValidated(gs, nil)
+		if err != nil {
+			return nil, err
 		}
 	}
 	streamer.SetBlockValidator(ret)
@@ -799,6 +846,17 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	}
 	log.Info("validated execution", "messageCount", printedCount, "globalstate", validated.GlobalState, "WasmRoots", validated.WasmRoots)
 	v.lastValidInfoPrinted = validated
+	revalidationConfig := v.config().Dangerous.Revalidation
+	if revalidationConfig.EndBlock > 0 && validated.GlobalState.Batch >= revalidationConfig.EndBlock {
+		log.Info("revalidation done", "startBlock", revalidationConfig.StartBlock, "endBlock", revalidationConfig.EndBlock)
+		if revalidationConfig.QuitAfterRevalidation {
+			// Sending nil to fatalErr channel to stop the node, but not report as an error
+			// since this is expected shutdown of the node.
+			v.fatalErr <- nil
+		} else {
+			v.StopOnly()
+		}
+	}
 	return time.Second
 }
 
