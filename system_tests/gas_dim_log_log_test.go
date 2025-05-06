@@ -50,7 +50,7 @@ func TestDimLogLog0TopicsOnlyMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicEmptyData)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log0Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG0")
@@ -83,7 +83,7 @@ func TestDimLogLog0ExtraDataMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyData)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log0Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG0")
@@ -120,7 +120,7 @@ func TestDimLogLog1TopicsOnlyMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicEmptyData)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitOneTopicEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log1Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG1")
@@ -156,7 +156,7 @@ func TestDimLogLog1ExtraDataMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyData)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log1Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG1")
@@ -192,7 +192,7 @@ func TestDimLogLog2TopicsOnlyMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopics)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitTwoTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log2Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG2")
@@ -230,7 +230,7 @@ func TestDimLogLog2ExtraDataMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraData)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log2Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG2")
@@ -266,7 +266,7 @@ func TestDimLogLog3TopicsOnlyMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopics)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitThreeTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log3Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG3")
@@ -304,7 +304,7 @@ func TestDimLogLog3ExtraDataMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraData)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log3Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG3")
@@ -340,7 +340,7 @@ func TestDimLogLog4TopicsOnlyMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitFourTopics)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitFourTopics)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log4Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG4")
@@ -378,7 +378,7 @@ func TestDimLogLog4ExtraDataMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraData)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraData)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log4Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG4")
@@ -435,7 +435,7 @@ func TestDimLogLog0ExtraDataMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyDataAndMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log0Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG0")
@@ -475,7 +475,7 @@ func TestDimLogLog1ExtraDataMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyDataAndMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log1Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG1")
@@ -516,7 +516,7 @@ func TestDimLogLog2ExtraDataMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraDataAndMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log2Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG2")
@@ -557,7 +557,7 @@ func TestDimLogLog3ExtraDataMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraDataAndMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log3Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG3")
@@ -598,7 +598,7 @@ func TestDimLogLog4ExtraDataMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
-	receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraDataAndMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraDataAndMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	log4Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG4")

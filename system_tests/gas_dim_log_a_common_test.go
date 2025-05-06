@@ -41,7 +41,7 @@ func TestDimLogComputationOnlyOpcodes(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCounter)
-	receipt := callOnContract(t, builder, auth, contract.NoSpecials)
+	_, receipt := callOnContract(t, builder, auth, contract.NoSpecials)
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 
 	// Validate each log entry
@@ -128,13 +128,13 @@ func callOnContract[F func(auth *bind.TransactOpts) (*types.Transaction, error)]
 	builder *NodeBuilder,
 	auth bind.TransactOpts,
 	testFunc F,
-) (receipt *types.Receipt) {
+) (tx *types.Transaction, receipt *types.Receipt) {
 	t.Helper()
 	tx, err := testFunc(&auth) // For write operations
 	Require(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-	return receipt
+	return tx, receipt
 }
 
 // call whatever test function is required for the test on the contract

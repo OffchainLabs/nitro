@@ -53,7 +53,7 @@ func TestDimLogCreateNoTransferMemUnchanged(t *testing.T) {
 
 	_, creator := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCreator)
 
-	receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemUnchanged)
+	_, receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemUnchanged)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
@@ -94,7 +94,7 @@ func TestDimLogCreateNoTransferMemExpansion(t *testing.T) {
 
 	_, creator := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCreator)
 
-	receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
@@ -140,7 +140,7 @@ func TestDimLogCreatePayingMemUnchanged(t *testing.T) {
 	// transfer some eth to the creator contract
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
 
-	receipt := callOnContract(t, builder, auth, creator.CreatePayableMemUnchanged)
+	_, receipt := callOnContract(t, builder, auth, creator.CreatePayableMemUnchanged)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
@@ -183,7 +183,7 @@ func TestDimLogCreatePayingMemExpansion(t *testing.T) {
 	// transfer some eth to the creator contract
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
 
-	receipt := callOnContract(t, builder, auth, creator.CreatePayableMemExpansion)
+	_, receipt := callOnContract(t, builder, auth, creator.CreatePayableMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
