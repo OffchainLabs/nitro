@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -153,16 +154,24 @@ func ExtractMessages(
 		}
 		for _, msg := range messagesInBatch {
 			report := batchPostingReports[i]
-			// This should not occur, but is added as an extra safety check
-			// to avoid dereferencing a nil pointer.
-			if report.Message.BatchGasCost == nil {
+			_, _, batchHash, _, _, _, err := arbostypes.ParseBatchPostingReportMessageFields(bytes.NewReader(report.Message.L2msg))
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
+			}
+			gotHash := crypto.Keccak256Hash(serialized)
+			if gotHash != batchHash {
 				return nil, nil, nil, fmt.Errorf(
-					"batch posting report %+v does not have a batch gas cost",
-					report.Message,
+					"batch data hash incorrect %v (wanted %v for batch %v)",
+					gotHash,
+					batchHash,
+					batch.SequenceNumber,
 				)
 			}
+			gas := arbostypes.ComputeBatchGasCost(serialized)
+
 			// Fill in the message's batch gas cost from the batch posting report.
-			msg.Message.BatchGasCost = report.Message.BatchGasCost
+			msg.Message.BatchGasCost = &gas
+
 			messages = append(messages, msg)
 			state.MsgCount += 1
 			msgIdx := arbutil.MessageIndex(state.MsgCount) - 1

@@ -24,6 +24,7 @@ import (
 	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -45,7 +46,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	melState := createInitialMELState(t, ctx, builder.addresses.Rollup, builder.L1.Client, builder.addresses.SequencerInbox)
+	melState := createInitialMELState(t, ctx, builder.addresses, builder.L1.Client)
 
 	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
 	Require(t, err)
@@ -125,7 +126,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	melState := createInitialMELState(t, ctx, builder.addresses.Rollup, builder.L1.Client, builder.addresses.SequencerInbox)
+	melState := createInitialMELState(t, ctx, builder.addresses, builder.L1.Client)
 
 	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
 	Require(t, err)
@@ -218,7 +219,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
 
 	// Create an initial MEL state from the latest confirmed assertion.
-	melState := createInitialMELState(t, ctx, builder.addresses.Rollup, builder.L1.Client, builder.addresses.SequencerInbox)
+	melState := createInitialMELState(t, ctx, builder.addresses, builder.L1.Client)
 
 	// Construct a new MEL service and provide with an initial MEL state
 	// to begin extracting messages from the parent chain.
@@ -353,12 +354,11 @@ func (m *mockMELDB) ReadDelayedMessage(
 func createInitialMELState(
 	t *testing.T,
 	ctx context.Context,
-	rollupAddr common.Address,
+	addrs *chaininfo.RollupAddresses,
 	client *ethclient.Client,
-	seqInboxAddr common.Address,
 ) *meltypes.State {
 	// Create an initial MEL state from the latest confirmed assertion.
-	rollup, err := rollupgen.NewRollupUserLogic(rollupAddr, client)
+	rollup, err := rollupgen.NewRollupUserLogic(addrs.Rollup, client)
 	Require(t, err)
 	confirmedHash, err := rollup.LatestConfirmed(&bind.CallOpts{})
 	Require(t, err)
@@ -366,7 +366,7 @@ func createInitialMELState(
 		ctx,
 		rollup,
 		client,
-		rollupAddr,
+		addrs.Rollup,
 		confirmedHash,
 	)
 	Require(t, err)
@@ -377,16 +377,17 @@ func createInitialMELState(
 
 	// TODO: Construct the correct MEL state from the latest confirmed assertion.
 	return &meltypes.State{
-		Version:                      0,
-		BatchPostingTargetAddress:    seqInboxAddr,
-		ParentChainId:                chainId.Uint64(),
-		ParentChainBlockNumber:       startBlock.NumberU64(),
-		ParentChainBlockHash:         startBlock.Hash(),
-		ParentChainPreviousBlockHash: startBlock.ParentHash(),
-		MessageAccumulator:           common.Hash{},
-		DelayedMessagedSeen:          1,
-		DelayedMessagesRead:          1, // Assumes we have read the init message.
-		MsgCount:                     1,
+		Version:                            0,
+		BatchPostingTargetAddress:          addrs.SequencerInbox,
+		DelayedMessagePostingTargetAddress: addrs.Bridge,
+		ParentChainId:                      chainId.Uint64(),
+		ParentChainBlockNumber:             startBlock.NumberU64(),
+		ParentChainBlockHash:               startBlock.Hash(),
+		ParentChainPreviousBlockHash:       startBlock.ParentHash(),
+		MessageAccumulator:                 common.Hash{},
+		DelayedMessagedSeen:                1,
+		DelayedMessagesRead:                1, // Assumes we have read the init message.
+		MsgCount:                           1,
 	}
 
 }

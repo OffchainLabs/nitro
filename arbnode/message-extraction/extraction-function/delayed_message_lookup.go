@@ -41,23 +41,40 @@ func parseDelayedMessagesFromBlock(
 		if tx.To() == nil {
 			continue
 		}
-		if *tx.To() != melState.DelayedMessagePostingTargetAddress {
-			continue
-		}
+		// TODO: We can exit early if the tx.To() is not the inbox address.
+		// However, the inbox address is not the event emitter – the bridge is.
+
 		// Fetch the receipts for the transaction to get the logs.
 		txIndex := uint(i)
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, err
 		}
+		relevantLogs := make([]*types.Log, 0, len(receipt.Logs))
+		// Check all logs in the receipt.
+		for _, log := range receipt.Logs {
+			// Check if the log was emitted by the delayed message posting address.
+			// On Arbitrum One, this is the bridge contract which emits a MessageDelivered event.
+			if log.Address == melState.DelayedMessagePostingTargetAddress {
+				relevantLogs = append(relevantLogs, log)
+			}
+		}
+		if len(relevantLogs) == 0 {
+			continue
+		}
 		delayedMessageScaffolds, parsedLogs, err := delayedMessageScaffoldsFromLogs(
-			receipt.Logs, params,
+			relevantLogs, params,
 		)
 		if err != nil {
 			return nil, err
 		}
 		msgScaffolds = append(msgScaffolds, delayedMessageScaffolds...)
 		messageDeliveredEvents = append(messageDeliveredEvents, parsedLogs...)
+	}
+	if len(msgScaffolds) != 0 {
+		if msgScaffolds[0].Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
+			fmt.Println("Got some delayed messages")
+		}
 	}
 	messageIds := make([]common.Hash, 0, len(messageDeliveredEvents))
 	inboxAddressSet := make(map[common.Address]struct{})
