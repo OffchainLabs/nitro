@@ -13,6 +13,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -140,21 +141,12 @@ func (m limitedArgumentsMarshal) String() string {
 	return res
 }
 
-var blobTxUnderpricedRegexp = regexp.MustCompile(`replacement transaction underpriced: new tx gas fee cap (\d*) <= (\d*) queued`)
-
-// IsAlreadyKnownError returns true if the error appears to be an "already known" error.
+// IsAlreadyKnownError returns true if the error appears to be an "already known" (GETH) error or "AlreadyKnown" (Nethermind) error.
 // This check is based on the error's string form and is not precise.
 func IsAlreadyKnownError(err error) bool {
 	s := err.Error()
-	if strings.Contains(s, "already known") {
+	if strings.Contains(s, txpool.ErrAlreadyKnown.Error()) || strings.Contains(s, "AlreadyKnown") {
 		return true
-	}
-	// go-ethereum returns "replacement transaction underpriced" instead of "already known" for blob txs.
-	// This is fixed in https://github.com/ethereum/go-ethereum/pull/29210
-	// TODO: Once a new geth release is out with this fix, we can remove this check.
-	matches := blobTxUnderpricedRegexp.FindSubmatch([]byte(s))
-	if len(matches) == 3 {
-		return string(matches[1]) == string(matches[2])
 	}
 	return false
 }
