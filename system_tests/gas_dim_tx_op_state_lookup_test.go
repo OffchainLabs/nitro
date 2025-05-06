@@ -1,13 +1,12 @@
 package arbtest
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
 )
-
-const ColdSloadCost = params.ColdSloadCostEIP2929
 
 // #########################################################################################################
 // #########################################################################################################
@@ -28,31 +27,25 @@ const ColdSloadCost = params.ColdSloadCostEIP2929
 // the computation to be 100 (for the warm access cost of the address)
 // and the state access to be 2500 (for the cold access cost of the address)
 // and all other gas dimensions to be 0
-func TestDimLogBalanceCold(t *testing.T) {
+func TestDimTxOpBalanceCold(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
-	_, receipt := callOnContract(t, builder, auth, contract.CallBalanceCold)
+	tx, receipt := callOnContract(t, builder, auth, contract.CallBalanceCold)
+	intrinsicTxCost := getIntrinsicTxCost(t, tx)
+	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	balanceLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "BALANCE")
+	expectedGasUsed := receipt.GasUsedForL2()
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions)
+	sumOneDimensionalGasCosts += intrinsicTxCost
+	sumAllGasCosts += intrinsicTxCost
 
-	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
-		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           ColdMinusWarmAccountAccessCost,
-		StateGrowth:           0,
-		HistoryGrowth:         0,
-		StateGrowthRefund:     0,
-	}
-	checkDimensionLogGasCostsEqual(
-		t,
-		expected,
-		balanceLog,
-	)
-	checkGasDimensionsEqualOneDimensionalGas(t, balanceLog)
+	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
+		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
+	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
+		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
 }
 
 // this test deployes a contract that calls BALANCE on a warm access list address
@@ -60,7 +53,7 @@ func TestDimLogBalanceCold(t *testing.T) {
 // on the warm BALANCE, we expect the total one-dimensional gas cost to be 100
 // the computation to be 100 (for the warm access cost of the address)
 // and all other gas dimensions to be 0
-func TestDimLogBalanceWarm(t *testing.T) {
+func TestDimTxOpBalanceWarm(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
@@ -97,7 +90,7 @@ func TestDimLogBalanceWarm(t *testing.T) {
 // the computation to be 100 (for the warm access cost of the address)
 // and the state access to be 2500 (for the cold access cost of the address)
 // and all other gas dimensions to be 0
-func TestDimLogExtCodeSizeCold(t *testing.T) {
+func TestDimTxOpExtCodeSizeCold(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
@@ -129,7 +122,7 @@ func TestDimLogExtCodeSizeCold(t *testing.T) {
 // on the warm EXTCODESIZE, we expect the total one-dimensional gas cost to be 100
 // the computation to be 100 (for the warm access cost of the address)
 // and all other gas dimensions to be 0
-func TestDimLogExtCodeSizeWarm(t *testing.T) {
+func TestDimTxOpExtCodeSizeWarm(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
@@ -166,7 +159,7 @@ func TestDimLogExtCodeSizeWarm(t *testing.T) {
 // the computation to be 100 (for the warm access cost of the address)
 // and the state access to be 2500 (for the cold access cost of the address)
 // and all other gas dimensions to be 0
-func TestDimLogExtCodeHashCold(t *testing.T) {
+func TestDimTxOpExtCodeHashCold(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
@@ -198,7 +191,7 @@ func TestDimLogExtCodeHashCold(t *testing.T) {
 // on the warm EXTCODEHASH, we expect the total one-dimensional gas cost to be 100
 // the computation to be 100 (for the warm access cost of the address)
 // and all other gas dimensions to be 0
-func TestDimLogExtCodeHashWarm(t *testing.T) {
+func TestDimTxOpExtCodeHashWarm(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
@@ -238,7 +231,7 @@ func TestDimLogExtCodeHashWarm(t *testing.T) {
 // the computation to be 100 (for the warm base access cost)
 // the state access to be 2000 (for the cold sload cost)
 // all others zero
-func TestDimLogSloadCold(t *testing.T) {
+func TestDimTxOpSloadCold(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
@@ -271,7 +264,7 @@ func TestDimLogSloadCold(t *testing.T) {
 // on the warm sload, we expect the total one-dimensional gas cost to be 100
 // the computation to be 100 (for the warm base access cost)
 // all others zero
-func TestDimLogSloadWarm(t *testing.T) {
+func TestDimTxOpSloadWarm(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
 	defer cancel()
 	defer cleanup()
