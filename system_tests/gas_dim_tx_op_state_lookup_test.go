@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
 )
 
@@ -59,25 +58,19 @@ func TestDimTxOpBalanceWarm(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
-	_, receipt := callOnContract(t, builder, auth, contract.CallBalanceWarm)
+	tx, receipt := callOnContract(t, builder, auth, contract.CallBalanceWarm)
+	intrinsicTxCost := getIntrinsicTxCost(t, tx)
+	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	balanceLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "BALANCE")
+	expectedGasUsed := receipt.GasUsedForL2()
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions)
+	sumOneDimensionalGasCosts += intrinsicTxCost
+	sumAllGasCosts += intrinsicTxCost
 
-	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
-		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           0,
-		StateGrowth:           0,
-		HistoryGrowth:         0,
-		StateGrowthRefund:     0,
-	}
-	checkDimensionLogGasCostsEqual(
-		t,
-		expected,
-		balanceLog,
-	)
-	checkGasDimensionsEqualOneDimensionalGas(t, balanceLog)
+	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
+		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
+	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
+		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
 }
 
 // ############################################################
@@ -96,25 +89,19 @@ func TestDimTxOpExtCodeSizeCold(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
-	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeCold)
+	tx, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeCold)
+	intrinsicTxCost := getIntrinsicTxCost(t, tx)
+	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	extCodeSizeLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODESIZE")
+	expectedGasUsed := receipt.GasUsedForL2()
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions)
+	sumOneDimensionalGasCosts += intrinsicTxCost
+	sumAllGasCosts += intrinsicTxCost
 
-	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
-		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           ColdMinusWarmAccountAccessCost,
-		StateGrowth:           0,
-		HistoryGrowth:         0,
-		StateGrowthRefund:     0,
-	}
-	checkDimensionLogGasCostsEqual(
-		t,
-		expected,
-		extCodeSizeLog,
-	)
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeSizeLog)
+	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
+		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
+	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
+		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
 }
 
 // this test deployes a contract that calls EXTCODESIZE on a warm access list address
@@ -128,25 +115,20 @@ func TestDimTxOpExtCodeSizeWarm(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
-	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeWarm)
+	tx, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeWarm)
+	intrinsicTxCost := getIntrinsicTxCost(t, tx)
+	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	extCodeSizeLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODESIZE")
+	expectedGasUsed := receipt.GasUsedForL2()
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions)
+	sumOneDimensionalGasCosts += intrinsicTxCost
+	sumAllGasCosts += intrinsicTxCost
 
-	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
-		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           0,
-		StateGrowth:           0,
-		HistoryGrowth:         0,
-		StateGrowthRefund:     0,
-	}
-	checkDimensionLogGasCostsEqual(
-		t,
-		expected,
-		extCodeSizeLog,
-	)
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeSizeLog)
+	CheckEqual(t, receipt.GasUsed, traceResult.GasUsed)
+	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
+		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
+	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
+		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
 }
 
 // ############################################################
@@ -165,25 +147,19 @@ func TestDimTxOpExtCodeHashCold(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
-	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashCold)
+	tx, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashCold)
+	intrinsicTxCost := getIntrinsicTxCost(t, tx)
+	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	extCodeHashLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODEHASH")
+	expectedGasUsed := receipt.GasUsedForL2()
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions)
+	sumOneDimensionalGasCosts += intrinsicTxCost
+	sumAllGasCosts += intrinsicTxCost
 
-	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
-		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           ColdMinusWarmAccountAccessCost,
-		StateGrowth:           0,
-		HistoryGrowth:         0,
-		StateGrowthRefund:     0,
-	}
-	checkDimensionLogGasCostsEqual(
-		t,
-		expected,
-		extCodeHashLog,
-	)
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeHashLog)
+	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
+		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
+	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
+		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
 }
 
 // this test deployes a contract that calls EXTCODEHASH on a warm access list address
@@ -197,25 +173,19 @@ func TestDimTxOpExtCodeHashWarm(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
-	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashWarm)
+	tx, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashWarm)
+	intrinsicTxCost := getIntrinsicTxCost(t, tx)
+	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	extCodeHashLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODEHASH")
+	expectedGasUsed := receipt.GasUsedForL2()
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions)
+	sumOneDimensionalGasCosts += intrinsicTxCost
+	sumAllGasCosts += intrinsicTxCost
 
-	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
-		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           0,
-		StateGrowth:           0,
-		HistoryGrowth:         0,
-		StateGrowthRefund:     0,
-	}
-	checkDimensionLogGasCostsEqual(
-		t,
-		expected,
-		extCodeHashLog,
-	)
-	checkGasDimensionsEqualOneDimensionalGas(t, extCodeHashLog)
+	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
+		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
+	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
+		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
 }
 
 // ############################################################
@@ -237,25 +207,19 @@ func TestDimTxOpSloadCold(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
-	_, receipt := callOnContract(t, builder, auth, contract.ColdSload)
+	tx, receipt := callOnContract(t, builder, auth, contract.ColdSload)
+	intrinsicTxCost := getIntrinsicTxCost(t, tx)
+	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	sloadLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SLOAD")
+	expectedGasUsed := receipt.GasUsedForL2()
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions)
+	sumOneDimensionalGasCosts += intrinsicTxCost
+	sumAllGasCosts += intrinsicTxCost
 
-	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: ColdSloadCost,
-		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           ColdMinusWarmSloadCost,
-		StateGrowth:           0,
-		HistoryGrowth:         0,
-		StateGrowthRefund:     0,
-	}
-	checkDimensionLogGasCostsEqual(
-		t,
-		expected,
-		sloadLog,
-	)
-	checkGasDimensionsEqualOneDimensionalGas(t, sloadLog)
+	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
+		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
+	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
+		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
 }
 
 // In this test we deploy a contract with a function that all it does
@@ -270,23 +234,17 @@ func TestDimTxOpSloadWarm(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
-	_, receipt := callOnContract(t, builder, auth, contract.WarmSload)
+	tx, receipt := callOnContract(t, builder, auth, contract.WarmSload)
+	intrinsicTxCost := getIntrinsicTxCost(t, tx)
+	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
-	sloadLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SLOAD")
+	expectedGasUsed := receipt.GasUsedForL2()
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions)
+	sumOneDimensionalGasCosts += intrinsicTxCost
+	sumAllGasCosts += intrinsicTxCost
 
-	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
-		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           0,
-		StateGrowth:           0,
-		HistoryGrowth:         0,
-		StateGrowthRefund:     0,
-	}
-	checkDimensionLogGasCostsEqual(
-		t,
-		expected,
-		sloadLog,
-	)
-	checkGasDimensionsEqualOneDimensionalGas(t, sloadLog)
+	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
+		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
+	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
+		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
 }

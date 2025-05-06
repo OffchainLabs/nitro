@@ -72,17 +72,16 @@ func TestDimLogCreateNoTransferMemUnchanged(t *testing.T) {
 	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas +
-			expectedInitCodeCost + expectedMemoryExpansionCost +
-			expectedCallExecutionCost + expectedCodeDepositCost,
-		Computation:       expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
-		StateAccess:       0,
-		StateGrowth:       expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
-		HistoryGrowth:     0,
-		StateGrowthRefund: 0,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost,
+		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
+		StateAccess:           0,
+		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    expectedCallExecutionCost,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, createLog)
-	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, createLog, expectedCallExecutionCost)
+	checkGasDimensionsMatch(t, expected, createLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
 }
 
 // in this test, we do a CREATE of a new contract with no transfer of value
@@ -113,17 +112,16 @@ func TestDimLogCreateNoTransferMemExpansion(t *testing.T) {
 	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas +
-			expectedInitCodeCost + expectedMemoryExpansionCost +
-			expectedCallExecutionCost + expectedCodeDepositCost,
-		Computation:       expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
-		StateAccess:       0,
-		StateGrowth:       expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
-		HistoryGrowth:     0,
-		StateGrowthRefund: 0,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost,
+		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
+		StateAccess:           0,
+		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    expectedCallExecutionCost,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, createLog)
-	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, createLog, expectedCallExecutionCost)
+	checkGasDimensionsMatch(t, expected, createLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
 }
 
 // in this test, we do a CREATE to a new contract with a transfer of ether
@@ -159,17 +157,16 @@ func TestDimLogCreatePayingMemUnchanged(t *testing.T) {
 	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas +
-			expectedInitCodeCost + expectedMemoryExpansionCost +
-			expectedCallExecutionCost + expectedCodeDepositCost,
-		Computation:       expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
-		StateAccess:       0,
-		StateGrowth:       expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
-		HistoryGrowth:     0,
-		StateGrowthRefund: 0,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost,
+		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
+		StateAccess:           0,
+		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    expectedCallExecutionCost,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, createLog)
-	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, createLog, expectedCallExecutionCost)
+	checkGasDimensionsMatch(t, expected, createLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
 }
 
 // in this test, we do a CREATE of a new contract with transfer of value
@@ -202,17 +199,16 @@ func TestDimLogCreatePayingMemExpansion(t *testing.T) {
 	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas +
-			expectedInitCodeCost + expectedMemoryExpansionCost +
-			expectedCallExecutionCost + expectedCodeDepositCost,
-		Computation:       expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
-		StateAccess:       0,
-		StateGrowth:       expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
-		HistoryGrowth:     0,
-		StateGrowthRefund: 0,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost,
+		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
+		StateAccess:           0,
+		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    expectedCallExecutionCost,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, createLog)
-	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, createLog, expectedCallExecutionCost)
+	checkGasDimensionsMatch(t, expected, createLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
 }
 
 // #########################################################################################################
@@ -273,17 +269,16 @@ func TestDimLogCreate2NoTransferMemUnchanged(t *testing.T) {
 	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas +
-			expectedInitCodeCost + expectedMemoryExpansionCost +
-			expectedCallExecutionCost + expectedCodeDepositCost + expectedHashCost,
-		Computation:       expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
-		StateAccess:       0,
-		StateGrowth:       expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
-		HistoryGrowth:     0,
-		StateGrowthRefund: 0,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
+		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
+		StateAccess:           0,
+		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    expectedCallExecutionCost,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, createLog)
-	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, createLog, expectedCallExecutionCost)
+	checkGasDimensionsMatch(t, expected, createLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
 }
 
 // in this test, we do a CREATE2 of a new contract with no transfer of value
@@ -315,17 +310,16 @@ func TestDimLogCreate2NoTransferMemExpansion(t *testing.T) {
 	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas +
-			expectedInitCodeCost + expectedMemoryExpansionCost +
-			expectedCallExecutionCost + expectedCodeDepositCost + expectedHashCost,
-		Computation:       expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
-		StateAccess:       0,
-		StateGrowth:       expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
-		HistoryGrowth:     0,
-		StateGrowthRefund: 0,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
+		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
+		StateAccess:           0,
+		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    expectedCallExecutionCost,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, createLog)
-	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, createLog, expectedCallExecutionCost)
+	checkGasDimensionsMatch(t, expected, createLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
 }
 
 // in this test, we do a CREATE2 of a new contract with transfer of value
@@ -360,17 +354,16 @@ func TestDimLogCreate2PayingMemUnchanged(t *testing.T) {
 	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas +
-			expectedInitCodeCost + expectedMemoryExpansionCost +
-			expectedCallExecutionCost + expectedCodeDepositCost + expectedHashCost,
-		Computation:       expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
-		StateAccess:       0,
-		StateGrowth:       expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
-		HistoryGrowth:     0,
-		StateGrowthRefund: 0,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
+		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
+		StateAccess:           0,
+		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    expectedCallExecutionCost,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, createLog)
-	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, createLog, expectedCallExecutionCost)
+	checkGasDimensionsMatch(t, expected, createLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
 }
 
 // in this test, we do a CREATE2 of a new contract with transfer of value
@@ -404,15 +397,14 @@ func TestDimLogCreate2PayingMemExpansion(t *testing.T) {
 	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas +
-			expectedInitCodeCost + expectedMemoryExpansionCost +
-			expectedCallExecutionCost + expectedCodeDepositCost + expectedHashCost,
-		Computation:       expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
-		StateAccess:       0,
-		StateGrowth:       expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
-		HistoryGrowth:     0,
-		StateGrowthRefund: 0,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
+		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
+		StateAccess:           0,
+		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    expectedCallExecutionCost,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, createLog)
-	checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(t, createLog, expectedCallExecutionCost)
+	checkGasDimensionsMatch(t, expected, createLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
 }

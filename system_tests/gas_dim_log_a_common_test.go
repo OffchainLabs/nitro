@@ -178,8 +178,17 @@ func callDebugTraceTransactionWithLogger(
 	}
 
 	// Validate basic structure
-	if traceResult.Gas == 0 {
+	if traceResult.GasUsed == 0 {
 		Fatal(t, "Expected non-zero gas usage")
+	}
+	if traceResult.GasUsedForL1 == 0 {
+		Fatal(t, "Expected non-zero gas usage for L1")
+	}
+	if traceResult.GasUsedForL2 == 0 {
+		Fatal(t, "Expected non-zero gas usage for L2")
+	}
+	if traceResult.IntrinsicGas == 0 {
+		Fatal(t, "Expected non-zero intrinsic gas")
 	}
 	if traceResult.Failed {
 		Fatal(t, "Transaction should not have failed")
@@ -263,8 +272,10 @@ type ExpectedGasCosts struct {
 	StateGrowth           uint64
 	HistoryGrowth         uint64
 	StateGrowthRefund     int64
+	ChildExecutionCost    uint64
 }
 
+// checks that all of the fields of the expected and actual dimension logs are equal
 func checkGasDimensionsMatch(t *testing.T, expected ExpectedGasCosts, actual *DimensionLogRes) {
 	t.Helper()
 	if actual.Computation != expected.Computation {
@@ -282,39 +293,15 @@ func checkGasDimensionsMatch(t *testing.T, expected ExpectedGasCosts, actual *Di
 	if actual.StateGrowthRefund != expected.StateGrowthRefund {
 		Fatal(t, "Expected StateGrowthRefund ", expected.StateGrowthRefund, " got ", actual.StateGrowthRefund, " actual: ", actual.DebugString())
 	}
-}
-
-// checks that all of the fields of the expected and actual dimension logs are equal
-func checkDimensionLogGasCostsEqual(
-	t *testing.T,
-	expected ExpectedGasCosts,
-	actual *DimensionLogRes,
-) {
-	t.Helper()
-	checkGasDimensionsMatch(t, expected, actual)
 	if actual.OneDimensionalGasCost != expected.OneDimensionalGasCost {
 		Fatal(t, "Expected OneDimensionalGasCost ", expected.OneDimensionalGasCost, " got ", actual.OneDimensionalGasCost, " actual: ", actual.DebugString())
 	}
-}
-
-// for the special case of opcodes that increase the stack depth,
-// the one-dimensional gas cost is the sum of the gas dimension
-// and the gas cost of all of the the child opcodes, instead of
-// just the gas dimensions
-func checkDimensionLogGasCostsEqualCallGas(
-	t *testing.T,
-	expected ExpectedGasCosts,
-	expectedCallChildExecutionGas uint64,
-	actual *DimensionLogRes,
-) {
-	t.Helper()
-	checkGasDimensionsMatch(t, expected, actual)
-	if actual.OneDimensionalGasCost != expected.OneDimensionalGasCost+expectedCallChildExecutionGas {
-		Fatal(t, "Expected OneDimensionalGasCost (", expected.OneDimensionalGasCost, " + ", expectedCallChildExecutionGas, " = ", expected.OneDimensionalGasCost+expectedCallChildExecutionGas, ") got ", actual.OneDimensionalGasCost, " actual: ", actual.DebugString())
+	if actual.ChildExecutionCost != expected.ChildExecutionCost {
+		Fatal(t, "Expected ChildExecutionCost ", expected.ChildExecutionCost, " got ", actual.ChildExecutionCost, " actual: ", actual.DebugString())
 	}
 }
 
-// checks that the one dimensional gas cost is equal to the sum of the other gas dimensions
+// check that the one dimensional gas cost is equal to the sum of the other gas dimensions
 func checkGasDimensionsEqualOneDimensionalGas(
 	t *testing.T,
 	l *DimensionLogRes,
@@ -322,18 +309,5 @@ func checkGasDimensionsEqualOneDimensionalGas(
 	t.Helper()
 	if l.OneDimensionalGasCost != l.Computation+l.StateAccess+l.StateGrowth+l.HistoryGrowth {
 		Fatal(t, "Expected OneDimensionalGasCost to equal sum of gas dimensions", l.DebugString())
-	}
-}
-
-// checks that the one dimensional gas cost is equal
-// to the child execution gas + sum of the other gas dimensions
-func checkGasDimensionsEqualOneDimensionalGasWithChildExecutionGas(
-	t *testing.T,
-	l *DimensionLogRes,
-	expectedChildExecutionGas uint64,
-) {
-	t.Helper()
-	if l.OneDimensionalGasCost != l.Computation+l.StateAccess+l.StateGrowth+l.HistoryGrowth+expectedChildExecutionGas {
-		Fatal(t, "Expected OneDimensionalGasCost to equal sum of gas dimensions: ", l.DebugString(), " + ", expectedChildExecutionGas)
 	}
 }

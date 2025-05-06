@@ -56,7 +56,7 @@ func TestDimLogSstoreColdZeroToZero(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -86,7 +86,7 @@ func TestDimLogSstoreColdZeroToNonZeroValue(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -116,7 +116,7 @@ func TestDimLogSstoreColdNonZeroValueToZero(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     int64(params.NetSstoreResetRefund),
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -147,7 +147,7 @@ func TestDimLogSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -178,7 +178,7 @@ func TestDimLogSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -207,7 +207,7 @@ func TestDimLogSstoreWarmZeroToZero(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -236,7 +236,7 @@ func TestDimLogSstoreWarmZeroToNonZeroValue(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -266,7 +266,7 @@ func TestDimLogSstoreWarmNonZeroValueToZero(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     int64(params.NetSstoreResetRefund),
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -296,7 +296,7 @@ func TestDimLogSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -326,7 +326,7 @@ func TestDimLogSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -359,7 +359,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -393,7 +393,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     2800, // i didn't see anything in params directly for this case
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -428,7 +428,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     -4800,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -463,7 +463,7 @@ func TestDimLogSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     -2000,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -496,7 +496,7 @@ func TestDimLogSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
 
@@ -530,6 +530,6 @@ func TestDimLogSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     19900,
 	}
-	checkDimensionLogGasCostsEqual(t, expected, sstoreLog)
+	checkGasDimensionsMatch(t, expected, sstoreLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
 }
