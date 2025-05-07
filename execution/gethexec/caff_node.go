@@ -97,7 +97,7 @@ func NewCaffNode(configFetcher SequencerConfigFetcher, execEngine *ExecutionEngi
 		config.CaffNodeConfig.RetryTime,
 		config.CaffNodeConfig.HotshotPollingInterval,
 		espressoTEEVerifierCaller,
-		espressoClient.NewMultipleNodesClient(config.CaffNodeConfig.HotShotUrls, config.CaffNodeConfig.FallbackUrls),
+		espressoClient.NewMultipleNodesClient(config.CaffNodeConfig.HotShotUrls),
 		config.CaffNodeConfig.RecordPerformance,
 	)
 

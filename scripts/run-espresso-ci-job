@@ -6,8 +6,8 @@ set -euo pipefail
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:$(pwd)/target/lib"
 
 # 2. Verify the library exists
-if [[ ! -f "$(pwd)/target/lib/libespresso_crypto_helper.so" ]]; then
-    echo "Error: libespresso_crypto_helper.so not found in $(pwd)/target/lib"
+if [[ ! -f "$(pwd)/target/lib/libespresso_crypto_helper-x86_64-unknown-linux-gnu.so" ]]; then
+    echo "Error: libespresso_crypto_helper-x86_64-unknown-linux-gnu.so not found in $(pwd)/target/lib"
     exit 1
 fi
 

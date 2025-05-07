@@ -17,7 +17,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  free-disk-space:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
   test:
+    needs: free-disk-space
     name: Go Tests
     runs-on: ubuntu-latest
 

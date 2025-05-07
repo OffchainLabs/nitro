@@ -27,7 +27,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  free-disk-space:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
   docker_build:
+    needs: free-disk-space
     strategy:
       matrix:
         platform: [linux/amd64, linux/arm64]

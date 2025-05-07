@@ -23,6 +23,7 @@ import (
 	lightclient "github.com/EspressoSystems/espresso-network-go/light-client"
 	tagged_base64 "github.com/EspressoSystems/espresso-network-go/tagged-base64"
 	espressoTypes "github.com/EspressoSystems/espresso-network-go/types"
+	espressoVerification "github.com/EspressoSystems/espresso-network-go/verification"
 	"github.com/ccoveille/go-safecast"
 	flag "github.com/spf13/pflag"
 
@@ -37,7 +38,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
-	"github.com/offchainlabs/nitro/espressocrypto"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
@@ -1452,10 +1452,10 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 
 	blockMerkleTreeRoot := nextHeader.Header.GetBlockMerkleTreeRoot()
 
-	ok := espressocrypto.VerifyMerkleProof(proof.Proof, jsonHeader, *blockMerkleTreeRoot, snapshot.Root)
-	if !ok {
-		log.Info("error validating merkle proof", "root", snapshot.Root, "height", height)
-		return fmt.Errorf("error validating merkle proof (height: %d, snapshot height: %d)", height, snapshot.Height)
+	ok, err := espressoVerification.VerifyMerkleProof(proof.Proof, jsonHeader, *blockMerkleTreeRoot, snapshot.Root)
+	if err != nil || !ok {
+		log.Error("error validating merkle proof", "root", snapshot.Root, "height", height, "err", err)
+		return fmt.Errorf("error validating merkle proof (height: %d, snapshot height: %d): %w", height, snapshot.Height, err)
 	}
 
 	// Verify the namespace proof
@@ -1464,7 +1464,7 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 		return fmt.Errorf("failed to fetch the transactions in block (height: %d): %w", height, err)
 	}
 
-	namespaceOk := espressocrypto.VerifyNamespace(
+	namespaceOk, err := espressoVerification.VerifyNamespace(
 		s.chainConfig.ChainID.Uint64(),
 		resp.Proof,
 		*header.Header.GetPayloadCommitment(),
@@ -1473,8 +1473,9 @@ func (s *TransactionStreamer) checkSubmittedTransactionForFinality(ctx context.C
 		resp.VidCommon,
 	)
 
-	if !namespaceOk {
-		return fmt.Errorf("error validating namespace proof (height: %d)", height)
+	if err != nil || !namespaceOk {
+		log.Error("error validating namespace proof", "root", snapshot.Root, "height", height, "err", err)
+		return fmt.Errorf("error validating namespace proof (height: %d): %w", height, err)
 	}
 
 	submittedPayload := firstSubmitted.Payload
