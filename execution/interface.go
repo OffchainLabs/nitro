@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -11,6 +12,13 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 )
+
+type SequencedMsg struct {
+	MsgIdx        arbutil.MessageIndex
+	MsgWithMeta   arbostypes.MessageWithMetadata
+	MsgResult     *MessageResult
+	BlockMetadata common.BlockMetadata
+}
 
 type MessageResult struct {
 	BlockHash common.Hash
@@ -35,7 +43,7 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 // always needed
 type ExecutionClient interface {
 	DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
-	Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*MessageResult]
+	Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*MessageResult]
 	HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex]
 	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
@@ -66,7 +74,11 @@ type ExecutionSequencer interface {
 	Pause()
 	Activate()
 	ForwardTo(url string) error
-	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
+	StartSequencing(ctx context.Context) (*SequencedMsg, time.Duration)
+	EndSequencing(ctx context.Context, errWhileSequencing error)
+	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*SequencedMsg, error)
+	AppendLastSequencedBlock() error
+	ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*SequencedMsg, error)
 	NextDelayedMessageNumber() (uint64, error)
 	Synced(ctx context.Context) bool
 	FullSyncProgressMap(ctx context.Context) map[string]interface{}
@@ -92,7 +104,6 @@ type ConsensusInfo interface {
 }
 
 type ConsensusSequencer interface {
-	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}]
 	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
 }
 
