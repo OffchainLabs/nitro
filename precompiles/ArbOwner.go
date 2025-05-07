@@ -33,10 +33,6 @@ var (
 	ErrOutOfBounds = errors.New("value out of bounds")
 )
 
-const (
-	nativeTokenNotSupportedArbOSVersion = "native token owners are not supported in ArbOS version %d"
-)
-
 // AddChainOwner adds account as a chain owner
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
 	return c.State.ChainOwners().Add(newOwner)
@@ -61,21 +57,13 @@ func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error)
 	return c.State.ChainOwners().AllMembers(65536)
 }
 
-// AddChainOwner adds account as a native token owner
+// AddNativeTokenOwner adds account as a native token owner
 func (con ArbOwner) AddNativeTokenOwner(c ctx, evm mech, newOwner addr) error {
-	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
-		return fmt.Errorf(nativeTokenNotSupportedArbOSVersion, c.State.ArbOSVersion())
-	}
-
 	return c.State.NativeTokenOwners().Add(newOwner)
 }
 
-// RemoveChainOwner removes account from the list of native token owners
+// RemoveNativeTokenOwner removes account from the list of native token owners
 func (con ArbOwner) RemoveNativeTokenOwner(c ctx, evm mech, addr addr) error {
-	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
-		return fmt.Errorf(nativeTokenNotSupportedArbOSVersion, c.State.ArbOSVersion())
-	}
-
 	member, _ := con.IsNativeTokenOwner(c, evm, addr)
 	if !member {
 		return errors.New("tried to remove non native token owner")
@@ -83,21 +71,13 @@ func (con ArbOwner) RemoveNativeTokenOwner(c ctx, evm mech, addr addr) error {
 	return c.State.NativeTokenOwners().Remove(addr, c.State.ArbOSVersion())
 }
 
-// IsChainOwner checks if the account is a native token owner
+// IsNativeTokenOwner checks if the account is a native token owner
 func (con ArbOwner) IsNativeTokenOwner(c ctx, evm mech, addr addr) (bool, error) {
-	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
-		return false, fmt.Errorf(nativeTokenNotSupportedArbOSVersion, c.State.ArbOSVersion())
-	}
-
 	return c.State.NativeTokenOwners().IsMember(addr)
 }
 
-// GetAllChainOwners retrieves the list of native token owners
+// GetAllNativeTokenOwners retrieves the list of native token owners
 func (con ArbOwner) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, error) {
-	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
-		return nil, fmt.Errorf(nativeTokenNotSupportedArbOSVersion, c.State.ArbOSVersion())
-	}
-
 	return c.State.NativeTokenOwners().AllMembers(65536)
 }
 

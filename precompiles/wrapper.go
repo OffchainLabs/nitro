@@ -151,6 +151,12 @@ func (wrapper *NativeTokenPrecompile) Call(
 		return nil, burner.gasLeft, err
 	}
 
+	arbosVersion := arbosState.ArbOSVersion(evm.StateDB)
+	if arbosVersion < con.Precompile().arbosVersion {
+		// the precompile isn't yet active, so treat this call as if it were to a contract that doesn't exist
+		return []byte{}, gasSupplied, nil
+	}
+
 	nativeTokenOwners := state.NativeTokenOwners()
 	isNativeTokenOwner, err := nativeTokenOwners.IsMember(caller)
 	if err != nil {

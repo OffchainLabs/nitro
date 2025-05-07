@@ -6,8 +6,9 @@ package precompiles
 import (
 	"errors"
 
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/holiman/uint256"
+
+	"github.com/ethereum/go-ethereum/core/tracing"
 )
 
 // ArbNativeToken precompile enables minting and burning native tokens.

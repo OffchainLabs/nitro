@@ -473,76 +473,91 @@ func TestCurrentTxL1GasFees(t *testing.T) {
 }
 
 // TODO: fix mint and burn native token tests
-// func TestMintAndBurnNativeToken(t *testing.T) {
-// 	ctx, cancel := context.WithCancel(context.Background())
-// 	defer cancel()
 //
-// 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_41)
-// 	cleanup := builder.Build(t)
-// 	defer cleanup()
+//	func TestMintAndBurnNativeToken(t *testing.T) {
+//		ctx, cancel := context.WithCancel(context.Background())
+//		defer cancel()
 //
-// 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+//		builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_41)
+//		cleanup := builder.Build(t)
+//		defer cleanup()
 //
-// 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
-// 	Require(t, err)
+//		auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 //
-// 	accountName := "User2"
-// 	builder.L2Info.GenerateAccount(accountName)
-// 	accountAddr := builder.L2Info.GetAddress(accountName)
+//		arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+//		Require(t, err)
 //
-// 	checkBalance := func(expectedBalance *big.Int, scenario string) {
-// 		balance, err := builder.L2.Client.BalanceAt(ctx, accountAddr, nil)
-// 		Require(t, err)
-// 		if balance.Cmp(expectedBalance) != 0 {
-// 			t.Fatal("expected balance to be", expectedBalance, "got", balance, "scenario", scenario)
-// 		}
-// 	}
+//		accountName := "User2"
+//		builder.L2Info.GenerateAccount(accountName)
+//		accountAddr := builder.L2Info.GetAddress(accountName)
 //
-// 	checkBalance(big.NewInt(0), "initial balance")
+//		checkBalance := func(expectedBalance *big.Int, scenario string) {
+//			balance, err := builder.L2.Client.BalanceAt(ctx, accountAddr, nil)
+//			Require(t, err)
+//			if balance.Cmp(expectedBalance) != 0 {
+//				t.Fatal("expected balance to be", expectedBalance, "got", balance, "scenario", scenario)
+//			}
+//		}
 //
-// 	tx, err := arbOwner.MintNativeToken(&auth, accountAddr, big.NewInt(100))
-// 	Require(t, err)
-// 	_, err = builder.L2.EnsureTxSucceeded(tx)
-// 	Require(t, err)
+//		checkBalance(big.NewInt(0), "initial balance")
 //
-// 	checkBalance(big.NewInt(100), "after mint")
+//		tx, err := arbOwner.MintNativeToken(&auth, accountAddr, big.NewInt(100))
+//		Require(t, err)
+//		_, err = builder.L2.EnsureTxSucceeded(tx)
+//		Require(t, err)
 //
-// 	tx, err = arbOwner.BurnNativeToken(&auth, accountAddr, big.NewInt(10))
-// 	Require(t, err)
-// 	_, err = builder.L2.EnsureTxSucceeded(tx)
-// 	Require(t, err)
+//		checkBalance(big.NewInt(100), "after mint")
 //
-// 	checkBalance(big.NewInt(90), "after burning 10")
+//		tx, err = arbOwner.BurnNativeToken(&auth, accountAddr, big.NewInt(10))
+//		Require(t, err)
+//		_, err = builder.L2.EnsureTxSucceeded(tx)
+//		Require(t, err)
 //
-// 	// balance not enough to burn 100
-// 	_, err = arbOwner.BurnNativeToken(&auth, accountAddr, big.NewInt(100))
-// 	if err == nil || err.Error() != "execution reverted" {
-// 		t.Fatal("expected burn to fail")
-// 	}
-// }
+//		checkBalance(big.NewInt(90), "after burning 10")
 //
-// func TestMintTokenNotAvailableBeforeArbos41(t *testing.T) {
-// 	ctx, cancel := context.WithCancel(context.Background())
-// 	defer cancel()
-//
-// 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_40)
-// 	cleanup := builder.Build(t)
-// 	defer cleanup()
-//
-// 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-//
-// 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
-// 	Require(t, err)
-//
-// 	accountName := "User2"
-// 	builder.L2Info.GenerateAccount(accountName)
-// 	accountAddr := builder.L2Info.GetAddress(accountName)
-//
-// 	_, err = arbOwner.MintNativeToken(&auth, accountAddr, big.NewInt(100))
-// 	if err == nil || err.Error() != "execution reverted" {
-// 		t.Fatal("expected mint to fail")
-// 	}
-// }
+//		// balance not enough to burn 100
+//		_, err = arbOwner.BurnNativeToken(&auth, accountAddr, big.NewInt(100))
+//		if err == nil || err.Error() != "execution reverted" {
+//			t.Fatal("expected burn to fail")
+//		}
+//	}
+
+func TestNativeTokenManagementNotAvailableBeforeArbos41(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_40)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	accountName := "User2"
+	builder.L2Info.GenerateAccount(accountName)
+	accountAddr := builder.L2Info.GetAddress(accountName)
+	_, err = arbOwner.AddNativeTokenOwner(&auth, accountAddr)
+	if err == nil || err.Error() != "execution reverted" {
+		t.Fatal("expected adding native token owner to fail")
+	}
+
+	// checks that minting doesn't work
+	balanceBeforeMinting, err := builder.L2.Client.BalanceAt(ctx, accountAddr, nil)
+	Require(t, err)
+	arbNativeToken, err := precompilesgen.NewArbNativeToken(types.ArbNativeTokenAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbNativeToken.MintNativeToken(&auth, big.NewInt(100))
+	// It doesn't fail because it is handled as ArbNativeToken doesn't exist
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	balanceAfterMinting, err := builder.L2.Client.BalanceAt(ctx, accountAddr, nil)
+	Require(t, err)
+	if balanceBeforeMinting.Cmp(balanceAfterMinting) != 0 {
+		t.Fatal("expected balance to be the same before and after minting")
+	}
+}
 
 func TestGetBrotliCompressionLevel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
