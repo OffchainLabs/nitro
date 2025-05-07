@@ -753,9 +753,6 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if config.Init.DevInit && config.Init.DevMaxCodeSize != 0 {
 			chainConfig.ArbitrumChainParams.MaxCodeSize = config.Init.DevMaxCodeSize
 		}
-		if config.Init.DevInit && config.Init.DevMaxCodeSize != 0 {
-			chainConfig.ArbitrumChainParams.MaxCodeSize = config.Init.DevMaxCodeSize
-		}
 		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
 		ancients, err := chainDb.Ancients()
 		if err != nil {

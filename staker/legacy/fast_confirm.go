@@ -28,7 +28,6 @@ type FastConfirmSafe struct {
 	fastConfirmNextNodeMethod abi.Method
 	builder                   *txbuilder.Builder
 	wallet                    ValidatorWalletInterface
-	gasRefunder               common.Address
 	l1Reader                  *headerreader.HeaderReader
 }
 
@@ -37,14 +36,12 @@ func NewFastConfirmSafe(
 	fastConfirmSafeAddress common.Address,
 	builder *txbuilder.Builder,
 	wallet ValidatorWalletInterface,
-	gasRefunder common.Address,
 	l1Reader *headerreader.HeaderReader,
 ) (*FastConfirmSafe, error) {
 	fastConfirmSafe := &FastConfirmSafe{
-		builder:     builder,
-		wallet:      wallet,
-		gasRefunder: gasRefunder,
-		l1Reader:    l1Reader,
+		builder:  builder,
+		wallet:   wallet,
+		l1Reader: l1Reader,
 	}
 	safe, err := contractsgen.NewSafe(fastConfirmSafeAddress, wallet.L1Client())
 	if err != nil {

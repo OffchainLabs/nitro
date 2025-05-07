@@ -596,11 +596,6 @@ $(stylus_test_hostio-test_wasm): $(stylus_test_hostio-test_src)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
-$(stylus_test_hostio-test_wasm): $(stylus_test_hostio-test_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	./scripts/remove_reference_types.sh $@
-	@touch -c $@ # cargo might decide to not rebuild the binary
-
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(prover_bin) $(output_latest)/soft-float.wasm
 	$(prover_bin) $< -l $(output_latest)/soft-float.wasm -o $@ -b --allow-hostapi --require-success
 

@@ -65,12 +65,14 @@ type BoldConfig struct {
 	APIDBPath                           string                 `koanf:"api-db-path"`
 	TrackChallengeParentAssertionHashes []string               `koanf:"track-challenge-parent-assertion-hashes"`
 	CheckStakerSwitchInterval           time.Duration          `koanf:"check-staker-switch-interval"`
+	MaxGetLogBlocks                     int64                  `koanf:"max-get-log-blocks"`
 	StateProviderConfig                 StateProviderConfig    `koanf:"state-provider-config"`
 	StartValidationFromStaked           bool                   `koanf:"start-validation-from-staked"`
 	AutoDeposit                         bool                   `koanf:"auto-deposit"`
 	AutoIncreaseAllowance               bool                   `koanf:"auto-increase-allowance"`
 	DelegatedStaking                    DelegatedStakingConfig `koanf:"delegated-staking"`
 	RPCBlockNumber                      string                 `koanf:"rpc-block-number"`
+	EnableFastConfirmation              bool                   `koanf:"enable-fast-confirmation"`
 	// How long to wait since parent assertion was created to post a new assertion
 	MinimumGapToParentAssertion time.Duration `koanf:"minimum-gap-to-parent-assertion"`
 	strategy                    legacystaker.StakerStrategy
@@ -141,6 +143,8 @@ var DefaultBoldConfig = BoldConfig{
 	AutoIncreaseAllowance:               true,
 	DelegatedStaking:                    DefaultDelegatedStakingConfig,
 	RPCBlockNumber:                      "finalized",
+	MaxGetLogBlocks:                     5000,
+	EnableFastConfirmation:              false,
 }
 
 var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
@@ -154,6 +158,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
 	f.String(prefix+".strategy", DefaultBoldConfig.Strategy, "define the bold validator staker strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.String(prefix+".rpc-block-number", DefaultBoldConfig.RPCBlockNumber, "define the block number to use for reading data onchain, either latest, safe, or finalized")
+	f.Int64(prefix+".max-get-log-blocks", DefaultBoldConfig.MaxGetLogBlocks, "maximum size for chunk of blocks when using get logs rpc")
 	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "assertion posting interval")
 	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "scan assertion interval")
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
@@ -169,6 +174,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".auto-deposit", DefaultBoldConfig.AutoDeposit, "auto-deposit stake token whenever making a move in BoLD that does not have enough stake token balance")
 	f.Bool(prefix+".auto-increase-allowance", DefaultBoldConfig.AutoIncreaseAllowance, "auto-increase spending allowance of the stake token by the rollup and challenge manager contracts")
 	DelegatedStakingConfigAddOptions(prefix+".delegated-staking", f)
+	f.Bool(prefix+".enable-fast-confirmation", DefaultBoldConfig.EnableFastConfirmation, "enable fast confirmation")
 }
 
 func StateProviderConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -427,6 +433,10 @@ func newBOLDChallengeManager(
 	if !config.AutoDeposit {
 		assertionChainOpts = append(assertionChainOpts, solimpl.WithoutAutoDeposit())
 	}
+
+	if config.EnableFastConfirmation {
+		assertionChainOpts = append(assertionChainOpts, solimpl.WithFastConfirmation())
+	}
 	assertionChain, err := solimpl.NewAssertionChain(
 		ctx,
 		rollupAddress,
@@ -521,6 +531,7 @@ func newBOLDChallengeManager(
 		challengemanager.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
 		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 		challengemanager.StackWithHeaderProvider(l1Reader),
+		challengemanager.StackWithSyncMaxGetLogBlocks(config.MaxGetLogBlocks),
 	}
 	if config.API {
 		apiAddr := fmt.Sprintf("%s:%d", config.APIHost, config.APIPort)
@@ -534,6 +545,9 @@ func newBOLDChallengeManager(
 	}
 	if config.DelegatedStaking.Enable {
 		stackOpts = append(stackOpts, challengemanager.StackWithDelegatedStaking())
+	}
+	if config.EnableFastConfirmation {
+		stackOpts = append(stackOpts, challengemanager.StackWithFastConfirmationEnabled())
 	}
 
 	manager, err := challengemanager.NewChallengeStack(
@@ -570,11 +584,14 @@ func readBoldAssertionCreationInfo(
 	} else {
 		var b [32]byte
 		copy(b[:], assertionHash[:])
-		node, err := rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
+		assertionCreationBlock, err := rollup.GetAssertionCreationBlockForLogLookup(&bind.CallOpts{Context: ctx}, b)
 		if err != nil {
 			return nil, err
 		}
-		creationBlock = node.CreatedAtBlock
+		if !assertionCreationBlock.IsUint64() {
+			return nil, errors.New("assertion creation block was not a uint64")
+		}
+		creationBlock = assertionCreationBlock.Uint64()
 	}
 	topics = [][]common.Hash{{assertionCreatedId}, {assertionHash}}
 	var query = ethereum.FilterQuery{
@@ -611,6 +628,6 @@ func readBoldAssertionCreationInfo(
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
 		TransactionHash:     ethLog.TxHash,
-		CreationBlock:       ethLog.BlockNumber,
+		CreationL1Block:     ethLog.BlockNumber,
 	}, nil
 }
