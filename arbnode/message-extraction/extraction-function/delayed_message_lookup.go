@@ -41,9 +41,6 @@ func parseDelayedMessagesFromBlock(
 		if tx.To() == nil {
 			continue
 		}
-		// TODO: We can exit early if the tx.To() is not the inbox address.
-		// However, the inbox address is not the event emitter – the bridge is.
-
 		// Fetch the receipts for the transaction to get the logs.
 		txIndex := uint(i)
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
