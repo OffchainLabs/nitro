@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
 )
 
@@ -30,14 +29,11 @@ func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
 	defer cleanup()
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCounter)
-	tx, receipt := callOnContract(t, builder, auth, contract.NoSpecials)
-	intrinsicTxCost := getIntrinsicTxCost(t, tx)
+	_, receipt := callOnContract(t, builder, auth, contract.NoSpecials)
 	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
 	expectedGasUsed := receipt.GasUsedForL2()
-	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions)
-	sumOneDimensionalGasCosts += intrinsicTxCost
-	sumAllGasCosts += intrinsicTxCost
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions, traceResult.IntrinsicGas)
 
 	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
 		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
@@ -101,10 +97,11 @@ func callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(
 func sumUpDimensionalGasCosts(
 	t *testing.T,
 	gasesByDimension map[string]native.GasesByDimension,
+	intrinsicGas uint64,
 ) (oneDimensionSum, allDimensionsSum uint64) {
 	t.Helper()
-	oneDimensionSum = 0
-	allDimensionsSum = 0
+	oneDimensionSum = intrinsicGas
+	allDimensionsSum = intrinsicGas
 	var sumRefunds int64 = 0
 	for _, gasByDimension := range gasesByDimension {
 		oneDimensionSum += gasByDimension.OneDimensionalGasCost
@@ -126,16 +123,20 @@ func sumUpDimensionalGasCosts(
 	return oneDimensionSum, allDimensionsSum
 }
 
-func getIntrinsicTxCost(t *testing.T, tx *types.Transaction) uint64 {
+// basically all of the TxOp tests do the same checks, the only difference is the setup.
+func TxOpTraceAndCheck(t *testing.T, ctx context.Context, builder *NodeBuilder, receipt *types.Receipt) {
 	t.Helper()
-	data := tx.Data()
-	var zeroBytes, nonZeroBytes uint64 = 0, 0
-	for _, b := range data {
-		if b == 0 {
-			zeroBytes++
-		} else {
-			nonZeroBytes++
-		}
-	}
-	return params.TxDataZeroGas*zeroBytes + params.TxDataNonZeroGasEIP2028*nonZeroBytes + params.TxGas
+	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
+
+	CheckEqual(t, receipt.GasUsed, traceResult.GasUsed)
+	CheckEqual(t, receipt.GasUsedForL1, traceResult.GasUsedForL1)
+	CheckEqual(t, receipt.GasUsedForL2(), traceResult.GasUsedForL2)
+
+	expectedGasUsed := receipt.GasUsedForL2()
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions, traceResult.IntrinsicGas)
+
+	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
+		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
+	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
+		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
 }
