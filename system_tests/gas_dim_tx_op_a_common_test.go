@@ -30,15 +30,8 @@ func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
 
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCounter)
 	_, receipt := callOnContract(t, builder, auth, contract.NoSpecials)
-	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
-	expectedGasUsed := receipt.GasUsedForL2()
-	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions, traceResult.IntrinsicGas)
-
-	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
-		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
-	CheckEqual(t, expectedGasUsed, sumAllGasCosts,
-		fmt.Sprintf("expected gas used: %d, all used: %d\nDimensions:\n%v", expectedGasUsed, sumAllGasCosts, traceResult.Dimensions))
+	TxOpTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // #########################################################################################################
@@ -98,34 +91,28 @@ func sumUpDimensionalGasCosts(
 	t *testing.T,
 	gasesByDimension map[string]native.GasesByDimension,
 	intrinsicGas uint64,
+	adjustedRefund uint64,
 ) (oneDimensionSum, allDimensionsSum uint64) {
 	t.Helper()
 	oneDimensionSum = intrinsicGas
 	allDimensionsSum = intrinsicGas
-	var sumRefunds int64 = 0
 	for _, gasByDimension := range gasesByDimension {
 		oneDimensionSum += gasByDimension.OneDimensionalGasCost
 		allDimensionsSum += gasByDimension.Computation + gasByDimension.StateAccess + gasByDimension.StateGrowth + gasByDimension.HistoryGrowth
-		sumRefunds += gasByDimension.StateGrowthRefund
 	}
-	if sumRefunds < 0 {
-		Fatal(t, "sumRefunds should never be negative: %d", sumRefunds)
+	if adjustedRefund > oneDimensionSum {
+		Fatal(t, "adjustedRefund should never be greater than oneDimensionSum: %d > %d", adjustedRefund, oneDimensionSum)
 	}
-	sumRefundsUint64 := uint64(sumRefunds)
-	if sumRefundsUint64 > oneDimensionSum {
-		Fatal(t, "sumRefunds should never be greater than oneDimensionSum: %d > %d", sumRefundsUint64, oneDimensionSum)
+	oneDimensionSum -= adjustedRefund
+	if adjustedRefund > allDimensionsSum {
+		Fatal(t, "adjustedRefund should never be greater than allDimensionsSum: %d > %d", adjustedRefund, allDimensionsSum)
 	}
-	oneDimensionSum -= sumRefundsUint64
-	if sumRefundsUint64 > allDimensionsSum {
-		Fatal(t, "sumRefunds should never be greater than allDimensionsSum: %d > %d", sumRefundsUint64, allDimensionsSum)
-	}
-	allDimensionsSum -= sumRefundsUint64
+	allDimensionsSum -= adjustedRefund
 	return oneDimensionSum, allDimensionsSum
 }
 
 // basically all of the TxOp tests do the same checks, the only difference is the setup.
 func TxOpTraceAndCheck(t *testing.T, ctx context.Context, builder *NodeBuilder, receipt *types.Receipt) {
-	t.Helper()
 	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
 
 	CheckEqual(t, receipt.GasUsed, traceResult.GasUsed)
@@ -133,7 +120,7 @@ func TxOpTraceAndCheck(t *testing.T, ctx context.Context, builder *NodeBuilder, 
 	CheckEqual(t, receipt.GasUsedForL2(), traceResult.GasUsedForL2)
 
 	expectedGasUsed := receipt.GasUsedForL2()
-	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions, traceResult.IntrinsicGas)
+	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(t, traceResult.Dimensions, traceResult.IntrinsicGas, traceResult.AdjustedRefund)
 
 	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
 		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
