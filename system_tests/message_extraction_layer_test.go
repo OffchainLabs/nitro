@@ -24,6 +24,7 @@ import (
 	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -77,7 +78,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		},
 	)
 	Require(t, err)
-	_ = extractor
 
 	// Create various L2 transactions and wait for them to be included in a batch
 	// as compressed messages submitted to the sequencer inbox.
@@ -109,6 +109,53 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	// Assert details about the extraction routine.
 	if len(mockDB.savedStates) == 0 {
 		t.Fatal("MEL did not save any states")
+	}
+
+	inboxTracker := builder.L2.ConsensusNode.InboxTracker
+	numBatches, err := inboxTracker.GetBatchCount()
+	Require(t, err)
+	if numBatches != 2 {
+		t.Fatalf("MEL number of batches %d does not match inbox tracker %d", 2, numBatches)
+	}
+	batchSequenceNum := uint64(1)
+	inboxTrackerMessageCount, err := inboxTracker.GetBatchMessageCount(batchSequenceNum)
+	Require(t, err)
+	if uint64(inboxTrackerMessageCount) != uint64(numMessages)+1 {
+		t.Fatalf(
+			"MEL batch message count %d does not match inbox tracker %d",
+			inboxTrackerMessageCount,
+			numMessages,
+		)
+	}
+	lastState := mockDB.savedStates[len(mockDB.savedStates)-1]
+	extractedNumMessages := lastState.MsgCount
+	if extractedNumMessages != uint64(inboxTrackerMessageCount) {
+		t.Fatalf(
+			"MEL batch message count %d does not match inbox tracker %d",
+			extractedNumMessages,
+			inboxTrackerMessageCount,
+		)
+	}
+	inboxStreamer := builder.L2.ConsensusNode.TxStreamer
+	msgCount, err := inboxStreamer.GetMessageCount()
+	Require(t, err)
+	inboxTrackerMessages := make([]*arbostypes.MessageWithMetadata, 0)
+	// Start from 1 to skip the init message.
+	for i := uint64(1); i < uint64(msgCount); i++ {
+		msg, err := inboxStreamer.GetMessage(arbutil.MessageIndex(i))
+		Require(t, err)
+		inboxTrackerMessages = append(inboxTrackerMessages, msg)
+	}
+	melMessages := mockDB.savedMsgs
+	if len(melMessages) != len(inboxTrackerMessages) {
+		t.Fatalf("MEL and inbox tracker message count do not match %d != %d", len(melMessages), len(inboxTrackerMessages))
+	}
+
+	for i, msg := range melMessages {
+		fromInboxTracker := inboxTrackerMessages[i]
+		if !fromInboxTracker.Message.Equals(msg.Message) {
+			t.Fatal("Messages from MEL and inbox tracker do not match")
+		}
 	}
 }
 
@@ -157,7 +204,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		},
 	)
 	Require(t, err)
-	_ = extractor
 
 	// Create various L2 transactions and wait for them to be included in a batch
 	// as compressed messages submitted to the sequencer inbox.

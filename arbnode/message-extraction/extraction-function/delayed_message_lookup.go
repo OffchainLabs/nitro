@@ -63,18 +63,15 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		delayedMessageScaffolds, parsedLogs, err := delayedMessageScaffoldsFromLogs(
-			relevantLogs, params,
+			parentChainBlock,
+			relevantLogs,
+			params,
 		)
 		if err != nil {
 			return nil, err
 		}
 		msgScaffolds = append(msgScaffolds, delayedMessageScaffolds...)
 		messageDeliveredEvents = append(messageDeliveredEvents, parsedLogs...)
-	}
-	if len(msgScaffolds) != 0 {
-		if msgScaffolds[0].Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
-			fmt.Println("Got some delayed messages")
-		}
 	}
 	messageIds := make([]common.Hash, 0, len(messageDeliveredEvents))
 	inboxAddressSet := make(map[common.Address]struct{})
@@ -138,7 +135,7 @@ func parseDelayedMessagesFromBlock(
 }
 
 func delayedMessageScaffoldsFromLogs(
-	logs []*types.Log, params *DelayedMessageLookupParams,
+	parentChainBlock *types.Block, logs []*types.Log, params *DelayedMessageLookupParams,
 ) ([]*arbnode.DelayedInboxMessage, []*bridgegen.IBridgeMessageDelivered, error) {
 	if len(logs) == 0 {
 		return nil, nil, nil
@@ -174,7 +171,7 @@ func delayedMessageScaffoldsFromLogs(
 				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:        parsedLog.Kind,
 					Poster:      parsedLog.Sender,
-					BlockNumber: parsedLog.Raw.BlockNumber,
+					BlockNumber: parentChainBlock.NumberU64(),
 					Timestamp:   parsedLog.Timestamp,
 					RequestId:   &requestId,
 					L1BaseFee:   parsedLog.BaseFeeL1,
