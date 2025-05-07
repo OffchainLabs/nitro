@@ -64,7 +64,7 @@ type InputJSON struct {
 	StartState      validator.GoGlobalState
 	UserWasms       map[ethdb.WasmTarget]map[common.Hash]string
 	DebugChain      bool
-	MaxUserWasmSize uint `json:"max-user-wasmSize,omitempty"`
+	MaxUserWasmSize uint64 `json:"max-user-wasmSize,omitempty"`
 }
 
 // Marshal returns the JSON encoding of the InputJSON.
@@ -111,7 +111,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		}
 		res.UserWasms[target] = archWasms
 	}
-	res.MaxUserWasmSize = uint(maxWasmSize)
+	res.MaxUserWasmSize = uint64(maxWasmSize) //nolint:gosec
 	return res
 }
 
