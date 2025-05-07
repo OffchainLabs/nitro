@@ -19,27 +19,27 @@ type ArbNativeToken struct {
 }
 
 // Mints some amount of the native gas token for this chain to the given address
-func (con ArbNativeToken) MintNativeToken(c ctx, evm mech, to addr, amount huge) error {
+func (con ArbNativeToken) MintNativeToken(c ctx, evm mech, amount huge) error {
 	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
 		return fmt.Errorf("minting native token is not supported in ArbOS version %d", c.State.ArbOSVersion())
 	}
 
 	evm.StateDB.ExpectBalanceMint(amount)
-	evm.StateDB.AddBalance(to, uint256.MustFromBig(amount), tracing.BalanceIncreaseMintNativeToken)
+	evm.StateDB.AddBalance(c.caller, uint256.MustFromBig(amount), tracing.BalanceIncreaseMintNativeToken)
 	return nil
 }
 
 // Burns some amount of the native gas token for this chain from the given address
-func (con ArbNativeToken) BurnNativeToken(c ctx, evm mech, from addr, amount huge) error {
+func (con ArbNativeToken) BurnNativeToken(c ctx, evm mech, amount huge) error {
 	if c.State.ArbOSVersion() < params.ArbosVersion_41 {
 		return fmt.Errorf("burning native token is not supported in ArbOS version %d", c.State.ArbOSVersion())
 	}
 
 	toSub := uint256.MustFromBig(amount)
-	if evm.StateDB.GetBalance(from).Cmp(toSub) < 0 {
+	if evm.StateDB.GetBalance(c.caller).Cmp(toSub) < 0 {
 		return errors.New("burn amount exceeds balance")
 	}
 	evm.StateDB.ExpectBalanceBurn(amount)
-	evm.StateDB.SubBalance(from, toSub, tracing.BalanceDecreaseBurnNativeToken)
+	evm.StateDB.SubBalance(c.caller, toSub, tracing.BalanceDecreaseBurnNativeToken)
 	return nil
 }
