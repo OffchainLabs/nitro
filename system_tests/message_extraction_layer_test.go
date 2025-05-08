@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -16,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -120,6 +122,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	batchSequenceNum := uint64(1)
 	inboxTrackerMessageCount, err := inboxTracker.GetBatchMessageCount(batchSequenceNum)
 	Require(t, err)
+	// #nosec G115
 	if uint64(inboxTrackerMessageCount) != uint64(numMessages)+1 {
 		t.Fatalf(
 			"MEL batch message count %d does not match inbox tracker %d",
@@ -333,8 +336,8 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	delayedInInboxTracker := make([]*arbostypes.L1IncomingMessage, 0)
 
 	// Start from 1 to ignore the init message.
-	for i := 1; i < int(numDelayedMessages); i++ {
-		fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, uint64(i))
+	for i := uint64(1); i < numDelayedMessages; i++ {
+		fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
 		delayedInInboxTracker = append(delayedInInboxTracker, fetchedDelayedMsg)
 	}

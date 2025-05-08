@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"

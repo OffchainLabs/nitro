@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -42,7 +43,7 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		// Fetch the receipts for the transaction to get the logs.
-		txIndex := uint(i)
+		txIndex := uint(i) // #nosec G115
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, err
@@ -89,7 +90,7 @@ func parseDelayedMessagesFromBlock(
 		if !ok {
 			continue
 		}
-		txIndex := uint(i)
+		txIndex := uint(i) // #nosec G115
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, err
