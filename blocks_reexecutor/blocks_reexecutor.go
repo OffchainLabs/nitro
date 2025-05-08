@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -24,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -66,7 +66,7 @@ func (c *Config) Validate() error {
 var DefaultConfig = Config{
 	Enable: false,
 	Mode:   "random",
-	Room:   runtime.NumCPU(),
+	Room:   util.GoMaxProcs(),
 	Blocks: `[[0,0]]`, // execute from chain start to chain end
 }
 
@@ -74,7 +74,7 @@ var TestConfig = Config{
 	Enable:         true,
 	Mode:           "full",
 	Blocks:         `[[0,0]]`, // execute from chain start to chain end
-	Room:           runtime.NumCPU(),
+	Room:           util.GoMaxProcs(),
 	TrieCleanLimit: 600,
 }
 
