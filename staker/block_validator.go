@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -27,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -227,7 +227,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
 	ValidationPoll:              time.Second,
 	ForwardBlocks:               128,
-	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	PrerecordedBlocks:           uint64(2 * util.GoMaxProcs()),
 	BatchCacheLimit:             20,
 	CurrentModuleRoot:           "current",
 	PendingUpgradeModuleRoot:    "latest",
@@ -247,7 +247,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	ValidationPoll:              100 * time.Millisecond,
 	ForwardBlocks:               128,
 	BatchCacheLimit:             20,
-	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	PrerecordedBlocks:           uint64(2 * util.GoMaxProcs()),
 	RecordingIterLimit:          20,
 	ValidationSentLimit:         1024,
 	CurrentModuleRoot:           "latest",
