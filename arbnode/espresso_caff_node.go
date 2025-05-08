@@ -25,7 +25,6 @@ import (
 type EspressoCaffNodeConfig struct {
 	Enable                  bool          `koanf:"enable"`
 	HotShotUrls             []string      `koanf:"hotshot-urls"`
-	FallbackUrls            []string      `koanf:"fallback-urls"`
 	NextHotshotBlock        uint64        `koanf:"next-hotshot-block"`
 	Namespace               uint64        `koanf:"namespace"`
 	RetryTime               time.Duration `koanf:"retry-time"`
@@ -58,7 +57,6 @@ var DefaultEspressoCaffNodeConfig = EspressoCaffNodeConfig{
 func EspressoCaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultEspressoCaffNodeConfig.Enable, "enable espresso Caff node")
 	f.StringSlice(prefix+".hotshot-urls", DefaultEspressoCaffNodeConfig.HotShotUrls, "Hotshot urls")
-	f.StringSlice(prefix+".fallback-urls", DefaultEspressoCaffNodeConfig.FallbackUrls, "Fallback urls")
 	f.Uint64(prefix+".next-hotshot-block", DefaultEspressoCaffNodeConfig.NextHotshotBlock, "the Hotshot block number from which the Caff node will read")
 	f.Uint64(prefix+".namespace", DefaultEspressoCaffNodeConfig.Namespace, "the namespace of the chain in Espresso Network, usually the chain id")
 	f.Duration(prefix+".retry-time", DefaultEspressoCaffNodeConfig.RetryTime, "retry time after a failure")
@@ -120,7 +118,7 @@ func NewEspressoCaffNode(
 		configFetcher().RetryTime,
 		configFetcher().HotshotPollingInterval,
 		espressoTEEVerifierCaller,
-		espressoClient.NewMultipleNodesClient(configFetcher().HotShotUrls, configFetcher().FallbackUrls),
+		espressoClient.NewMultipleNodesClient(configFetcher().HotShotUrls),
 		recordPerformance,
 		common.HexToAddress(configFetcher().BatchPosterAddr),
 	)
