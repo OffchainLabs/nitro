@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
 )
 
