@@ -9,6 +9,9 @@ import (
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // ArbNativeToken precompile enables minting and burning native tokens.
@@ -17,8 +20,14 @@ type ArbNativeToken struct {
 	Address addr
 }
 
+var mintBurnGasCost = arbmath.WordsForBytes(32) * params.SstoreSetGas / 100
+
 // Mints some amount of the native gas token for this chain to the given address
 func (con ArbNativeToken) MintNativeToken(c ctx, evm mech, amount huge) error {
+	if err := c.Burn(mintBurnGasCost); err != nil {
+		return err
+	}
+
 	evm.StateDB.ExpectBalanceMint(amount)
 	evm.StateDB.AddBalance(c.caller, uint256.MustFromBig(amount), tracing.BalanceIncreaseMintNativeToken)
 	return nil
@@ -26,6 +35,10 @@ func (con ArbNativeToken) MintNativeToken(c ctx, evm mech, amount huge) error {
 
 // Burns some amount of the native gas token for this chain from the given address
 func (con ArbNativeToken) BurnNativeToken(c ctx, evm mech, amount huge) error {
+	if err := c.Burn(mintBurnGasCost); err != nil {
+		return err
+	}
+
 	toSub := uint256.MustFromBig(amount)
 	if evm.StateDB.GetBalance(c.caller).Cmp(toSub) < 0 {
 		return errors.New("burn amount exceeds balance")
