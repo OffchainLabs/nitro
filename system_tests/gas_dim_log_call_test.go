@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
 )
 
@@ -114,7 +115,7 @@ func TestDimLogCallColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
-	//prefund callee address
+	// prefund callee address
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, calleeAddress)
@@ -150,7 +151,7 @@ func TestDimLogCallColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
-	//prefund callee address
+	// prefund callee address
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, calleeAddress)
@@ -398,7 +399,7 @@ func TestDimLogCallColdPayingContractFundedMemUnchanged(t *testing.T) {
 	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallee)
 
-	//fund the caller with some funds
+	// fund the caller with some funds
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
 	// fund the callee address with some funds
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
@@ -543,7 +544,7 @@ func TestDimLogCallWarmNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
-	//prefund callee address
+	// prefund callee address
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, calleeAddress)
@@ -579,7 +580,7 @@ func TestDimLogCallWarmNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCaller)
 	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
-	//prefund callee address
+	// prefund callee address
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, calleeAddress)
@@ -999,7 +1000,7 @@ func TestDimLogCallCodeColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
 	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
-	//prefund callee address
+	// prefund callee address
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, calleeAddress)
@@ -1035,7 +1036,7 @@ func TestDimLogCallCodeColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
 	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
-	//prefund callee address
+	// prefund callee address
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, calleeAddress)
@@ -1283,7 +1284,7 @@ func TestDimLogCallCodeColdPayingContractFundedMemUnchanged(t *testing.T) {
 	callerAddress, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
 	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCodee)
 
-	//fund the caller with some funds
+	// fund the caller with some funds
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", callerAddress, big.NewInt(1e17), builder.L2Info)
 	// fund the callee address with some funds
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
@@ -1428,7 +1429,7 @@ func TestDimLogCallCodeWarmNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
 	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
-	//prefund callee address
+	// prefund callee address
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, calleeAddress)
@@ -1464,7 +1465,7 @@ func TestDimLogCallCodeWarmNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 	_, caller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCallCoder)
 	calleeAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
-	//prefund callee address
+	// prefund callee address
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", calleeAddress, big.NewInt(1e17), builder.L2Info)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, calleeAddress)

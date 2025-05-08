@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
 )
 
