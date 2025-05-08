@@ -688,6 +688,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	var chainConfig *params.ChainConfig
+	var genesisArbOSInit *params.ArbOSInit
 
 	if config.Init.GenesisJsonFile != "" {
 		if initDataReader != nil {
@@ -717,6 +718,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			Accounts: accounts,
 		})
 		chainConfig = gen.Config
+		genesisArbOSInit = gen.ArbOSInit
 	}
 
 	var l2BlockChain *core.BlockChain
@@ -825,7 +827,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
 			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
 		}
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}

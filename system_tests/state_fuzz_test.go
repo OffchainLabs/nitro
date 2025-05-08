@@ -161,6 +161,7 @@ func FuzzStateTransition(f *testing.F) {
 			cacheConfig,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
+			nil,
 			initMessage,
 			0,
 			0,
