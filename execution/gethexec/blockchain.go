@@ -1,7 +1,6 @@
 package gethexec
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -235,16 +233,6 @@ func GetBlockChain(
 	vmConfig := vm.Config{
 		EnablePreimageRecording: false,
 		Tracer:                  tracer,
-	}
-
-	if vmTraceConfig != nil && vmTraceConfig.TracerName != "" {
-		t, err := tracers.LiveDirectory.New(vmTraceConfig.TracerName, json.RawMessage(vmTraceConfig.JSONConfig))
-		if err == nil {
-			log.Info(vmTraceConfig.TracerName + " live tracer activated")
-			vmConfig.Tracer = t
-		} else {
-			log.Error("Custom tracer error: " + err.Error())
-		}
 	}
 
 	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, &txLookupLimit)
