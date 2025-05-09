@@ -72,6 +72,17 @@ func (m *MessageExtractor) CurrentFSMState() FSMState {
 	return m.fsm.Current().State
 }
 
+func (m *MessageExtractor) wasBlockReorgedOut(ctx context.Context, parentChainBlockNumber uint64, parentChainBlockHash common.Hash) (bool, error) {
+	header, err := m.l1Reader.Client().HeaderByNumber(ctx, new(big.Int).SetUint64(parentChainBlockNumber))
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return true, nil
+		}
+		return false, err
+	}
+	return header.Hash() != parentChainBlockHash, nil
+}
+
 func (m *MessageExtractor) Act(ctx context.Context) error {
 	current := m.fsm.Current()
 	switch current.State {
@@ -116,6 +127,52 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 		return m.fsm.Do(processNextBlock{
 			melState: melState,
 		})
+	case ReorgingToOldBlock:
+		reorgAction, ok := current.SourceEvent.(reorgingToOldBlock)
+		if !ok {
+			return fmt.Errorf("invalid action: %T", current.SourceEvent)
+		}
+
+		// First find the block to reorg to
+		// TODO: we need access to melstate via db here
+		currentDirtyState := reorgAction.melState
+		for {
+			previousState, err := m.stateFetcher.GetState(
+				ctx,
+				currentDirtyState.ParentChainPreviousBlockHash,
+			)
+			if err != nil { // save rewind progress in case of errors
+				return m.fsm.Do(reorgingToOldBlock{
+					melState: currentDirtyState,
+				})
+			}
+
+			// Check if parent mel state was reorged
+			wasReorged, err := m.wasBlockReorgedOut(ctx, previousState.ParentChainBlockNumber, previousState.ParentChainBlockHash)
+			if err != nil {
+				return m.fsm.Do(reorgingToOldBlock{
+					melState: currentDirtyState,
+				})
+			}
+
+			// Clear dirty melState
+			// TODO: batch clearing stale keys from db- mapping to melStates, delayed messages, sequencer messages etc... with ParentChainBlockNumber as key suffix. Ideally txStreamer would do this
+			// m.melDB.DeleteStartingAt(currentDirtyState.ParentChainBlockNumber)
+			if err := m.melDB.DeleteState(ctx, currentDirtyState.ParentChainBlockHash); err != nil {
+				return m.fsm.Do(reorgingToOldBlock{
+					melState: currentDirtyState,
+				})
+			}
+			if wasReorged {
+				currentDirtyState = previousState
+				continue
+			}
+
+			// Found the block to reorg to
+			return m.fsm.Do(processNextBlock{
+				melState: previousState,
+			})
+		}
 	case ProcessingNextBlock:
 		// Process the next block in the parent chain and extracts messages.
 		processAction, ok := current.SourceEvent.(processNextBlock)
@@ -123,6 +180,18 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 			return fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
 		preState := processAction.melState
+
+		// Check for reorg
+		wasReorged, err := m.wasBlockReorgedOut(ctx, preState.ParentChainBlockNumber, preState.ParentChainBlockHash)
+		if err != nil {
+			return err
+		}
+		if wasReorged {
+			// Found a reorg, we move to ReorgingToOldBlock state to handle it
+			return m.fsm.Do(reorgingToOldBlock{
+				melState: preState,
+			})
+		}
 
 		// TODO: Check the latest block number to see if it exists, otherwise, we just have to
 		// repeat this FSM state until the new block exists.

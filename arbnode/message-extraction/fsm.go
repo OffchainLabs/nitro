@@ -16,6 +16,7 @@ const (
 	_ FSMState = iota
 	Start
 	ProcessingNextBlock
+	ReorgingToOldBlock
 	SavingMessages
 )
 
@@ -25,6 +26,8 @@ func (s FSMState) String() string {
 		return "start"
 	case ProcessingNextBlock:
 		return "processing_next_block"
+	case ReorgingToOldBlock:
+		return "reorging_to_old_block"
 	case SavingMessages:
 		return "saving_messages"
 	default:
@@ -43,6 +46,10 @@ type processNextBlock struct {
 	melState *meltypes.State
 }
 
+type reorgingToOldBlock struct {
+	melState *meltypes.State
+}
+
 type saveMessages struct {
 	postState       *meltypes.State
 	messages        []*arbostypes.MessageWithMetadata
@@ -55,6 +62,9 @@ func (backToStart) String() string {
 func (processNextBlock) String() string {
 	return "process_next_block"
 }
+func (reorgingToOldBlock) String() string {
+	return "reorging_to_old_block"
+}
 func (saveMessages) String() string {
 	return "save_messages"
 }
@@ -62,6 +72,9 @@ func (backToStart) isFsmAction() bool {
 	return true
 }
 func (processNextBlock) isFsmAction() bool {
+	return true
+}
+func (reorgingToOldBlock) isFsmAction() bool {
 	return true
 }
 func (saveMessages) isFsmAction() bool {
@@ -83,8 +96,13 @@ func newFSM(
 		},
 		{
 			Typ:  processNextBlock{},
-			From: []FSMState{Start, ProcessingNextBlock, SavingMessages},
+			From: []FSMState{Start, ProcessingNextBlock, ReorgingToOldBlock, SavingMessages},
 			To:   ProcessingNextBlock,
+		},
+		{
+			Typ:  reorgingToOldBlock{},
+			From: []FSMState{Start, ProcessingNextBlock},
+			To:   ReorgingToOldBlock,
 		},
 		{
 			Typ:  saveMessages{},
