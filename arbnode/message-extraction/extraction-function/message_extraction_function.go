@@ -19,7 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 var (
@@ -171,12 +170,7 @@ func ExtractMessages(
 
 			messages = append(messages, msg)
 			state.MsgCount += 1
-			msgIdx := arbutil.MessageIndex(state.MsgCount) - 1
-			msgHash, err := msg.Hash(msgIdx, state.ParentChainId)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-			state = state.AccumulateMessage(msgHash)
+			state = state.AccumulateMessage(msg)
 		}
 	}
 	return state, messages, delayedMessages, nil

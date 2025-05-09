@@ -28,6 +28,8 @@ type State struct {
 	DelayedMessagedSeen                uint64
 }
 
+// Defines a basic interface for MEL, including saving states, messages,
+// and delayed messages to a database.
 type StateDatabase interface {
 	SaveState(
 		ctx context.Context,
@@ -46,17 +48,45 @@ type StateDatabase interface {
 	) (*arbnode.DelayedInboxMessage, error)
 }
 
+// Defines an interface for fetching a MEL state by parent chain block hash.
 type StateFetcher interface {
 	GetState(
 		ctx context.Context, parentChainBlockHash common.Hash,
 	) (*State, error)
 }
 
+// Performs a deep clone of the state struct to prevent any unintended
+// mutations of pointers at runtime.
 func (s *State) Clone() *State {
-	return s // TODO: Implement smart cloning of the state.
+	batchPostingTarget := common.Address{}
+	delayedMessageTarget := common.Address{}
+	parentChainHash := common.Hash{}
+	parentChainPrevHash := common.Hash{}
+	msgAcc := common.Hash{}
+	delayedMsgAcc := common.Hash{}
+	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
+	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
+	copy(parentChainHash[:], s.ParentChainBlockHash[:])
+	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
+	copy(msgAcc[:], s.MessageAccumulator[:])
+	copy(delayedMsgAcc[:], s.DelayedMessageAccumulator[:])
+	return &State{
+		Version:                            s.Version,
+		ParentChainId:                      s.ParentChainId,
+		ParentChainBlockNumber:             s.ParentChainBlockNumber,
+		BatchPostingTargetAddress:          batchPostingTarget,
+		DelayedMessagePostingTargetAddress: delayedMessageTarget,
+		ParentChainBlockHash:               parentChainHash,
+		ParentChainPreviousBlockHash:       parentChainPrevHash,
+		MessageAccumulator:                 msgAcc,
+		DelayedMessageAccumulator:          delayedMsgAcc,
+		MsgCount:                           s.MsgCount,
+		DelayedMessagesRead:                s.DelayedMessagesRead,
+		DelayedMessagedSeen:                s.DelayedMessagedSeen,
+	}
 }
 
-func (s *State) AccumulateMessage(msgHash common.Hash) *State {
+func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
 	// TODO: Unimplemented.
 	return s
 }
