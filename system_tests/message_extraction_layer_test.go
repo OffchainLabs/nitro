@@ -369,6 +369,7 @@ func (m *mockMELDB) SaveDelayedMessages(
 }
 func (m *mockMELDB) ReadDelayedMessage(
 	ctx context.Context,
+	_ *meltypes.State,
 	index uint64,
 ) (*arbnode.DelayedInboxMessage, error) {
 	if index == 0 {
