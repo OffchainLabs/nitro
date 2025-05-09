@@ -210,8 +210,8 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	initialChainOwner := chainConfig.ArbitrumChainParams.InitialChainOwner
 
 	nativeTokenEnabledFromTime := uint64(0)
-	if genesisArbOSInit != nil {
-		nativeTokenEnabledFromTime = *genesisArbOSInit.NativeTokenEnabledTime
+	if genesisArbOSInit != nil && genesisArbOSInit.NativeTokenSupplyManagementEnabled {
+		nativeTokenEnabledFromTime = timestamp
 	}
 	err = sto.SetUint64ByUint64(uint64(nativeTokenEnabledFromTimeOffset), nativeTokenEnabledFromTime)
 	if err != nil {

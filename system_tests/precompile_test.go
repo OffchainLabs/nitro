@@ -478,9 +478,8 @@ func TestArbNativeToken(t *testing.T) {
 	defer cancel()
 
 	// The chain being tested will have the feature enabled.
-	nativeTokenEnabledTime := uint64(1)
 	arbOSInit := &params.ArbOSInit{
-		NativeTokenEnabledTime: &nativeTokenEnabledTime,
+		NativeTokenSupplyManagementEnabled: true,
 	}
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_41)
