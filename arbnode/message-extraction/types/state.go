@@ -33,7 +33,8 @@ type State struct {
 type StateDatabase interface {
 	State(
 		ctx context.Context,
-	)
+		parentChainBlockHash common.Hash,
+	) (*State, error)
 	SaveState(
 		ctx context.Context,
 		state *State,

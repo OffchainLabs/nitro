@@ -234,18 +234,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// based on this old state after the reorg is handled.
 	case Reorging:
 		// TODO: Implement reorging logic.
-		reorgAction, ok := current.SourceEvent.(reorgToOldBlock)
-		if !ok {
-			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
-		}
-		oldBlock := reorgAction.reorgTo
-		oldState, err := m.melDB.State(ctx, oldBlock.Hash())
-		if err != nil {
-			return m.retryInterval, err
-		}
-		return 0, m.fsm.Do(processNextBlock{
-			melState: oldState,
-		})
+		return m.retryInterval, fmt.Errorf("reorg state not implemented")
 	default:
 		return m.retryInterval, fmt.Errorf("invalid state: %s", current.State)
 	}
