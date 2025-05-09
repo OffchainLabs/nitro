@@ -33,8 +33,7 @@ type State struct {
 type StateDatabase interface {
 	State(
 		ctx context.Context,
-		parentChainBlockHash common.Hash,
-	) (*State, error)
+	)
 	SaveState(
 		ctx context.Context,
 		state *State,
@@ -91,11 +90,11 @@ func (s *State) Clone() *State {
 }
 
 func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
-	// TODO: Implement.
+	// TODO: Unimplemented.
 	return s
 }
 
 func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) *State {
-	// TODO: Implement.
+	// TODO: Unimplemented.
 	return s
 }
