@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"math/big"
+	"reflect"
 	"testing"
 	"time"
 
@@ -364,6 +365,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	Require(t, err)
 	Require(t, builder.L1.L1Backend.BlockChain().ReorgToOldBlock(reorgToBlock))
 
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 3)
 	// Check if ReorgingToOldBlock fsm state works as intended
 	for {
 		prevFSMState := extractor.CurrentFSMState()
@@ -372,10 +374,8 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 			t.Fatal(err)
 		}
 		newFSMState := extractor.CurrentFSMState()
-		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
-		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
-		// exit the loop here and assert information about MEL.
-		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.ProcessingNextBlock {
+		// After reorg rewinding is done, break
+		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.SavingMessages {
 			break
 		}
 	}
@@ -387,16 +387,6 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		t.Fatal("Unexpected last MEL state after a parent chain reorg")
 	}
 }
-
-// type mockMELStateFetcher struct {
-// 	state *meltypes.State
-// }
-
-// func (m *mockMELStateFetcher) GetState(
-// 	ctx context.Context, parentChainBlockHash common.Hash,
-// ) (*meltypes.State, error) {
-// 	return m.state, nil
-// }
 
 type mockMELDB struct {
 	savedMsgs        []*arbostypes.MessageWithMetadata
@@ -426,7 +416,7 @@ func (m *mockMELDB) DeleteState(
 	ctx context.Context, parentChainBlockHash common.Hash,
 ) error {
 	if state, ok := m.savedStates[parentChainBlockHash]; ok {
-		if m.lastState != state {
+		if !reflect.DeepEqual(m.lastState, state) {
 			panic("currently we do not delete keys out of order, so this case should never be possible")
 		}
 		m.lastState = m.savedStates[state.ParentChainPreviousBlockHash]
