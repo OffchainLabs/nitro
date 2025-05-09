@@ -116,6 +116,27 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 		return m.fsm.Do(processNextBlock{
 			melState: melState,
 		})
+	case ReorgingToOldBlock:
+		reorgAction, ok := current.SourceEvent.(reorgingToOldBlock)
+		if !ok {
+			return fmt.Errorf("invalid action: %T", current.SourceEvent)
+		}
+
+		// TODO: we need access to melstate via db here
+		// First gets previous state and then delete dirtyMelState from db so that if node crashes midway its recoverable
+		currentDirtyState := reorgAction.melState
+		previousState, err := m.stateFetcher.GetState(ctx, currentDirtyState.ParentChainPreviousBlockHash)
+		if err != nil {
+			return err
+		}
+		// TODO: update melstate `head` blockhash in DB and delete sequencer messages etc...
+		// m.melDB.updateHeadMELState(currentDirtyState.ParentChainPreviousBlockHash)
+		if err := m.melDB.DeleteState(ctx, currentDirtyState.ParentChainBlockHash); err != nil {
+			return err
+		}
+		return m.fsm.Do(processNextBlock{
+			melState: previousState,
+		})
 	case ProcessingNextBlock:
 		// Process the next block in the parent chain and extracts messages.
 		processAction, ok := current.SourceEvent.(processNextBlock)
@@ -123,7 +144,6 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 			return fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
 		preState := processAction.melState
-
 		// TODO: Check the latest block number to see if it exists, otherwise, we just have to
 		// repeat this FSM state until the new block exists.
 		parentChainBlock, err := m.l1Reader.Client().BlockByNumber(
@@ -140,6 +160,12 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 				})
 			}
 			return err
+		}
+		if parentChainBlock.ParentHash() != preState.ParentChainBlockHash {
+			// Reorg detected
+			return m.fsm.Do(reorgingToOldBlock{
+				melState: preState,
+			})
 		}
 		postState, msgs, delayedMsgs, err := extractionfunction.ExtractMessages(
 			ctx,

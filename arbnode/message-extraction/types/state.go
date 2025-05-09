@@ -34,6 +34,9 @@ type StateDatabase interface {
 		state *State,
 		messages []*arbostypes.MessageWithMetadata,
 	) error
+	DeleteState(
+		ctx context.Context, parentChainBlockHash common.Hash,
+	) error
 	SaveDelayedMessages(
 		ctx context.Context,
 		state *State,
@@ -52,7 +55,12 @@ type StateFetcher interface {
 }
 
 func (s *State) Clone() *State {
-	return s // TODO: Implement smart cloning of the state.
+	if s == nil {
+		return nil
+	}
+	clone := *s
+	// TODO: revisit and check if this is enough
+	return &clone
 }
 
 func (s *State) AccumulateMessage(msgHash common.Hash) *State {
