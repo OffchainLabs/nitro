@@ -12,11 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/bold/containers/fsm"
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -49,17 +47,13 @@ var TestMELConfig = MELConfig{
 
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
-	config                 MELConfigFetcher
-	l1Reader               *headerreader.HeaderReader
-	stateFetcher           meltypes.StateFetcher
-	addrs                  *chaininfo.RollupAddresses
-	melDB                  meltypes.StateDatabase
-	sequencerInbox         *arbnode.SequencerInbox
-	sequencerInboxBindings *bridgegen.SequencerInbox
-	delayedBridgeBindings  *bridgegen.IBridge
-	delayedBridge          *arbnode.DelayedBridge
-	dataProviders          []daprovider.Reader
-	fsm                    *fsm.Fsm[action, FSMState]
+	config        MELConfigFetcher
+	l1Reader      *headerreader.HeaderReader
+	stateFetcher  meltypes.StateFetcher
+	addrs         *chaininfo.RollupAddresses
+	melDB         meltypes.StateDatabase
+	dataProviders []daprovider.Reader
+	fsm           *fsm.Fsm[action, FSMState]
 }
 
 func NewMessageExtractor(
@@ -67,8 +61,6 @@ func NewMessageExtractor(
 	rollupAddrs *chaininfo.RollupAddresses,
 	stateFetcher meltypes.StateFetcher,
 	melDB meltypes.StateDatabase,
-	sequencerInbox *arbnode.SequencerInbox,
-	delayedBridge *arbnode.DelayedBridge,
 	dataProviders []daprovider.Reader,
 	config MELConfigFetcher,
 ) (*MessageExtractor, error) {
@@ -79,26 +71,14 @@ func NewMessageExtractor(
 	if err != nil {
 		return nil, err
 	}
-	sequencerInboxBindings, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Reader.Client())
-	if err != nil {
-		return nil, err
-	}
-	delayedInboxBindings, err := bridgegen.NewIBridge(rollupAddrs.Bridge, l1Reader.Client())
-	if err != nil {
-		return nil, err
-	}
 	return &MessageExtractor{
-		l1Reader:               l1Reader,
-		addrs:                  rollupAddrs,
-		stateFetcher:           stateFetcher,
-		melDB:                  melDB,
-		sequencerInbox:         sequencerInbox,
-		delayedBridge:          delayedBridge,
-		delayedBridgeBindings:  delayedInboxBindings,
-		dataProviders:          dataProviders,
-		sequencerInboxBindings: sequencerInboxBindings,
-		config:                 config,
-		fsm:                    fsm,
+		l1Reader:      l1Reader,
+		addrs:         rollupAddrs,
+		stateFetcher:  stateFetcher,
+		melDB:         melDB,
+		dataProviders: dataProviders,
+		config:        config,
+		fsm:           fsm,
 	}, nil
 }
 
@@ -108,10 +88,12 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 	return stopwaiter.CallIterativelyWith(
 		&m.StopWaiterSafe,
 		func(ctx context.Context, ignored struct{}) time.Duration {
-			if err := m.Act(ctx); err != nil {
+			actAgainInterval, err := m.Act(ctx)
+			if err != nil {
 				log.Error("Error in message extractor", "err", err)
+				return actAgainInterval
 			}
-			return time.Second
+			return actAgainInterval
 		},
 		runChan,
 	)

@@ -20,7 +20,6 @@ func serializeBatch(
 	parentChainBlock *types.Block,
 	tx *types.Transaction,
 	txIndex uint,
-	seqInboxAbi *abi.ABI,
 	receiptFetcher ReceiptFetcher,
 ) ([]byte, error) {
 	if batch.Serialized != nil {
@@ -50,7 +49,7 @@ func serializeBatch(
 		parentChainBlock,
 		tx,
 		txIndex,
-		seqInboxAbi,
+		seqInboxABI,
 		receiptFetcher,
 	)
 	if err != nil {

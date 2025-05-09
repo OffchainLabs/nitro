@@ -49,8 +49,6 @@ func ExtractMessages(
 	dataProviders []daprovider.Reader,
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
-	batchLookupParams *BatchLookupParams,
-	delayedMessageLookupParams *DelayedMessageLookupParams,
 ) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
 	state := inputState.Clone()
 	// Clones the state to avoid mutating the input pointer in case of errors.
@@ -75,7 +73,6 @@ func ExtractMessages(
 		state,
 		parentChainBlock,
 		receiptFetcher,
-		batchLookupParams,
 	)
 	if err != nil {
 		return nil, nil, nil, err
@@ -85,7 +82,6 @@ func ExtractMessages(
 		state,
 		parentChainBlock,
 		receiptFetcher,
-		delayedMessageLookupParams,
 	)
 	if err != nil {
 		return nil, nil, nil, err
@@ -125,7 +121,6 @@ func ExtractMessages(
 			parentChainBlock,
 			batchTx,
 			txIndex,
-			batchLookupParams.SequencerInboxABI,
 			receiptFetcher,
 		)
 		if err != nil {

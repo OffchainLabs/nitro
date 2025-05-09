@@ -5,55 +5,13 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/staker/bold"
 )
-
-var batchDeliveredID common.Hash
-var messageDeliveredID common.Hash
-var inboxMessageDeliveredID common.Hash
-var inboxMessageFromOriginID common.Hash
-var seqInboxABI *abi.ABI
-var iBridgeABI *abi.ABI
-var iInboxABI *abi.ABI
-var iDelayedMessageProviderABI *abi.ABI
-
-func init() {
-	var err error
-	sequencerBridgeABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
-	if err != nil {
-		panic(err)
-	}
-	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
-	parsedIBridgeABI, err := bridgegen.IBridgeMetaData.GetAbi()
-	if err != nil {
-		panic(err)
-	}
-	iBridgeABI = parsedIBridgeABI
-	parsedIMessageProviderABI, err := bridgegen.IDelayedMessageProviderMetaData.GetAbi()
-	if err != nil {
-		panic(err)
-	}
-	iDelayedMessageProviderABI = parsedIMessageProviderABI
-	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
-	inboxMessageDeliveredID = parsedIMessageProviderABI.Events["InboxMessageDelivered"].ID
-	inboxMessageFromOriginID = parsedIMessageProviderABI.Events["InboxMessageDeliveredFromOrigin"].ID
-	seqInboxABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
-	if err != nil {
-		panic(err)
-	}
-	parsedIInboxABI, err := bridgegen.IInboxMetaData.GetAbi()
-	if err != nil {
-		panic(err)
-	}
-	iInboxABI = parsedIInboxABI
-}
 
 func (m *MessageExtractor) ReceiptForTransactionIndex(
 	ctx context.Context,
@@ -71,7 +29,7 @@ func (m *MessageExtractor) CurrentFSMState() FSMState {
 	return m.fsm.Current().State
 }
 
-func (m *MessageExtractor) Act(ctx context.Context) error {
+func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	current := m.fsm.Current()
 	switch current.State {
 	case Start:
@@ -82,11 +40,11 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 		client := m.l1Reader.Client()
 		rollup, err := rollupgen.NewRollupUserLogic(m.addrs.Rollup, client)
 		if err != nil {
-			return err
+			return time.Second, err
 		}
 		confirmedAssertionHash, err := rollup.LatestConfirmed(m.callOpts(ctx))
 		if err != nil {
-			return err
+			return time.Second, err
 		}
 		latestConfirmedAssertion, err := bold.ReadBoldAssertionCreationInfo(
 			ctx,
@@ -96,30 +54,30 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 			confirmedAssertionHash,
 		)
 		if err != nil {
-			return err
+			return time.Second, err
 		}
 		startBlock, err := client.HeaderByNumber(
 			ctx,
 			new(big.Int).SetUint64(latestConfirmedAssertion.CreationL1Block),
 		)
 		if err != nil {
-			return err
+			return time.Second, err
 		}
 		melState, err := m.stateFetcher.GetState(
 			ctx,
 			startBlock.Hash(),
 		)
 		if err != nil {
-			return err
+			return time.Second, err
 		}
-		return m.fsm.Do(processNextBlock{
+		return 0, m.fsm.Do(processNextBlock{
 			melState: melState,
 		})
 	case ProcessingNextBlock:
 		// Process the next block in the parent chain and extracts messages.
 		processAction, ok := current.SourceEvent.(processNextBlock)
 		if !ok {
-			return fmt.Errorf("invalid action: %T", current.SourceEvent)
+			return time.Second, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
 		preState := processAction.melState
 
@@ -134,11 +92,11 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 			// can know how long before it retries. This gives us more control of how often
 			// we want to retry a state in the FSM.
 			if strings.Contains(err.Error(), "not found") {
-				return m.fsm.Do(processNextBlock{
+				return time.Second, m.fsm.Do(processNextBlock{
 					melState: preState,
 				})
 			}
-			return err
+			return time.Second, err
 		}
 		postState, msgs, delayedMsgs, err := extractionfunction.ExtractMessages(
 			ctx,
@@ -147,23 +105,11 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 			m.dataProviders,
 			m.melDB,
 			m,
-			&extractionfunction.BatchLookupParams{
-				BatchDeliveredEventID: batchDeliveredID,
-				SequencerInboxABI:     seqInboxABI,
-			},
-			&extractionfunction.DelayedMessageLookupParams{
-				MessageDeliveredID:         messageDeliveredID,
-				InboxMessageDeliveredID:    inboxMessageDeliveredID,
-				InboxMessageFromOriginID:   inboxMessageFromOriginID,
-				IDelayedMessageProviderABI: iDelayedMessageProviderABI,
-				IBridgeABI:                 iBridgeABI,
-				IInboxABI:                  iInboxABI,
-			},
 		)
 		if err != nil {
-			return err
+			return time.Second, err
 		}
-		return m.fsm.Do(saveMessages{
+		return 0, m.fsm.Do(saveMessages{
 			postState:       postState,
 			messages:        msgs,
 			delayedMessages: delayedMsgs,
@@ -172,20 +118,20 @@ func (m *MessageExtractor) Act(ctx context.Context) error {
 		// Persists messages and a processed MEL state to the database.
 		saveAction, ok := current.SourceEvent.(saveMessages)
 		if !ok {
-			return fmt.Errorf("invalid action: %T", current.SourceEvent)
+			return time.Second, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
 		// TODO: Make these database writes atomic, so if one fails, nothing
 		// gets persisted and we retry.
 		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
-			return err
+			return time.Second, err
 		}
 		if err := m.melDB.SaveState(ctx, saveAction.postState, saveAction.messages); err != nil {
-			return err
+			return time.Second, err
 		}
-		return m.fsm.Do(processNextBlock{
+		return 0, m.fsm.Do(processNextBlock{
 			melState: saveAction.postState,
 		})
 	default:
-		return fmt.Errorf("invalid state: %s", current.State)
+		return time.Second, fmt.Errorf("invalid state: %s", current.State)
 	}
 }
