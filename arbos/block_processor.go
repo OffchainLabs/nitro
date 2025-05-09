@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -147,7 +146,6 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
-	liveTracingHooks *tracing.Hooks,
 ) (*types.Block, types.Receipts, error) {
 	chainConfig := chainContext.Config()
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
@@ -158,19 +156,11 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header,
-		txes,
-		delayedMessagesRead,
-		lastBlockHeader,
-		statedb,
-		chainContext,
-		hooks,
-		isMsgForPrefetch,
-		runMode,
-		liveTracingHooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runMode,
 	)
 }
 
+// A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
 	l1Header *arbostypes.L1IncomingMessageHeader,
 	txes types.Transactions,
@@ -181,7 +171,6 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
-	liveTracingHooks *tracing.Hooks,
 ) (*types.Block, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -223,18 +212,6 @@ func ProduceBlockAdvanced(
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
 	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
-
-	if liveTracingHooks != nil && runMode == core.MessageCommitMode {
-		if liveTracingHooks.OnBlockStart != nil {
-			tmpBlock := types.NewBlock(header, &types.Body{Transactions: complete}, receipts, trie.NewStackTrie(nil))
-
-			liveTracingHooks.OnBlockStart(tracing.BlockEvent{
-				Block:     tmpBlock,
-				Finalized: header,
-				Safe:      header,
-			})
-		}
-	}
 
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
@@ -339,18 +316,7 @@ func ProduceBlockAdvanced(
 
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
-
-			var evm *vm.EVM
-
-			if isMsgForPrefetch || liveTracingHooks == nil {
-				evm = vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
-			} else {
-				// Enable tracing
-				tracingStateDB := state.NewHookedState(statedb, liveTracingHooks)
-				evm = vm.NewEVM(blockContext, tracingStateDB, chainConfig, vm.Config{
-					Tracer: liveTracingHooks,
-				})
-			}
+			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
 				&gasPool,
@@ -534,12 +500,6 @@ func ProduceBlockAdvanced(
 		}
 		// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
 		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
-	}
-
-	if liveTracingHooks != nil && runMode == core.MessageCommitMode {
-		if liveTracingHooks.OnBlockEnd != nil {
-			liveTracingHooks.OnBlockEnd(nil)
-		}
 	}
 
 	return block, receipts, nil
