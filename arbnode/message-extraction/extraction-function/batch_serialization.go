@@ -9,6 +9,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/filters"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -98,7 +100,7 @@ func getSequencerBatchData(
 			return nil, errors.New("no logs found in transaction receipt")
 		}
 		topics := [][]common.Hash{{sequencerBatchDataABI}, {numberAsHash}}
-		filteredLogs := filterLogs(receipt.Logs, []common.Address{batch.BridgeAddress}, topics)
+		filteredLogs := filters.FilterLogs(receipt.Logs, nil, nil, []common.Address{batch.BridgeAddress}, topics)
 		if len(filteredLogs) == 0 {
 			return nil, errors.New("expected to find sequencer batch data")
 		}

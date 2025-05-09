@@ -12,6 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth/filters"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -32,7 +34,7 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		// Fetch the receipts for the transaction to get the logs.
-		txIndex := uint(i)
+		txIndex := uint(i) // #nosec G115
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, err
@@ -78,7 +80,7 @@ func parseDelayedMessagesFromBlock(
 		if !ok {
 			continue
 		}
-		txIndex := uint(i)
+		txIndex := uint(i) // #nosec G115
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
 		if err != nil {
 			return nil, err
@@ -90,7 +92,7 @@ func parseDelayedMessagesFromBlock(
 			{inboxMessageDeliveredID, inboxMessageFromOriginID}, // matches either of these IDs.
 			messageIds, // matches any of the message IDs.
 		}
-		filteredInboxMessageLogs := filterLogs(receipt.Logs, inboxAddressList, topics)
+		filteredInboxMessageLogs := filters.FilterLogs(receipt.Logs, nil, nil, inboxAddressList, topics)
 		for _, inboxMsgLog := range filteredInboxMessageLogs {
 			msgNum, msg, err := parseDelayedMessage(
 				inboxMsgLog,
@@ -206,58 +208,6 @@ func parseDelayedMessage(
 	default:
 		return nil, nil, errors.New("unexpected log type")
 	}
-}
-
-func filterLogs(logs []*types.Log, addresses []common.Address, topics [][]common.Hash) []*types.Log {
-	var filteredLogs []*types.Log
-	for _, log := range logs {
-		// Filter by address if addresses are specified.
-		if len(addresses) > 0 {
-			addressMatch := false
-			for _, address := range addresses {
-				if log.Address == address {
-					addressMatch = true
-					break
-				}
-			}
-			if !addressMatch {
-				continue
-			}
-		}
-		// Filter by topics.
-		if len(topics) > 0 {
-			topicMatch := true
-			// We can only match as many topics as the log has.
-			maxTopics := len(log.Topics)
-			if maxTopics > len(topics) {
-				maxTopics = len(topics)
-			}
-			for i := 0; i < maxTopics; i++ {
-				// Empty topic list (nil or {}) matches anything.
-				if len(topics[i]) == 0 {
-					continue
-				}
-				// Check if current topic matches any of the options for this position.
-				positionMatch := false
-				for _, topic := range topics[i] {
-					if log.Topics[i] == topic {
-						positionMatch = true
-						break
-					}
-				}
-				if !positionMatch {
-					topicMatch = false
-					break
-				}
-			}
-			if !topicMatch {
-				continue
-			}
-		}
-
-		filteredLogs = append(filteredLogs, log)
-	}
-	return filteredLogs
 }
 
 type sortableMessageList []*arbnode.DelayedInboxMessage

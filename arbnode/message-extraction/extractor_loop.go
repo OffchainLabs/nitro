@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
 	"github.com/offchainlabs/nitro/staker/bold"
