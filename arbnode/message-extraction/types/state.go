@@ -41,6 +41,7 @@ type StateDatabase interface {
 	) error
 	ReadDelayedMessage(
 		ctx context.Context,
+		state *State,
 		index uint64,
 	) (*arbnode.DelayedInboxMessage, error)
 }
@@ -56,9 +57,11 @@ func (s *State) Clone() *State {
 }
 
 func (s *State) AccumulateMessage(msgHash common.Hash) *State {
+	// TODO: Unimplemented.
 	return s
 }
 
 func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) *State {
+	// TODO: Unimplemented.
 	return s
 }

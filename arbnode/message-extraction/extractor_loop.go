@@ -99,8 +99,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if !ok {
 			return time.Second, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		// TODO: Make these database writes atomic, so if one fails, nothing
-		// gets persisted and we retry.
+		// TODO: Use a DB batch to ensure these writes atomic, so if one fails, nothing will be persisted.
 		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
 			return time.Second, err
 		}

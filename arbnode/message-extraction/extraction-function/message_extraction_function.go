@@ -31,6 +31,7 @@ var (
 type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
 		ctx context.Context,
+		state *meltypes.State,
 		index uint64,
 	) (*arbnode.DelayedInboxMessage, error)
 }
@@ -363,7 +364,7 @@ func extractArbosMessage(
 				DelayedMessagesRead: seqMsg.AfterDelayedMessages,
 			}
 		} else {
-			delayed, err := p.delayedMsgDB.ReadDelayedMessage(ctx, p.melState.DelayedMessagesRead)
+			delayed, err := p.delayedMsgDB.ReadDelayedMessage(ctx, p.melState, p.melState.DelayedMessagesRead)
 			if err != nil {
 				return nil, p, err
 			}

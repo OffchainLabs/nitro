@@ -22,7 +22,7 @@ import (
 )
 
 func MELConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".read-mode", DefaultMELConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
+	f.String(prefix+".read-mode", DefaultMELConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
 }
 
 type MELConfig struct {
@@ -96,7 +96,6 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 			actAgainInterval, err := m.Act(ctx)
 			if err != nil {
 				log.Error("Error in message extractor", "err", err)
-				return actAgainInterval
 			}
 			return actAgainInterval
 		},
