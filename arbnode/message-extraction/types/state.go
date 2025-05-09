@@ -31,6 +31,10 @@ type State struct {
 // Defines a basic interface for MEL, including saving states, messages,
 // and delayed messages to a database.
 type StateDatabase interface {
+	State(
+		ctx context.Context,
+		parentChainBlockHash common.Hash,
+	) (*State, error)
 	SaveState(
 		ctx context.Context,
 		state *State,
@@ -87,11 +91,11 @@ func (s *State) Clone() *State {
 }
 
 func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
-	// TODO: Unimplemented.
+	// TODO: Implement.
 	return s
 }
 
 func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) *State {
-	// TODO: Unimplemented.
+	// TODO: Implement.
 	return s
 }

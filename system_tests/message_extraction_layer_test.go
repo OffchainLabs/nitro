@@ -63,12 +63,13 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		savedDelayedMsgs: make([]*arbnode.DelayedInboxMessage, 0),
 	}
 	extractor, err := mel.NewMessageExtractor(
-		l1Reader,
+		l1Reader.Client(),
 		builder.addresses,
 		&mockMELStateFetcher{state: melState},
 		mockDB,
 		nil, // TODO: Provide da readers here.
 		melState.ParentChainBlockHash,
+		0,
 	)
 	Require(t, err)
 
@@ -182,12 +183,13 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		savedDelayedMsgs: make([]*arbnode.DelayedInboxMessage, 0),
 	}
 	extractor, err := mel.NewMessageExtractor(
-		l1Reader,
+		l1Reader.Client(),
 		builder.addresses,
 		&mockMELStateFetcher{state: melState},
 		mockDB,
 		nil, // TODO: Provide da readers here.
 		melState.ParentChainBlockHash,
+		0,
 	)
 	Require(t, err)
 
@@ -268,12 +270,13 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		savedDelayedMsgs: make([]*arbnode.DelayedInboxMessage, 0),
 	}
 	extractor, err := mel.NewMessageExtractor(
-		l1Reader,
+		l1Reader.Client(),
 		builder.addresses,
 		&mockMELStateFetcher{state: melState},
 		mockDB,
 		nil, // TODO: Provide da readers here.
 		melState.ParentChainBlockHash,
+		0,
 	)
 	Require(t, err)
 
@@ -338,6 +341,13 @@ type mockMELDB struct {
 	savedMsgs        []*arbostypes.MessageWithMetadata
 	savedDelayedMsgs []*arbnode.DelayedInboxMessage
 	savedStates      []*meltypes.State
+}
+
+func (m *mockMELDB) State(
+	ctx context.Context,
+	parentChainBlockHash common.Hash,
+) (*meltypes.State, error) {
+	return nil, errors.New("unimplemented")
 }
 
 func (m *mockMELDB) SaveState(

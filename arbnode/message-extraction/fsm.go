@@ -3,6 +3,7 @@ package mel
 import (
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
@@ -16,6 +17,7 @@ const (
 	_ FSMState = iota
 	Start
 	ProcessingNextBlock
+	Reorging
 	SavingMessages
 )
 
@@ -27,6 +29,8 @@ func (s FSMState) String() string {
 		return "processing_next_block"
 	case SavingMessages:
 		return "saving_messages"
+	case Reorging:
+		return "reorging"
 	default:
 		return "invalid"
 	}
@@ -49,6 +53,10 @@ type saveMessages struct {
 	delayedMessages []*arbnode.DelayedInboxMessage
 }
 
+type reorgToOldBlock struct {
+	reorgTo *types.Block
+}
+
 func (backToStart) String() string {
 	return "back_to_start"
 }
@@ -58,6 +66,9 @@ func (processNextBlock) String() string {
 func (saveMessages) String() string {
 	return "save_messages"
 }
+func (reorgToOldBlock) String() string {
+	return "reorg"
+}
 func (backToStart) isFsmAction() bool {
 	return true
 }
@@ -65,6 +76,9 @@ func (processNextBlock) isFsmAction() bool {
 	return true
 }
 func (saveMessages) isFsmAction() bool {
+	return true
+}
+func (reorgToOldBlock) isFsmAction() bool {
 	return true
 }
 
@@ -83,8 +97,13 @@ func newFSM(
 		},
 		{
 			Typ:  processNextBlock{},
-			From: []FSMState{Start, ProcessingNextBlock, SavingMessages},
+			From: []FSMState{Start, ProcessingNextBlock, SavingMessages, Reorging},
 			To:   ProcessingNextBlock,
+		},
+		{
+			Typ:  reorgToOldBlock{},
+			From: []FSMState{Start, ProcessingNextBlock},
+			To:   Reorging,
 		},
 		{
 			Typ:  saveMessages{},
