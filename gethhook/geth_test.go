@@ -39,7 +39,7 @@ func (r *TestChainContext) GetHeader(hash common.Hash, num uint64) *types.Header
 }
 
 var testChainConfig = &params.ChainConfig{
-	ChainID:             big.NewInt(1337),
+	ChainID:             big.NewInt(0),
 	HomesteadBlock:      big.NewInt(0),
 	DAOForkBlock:        nil,
 	DAOForkSupport:      true,
