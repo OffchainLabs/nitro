@@ -579,7 +579,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.MessageCommitMode,
-		s.bc.GetVMConfig().Tracer,
 	)
 	if err != nil {
 		return nil, err
@@ -779,7 +778,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		isMsgForPrefetch,
 		runMode,
-		s.bc.GetVMConfig().Tracer,
 	)
 
 	return block, statedb, receipts, err
