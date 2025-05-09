@@ -35,7 +35,7 @@ func parseDelayedMessagesFromBlock(
 		}
 		// Fetch the receipts for the transaction to get the logs.
 		txIndex := uint(i) // #nosec G115
-		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +81,7 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		txIndex := uint(i) // #nosec G115
-		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +194,7 @@ func parseDelayedMessage(
 		args := make(map[string]interface{})
 		data := tx.Data()
 		if len(data) < 4 {
-			return nil, nil, errors.New("tx data too short") // TODO: Add a hash of the tx that was too short.
+			return nil, nil, fmt.Errorf("tx data %#x too short", data)
 		}
 		l2MessageFromOriginCallABI := iInboxABI.Methods["sendL2MessageFromOrigin"]
 		if err := l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:]); err != nil {

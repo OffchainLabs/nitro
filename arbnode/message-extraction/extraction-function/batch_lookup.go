@@ -30,7 +30,7 @@ func parseBatchesFromBlock(
 		}
 		// Fetch the receipts for the transaction to get the logs.
 		txIndex := uint(i) // #nosec G115
-		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
 		if err != nil {
 			return nil, nil, nil, err
 		}

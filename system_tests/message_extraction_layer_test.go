@@ -69,9 +69,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		mockDB,
 		nil, // TODO: Provide da readers here.
 		melState.ParentChainBlockHash,
-		func() *mel.MELConfig {
-			return &mel.DefaultMELConfig
-		},
 	)
 	Require(t, err)
 
@@ -191,9 +188,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		mockDB,
 		nil, // TODO: Provide da readers here.
 		melState.ParentChainBlockHash,
-		func() *mel.MELConfig {
-			return &mel.DefaultMELConfig
-		},
 	)
 	Require(t, err)
 
@@ -280,9 +274,6 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		mockDB,
 		nil, // TODO: Provide da readers here.
 		melState.ParentChainBlockHash,
-		func() *mel.MELConfig {
-			return &mel.DefaultMELConfig
-		},
 	)
 	Require(t, err)
 

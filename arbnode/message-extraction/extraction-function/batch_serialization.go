@@ -92,7 +92,7 @@ func getSequencerBatchData(
 		sequencerBatchDataABI := seqInboxAbi.Events["SequencerBatchData"].ID
 		var numberAsHash common.Hash
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
-		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
 		if err != nil {
 			return nil, err
 		}

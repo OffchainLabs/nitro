@@ -27,6 +27,7 @@ var (
 	ErrInvalidParentChainBlock = errors.New("invalid parent chain block")
 )
 
+// Defines a method that can read a delayed message from an external database.
 type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
 		ctx context.Context,
@@ -35,10 +36,11 @@ type DelayedMessageDatabase interface {
 	) (*arbnode.DelayedInboxMessage, error)
 }
 
+// Defines a method that can fetch the receipt for a specific
+// transaction index in a parent chain block.
 type ReceiptFetcher interface {
 	ReceiptForTransactionIndex(
 		ctx context.Context,
-		parentChainBlock *types.Block,
 		txIndex uint,
 	) (*types.Receipt, error)
 }
@@ -96,8 +98,6 @@ func ExtractMessages(
 		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
 			batchPostingReports = append(batchPostingReports, delayed)
 		}
-		// TODO: Create a unique, delayed message hash beyond just
-		// the underlying message's hash.
 		state.DelayedMessagedSeen += 1
 		state = state.AccumulateDelayedMessage(delayed)
 	}
@@ -366,8 +366,6 @@ func extractArbosMessage(
 				log.Error("No more delayed messages in queue", "delayedMessagesRead", p.melState.DelayedMessagesRead)
 				return nil, p, fmt.Errorf("no more delayed messages in queue")
 			}
-			// TODO: Verify that this delayed message retrieved from an external source, such as a DB,
-			// is a child of the delayed message accumulator in the MEL state.
 			p.melState.DelayedMessagesRead += 1
 			msg = &arbostypes.MessageWithMetadata{
 				Message:             delayed.Message,

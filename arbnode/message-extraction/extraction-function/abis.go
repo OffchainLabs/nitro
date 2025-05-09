@@ -7,7 +7,6 @@ import (
 )
 
 var batchDeliveredID common.Hash
-var messageDeliveredID common.Hash
 var inboxMessageDeliveredID common.Hash
 var inboxMessageFromOriginID common.Hash
 var seqInboxABI *abi.ABI
@@ -32,7 +31,6 @@ func init() {
 		panic(err)
 	}
 	iDelayedMessageProviderABI = parsedIMessageProviderABI
-	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
 	inboxMessageDeliveredID = parsedIMessageProviderABI.Events["InboxMessageDelivered"].ID
 	inboxMessageFromOriginID = parsedIMessageProviderABI.Events["InboxMessageDeliveredFromOrigin"].ID
 	seqInboxABI, err = bridgegen.SequencerInboxMetaData.GetAbi()

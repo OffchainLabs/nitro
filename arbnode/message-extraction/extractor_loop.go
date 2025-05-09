@@ -8,20 +8,32 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
 )
 
-func (m *MessageExtractor) ReceiptForTransactionIndex(
+type blockReceiptFetcher struct {
+	client           *ethclient.Client
+	parentChainBlock *types.Block
+}
+
+func newBlockReceiptFetcher(client *ethclient.Client, parentChainBlock *types.Block) *blockReceiptFetcher {
+	return &blockReceiptFetcher{
+		client:           client,
+		parentChainBlock: parentChainBlock,
+	}
+}
+
+func (rf *blockReceiptFetcher) ReceiptForTransactionIndex(
 	ctx context.Context,
-	parentChainBlock *types.Block,
 	txIndex uint,
 ) (*types.Receipt, error) {
-	tx, err := m.l1Reader.Client().TransactionInBlock(ctx, parentChainBlock.Hash(), txIndex)
+	tx, err := rf.client.TransactionInBlock(ctx, rf.parentChainBlock.Hash(), txIndex)
 	if err != nil {
 		return nil, err
 	}
-	return m.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
+	return rf.client.TransactionReceipt(ctx, tx.Hash())
 }
 
 func (m *MessageExtractor) CurrentFSMState() FSMState {
@@ -77,13 +89,16 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				return time.Second, err
 			}
 		}
+		// Creates a receipt fetcher for the specific parent chain block, to be used
+		// by the message extraction function.
+		receiptFetcher := newBlockReceiptFetcher(m.l1Reader.Client(), parentChainBlock)
 		postState, msgs, delayedMsgs, err := extractionfunction.ExtractMessages(
 			ctx,
 			preState,
 			parentChainBlock,
 			m.dataProviders,
 			m.melDB,
-			m,
+			receiptFetcher,
 		)
 		if err != nil {
 			return time.Second, err
