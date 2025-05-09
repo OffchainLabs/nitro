@@ -4,14 +4,12 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
-	"github.com/offchainlabs/nitro/staker/bold"
 )
 
 func (m *MessageExtractor) ReceiptForTransactionIndex(
@@ -34,39 +32,22 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	current := m.fsm.Current()
 	switch current.State {
 	case Start:
-		// Fetch the initial state for the FSM from a state fetcher and
-		// read the first parent chain block we should process.
-		// TODO: Start from the latest MEL state we have in the database if it exists
-		// instead of the latest confirmed assertion.
-		client := m.l1Reader.Client()
-		rollup, err := rollupgen.NewRollupUserLogic(m.addrs.Rollup, client)
-		if err != nil {
-			return time.Second, err
-		}
-		confirmedAssertionHash, err := rollup.LatestConfirmed(m.callOpts(ctx))
-		if err != nil {
-			return time.Second, err
-		}
-		latestConfirmedAssertion, err := bold.ReadBoldAssertionCreationInfo(
+		// TODO: Start from the latest MEL state we have in the database if it exists as the first step.
+		// Check if the specified start block hash exists in the parent chain.
+		if _, err := m.l1Reader.Client().HeaderByHash(
 			ctx,
-			rollup,
-			client,
-			m.addrs.Rollup,
-			confirmedAssertionHash,
-		)
-		if err != nil {
-			return time.Second, err
+			m.startParentChainBlockHash,
+		); err != nil {
+			return time.Second, fmt.Errorf(
+				"failed to get start block by hash %s from parent chain: %w",
+				m.startParentChainBlockHash,
+				err,
+			)
 		}
-		startBlock, err := client.HeaderByNumber(
-			ctx,
-			new(big.Int).SetUint64(latestConfirmedAssertion.CreationL1Block),
-		)
-		if err != nil {
-			return time.Second, err
-		}
+		// Fetch the initial state for MEL from a state fetcher interface by parent chain block hash.
 		melState, err := m.stateFetcher.GetState(
 			ctx,
-			startBlock.Hash(),
+			m.startParentChainBlockHash,
 		)
 		if err != nil {
 			return time.Second, err
@@ -82,22 +63,19 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		}
 		preState := processAction.melState
 
-		// TODO: Check the latest block number to see if it exists, otherwise, we just have to
-		// repeat this FSM state until the new block exists.
 		parentChainBlock, err := m.l1Reader.Client().BlockByNumber(
 			ctx,
 			new(big.Int).SetUint64(preState.ParentChainBlockNumber+1),
 		)
 		if err != nil {
-			// TODO: Additionally return a duration from this function so that a stop waiter
-			// can know how long before it retries. This gives us more control of how often
-			// we want to retry a state in the FSM.
-			if strings.Contains(err.Error(), "not found") {
-				return time.Second, m.fsm.Do(processNextBlock{
-					melState: preState,
-				})
+			if err == ethereum.NotFound {
+				// If the block with the specified number is not found, it likely has not
+				// been posted yet to the parent chain, so we can retry after a short delay
+				// without returning an error from the FSM.
+				return time.Second, nil
+			} else {
+				return time.Second, err
 			}
-			return time.Second, err
 		}
 		postState, msgs, delayedMsgs, err := extractionfunction.ExtractMessages(
 			ctx,

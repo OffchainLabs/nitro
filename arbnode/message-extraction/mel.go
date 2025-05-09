@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -48,13 +49,14 @@ var TestMELConfig = MELConfig{
 
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
-	config        MELConfigFetcher
-	l1Reader      *headerreader.HeaderReader
-	stateFetcher  meltypes.StateFetcher
-	addrs         *chaininfo.RollupAddresses
-	melDB         meltypes.StateDatabase
-	dataProviders []daprovider.Reader
-	fsm           *fsm.Fsm[action, FSMState]
+	config                    MELConfigFetcher
+	l1Reader                  *headerreader.HeaderReader
+	stateFetcher              meltypes.StateFetcher
+	addrs                     *chaininfo.RollupAddresses
+	melDB                     meltypes.StateDatabase
+	dataProviders             []daprovider.Reader
+	startParentChainBlockHash common.Hash
+	fsm                       *fsm.Fsm[action, FSMState]
 }
 
 func NewMessageExtractor(
@@ -63,6 +65,7 @@ func NewMessageExtractor(
 	stateFetcher meltypes.StateFetcher,
 	melDB meltypes.StateDatabase,
 	dataProviders []daprovider.Reader,
+	startParentChainBlockHash common.Hash,
 	config MELConfigFetcher,
 ) (*MessageExtractor, error) {
 	if err := config().Validate(); err != nil {
@@ -73,13 +76,14 @@ func NewMessageExtractor(
 		return nil, err
 	}
 	return &MessageExtractor{
-		l1Reader:      l1Reader,
-		addrs:         rollupAddrs,
-		stateFetcher:  stateFetcher,
-		melDB:         melDB,
-		dataProviders: dataProviders,
-		config:        config,
-		fsm:           fsm,
+		l1Reader:                  l1Reader,
+		addrs:                     rollupAddrs,
+		stateFetcher:              stateFetcher,
+		melDB:                     melDB,
+		dataProviders:             dataProviders,
+		startParentChainBlockHash: startParentChainBlockHash,
+		config:                    config,
+		fsm:                       fsm,
 	}, nil
 }
 
