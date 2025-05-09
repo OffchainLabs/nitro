@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -476,7 +477,13 @@ func TestArbNativeToken(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_41)
+	// The chain being tested will have the feature enabled.
+	nativeTokenEnabledTime := uint64(1)
+	arbOSInit := &params.ArbOSInit{
+		NativeTokenEnabledTime: &nativeTokenEnabledTime,
+	}
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_41)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -620,6 +627,111 @@ func TestArbNativeToken(t *testing.T) {
 	expectedBalance = expectedBalance.Sub(expectedBalance, toBurn)
 	if balanceAfterBurning.Cmp(expectedBalance) != 0 {
 		t.Fatal("expected balance to be", expectedBalance, "got", balanceAfterBurning)
+	}
+}
+
+func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_41)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	authOwner := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	// tests that native token owner management is disabled by default
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+
+	nativeTokenOwnerName := "NativeTokenOwner"
+	builder.L2Info.GenerateAccount(nativeTokenOwnerName)
+	nativeTokenOwnerAddr := builder.L2Info.GetAddress(nativeTokenOwnerName)
+
+	// checks that no native token owners are set
+	isNativeTokenOwner, err := arbOwner.IsNativeTokenOwner(callOpts, nativeTokenOwnerAddr)
+	Require(t, err)
+	if isNativeTokenOwner {
+		t.Fatal("expected native token owner to not be set")
+	}
+	nativeTokenOwners, err := arbOwner.GetAllNativeTokenOwners(callOpts)
+	Require(t, err)
+	if len(nativeTokenOwners) != 0 {
+		t.Fatal("expected no native token owners")
+	}
+
+	// attempts to add native token owners before the feature is enabled
+	_, err = arbOwner.AddNativeTokenOwner(&authOwner, nativeTokenOwnerAddr)
+	if err == nil || err.Error() != "execution reverted" {
+		t.Error("expected adding native token owner to fail")
+	}
+
+	now := time.Now()
+	sixDaysFromNow := uint64(now.Add(24 * 6 * time.Hour).Unix())
+	sevenAndAHalfDaysFromNow := uint64(now.Add(24*7*time.Hour + 12*time.Hour).Unix())
+	eightDaysFromNow := uint64(now.Add(24 * 8 * time.Hour).Unix())
+
+	// attempts to enable the feature too early (6 days from now, instead of 7)
+	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sixDaysFromNow)
+	if err == nil || err.Error() != "execution reverted" {
+		t.Error("expected enabling native token management to fail")
+	}
+
+	// succeeds to enable the feature enough in the future (8 days from now)
+	tx, err := arbOwner.SetNativeTokenEnabledFrom(&authOwner, eightDaysFromNow)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// succeeds to shorten the time to enable the feature as long as it is still
+	// far enough in the future (7.5 days from now)
+	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sevenAndAHalfDaysFromNow)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// fails to shorten the time to enable the feature if it is too close to
+	// the current time (6 days from now)
+	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sixDaysFromNow)
+	if err == nil || err.Error() != "execution reverted" {
+		t.Error("expected enabling native token management to fail")
+	}
+
+	// About to test some very specific time-sensitive boundaries. Setting
+	// a new value for now.
+	now = time.Now()
+
+	// succeeds to shorten the time to enable the feature to just 5 seconds more
+	// than 7 days from now.
+	sevenDaysFiveSecondsFromNow := uint64(now.Add(24*7*time.Hour + 5*time.Second).Unix())
+	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sevenDaysFiveSecondsFromNow)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// Sleep for 15 seconds to ensure that that the time the feature is will be
+	// enabled is <= 7 days from now.
+	time.Sleep(15 * time.Second)
+	// Time to Enable ~ 6.23:59:50
+	// Resetting now after the sleep
+	now = time.Now()
+
+	// Now is should be okay to set the time to enable the feature to some time
+	// greater than 6 days, 23 hours, 59 minutes and 50 seconds from now, but
+	// less than 7 days from now. ~ 6.23:59:55
+	almostSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 5*time.Second).Unix())
+	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, almostSevenDaysFromNow)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// It should not, however, be okay to set the time to an even earlier time.
+	// ~ 6.23:59:40
+	tooFarFromSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 20*time.Second).Unix())
+	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, tooFarFromSevenDaysFromNow)
+	if err == nil || err.Error() != "execution reverted" {
+		t.Error("expected enabling native token management to fail")
 	}
 }
 
