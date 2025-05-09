@@ -46,6 +46,7 @@ var (
 	)
 	dynamicFeeTx = types.NewTx(
 		&types.DynamicFeeTx{
+			ChainID:   big.NewInt(1337),
 			Nonce:     13,
 			GasTipCap: big.NewInt(1),
 			GasFeeCap: big.NewInt(1),
