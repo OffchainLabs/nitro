@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -73,8 +72,7 @@ func (con ArbOwner) SetNativeTokenEnabledFrom(c ctx, evm mech, timestamp uint64)
 	if err != nil {
 		return err
 	}
-	// #nosec G115
-	now := uint64(time.Now().Unix())
+	now := evm.Context.Time
 	// If the feature is disabled, then the time must be at least 7 days in the
 	// future.
 	// If the feature is scheduled to be enabled more than 7 days in the future,
