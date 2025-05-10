@@ -667,8 +667,11 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	}
 
 	now := time.Now()
+	// #nosec G115
 	sixDaysFromNow := uint64(now.Add(24 * 6 * time.Hour).Unix())
+	// #nosec G115
 	sevenAndAHalfDaysFromNow := uint64(now.Add(24*7*time.Hour + 12*time.Hour).Unix())
+	// #nosec G115
 	eightDaysFromNow := uint64(now.Add(24 * 8 * time.Hour).Unix())
 
 	// attempts to enable the feature too early (6 days from now, instead of 7)
@@ -703,6 +706,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 
 	// succeeds to shorten the time to enable the feature to just 5 seconds more
 	// than 7 days from now.
+	// #nosec G115
 	sevenDaysFiveSecondsFromNow := uint64(now.Add(24*7*time.Hour + 5*time.Second).Unix())
 	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sevenDaysFiveSecondsFromNow)
 	Require(t, err)
@@ -719,6 +723,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	// Now is should be okay to set the time to enable the feature to some time
 	// greater than 6 days, 23 hours, 59 minutes and 50 seconds from now, but
 	// less than 7 days from now. ~ 6.23:59:55
+	// #nosec G115
 	almostSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 5*time.Second).Unix())
 	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, almostSevenDaysFromNow)
 	Require(t, err)
@@ -727,6 +732,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 
 	// It should not, however, be okay to set the time to an even earlier time.
 	// ~ 6.23:59:40
+	// #nosec G115
 	tooFarFromSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 20*time.Second).Unix())
 	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, tooFarFromSevenDaysFromNow)
 	if err == nil || err.Error() != "execution reverted" {
