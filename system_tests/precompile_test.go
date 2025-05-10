@@ -473,7 +473,7 @@ func TestCurrentTxL1GasFees(t *testing.T) {
 	}
 }
 
-func TestArbNativeToken(t *testing.T) {
+func TestArbNativeTokenManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -567,15 +567,15 @@ func TestArbNativeToken(t *testing.T) {
 
 	// tests minting and burning native tokens
 
-	arbNativeToken, err := precompilesgen.NewArbNativeToken(types.ArbNativeTokenAddress, builder.L2.Client)
+	arbNativeTokenManager, err := precompilesgen.NewArbNativeTokenManager(types.ArbNativeTokenManagerAddress, builder.L2.Client)
 	Require(t, err)
 
 	// tries to mint and burn without being a native token owner
-	_, err = arbNativeToken.MintNativeToken(&authOwner, big.NewInt(100))
+	_, err = arbNativeTokenManager.MintNativeToken(&authOwner, big.NewInt(100))
 	if err == nil || err.Error() != "unauthorized caller to access-controlled method" {
 		t.Fatal("expected minting to fail")
 	}
-	_, err = arbNativeToken.BurnNativeToken(&authOwner, big.NewInt(100))
+	_, err = arbNativeTokenManager.BurnNativeToken(&authOwner, big.NewInt(100))
 	if err == nil || err.Error() != "unauthorized caller to access-controlled method" {
 		t.Fatal("expected burning to fail")
 	}
@@ -600,7 +600,7 @@ func TestArbNativeToken(t *testing.T) {
 	toMint := big.NewInt(100)
 	balanceBeforeMinting, err := builder.L2.Client.BalanceAt(ctx, nativeTokenOwnerAddr, nil)
 	Require(t, err)
-	tx, err = arbNativeToken.MintNativeToken(&authNativeTokenOwner, toMint)
+	tx, err = arbNativeTokenManager.MintNativeToken(&authNativeTokenOwner, toMint)
 	Require(t, err)
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -615,7 +615,7 @@ func TestArbNativeToken(t *testing.T) {
 
 	// checks burning
 	toBurn := big.NewInt(50)
-	tx, err = arbNativeToken.BurnNativeToken(&authNativeTokenOwner, toBurn)
+	tx, err = arbNativeTokenManager.BurnNativeToken(&authNativeTokenOwner, toBurn)
 	Require(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -763,10 +763,10 @@ func TestNativeTokenManagementNotAvailableBeforeArbos41(t *testing.T) {
 	// checks that minting doesn't work
 	balanceBeforeMinting, err := builder.L2.Client.BalanceAt(ctx, accountAddr, nil)
 	Require(t, err)
-	arbNativeToken, err := precompilesgen.NewArbNativeToken(types.ArbNativeTokenAddress, builder.L2.Client)
+	arbNativeTokenManager, err := precompilesgen.NewArbNativeTokenManager(types.ArbNativeTokenManagerAddress, builder.L2.Client)
 	Require(t, err)
-	tx, err := arbNativeToken.MintNativeToken(&auth, big.NewInt(100))
-	// It doesn't fail because it is handled as ArbNativeToken doesn't exist
+	tx, err := arbNativeTokenManager.MintNativeToken(&auth, big.NewInt(100))
+	// It doesn't fail because it is handled as ArbNativeTokenManager doesn't exist
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)

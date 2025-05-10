@@ -14,16 +14,16 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// ArbNativeToken precompile enables minting and burning native tokens.
+// ArbNativeTokenManager precompile enables minting and burning native tokens.
 // All calls to this precompile are authorized by the NativeTokenPrecompile wrapper.
-type ArbNativeToken struct {
+type ArbNativeTokenManager struct {
 	Address addr
 }
 
 var mintBurnGasCost = arbmath.WordsForBytes(32) * params.SstoreSetGas / 100
 
 // Mints some amount of the native gas token for this chain to the given address
-func (con ArbNativeToken) MintNativeToken(c ctx, evm mech, amount huge) error {
+func (con ArbNativeTokenManager) MintNativeToken(c ctx, evm mech, amount huge) error {
 	if err := c.Burn(mintBurnGasCost); err != nil {
 		return err
 	}
@@ -34,7 +34,7 @@ func (con ArbNativeToken) MintNativeToken(c ctx, evm mech, amount huge) error {
 }
 
 // Burns some amount of the native gas token for this chain from the given address
-func (con ArbNativeToken) BurnNativeToken(c ctx, evm mech, amount huge) error {
+func (con ArbNativeTokenManager) BurnNativeToken(c ctx, evm mech, amount huge) error {
 	if err := c.Burn(mintBurnGasCost); err != nil {
 		return err
 	}
