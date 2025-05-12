@@ -243,6 +243,11 @@ test-go-redis: test-go-deps
 	gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/... -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
+.PHONY: test-go-gas-dimensions
+test-go-gas-dimensions: test-go-deps
+	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run "TestDim(Log|TxOp)" -tags gasdimensionstest
+	@printf $(done)
+
 .PHONY: test-gen-proofs
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
@@ -599,6 +604,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	yarn --cwd safe-smart-account build
 	yarn --cwd contracts build
 	yarn --cwd contracts build:forge:yul
+	yarn --cwd contracts build:forge:gas-dimensions
 	yarn --cwd contracts-legacy build
 	yarn --cwd contracts-legacy build:forge:yul
 	@touch $@

@@ -157,7 +157,35 @@ func main() {
 		})
 	}
 
-	// add upgrade executor module which is not compiled locally, but imported from 'nitro-contracts' dependencies
+	gasDimensionsFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "gas-dimensions", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	gasDimensionsModInfo := modules["gas_dimensionsgen"]
+	if gasDimensionsModInfo == nil {
+		gasDimensionsModInfo = &moduleInfo{}
+		modules["gas_dimensionsgen"] = gasDimensionsModInfo
+	}
+	for _, path := range gasDimensionsFilePaths {
+		_, file := filepath.Split(path)
+		name := file[:len(file)-5]
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal("could not read", path, "for contract", name, err)
+		}
+		artifact := FoundryArtifact{}
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			log.Fatal("failed to parse contract", name, err)
+		}
+		gasDimensionsModInfo.addArtifact(HardHatArtifact{
+			ContractName: name,
+			Abi:          artifact.Abi,
+			Bytecode:     artifact.Bytecode.Object,
+		})
+	}
+
+	// add upgrade executor module which is not compiled locally, but imported from 'nitro-contracts' depedencies
 	upgExecutorPath := filepath.Join(parent, "contracts", "node_modules", "@offchainlabs", "upgrade-executor", "build", "contracts", "src", "UpgradeExecutor.sol", "UpgradeExecutor.json")
 	_, err = os.Stat(upgExecutorPath)
 	if !os.IsNotExist(err) {

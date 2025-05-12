@@ -5,7 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 const ColdSloadCost = params.ColdSloadCostEIP2929
@@ -34,7 +34,7 @@ func TestDimLogBalanceCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployBalance)
 	_, receipt := callOnContract(t, builder, auth, contract.CallBalanceCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -66,7 +66,7 @@ func TestDimLogBalanceWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployBalance)
 	_, receipt := callOnContract(t, builder, auth, contract.CallBalanceWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -103,7 +103,7 @@ func TestDimLogExtCodeSizeCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeSize)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -135,7 +135,7 @@ func TestDimLogExtCodeSizeWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeSize)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -172,7 +172,7 @@ func TestDimLogExtCodeHashCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeHash)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashCold)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -204,7 +204,7 @@ func TestDimLogExtCodeHashWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeHash)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashWarm)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -244,7 +244,7 @@ func TestDimLogSloadCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySload)
 	_, receipt := callOnContract(t, builder, auth, contract.ColdSload)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -277,7 +277,7 @@ func TestDimLogSloadWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySload)
 	_, receipt := callOnContract(t, builder, auth, contract.WarmSload)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
