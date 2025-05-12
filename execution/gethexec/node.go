@@ -219,20 +219,15 @@ func CreateExecutionNode(
 		log.Warn("sequencer enabled without l1 client")
 	}
 
-	seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
 	if config.Sequencer.Enable {
+		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
 		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher)
 		if err != nil {
 			return nil, err
 		}
 		txPublisher = sequencer
 	} else {
-		if config.Sequencer.EnableCaffNode {
-			targets := append([]string{config.forwardingTarget}, config.SecondaryForwardingTarget...)
-			txForwarder := NewForwarder(targets, &config.Forwarder)
-			espressoFinalityNode := NewCaffNode(seqConfigFetcher, execEngine, txForwarder, stack)
-			txPublisher = espressoFinalityNode
-		} else if config.Forwarder.RedisUrl != "" {
+		if config.Forwarder.RedisUrl != "" {
 			txPublisher = NewRedisTxForwarder(config.forwardingTarget, &config.Forwarder)
 		} else if config.forwardingTarget == "" {
 			txPublisher = NewTxDropper()

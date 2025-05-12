@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -31,7 +32,7 @@ func TestEspressoStreamer(t *testing.T) {
 		// Simulate the call to the tee verifier returning a byte array. To the streamer, this indicates the attestation quote is valid.
 		mockEspressoTEEVerifierClient.On("Verify", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 		// create a new streamer object
-		streamer := NewEspressoStreamer(1, 1, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient, false)
+		streamer := NewEspressoStreamer(1, 1, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient, false, common.Address{})
 		streamer.Reset(735805, 1)
 		// Get the data for this test
 		testBlocks := GetTestBlocks()
@@ -64,7 +65,7 @@ func TestEspressoStreamer(t *testing.T) {
 
 		mockEspressoClient.On("FetchTransactionsInBlock", ctx, uint64(6), namespace).Return(espressoClient.TransactionsInBlock{}, errors.New("test error"))
 
-		streamer := NewEspressoStreamer(namespace, 3, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient, false)
+		streamer := NewEspressoStreamer(namespace, 3, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient, false, common.Address{})
 
 		testParseFn := func(tx types.Bytes) ([]*MessageWithMetadataAndPos, error) {
 			return nil, nil
@@ -106,7 +107,7 @@ func TestEspressoStreamer(t *testing.T) {
 			},
 		}, nil)
 
-		streamer := NewEspressoStreamer(namespace, 3, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient, false)
+		streamer := NewEspressoStreamer(namespace, 3, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient, false, common.Address{})
 
 		testParseFn := func(pos uint64, hotshotheight uint64) func(tx types.Bytes) ([]*MessageWithMetadataAndPos, error) {
 

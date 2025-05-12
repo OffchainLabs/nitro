@@ -10,12 +10,14 @@ import (
 
 	lightclient "github.com/EspressoSystems/espresso-network-go/light-client"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -184,7 +186,7 @@ func TestEspressoE2E(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup := createL1AndL2Node(ctx, t, true)
+	builder, cleanup := createL1AndL2Node(ctx, t, true, false)
 	defer cleanup()
 
 	err := waitForL1Node(ctx)
@@ -367,6 +369,93 @@ func TestEspressoE2E(t *testing.T) {
 		balance4 := l2Node.GetBalance(t, addr3)
 		log.Info("waiting for balance", "account", newAccount3, "addr", addr3, "balance", balance4)
 		return balance4.Cmp((&big.Int{}).Add(transferAmount, transferAmount)) >= 0
+	})
+	Require(t, err)
+}
+
+func TestEspressoE2EWithBlobs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create L1 and L2 nodes with blobs enabled
+	builder, cleanup := createL1AndL2Node(ctx, t, true, true)
+	defer cleanup()
+
+	err := waitForL1Node(ctx)
+	Require(t, err)
+
+	shutdown := runEspresso()
+	defer shutdown()
+
+	// wait for the builder
+	err = waitForEspressoNode(ctx)
+	Require(t, err)
+
+	l2Node := builder.L2
+	l2Info := builder.L2Info
+
+	// Wait for the initial message
+	expected := arbutil.MessageIndex(1)
+	err = waitFor(ctx, func() bool {
+		msgCnt, err := l2Node.ConsensusNode.TxStreamer.GetMessageCount()
+		if err != nil {
+			panic(err)
+		}
+		return msgCnt >= expected
+	})
+	Require(t, err)
+
+	// wait for the latest hotshot block
+	err = waitFor(ctx, func() bool {
+		out, err := exec.Command("curl", "http://127.0.0.1:41000/status/block-height", "-L").Output()
+		if err != nil {
+			return false
+		}
+		h := 0
+		err = json.Unmarshal(out, &h)
+		if err != nil {
+			return false
+		}
+		// Wait for the hotshot to generate some blocks to better simulate the real-world environment.
+		// Chosen based on intuition; no empirical data supports this value.
+		return h > 10
+	})
+	Require(t, err)
+
+	// make light client reader
+
+	lightClientReader, err := lightclient.NewLightClientReader(common.HexToAddress(lightClientAddress), builder.L1.Client)
+	Require(t, err)
+	// wait for hotshot liveness
+
+	err = waitForHotShotLiveness(ctx, lightClientReader)
+	Require(t, err)
+
+	// Check if the tx is executed correctly
+	err = checkTransferTxOnL2(t, ctx, l2Node, "User10", l2Info)
+	Require(t, err)
+
+	// Remember the number of messages
+	var msgCnt arbutil.MessageIndex
+	err = waitFor(ctx, func() bool {
+		cnt, err := l2Node.ConsensusNode.TxStreamer.GetMessageCount()
+		Require(t, err)
+		msgCnt = cnt
+		log.Info("waiting for message count", "cnt", msgCnt)
+		return msgCnt >= 2
+	})
+	Require(t, err)
+
+	// Check that the batch sent is greater than 1
+	err = waitForWith(ctx, 8*time.Minute, 5*time.Second, func() bool {
+		// Check the sequencer inbox contract
+
+		sequencerInbox, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
+		Require(t, err)
+
+		batchCount, err := sequencerInbox.BatchCount(&bind.CallOpts{Context: ctx})
+		Require(t, err)
+		return batchCount.Uint64() > 1
 	})
 	Require(t, err)
 }

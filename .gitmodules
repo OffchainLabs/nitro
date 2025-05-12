@@ -20,7 +20,7 @@
 [submodule "contracts"]
 	path = contracts
 	url = https://github.com/EspressoSystems/nitro-contracts.git
-	branch = 27d1bf6e13d334c37f0e6819c6b2c63d620c4f02
+	branch = release-v2.1.3-6ffebef
 [submodule "arbitrator/langs/rust"]
 	path = arbitrator/langs/rust
 	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
@@ -39,5 +39,5 @@
 [submodule "bold"]
 	path = bold
 	url = https://github.com/EspressoSystems/bold.git
-	branch = integration
+	branch = sync-v3.5.6
 

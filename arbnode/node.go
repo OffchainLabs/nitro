@@ -103,6 +103,8 @@ type Config struct {
 	BlockMetadataFetcher BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
+
+	EspressoCaffNode EspressoCaffNodeConfig `koanf:"espresso-caff-node"`
 }
 
 func (c *Config) Validate() error {
@@ -118,6 +120,9 @@ func (c *Config) Validate() error {
 		}
 		c.Feed.Output.Enable = false
 		c.Feed.Input.URL = []string{}
+	}
+	if c.EspressoCaffNode.Enable && (c.Sequencer || c.DelayedSequencer.Enable || c.SeqCoordinator.Enable) {
+		return errors.New("cannot start a Caff node with any sequencer enabled")
 	}
 	if err := c.BlockValidator.Validate(); err != nil {
 		return err
@@ -171,6 +176,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
+	EspressoCaffNodeConfigAddOptions(prefix+".espresso-caff-node", f)
 }
 
 var ConfigDefault = Config{
@@ -193,6 +199,7 @@ var ConfigDefault = Config{
 	Maintenance:          DefaultMaintenanceConfig,
 	BlockMetadataFetcher: DefaultBlockMetadataFetcherConfig,
 	SnapSyncTest:         DefaultSnapSyncConfig,
+	EspressoCaffNode:     DefaultEspressoCaffNodeConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -292,6 +299,8 @@ type Node struct {
 	blockMetadataFetcher    *BlockMetadataFetcher
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
+
+	EspressoCaffNode *EspressoCaffNode
 }
 
 type SnapSyncConfig struct {
@@ -566,6 +575,50 @@ func createNodeImpl(
 	delayedBridge, err := NewDelayedBridge(l1client, deployInfo.Bridge, deployInfo.DeployedAt)
 	if err != nil {
 		return nil, err
+	}
+
+	if config.EspressoCaffNode.Enable {
+		if exec, ok := exec.(*gethexec.ExecutionNode); ok {
+			espressoCaffNode := NewEspressoCaffNode(
+				func() *EspressoCaffNodeConfig { return &config.EspressoCaffNode },
+				exec.ExecEngine,
+				delayedBridge,
+				l1Reader,
+				arbDb,
+				config.EspressoCaffNode.RecordPerformance,
+				config.EspressoCaffNode.BlocksToRead,
+			)
+
+			return &Node{
+				ArbDB:                   arbDb,
+				Stack:                   stack,
+				Execution:               exec,
+				L1Reader:                nil,
+				TxStreamer:              txStreamer,
+				DeployInfo:              nil,
+				BlobReader:              blobReader,
+				InboxReader:             nil,
+				InboxTracker:            nil,
+				DelayedSequencer:        nil,
+				BatchPoster:             nil,
+				MessagePruner:           nil,
+				BlockValidator:          nil,
+				StatelessBlockValidator: nil,
+				Staker:                  nil,
+				BroadcastServer:         broadcastServer,
+				BroadcastClients:        broadcastClients,
+				SeqCoordinator:          coordinator,
+				MaintenanceRunner:       maintenanceRunner,
+				DASLifecycleManager:     nil,
+				SyncMonitor:             syncMonitor,
+				configFetcher:           configFetcher,
+				EspressoCaffNode:        espressoCaffNode,
+				ctx:                     ctx,
+			}, nil
+
+		} else {
+			return nil, errors.New("execution engine is not a gethexec.ExecutionNode while espresso caff node is enabled")
+		}
 	}
 	// #nosec G115
 	sequencerInbox, err := NewSequencerInbox(l1client, deployInfo.SequencerInbox, int64(deployInfo.DeployedAt))
@@ -1055,6 +1108,12 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
+	}
+	if n.EspressoCaffNode != nil {
+		err = n.EspressoCaffNode.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting espresso caff node: %w", err)
+		}
 	}
 	n.SyncMonitor.Start(ctx)
 	return nil

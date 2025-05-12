@@ -389,6 +389,7 @@ func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
+		log.Info("Building L1 node")
 		b.BuildL1(t)
 		return b.BuildL2OnL1(t)
 	}
@@ -666,9 +667,12 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	return func() { b.L2.cleanup() }
 }
 
-func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T) func() {
+func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T, existing *NodeBuilder) func() {
 	b.L2 = NewTestClient(b.ctx)
 	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+
+	l1Client := existing.L1.Client
+	deployInfo := existing.addresses
 
 	var chainDb ethdb.Database
 	var arbDb ethdb.Database
@@ -685,7 +689,7 @@ func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T) func() {
 	fatalErrChan := make(chan error, 10)
 	b.L2.ConsensusNode, err = arbnode.CreateNode(
 		b.ctx, b.L2.Stack, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(),
-		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil)
+		l1Client, deployInfo, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil)
 	Require(t, err)
 
 	err = b.L2.ConsensusNode.Start(b.ctx)
@@ -1254,6 +1258,12 @@ func createTestL1BlockChainWithL1StackConfig(t *testing.T, l1info info, stackCon
 	l1info.GenerateAccount("Faucet")
 
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.LondonBlock = big.NewInt(0) // EIP-1559
+	cancunTime := uint64(0)
+	chainConfig.CancunTime = &cancunTime
+	// Also ensure Shanghai is activated (prerequisite)
+	shanghaiTime := uint64(0)
+	chainConfig.ShanghaiTime = &shanghaiTime
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
 	stack, err := node.New(stackConfig)
@@ -1272,7 +1282,6 @@ func createTestL1BlockChainWithL1StackConfig(t *testing.T, l1info info, stackCon
 	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
 	nodeConf.Miner.PendingFeeRecipient = l1info.GetAddress("Faucet")
 	nodeConf.SyncMode = downloader.FullSync
-
 	l1backend, err := eth.New(stack, &nodeConf)
 	Require(t, err)
 
@@ -1422,6 +1431,7 @@ func deployOnParentChain(
 			EspressoTEEVerifier:          espressoTEEVerifierAddress,
 		}
 		wrappedClient := butil.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)
+		log.Info("Deploying Full rollup stack")
 		boldAddresses, err := setup.DeployFullRollupStack(
 			ctx,
 			wrappedClient,
