@@ -125,6 +125,9 @@ func (c *Config) Validate() error {
 		c.Feed.Output.Enable = false
 		c.Feed.Input.URL = []string{}
 	}
+	if c.EspressoCaffNode.Enable && (c.Sequencer || c.DelayedSequencer.Enable || c.SeqCoordinator.Enable) {
+		return errors.New("cannot start a Caff node with any sequencer enabled")
+	}
 	if err := c.BlockValidator.Validate(); err != nil {
 		return err
 	}
@@ -201,6 +204,7 @@ var ConfigDefault = Config{
 	Maintenance:          DefaultMaintenanceConfig,
 	BlockMetadataFetcher: DefaultBlockMetadataFetcherConfig,
 	SnapSyncTest:         DefaultSnapSyncConfig,
+	EspressoCaffNode:     DefaultEspressoCaffNodeConfig,
 }
 
 func ConfigDefaultL1Test() *Config {

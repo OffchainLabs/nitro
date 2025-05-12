@@ -388,6 +388,7 @@ func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
+		log.Info("Building L1 node")
 		b.BuildL1(t)
 		return b.BuildL2OnL1(t)
 	}
@@ -1248,6 +1249,12 @@ func createTestL1BlockChain(t *testing.T, l1info info, stackConfig *node.Config)
 	l1info.GenerateAccount("Faucet")
 
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.LondonBlock = big.NewInt(0) // EIP-1559
+	cancunTime := uint64(0)
+	chainConfig.CancunTime = &cancunTime
+	// Also ensure Shanghai is activated (prerequisite)
+	shanghaiTime := uint64(0)
+	chainConfig.ShanghaiTime = &shanghaiTime
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
 	stack, err := node.New(stackConfig)
@@ -1266,7 +1273,6 @@ func createTestL1BlockChain(t *testing.T, l1info info, stackConfig *node.Config)
 	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
 	nodeConf.Miner.PendingFeeRecipient = l1info.GetAddress("Faucet")
 	nodeConf.SyncMode = downloader.FullSync
-
 	l1backend, err := eth.New(stack, &nodeConf)
 	Require(t, err)
 
@@ -1416,6 +1422,7 @@ func deployOnParentChain(
 			EspressoTEEVerifier:          espressoTEEVerifierAddress,
 		}
 		wrappedClient := butil.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)
+		log.Info("Deploying Full rollup stack")
 		boldAddresses, err := setup.DeployFullRollupStack(
 			ctx,
 			wrappedClient,

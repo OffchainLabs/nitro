@@ -61,7 +61,7 @@ func EspressoCaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".namespace", DefaultEspressoCaffNodeConfig.Namespace, "the namespace of the chain in Espresso Network, usually the chain id")
 	f.Duration(prefix+".retry-time", DefaultEspressoCaffNodeConfig.RetryTime, "retry time after a failure")
 	f.Duration(prefix+".hotshot-polling-interval", DefaultEspressoCaffNodeConfig.HotshotPollingInterval, "time after a success")
-	f.String(prefix+".espresso-tee-verifier-addr", "", "tee verifier address")
+	f.String(prefix+".espresso-tee-verifier-addr", DefaultEspressoCaffNodeConfig.EspressoTEEVerifierAddr, "espresso tee verifier address that is used to verify the signature of the Hotshot transactions")
 	f.String(prefix+".batch-poster-addr", DefaultEspressoCaffNodeConfig.BatchPosterAddr, "batch poster address that is used to verify the signature of the Hotshot transactions")
 	f.Bool(prefix+".record-performance", DefaultEspressoCaffNodeConfig.RecordPerformance, "record performance of the Caff node")
 	f.Bool(prefix+".wait-for-finalization", DefaultEspressoCaffNodeConfig.WaitForFinalization, "Configures the Caff node to only produce blocks from delayed messages if they are finalized on the parent chain")
@@ -122,7 +122,6 @@ func NewEspressoCaffNode(
 		recordPerformance,
 		common.HexToAddress(configFetcher().BatchPosterAddr),
 	)
-
 	delayedMessageFetcher := NewDelayedMessageFetcher(delayedBridge, l1Reader, db, blocksToRead,
 		configFetcher().WaitForFinalization, configFetcher().WaitForConfirmations, configFetcher().RequiredBlockDepth)
 

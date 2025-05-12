@@ -156,35 +156,6 @@ func (c *SequencerConfig) Validate() error {
 
 type SequencerConfigFetcher func() *SequencerConfig
 
-type CaffNodeConfig struct {
-	HotShotUrls             []string            `koanf:"hotshot-urls"`
-	NextHotshotBlock        uint64              `koanf:"next-hotshot-block"`
-	Namespace               uint64              `koanf:"namespace"`
-	RetryTime               time.Duration       `koanf:"retry-time"`
-	HotshotPollingInterval  time.Duration       `koanf:"hotshot-polling-interval"`
-	ParentChainReader       headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
-	ParentChainNodeUrl      string              `koanf:"parent-chain-node-url"`
-	EspressoTEEVerifierAddr string              `koanf:"espresso-tee-verifier-addr"`
-	BatchPosterAddr         string              `koanf:"batch-poster-addr"`
-	// See how it is used in cmd/nitro/nitro.go
-	// search for "caff-node-config.forwarding"
-	Forwarding        bool `koanf:"forwarding"`
-	RecordPerformance bool `koanf:"record-performance"`
-}
-
-var DefaultCaffNodeConfig = CaffNodeConfig{
-	HotShotUrls:             []string{},
-	NextHotshotBlock:        1,
-	Namespace:               0,
-	RetryTime:               time.Second * 2,
-	HotshotPollingInterval:  time.Millisecond * 100,
-	ParentChainReader:       headerreader.DefaultConfig,
-	ParentChainNodeUrl:      "",
-	EspressoTEEVerifierAddr: "",
-	Forwarding:              true,
-	RecordPerformance:       false,
-}
-
 var DefaultSequencerConfig = SequencerConfig{
 	Enable:                      false,
 	MaxBlockSpeed:               time.Millisecond * 250,
