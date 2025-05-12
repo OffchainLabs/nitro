@@ -3,7 +3,6 @@ package mel
 import (
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
@@ -58,9 +57,7 @@ type saveMessages struct {
 }
 
 // An action that transitions the FSM to the reorging state.
-type reorgToOldBlock struct {
-	reorgTo *types.Block
-}
+type reorgToOldBlock struct{}
 
 func (backToStart) String() string {
 	return "back_to_start"

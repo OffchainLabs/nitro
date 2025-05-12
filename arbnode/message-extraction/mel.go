@@ -2,6 +2,7 @@ package mel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -177,7 +178,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			new(big.Int).SetUint64(preState.ParentChainBlockNumber+1),
 		)
 		if err != nil {
-			if err == ethereum.NotFound {
+			if errors.Is(err, ethereum.NotFound) {
 				// If the block with the specified number is not found, it likely has not
 				// been posted yet to the parent chain, so we can retry
 				// without returning an error from the FSM.
