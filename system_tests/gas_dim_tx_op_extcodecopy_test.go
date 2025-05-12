@@ -3,7 +3,7 @@ package arbtest
 import (
 	"testing"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 // #########################################################################################################
@@ -28,7 +28,7 @@ func TestDimTxOpExtCodeCopyColdMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdNoMemExpansion)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -43,7 +43,7 @@ func TestDimTxOpExtCodeCopyColdMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdMemExpansion)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -58,7 +58,7 @@ func TestDimTxOpExtCodeCopyWarmMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmNoMemExpansion)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -73,7 +73,7 @@ func TestDimTxOpExtCodeCopyWarmMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmMemExpansion)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)

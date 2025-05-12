@@ -3,7 +3,7 @@ package arbtest
 import (
 	"testing"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 // #########################################################################################################
@@ -27,7 +27,7 @@ func TestDimTxOpBalanceCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployBalance)
 	_, receipt := callOnContract(t, builder, auth, contract.CallBalanceCold)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -41,7 +41,7 @@ func TestDimTxOpBalanceWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployBalance)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployBalance)
 	_, receipt := callOnContract(t, builder, auth, contract.CallBalanceWarm)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -59,7 +59,7 @@ func TestDimTxOpExtCodeSizeCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeSize)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeCold)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -73,7 +73,7 @@ func TestDimTxOpExtCodeSizeWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeSize)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeSize)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeWarm)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -91,7 +91,7 @@ func TestDimTxOpExtCodeHashCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeHash)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashCold)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -105,7 +105,7 @@ func TestDimTxOpExtCodeHashWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeHash)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeHash)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashWarm)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -125,7 +125,7 @@ func TestDimTxOpSloadCold(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySload)
 	_, receipt := callOnContract(t, builder, auth, contract.ColdSload)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -139,7 +139,7 @@ func TestDimTxOpSloadWarm(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySload)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySload)
 	_, receipt := callOnContract(t, builder, auth, contract.WarmSload)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)

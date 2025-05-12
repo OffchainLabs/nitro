@@ -3,7 +3,7 @@ package arbtest
 import (
 	"testing"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 // #########################################################################################################
@@ -28,7 +28,7 @@ func TestDimTxOpSstoreColdZeroToZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdZeroToZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -42,7 +42,7 @@ func TestDimTxOpSstoreColdZeroToNonZeroValue(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdZeroToNonZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -56,7 +56,7 @@ func TestDimTxOpSstoreColdNonZeroValueToZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroValueToZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -70,7 +70,7 @@ func TestDimTxOpSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroToSameNonZeroValue)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -84,7 +84,7 @@ func TestDimTxOpSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroToDifferentNonZeroValue)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -98,7 +98,7 @@ func TestDimTxOpSstoreWarmZeroToZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmZeroToZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -112,7 +112,7 @@ func TestDimTxOpSstoreWarmZeroToNonZeroValue(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmZeroToNonZeroValue)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -126,7 +126,7 @@ func TestDimTxOpSstoreWarmNonZeroValueToZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroValueToZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -140,7 +140,7 @@ func TestDimTxOpSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroToSameNonZeroValue)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -154,7 +154,7 @@ func TestDimTxOpSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroToDifferentNonZeroValue)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -168,7 +168,7 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToNonZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -182,7 +182,7 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToSameNonZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -196,7 +196,7 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToNonZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -210,7 +210,7 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToSameNonZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -224,7 +224,7 @@ func TestDimTxOpSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroToNonZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -238,7 +238,7 @@ func TestDimTxOpSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySstore)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroBackToZero)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)

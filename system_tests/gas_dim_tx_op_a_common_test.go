@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 type OpcodeSumTraceResult = native.TxGasDimensionByOpcodeExecutionResult
@@ -29,7 +29,7 @@ func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCounter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCounter)
 	_, receipt := callOnContract(t, builder, auth, contract.NoSpecials)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
