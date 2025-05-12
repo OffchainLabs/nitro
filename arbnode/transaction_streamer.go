@@ -1063,7 +1063,6 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	if s.trackBlockMetadataFrom == 0 || pos < s.trackBlockMetadataFrom {
 		msgWithBlockInfo.BlockMetadata = nil
 	}
-
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, pos)
 
 	return nil
@@ -1391,6 +1390,70 @@ func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struc
 		return 0
 	}
 	return s.config().ExecuteMessageLoopDelay
+}
+
+func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx context.Context) {
+	if s.trackBlockMetadataFrom == 0 {
+		return
+	}
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		log.Error("Error getting message count from arbDB", "err", err)
+		return
+	}
+	if s.trackBlockMetadataFrom >= msgCount {
+		return // We dont need to back fill if trackBlockMetadataFrom is in the future
+	}
+
+	wasKeyFound := func(pos uint64) bool {
+		searchWithPrefix := func(prefix []byte) bool {
+			key := dbKey(prefix, pos)
+			_, err := s.db.Get(key)
+			if err == nil {
+				return true
+			}
+			if !dbutil.IsErrNotFound(err) {
+				log.Error("Error reading key in arbDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
+			}
+			return false
+		}
+		return searchWithPrefix(blockMetadataInputFeedPrefix) || searchWithPrefix(missingBlockMetadataInputFeedPrefix)
+	}
+
+	start := s.trackBlockMetadataFrom
+	if wasKeyFound(uint64(start)) {
+		return // back-filling not required
+	}
+	finish := msgCount - 1
+	for start < finish {
+		mid := (start + finish + 1) / 2
+		if wasKeyFound(uint64(mid)) {
+			finish = mid - 1
+		} else {
+			start = mid
+		}
+	}
+	lastNonExistent := start
+
+	// We back-fill in reverse to avoid fragmentation in case of any failures
+	batch := s.db.NewBatch()
+	for i := lastNonExistent; i >= s.trackBlockMetadataFrom; i-- {
+		if err := batch.Put(dbKey(missingBlockMetadataInputFeedPrefix, uint64(i)), nil); err != nil {
+			log.Error("Error marking blockMetadata as missing while back-filling", "pos", i, "err", err)
+			return
+		}
+		// If we reached the ideal batch size, commit and reset
+		if batch.ValueSize() >= ethdb.IdealBatchSize {
+			if err := batch.Write(); err != nil {
+				log.Error("Error writing batch with missing trackers to db while back-filling", "err", err)
+				return
+			}
+			batch.Reset()
+		}
+	}
+	if err := batch.Write(); err != nil {
+		log.Error("Error writing batch with missing trackers to db while back-filling", "err", err)
+	}
 }
 
 // Check if the latest submitted transaction has been finalized on L1 and verify it.
@@ -1895,29 +1958,6 @@ func (s *TransactionStreamer) shouldResubmitEspressoTransactions(ctx context.Con
 	return true
 }
 
-func (s *TransactionStreamer) Start(ctxIn context.Context) error {
-	s.StopWaiter.Start(ctxIn, s)
-
-	if s.lightClientReader != nil && s.espressoClient != nil {
-		err := stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.pollSubmittedTransactionForFinality, s.newSovereignTxNotifier)
-		if err != nil {
-			return err
-		}
-		err = stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.submitTransactionsToEspresso, s.newSovereignTxNotifier)
-		if err != nil {
-			return err
-		}
-		err = stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.pollToResubmitEspressoTransactions, s.newSovereignTxNotifier)
-		if err != nil {
-			return err
-		}
-	} else {
-		log.Warn("light client reader or espresso client not set, skipping espresso verification")
-	}
-
-	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
-}
-
 /**
  * This function generates the attestation quote for the user data.
  * The user data is hashed using keccak256 and then 32 bytes of padding is added to the hash.
@@ -1951,4 +1991,28 @@ func (t *TransactionStreamer) getAttestationQuote(userData []byte) ([]byte, erro
 	}
 
 	return attestationQuote, nil
+}
+
+func (s *TransactionStreamer) Start(ctxIn context.Context) error {
+	s.StopWaiter.Start(ctxIn, s)
+	s.LaunchThread(s.backfillTrackersForMissingBlockMetadata)
+
+	if s.lightClientReader != nil && s.espressoClient != nil {
+		err := stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.pollSubmittedTransactionForFinality, s.newSovereignTxNotifier)
+		if err != nil {
+			return err
+		}
+		err = stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.submitTransactionsToEspresso, s.newSovereignTxNotifier)
+		if err != nil {
+			return err
+		}
+		err = stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.pollToResubmitEspressoTransactions, s.newSovereignTxNotifier)
+		if err != nil {
+			return err
+		}
+	} else {
+		log.Warn("light client reader or espresso client not set, skipping espresso verification")
+	}
+
+	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -173,7 +174,9 @@ type ExecutionNode struct {
 	ExecEngine               *ExecutionEngine
 	Recorder                 *BlockRecorder
 	Sequencer                *Sequencer // either nil or same as TxPublisher
+	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
+	ExpressLaneService       *expressLaneService
 	ConfigFetcher            ConfigFetcher
 	SyncMonitor              *SyncMonitor
 	ParentChainReader        *headerreader.HeaderReader
@@ -236,7 +239,8 @@ func CreateExecutionNode(
 
 	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher().TxPreChecker }
 
-	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
+	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
+	txPublisher = txPreChecker
 	arbInterface, err := NewArbInterface(l2BlockChain, txPublisher)
 	if err != nil {
 		return nil, err
@@ -326,6 +330,7 @@ func CreateExecutionNode(
 		ExecEngine:               execEngine,
 		Recorder:                 recorder,
 		Sequencer:                sequencer,
+		TxPreChecker:             txPreChecker,
 		TxPublisher:              txPublisher,
 		ConfigFetcher:            configFetcher,
 		SyncMonitor:              syncMon,
@@ -498,4 +503,52 @@ func (n *ExecutionNode) Synced() bool {
 
 func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
 	return n.SyncMonitor.FullSyncProgressMap()
+}
+
+func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *params.ChainConfig) error {
+	execNodeConfig := n.ConfigFetcher()
+	if execNodeConfig.Sequencer.Timeboost.Enable {
+		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress)
+
+		auctionContract, err := NewExpressLaneAuctionFromInternalAPI(
+			n.Backend.APIBackend(),
+			n.FilterSystem,
+			auctionContractAddr)
+		if err != nil {
+			return err
+		}
+
+		roundTimingInfo, err := GetRoundTimingInfo(auctionContract)
+		if err != nil {
+			return err
+		}
+
+		expressLaneTracker := NewExpressLaneTracker(
+			*roundTimingInfo,
+			execNodeConfig.Sequencer.MaxBlockSpeed,
+			n.Backend.APIBackend(),
+			auctionContract,
+			auctionContractAddr,
+			chainConfig,
+			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
+		)
+
+		n.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
+
+		if execNodeConfig.Sequencer.Enable {
+			err := n.Sequencer.InitializeExpressLaneService(
+				common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctioneerAddress),
+				roundTimingInfo,
+				expressLaneTracker,
+			)
+			if err != nil {
+				log.Error("failed to create express lane service", "err", err)
+			}
+			n.Sequencer.StartExpressLaneService(ctx)
+		}
+
+		expressLaneTracker.Start(ctx)
+	}
+
+	return nil
 }

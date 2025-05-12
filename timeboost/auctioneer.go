@@ -106,19 +106,20 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 // It is responsible for receiving bids, validating them, and resolving auctions.
 type AuctioneerServer struct {
 	stopwaiter.StopWaiter
-	consumer                  *pubsub.Consumer[*JsonValidatedBid, error]
-	txOpts                    *bind.TransactOpts
-	chainId                   *big.Int
-	endpointManager           SequencerEndpointManager
-	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
-	auctionContractAddr       common.Address
-	bidsReceiver              chan *JsonValidatedBid
-	bidCache                  *bidCache
-	roundTimingInfo           RoundTimingInfo
-	streamTimeout             time.Duration
-	auctionResolutionWaitTime time.Duration
-	database                  *SqliteDatabase
-	s3StorageService          *S3StorageService
+	consumer                       *pubsub.Consumer[*JsonValidatedBid, error]
+	txOpts                         *bind.TransactOpts
+	chainId                        *big.Int
+	endpointManager                SequencerEndpointManager
+	auctionContract                *express_lane_auctiongen.ExpressLaneAuction
+	auctionContractAddr            common.Address
+	auctionContractDomainSeparator [32]byte
+	bidsReceiver                   chan *JsonValidatedBid
+	bidCache                       *bidCache
+	roundTimingInfo                RoundTimingInfo
+	streamTimeout                  time.Duration
+	auctionResolutionWaitTime      time.Duration
+	database                       *SqliteDatabase
+	s3StorageService               *S3StorageService
 }
 
 // NewAuctioneerServer creates a new autonomous auctioneer struct.
@@ -183,6 +184,12 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err != nil {
 		return nil, err
 	}
+	domainSeparator, err := auctionContract.DomainSeparator(&bind.CallOpts{
+		Context: ctx,
+	})
+	if err != nil {
+		return nil, err
+	}
 	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
 		return nil, err
@@ -195,18 +202,19 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		return nil, err
 	}
 	return &AuctioneerServer{
-		txOpts:                    txOpts,
-		endpointManager:           endpointManager,
-		chainId:                   chainId,
-		database:                  database,
-		s3StorageService:          s3StorageService,
-		consumer:                  c,
-		auctionContract:           auctionContract,
-		auctionContractAddr:       auctionContractAddr,
-		bidsReceiver:              make(chan *JsonValidatedBid, 100_000), // TODO(Terence): Is 100k enough? Make this configurable?
-		bidCache:                  newBidCache(),
-		roundTimingInfo:           *roundTimingInfo,
-		auctionResolutionWaitTime: cfg.AuctionResolutionWaitTime,
+		txOpts:                         txOpts,
+		endpointManager:                endpointManager,
+		chainId:                        chainId,
+		database:                       database,
+		s3StorageService:               s3StorageService,
+		consumer:                       c,
+		auctionContract:                auctionContract,
+		auctionContractAddr:            auctionContractAddr,
+		auctionContractDomainSeparator: domainSeparator,
+		bidsReceiver:                   make(chan *JsonValidatedBid, 100_000), // TODO(Terence): Is 100k enough? Make this configurable?
+		bidCache:                       newBidCache(domainSeparator),
+		roundTimingInfo:                *roundTimingInfo,
+		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,
 	}, nil
 }
 
@@ -316,7 +324,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 					log.Error("Could not resolve auction for round", "error", err)
 				}
 				// Clear the bid cache.
-				a.bidCache = newBidCache()
+				a.bidCache = newBidCache(a.auctionContractDomainSeparator)
 			}
 		}
 	})

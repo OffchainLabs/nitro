@@ -235,6 +235,8 @@ func TestOverflowAssertions(t *testing.T) {
 	Require(t, err)
 	manager.Start(ctx)
 
+	rollup, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), assertionChain.Backend())
+	Require(t, err)
 	filterer, err := rollupgen.NewRollupUserLogicFilterer(assertionChain.RollupAddress(), assertionChain.Backend())
 	Require(t, err)
 
@@ -282,12 +284,15 @@ func TestOverflowAssertions(t *testing.T) {
 				assertionHash := protocol.AssertionHash{Hash: it.Event.AssertionHash}
 				creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, assertionHash)
 				Require(t, err)
-				t.Logf("Created assertion in block: %d", creationInfo.CreationBlock)
+				assertionCreationBlock, err := rollup.GetAssertionCreationBlockForLogLookup(&bind.CallOpts{Context: ctx}, it.Event.AssertionHash)
+				Require(t, err)
+				creationBlock := assertionCreationBlock.Uint64()
+				t.Logf("Created assertion in block: %d", creationBlock)
 				newState := protocol.GoGlobalStateFromSolidity(creationInfo.AfterState.GlobalState)
 				t.Logf("NewState PosInBatch: %d", newState.PosInBatch)
 				inboxMax := creationInfo.InboxMaxCount.Uint64()
 				t.Logf("InboxMax: %d", inboxMax)
-				blocks := creationInfo.CreationBlock - lastAssertionBlock
+				blocks := creationBlock - lastAssertionBlock
 				// PosInBatch == 0 && inboxMax > lastInboxMax means it is NOT an overflow assertion.
 				if newState.PosInBatch == 0 && inboxMax > lastInboxMax {
 					if expectedAssertions[0] == overflow {
@@ -304,7 +309,7 @@ func TestOverflowAssertions(t *testing.T) {
 						t.Errorf("overflow assertions should not have %d blocks between them. Got: %d", mab64, blocks)
 					}
 				}
-				lastAssertionBlock = creationInfo.CreationBlock
+				lastAssertionBlock = creationBlock
 				lastInboxMax = inboxMax
 				expectedAssertions = expectedAssertions[1:]
 			}
