@@ -141,6 +141,7 @@ type BroadcastClient struct {
 
 	retrying                        bool
 	shuttingDown                    bool
+	firstReconnectAttempt           bool
 	confirmedSequenceNumberListener chan arbutil.MessageIndex
 	txStreamer                      TransactionStreamerInterface
 	fatalErrChan                    chan error
@@ -177,6 +178,7 @@ func NewBroadcastClient(
 		fatalErrChan:                    fatalErrChan,
 		sigVerifier:                     sigVerifier,
 		adjustCount:                     adjustCount,
+		firstReconnectAttempt:           true,
 	}, err
 }
 
@@ -361,6 +363,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	bc.connMutex.Lock()
 	bc.conn = conn
 	bc.compression = compressionNegotiated
+	bc.firstReconnectAttempt = true
 	bc.connMutex.Unlock()
 	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum)
 
@@ -412,6 +415,14 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					sourcesDisconnectedGauge.Inc(1)
 				}
 				_ = bc.conn.Close()
+
+				// Skip backoff for first reconnection attempt
+				if bc.firstReconnectAttempt {
+					bc.firstReconnectAttempt = false
+					log.Info("First reconnection attempt, skipping backoff", "url", bc.websocketUrl)
+					earlyFrameData = bc.retryConnect(ctx)
+					continue
+				}
 				timer := time.NewTimer(backoffDuration)
 				if backoffDuration < bc.config().ReconnectMaximumBackoff {
 					backoffDuration *= 2
@@ -440,6 +451,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					sourcesDisconnectedGauge.Dec(1)
 					sourcesConnectedGauge.Inc(1)
 					bc.adjustCount(1)
+					bc.firstReconnectAttempt = true
 				}
 				if len(res.Messages) > 0 {
 					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
@@ -494,7 +506,7 @@ func (bc *BroadcastClient) isShuttingDown() bool {
 
 func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 	maxWaitDuration := 15 * time.Second
-	waitDuration := 500 * time.Millisecond
+	var waitDuration time.Duration = 0 // Don't wait for first reconnect
 	bc.retrying = true
 
 	for !bc.isShuttingDown() {
