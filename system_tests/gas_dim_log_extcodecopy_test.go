@@ -5,7 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 // #########################################################################################################
@@ -94,7 +94,7 @@ func TestDimLogExtCodeCopyColdMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdNoMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -132,7 +132,7 @@ func TestDimLogExtCodeCopyColdMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -168,7 +168,7 @@ func TestDimLogExtCodeCopyWarmMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmNoMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -206,7 +206,7 @@ func TestDimLogExtCodeCopyWarmMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployExtCodeCopy)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
