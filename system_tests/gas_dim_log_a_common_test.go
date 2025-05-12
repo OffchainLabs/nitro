@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 type DimensionLogRes = native.DimensionLogRes
@@ -41,7 +41,7 @@ func TestDimLogComputationOnlyOpcodes(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCounter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCounter)
 	_, receipt := callOnContract(t, builder, auth, contract.NoSpecials)
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 

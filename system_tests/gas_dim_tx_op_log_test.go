@@ -3,7 +3,7 @@ package arbtest
 import (
 	"testing"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 // #########################################################################################################
@@ -37,7 +37,7 @@ func TestDimTxOpLog0TopicsOnlyMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicEmptyData)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -51,7 +51,7 @@ func TestDimTxOpLog0ExtraDataMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyData)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -65,7 +65,7 @@ func TestDimTxOpLog1TopicsOnlyMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitOneTopicEmptyData)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -79,7 +79,7 @@ func TestDimTxOpLog1ExtraDataMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyData)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -93,7 +93,7 @@ func TestDimTxOpLog2TopicsOnlyMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitTwoTopics)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -107,7 +107,7 @@ func TestDimTxOpLog2ExtraDataMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraData)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -121,7 +121,7 @@ func TestDimTxOpLog3TopicsOnlyMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitThreeTopics)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -135,7 +135,7 @@ func TestDimTxOpLog3ExtraDataMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraData)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -149,7 +149,7 @@ func TestDimTxOpLog4TopicsOnlyMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitFourTopics)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -163,7 +163,7 @@ func TestDimTxOpLog4ExtraDataMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraData)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -177,7 +177,7 @@ func TestDimTxOpLog0ExtraDataMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyDataAndMemExpansion)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -191,7 +191,7 @@ func TestDimTxOpLog1ExtraDataMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyDataAndMemExpansion)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -205,7 +205,7 @@ func TestDimTxOpLog2ExtraDataMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraDataAndMemExpansion)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -219,7 +219,7 @@ func TestDimTxOpLog3ExtraDataMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraDataAndMemExpansion)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
@@ -233,7 +233,7 @@ func TestDimTxOpLog4ExtraDataMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, contract := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployLogEmitter)
+	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraDataAndMemExpansion)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)

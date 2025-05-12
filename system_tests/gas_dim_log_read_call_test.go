@@ -6,7 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 // this file does the tests for the read-only call opcodes, i.e. DELEGATECALL and STATICCALL
@@ -44,7 +44,7 @@ func TestDimLogDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCaller)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyCold, emptyAccountAddress)
 
@@ -81,7 +81,7 @@ func TestDimLogDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCaller)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyWarm, emptyAccountAddress)
 
@@ -119,8 +119,8 @@ func TestDimLogDelegateCallColdContractMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
-	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCallee)
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCaller)
+	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCallee)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyCold, delegateCalleeAddress)
 
@@ -158,8 +158,8 @@ func TestDimLogDelegateCallWarmContractMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
-	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCallee)
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCaller)
+	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCallee)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyWarm, delegateCalleeAddress)
 
@@ -199,7 +199,7 @@ func TestDimLogDelegateCallColdNoCodeMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCaller)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyColdMemExpansion, emptyAccountAddress)
 
@@ -239,7 +239,7 @@ func TestDimLogDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCaller)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyWarmMemExpansion, emptyAccountAddress)
 
@@ -280,8 +280,8 @@ func TestDimLogDelegateCallColdContractMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
-	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCallee)
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCaller)
+	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCallee)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyColdMemExpansion, delegateCalleeAddress)
 
@@ -322,8 +322,8 @@ func TestDimLogDelegateCallWarmContractMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCaller)
-	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployDelegateCallee)
+	_, delegateCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCaller)
+	delegateCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployDelegateCallee)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyWarmMemExpansion, delegateCalleeAddress)
 
@@ -360,7 +360,7 @@ func TestDimLogStaticCallColdNoCodeMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCaller)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyCold, emptyAccountAddress)
 
@@ -394,7 +394,7 @@ func TestDimLogStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
 	defer cleanup()
 
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCaller)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyWarm, emptyAccountAddress)
 
@@ -428,8 +428,8 @@ func TestDimLogStaticCallColdContractMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
-	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCallee)
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCaller)
+	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyCold, staticCalleeAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -462,8 +462,8 @@ func TestDimLogStaticCallWarmContractMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
-	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCallee)
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCaller)
+	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyWarm, staticCalleeAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -498,7 +498,7 @@ func TestDimLogStaticCallColdNoCodeMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCaller)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyColdMemExpansion, emptyAccountAddress)
 
@@ -536,7 +536,7 @@ func TestDimLogStaticCallWarmNoCodeMemExpansion(t *testing.T) {
 	defer cleanup()
 
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
-	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCaller)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyWarmMemExpansion, emptyAccountAddress)
 
@@ -574,8 +574,8 @@ func TestDimLogStaticCallColdContractMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
-	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCallee)
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCaller)
+	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyColdMemExpansion, staticCalleeAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
@@ -612,8 +612,8 @@ func TestDimLogStaticCallWarmContractMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCaller)
-	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployStaticCallee)
+	_, staticCaller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCaller)
+	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyWarmMemExpansion, staticCalleeAddress)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)

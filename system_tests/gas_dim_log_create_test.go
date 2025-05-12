@@ -6,7 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 // #########################################################################################################
@@ -52,7 +52,7 @@ func TestDimLogCreateNoTransferMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, creator := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCreator)
+	_, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreator)
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemUnchanged)
 
@@ -92,7 +92,7 @@ func TestDimLogCreateNoTransferMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, creator := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCreator)
+	_, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreator)
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemExpansion)
 
@@ -135,7 +135,7 @@ func TestDimLogCreatePayingMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	creatorAddress, creator := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCreator)
+	creatorAddress, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreator)
 	// transfer some eth to the creator contract
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
 
@@ -177,7 +177,7 @@ func TestDimLogCreatePayingMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	creatorAddress, creator := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCreator)
+	creatorAddress, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreator)
 	// transfer some eth to the creator contract
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
 
@@ -248,7 +248,7 @@ func TestDimLogCreate2NoTransferMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, creator := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCreatorTwo)
+	_, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreatorTwo)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemUnchanged, [32]byte{0x13, 0x37})
 
@@ -289,7 +289,7 @@ func TestDimLogCreate2NoTransferMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, creator := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCreatorTwo)
+	_, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreatorTwo)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemExpansion, [32]byte{0x13, 0x37})
 
@@ -333,7 +333,7 @@ func TestDimLogCreate2PayingMemUnchanged(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, creator := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCreatorTwo)
+	_, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreatorTwo)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemUnchanged, [32]byte{0x13, 0x37})
 
@@ -374,7 +374,7 @@ func TestDimLogCreate2PayingMemExpansion(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	creatorAddress, creator := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployCreatorTwo)
+	creatorAddress, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreatorTwo)
 	// transfer some eth to the creator contract
 	_, _ = builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
 

@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/solgen/go/gasdimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
 // #########################################################################################################
@@ -45,7 +45,7 @@ func TestDimLogSelfdestructColdNoTransferVirgin(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	_, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySelfDestructor)
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
@@ -80,8 +80,8 @@ func TestDimLogSelfdestructColdNoTransferFunded(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
-	payableCounterAddress, _ /*payableCounter*/ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployPayableCounter)
+	_, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySelfDestructor)
+	payableCounterAddress, _ /*payableCounter*/ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployPayableCounter)
 
 	// prefund the selfDestructor and payableCounter with some funds
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
@@ -120,7 +120,7 @@ func TestDimLogSelfdestructColdPayingVirgin(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySelfDestructor)
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
@@ -159,7 +159,7 @@ func TestDimLogSelfdestructColdPayingFunded(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySelfDestructor)
 	emptyAccount := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
 	// send some money to the self destructor address ahead of time
@@ -198,7 +198,7 @@ func TestDimLogSelfdestructWarmNoTransferVirgin(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	_, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySelfDestructor)
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
@@ -233,8 +233,8 @@ func TestDimLogSelfdestructWarmNoTransferFunded(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	_ /*selfDestructorAddress*/, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
-	payableCounterAddress, _ /*payableCounter*/ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployPayableCounter)
+	_ /*selfDestructorAddress*/, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySelfDestructor)
+	payableCounterAddress, _ /*payableCounter*/ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployPayableCounter)
 
 	// prefund the payableCounter with some funds, but not the selfDestructor
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
@@ -273,7 +273,7 @@ func TestDimLogSelfdestructWarmPayingVirgin(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
+	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySelfDestructor)
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
@@ -309,8 +309,8 @@ func TestDimLogSelfdestructWarmPayingFunded(t *testing.T) {
 	defer cancel()
 	defer cleanup()
 
-	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeploySelfDestructor)
-	payableCounterAddress, _ /*payableCounter*/ := deployGasDimensionTestContract(t, builder, auth, gasdimensionsgen.DeployPayableCounter)
+	selfDestructorAddress, selfDestructor := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySelfDestructor)
+	payableCounterAddress, _ /*payableCounter*/ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployPayableCounter)
 
 	// prefund the selfDestructor and payableCounter with some funds
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
