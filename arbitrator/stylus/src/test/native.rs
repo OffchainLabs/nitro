@@ -190,6 +190,12 @@ fn test_import_export_safety() -> Result<()> {
         let bin = binary::parse(&wasm, path);
         if !instrument {
             assert!(bin.is_err());
+
+            // Also check that creating instances fails
+            let (compile, config, _) = test_configs();
+            assert!(TestInstance::new_linked(file, &compile, config).is_err());
+            assert!(Machine::from_user_path(path, &compile).is_err());
+
             return Ok(());
         }
 
@@ -201,12 +207,17 @@ fn test_import_export_safety() -> Result<()> {
         assert!(bin.instrument(&compile, codehash).is_err());
 
         if both {
-            assert!(TestInstance::new_test(file, compile).is_err());
+            assert!(TestInstance::new_test(file, compile.clone()).is_err());
+
+            // Check that creating instances fails
+            let (_, config, _) = test_configs();
+            assert!(TestInstance::new_linked(file, &compile, config).is_err());
+            assert!(Machine::from_user_path(path, &compile).is_err());
         }
         Ok(())
     }
 
-    // TODO: perform all the same checks in instances
+    // All checks are now performed in the check function
     check("tests/bad-mods/bad-export.wat", true, false)?;
     check("tests/bad-mods/bad-export2.wat", true, false)?;
     check("tests/bad-mods/bad-export3.wat", true, true)?;
