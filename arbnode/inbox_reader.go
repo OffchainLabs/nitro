@@ -142,7 +142,7 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 		},
 		runChan,
 	)
-	if err != nil {
+	if err != nil || r.bitro {
 		return err
 	}
 	// Ensure we read the init message before other things start up
