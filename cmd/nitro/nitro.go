@@ -42,14 +42,11 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -57,7 +54,8 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -144,27 +142,6 @@ func closeDb(db io.Closer, name string) {
 
 func main() {
 	os.Exit(mainImpl())
-}
-
-// Checks metrics and PProf flag, runs them if enabled.
-// Note: they are separate so one can enable/disable them as they wish, the only
-// requirement is that they can't run on the same address and port.
-func startMetrics(cfg *NodeConfig) error {
-	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
-	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
-	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
-		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
-	}
-	if cfg.Metrics {
-		log.Info("Enabling metrics collection")
-		metrics.Enable()
-		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
-		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
-	}
-	if cfg.PProf {
-		genericconf.StartPprof(pAddr)
-	}
-	return nil
 }
 
 // Returns the exit code
@@ -416,7 +393,13 @@ func mainImpl() int {
 		}
 	}
 
-	if err := startMetrics(nodeConfig); err != nil {
+	err = util.StartMetricsAndPProf(&util.MetricsPProfOpts{
+		Metrics:       nodeConfig.Metrics,
+		MetricsServer: nodeConfig.MetricsServer,
+		PProf:         nodeConfig.PProf,
+		PprofCfg:      nodeConfig.PprofCfg,
+	})
+	if err != nil {
 		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
