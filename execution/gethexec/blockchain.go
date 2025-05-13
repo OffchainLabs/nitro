@@ -144,7 +144,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 		return err
 	}
 	storedGenHash := rawdb.ReadCanonicalHash(chainDb, blockNumber)
-	timestamp := uint64(0)
+	timestamp := uint64(time.Now().Unix())
 	if blockNumber > 0 {
 		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
 		if prevHash == EmptyHash {

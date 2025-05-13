@@ -10,20 +10,21 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/params"
-
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // ArbNativeTokenManager precompile enables minting and burning native tokens.
 // All calls to this precompile are authorized by the NativeTokenPrecompile wrapper.
 type ArbNativeTokenManager struct {
-	Address addr
+	Address addr // 0x73
 }
 
-var mintBurnGasCost = arbmath.WordsForBytes(32) * params.SstoreSetGas / 100
+var mintBurnGasCost = params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas
 
 // Mints some amount of the native gas token for this chain to the given address
 func (con ArbNativeTokenManager) MintNativeToken(c ctx, evm mech, amount huge) error {
+	if !con.hasAccess(c) {
+		return c.BurnOut()
+	}
 	if err := c.Burn(mintBurnGasCost); err != nil {
 		return err
 	}
@@ -35,6 +36,9 @@ func (con ArbNativeTokenManager) MintNativeToken(c ctx, evm mech, amount huge) e
 
 // Burns some amount of the native gas token for this chain from the given address
 func (con ArbNativeTokenManager) BurnNativeToken(c ctx, evm mech, amount huge) error {
+	if !con.hasAccess(c) {
+		return c.BurnOut()
+	}
 	if err := c.Burn(mintBurnGasCost); err != nil {
 		return err
 	}
@@ -46,4 +50,9 @@ func (con ArbNativeTokenManager) BurnNativeToken(c ctx, evm mech, amount huge) e
 	evm.StateDB.ExpectBalanceBurn(amount)
 	evm.StateDB.SubBalance(c.caller, toSub, tracing.BalanceDecreaseBurnNativeToken)
 	return nil
+}
+
+func (con ArbNativeTokenManager) hasAccess(c ctx) bool {
+	manager, err := c.State.NativeTokenOwners().IsMember(c.caller)
+	return manager && err == nil
 }

@@ -649,7 +649,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbNativeTokenManager.arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["BurnNativeToken"].arbosVersion = params.ArbosVersion_41
-	insert(nativeTokenOnly(ArbNativeTokenManager.address, ArbNativeTokenManager))
+	insert(ArbNativeTokenManager.address, ArbNativeTokenManager)
 
 	return contracts
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -134,7 +135,8 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	}
 	burner := burn.NewSystemBurner(nil, false)
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
-	newState, err := InitializeArbosState(statedb, burner, chainConfig, nil, 0, arbostypes.TestInitMessage)
+	timestamp := uint64(time.Now().Unix())
+	newState, err := InitializeArbosState(statedb, burner, chainConfig, nil, timestamp, arbostypes.TestInitMessage)
 	if err != nil {
 		panic("failed to open the ArbOS state: " + err.Error())
 	}

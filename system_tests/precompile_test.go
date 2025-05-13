@@ -572,11 +572,11 @@ func TestArbNativeTokenManager(t *testing.T) {
 
 	// tries to mint and burn without being a native token owner
 	_, err = arbNativeTokenManager.MintNativeToken(&authOwner, big.NewInt(100))
-	if err == nil || err.Error() != "unauthorized caller to access-controlled method" {
+	if err == nil || err.Error() != "execution reverted" {
 		t.Fatal("expected minting to fail")
 	}
 	_, err = arbNativeTokenManager.BurnNativeToken(&authOwner, big.NewInt(100))
-	if err == nil || err.Error() != "unauthorized caller to access-controlled method" {
+	if err == nil || err.Error() != "execution reverted" {
 		t.Fatal("expected burning to fail")
 	}
 
