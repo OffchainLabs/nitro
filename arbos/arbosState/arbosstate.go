@@ -135,6 +135,7 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	}
 	burner := burn.NewSystemBurner(nil, false)
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	// #nosec G115
 	timestamp := uint64(time.Now().Unix())
 	newState, err := InitializeArbosState(statedb, burner, chainConfig, nil, timestamp, arbostypes.TestInitMessage)
 	if err != nil {
