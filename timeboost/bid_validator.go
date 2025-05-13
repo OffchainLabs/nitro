@@ -32,7 +32,7 @@ type BidValidatorConfig struct {
 	RedisURL       string                `koanf:"redis-url"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 	// Timeout on polling for existence of each redis stream.
-	SequencerEndpoint      string `koanf:"sequencer-endpoint"`
+	RpcEndpoint            string `koanf:"rpc-endpoint"`
 	AuctionContractAddress string `koanf:"auction-contract-address"`
 	MaxBidsPerSender       uint8  `koanf:"max-bids-per-sender"`
 }
@@ -55,7 +55,7 @@ func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBidValidatorConfig.Enable, "enable bid validator")
 	f.String(prefix+".redis-url", DefaultBidValidatorConfig.RedisURL, "url of redis server")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
-	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
+	f.String(prefix+".rpc-endpoint", DefaultBidValidatorConfig.RpcEndpoint, "url of rpc endpoint")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.Uint8(prefix+".max-bids-per-sender", DefaultBidValidatorConfig.MaxBidsPerSender, "maximum number of bids a sender can submit per round")
 
@@ -100,16 +100,16 @@ func NewBidValidator(
 		return nil, err
 	}
 
-	client, err := rpc.DialContext(ctx, cfg.SequencerEndpoint)
+	client, err := rpc.DialContext(ctx, cfg.RpcEndpoint)
 	if err != nil {
 		return nil, err
 	}
-	sequencerClient := ethclient.NewClient(client)
-	chainId, err := sequencerClient.ChainID(ctx)
+	rpcClient := ethclient.NewClient(client)
+	chainId, err := rpcClient.ChainID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, rpcClient)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func NewBidValidator(
 
 	bidValidator := &BidValidator{
 		chainId:                        chainId,
-		client:                         sequencerClient,
+		client:                         rpcClient,
 		redisClient:                    redisClient,
 		stack:                          stack,
 		auctionContract:                auctionContract,
