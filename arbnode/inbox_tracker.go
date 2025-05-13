@@ -552,7 +552,25 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 		pos++
 	}
 
-	return t.setDelayedCountReorgAndWriteBatch(batch, firstPos, pos, true)
+	err = t.setDelayedCountReorgAndWriteBatch(batch, firstPos, pos, true)
+	if err != nil {
+		return err
+	}
+	if !t.bitro {
+		return nil
+	}
+	msgsWithMetadata := []arbostypes.MessageWithMetadata{}
+	for _, delayed := range messages {
+		num, err := delayed.Message.Header.SeqNum()
+		if err != nil {
+			return err
+		}
+		msgsWithMetadata = append(msgsWithMetadata, arbostypes.MessageWithMetadata{
+			Message:             delayed.Message,
+			DelayedMessagesRead: num + 1,
+		})
+	}
+	return t.txStreamer.AddMessages(arbutil.MessageIndex(firstPos), true, msgsWithMetadata, nil)
 }
 
 // All-in-one delayed message count adjuster. Can go forwards or backwards.
