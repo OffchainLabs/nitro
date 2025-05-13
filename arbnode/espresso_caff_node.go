@@ -2,6 +2,7 @@ package arbnode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -23,19 +24,28 @@ import (
 )
 
 type EspressoCaffNodeConfig struct {
-	Enable                  bool          `koanf:"enable"`
-	HotShotUrls             []string      `koanf:"hotshot-urls"`
-	NextHotshotBlock        uint64        `koanf:"next-hotshot-block"`
-	Namespace               uint64        `koanf:"namespace"`
-	RetryTime               time.Duration `koanf:"retry-time"`
-	HotshotPollingInterval  time.Duration `koanf:"hotshot-polling-interval"`
-	EspressoTEEVerifierAddr string        `koanf:"espresso-tee-verifier-addr"`
-	BatchPosterAddr         string        `koanf:"batch-poster-addr"`
-	RecordPerformance       bool          `koanf:"record-performance"`
-	WaitForFinalization     bool          `koanf:"wait-for-finalization"`
-	WaitForConfirmations    bool          `koanf:"wait-for-confirmations"`
-	RequiredBlockDepth      uint64        `koanf:"required-block-depth"`
-	BlocksToRead            uint64        `koanf:"blocks-to-read"`
+	Enable                  bool                    `koanf:"enable"`
+	HotShotUrls             []string                `koanf:"hotshot-urls"`
+	NextHotshotBlock        uint64                  `koanf:"next-hotshot-block"`
+	Namespace               uint64                  `koanf:"namespace"`
+	RetryTime               time.Duration           `koanf:"retry-time"`
+	HotshotPollingInterval  time.Duration           `koanf:"hotshot-polling-interval"`
+	EspressoTEEVerifierAddr string                  `koanf:"espresso-tee-verifier-addr"`
+	BatchPosterAddr         string                  `koanf:"batch-poster-addr"`
+	RecordPerformance       bool                    `koanf:"record-performance"`
+	WaitForFinalization     bool                    `koanf:"wait-for-finalization"`
+	WaitForConfirmations    bool                    `koanf:"wait-for-confirmations"`
+	RequiredBlockDepth      uint64                  `koanf:"required-block-depth"`
+	BlocksToRead            uint64                  `koanf:"blocks-to-read"`
+	Dangerous               DangerousCaffNodeConfig `koanf:"dangerous"`
+}
+
+type DangerousCaffNodeConfig struct {
+	IgnoreDatabaseHotshotBlock bool `koanf:"ignore-database-hotshot-block"`
+}
+
+var DefaultDangerousCaffNodeConfig = DangerousCaffNodeConfig{
+	IgnoreDatabaseHotshotBlock: false,
 }
 
 var DefaultEspressoCaffNodeConfig = EspressoCaffNodeConfig{
@@ -52,6 +62,7 @@ var DefaultEspressoCaffNodeConfig = EspressoCaffNodeConfig{
 	WaitForConfirmations:    false,
 	RequiredBlockDepth:      6,
 	BlocksToRead:            100,
+	Dangerous:               DefaultDangerousCaffNodeConfig,
 }
 
 func EspressoCaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -68,6 +79,11 @@ func EspressoCaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".wait-for-confirmations", DefaultEspressoCaffNodeConfig.WaitForConfirmations, "Configures the Caff node to only produce blocks from delayed messages if they have atleast requiredBlockDepth confirmations on the parent chain")
 	f.Uint64(prefix+".required-block-depth", DefaultEspressoCaffNodeConfig.RequiredBlockDepth, "Configures the required block depth/number of confirmations on the parent chain that a delayed message is required to have before this Caff node will add it to it's state")
 	f.Uint64(prefix+".blocks-to-read", DefaultEspressoCaffNodeConfig.BlocksToRead, "Configures the number of blocks to read from the parent chain for delayed messages")
+	DangerousCaffNodeConfigAddOptions(prefix+".dangerous", f)
+}
+
+func DangerousCaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".ignore-database-hotshot-block", DefaultDangerousCaffNodeConfig.IgnoreDatabaseHotshotBlock, "Ignores the database hotshot block and starts from the next block specified in the config by the user")
 }
 
 type EspressoCaffNodeConfigFetcher func() *EspressoCaffNodeConfig
@@ -266,17 +282,20 @@ func (n *EspressoCaffNode) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to convert block number to message index: %w", err)
 	}
-	nextHotshotBlock, err := n.espressoStreamer.ReadNextHotshotBlockFromDb(n.db)
-	if err != nil {
-		log.Crit("failed to read next hotshot block", "err", err)
-		return nil
+	var nextHotshotBlock uint64
+
+	if !n.configFetcher().Dangerous.IgnoreDatabaseHotshotBlock {
+		nextHotshotBlock, err = n.espressoStreamer.ReadNextHotshotBlockFromDb(n.db)
+		if err != nil {
+			return fmt.Errorf("failed to read next hotshot block: %w", err)
+		}
 	}
 
 	if nextHotshotBlock == 0 {
 		// No next hotshot block found, so we need to start from config.CaffNodeConfig.NextHotshotBlock
 		nextHotshotBlock = n.configFetcher().NextHotshotBlock
 		if nextHotshotBlock == 0 {
-			log.Crit("No next hotshot block found in database, and no config.CaffNodeConfig.NextHotshotBlock set")
+			return errors.New("No next hotshot block found in database or dangerous.ignore-database-hotshot-block is set to true, please set config.CaffNodeConfig.NextHotshotBlock")
 		}
 	}
 	// The reason we do the reset here is because database is only initialized after Caff node is initialized

@@ -664,7 +664,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	return func() { b.L2.cleanup() }
 }
 
-func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T, existing *NodeBuilder) func() {
+func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T, existing *NodeBuilder) (func(), error) {
 	b.L2 = NewTestClient(b.ctx)
 	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
 
@@ -681,16 +681,22 @@ func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T, existing *NodeBuilder)
 	execConfig := b.execConfig
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher)
-	Require(t, err)
+	if err != nil {
+		return nil, err
+	}
 
 	fatalErrChan := make(chan error, 10)
 	b.L2.ConsensusNode, err = arbnode.CreateNode(
 		b.ctx, b.L2.Stack, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(),
 		l1Client, deployInfo, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil)
-	Require(t, err)
+	if err != nil {
+		return nil, err
+	}
 
 	err = b.L2.ConsensusNode.Start(b.ctx)
-	Require(t, err)
+	if err != nil {
+		return nil, err
+	}
 
 	b.L2.Client = ClientForStack(t, b.L2.Stack)
 
@@ -698,7 +704,7 @@ func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T, existing *NodeBuilder)
 
 	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
 	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
-	return func() { b.L2.cleanup() }
+	return func() { b.L2.cleanup() }, nil
 }
 
 // L2 -Only. RestartL2Node shutdowns the existing l2 node and start it again using the same data dir.
