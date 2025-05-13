@@ -82,6 +82,8 @@ var TestInboxReaderConfig = InboxReaderConfig{
 type InboxReader struct {
 	stopwaiter.StopWaiter
 
+	bitro bool
+
 	// Only in run thread
 	caughtUp          bool
 	firstMessageBlock *big.Int
@@ -106,6 +108,7 @@ func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *h
 		return nil, err
 	}
 	return &InboxReader{
+		bitro:             true,
 		tracker:           tracker,
 		delayedBridge:     delayedBridge,
 		sequencerInbox:    sequencerInbox,
@@ -390,10 +393,13 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			}
 		}
 
-		seenBatchCount, err = r.sequencerInbox.GetBatchCount(ctx, currentHeight)
-		if err != nil {
-			seenBatchCount = 0
-			return err
+		var seenBatchCount uint64
+		if !r.bitro {
+			seenBatchCount, err = r.sequencerInbox.GetBatchCount(ctx, currentHeight)
+			if err != nil {
+				seenBatchCount = 0
+				return err
+			}
 		}
 		checkingBatchCount := seenBatchCount
 		{
@@ -408,6 +414,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			}
 			if checkingBatchCount > 0 {
 				checkingBatchSeqNum := checkingBatchCount - 1
+				// [bitro] we don't need to change here because checkingBatchCount is always zero
 				l1BatchAcc, err := r.sequencerInbox.GetAccumulator(ctx, checkingBatchSeqNum, currentHeight)
 				if err != nil {
 					return err
@@ -469,9 +476,12 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				"reorgingDelayed", reorgingDelayed,
 				"reorgingSequencer", reorgingSequencer,
 			)
-			sequencerBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, from, to)
-			if err != nil {
-				return err
+			var sequencerBatches []*SequencerInboxBatch
+			if !r.bitro {
+				sequencerBatches, err = r.sequencerInbox.LookupBatchesInRange(ctx, from, to)
+				if err != nil {
+					return err
+				}
 			}
 			delayedMessages, err := r.delayedBridge.LookupMessagesInRange(ctx, from, to, func(batchNum uint64) ([]byte, error) {
 				if len(sequencerBatches) > 0 && batchNum >= sequencerBatches[0].SequenceNumber {
@@ -682,9 +692,12 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 		return nil, common.Hash{}, err
 	}
 	blockNum := arbmath.UintToBig(metadata.ParentChainBlock)
-	seqBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, blockNum, blockNum)
-	if err != nil {
-		return nil, common.Hash{}, err
+	var seqBatches []*SequencerInboxBatch
+	if !r.bitro {
+		seqBatches, err = r.sequencerInbox.LookupBatchesInRange(ctx, blockNum, blockNum)
+		if err != nil {
+			return nil, common.Hash{}, err
+		}
 	}
 	var seenBatches []uint64
 	for _, batch := range seqBatches {
