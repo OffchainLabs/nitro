@@ -116,7 +116,7 @@ func TestBitro(t *testing.T) {
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
 
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
-	callValue := big.NewInt(1e6)
+	callValue := big.NewInt(1e6 + 1e5)
 
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
 	Require(t, err, "failed to deploy NodeInterface")
@@ -180,7 +180,7 @@ func TestBitro(t *testing.T) {
 	Require(t, err)
 
 	if !arbmath.BigEquals(l2balance, callValue) {
-		Fatal(t, "Unexpected balance:", l2balance)
+		Fatal(t, "Unexpected balance:", l2balance, " expected: ", callValue)
 	}
 	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
 }
