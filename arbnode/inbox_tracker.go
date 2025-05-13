@@ -42,6 +42,7 @@ type InboxTracker struct {
 	dapReaders     []daprovider.Reader
 	snapSyncConfig SnapSyncConfig
 
+	bitro          bool
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
@@ -53,6 +54,16 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapRead
 		dapReaders:     dapReaders,
 		batchMeta:      containers.NewLruCache[uint64, BatchMetadata](1000),
 		snapSyncConfig: snapSyncConfig,
+	}
+	return tracker, nil
+}
+
+func NewBitroInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+	tracker := &InboxTracker{
+		db:             db,
+		txStreamer:     txStreamer,
+		snapSyncConfig: snapSyncConfig,
+		bitro:          true,
 	}
 	return tracker, nil
 }
@@ -173,6 +184,21 @@ type BatchMetadata struct {
 func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 	t.batchMetaMutex.Lock()
 	defer t.batchMetaMutex.Unlock()
+
+	if t.bitro {
+		ctx := context.TODO() // not really used in bitro-relevant codepath
+		_, acc, parentChainBlock, err := t.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, seqNum)
+		if err != nil {
+			return BatchMetadata{}, err
+		}
+		return BatchMetadata{
+			Accumulator:         acc,
+			MessageCount:        arbutil.MessageIndex(seqNum),
+			DelayedMessageCount: seqNum,
+			ParentChainBlock:    parentChainBlock,
+		}, nil
+	}
+
 	metadata, exist := t.batchMeta.Get(seqNum)
 	if exist {
 		return metadata, nil
