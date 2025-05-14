@@ -272,7 +272,7 @@ type Node struct {
 	BroadcastClients         *broadcastclients.BroadcastClients
 	SeqCoordinator           *SeqCoordinator
 	MaintenanceRunner        *MaintenanceRunner
-	dasServerCloseFn         func()
+	providerServerCloseFn    func()
 	DASLifecycleManager      *das.LifecycleManager
 	SyncMonitor              *SyncMonitor
 	blockMetadataFetcher     *BlockMetadataFetcher
@@ -573,7 +573,7 @@ func getDAS(
 	var err error
 	var daClient *daclient.Client
 	var withDAWriter bool
-	var dasServerCloseFn func()
+	var providerServerCloseFn func()
 	if config.DAProvider.Enable {
 		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DAProvider.RPC })
 		if err != nil {
@@ -600,19 +600,19 @@ func getDAS(
 		serverConfig.EnableDAWriter = config.BatchPoster.Enable
 		serverConfig.JWTSecret = jwtPath
 		withDAWriter = config.BatchPoster.Enable
-		dasServer, closeFn, err := dapserver.NewServer(ctx, &serverConfig, dataSigner, l1client, l1Reader, deployInfo.SequencerInbox)
+		providerServer, closeFn, err := dapserver.NewServer(ctx, &serverConfig, dataSigner, l1client, l1Reader, deployInfo.SequencerInbox)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		clientConfig := rpcclient.DefaultClientConfig
-		clientConfig.URL = dasServer.Addr
+		clientConfig.URL = providerServer.Addr
 		clientConfig.JWTSecret = jwtPath
 		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &clientConfig })
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		dasServerCloseFn = func() {
-			_ = dasServer.Shutdown(ctx)
+		providerServerCloseFn = func() {
+			_ = providerServer.Shutdown(ctx)
 			if closeFn != nil {
 				closeFn()
 			}
@@ -633,9 +633,9 @@ func getDAS(
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
 	}
 	if withDAWriter {
-		return daClient, dasServerCloseFn, dapReaders, nil
+		return daClient, providerServerCloseFn, dapReaders, nil
 	}
-	return nil, dasServerCloseFn, dapReaders, nil
+	return nil, providerServerCloseFn, dapReaders, nil
 }
 
 func getInboxTrackerAndReader(
@@ -1089,7 +1089,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	dapWriter, dasServerCloseFn, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
+	dapWriter, providerServerCloseFn, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
 	if err != nil {
 		return nil, err
 	}
@@ -1151,7 +1151,7 @@ func createNodeImpl(
 		BroadcastClients:         broadcastClients,
 		SeqCoordinator:           coordinator,
 		MaintenanceRunner:        maintenanceRunner,
-		dasServerCloseFn:         dasServerCloseFn,
+		providerServerCloseFn:    providerServerCloseFn,
 		SyncMonitor:              syncMonitor,
 		blockMetadataFetcher:     blockMetadataFetcher,
 		configFetcher:            configFetcher,
@@ -1503,8 +1503,8 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.StopAndWait()
 	}
 	n.SyncMonitor.StopAndWait()
-	if n.dasServerCloseFn != nil {
-		n.dasServerCloseFn()
+	if n.providerServerCloseFn != nil {
+		n.providerServerCloseFn()
 	}
 	if n.ExecutionClient != nil {
 		_, err := n.ExecutionClient.StopAndWait().Await(n.ctx)

@@ -27,7 +27,7 @@ import (
 )
 
 type Config struct {
-	DASServer        dapserver.ServerConfig      `koanf:"das-server"`
+	ProviderServer   dapserver.ServerConfig      `koanf:"provider-server"`
 	WithDataSigner   bool                     `koanf:"with-data-signer"`
 	DataSignerWallet genericconf.WalletConfig `koanf:"data-signer-wallet"`
 
@@ -42,7 +42,7 @@ type Config struct {
 }
 
 var DefaultConfig = Config{
-	DASServer:        dapserver.DefaultServerConfig,
+	ProviderServer:   dapserver.DefaultServerConfig,
 	WithDataSigner:   false,
 	DataSignerWallet: arbnode.DefaultBatchPosterL1WalletConfig,
 	Conf:             genericconf.ConfConfigDefault,
@@ -73,7 +73,7 @@ func parseDAProvider(args []string) (*Config, error) {
 	f.String("log-level", DefaultConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", DefaultConfig.LogType, "log type (plaintext or json)")
 
-	dapserver.ServerConfigAddOptions("das-server", f)
+	dapserver.ServerConfigAddOptions("provider-server", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -81,7 +81,7 @@ func parseDAProvider(args []string) (*Config, error) {
 		return nil, err
 	}
 
-	if err = das.FixKeysetCLIParsing("das-server.data-availability.rpc-aggregator.backends", k); err != nil {
+	if err = das.FixKeysetCLIParsing("provider-server.data-availability.rpc-aggregator.backends", k); err != nil {
 		return nil, err
 	}
 
@@ -92,7 +92,7 @@ func parseDAProvider(args []string) (*Config, error) {
 
 	if config.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"das-server.data-availability.key.priv-key": "",
+			"provider-server.data-availability.key.priv-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -154,19 +154,19 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if !config.DASServer.DataAvailability.Enable {
-		return errors.New("--das-server.data-availability.enable is a required to start a das-server")
+	if !config.ProviderServer.DataAvailability.Enable {
+		return errors.New("--provider-server.data-availability.enable is required to start a provider server")
 	}
 
-	if config.DASServer.DataAvailability.ParentChainNodeURL == "" || config.DASServer.DataAvailability.ParentChainNodeURL == "none" {
-		return errors.New("--das-server.data-availability.parent-chain-node-url is a required to start a das-server")
+	if config.ProviderServer.DataAvailability.ParentChainNodeURL == "" || config.ProviderServer.DataAvailability.ParentChainNodeURL == "none" {
+		return errors.New("--provider-server.data-availability.parent-chain-node-url is required to start a provider server")
 	}
 
-	if config.DASServer.DataAvailability.SequencerInboxAddress == "" || config.DASServer.DataAvailability.SequencerInboxAddress == "none" {
+	if config.ProviderServer.DataAvailability.SequencerInboxAddress == "" || config.ProviderServer.DataAvailability.SequencerInboxAddress == "none" {
 		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address")
 	}
 
-	l1Client, err := das.GetL1Client(ctx, config.DASServer.DataAvailability.ParentChainConnectionAttempts, config.DASServer.DataAvailability.ParentChainNodeURL)
+	l1Client, err := das.GetL1Client(ctx, config.ProviderServer.DataAvailability.ParentChainConnectionAttempts, config.ProviderServer.DataAvailability.ParentChainNodeURL)
 	if err != nil {
 		return err
 	}
@@ -177,16 +177,16 @@ func startup() error {
 		return err
 	}
 
-	seqInboxAddr, err := das.OptionalAddressFromString(config.DASServer.DataAvailability.SequencerInboxAddress)
+	seqInboxAddr, err := das.OptionalAddressFromString(config.ProviderServer.DataAvailability.SequencerInboxAddress)
 	if err != nil {
 		return err
 	}
 	if seqInboxAddr == nil {
-		return errors.New("must provide --das-server.data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+		return errors.New("must provide --provider-server.data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 	}
 
 	var dataSigner signature.DataSignerFunc
-	if config.WithDataSigner && config.DASServer.EnableDAWriter {
+	if config.WithDataSigner && config.ProviderServer.EnableDAWriter {
 		l1ChainId, err := l1Client.ChainID(ctx)
 		if err != nil {
 			return fmt.Errorf("couldn't read L1 chainid: %w", err)
@@ -196,8 +196,8 @@ func startup() error {
 		}
 	}
 
-	log.Info("Starting json rpc server", "addr", config.DASServer.Addr, "port", config.DASServer.Port)
-	dasServer, closeFn, err := dapserver.NewServer(ctx, &config.DASServer, dataSigner, l1Client, l1Reader, *seqInboxAddr)
+	log.Info("Starting json rpc server", "addr", config.ProviderServer.Addr, "port", config.ProviderServer.Port)
+	providerServer, closeFn, err := dapserver.NewServer(ctx, &config.ProviderServer, dataSigner, l1Client, l1Reader, *seqInboxAddr)
 	if err != nil {
 		return err
 	}
@@ -208,7 +208,7 @@ func startup() error {
 
 	<-sigint
 
-	if err = dasServer.Shutdown(ctx); err != nil {
+	if err = providerServer.Shutdown(ctx); err != nil {
 		return err
 	}
 	if closeFn != nil {
