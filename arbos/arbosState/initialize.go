@@ -95,7 +95,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	}
 
 	burner := burn.NewSystemBurner(nil, false)
-	arbosState, err := InitializeArbosState(statedb, burner, chainConfig, genesisArbOSInit, timestamp, initMessage)
+	arbosState, err := InitializeArbosState(statedb, burner, chainConfig, genesisArbOSInit, initMessage)
 	if err != nil {
 		panic("failed to open the ArbOS state :" + err.Error())
 	}

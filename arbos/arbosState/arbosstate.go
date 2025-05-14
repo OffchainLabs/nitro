@@ -135,8 +135,7 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	burner := burn.NewSystemBurner(nil, false)
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	// #nosec G115
-	timestamp := uint64(1)
-	newState, err := InitializeArbosState(statedb, burner, chainConfig, nil, timestamp, arbostypes.TestInitMessage)
+	newState, err := InitializeArbosState(statedb, burner, chainConfig, nil, arbostypes.TestInitMessage)
 	if err != nil {
 		panic("failed to open the ArbOS state: " + err.Error())
 	}
@@ -185,7 +184,7 @@ var (
 
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
 
-func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, timestamp uint64, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
+func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -213,7 +212,10 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 
 	nativeTokenEnabledFromTime := uint64(0)
 	if genesisArbOSInit != nil && genesisArbOSInit.NativeTokenSupplyManagementEnabled {
-		nativeTokenEnabledFromTime = timestamp
+		// Since we're initializing the state from the beginning with the
+		// faeture eanbled, we set the enalbed time to 1 (which will always be)
+		// lower than the timestamp of the first block of the chain.
+		nativeTokenEnabledFromTime = uint64(1)
 	}
 	err = sto.SetUint64ByUint64(uint64(nativeTokenEnabledFromTimeOffset), nativeTokenEnabledFromTime)
 	if err != nil {
