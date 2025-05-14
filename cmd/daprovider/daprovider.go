@@ -20,14 +20,14 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider/das"
-	"github.com/offchainlabs/nitro/daprovider/das/dasserver"
+	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
 type Config struct {
-	DASServer        dasserver.ServerConfig   `koanf:"das-server"`
+	DASServer        dapserver.ServerConfig      `koanf:"das-server"`
 	WithDataSigner   bool                     `koanf:"with-data-signer"`
 	DataSignerWallet genericconf.WalletConfig `koanf:"data-signer-wallet"`
 
@@ -42,7 +42,7 @@ type Config struct {
 }
 
 var DefaultConfig = Config{
-	DASServer:        dasserver.DefaultServerConfig,
+	DASServer:        dapserver.DefaultServerConfig,
 	WithDataSigner:   false,
 	DataSignerWallet: arbnode.DefaultBatchPosterL1WalletConfig,
 	Conf:             genericconf.ConfConfigDefault,
@@ -73,7 +73,7 @@ func parseDAProvider(args []string) (*Config, error) {
 	f.String("log-level", DefaultConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", DefaultConfig.LogType, "log type (plaintext or json)")
 
-	dasserver.ServerConfigAddOptions("das-server", f)
+	dapserver.ServerConfigAddOptions("das-server", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -197,7 +197,7 @@ func startup() error {
 	}
 
 	log.Info("Starting json rpc server", "addr", config.DASServer.Addr, "port", config.DASServer.Port)
-	dasServer, closeFn, err := dasserver.NewServer(ctx, &config.DASServer, dataSigner, l1Client, l1Reader, *seqInboxAddr)
+	dasServer, closeFn, err := dapserver.NewServer(ctx, &config.DASServer, dataSigner, l1Client, l1Reader, *seqInboxAddr)
 	if err != nil {
 		return err
 	}
