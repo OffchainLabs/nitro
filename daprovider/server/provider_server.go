@@ -126,14 +126,14 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 
 	addr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
-		return nil, nil, errors.New("failed getting dasserver address from listener")
+		return nil, nil, errors.New("failed getting provider server address from listener")
 	}
 
 	var handler http.Handler
 	if config.JWTSecret != "" {
 		jwt, err := fetchJWTSecret(config.JWTSecret)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed creating new dasserver: %w", err)
+			return nil, nil, fmt.Errorf("failed creating new provider server: %w", err)
 		}
 		handler = node.NewHTTPHandlerStack(rpcServer, nil, nil, jwt)
 	} else {
@@ -151,7 +151,7 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 	go func() {
 		if err := srv.Serve(listener); err != nil &&
 			!errors.Is(err, http.ErrServerClosed) {
-			log.Error("das-server's Serve method returned a non http.ErrServerClosed error", "err", err)
+			log.Error("provider server's Serve method returned a non http.ErrServerClosed error", "err", err)
 		}
 	}()
 
