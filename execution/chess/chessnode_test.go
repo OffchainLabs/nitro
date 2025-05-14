@@ -7,8 +7,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-func TestChessNode(t *testing.T) {
-	node := NewChessNode()
+func TestChessEngine(t *testing.T) {
+	node := NewChessEngine()
 
 	white := common.HexToAddress("0xfafa")
 	black := common.HexToAddress("0xbebe")

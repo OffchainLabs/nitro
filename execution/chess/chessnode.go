@@ -76,15 +76,15 @@ func (tx ChessTx) DecodeMakeMove() (id uint64, move string, err error) {
 	return id, move, nil
 }
 
-type ChessNode struct {
+type ChessEngine struct {
 	games []*Game
 }
 
-func NewChessNode() *ChessNode {
-	return &ChessNode{}
+func NewChessEngine() *ChessEngine {
+	return &ChessEngine{}
 }
 
-func (n *ChessNode) Process(from common.Address, tx ChessTx) error {
+func (n *ChessEngine) Process(from common.Address, tx ChessTx) error {
 	op, err := tx.GetOp()
 	if err != nil {
 		return err
@@ -115,7 +115,7 @@ func (n *ChessNode) Process(from common.Address, tx ChessTx) error {
 	return nil
 }
 
-func (n *ChessNode) Status() string {
+func (n *ChessEngine) Status() string {
 	status := []string{}
 	for i, game := range n.games {
 		if i > 0 {
