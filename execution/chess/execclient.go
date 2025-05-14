@@ -29,12 +29,12 @@ func NewChessNode() *ChessNode {
 }
 
 func (n *ChessNode) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	if n.headMsg+1 != msgIdx {
+		return containers.NewReadyPromise(&execution.MessageResult{}, fmt.Errorf("digest message %d but we are at %d", msgIdx, n.headMsg))
+	}
 	err := n.engine.Process(msg.Message.Header.Poster, msg.Message.L2msg)
 	if err != nil {
 		log.Info("failed to process chess tx", "err", err)
-	}
-	if n.headMsg+1 != msgIdx {
-		return containers.NewReadyPromise(&execution.MessageResult{}, fmt.Errorf("digest message %d but we are at %d", msgIdx, n.headMsg))
 	}
 	result := execution.MessageResult{
 		BlockHash: common.Hash(crypto.Keccak256([]byte(n.engine.Status()))),
