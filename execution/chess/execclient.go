@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -16,14 +19,26 @@ type ChessNode struct {
 	stopwaiter.StopWaiter
 	past    map[arbutil.MessageIndex]*execution.MessageResult
 	headMsg arbutil.MessageIndex
+	engine  *ChessEngine
+}
+
+func NewChessNode() *ChessNode {
+	return &ChessNode{
+		engine: NewChessEngine(),
+	}
 }
 
 func (n *ChessNode) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
-	// TODO game.process(msg.Message.Header.Poster, msg.Message.L2msg)
+	err := n.engine.Process(msg.Message.Header.Poster, msg.Message.L2msg)
+	if err != nil {
+		log.Info("failed to process chess tx", "err", err)
+	}
 	if n.headMsg+1 != msgIdx {
 		return containers.NewReadyPromise(&execution.MessageResult{}, fmt.Errorf("digest message %d but we are at %d", msgIdx, n.headMsg))
 	}
-	result := execution.MessageResult{} // TODO
+	result := execution.MessageResult{
+		BlockHash: common.Hash(crypto.Keccak256([]byte(n.engine.Status()))),
+	}
 	n.past[msgIdx] = &result
 	return containers.NewReadyPromise(&result, nil)
 }
