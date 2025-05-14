@@ -71,6 +71,12 @@ func (v *DefaultValidator) RecordPreimages(ctx context.Context, batch []byte) ([
 	}, nil
 }
 
+// Storage returns the underlying storage implementation
+// This method is mainly for testing and debugging
+func (v *DefaultValidator) Storage() PreimageStorage {
+	return v.storage
+}
+
 // GenerateProof generates a proof for a specific preimage
 // In this default implementation, we use a simple proof format:
 // [proof_type (1 byte) | preimage_data (variable length)]

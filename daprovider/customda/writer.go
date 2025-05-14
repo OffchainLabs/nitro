@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
@@ -72,7 +71,7 @@ func (w *Writer) Store(
 
 		// Log the preimages that were recorded
 		for _, p := range preimages {
-			log.Debug("Recorded preimage", "type", p.Type, "hash", p.Hash.Hex(), "size", len(p.Preimage))
+			log.Debug("Recorded preimage", "type", p.PreimageType, "hash", p.Hash.Hex(), "size", len(p.Data))
 		}
 	}
 
