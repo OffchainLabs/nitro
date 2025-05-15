@@ -58,7 +58,9 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	defer cancel()
 
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, opts.dasModeString)
-	defer lifecycleManager.StopAndWaitUntil(time.Second)
+	if lifecycleManager != nil {
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
+	}
 	if opts.workload == upgradeArbOs {
 		chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_10
 	}
@@ -78,12 +80,31 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	// Only authorize DAS keyset if we're using traditional DAS
+	if opts.dasModeString != "customda" && opts.dasModeString != "onchain" && dasSignerKey != nil {
+		authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	}
 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
-	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
-	validatorConfig.DataAvailability.RPCAggregator.Enable = false
+
+	// Configure validator based on DA mode
+	if opts.dasModeString == "customda" {
+		// For custom DA, copy the DAProvider configuration
+		validatorConfig.DAProvider = l1NodeConfigA.DAProvider
+
+		// Disable traditional DAS for validator
+		validatorConfig.DataAvailability.Enable = false
+
+		// CustomDA validators also need batch poster configuration
+		// to recognize custom DA messages
+		validatorConfig.BatchPoster.Enable = false
+		validatorConfig.BatchPoster.UseCustomDA = true
+	} else {
+		// For traditional DAS, copy DataAvailability configuration
+		validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
+		validatorConfig.DataAvailability.RPCAggregator.Enable = false
+	}
 	redisURL := ""
 	if opts.useRedisStreams {
 		redisURL = redisutil.CreateTestRedis(ctx, t)
@@ -371,6 +392,17 @@ func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
 		dasModeString: "files",
 		workloadLoops: 8,
 		workload:      smallContract,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+// TestBlockValidatorCustomDA tests the block validator with custom DA
+func TestBlockValidatorCustomDA(t *testing.T) {
+	opts := Options{
+		dasModeString: "customda",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    true,
 	}
 	testBlockValidatorSimple(t, opts)
 }

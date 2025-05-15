@@ -1661,6 +1661,18 @@ func setupConfigWithDAS(
 		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	case "onchain":
 		enableDas = false
+	case "customda":
+		// For custom DA, we'll create a separate setup
+		customDAServer, serverURL := startCustomDAServer(t, ctx)
+		configureNodeForCustomDA(l1NodeConfigA, serverURL)
+		// Make sure to store the server in the test context so it can be cleaned up
+		t.Cleanup(func() {
+			err := customDAServer.server.Shutdown(ctx)
+			if err != nil {
+				log.Error("Error shutting down CustomDA server", "err", err)
+			}
+		})
+		return chainConfig, l1NodeConfigA, nil, "", nil
 	default:
 		Fatal(t, "unknown storage type")
 	}
