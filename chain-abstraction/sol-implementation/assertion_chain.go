@@ -1055,10 +1055,11 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		return nil, err
 	}
 	afterState := parsedLog.Assertion.AfterState
-	creationL1Block, err := a.GetAssertionCreationParentBlock(ctx, parsedLog.AssertionHash)
+	res, err := a.rollup.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), parsedLog.AssertionHash)
 	if err != nil {
 		return nil, err
 	}
+	creationL1Block := res.CreatedAtBlock
 	return &protocol.AssertionCreatedInfo{
 		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
 		RequiredStake:       parsedLog.RequiredStake,
