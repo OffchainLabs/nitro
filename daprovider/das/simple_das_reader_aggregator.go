@@ -204,11 +204,6 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash common.H
 				go func(reader dasutil.DASReader) {
 					defer wg.Done()
 					data, err := a.tryGetByHash(subCtx, hash, reader)
-					if err != nil && errors.Is(ctx.Err(), context.Canceled) {
-						// Don't record a stats data point when a different
-						// client returned faster than this one.
-						return
-					}
 					results <- dataErrorPair{data, err}
 				}(reader)
 			}
@@ -248,10 +243,15 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(
 	ctx context.Context, hash common.Hash, reader dasutil.DASReader,
 ) ([]byte, error) {
 	stat := readerStatMessage{reader: reader}
-	stat.success = false
 
 	start := time.Now()
 	result, err := reader.GetByHash(ctx, hash)
+
+	if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		// Do not record stats if the context was canceled or timed out
+		return result, err
+	}
+
 	if err == nil {
 		if dastree.ValidHash(hash, result) {
 			stat.success = true
@@ -314,15 +314,25 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 			case <-innerCtx.Done():
 				return
 			case stat := <-a.statMessages:
-				a.stats[stat.reader] = append(a.stats[stat.reader], stat.readerStat)
-				statsLen := len(a.stats[stat.reader])
-				if statsLen > a.config.MaxPerEndpointStats {
-					a.stats[stat.reader] = a.stats[stat.reader][statsLen-a.config.MaxPerEndpointStats:]
+				a.readersMutex.Lock()
+				if currentStats, ok := a.stats[stat.reader]; ok {
+					currentStats = append(currentStats, stat.readerStat)
+					statsLen := len(currentStats)
+					if statsLen > a.config.MaxPerEndpointStats {
+						a.stats[stat.reader] = currentStats[statsLen-a.config.MaxPerEndpointStats:]
+					} else {
+						a.stats[stat.reader] = currentStats
+					}
+				} else {
+					log.Debug("Received stat for unknown reader, skipping", "reader", stat.reader)
 				}
+				a.readersMutex.Unlock()
 			case <-updateStrategyTicker.C:
-				// Strategy update happens in same goroutine as updates to the stats
-				// to avoid needing extra synchronization.
+				// Strategy update accesses shared 'readers' and 'stats' protected by readersMutex.
+				// It runs in the same goroutine as statMessages processing to ensure consistency.
+				a.readersMutex.RLock()
 				a.strategy.update(a.readers, a.stats)
+				a.readersMutex.RUnlock()
 			case onlineUrls := <-onlineUrlsChan:
 				updateRestfulDasClients(onlineUrls)
 			}
