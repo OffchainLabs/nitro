@@ -22,9 +22,9 @@ type ChessNode struct {
 	engine  *ChessEngine
 }
 
-func NewChessNode() *ChessNode {
+func NewChessNode(engine *ChessEngine) *ChessNode {
 	return &ChessNode{
-		engine: NewChessEngine(),
+		engine: engine,
 	}
 }
 
