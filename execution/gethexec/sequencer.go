@@ -86,6 +86,7 @@ type SequencerConfig struct {
 
 type DangerousConfig struct {
 	Timeboost TimeboostConfig `koanf:"timeboost"`
+	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
 }
 
 type TimeboostConfig struct {
@@ -185,6 +186,7 @@ var DefaultSequencerConfig = SequencerConfig{
 
 var DefaultDangerousConfig = DangerousConfig{
 	Timeboost: DefaultTimeboostConfig,
+	DisableSeqInboxMaxDataSizeCheck: false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -221,6 +223,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 
 func DangerousAddOptions(prefix string, f *flag.FlagSet) {
 	TimeboostAddOptions(prefix+".timeboost", f)
+	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 }
 
 type txQueueItem struct {
