@@ -35,7 +35,7 @@ func FuzzPrecompiles(f *testing.F) {
 		}
 		burner := burn.NewSystemBurner(nil, false)
 		chainConfig := chaininfo.ArbitrumDevTestChainConfig()
-		_, err = arbosState.InitializeArbosState(sdb, burner, chainConfig, arbostypes.TestInitMessage)
+		_, err = arbosState.InitializeArbosState(sdb, burner, chainConfig, nil, arbostypes.TestInitMessage)
 		if err != nil {
 			panic(err)
 		}
