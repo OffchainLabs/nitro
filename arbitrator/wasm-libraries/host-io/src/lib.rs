@@ -16,6 +16,7 @@ extern "C" {
     pub fn wavm_read_keccak_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_sha2_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_eth_versioned_hash_preimage(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_customda_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(msg_num: u64, ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_delayed_inbox_message(seq_num: u64, ptr: *mut u8, offset: usize) -> usize;
 }
@@ -137,6 +138,7 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
         PreimageType::Keccak256 => wavm_read_keccak_256_preimage,
         PreimageType::Sha2_256 => wavm_read_sha2_256_preimage,
         PreimageType::EthVersionedHash => wavm_read_eth_versioned_hash_preimage,
+        PreimageType::CustomDA => wavm_read_customda_preimage,
     };
     let read = preimage_reader(our_ptr, offset);
     assert!(read <= 32);
