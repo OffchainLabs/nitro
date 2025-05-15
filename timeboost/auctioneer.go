@@ -226,6 +226,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		bidCache:                       newBidCache(domainSeparator),
 		roundTimingInfo:                *roundTimingInfo,
 		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,
+		streamTimeout:                  cfg.StreamTimeout,
 		unackedBids:                    make(map[string]*pubsub.Message[*JsonValidatedBid]),
 	}, nil
 }
