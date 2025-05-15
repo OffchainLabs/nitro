@@ -87,7 +87,7 @@ func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".retention-period", DefaultSyncToStorageConfig.RetentionPeriod, "period to request storage to retain synced data")
 	f.Duration(prefix+".delay-on-error", DefaultSyncToStorageConfig.DelayOnError, "time to wait if encountered an error before retrying")
 	f.Bool(prefix+".ignore-write-errors", DefaultSyncToStorageConfig.IgnoreWriteErrors, "log only on failures to write when syncing; otherwise treat it as an error")
-	f.String(prefix+".state-dir", DefaultSyncToStorageConfig.StateDir, "directory to store the sync state in, ie the block number currently synced up to, so that we don't sync from scratch each time")
+	f.String(prefix+".state-dir", DefaultSyncToStorageConfig.StateDir, "directory to store the sync state in, i.e. the block number currently synced up to, so that we don't sync from scratch each time")
 	f.Bool(prefix+".sync-expired-data", DefaultSyncToStorageConfig.SyncExpiredData, "sync even data that is expired; needed for mirror configuration")
 }
 
