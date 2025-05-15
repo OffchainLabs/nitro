@@ -600,7 +600,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	execConfig.Caching.StateScheme = rawdb.HashScheme
 	useWasmCache := uint32(1)
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, nil, execConfig, useWasmCache, true)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, nil, initMessage, nil, execConfig, useWasmCache, true)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -825,7 +825,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, execConfig.Validate())
 	execConfig.Caching.StateScheme = rawdb.HashScheme
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, nil, initMessage, execConfig.TxLookupLimit, 0)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, execConfig.TxLookupLimit, 0)
 	Require(t, err)
 
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
