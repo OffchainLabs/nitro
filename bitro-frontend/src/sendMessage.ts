@@ -4,15 +4,10 @@ import { IInbox__factory } from '@arbitrum/sdk/dist/lib/abi/factories/IInbox__fa
 
 const INBOX_ADDRESS = '0xb811fA75EA2952112c12929f6d11A99C7726f67E';
 
-export async function sendToDelayedInbox(l3TargetAddress: string, messageData: string) {
+export async function sendToDelayedInbox(messageData: string) {
   const provider = await connectWallet();
   const signer = provider.getSigner();
   const sender = await signer.getAddress();
-
-  const encoded = ethers.utils.defaultAbiCoder.encode(
-    ['address', 'bytes'],
-    [l3TargetAddress, ethers.utils.toUtf8Bytes(messageData)]
-  );
 
   // Connect to the L2 inbox contract
   const inboxContract = IInbox__factory.connect(INBOX_ADDRESS, signer);
@@ -24,7 +19,7 @@ export async function sendToDelayedInbox(l3TargetAddress: string, messageData: s
   const maxFeePerGas = ethers.utils.parseUnits('2', 'gwei');
 
   const tx = await inboxContract.sendL2Message(
-    encoded,            // messageData
+    ethers.utils.arrayify(messageData),            // messageData
   )
 
   console.log(`TX hash: ${tx.hash}`);
