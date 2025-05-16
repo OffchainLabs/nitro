@@ -106,6 +106,7 @@ func init() {
 			}
 			res := &ExecutionResult{
 				UsedGas:       msg.GasLimit - gasLeft,
+				MaxUsedGas:    msg.GasLimit - gasLeft,
 				Err:           nil,
 				ReturnData:    output,
 				ScheduledTxes: nil,
