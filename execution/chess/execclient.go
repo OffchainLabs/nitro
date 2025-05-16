@@ -25,6 +25,7 @@ type ChessNode struct {
 func NewChessNode(engine *ChessEngine) *ChessNode {
 	return &ChessNode{
 		engine: engine,
+		past:   make(map[arbutil.MessageIndex]*execution.MessageResult),
 	}
 }
 
@@ -34,12 +35,13 @@ func (n *ChessNode) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.M
 	}
 	err := n.engine.Process(msg.Message.Header.Poster, msg.Message.L2msg)
 	if err != nil {
-		log.Info("failed to process chess tx", "err", err)
+		log.Info("failed to process chess tx", "err", err, "msgIdx", msgIdx, "l2msg", msg.Message.L2msg)
 	}
 	result := execution.MessageResult{
 		BlockHash: common.Hash(crypto.Keccak256([]byte(n.engine.Status()))),
 	}
 	n.past[msgIdx] = &result
+	n.headMsg += 1
 	return containers.NewReadyPromise(&result, nil)
 }
 
