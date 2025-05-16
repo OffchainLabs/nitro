@@ -186,7 +186,7 @@ func setupBidValidator(t testing.TB, ctx context.Context, redisURL string, testS
 	stack, err := node.New(&stackConf)
 	require.NoError(t, err)
 	cfg := &BidValidatorConfig{
-		SequencerEndpoint:      testSetup.endpoint,
+		RpcEndpoint:            testSetup.endpoint,
 		AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 		RedisURL:               redisURL,
 		ProducerConfig:         pubsub.TestProducerConfig,

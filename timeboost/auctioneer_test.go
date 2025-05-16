@@ -62,7 +62,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 		stack, err := node.New(&stackConf)
 		require.NoError(t, err)
 		cfg := &BidValidatorConfig{
-			SequencerEndpoint:      testSetup.endpoint,
+			RpcEndpoint:            testSetup.endpoint,
 			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 			RedisURL:               redisURL,
 			ProducerConfig:         pubsub.TestProducerConfig,
@@ -193,7 +193,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 	stack, err := node.New(&stackConf)
 	require.NoError(t, err)
 	validatorCfg := &BidValidatorConfig{
-		SequencerEndpoint:      testSetup.endpoint,
+		RpcEndpoint:            testSetup.endpoint,
 		AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 		RedisURL:               redisURL,
 		ProducerConfig:         pubsub.TestProducerConfig,
