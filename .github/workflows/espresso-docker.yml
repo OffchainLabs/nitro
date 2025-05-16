@@ -1,4 +1,4 @@
-# Build the nitro-node and nitro-node-dev images on ARM64 and AMD64 hosts.
+# Build the nitro-node images on ARM64 and AMD64 hosts.
 #
 # The reason for building the ARM image natively instead of with QEMU is that
 # the QEMU build always failed after around 40 minutes. I'm currently not sure
@@ -112,17 +112,6 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
 
-      - name: Build nitro-node-dev image
-        uses: ./.github/actions/docker-image
-        id: nitro-node-dev
-        with:
-          context: .
-          file: Dockerfile
-          images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node-dev
-          target: nitro-node-dev
-          platforms: ${{ matrix.platform }}
-          push: ${{ github.event_name != 'pull_request' }}
-
       - name: Check available space after CI run
         if: "!cancelled()"
         run: |
@@ -140,12 +129,10 @@ jobs:
       - docker_build
     strategy:
       matrix:
-        target: [nitro-node, nitro-node-dev]
+        target: [nitro-node]
         include:
           - target: nitro-node
             image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node
-          - target: nitro-node-dev
-            image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node-dev
 
     runs-on: ubuntu-latest
     steps:

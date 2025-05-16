@@ -139,6 +139,10 @@ func ParseHotShotPayload(payload []byte) (signature []byte, userDataHash []byte,
 		// Extract the message
 		message := payload[currentPos : currentPos+messageSize]
 		currentPos += messageSize
+		if len(message) == 0 {
+			// If the message has a size of 0, skip adding it to the list.
+			continue
+		}
 
 		indices = append(indices, index)
 		messages = append(messages, message)

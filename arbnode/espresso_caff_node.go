@@ -128,13 +128,16 @@ func NewEspressoCaffNode(
 		log.Crit("failed to create espressoTEEVerifierCaller", "err", err)
 		return nil
 	}
-
+	client, err := espressoClient.NewMultipleNodesClient(configFetcher().HotShotUrls)
+	if err != nil {
+		log.Crit("Failed to create hotshot client", "err", err)
+	}
 	espressoStreamer := espressostreamer.NewEspressoStreamer(configFetcher().Namespace,
 		configFetcher().NextHotshotBlock,
 		configFetcher().RetryTime,
 		configFetcher().HotshotPollingInterval,
 		espressoTEEVerifierCaller,
-		espressoClient.NewMultipleNodesClient(configFetcher().HotShotUrls),
+		client,
 		recordPerformance,
 		common.HexToAddress(configFetcher().BatchPosterAddr),
 	)
