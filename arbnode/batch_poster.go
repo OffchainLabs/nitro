@@ -408,13 +408,40 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	hotShotUrlsLen := len(hotShotUrls)
 
 	// If the length of the hotshot urls is greater than zero, and it's not length 1 with an empty string, create the espresso multiple nodes client.
-
 	if hotShotUrlsLen != 0 && !(hotShotUrls[0] == "" && hotShotUrlsLen == 1) {
 		hotShotClient, err := hotshotClient.NewMultipleNodesClient(hotShotUrls)
 		if err != nil {
 			log.Crit("Failed to create hotshot client", "err", err)
 		}
 		opts.Streamer.espressoClient = hotShotClient
+		// If hotshot url is set, also set the sequencer inbox
+		if seqInbox == nil {
+			log.Error("espresso mode enabled without a sequencer inbox address")
+			return nil, fmt.Errorf("espresso mode enabled without a sequencer inbox address")
+		}
+		bridgeAddress, err := seqInbox.Bridge(&bind.CallOpts{Context: context.Background()})
+		if err != nil {
+			return nil, fmt.Errorf("espresso mode enabled bridge")
+		}
+		bridge, err := bridgegen.NewBridge(bridgeAddress, opts.L1Reader.Client())
+		if err != nil {
+			return nil, fmt.Errorf("espresso mode enabled without bridge")
+		}
+
+		// check if the pos is already finalized on L1
+		// and get the current finalized block number from L1
+		finalizedBlockNumber, err := opts.L1Reader.LatestFinalizedBlockNr(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("failed to get finalized block number: %w", err)
+		}
+
+		sequencerMessageCount, err := bridge.SequencerReportedSubMessageCount(&bind.CallOpts{
+			BlockNumber: new(big.Int).SetUint64(finalizedBlockNumber),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get sequencerMessageCount: %w", err)
+		}
+		opts.Streamer.InitialFinalizedSequencerMessageCount = sequencerMessageCount
 	}
 
 	if lightClientAddr != "" {
@@ -622,7 +649,6 @@ func (b *BatchPoster) checkEspressoValidation() bool {
 	}
 
 	// This message has passed the espresso verification
-
 	if lastConfirmed != nil && b.building.msgCount-1 <= *lastConfirmed {
 		return true
 	}
