@@ -160,7 +160,7 @@ stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(st
 CBROTLI_WASM_BUILD_ARGS ?=-d
 
 
-ESPRESSO_NETWORK_GO_VER ?= 0.0.36
+ESPRESSO_NETWORK_GO_VER ?= 0.0.37
 ESPRESSO_TAR = espresso-network-go-$(ESPRESSO_NETWORK_GO_VER).tar.gz
 ESPRESSO_URL = https://github.com/EspressoSystems/espresso-network-go/archive/refs/tags/v$(ESPRESSO_NETWORK_GO_VER).tar.gz
 ESPRESSO_DIR = espresso-network-go

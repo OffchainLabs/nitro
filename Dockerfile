@@ -56,7 +56,7 @@ COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY brotli brotli
-ARG ESPRESSO_NETWORK_GO_VER=0.0.36
+ARG ESPRESSO_NETWORK_GO_VER=0.0.37
 ADD https://github.com/EspressoSystems/espresso-network-go/archive/refs/tags/v$ESPRESSO_NETWORK_GO_VER.tar.gz .
 RUN tar -xzf v${ESPRESSO_NETWORK_GO_VER}.tar.gz && \
     mv espresso-network-go-${ESPRESSO_NETWORK_GO_VER} espresso-network-go
@@ -95,7 +95,7 @@ COPY ./safe-smart-account ./safe-smart-account
 COPY ./solgen/gen.go ./solgen/
 COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
-ARG ESPRESSO_NETWORK_GO_VER=0.0.36
+ARG ESPRESSO_NETWORK_GO_VER=0.0.37
 ADD https://github.com/EspressoSystems/espresso-network-go/archive/refs/tags/v$ESPRESSO_NETWORK_GO_VER.tar.gz .
 RUN tar -xzf v${ESPRESSO_NETWORK_GO_VER}.tar.gz && \
     mv espresso-network-go-${ESPRESSO_NETWORK_GO_VER} espresso-network-go
@@ -280,7 +280,7 @@ COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 COPY bold/go.mod bold/go.sum bold/
-ARG ESPRESSO_NETWORK_GO_VER=0.0.36
+ARG ESPRESSO_NETWORK_GO_VER=0.0.37
 ADD https://github.com/EspressoSystems/espresso-network-go/archive/refs/tags/v$ESPRESSO_NETWORK_GO_VER.tar.gz .
 RUN tar -xzf v${ESPRESSO_NETWORK_GO_VER}.tar.gz && \
     mv espresso-network-go-${ESPRESSO_NETWORK_GO_VER} espresso-network-go

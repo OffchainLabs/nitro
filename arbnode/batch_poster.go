@@ -411,7 +411,10 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	// If the length of the hotshot urls is greater than zero, and it's not length 1 with an empty string, create the espresso multiple nodes client.
 
 	if hotShotUrlsLen != 0 && !(hotShotUrls[0] == "" && hotShotUrlsLen == 1) {
-		hotShotClient := hotshotClient.NewMultipleNodesClient(hotShotUrls)
+		hotShotClient, err := hotshotClient.NewMultipleNodesClient(hotShotUrls)
+		if err != nil {
+			log.Crit("Failed to create hotshot client", "err", err)
+		}
 		opts.Streamer.espressoClient = hotShotClient
 	}
 

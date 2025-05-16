@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func TestEspressoStreamer(t *testing.T) {
@@ -141,6 +142,36 @@ func TestEspressoStreamer(t *testing.T) {
 
 		require.Equal(t, len(streamer.messageWithMetadataAndPos), 1)
 	})
+}
+
+// ExpectErr:
+// This serves to assert that we should be expecting a specific error during the test, and if the error does not match, fail the test.
+func ExpectErr(t *testing.T, err error, expectedError error) {
+	t.Helper()
+	if !errors.Is(err, expectedError) {
+		t.Fatal(err, expectedError)
+	}
+}
+
+// This test ensures that parseEspressoTransaction will have
+func TestEspressoEmptyTransaction(t *testing.T) {
+	mockEspressoClient := new(mockEspressoClient)
+	mockEspressoTEEVerifierClient := new(mockEspressoTEEVerifier)
+	streamer := NewEspressoStreamer(1, 1, time.Millisecond, time.Millisecond, mockEspressoTEEVerifierClient, mockEspressoClient, false, common.Address{})
+	// This determines the contents of the message. For this test the contents of the message needs to be empty (not 0's) to properly test the behavior
+	msgFetcher := func(arbutil.MessageIndex) ([]byte, error) {
+		return []byte{}, nil
+	}
+	// create an empty payload
+	test := []arbutil.MessageIndex{1, 2}
+	payload, _ := arbutil.BuildRawHotShotPayload(test, msgFetcher, 100000) // this value is just a random number to get BuildRawHotShotPayload to return a payload
+	// create a fake signature for the payload.
+	signerFunc := func([]byte) ([]byte, error) {
+		return []byte{1}, nil
+	}
+	signedPayload, _ := arbutil.SignHotShotPayload(payload, signerFunc)
+	_, err := streamer.parseEspressoTransaction(signedPayload)
+	ExpectErr(t, err, PayloadHadNoMessagesErr)
 }
 
 type TestBlock struct {
