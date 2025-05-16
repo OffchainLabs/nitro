@@ -860,6 +860,7 @@ func getStatelessBlockValidator(
 ) (*staker.StatelessBlockValidator, error) {
 	var err error
 	var statelessBlockValidator *staker.StatelessBlockValidator
+	return nil, nil
 	if config.BlockValidator.RedisValidationClientConfig.Enabled() || config.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		if exec == nil {
 			return nil, errors.New("stateless block validator requires an execution recorder")
@@ -1046,10 +1047,11 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	broadcastServer, err := getBroadcastServer(config, configFetcher, dataSigner, l2Config.ChainID.Uint64(), fatalErrChan)
-	if err != nil {
-		return nil, err
-	}
+	var broadcastServer *broadcaster.Broadcaster
+	// broadcastServer, err := getBroadcastServer(config, configFetcher, dataSigner, l2Config.ChainID.Uint64(), fatalErrChan)
+	// if err != nil {
+	// 	return nil, errs
+	// }
 
 	txStreamer, err := getTransactionStreamer(ctx, arbDb, l2Config, executionClient, broadcastServer, configFetcher, fatalErrChan)
 	if err != nil {
@@ -1071,15 +1073,17 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	broadcastClients, err := getBroadcastClients(config, configFetcher, txStreamer, l2Config.ChainID.Uint64(), bpVerifier, fatalErrChan)
-	if err != nil {
-		return nil, err
-	}
+	var broadcastClients *broadcastclients.BroadcastClients
+	// broadcastClients, err := getBroadcastClients(config, configFetcher, txStreamer, l2Config.ChainID.Uint64(), bpVerifier, fatalErrChan)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, executionClient, l2Config.ChainID.Uint64())
-	if err != nil {
-		return nil, err
-	}
+	var blockMetadataFetcher *BlockMetadataFetcher
+	// blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, executionClient, l2Config.ChainID.Uint64())
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	if !config.ParentChainReader.Enable {
 		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
@@ -1090,10 +1094,13 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	dapWriter, dasServerCloseFn, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
-	if err != nil {
-		return nil, err
-	}
+	var dapWriter daprovider.Writer
+	var dasServerCloseFn func()
+	var dapReaders []daprovider.Reader
+	// dapWriter, dasServerCloseFn, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
 	if err != nil {
@@ -1306,9 +1313,13 @@ func CreateNodeFullExecutionClient(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	execClient, ok := n.ExecutionClient.(*gethexec.ExecutionNode)
-	if !ok {
-		execClient = nil
+	var execClient *gethexec.ExecutionNode
+	if n.ExecutionClient != nil {
+		var ok bool
+		execClient, ok = n.ExecutionClient.(*gethexec.ExecutionNode)
+		if !ok {
+			execClient = nil
+		}
 	}
 	if execClient != nil {
 		err := execClient.Initialize(ctx)
