@@ -135,7 +135,7 @@ func mainImpl() int {
 	}
 	fatalErrChan := make(chan error, 10)
 
-	execNode := chess.NewChessNode()
+	execNode := chess.NewChessNode(chess.NewChessEngine())
 	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"))
 	if err != nil {
 		log.Error("opening DB", "err", err)
