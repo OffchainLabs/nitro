@@ -89,6 +89,8 @@ type InboxReader struct {
 	firstMessageBlock *big.Int
 	config            InboxReaderConfigFetcher
 
+	readFrom uint64
+
 	// Thread safe
 	tracker        *InboxTracker
 	delayedBridge  *DelayedBridge
@@ -281,10 +283,15 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			seenBatchCountStored = seenBatchCount
 		}
 	}
+
 	defer storeSeenBatchCount() // in case of error
 	for {
 		config := r.config()
 		currentHeight := big.NewInt(0)
+		lastFinalized, err := r.l1Reader.LatestFinalizedBlockNr(ctx)
+		if err != nil {
+			return err
+		}
 		if readMode != "latest" {
 			var blockNum uint64
 			fetchLatestSafeOrFinalized := func() {
@@ -631,6 +638,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					return err
 				}
 			} else {
+				r.setNextBlockToRead(to.Uint64(), lastFinalized)
 				from = arbmath.BigAddByUint(to, 1)
 			}
 		}
@@ -679,11 +687,22 @@ func (r *InboxReader) getNextBlockToRead(ctx context.Context) (*big.Int, error) 
 	if err != nil {
 		return nil, err
 	}
+	if parentChainBlockNumber < r.readFrom {
+		parentChainBlockNumber = r.readFrom
+	}
 	msgBlock := new(big.Int).SetUint64(parentChainBlockNumber)
 	if arbmath.BigLessThan(msgBlock, r.firstMessageBlock) {
 		msgBlock.Set(r.firstMessageBlock)
 	}
 	return msgBlock, nil
+}
+
+func (r *InboxReader) setNextBlockToRead(lastReadTo, lastFinalized uint64) {
+	if lastReadTo <= lastFinalized {
+		r.readFrom = lastReadTo
+	} else {
+		r.readFrom = lastFinalized
+	}
 }
 
 func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {
