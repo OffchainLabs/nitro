@@ -2,6 +2,7 @@ package mel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -14,8 +15,8 @@ import (
 	"github.com/offchainlabs/bold/containers/fsm"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -177,7 +178,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			new(big.Int).SetUint64(preState.ParentChainBlockNumber+1),
 		)
 		if err != nil {
-			if err == ethereum.NotFound {
+			if errors.Is(err, ethereum.NotFound) {
 				// If the block with the specified number is not found, it likely has not
 				// been posted yet to the parent chain, so we can retry
 				// without returning an error from the FSM.

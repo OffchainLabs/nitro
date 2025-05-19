@@ -10,6 +10,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
+// Defines a finite state machine (FSM) for the message extraction process.
 type FSMState uint8
 
 const (
@@ -41,12 +42,15 @@ type action interface {
 	isFsmAction() bool
 }
 
+// An action that returns the FSM to the start state.
 type backToStart struct{}
 
+// An action that transitions the FSM to the processing next block state.
 type processNextBlock struct {
 	melState *meltypes.State
 }
 
+// An action that transitions the FSM to the saving messages state.
 type saveMessages struct {
 	postState       *meltypes.State
 	messages        []*arbostypes.MessageWithMetadata

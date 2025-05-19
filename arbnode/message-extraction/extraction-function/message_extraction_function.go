@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/daprovider"
 )
 
 var (
@@ -45,6 +45,10 @@ type ReceiptFetcher interface {
 	) (*types.Receipt, error)
 }
 
+// ExtractMessages is a pure function that can read a parent chain block and
+// and input MEL state to run a specific algorithm that extracts Arbitrum messages and
+// delayed messages observed from transactions in the block. This function can be proven
+// through a replay binary, and should also compile to WAVM in addition to running in native mode.
 func ExtractMessages(
 	ctx context.Context,
 	inputState *meltypes.State,

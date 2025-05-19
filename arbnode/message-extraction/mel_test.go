@@ -25,7 +25,8 @@ func TestMessageExtractor(t *testing.T) {
 	ctx := context.Background()
 	parentChainReader := &mockParentChainReader{
 		blocks: map[common.Hash]*types.Block{
-			{}: {},
+			{}:                              {},
+			common.BigToHash(big.NewInt(1)): {},
 		},
 		headers: map[common.Hash]*types.Header{
 			{}: {},
@@ -44,7 +45,7 @@ func TestMessageExtractor(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, extractor.CurrentFSMState() == Start)
 
-	t.Run("Start state works correctly", func(t *testing.T) {
+	t.Run("Start", func(t *testing.T) {
 		// Expect that an error in the initial state of the FSM
 		// will cause the FSM to return to the start state.
 		parentChainReader.returnErr = errors.New("oops")
@@ -61,7 +62,8 @@ func TestMessageExtractor(t *testing.T) {
 		// Expect that we can now transition to the process
 		// next block state.
 		melState := &meltypes.State{
-			Version: 42,
+			Version:                42,
+			ParentChainBlockNumber: 0,
 		}
 		initialStateFetcher.returnErr = nil
 		initialStateFetcher.state = melState
@@ -73,7 +75,7 @@ func TestMessageExtractor(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, processBlockAction.melState, melState)
 	})
-	t.Run("ProcessingNextBlock works correctly", func(t *testing.T) {
+	t.Run("ProcessingNextBlock", func(t *testing.T) {
 		parentChainReader.returnErr = errors.New("oops")
 		_, err := extractor.Act(ctx)
 		require.ErrorContains(t, err, "oops")
