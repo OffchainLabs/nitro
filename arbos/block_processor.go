@@ -473,7 +473,9 @@ func ProduceBlockAdvanced(
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
 
-	FinalizeBlock(header, complete, statedb, chainConfig)
+	if err = FinalizeBlock(header, complete, statedb, chainConfig); err != nil {
+		return nil, nil, err
+	}
 
 	// Touch up the block hashes in receipts
 	tmpBlock := types.NewBlock(header, &types.Body{Transactions: complete}, receipts, trie.NewStackTrie(nil))
@@ -506,7 +508,7 @@ func ProduceBlockAdvanced(
 }
 
 // Also sets header.Root
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.StateDB, chainConfig *params.ChainConfig) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.StateDB, chainConfig *params.ChainConfig) error {
 	if header != nil {
 		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			panic("cannot finalize blocks before genesis")
@@ -527,9 +529,18 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 			}
 			// Add outbox info to the header for client-side proving
 			acc := state.SendMerkleAccumulator()
-			sendRoot, _ = acc.Root()
-			sendCount, _ = acc.Size()
-			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
+			sendRoot, err = acc.Root()
+			if err != nil {
+				return err
+			}
+			sendCount, err = acc.Size()
+			if err != nil {
+				return err
+			}
+			nextL1BlockNumber, err = state.Blockhashes().L1BlockNumber()
+			if err != nil {
+				return err
+			}
 			arbosVersion = state.ArbOSVersion()
 		}
 		arbitrumHeader := types.HeaderInfo{
@@ -541,4 +552,5 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 		header.Root = statedb.IntermediateRoot(true)
 	}
+	return nil
 }

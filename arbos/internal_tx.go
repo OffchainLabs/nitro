@@ -92,7 +92,10 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 
-		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+		err = state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+		if err != nil {
+			return err
+		}
 
 		return state.UpgradeArbosVersionIfNecessary(currentTime, evm.StateDB, evm.ChainConfig())
 	case InternalTxBatchPostingReportMethodID:

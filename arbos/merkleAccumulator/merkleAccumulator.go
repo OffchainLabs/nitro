@@ -4,7 +4,9 @@
 package merkleAccumulator
 
 import (
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -201,6 +203,9 @@ func (acc *MerkleAccumulator) Root() (common.Hash, error) {
 			}
 		}
 		capacity *= 2
+	}
+	if hashSoFar == nil {
+		return types.EmptyCodeHash, fmt.Errorf("root nil")
 	}
 	return *hashSoFar, nil
 }

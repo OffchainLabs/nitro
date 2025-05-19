@@ -144,7 +144,7 @@ func (s *ExecutionEngine) fetchHeaderLoop() {
 			log.Error("failed to fetch block root", "err", err)
 		}
 		if target > uint64(currentHeight+2000) {
-			target = uint64(currentHeight + 1500)
+			target = uint64(currentHeight + 2000)
 		}
 		wg := sync.WaitGroup{}
 		routines := 20

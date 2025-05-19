@@ -4,6 +4,7 @@
 package l2pricing
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/params"
@@ -40,7 +41,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) error {
 }
 
 // UpdatePricingModel updates the pricing model with info from the last block
-func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint64, debug bool) {
+func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint64, debug bool) error {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
 	_ = ps.AddToGasPool(arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, speedLimit)))
 	inertia, _ := ps.PricingInertia()
@@ -50,8 +51,12 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 	baseFee := minBaseFee
 	if backlog > tolerance*speedLimit {
 		excess := arbmath.SaturatingCast[int64](backlog - tolerance*speedLimit)
+		if arbmath.SaturatingCast[arbmath.Bips](inertia*speedLimit) == 0 {
+			return fmt.Errorf("divide with zero")
+		}
 		exponentBips := arbmath.NaturalToBips(excess) / arbmath.SaturatingCast[arbmath.Bips](inertia*speedLimit)
 		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponentBips, 4))
 	}
 	_ = ps.SetBaseFeeWei(baseFee)
+	return nil
 }
