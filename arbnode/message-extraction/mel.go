@@ -15,8 +15,8 @@ import (
 	"github.com/offchainlabs/bold/containers/fsm"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
