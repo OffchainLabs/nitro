@@ -203,6 +203,8 @@ func (l *Simple) Release(ctx context.Context) {
 
 	if err != nil {
 		log.Error("release returned error", "err", err)
+	} else {
+		atomicTimeWrite(&l.lockedUntil, time.Time{})
 	}
 }
 
