@@ -143,13 +143,13 @@ func (s *ExecutionEngine) fetchHeaderLoop() {
 			time.Sleep(1 * time.Second)
 			log.Error("failed to fetch block root", "err", err)
 		}
-		if target > uint64(currentHeight+15000) {
-			target = uint64(currentHeight + 15000)
+		if target > uint64(currentHeight+2000) {
+			target = uint64(currentHeight + 1500)
 		}
 		wg := sync.WaitGroup{}
-		routines := 100
-		if int64(target)-cacheHeight < 1000 {
-			routines = 10
+		routines := 20
+		if int64(target)-cacheHeight < 200 {
+			routines = 5
 		}
 		wg.Add(routines)
 		heightCh := make(chan int64, routines)
@@ -157,7 +157,10 @@ func (s *ExecutionEngine) fetchHeaderLoop() {
 			go func() {
 				defer wg.Done()
 				for h := range heightCh {
-					header, _ := client.HeaderByNumber(context.Background(), big.NewInt(h))
+					header, err := client.HeaderByNumber(context.Background(), big.NewInt(h))
+					if err != nil {
+						log.Error("failed to get header", "err", err)
+					}
 					if header != nil {
 						s.headerRootCache.Add(h, header.Root)
 					}
