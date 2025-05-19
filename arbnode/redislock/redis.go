@@ -142,18 +142,14 @@ func (l *Simple) AttemptLockAndPeriodicallyRefreshIt(ctx context.Context, releas
 		for {
 			select {
 			case <-release:
-				l.Release(ctx)
 				return
 			case <-ctx.Done():
-				l.Release(ctx)
 				return
 			default:
 				select {
 				case <-release:
-					l.Release(ctx)
 					return
 				case <-ctx.Done():
-					l.Release(ctx)
 					return
 				case <-refreshTick:
 					gotLock, err := l.attemptLock(ctx)
