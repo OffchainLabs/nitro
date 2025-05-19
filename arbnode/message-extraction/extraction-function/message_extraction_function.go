@@ -131,6 +131,26 @@ func ExtractMessages(
 		if err != nil {
 			return nil, nil, nil, err
 		}
+
+		batchPostReport := batchPostingReports[i]
+		_, _, batchHash, _, _, _, err := arbostypes.ParseBatchPostingReportMessageFields(bytes.NewReader(batchPostReport.Message.L2msg))
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
+		}
+		gotHash := crypto.Keccak256Hash(serialized)
+		if gotHash != batchHash {
+			return nil, nil, nil, fmt.Errorf(
+				"batch data hash incorrect %v (wanted %v for batch %v)",
+				gotHash,
+				batchHash,
+				batch.SequenceNumber,
+			)
+		}
+		gas := arbostypes.ComputeBatchGasCost(serialized)
+
+		// Fill in the batch gas cost into the batch posting report.
+		batchPostReport.Message.BatchGasCost = &gas
+
 		rawSequencerMsg, err := arbstate.ParseSequencerMessage(
 			ctx,
 			batch.SequenceNumber,
@@ -153,25 +173,6 @@ func ExtractMessages(
 			return nil, nil, nil, err
 		}
 		for _, msg := range messagesInBatch {
-			report := batchPostingReports[i]
-			_, _, batchHash, _, _, _, err := arbostypes.ParseBatchPostingReportMessageFields(bytes.NewReader(report.Message.L2msg))
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
-			}
-			gotHash := crypto.Keccak256Hash(serialized)
-			if gotHash != batchHash {
-				return nil, nil, nil, fmt.Errorf(
-					"batch data hash incorrect %v (wanted %v for batch %v)",
-					gotHash,
-					batchHash,
-					batch.SequenceNumber,
-				)
-			}
-			gas := arbostypes.ComputeBatchGasCost(serialized)
-
-			// Fill in the message's batch gas cost from the batch posting report.
-			msg.Message.BatchGasCost = &gas
-
 			messages = append(messages, msg)
 			state.MsgCount += 1
 			state = state.AccumulateMessage(msg)
