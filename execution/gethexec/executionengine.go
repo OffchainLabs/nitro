@@ -19,6 +19,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common/lru"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"math/big"
 	"os"
 	"path"
 	"runtime/pprof"
@@ -104,6 +107,9 @@ type ExecutionEngine struct {
 
 	cachedL1PriceData *L1PriceData
 	syncTillBlock     uint64
+
+	headerRootCache *lru.Cache[int64, common.Hash]
+	client          *ethclient.Client
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -113,13 +119,58 @@ func NewL1PriceData() *L1PriceData {
 }
 
 func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64) (*ExecutionEngine, error) {
-	return &ExecutionEngine{
+	e := &ExecutionEngine{
 		bc:                bc,
 		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier:  make(chan struct{}, 1),
 		cachedL1PriceData: NewL1PriceData(),
 		syncTillBlock:     syncTillBlock,
-	}, nil
+		headerRootCache:   lru.NewCache[int64, common.Hash](20000),
+	}
+	go e.fetchHeaderLoop()
+	return e, nil
+}
+
+func (s *ExecutionEngine) fetchHeaderLoop() {
+	cacheHeight := s.bc.CurrentHeader().Number.Int64()
+	client, _ := ethclient.Dial("https://open-platform.nodereal.io/5d9c218e356942a6a9c577e2aadd174c/arbitrum-nitro/")
+	s.client = client
+	for {
+		currentHeight := s.bc.CurrentHeader().Number.Int64()
+
+		target, err := client.BlockNumber(context.Background())
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			log.Error("failed to fetch block root", "err", err)
+		}
+		if target > uint64(currentHeight+15000) {
+			target = uint64(currentHeight + 15000)
+		}
+		wg := sync.WaitGroup{}
+		routines := 100
+		if int64(target)-cacheHeight < 1000 {
+			routines = 10
+		}
+		wg.Add(routines)
+		heightCh := make(chan int64, routines)
+		for i := 0; i < routines; i++ {
+			go func() {
+				defer wg.Done()
+				for h := range heightCh {
+					header, _ := client.HeaderByNumber(context.Background(), big.NewInt(h))
+					if header != nil {
+						s.headerRootCache.Add(h, header.Root)
+					}
+				}
+			}()
+		}
+		for h := cacheHeight; h <= int64(target); h++ {
+			heightCh <- h
+		}
+		close(heightCh)
+		wg.Wait()
+		cacheHeight = int64(target)
+	}
 }
 
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
@@ -553,6 +604,15 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
+	if root, exist := s.headerRootCache.Get(lastBlockHeader.Number.Int64() + 1); exist {
+		statedb.SetExpectedStateRoot(root)
+	} else {
+		h, err := s.client.HeaderByNumber(context.Background(), big.NewInt(lastBlockHeader.Number.Int64()+1))
+		if err != nil {
+			return nil, err
+		}
+		statedb.SetExpectedStateRoot(h.Root)
+	}
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
 		return nil, errors.New("can't find block for current header")
@@ -753,6 +813,17 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	}
 
 	statedb, err := s.bc.StateAt(currentHeader.Root)
+
+	if root, exist := s.headerRootCache.Get(currentHeader.Number.Int64() + 1); exist {
+		statedb.SetExpectedStateRoot(root)
+	} else {
+		h, err := s.client.HeaderByNumber(context.Background(), big.NewInt(currentHeader.Number.Int64()+1))
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		statedb.SetExpectedStateRoot(h.Root)
+	}
+
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -770,6 +841,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	if isMsgForPrefetch {
 		runMode = core.MessageReplayMode
 	}
+
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
