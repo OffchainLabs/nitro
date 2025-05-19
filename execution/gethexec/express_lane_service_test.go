@@ -274,6 +274,14 @@ func makeStubPublisher(els *expressLaneService) *stubPublisher {
 
 var emptyTx = types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), nil)
 
+type testTransactionPublisher struct {
+	publishFunc func(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error
+}
+
+func (t testTransactionPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	return t.publishFunc(parentCtx, tx, options)
+}
+
 func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	if tx.Hash() != emptyTx.Hash() {
 		return errors.New("oops, bad tx")
@@ -594,6 +602,49 @@ func TestIsWithinAuctionCloseWindow(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_expressLaneService_dontCareSequence(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	timingInfo := defaultTestRoundTimingInfo(time.Now())
+	tr := &ExpressLaneTracker{}
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
+
+	mp := &struct {
+		processedDontCare bool
+		processedTx       *types.Transaction
+		processedOptions  *arbitrum_types.ConditionalOptions
+	}{}
+
+	mockPublish := func(ctx context.Context, tx *types.Transaction, _ *arbitrum_types.ConditionalOptions) error {
+		mp.processedTx = tx
+		mp.processedDontCare = true
+		return nil
+	}
+
+	els := &expressLaneService{
+		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
+		roundTimingInfo: timingInfo,
+		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		tracker:         tr,
+		transactionPublisher: testTransactionPublisher{
+			publishFunc: mockPublish,
+		},
+	}
+
+	els.StopWaiter.Start(ctx, els)
+
+	// Test with a transaction that uses DontCareSequence
+	tx := types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), []byte("dontcare"))
+	dontCareMsg := buildValidSubmissionWithSeqAndTx(t, 0, DontCareSequence, tx)
+
+	err := els.sequenceExpressLaneSubmission(dontCareMsg)
+	require.NoError(t, err)
+
+	require.True(t, mp.processedDontCare)
+	require.Equal(t, tx.Hash(), mp.processedTx.Hash())
 }
 
 func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
