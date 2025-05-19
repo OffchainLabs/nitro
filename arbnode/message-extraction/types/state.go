@@ -28,7 +28,13 @@ type State struct {
 	DelayedMessagedSeen                uint64
 }
 
+// Defines a basic interface for MEL, including saving states, messages,
+// and delayed messages to a database.
 type StateDatabase interface {
+	State(
+		ctx context.Context,
+		parentChainBlockHash common.Hash,
+	) (*State, error)
 	SaveState(
 		ctx context.Context,
 		state *State,
@@ -44,29 +50,55 @@ type StateDatabase interface {
 	) error
 	ReadDelayedMessage(
 		ctx context.Context,
+		state *State,
 		index uint64,
 	) (*arbnode.DelayedInboxMessage, error)
 }
 
+// Defines an interface for fetching a MEL state by parent chain block hash.
 type StateFetcher interface {
 	GetState(
 		ctx context.Context, parentChainBlockHash common.Hash,
 	) (*State, error)
 }
 
+// Performs a deep clone of the state struct to prevent any unintended
+// mutations of pointers at runtime.
 func (s *State) Clone() *State {
-	if s == nil {
-		return nil
+	batchPostingTarget := common.Address{}
+	delayedMessageTarget := common.Address{}
+	parentChainHash := common.Hash{}
+	parentChainPrevHash := common.Hash{}
+	msgAcc := common.Hash{}
+	delayedMsgAcc := common.Hash{}
+	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
+	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
+	copy(parentChainHash[:], s.ParentChainBlockHash[:])
+	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
+	copy(msgAcc[:], s.MessageAccumulator[:])
+	copy(delayedMsgAcc[:], s.DelayedMessageAccumulator[:])
+	return &State{
+		Version:                            s.Version,
+		ParentChainId:                      s.ParentChainId,
+		ParentChainBlockNumber:             s.ParentChainBlockNumber,
+		BatchPostingTargetAddress:          batchPostingTarget,
+		DelayedMessagePostingTargetAddress: delayedMessageTarget,
+		ParentChainBlockHash:               parentChainHash,
+		ParentChainPreviousBlockHash:       parentChainPrevHash,
+		MessageAccumulator:                 msgAcc,
+		DelayedMessageAccumulator:          delayedMsgAcc,
+		MsgCount:                           s.MsgCount,
+		DelayedMessagesRead:                s.DelayedMessagesRead,
+		DelayedMessagedSeen:                s.DelayedMessagedSeen,
 	}
-	clone := *s
-	// TODO: revisit and check if this is enough
-	return &clone
 }
 
-func (s *State) AccumulateMessage(msgHash common.Hash) *State {
+func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
+	// TODO: Unimplemented.
 	return s
 }
 
 func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) *State {
+	// TODO: Unimplemented.
 	return s
 }

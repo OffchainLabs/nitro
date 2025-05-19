@@ -20,21 +20,11 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
-type DelayedMessageLookupParams struct {
-	MessageDeliveredID         common.Hash
-	InboxMessageDeliveredID    common.Hash
-	InboxMessageFromOriginID   common.Hash
-	IDelayedMessageProviderABI *abi.ABI
-	IBridgeABI                 *abi.ABI
-	IInboxABI                  *abi.ABI
-}
-
 func parseDelayedMessagesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
 	parentChainBlock *types.Block,
 	receiptFetcher ReceiptFetcher,
-	params *DelayedMessageLookupParams,
 ) ([]*arbnode.DelayedInboxMessage, error) {
 	msgScaffolds := make([]*arbnode.DelayedInboxMessage, 0)
 	messageDeliveredEvents := make([]*bridgegen.IBridgeMessageDelivered, 0)
@@ -45,7 +35,7 @@ func parseDelayedMessagesFromBlock(
 		}
 		// Fetch the receipts for the transaction to get the logs.
 		txIndex := uint(i) // #nosec G115
-		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -64,7 +54,6 @@ func parseDelayedMessagesFromBlock(
 		delayedMessageScaffolds, parsedLogs, err := delayedMessageScaffoldsFromLogs(
 			parentChainBlock,
 			relevantLogs,
-			params,
 		)
 		if err != nil {
 			return nil, err
@@ -92,7 +81,7 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		txIndex := uint(i) // #nosec G115
-		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -100,7 +89,7 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		topics := [][]common.Hash{
-			{params.InboxMessageDeliveredID, params.InboxMessageFromOriginID}, // matches either of these IDs.
+			{inboxMessageDeliveredID, inboxMessageFromOriginID}, // matches either of these IDs.
 			messageIds, // matches any of the message IDs.
 		}
 		filteredInboxMessageLogs := filters.FilterLogs(receipt.Logs, nil, nil, inboxAddressList, topics)
@@ -108,7 +97,6 @@ func parseDelayedMessagesFromBlock(
 			msgNum, msg, err := parseDelayedMessage(
 				inboxMsgLog,
 				tx,
-				params,
 			)
 			if err != nil {
 				return nil, err
@@ -134,7 +122,7 @@ func parseDelayedMessagesFromBlock(
 }
 
 func delayedMessageScaffoldsFromLogs(
-	parentChainBlock *types.Block, logs []*types.Log, params *DelayedMessageLookupParams,
+	parentChainBlock *types.Block, logs []*types.Log,
 ) ([]*arbnode.DelayedInboxMessage, []*bridgegen.IBridgeMessageDelivered, error) {
 	if len(logs) == 0 {
 		return nil, nil, nil
@@ -148,7 +136,7 @@ func delayedMessageScaffoldsFromLogs(
 			continue
 		}
 		event := new(bridgegen.IBridgeMessageDelivered)
-		if err := unpackLogTo(event, params.IBridgeABI, "MessageDelivered", *ethLog); err != nil {
+		if err := unpackLogTo(event, iBridgeABI, "MessageDelivered", *ethLog); err != nil {
 			return nil, nil, err
 		}
 		parsedLogs = append(parsedLogs, event)
@@ -187,29 +175,28 @@ func delayedMessageScaffoldsFromLogs(
 func parseDelayedMessage(
 	ethLog *types.Log,
 	tx *types.Transaction,
-	params *DelayedMessageLookupParams,
 ) (*big.Int, []byte, error) {
 	if ethLog == nil {
 		return nil, nil, nil
 	}
 	switch {
-	case ethLog.Topics[0] == params.InboxMessageDeliveredID:
+	case ethLog.Topics[0] == inboxMessageDeliveredID:
 		event := new(bridgegen.IDelayedMessageProviderInboxMessageDelivered)
-		if err := unpackLogTo(event, params.IDelayedMessageProviderABI, "InboxMessageDelivered", *ethLog); err != nil {
+		if err := unpackLogTo(event, iDelayedMessageProviderABI, "InboxMessageDelivered", *ethLog); err != nil {
 			return nil, nil, err
 		}
 		return event.MessageNum, event.Data, nil
-	case ethLog.Topics[0] == params.InboxMessageFromOriginID:
+	case ethLog.Topics[0] == inboxMessageFromOriginID:
 		event := new(bridgegen.IDelayedMessageProviderInboxMessageDeliveredFromOrigin)
-		if err := unpackLogTo(event, params.IDelayedMessageProviderABI, "InboxMessageDeliveredFromOrigin", *ethLog); err != nil {
+		if err := unpackLogTo(event, iDelayedMessageProviderABI, "InboxMessageDeliveredFromOrigin", *ethLog); err != nil {
 			return nil, nil, err
 		}
 		args := make(map[string]interface{})
 		data := tx.Data()
 		if len(data) < 4 {
-			return nil, nil, errors.New("tx data too short") // TODO: Add a hash of the tx that was too short.
+			return nil, nil, fmt.Errorf("tx data %#x too short", data)
 		}
-		l2MessageFromOriginCallABI := params.IInboxABI.Methods["sendL2MessageFromOrigin"]
+		l2MessageFromOriginCallABI := iInboxABI.Methods["sendL2MessageFromOrigin"]
 		if err := l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:]); err != nil {
 			return nil, nil, err
 		}

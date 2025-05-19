@@ -52,11 +52,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 
 	melState := createInitialMELState(t, ctx, builder.addresses, builder.L1.Client)
 
-	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
-	Require(t, err)
-	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.addresses.Bridge, 0)
-	Require(t, err)
-
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
 	l1Reader, err := headerreader.New(ctx, builder.L1.Client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
 	Require(t, err)
@@ -70,16 +65,13 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	}
 	Require(t, mockDB.SaveState(ctx, melState, nil))
 	extractor, err := mel.NewMessageExtractor(
-		l1Reader,
+		l1Reader.Client(),
 		builder.addresses,
 		mockDB,
 		mockDB,
-		seqInbox,
-		delayedBridge,
 		nil, // TODO: Provide da readers here.
-		func() *mel.MELConfig {
-			return &mel.DefaultMELConfig
-		},
+		melState.ParentChainBlockHash,
+		0,
 	)
 	Require(t, err)
 
@@ -100,7 +92,8 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	// Run the extractor routine until it has caught up to the latest parent chain block.
 	for {
 		prevFSMState := extractor.CurrentFSMState()
-		Require(t, extractor.Act(ctx))
+		_, err = extractor.Act(ctx)
+		Require(t, err)
 		newFSMState := extractor.CurrentFSMState()
 		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
 		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
@@ -181,11 +174,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 
 	melState := createInitialMELState(t, ctx, builder.addresses, builder.L1.Client)
 
-	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
-	Require(t, err)
-	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.addresses.Bridge, 0)
-	Require(t, err)
-
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
 	l1Reader, err := headerreader.New(ctx, builder.L1.Client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
 	Require(t, err)
@@ -199,16 +187,13 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	}
 	Require(t, mockDB.SaveState(ctx, melState, nil))
 	extractor, err := mel.NewMessageExtractor(
-		l1Reader,
+		l1Reader.Client(),
 		builder.addresses,
 		mockDB,
 		mockDB,
-		seqInbox,
-		delayedBridge,
 		nil, // TODO: Provide da readers here.
-		func() *mel.MELConfig {
-			return &mel.DefaultMELConfig
-		},
+		melState.ParentChainBlockHash,
+		0,
 	)
 	Require(t, err)
 
@@ -232,7 +217,8 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	// Run the extractor routine until it has caught up to the latest parent chain block.
 	for {
 		prevFSMState := extractor.CurrentFSMState()
-		Require(t, extractor.Act(ctx))
+		_, err = extractor.Act(ctx)
+		Require(t, err)
 		newFSMState := extractor.CurrentFSMState()
 		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
 		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
@@ -276,11 +262,6 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 
 	// Construct a new MEL service and provide with an initial MEL state
 	// to begin extracting messages from the parent chain.
-	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
-	Require(t, err)
-	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.addresses.Bridge, 0)
-	Require(t, err)
-
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
 	l1Reader, err := headerreader.New(ctx, builder.L1.Client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
 	Require(t, err)
@@ -294,25 +275,20 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	}
 	Require(t, mockDB.SaveState(ctx, melState, nil))
 	extractor, err := mel.NewMessageExtractor(
-		l1Reader,
+		l1Reader.Client(),
 		builder.addresses,
 		mockDB,
 		mockDB,
-		seqInbox,
-		delayedBridge,
 		nil, // TODO: Provide da readers here.
-		func() *mel.MELConfig {
-			return &mel.DefaultMELConfig
-		},
+		melState.ParentChainBlockHash,
+		0,
 	)
 	Require(t, err)
 
 	for {
 		prevFSMState := extractor.CurrentFSMState()
-		err = extractor.Act(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
+		_, err = extractor.Act(ctx)
+		Require(t, err)
 		newFSMState := extractor.CurrentFSMState()
 		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
 		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
@@ -369,7 +345,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	// Check if ReorgingToOldBlock fsm state works as intended
 	for {
 		prevFSMState := extractor.CurrentFSMState()
-		err = extractor.Act(ctx)
+		_, err = extractor.Act(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -393,6 +369,13 @@ type mockMELDB struct {
 	savedDelayedMsgs []*arbnode.DelayedInboxMessage
 	savedStates      map[common.Hash]*meltypes.State
 	lastState        *meltypes.State
+}
+
+func (m *mockMELDB) State(
+	ctx context.Context,
+	parentChainBlockHash common.Hash,
+) (*meltypes.State, error) {
+	return m.savedStates[parentChainBlockHash], nil
 }
 
 func (m *mockMELDB) SaveState(
@@ -435,6 +418,7 @@ func (m *mockMELDB) SaveDelayedMessages(
 }
 func (m *mockMELDB) ReadDelayedMessage(
 	ctx context.Context,
+	_ *meltypes.State,
 	index uint64,
 ) (*arbnode.DelayedInboxMessage, error) {
 	if index == 0 {

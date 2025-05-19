@@ -16,7 +16,7 @@ const (
 	_ FSMState = iota
 	Start
 	ProcessingNextBlock
-	ReorgingToOldBlock
+	Reorging
 	SavingMessages
 )
 
@@ -26,10 +26,10 @@ func (s FSMState) String() string {
 		return "start"
 	case ProcessingNextBlock:
 		return "processing_next_block"
-	case ReorgingToOldBlock:
-		return "reorging_to_old_block"
 	case SavingMessages:
 		return "saving_messages"
+	case Reorging:
+		return "reorging"
 	default:
 		return "invalid"
 	}
@@ -46,14 +46,14 @@ type processNextBlock struct {
 	melState *meltypes.State
 }
 
-type reorgingToOldBlock struct {
-	melState *meltypes.State
-}
-
 type saveMessages struct {
 	postState       *meltypes.State
 	messages        []*arbostypes.MessageWithMetadata
 	delayedMessages []*arbnode.DelayedInboxMessage
+}
+
+type reorgToOldBlock struct {
+	melState *meltypes.State
 }
 
 func (backToStart) String() string {
@@ -62,11 +62,11 @@ func (backToStart) String() string {
 func (processNextBlock) String() string {
 	return "process_next_block"
 }
-func (reorgingToOldBlock) String() string {
-	return "reorging_to_old_block"
-}
 func (saveMessages) String() string {
 	return "save_messages"
+}
+func (reorgToOldBlock) String() string {
+	return "reorg"
 }
 func (backToStart) isFsmAction() bool {
 	return true
@@ -74,10 +74,10 @@ func (backToStart) isFsmAction() bool {
 func (processNextBlock) isFsmAction() bool {
 	return true
 }
-func (reorgingToOldBlock) isFsmAction() bool {
+func (saveMessages) isFsmAction() bool {
 	return true
 }
-func (saveMessages) isFsmAction() bool {
+func (reorgToOldBlock) isFsmAction() bool {
 	return true
 }
 
@@ -96,13 +96,13 @@ func newFSM(
 		},
 		{
 			Typ:  processNextBlock{},
-			From: []FSMState{Start, ProcessingNextBlock, ReorgingToOldBlock, SavingMessages},
+			From: []FSMState{Start, ProcessingNextBlock, SavingMessages, Reorging},
 			To:   ProcessingNextBlock,
 		},
 		{
-			Typ:  reorgingToOldBlock{},
+			Typ:  reorgToOldBlock{},
 			From: []FSMState{Start, ProcessingNextBlock},
-			To:   ReorgingToOldBlock,
+			To:   Reorging,
 		},
 		{
 			Typ:  saveMessages{},

@@ -19,7 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 var (
@@ -28,17 +27,20 @@ var (
 	ErrInvalidParentChainBlock = errors.New("invalid parent chain block")
 )
 
+// Defines a method that can read a delayed message from an external database.
 type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
 		ctx context.Context,
+		state *meltypes.State,
 		index uint64,
 	) (*arbnode.DelayedInboxMessage, error)
 }
 
+// Defines a method that can fetch the receipt for a specific
+// transaction index in a parent chain block.
 type ReceiptFetcher interface {
 	ReceiptForTransactionIndex(
 		ctx context.Context,
-		parentChainBlock *types.Block,
 		txIndex uint,
 	) (*types.Receipt, error)
 }
@@ -50,8 +52,6 @@ func ExtractMessages(
 	dataProviders []daprovider.Reader,
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
-	batchLookupParams *BatchLookupParams,
-	delayedMessageLookupParams *DelayedMessageLookupParams,
 ) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
 	state := inputState.Clone()
 	// Clones the state to avoid mutating the input pointer in case of errors.
@@ -76,7 +76,6 @@ func ExtractMessages(
 		state,
 		parentChainBlock,
 		receiptFetcher,
-		batchLookupParams,
 	)
 	if err != nil {
 		return nil, nil, nil, err
@@ -86,7 +85,6 @@ func ExtractMessages(
 		state,
 		parentChainBlock,
 		receiptFetcher,
-		delayedMessageLookupParams,
 	)
 	if err != nil {
 		return nil, nil, nil, err
@@ -100,8 +98,6 @@ func ExtractMessages(
 		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
 			batchPostingReports = append(batchPostingReports, delayed)
 		}
-		// TODO: Create a unique, delayed message hash beyond just
-		// the underlying message's hash.
 		state.DelayedMessagedSeen += 1
 		state = state.AccumulateDelayedMessage(delayed)
 	}
@@ -126,7 +122,6 @@ func ExtractMessages(
 			parentChainBlock,
 			batchTx,
 			txIndex,
-			batchLookupParams.SequencerInboxABI,
 			receiptFetcher,
 		)
 		if err != nil {
@@ -175,12 +170,7 @@ func ExtractMessages(
 
 			messages = append(messages, msg)
 			state.MsgCount += 1
-			msgIdx := arbutil.MessageIndex(state.MsgCount) - 1
-			msgHash, err := msg.Hash(msgIdx, state.ParentChainId)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-			state = state.AccumulateMessage(msgHash)
+			state = state.AccumulateMessage(msg)
 		}
 	}
 	return state, messages, delayedMessages, nil
@@ -368,7 +358,7 @@ func extractArbosMessage(
 				DelayedMessagesRead: seqMsg.AfterDelayedMessages,
 			}
 		} else {
-			delayed, err := p.delayedMsgDB.ReadDelayedMessage(ctx, p.melState.DelayedMessagesRead)
+			delayed, err := p.delayedMsgDB.ReadDelayedMessage(ctx, p.melState, p.melState.DelayedMessagesRead)
 			if err != nil {
 				return nil, p, err
 			}
@@ -376,8 +366,6 @@ func extractArbosMessage(
 				log.Error("No more delayed messages in queue", "delayedMessagesRead", p.melState.DelayedMessagesRead)
 				return nil, p, fmt.Errorf("no more delayed messages in queue")
 			}
-			// TODO: Verify that this delayed message retrieved from an external source, such as a DB,
-			// is a child of the delayed message accumulator in the MEL state.
 			p.melState.DelayedMessagesRead += 1
 			msg = &arbostypes.MessageWithMetadata{
 				Message:             delayed.Message,

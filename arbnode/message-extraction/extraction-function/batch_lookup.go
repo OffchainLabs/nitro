@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode"
@@ -14,17 +12,11 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
-type BatchLookupParams struct {
-	BatchDeliveredEventID common.Hash
-	SequencerInboxABI     *abi.ABI
-}
-
 func parseBatchesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
 	parentChainBlock *types.Block,
 	receiptFetcher ReceiptFetcher,
-	params *BatchLookupParams,
 ) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 	allBatches := make([]*arbnode.SequencerInboxBatch, 0)
 	allBatchTxs := make([]*types.Transaction, 0)
@@ -38,7 +30,7 @@ func parseBatchesFromBlock(
 		}
 		// Fetch the receipts for the transaction to get the logs.
 		txIndex := uint(i) // #nosec G115
-		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, parentChainBlock, txIndex)
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -53,11 +45,11 @@ func parseBatchesFromBlock(
 			if log == nil {
 				continue
 			}
-			if log.Topics[0] != params.BatchDeliveredEventID {
+			if log.Topics[0] != batchDeliveredID {
 				continue
 			}
 			event := new(bridgegen.SequencerInboxSequencerBatchDelivered)
-			if err := unpackLogTo(event, params.SequencerInboxABI, "SequencerBatchDelivered", *log); err != nil {
+			if err := unpackLogTo(event, seqInboxABI, "SequencerBatchDelivered", *log); err != nil {
 				return nil, nil, nil, err
 			}
 			if !event.BatchSequenceNumber.IsUint64() {
