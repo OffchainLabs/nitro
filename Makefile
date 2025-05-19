@@ -169,7 +169,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
+build: $(patsubst %,$(output_root)/bin/%, nitro)
 	@printf $(done)
 
 .PHONY: build-node-deps

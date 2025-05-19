@@ -101,6 +101,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 
 	return &core.CacheConfig{
 		TrieCleanLimit:                     cachingConfig.TrieCleanCache,
+		NoTries:                            true,
 		TrieCleanNoPrefetch:                baseConf.NoPrefetch,
 		TrieDirtyLimit:                     cachingConfig.TrieDirtyCache,
 		TrieDirtyDisabled:                  cachingConfig.Archive,
@@ -187,8 +188,10 @@ func TryReadStoredChainConfig(chainDb ethdb.Database) *params.ChainConfig {
 
 	block0Hash := rawdb.ReadCanonicalHash(chainDb, 0)
 	if block0Hash == EmptyHash {
+		fmt.Println("block0 hash empty")
 		return nil
 	}
+	fmt.Println("block0 hash not empty", block0Hash)
 	return rawdb.ReadChainConfig(chainDb, block0Hash)
 }
 
