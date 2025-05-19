@@ -188,10 +188,8 @@ func TryReadStoredChainConfig(chainDb ethdb.Database) *params.ChainConfig {
 
 	block0Hash := rawdb.ReadCanonicalHash(chainDb, 0)
 	if block0Hash == EmptyHash {
-		fmt.Println("block0 hash empty")
 		return nil
 	}
-	fmt.Println("block0 hash not empty", block0Hash)
 	return rawdb.ReadChainConfig(chainDb, block0Hash)
 }
 

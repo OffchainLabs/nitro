@@ -607,6 +607,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if root, exist := s.headerRootCache.Get(lastBlockHeader.Number.Int64() + 1); exist {
 		statedb.SetExpectedStateRoot(root)
 	} else {
+		log.Info("root not hit cache")
 		h, err := s.client.HeaderByNumber(context.Background(), big.NewInt(lastBlockHeader.Number.Int64()+1))
 		if err != nil {
 			return nil, err
@@ -817,6 +818,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	if root, exist := s.headerRootCache.Get(currentHeader.Number.Int64() + 1); exist {
 		statedb.SetExpectedStateRoot(root)
 	} else {
+		log.Info("root not hit cache")
 		h, err := s.client.HeaderByNumber(context.Background(), big.NewInt(currentHeader.Number.Int64()+1))
 		if err != nil {
 			return nil, nil, nil, err

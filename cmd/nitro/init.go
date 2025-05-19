@@ -566,20 +566,13 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 			}
 		}
 	}
-	fmt.Println("success return")
 	return chainDb, l2BlockChain, nil
 }
 
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, targetConfig *gethexec.StylusTargetConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
-	fmt.Println("do  openInitializeChainDb")
 	if !config.Init.Force {
-		fmt.Println("do Init.Force")
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, config.Persistent.Ancient, "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
-			fmt.Println("do OpenDatabaseWithFreezerWithExtraOptions")
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
-				fmt.Println("do TryReadStoredChainConfig")
-				bz, _ := json.Marshal(chainConfig)
-				fmt.Println(string(bz))
 
 				readOnlyDb.Close()
 				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
@@ -625,33 +618,27 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
 					}
 				}
-				fmt.Println("do rebuildLocalWasm")
 				return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
 			}
 			readOnlyDb.Close()
 		} else if !dbutil.IsNotExistError(err) {
 			// we only want to continue if the database does not exist
 			return nil, nil, fmt.Errorf("Failed to open database: %w", err)
-		} else {
-			fmt.Println("do err", err)
 		}
 	}
 
 	// Check if database was misplaced in parent dir
 	const errorFmt = "database was not found in %s, but it was found in %s (have you placed the database in the wrong directory?)"
 	parentDir := filepath.Dir(stack.InstanceDir())
-	fmt.Println("do l2chaindata exist")
 
 	if dirExists(path.Join(parentDir, "l2chaindata")) {
 		return nil, nil, fmt.Errorf(errorFmt, stack.InstanceDir(), parentDir)
 	}
-	fmt.Println("do grandParentDir")
 	grandParentDir := filepath.Dir(parentDir)
 	if dirExists(path.Join(grandParentDir, "l2chaindata")) {
 		return nil, nil, fmt.Errorf(errorFmt, stack.InstanceDir(), grandParentDir)
 	}
 
-	fmt.Println("do  checkEmptyDatabaseDir")
 	if err := checkEmptyDatabaseDir(stack.InstanceDir(), config.Init.Force); err != nil {
 		return nil, nil, err
 	}
