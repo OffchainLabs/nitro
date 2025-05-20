@@ -144,6 +144,21 @@ const DontCareSequence = math.MaxUint64
 // sequenceExpressLaneSubmission with the roundInfo lock held, validates sequence number and sender address fields of the message
 // adds the message to the sequencer transaction queue
 func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.ExpressLaneSubmission) error {
+	if msg.SequenceNumber == DontCareSequence {
+		// Don't store DontCareSequence txs with the redisCoordinator. The redisCoordinator is
+		// meant for restoring messages in the reordering queue if the sequencer fails over,
+		// but for messages with DontCareSequence we skip the reordernig queue.
+
+		if es.roundTimingInfo.RoundNumber() != msg.Round {
+			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, es.roundTimingInfo.RoundNumber())
+		}
+
+		// Process immediately without affecting sequence ordering
+		timeout := min(es.roundTimingInfo.TimeTilNextRound(), es.seqConfig().QueueTimeout)
+		queueCtx, _ := ctxWithTimeout(es.GetContext(), timeout)
+		return es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, msg.Transaction, msg.Options)
+	}
+
 	es.roundInfoMutex.Lock()
 	defer es.roundInfoMutex.Unlock()
 
@@ -158,21 +173,6 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 	}
 	if sender != controller {
 		return timeboost.ErrNotExpressLaneController
-	}
-
-	if msg.SequenceNumber == DontCareSequence {
-		// Don't store DontCareSequence txs with the redisCoordinator. The redisCoordinator is
-		// meant for restoring messages in the reordering queue if the sequencer fails over,
-		// but for messages with DontCareSequence we skip the reordernig queue.
-
-		if es.roundTimingInfo.RoundNumber() != msg.Round {
-			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, es.roundTimingInfo.RoundNumber())
-		}
-
-		// Process immediately without affecting sequence ordering
-		timeout := min(es.roundTimingInfo.TimeTilNextRound(), es.seqConfig().QueueTimeout)
-		queueCtx, _ := ctxWithTimeout(es.GetContext(), timeout)
-		return es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, msg.Transaction, msg.Options)
 	}
 
 	// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
