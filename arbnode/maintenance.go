@@ -216,6 +216,15 @@ func (mr *MaintenanceRunner) Trigger() error {
 }
 
 func (mr *MaintenanceRunner) attemptMaintenance(ctx context.Context) error {
+	shouldTriggerMaintenance, err := mr.exec.ShouldTriggerMaintenance().Await(mr.GetContext())
+	if err != nil {
+		return err
+	}
+	if !shouldTriggerMaintenance {
+		log.Debug("skipping maintenance, not triggered")
+		return nil
+	}
+
 	if mr.seqCoordinator == nil {
 		return mr.runMaintenance()
 	}
@@ -247,7 +256,7 @@ func (mr *MaintenanceRunner) runMaintenance() error {
 	defer mr.setMaintenanceDone()
 
 	log.Info("Flushing triedb to disk (this may take a while...)")
-	_, err = mr.exec.Maintenance().Await(mr.GetContext())
+	_, err = mr.exec.TriggerMaintenance().Await(mr.GetContext())
 	log.Info("Done flushing triedb to disk")
 	return err
 }

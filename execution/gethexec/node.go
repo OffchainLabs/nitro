@@ -532,9 +532,13 @@ func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) containers.Pr
 	return containers.NewReadyPromise(n.ExecEngine.BlockNumberToMessageIndex(blockNum))
 }
 
-func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
+func (n *ExecutionNode) ShouldTriggerMaintenance() containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(n.ExecEngine.ShouldTriggerMaintenance(n.ConfigFetcher().Caching.TrieTimeLimitBeforeFlushMaintenance), nil)
+}
+
+func (n *ExecutionNode) TriggerMaintenance() containers.PromiseInterface[struct{}] {
 	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
-	err := n.ExecEngine.Maintenance(trieCapLimitBytes)
+	err := n.ExecEngine.TriggerMaintenance(trieCapLimitBytes)
 	return containers.NewReadyPromise(struct{}{}, err)
 }
 
