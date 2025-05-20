@@ -125,7 +125,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 			numMessages,
 		)
 	}
-	// lastState := mockDB.savedStates[len(mockDB.savedStates)-1]
 	lastState := mockDB.lastState
 	extractedNumMessages := lastState.MsgCount
 	if extractedNumMessages != uint64(inboxTrackerMessageCount) {
