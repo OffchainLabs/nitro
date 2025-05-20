@@ -1272,29 +1272,6 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 	if msgAndBlockInfo.BlockHash == nil {
 		return
 	}
-	if msgResult.BlockHash != *msgAndBlockInfo.BlockHash {
-		log.Error(
-			BlockHashMismatchLogMsg,
-			"expected", msgAndBlockInfo.BlockHash,
-			"actual", msgResult.BlockHash,
-		)
-		// Try deleting the existing blockMetadata for this block in arbDB and set it as missing
-		if msgAndBlockInfo.BlockMetadata != nil &&
-			s.trackBlockMetadataFrom != 0 && msgIdx >= s.trackBlockMetadataFrom {
-			batch := s.db.NewBatch()
-			if err := batch.Delete(dbKey(blockMetadataInputFeedPrefix, uint64(msgIdx))); err != nil {
-				log.Error("error deleting blockMetadata of block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
-				return
-			}
-			if err := batch.Put(dbKey(missingBlockMetadataInputFeedPrefix, uint64(msgIdx)), nil); err != nil {
-				log.Error("error marking deleted blockMetadata as missing in arbDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
-				return
-			}
-			if err := batch.Write(); err != nil {
-				log.Error("error writing batch that deletes blockMetadata of the block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
-			}
-		}
-	}
 }
 
 func (s *TransactionStreamer) storeResult(
