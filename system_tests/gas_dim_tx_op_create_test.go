@@ -24,6 +24,7 @@ import (
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE operation with no value transfer and no memory expansion.
 func TestDimTxOpCreateNoTransferMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -39,6 +40,7 @@ func TestDimTxOpCreateNoTransferMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE operation with no value transfer and memory expansion.
 func TestDimTxOpCreateNoTransferMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -54,6 +56,7 @@ func TestDimTxOpCreateNoTransferMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE operation with value transfer and no memory expansion.
 func TestDimTxOpCreatePayingMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -71,6 +74,7 @@ func TestDimTxOpCreatePayingMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE operation with value transfer and memory expansion.
 func TestDimTxOpCreatePayingMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -92,6 +96,7 @@ func TestDimTxOpCreatePayingMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE2 operation with no value transfer and no memory expansion.
 func TestDimTxOpCreate2NoTransferMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -107,6 +112,7 @@ func TestDimTxOpCreate2NoTransferMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE2 operation with no value transfer and memory expansion.
 func TestDimTxOpCreate2NoTransferMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -122,6 +128,7 @@ func TestDimTxOpCreate2NoTransferMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE2 operation with value transfer and no memory expansion.
 func TestDimTxOpCreate2PayingMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -137,6 +144,7 @@ func TestDimTxOpCreate2PayingMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE2 operation with value transfer and memory expansion.
 func TestDimTxOpCreate2PayingMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

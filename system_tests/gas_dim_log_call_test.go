@@ -40,6 +40,7 @@ import (
 // the callee is virgin (has never been seen before on the network)
 // there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
 func TestDimLogCallColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -73,6 +74,7 @@ func TestDimLogCallColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 // the callee is virgin (has never been seen before on the network)
 // there is memory expansion, the CALL writes to memory outside the bounds of the original memory
 func TestDimLogCallColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -108,6 +110,7 @@ func TestDimLogCallColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
 // the callee has been funded before (someone sent it money in the past)
 // there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
 func TestDimLogCallColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -144,6 +147,7 @@ func TestDimLogCallColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 // the callee has been funded before (someone sent it money in the past)
 // there is memory expansion, the CALL writes to memory outside the bounds of the original memory
 func TestDimLogCallColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -181,6 +185,7 @@ func TestDimLogCallColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 // the callee has been funded before (someone sent it money in the past)
 // there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
 func TestDimLogCallColdNoTransferContractFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -214,6 +219,7 @@ func TestDimLogCallColdNoTransferContractFundedMemUnchanged(t *testing.T) {
 // the callee has been funded before (someone sent it money in the past)
 // there is memory expansion, the CALL writes to memory outside the bounds of the original memory
 func TestDimLogCallColdNoTransferContractFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -249,6 +255,7 @@ func TestDimLogCallColdNoTransferContractFundedMemExpansion(t *testing.T) {
 // the callee is virgin (has never been seen before on the network)
 // there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
 func TestDimLogCallColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
