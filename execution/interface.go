@@ -43,7 +43,8 @@ type ExecutionClient interface {
 	SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 
-	Maintenance() containers.PromiseInterface[struct{}]
+	TriggerMaintenance() containers.PromiseInterface[struct{}]
+	ShouldTriggerMaintenance() containers.PromiseInterface[bool]
 
 	Start(ctx context.Context) error
 	StopAndWait()

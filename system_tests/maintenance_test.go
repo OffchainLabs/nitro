@@ -31,7 +31,7 @@ func TestMaintenance(t *testing.T) {
 		Require(t, err)
 	}
 
-	_, err := builder.L2.ExecNode.Maintenance().Await(ctx)
+	_, err := builder.L2.ExecNode.TriggerMaintenance().Await(ctx)
 	Require(t, err)
 
 	for i := 2; i < 3+numberOfTransfers; i++ {
