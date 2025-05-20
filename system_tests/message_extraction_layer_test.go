@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"math/big"
+	"reflect"
 	"testing"
 	"time"
 
@@ -59,13 +60,14 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 
 	mockDB := &mockMELDB{
 		savedMsgs:        make([]*arbostypes.MessageWithMetadata, 0),
-		savedStates:      make([]*meltypes.State, 0),
+		savedStates:      make(map[common.Hash]*meltypes.State),
 		savedDelayedMsgs: make([]*arbnode.DelayedInboxMessage, 0),
 	}
+	Require(t, mockDB.SaveState(ctx, melState, nil))
 	extractor, err := mel.NewMessageExtractor(
 		l1Reader.Client(),
 		builder.addresses,
-		&mockMELStateFetcher{state: melState},
+		mockDB,
 		mockDB,
 		nil, // TODO: Provide da readers here.
 		melState.ParentChainBlockHash,
@@ -123,7 +125,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 			numMessages,
 		)
 	}
-	lastState := mockDB.savedStates[len(mockDB.savedStates)-1]
+	lastState := mockDB.lastState
 	extractedNumMessages := lastState.MsgCount
 	if extractedNumMessages != uint64(inboxTrackerMessageCount) {
 		t.Fatalf(
@@ -179,13 +181,14 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 
 	mockDB := &mockMELDB{
 		savedMsgs:        make([]*arbostypes.MessageWithMetadata, 0),
-		savedStates:      make([]*meltypes.State, 0),
+		savedStates:      make(map[common.Hash]*meltypes.State),
 		savedDelayedMsgs: make([]*arbnode.DelayedInboxMessage, 0),
 	}
+	Require(t, mockDB.SaveState(ctx, melState, nil))
 	extractor, err := mel.NewMessageExtractor(
 		l1Reader.Client(),
 		builder.addresses,
-		&mockMELStateFetcher{state: melState},
+		mockDB,
 		mockDB,
 		nil, // TODO: Provide da readers here.
 		melState.ParentChainBlockHash,
@@ -266,13 +269,14 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 
 	mockDB := &mockMELDB{
 		savedMsgs:        make([]*arbostypes.MessageWithMetadata, 0),
-		savedStates:      make([]*meltypes.State, 0),
+		savedStates:      make(map[common.Hash]*meltypes.State),
 		savedDelayedMsgs: make([]*arbnode.DelayedInboxMessage, 0),
 	}
+	Require(t, mockDB.SaveState(ctx, melState, nil))
 	extractor, err := mel.NewMessageExtractor(
 		l1Reader.Client(),
 		builder.addresses,
-		&mockMELStateFetcher{state: melState},
+		mockDB,
 		mockDB,
 		nil, // TODO: Provide da readers here.
 		melState.ParentChainBlockHash,
@@ -299,7 +303,8 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 
 	numDelayedMessages, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
 	Require(t, err)
-	lastState := mockDB.savedStates[len(mockDB.savedStates)-1]
+	// lastState := mockDB.savedStates[len(mockDB.savedStates)-1]
+	lastState := mockDB.lastState
 
 	// Check that MEL extracted the same number of delayed messages the inbox tracker has seen.
 	if lastState.DelayedMessagedSeen != numDelayedMessages {
@@ -325,29 +330,51 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 			t.Fatal("Messages from MEL and inbox tracker do not match")
 		}
 	}
-}
 
-type mockMELStateFetcher struct {
-	state *meltypes.State
-}
+	// Small reorg of 4 mel states
+	numMelStatesBeforeReorg := len(mockDB.savedStates)
+	reorgToBlockHash := mockDB.savedStates[mockDB.lastState.ParentChainPreviousBlockHash].ParentChainPreviousBlockHash
+	reorgToBlockHash = mockDB.savedStates[reorgToBlockHash].ParentChainPreviousBlockHash
+	reorgToBlockHash = mockDB.savedStates[reorgToBlockHash].ParentChainPreviousBlockHash
+	reorgToBlock, err := builder.L1.Client.BlockByHash(ctx, reorgToBlockHash)
+	Require(t, err)
+	Require(t, builder.L1.L1Backend.BlockChain().ReorgToOldBlock(reorgToBlock))
 
-func (m *mockMELStateFetcher) GetState(
-	ctx context.Context, parentChainBlockHash common.Hash,
-) (*meltypes.State, error) {
-	return m.state, nil
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 3)
+	// Check if ReorgingToOldBlock fsm state works as intended
+	for {
+		prevFSMState := extractor.CurrentFSMState()
+		_, err = extractor.Act(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		newFSMState := extractor.CurrentFSMState()
+		// After reorg rewinding is done, break
+		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.SavingMessages {
+			break
+		}
+	}
+
+	if len(mockDB.savedStates) != numMelStatesBeforeReorg-4 {
+		t.Fatalf("Unexpected number of MEL states after a parent chain reorg. Want: %d, Have: %d", numMelStatesBeforeReorg-4, len(mockDB.savedStates))
+	}
+	if mockDB.lastState != mockDB.savedStates[reorgToBlockHash] {
+		t.Fatal("Unexpected last MEL state after a parent chain reorg")
+	}
 }
 
 type mockMELDB struct {
 	savedMsgs        []*arbostypes.MessageWithMetadata
 	savedDelayedMsgs []*arbnode.DelayedInboxMessage
-	savedStates      []*meltypes.State
+	savedStates      map[common.Hash]*meltypes.State
+	lastState        *meltypes.State
 }
 
 func (m *mockMELDB) State(
 	ctx context.Context,
 	parentChainBlockHash common.Hash,
 ) (*meltypes.State, error) {
-	return nil, errors.New("unimplemented")
+	return m.savedStates[parentChainBlockHash], nil
 }
 
 func (m *mockMELDB) SaveState(
@@ -355,8 +382,28 @@ func (m *mockMELDB) SaveState(
 	state *meltypes.State,
 	messages []*arbostypes.MessageWithMetadata,
 ) error {
-	m.savedStates = append(m.savedStates, state)
+	m.savedStates[state.ParentChainBlockHash] = state
+	m.lastState = state
 	m.savedMsgs = append(m.savedMsgs, messages...)
+	return nil
+}
+
+func (m *mockMELDB) GetState(
+	ctx context.Context, parentChainBlockHash common.Hash,
+) (*meltypes.State, error) {
+	return m.savedStates[parentChainBlockHash], nil
+}
+
+func (m *mockMELDB) DeleteState(
+	ctx context.Context, parentChainBlockHash common.Hash,
+) error {
+	if state, ok := m.savedStates[parentChainBlockHash]; ok {
+		if !reflect.DeepEqual(m.lastState, state) {
+			panic("currently we do not delete keys out of order, so this case should never be possible")
+		}
+		m.lastState = m.savedStates[state.ParentChainPreviousBlockHash]
+		delete(m.savedStates, parentChainBlockHash)
+	}
 	return nil
 }
 

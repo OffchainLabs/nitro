@@ -187,6 +187,12 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				return m.retryInterval, err
 			}
 		}
+		if parentChainBlock.ParentHash() != preState.ParentChainBlockHash {
+			// Reorg detected
+			return 0, m.fsm.Do(reorgToOldBlock{
+				melState: preState,
+			})
+		}
 		// Creates a receipt fetcher for the specific parent chain block, to be used
 		// by the message extraction function.
 		receiptFetcher := newBlockReceiptFetcher(m.parentChainReader, parentChainBlock)
@@ -234,8 +240,25 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// specified block. The FSM will transition to the `ProcessingNextBlock` state
 	// based on this old state after the reorg is handled.
 	case Reorging:
-		// TODO: Implement reorging logic.
-		return m.retryInterval, fmt.Errorf("reorg state not implemented")
+		reorgAction, ok := current.SourceEvent.(reorgToOldBlock)
+		if !ok {
+			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
+		}
+		// TODO: we need access to melstate via db here
+		// First gets previous state and then delete dirtyMelState from db so that if node crashes midway its recoverable
+		currentDirtyState := reorgAction.melState
+		previousState, err := m.melDB.State(ctx, currentDirtyState.ParentChainPreviousBlockHash)
+		if err != nil {
+			return m.retryInterval, err
+		}
+		// TODO: update melstate `head` blockhash in DB and delete sequencer messages etc...
+		// m.melDB.updateHeadMELState(currentDirtyState.ParentChainPreviousBlockHash)
+		if err := m.melDB.DeleteState(ctx, currentDirtyState.ParentChainBlockHash); err != nil {
+			return m.retryInterval, err
+		}
+		return 0, m.fsm.Do(processNextBlock{
+			melState: previousState,
+		})
 	default:
 		return m.retryInterval, fmt.Errorf("invalid state: %s", current.State)
 	}

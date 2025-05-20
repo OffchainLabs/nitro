@@ -40,6 +40,9 @@ type StateDatabase interface {
 		state *State,
 		messages []*arbostypes.MessageWithMetadata,
 	) error
+	DeleteState(
+		ctx context.Context, parentChainBlockHash common.Hash,
+	) error
 	SaveDelayedMessages(
 		ctx context.Context,
 		state *State,

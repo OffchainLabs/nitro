@@ -3,8 +3,6 @@ package mel
 import (
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/core/types"
-
 	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
@@ -59,7 +57,7 @@ type saveMessages struct {
 }
 
 type reorgToOldBlock struct {
-	reorgTo *types.Block //nolint:unused
+	melState *meltypes.State
 }
 
 func (backToStart) String() string {
