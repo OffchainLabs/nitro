@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common/lru"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"math/big"
 	"os"
@@ -127,7 +128,7 @@ func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64) (*ExecutionEn
 		syncTillBlock:     syncTillBlock,
 		headerRootCache:   lru.NewCache[int64, common.Hash](20000),
 	}
-	go e.fetchHeaderLoop()
+	//go e.fetchHeaderLoop()
 	return e, nil
 }
 
@@ -607,16 +608,9 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-	if root, exist := s.headerRootCache.Get(lastBlockHeader.Number.Int64() + 1); exist {
-		statedb.SetExpectedStateRoot(root)
-	} else {
-		log.Info("root not hit cache")
-		h, err := s.client.HeaderByNumber(context.Background(), big.NewInt(lastBlockHeader.Number.Int64()+1))
-		if err != nil {
-			return nil, err
-		}
-		statedb.SetExpectedStateRoot(h.Root)
-	}
+	buf := binary.AppendVarint([]byte{}, lastBlockHeader.Number.Int64()+1)
+	statedb.SetExpectedStateRoot(crypto.Keccak256Hash(buf))
+
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
 		return nil, errors.New("can't find block for current header")
@@ -817,17 +811,8 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	}
 
 	statedb, err := s.bc.StateAt(currentHeader.Root)
-
-	if root, exist := s.headerRootCache.Get(currentHeader.Number.Int64() + 1); exist {
-		statedb.SetExpectedStateRoot(root)
-	} else {
-		log.Info("root not hit cache")
-		h, err := s.client.HeaderByNumber(context.Background(), big.NewInt(currentHeader.Number.Int64()+1))
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		statedb.SetExpectedStateRoot(h.Root)
-	}
+	buf := binary.AppendVarint([]byte{}, currentHeader.Number.Int64()+1)
+	statedb.SetExpectedStateRoot(crypto.Keccak256Hash(buf))
 
 	if err != nil {
 		return nil, nil, nil, err
