@@ -535,11 +535,6 @@ func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) containers.Pr
 func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
 	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
 	err := n.ExecEngine.Maintenance(trieCapLimitBytes)
-	if err != nil {
-		return containers.NewReadyPromise(struct{}{}, err)
-	}
-
-	err = n.ChainDB.Compact(nil, nil)
 	return containers.NewReadyPromise(struct{}{}, err)
 }
 

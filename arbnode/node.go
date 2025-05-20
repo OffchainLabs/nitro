@@ -472,13 +472,11 @@ func getBPVerifier(
 }
 
 func getMaintenanceRunner(
-	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 	exec execution.ExecutionClient,
 ) (*MaintenanceRunner, error) {
-	dbs := []ethdb.Database{arbDb}
-	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, dbs, exec)
+	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, exec)
 	if err != nil {
 		return nil, err
 	}
@@ -1067,7 +1065,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	maintenanceRunner, err := getMaintenanceRunner(arbDb, configFetcher, coordinator, executionClient)
+	maintenanceRunner, err := getMaintenanceRunner(configFetcher, coordinator, executionClient)
 	if err != nil {
 		return nil, err
 	}
