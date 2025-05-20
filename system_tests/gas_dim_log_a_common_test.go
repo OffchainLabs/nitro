@@ -7,14 +7,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
@@ -97,20 +94,7 @@ func gasDimensionTestSetup(t *testing.T, expectRevert bool) (
 	// For now Archive node should use HashScheme
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	if expectRevert {
-		postTxFilter := func(
-			_ *types.Header,
-			statedb *state.StateDB,
-			_ *arbosState.ArbosState,
-			tx *types.Transaction,
-			_ common.Address,
-			_ uint64,
-			_ *core.ExecutionResult) error {
-			if statedb.IsTxFiltered() {
-				return state.ErrArbTxFilter
-			}
-			return nil
-		}
-		builder.execConfig.Sequencer.PostTxFilter = postTxFilter
+		builder.execConfig.Sequencer.MaxRevertGasReject = 0
 	}
 	cleanup = builder.Build(t)
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
