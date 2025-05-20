@@ -16,8 +16,8 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
 )
 
 var _ ParentChainReader = (*mockParentChainReader)(nil)
@@ -28,7 +28,8 @@ func TestMessageExtractor(t *testing.T) {
 	emptyblk := types.NewBlock(&types.Header{}, nil, nil, nil)
 	parentChainReader := &mockParentChainReader{
 		blocks: map[common.Hash]*types.Block{
-			{}: {},
+			{}:                              {},
+			common.BigToHash(big.NewInt(1)): {},
 		},
 		headers: map[common.Hash]*types.Header{
 			{}: {},
@@ -68,7 +69,8 @@ func TestMessageExtractor(t *testing.T) {
 		// Expect that we can now transition to the process
 		// next block state.
 		melState := &meltypes.State{
-			Version: 42,
+			Version:                42,
+			ParentChainBlockNumber: 0,
 		}
 		initialStateFetcher.returnErr = nil
 		initialStateFetcher.state = melState
