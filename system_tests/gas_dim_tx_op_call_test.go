@@ -36,6 +36,7 @@ import (
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, virgin, no-code callee, no value transfer, no memory expansion.
 func TestDimTxOpCallColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -52,6 +53,7 @@ func TestDimTxOpCallColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, virgin, no-code callee, no value transfer, with memory expansion.
 func TestDimTxOpCallColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -68,6 +70,7 @@ func TestDimTxOpCallColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, funded, no-code callee, no value transfer, no memory expansion.
 func TestDimTxOpCallColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -87,6 +90,7 @@ func TestDimTxOpCallColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, funded, no-code callee, no value transfer, with memory expansion.
 func TestDimTxOpCallColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -106,6 +110,7 @@ func TestDimTxOpCallColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, funded, contract callee, no value transfer, no memory expansion.
 func TestDimTxOpCallColdNoTransferContractFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -122,6 +127,7 @@ func TestDimTxOpCallColdNoTransferContractFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, funded, contract callee, no value transfer, with memory expansion.
 func TestDimTxOpCallColdNoTransferContractFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -138,6 +144,7 @@ func TestDimTxOpCallColdNoTransferContractFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, virgin, no-code callee, with value transfer, no memory expansion.
 func TestDimTxOpCallColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -156,6 +163,7 @@ func TestDimTxOpCallColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, virgin, no-code callee, with value transfer, with memory expansion.
 func TestDimTxOpCallColdPayingNoCodeVirginMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -174,6 +182,7 @@ func TestDimTxOpCallColdPayingNoCodeVirginMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, funded, no-code callee, with value transfer, no memory expansion.
 func TestDimTxOpCallColdPayingNoCodeFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -192,6 +201,7 @@ func TestDimTxOpCallColdPayingNoCodeFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, funded, no-code callee, with value transfer, with memory expansion.
 func TestDimTxOpCallColdPayingNoCodeFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -210,6 +220,7 @@ func TestDimTxOpCallColdPayingNoCodeFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, funded, contract callee, with value transfer, no memory expansion.
 func TestDimTxOpCallColdPayingContractFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -231,6 +242,7 @@ func TestDimTxOpCallColdPayingContractFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a cold, funded, contract callee, with value transfer, with memory expansion.
 func TestDimTxOpCallColdPayingContractFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -252,6 +264,7 @@ func TestDimTxOpCallColdPayingContractFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, virgin, no-code callee, no value transfer, no memory expansion.
 func TestDimTxOpCallWarmNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -268,6 +281,7 @@ func TestDimTxOpCallWarmNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, virgin, no-code callee, no value transfer, with memory expansion.
 func TestDimTxOpCallWarmNoTransferNoCodeVirginMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -284,6 +298,7 @@ func TestDimTxOpCallWarmNoTransferNoCodeVirginMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, funded, no-code callee, no value transfer, no memory expansion.
 func TestDimTxOpCallWarmNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -303,6 +318,7 @@ func TestDimTxOpCallWarmNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, funded, no-code callee, no value transfer, with memory expansion.
 func TestDimTxOpCallWarmNoTransferNoCodeFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -322,6 +338,7 @@ func TestDimTxOpCallWarmNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, funded, contract callee, no value transfer, no memory expansion.
 func TestDimTxOpCallWarmNoTransferContractFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -338,6 +355,7 @@ func TestDimTxOpCallWarmNoTransferContractFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, funded, contract callee, no value transfer, with memory expansion.
 func TestDimTxOpCallWarmNoTransferContractFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -357,6 +375,7 @@ func TestDimTxOpCallWarmNoTransferContractFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, virgin, no-code callee, with value transfer, no memory expansion.
 func TestDimTxOpCallWarmPayingNoCodeVirginMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -377,6 +396,7 @@ func TestDimTxOpCallWarmPayingNoCodeVirginMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, virgin, no-code callee, with value transfer, with memory expansion.
 func TestDimTxOpCallWarmPayingNoCodeVirginMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -397,6 +417,7 @@ func TestDimTxOpCallWarmPayingNoCodeVirginMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, funded, no-code callee, with value transfer, no memory expansion.
 func TestDimTxOpCallWarmPayingNoCodeFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -418,6 +439,7 @@ func TestDimTxOpCallWarmPayingNoCodeFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, funded, no-code callee, with value transfer, with memory expansion.
 func TestDimTxOpCallWarmPayingNoCodeFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -439,6 +461,7 @@ func TestDimTxOpCallWarmPayingNoCodeFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, funded, contract callee, with value transfer, no memory expansion.
 func TestDimTxOpCallWarmPayingContractFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -460,6 +483,7 @@ func TestDimTxOpCallWarmPayingContractFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALL to a warm, funded, contract callee, with value transfer, with memory expansion.
 func TestDimTxOpCallWarmPayingContractFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -495,6 +519,7 @@ func TestDimTxOpCallWarmPayingContractFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, virgin, no-code callee, no value transfer, no memory expansion.
 func TestDimTxOpCallCodeColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -511,6 +536,7 @@ func TestDimTxOpCallCodeColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, virgin, no-code callee, no value transfer, with memory expansion.
 func TestDimTxOpCallCodeColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -527,6 +553,7 @@ func TestDimTxOpCallCodeColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, funded, no-code callee, no value transfer, no memory expansion.
 func TestDimTxOpCallCodeColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -546,6 +573,7 @@ func TestDimTxOpCallCodeColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, funded, no-code callee, no value transfer, with memory expansion.
 func TestDimTxOpCallCodeColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -565,6 +593,7 @@ func TestDimTxOpCallCodeColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, funded, contract callee, no value transfer, no memory expansion.
 func TestDimTxOpCallCodeColdNoTransferContractFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -581,6 +610,7 @@ func TestDimTxOpCallCodeColdNoTransferContractFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, funded, contract callee, no value transfer, with memory expansion.
 func TestDimTxOpCallCodeColdNoTransferContractFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -597,6 +627,7 @@ func TestDimTxOpCallCodeColdNoTransferContractFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, virgin, no-code callee, with value transfer, no memory expansion.
 func TestDimTxOpCallCodeColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -615,6 +646,7 @@ func TestDimTxOpCallCodeColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, virgin, no-code callee, with value transfer, with memory expansion.
 func TestDimTxOpCallCodeColdPayingNoCodeVirginMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -633,6 +665,7 @@ func TestDimTxOpCallCodeColdPayingNoCodeVirginMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, funded, no-code callee, with value transfer, no memory expansion.
 func TestDimTxOpCallCodeColdPayingNoCodeFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -651,6 +684,7 @@ func TestDimTxOpCallCodeColdPayingNoCodeFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, funded, no-code callee, with value transfer, with memory expansion.
 func TestDimTxOpCallCodeColdPayingNoCodeFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -669,6 +703,7 @@ func TestDimTxOpCallCodeColdPayingNoCodeFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, funded, contract callee, with value transfer, no memory expansion.
 func TestDimTxOpCallCodeColdPayingContractFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -690,6 +725,7 @@ func TestDimTxOpCallCodeColdPayingContractFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a cold, funded, contract callee, with value transfer, with memory expansion.
 func TestDimTxOpCallCodeColdPayingContractFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -711,6 +747,7 @@ func TestDimTxOpCallCodeColdPayingContractFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, virgin, no-code callee, no value transfer, no memory expansion.
 func TestDimTxOpCallCodeWarmNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -727,6 +764,7 @@ func TestDimTxOpCallCodeWarmNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, virgin, no-code callee, no value transfer, with memory expansion.
 func TestDimTxOpCallCodeWarmNoTransferNoCodeVirginMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -743,6 +781,7 @@ func TestDimTxOpCallCodeWarmNoTransferNoCodeVirginMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, funded, no-code callee, no value transfer, no memory expansion.
 func TestDimTxOpCallCodeWarmNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -762,6 +801,7 @@ func TestDimTxOpCallCodeWarmNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, funded, no-code callee, no value transfer, with memory expansion.
 func TestDimTxOpCallCodeWarmNoTransferNoCodeFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -781,6 +821,7 @@ func TestDimTxOpCallCodeWarmNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, funded, contract callee, no value transfer, no memory expansion.
 func TestDimTxOpCallCodeWarmNoTransferContractFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -797,6 +838,7 @@ func TestDimTxOpCallCodeWarmNoTransferContractFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, funded, contract callee, no value transfer, with memory expansion.
 func TestDimTxOpCallCodeWarmNoTransferContractFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -816,6 +858,7 @@ func TestDimTxOpCallCodeWarmNoTransferContractFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, virgin, no-code callee, with value transfer, no memory expansion.
 func TestDimTxOpCallCodeWarmPayingNoCodeVirginMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -836,6 +879,7 @@ func TestDimTxOpCallCodeWarmPayingNoCodeVirginMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, virgin, no-code callee, with value transfer, with memory expansion.
 func TestDimTxOpCallCodeWarmPayingNoCodeVirginMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -856,6 +900,7 @@ func TestDimTxOpCallCodeWarmPayingNoCodeVirginMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, funded, no-code callee, with value transfer, no memory expansion.
 func TestDimTxOpCallCodeWarmPayingNoCodeFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -877,6 +922,7 @@ func TestDimTxOpCallCodeWarmPayingNoCodeFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, funded, no-code callee, with value transfer, with memory expansion.
 func TestDimTxOpCallCodeWarmPayingNoCodeFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -898,6 +944,7 @@ func TestDimTxOpCallCodeWarmPayingNoCodeFundedMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, funded, contract callee, with value transfer, no memory expansion.
 func TestDimTxOpCallCodeWarmPayingContractFundedMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -919,6 +966,7 @@ func TestDimTxOpCallCodeWarmPayingContractFundedMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CALLCODE to a warm, funded, contract callee, with value transfer, with memory expansion.
 func TestDimTxOpCallCodeWarmPayingContractFundedMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

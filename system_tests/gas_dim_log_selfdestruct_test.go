@@ -41,6 +41,7 @@ import (
 // state access to be 5000+2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSelfdestructColdNoTransferVirgin(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -76,6 +77,7 @@ func TestDimLogSelfdestructColdNoTransferVirgin(t *testing.T) {
 // state access to be 5000+2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSelfdestructColdNoTransferFunded(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -116,6 +118,7 @@ func TestDimLogSelfdestructColdNoTransferFunded(t *testing.T) {
 // state access to be 5000+2500, state growth to be 25000,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSelfdestructColdPayingVirgin(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -155,6 +158,7 @@ func TestDimLogSelfdestructColdPayingVirgin(t *testing.T) {
 // state access to be 5000+2500, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSelfdestructColdPayingFunded(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -194,6 +198,7 @@ func TestDimLogSelfdestructColdPayingFunded(t *testing.T) {
 // state access to be 4900, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSelfdestructWarmNoTransferVirgin(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -229,6 +234,7 @@ func TestDimLogSelfdestructWarmNoTransferVirgin(t *testing.T) {
 // state access to be 4900, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSelfdestructWarmNoTransferFunded(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -269,6 +275,7 @@ func TestDimLogSelfdestructWarmNoTransferFunded(t *testing.T) {
 // that gives us a computation of 100, state access of 4900, state growth of 25000,
 // history growth of 0, and state growth refund of 0
 func TestDimLogSelfdestructWarmPayingVirgin(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -305,6 +312,7 @@ func TestDimLogSelfdestructWarmPayingVirgin(t *testing.T) {
 // state access to be 4900, state growth to be 0,
 // history growth to be 0, and state growth refund to be 0
 func TestDimLogSelfdestructWarmPayingFunded(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

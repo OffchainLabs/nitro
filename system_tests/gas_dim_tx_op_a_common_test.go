@@ -25,6 +25,7 @@ type OpcodeSumTraceResult = native.TxGasDimensionByOpcodeExecutionResult
 // used for a transaction as the TX receipt, for
 // computation-only opcodes.
 func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

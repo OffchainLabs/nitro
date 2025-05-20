@@ -33,6 +33,7 @@ import (
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG0 with no topics, no data, no memory expansion.
 func TestDimTxOpLog0TopicsOnlyMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -47,6 +48,7 @@ func TestDimTxOpLog0TopicsOnlyMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG0 with no topics, 7 bytes of data, no memory expansion.
 func TestDimTxOpLog0ExtraDataMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -61,6 +63,7 @@ func TestDimTxOpLog0ExtraDataMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG1 with one topic, no data, no memory expansion.
 func TestDimTxOpLog1TopicsOnlyMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -75,6 +78,7 @@ func TestDimTxOpLog1TopicsOnlyMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG1 with one topic, 9 bytes of data, no memory expansion.
 func TestDimTxOpLog1ExtraDataMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -89,6 +93,7 @@ func TestDimTxOpLog1ExtraDataMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG2 with two topics, no data, no memory expansion.
 func TestDimTxOpLog2TopicsOnlyMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -103,6 +108,7 @@ func TestDimTxOpLog2TopicsOnlyMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG2 with two topics, 32 bytes of data (address), no memory expansion.
 func TestDimTxOpLog2ExtraDataMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -117,6 +123,7 @@ func TestDimTxOpLog2ExtraDataMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG3 with three topics, no data, no memory expansion.
 func TestDimTxOpLog3TopicsOnlyMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -131,6 +138,7 @@ func TestDimTxOpLog3TopicsOnlyMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG3 with three topics, 32 bytes of data (bytes32), no memory expansion.
 func TestDimTxOpLog3ExtraDataMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -145,6 +153,7 @@ func TestDimTxOpLog3ExtraDataMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG4 with four topics, no data, no memory expansion.
 func TestDimTxOpLog4TopicsOnlyMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -159,6 +168,7 @@ func TestDimTxOpLog4TopicsOnlyMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG4 with four topics, 32 bytes of data (bytes32), no memory expansion.
 func TestDimTxOpLog4ExtraDataMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -173,6 +183,7 @@ func TestDimTxOpLog4ExtraDataMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG0 with no topics, 64 bytes of data, memory expansion from 96 to 160 bytes.
 func TestDimTxOpLog0ExtraDataMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -187,6 +198,7 @@ func TestDimTxOpLog0ExtraDataMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG1 with one topic, 64 bytes of data, memory expansion from 96 to 160 bytes.
 func TestDimTxOpLog1ExtraDataMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -201,6 +213,7 @@ func TestDimTxOpLog1ExtraDataMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG2 with two topics, 64 bytes of data, memory expansion from 96 to 160 bytes.
 func TestDimTxOpLog2ExtraDataMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -215,6 +228,7 @@ func TestDimTxOpLog2ExtraDataMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG3 with three topics, 64 bytes of data, memory expansion from 96 to 160 bytes.
 func TestDimTxOpLog3ExtraDataMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -229,6 +243,7 @@ func TestDimTxOpLog3ExtraDataMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: LOG4 with four topics, 64 bytes of data, memory expansion from 96 to 160 bytes.
 func TestDimTxOpLog4ExtraDataMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

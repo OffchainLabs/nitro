@@ -13,6 +13,7 @@ import (
 // the invalid opcode uses all of the remaining gas in a transaction
 // and halts transaction execution
 func TestDimLogInvalid(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -92,6 +93,7 @@ func TestDimLogInvalid(t *testing.T) {
 // but the revert does not stop the entire transaction
 // execution, it's inside a try/catch
 func TestDimLogInvalidInTryCatch(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -145,6 +147,7 @@ func TestDimLogInvalidInTryCatchWithMemoryExpansion(t *testing.T) {
 }
 
 func TestDimLogRevert(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, true)
 	defer cancel()
 	defer cleanup()
@@ -187,6 +190,7 @@ func TestDimLogRevert(t *testing.T) {
 }
 
 func TestDimLogRevertWithMessage(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, true)
 	defer cancel()
 	defer cleanup()
@@ -229,6 +233,7 @@ func TestDimLogRevertWithMessage(t *testing.T) {
 }
 
 func TestDimLogRevertWithMemoryExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, true)
 	defer cancel()
 	defer cleanup()
@@ -281,6 +286,7 @@ func TestDimLogRevertWithMemoryExpansion(t *testing.T) {
 // but the tracer should not fail
 // and the gas should still make sense
 func TestDimLogInvalidJump(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

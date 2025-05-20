@@ -90,6 +90,7 @@ var extCodeCopyMemoryExpansionCost uint64 = 53
 // 2500 + the minimum word cost,
 // and all other gas dimensions to be 0
 func TestDimLogExtCodeCopyColdMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -128,6 +129,7 @@ func TestDimLogExtCodeCopyColdMemUnchanged(t *testing.T) {
 // the state access to be 2500 + the minimum word cost,
 // and all other gas dimensions to be 0
 func TestDimLogExtCodeCopyColdMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -164,6 +166,7 @@ func TestDimLogExtCodeCopyColdMemExpansion(t *testing.T) {
 // just the minimum word cost,
 // and all other gas dimensions to be 0
 func TestDimLogExtCodeCopyWarmMemUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -202,6 +205,7 @@ func TestDimLogExtCodeCopyWarmMemUnchanged(t *testing.T) {
 // the state access to be the minimum word cost,
 // and all other gas dimensions to be 0
 func TestDimLogExtCodeCopyWarmMemExpansion(t *testing.T) {
+	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
