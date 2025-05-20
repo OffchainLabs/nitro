@@ -476,7 +476,8 @@ func TestBatchPosterDelayBufferDontForceNonDelayedMessages(t *testing.T) {
 	builder.L2.ConsensusNode.BatchPoster.StopAndWait() // allow us to modify config and call loop at will
 	// Set delay to zero to force non-delayed messages
 	builder.nodeConfig.BatchPoster.MaxDelay = 0
-	builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	_, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	Require(t, err)
 	for _, tx := range txs {
 		_, err := testClientB.EnsureTxSucceeded(tx)
 		Require(t, err, "tx not found on second node")
