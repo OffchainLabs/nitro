@@ -647,6 +647,305 @@ func Test_expressLaneService_dontCareSequence(t *testing.T) {
 	require.Equal(t, tx.Hash(), mp.processedTx.Hash())
 }
 
+// Test_expressLaneService_mixedSequenceNumbersDontCareFirst tests sending dontcare sequence numbers first, then normal sequence numbers
+func Test_expressLaneService_mixedSequenceNumbersDontCareFirst(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	timingInfo := defaultTestRoundTimingInfo(time.Now())
+	tr := &ExpressLaneTracker{}
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
+
+	publishedTxs := []*types.Transaction{}
+	mockPublish := func(ctx context.Context, tx *types.Transaction, _ *arbitrum_types.ConditionalOptions) error {
+		publishedTxs = append(publishedTxs, tx)
+		return nil
+	}
+
+	els := &expressLaneService{
+		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
+		roundTimingInfo: timingInfo,
+		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		tracker:         tr,
+		transactionPublisher: testTransactionPublisher{
+			publishFunc: mockPublish,
+		},
+	}
+
+	els.roundInfo.Add(0, &expressLaneRoundInfo{0, make(map[uint64]*timeboost.ExpressLaneSubmission)})
+	els.StopWaiter.Start(ctx, els)
+
+	// First send transactions with DontCareSequence numbers
+	dontCareTx1 := types.NewTransaction(0, common.Address{1}, big.NewInt(1), 0, big.NewInt(0), []byte("dontcare1"))
+	dontCareTx2 := types.NewTransaction(0, common.Address{2}, big.NewInt(2), 0, big.NewInt(0), []byte("dontcare2"))
+
+	dontCareMsg1 := buildValidSubmissionWithSeqAndTx(t, 0, DontCareSequence, dontCareTx1)
+	dontCareMsg2 := buildValidSubmissionWithSeqAndTx(t, 0, DontCareSequence, dontCareTx2)
+
+	// Then send transactions with normal sequence numbers
+	normalTx1 := types.NewTransaction(0, common.Address{3}, big.NewInt(3), 0, big.NewInt(0), []byte("normal1"))
+	normalTx2 := types.NewTransaction(0, common.Address{4}, big.NewInt(4), 0, big.NewInt(0), []byte("normal2"))
+
+	normalMsg1 := buildValidSubmissionWithSeqAndTx(t, 0, 0, normalTx1)
+	normalMsg2 := buildValidSubmissionWithSeqAndTx(t, 0, 1, normalTx2)
+
+	// Submit the messages
+	err := els.sequenceExpressLaneSubmission(dontCareMsg1)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(dontCareMsg2)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(normalMsg1)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(normalMsg2)
+	require.NoError(t, err)
+
+	// All 4 transactions should be published
+	require.Equal(t, 4, len(publishedTxs))
+
+	// Check that the transactions were published in the expected order
+	require.Equal(t, dontCareTx1.Hash(), publishedTxs[0].Hash())
+	require.Equal(t, dontCareTx2.Hash(), publishedTxs[1].Hash())
+	require.Equal(t, normalTx1.Hash(), publishedTxs[2].Hash())
+	require.Equal(t, normalTx2.Hash(), publishedTxs[3].Hash())
+
+	// Check that the sequence number was updated correctly
+	els.roundInfoMutex.Lock()
+	roundInfo, _ := els.roundInfo.Get(0)
+	require.Equal(t, uint64(2), roundInfo.sequence) // Should be 2 after processing seq 0 and 1
+	els.roundInfoMutex.Unlock()
+}
+
+// Test_expressLaneService_mixedSequenceNumbersNormalFirst tests sending normal sequence numbers first, then dontcare sequence numbers
+func Test_expressLaneService_mixedSequenceNumbersNormalFirst(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	timingInfo := defaultTestRoundTimingInfo(time.Now())
+	tr := &ExpressLaneTracker{}
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
+
+	publishedTxs := []*types.Transaction{}
+	mockPublish := func(ctx context.Context, tx *types.Transaction, _ *arbitrum_types.ConditionalOptions) error {
+		publishedTxs = append(publishedTxs, tx)
+		return nil
+	}
+
+	els := &expressLaneService{
+		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
+		roundTimingInfo: timingInfo,
+		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		tracker:         tr,
+		transactionPublisher: testTransactionPublisher{
+			publishFunc: mockPublish,
+		},
+	}
+
+	els.roundInfo.Add(0, &expressLaneRoundInfo{0, make(map[uint64]*timeboost.ExpressLaneSubmission)})
+	els.StopWaiter.Start(ctx, els)
+
+	// First send transactions with normal sequence numbers
+	normalTx1 := types.NewTransaction(0, common.Address{1}, big.NewInt(1), 0, big.NewInt(0), []byte("normal1"))
+	normalTx2 := types.NewTransaction(0, common.Address{2}, big.NewInt(2), 0, big.NewInt(0), []byte("normal2"))
+
+	normalMsg1 := buildValidSubmissionWithSeqAndTx(t, 0, 0, normalTx1)
+	normalMsg2 := buildValidSubmissionWithSeqAndTx(t, 0, 1, normalTx2)
+
+	// Then send transactions with DontCareSequence numbers
+	dontCareTx1 := types.NewTransaction(0, common.Address{3}, big.NewInt(3), 0, big.NewInt(0), []byte("dontcare1"))
+	dontCareTx2 := types.NewTransaction(0, common.Address{4}, big.NewInt(4), 0, big.NewInt(0), []byte("dontcare2"))
+
+	dontCareMsg1 := buildValidSubmissionWithSeqAndTx(t, 0, DontCareSequence, dontCareTx1)
+	dontCareMsg2 := buildValidSubmissionWithSeqAndTx(t, 0, DontCareSequence, dontCareTx2)
+
+	// Submit the messages
+	err := els.sequenceExpressLaneSubmission(normalMsg1)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(normalMsg2)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(dontCareMsg1)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(dontCareMsg2)
+	require.NoError(t, err)
+
+	// All 4 transactions should be published
+	require.Equal(t, 4, len(publishedTxs))
+
+	// Check that the transactions were published in the expected order
+	require.Equal(t, normalTx1.Hash(), publishedTxs[0].Hash())
+	require.Equal(t, normalTx2.Hash(), publishedTxs[1].Hash())
+	require.Equal(t, dontCareTx1.Hash(), publishedTxs[2].Hash())
+	require.Equal(t, dontCareTx2.Hash(), publishedTxs[3].Hash())
+
+	// Check that the sequence number was updated correctly
+	els.roundInfoMutex.Lock()
+	roundInfo, _ := els.roundInfo.Get(0)
+	require.Equal(t, uint64(2), roundInfo.sequence) // Should be 2 after processing seq 0 and 1
+	els.roundInfoMutex.Unlock()
+}
+
+// Test_expressLaneService_mixedSequenceNumbersIntermixed tests sending a mix of normal and dontcare sequence numbers
+func Test_expressLaneService_mixedSequenceNumbersIntermixed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	timingInfo := defaultTestRoundTimingInfo(time.Now())
+	tr := &ExpressLaneTracker{}
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
+
+	publishedTxs := []*types.Transaction{}
+	mockPublish := func(ctx context.Context, tx *types.Transaction, _ *arbitrum_types.ConditionalOptions) error {
+		publishedTxs = append(publishedTxs, tx)
+		return nil
+	}
+
+	els := &expressLaneService{
+		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
+		roundTimingInfo: timingInfo,
+		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		tracker:         tr,
+		transactionPublisher: testTransactionPublisher{
+			publishFunc: mockPublish,
+		},
+	}
+
+	els.roundInfo.Add(0, &expressLaneRoundInfo{0, make(map[uint64]*timeboost.ExpressLaneSubmission)})
+	els.StopWaiter.Start(ctx, els)
+
+	// Create transactions with mixed sequence numbers
+	normalTx1 := types.NewTransaction(0, common.Address{1}, big.NewInt(1), 0, big.NewInt(0), []byte("normal1"))
+	dontCareTx1 := types.NewTransaction(0, common.Address{2}, big.NewInt(2), 0, big.NewInt(0), []byte("dontcare1"))
+	normalTx2 := types.NewTransaction(0, common.Address{3}, big.NewInt(3), 0, big.NewInt(0), []byte("normal2"))
+	dontCareTx2 := types.NewTransaction(0, common.Address{4}, big.NewInt(4), 0, big.NewInt(0), []byte("dontcare2"))
+	normalTx3 := types.NewTransaction(0, common.Address{5}, big.NewInt(5), 0, big.NewInt(0), []byte("normal3"))
+
+	normalMsg1 := buildValidSubmissionWithSeqAndTx(t, 0, 0, normalTx1)
+	dontCareMsg1 := buildValidSubmissionWithSeqAndTx(t, 0, DontCareSequence, dontCareTx1)
+	normalMsg2 := buildValidSubmissionWithSeqAndTx(t, 0, 1, normalTx2)
+	dontCareMsg2 := buildValidSubmissionWithSeqAndTx(t, 0, DontCareSequence, dontCareTx2)
+	normalMsg3 := buildValidSubmissionWithSeqAndTx(t, 0, 2, normalTx3)
+
+	// Submit the messages in an intermixed order
+	err := els.sequenceExpressLaneSubmission(normalMsg1)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(dontCareMsg1)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(normalMsg2)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(dontCareMsg2)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(normalMsg3)
+	require.NoError(t, err)
+
+	// All 5 transactions should be published
+	require.Equal(t, 5, len(publishedTxs))
+
+	// Check that the transactions were published in the correct order
+	require.Equal(t, normalTx1.Hash(), publishedTxs[0].Hash())
+	require.Equal(t, dontCareTx1.Hash(), publishedTxs[1].Hash())
+	require.Equal(t, normalTx2.Hash(), publishedTxs[2].Hash())
+	require.Equal(t, dontCareTx2.Hash(), publishedTxs[3].Hash())
+	require.Equal(t, normalTx3.Hash(), publishedTxs[4].Hash())
+
+	// Check that the sequence number was updated correctly
+	els.roundInfoMutex.Lock()
+	roundInfo, _ := els.roundInfo.Get(0)
+	require.Equal(t, uint64(3), roundInfo.sequence) // Should be 3 after processing seq 0, 1, and 2
+	els.roundInfoMutex.Unlock()
+}
+
+// Test_expressLaneService_dontCareWithQueuedTransactions tests that dontcare transactions are processed immediately
+// even when regular sequence numbers are queued
+func Test_expressLaneService_dontCareWithQueuedTransactions(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	timingInfo := defaultTestRoundTimingInfo(time.Now())
+	tr := &ExpressLaneTracker{}
+	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
+
+	publishedTxs := []*types.Transaction{}
+	mockPublish := func(ctx context.Context, tx *types.Transaction, _ *arbitrum_types.ConditionalOptions) error {
+		publishedTxs = append(publishedTxs, tx)
+		return nil
+	}
+
+	els := &expressLaneService{
+		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
+		roundTimingInfo: timingInfo,
+		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		tracker:         tr,
+		transactionPublisher: testTransactionPublisher{
+			publishFunc: mockPublish,
+		},
+	}
+
+	els.roundInfo.Add(0, &expressLaneRoundInfo{0, make(map[uint64]*timeboost.ExpressLaneSubmission)})
+	els.StopWaiter.Start(ctx, els)
+
+	// Create some transactions with gaps in sequence numbers
+	normalTx1 := types.NewTransaction(0, common.Address{1}, big.NewInt(1), 0, big.NewInt(0), []byte("normal1"))
+	normalTx3 := types.NewTransaction(0, common.Address{3}, big.NewInt(3), 0, big.NewInt(0), []byte("normal3"))
+	normalTx4 := types.NewTransaction(0, common.Address{4}, big.NewInt(4), 0, big.NewInt(0), []byte("normal4"))
+	dontCareTx1 := types.NewTransaction(0, common.Address{5}, big.NewInt(5), 0, big.NewInt(0), []byte("dontcare1"))
+	normalTx2 := types.NewTransaction(0, common.Address{2}, big.NewInt(2), 0, big.NewInt(0), []byte("normal2"))
+
+	normalMsg1 := buildValidSubmissionWithSeqAndTx(t, 0, 0, normalTx1)
+	normalMsg3 := buildValidSubmissionWithSeqAndTx(t, 0, 2, normalTx3)
+	normalMsg4 := buildValidSubmissionWithSeqAndTx(t, 0, 3, normalTx4)
+	dontCareMsg1 := buildValidSubmissionWithSeqAndTx(t, 0, DontCareSequence, dontCareTx1)
+	normalMsg2 := buildValidSubmissionWithSeqAndTx(t, 0, 1, normalTx2)
+
+	// Submit the transactions with a gap in sequence numbers
+	err := els.sequenceExpressLaneSubmission(normalMsg1)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(normalMsg3)
+	require.NoError(t, err)
+
+	err = els.sequenceExpressLaneSubmission(normalMsg4)
+	require.NoError(t, err)
+
+	// At this point, only normalTx1 should be published because of the gap at sequence number 1
+	require.Equal(t, 1, len(publishedTxs))
+	require.Equal(t, normalTx1.Hash(), publishedTxs[0].Hash())
+
+	// Submit a dontcare transaction - it should be processed immediately
+	err = els.sequenceExpressLaneSubmission(dontCareMsg1)
+	require.NoError(t, err)
+
+	// Now dontCareTx1 should also be published, but normalTx3 and normalTx4 should still be queued
+	require.Equal(t, 2, len(publishedTxs))
+	require.Equal(t, dontCareTx1.Hash(), publishedTxs[1].Hash())
+
+	// Now fill the gap with normalMsg2
+	err = els.sequenceExpressLaneSubmission(normalMsg2)
+	require.NoError(t, err)
+
+	// Now all transactions should be published
+	require.Equal(t, 5, len(publishedTxs))
+	require.Equal(t, normalTx1.Hash(), publishedTxs[0].Hash())
+	require.Equal(t, dontCareTx1.Hash(), publishedTxs[1].Hash())
+	require.Equal(t, normalTx2.Hash(), publishedTxs[2].Hash())
+	require.Equal(t, normalTx3.Hash(), publishedTxs[3].Hash())
+	require.Equal(t, normalTx4.Hash(), publishedTxs[4].Hash())
+
+	// Check that the sequence number was updated correctly
+	els.roundInfoMutex.Lock()
+	roundInfo, _ := els.roundInfo.Get(0)
+	require.Equal(t, uint64(4), roundInfo.sequence) // Should be 4 after processing seq 0, 1, 2, and 3
+	els.roundInfoMutex.Unlock()
+}
+
 func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 	b.StopTimer()
 	addr := crypto.PubkeyToAddress(testPriv.PublicKey)
