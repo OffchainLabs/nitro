@@ -72,7 +72,7 @@ func (enc *ZeroheavyEncoder) readOneImpl() (byte, error) {
 			return 0, nil
 		}
 		ret := byte(1)
-		for i := 0; i < 6; i++ {
+		for range 6 {
 			nextBit, err := enc.nextInputBit()
 			if err != nil {
 				return 0, err
@@ -96,7 +96,7 @@ func (enc *ZeroheavyEncoder) readOneImpl() (byte, error) {
 		return ret, nil
 	}
 	ret := byte(1) // first bit is 1
-	for i := 0; i < 7; i++ {
+	for range 7 {
 		ret <<= 1
 		nextBit, err := enc.nextInputBit()
 		if err != nil {
@@ -134,7 +134,7 @@ func NewZeroheavyDecoder(source io.Reader) *ZeroheavyDecoder {
 
 func (br *ZeroheavyDecoder) readOne() (byte, error) {
 	ret := byte(0)
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		b, err := br.nextBit()
 		if err != nil {
 			return 0, err
@@ -179,7 +179,7 @@ func (br *ZeroheavyDecoder) pushBit(b bool) {
 }
 
 func (br *ZeroheavyDecoder) push7Bits(b byte) {
-	for i := 0; i < 7; i++ {
+	for i := range 7 {
 		br.pushBit(b&(1<<(6-i)) != 0)
 	}
 }
@@ -209,7 +209,7 @@ func (br *ZeroheavyDecoder) refill() bool {
 	} else if b == 1 {
 		br.pushBit(false)
 		br.pushBit(true)
-		for i := 0; i < 6; i++ {
+		for range 6 {
 			br.pushBit(false)
 		}
 	} else if b < 0x80 {
