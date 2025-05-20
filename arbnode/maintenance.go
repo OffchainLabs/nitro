@@ -14,7 +14,6 @@ import (
 
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode/redislock"
@@ -29,7 +28,6 @@ type MaintenanceRunner struct {
 	exec            execution.ExecutionClient
 	config          MaintenanceConfigFetcher
 	seqCoordinator  *SeqCoordinator
-	dbs             []ethdb.Database
 	lastMaintenance atomic.Int64
 
 	// lock is used to ensures that at any given time, only single node is on
@@ -92,7 +90,7 @@ var DefaultMaintenanceConfig = MaintenanceConfig{
 
 type MaintenanceConfigFetcher func() *MaintenanceConfig
 
-func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, dbs []ethdb.Database, exec execution.ExecutionClient) (*MaintenanceRunner, error) {
+func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, exec execution.ExecutionClient) (*MaintenanceRunner, error) {
 	cfg := config()
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
@@ -101,7 +99,6 @@ func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCo
 		exec:           exec,
 		config:         config,
 		seqCoordinator: seqCoordinator,
-		dbs:            dbs,
 	}
 
 	// node restart is considered "maintenance"
@@ -249,28 +246,8 @@ func (mr *MaintenanceRunner) runMaintenance() error {
 	}
 	defer mr.setMaintenanceDone()
 
-	log.Info("Compacting databases and flushing triedb to disk (this may take a while...)")
-	results := make(chan error, len(mr.dbs))
-	expected := 0
-	for _, db := range mr.dbs {
-		expected++
-		db := db
-		go func() {
-			results <- db.Compact(nil, nil)
-		}()
-	}
-	expected++
-	go func() {
-		_, res := mr.exec.Maintenance().Await(mr.GetContext())
-		results <- res
-	}()
-	for i := 0; i < expected; i++ {
-		subErr := <-results
-		if subErr != nil {
-			err = errors.Join(err, subErr)
-			log.Warn("maintenance error", "err", subErr)
-		}
-	}
-	log.Info("Done compacting databases and flushing triedb to disk")
+	log.Info("Flushing triedb to disk (this may take a while...)")
+	_, err = mr.exec.Maintenance().Await(mr.GetContext())
+	log.Info("Done flushing triedb to disk")
 	return err
 }
