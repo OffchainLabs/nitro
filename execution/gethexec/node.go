@@ -160,8 +160,8 @@ var DefaultLiveTracingConfig = LiveTracingConfig{
 }
 
 func LiveTracingConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".tracer-name", DefaultLiveTracingConfig.TracerName, "Name of tracer which should record internal VM operations (costly)")
-	f.String(prefix+".json-config", DefaultLiveTracingConfig.JSONConfig, "Tracer configuration in JSON format")
+	f.String(prefix+".tracer-name", DefaultLiveTracingConfig.TracerName, "(experimental) Name of tracer which should record internal VM operations (costly)")
+	f.String(prefix+".json-config", DefaultLiveTracingConfig.JSONConfig, "(experimental) Tracer configuration in JSON format")
 }
 
 var ConfigDefault = Config{

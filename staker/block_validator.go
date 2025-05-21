@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -27,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -171,11 +171,21 @@ func (c *BlockValidatorConfig) Validate() error {
 			}
 		}
 	}
+	if c.Dangerous.Revalidation.EndBlock > 0 && c.Dangerous.Revalidation.EndBlock < c.Dangerous.Revalidation.StartBlock {
+		return fmt.Errorf("revalidation end block %d is before start block %d", c.Dangerous.Revalidation.EndBlock, c.Dangerous.Revalidation.StartBlock)
+	}
 	return nil
 }
 
 type BlockValidatorDangerousConfig struct {
-	ResetBlockValidation bool `koanf:"reset-block-validation"`
+	ResetBlockValidation bool               `koanf:"reset-block-validation"`
+	Revalidation         RevalidationConfig `koanf:"revalidation"`
+}
+
+type RevalidationConfig struct {
+	StartBlock            uint64 `koanf:"start-block"`
+	EndBlock              uint64 `koanf:"end-block"`
+	QuitAfterRevalidation bool   `koanf:"quit-after-revalidation"`
 }
 
 type BlockValidatorConfigFetcher func() *BlockValidatorConfig
@@ -201,6 +211,13 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
+	RevalidationConfigAddOptions(prefix+".revalidation", f)
+}
+
+func RevalidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Uint64(prefix+".start-block", DefaultBlockValidatorDangerousConfig.Revalidation.StartBlock, "start revalidation from this block")
+	f.Uint64(prefix+".end-block", DefaultBlockValidatorDangerousConfig.Revalidation.EndBlock, "end revalidation at this block")
+	f.Bool(prefix+".quit-after-revalidation", DefaultBlockValidatorDangerousConfig.Revalidation.QuitAfterRevalidation, "exit node after revalidation is done")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
@@ -210,7 +227,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
 	ValidationPoll:              time.Second,
 	ForwardBlocks:               128,
-	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	PrerecordedBlocks:           uint64(2 * util.GoMaxProcs()),
 	BatchCacheLimit:             20,
 	CurrentModuleRoot:           "current",
 	PendingUpgradeModuleRoot:    "latest",
@@ -230,7 +247,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	ValidationPoll:              100 * time.Millisecond,
 	ForwardBlocks:               128,
 	BatchCacheLimit:             20,
-	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	PrerecordedBlocks:           uint64(2 * util.GoMaxProcs()),
 	RecordingIterLimit:          20,
 	ValidationSentLimit:         1024,
 	CurrentModuleRoot:           "latest",
@@ -243,6 +260,13 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
 	ResetBlockValidation: false,
+	Revalidation:         DefaultRevalidationConfig,
+}
+
+var DefaultRevalidationConfig = RevalidationConfig{
+	StartBlock:            0,
+	EndBlock:              0,
+	QuitAfterRevalidation: false,
 }
 
 type valStatusField uint32
@@ -337,6 +361,29 @@ func NewBlockValidator(
 			SendRoot:   genesis.SendRoot,
 			Batch:      1,
 			PosInBatch: 0,
+		}
+	}
+	if config().Dangerous.Revalidation.StartBlock > 0 {
+		startBlock := config().Dangerous.Revalidation.StartBlock
+		messageCount, err := inbox.GetBatchMessageCount(startBlock - 1)
+		if err != nil {
+			return nil, err
+		}
+		res := &execution.MessageResult{}
+		if messageCount > 0 {
+			res, err = streamer.ResultAtMessageIndex(messageCount - 1)
+			if err != nil {
+				return nil, err
+			}
+		}
+		_, endPos, err := statelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
+		if err != nil {
+			return nil, err
+		}
+		gs := BuildGlobalState(*res, endPos)
+		err = ret.writeLastValidated(gs, nil)
+		if err != nil {
+			return nil, err
 		}
 	}
 	streamer.SetBlockValidator(ret)
@@ -799,6 +846,17 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	}
 	log.Info("validated execution", "messageCount", printedCount, "globalstate", validated.GlobalState, "WasmRoots", validated.WasmRoots)
 	v.lastValidInfoPrinted = validated
+	revalidationConfig := v.config().Dangerous.Revalidation
+	if revalidationConfig.EndBlock > 0 && validated.GlobalState.Batch >= revalidationConfig.EndBlock {
+		log.Info("revalidation done", "startBlock", revalidationConfig.StartBlock, "endBlock", revalidationConfig.EndBlock)
+		if revalidationConfig.QuitAfterRevalidation {
+			// Sending nil to fatalErr channel to stop the node, but not report as an error
+			// since this is expected shutdown of the node.
+			v.fatalErr <- nil
+		} else {
+			v.StopOnly()
+		}
+	}
 	return time.Second
 }
 
@@ -886,6 +944,10 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 			log.Warn("Recording for validation failed, retrying..", "pos", pos)
 			return &pos, nil
 		}
+		if currentStatus != Prepared {
+			log.Trace("sendValidations: validation not prepared", "pos", pos, "status", currentStatus)
+			return nil, nil
+		}
 		for _, moduleRoot := range wasmRoots {
 			spawner := v.chosenValidator[moduleRoot]
 			if spawner == nil {
@@ -902,72 +964,68 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 			log.Warn("sendValidations: aborting due to running low on memory")
 			return nil, nil
 		}
-		if currentStatus == Prepared {
-			replaced := validationStatus.replaceStatus(Prepared, SendingValidation)
+		replaced := validationStatus.replaceStatus(Prepared, SendingValidation)
+		if !replaced {
+			v.possiblyFatal(errors.New("failed to set SendingValidation status"))
+		}
+		validatorProfileWaitToLaunchHist.Update(validationStatus.profileStep())
+		validatorPendingValidationsGauge.Inc(1)
+		var runs []validator.ValidationRun
+		for _, moduleRoot := range wasmRoots {
+			spawner := v.chosenValidator[moduleRoot]
+			input, err := validationStatus.Entry.ToInput(spawner.StylusArchs())
+			if err != nil && ctx.Err() == nil {
+				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
+				continue
+			}
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			run := spawner.Launch(input, moduleRoot)
+			log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
+			runs = append(runs, run)
+		}
+		validationStatus.DoneEntry = &validationDoneEntry{
+			Success:         false,
+			Start:           validationStatus.Entry.Start,
+			End:             validationStatus.Entry.End,
+			WasmModuleRoots: wasmRoots,
+		}
+		validationStatus.Entry = nil // no longer needed
+		validatorProfileLaunchingHist.Update(validationStatus.profileStep())
+		validationCtx, cancel := context.WithCancel(ctx)
+		validationStatus.Cancel = cancel
+		v.LaunchUntrackedThread(func() {
+			defer validatorPendingValidationsGauge.Dec(1)
+			defer cancel()
+			markSuccess := len(runs) > 0
+
+			// validationStatus might be removed from under us
+			// trigger validation progress when done
+			for _, run := range runs {
+				runEnd, err := run.Await(validationCtx)
+				if err == nil && runEnd != validationStatus.DoneEntry.End {
+					err = fmt.Errorf("validation failed: got %v", runEnd)
+				}
+				if err != nil {
+					validatorFailedValidationsCounter.Inc(1)
+					markSuccess = false
+					log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
+					break
+				}
+				validatorValidValidationsCounter.Inc(1)
+			}
+			validationStatus.DoneEntry.Success = markSuccess
+			validatorProfileRunningHist.Update(validationStatus.profileStep())
+			replaced := validationStatus.replaceStatus(SendingValidation, ValidationDone)
 			if !replaced {
 				v.possiblyFatal(errors.New("failed to set SendingValidation status"))
 			}
-			validatorProfileWaitToLaunchHist.Update(validationStatus.profileStep())
-			validatorPendingValidationsGauge.Inc(1)
-			var runs []validator.ValidationRun
-			for _, moduleRoot := range wasmRoots {
-				spawner := v.chosenValidator[moduleRoot]
-				input, err := validationStatus.Entry.ToInput(spawner.StylusArchs())
-				if err != nil && ctx.Err() == nil {
-					v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
-					continue
-				}
-				if ctx.Err() != nil {
-					return nil, ctx.Err()
-				}
-				run := spawner.Launch(input, moduleRoot)
-				log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
-				runs = append(runs, run)
-			}
-			validationStatus.DoneEntry = &validationDoneEntry{
-				Success:         false,
-				Start:           validationStatus.Entry.Start,
-				End:             validationStatus.Entry.End,
-				WasmModuleRoots: wasmRoots,
-			}
-			validationStatus.Entry = nil // no longer needed
-			validatorProfileLaunchingHist.Update(validationStatus.profileStep())
-			validationCtx, cancel := context.WithCancel(ctx)
-			validationStatus.Cancel = cancel
-			v.LaunchUntrackedThread(func() {
-				defer validatorPendingValidationsGauge.Dec(1)
-				defer cancel()
-				markSuccess := len(runs) > 0
-
-				// validationStatus might be removed from under us
-				// trigger validation progress when done
-				for _, run := range runs {
-					runEnd, err := run.Await(validationCtx)
-					if err == nil && runEnd != validationStatus.DoneEntry.End {
-						err = fmt.Errorf("validation failed: got %v", runEnd)
-					}
-					if err != nil {
-						validatorFailedValidationsCounter.Inc(1)
-						markSuccess = false
-						log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
-						break
-					}
-					validatorValidValidationsCounter.Inc(1)
-				}
-				validationStatus.DoneEntry.Success = markSuccess
-				validatorProfileRunningHist.Update(validationStatus.profileStep())
-				replaced := validationStatus.replaceStatus(SendingValidation, ValidationDone)
-				if !replaced {
-					v.possiblyFatal(errors.New("failed to set SendingValidation status"))
-				}
-				nonBlockingTrigger(v.progressValidationsChan)
-			})
-			pos += 1
-			atomicStorePos(&v.lastValidationSentA, pos, validatorMsgCountLastValidationSentGauge)
-			log.Trace("validation sent", "pos", pos)
-		} else {
-			return nil, fmt.Errorf("bad status trying to send validation for pos %d status: %v", pos, currentStatus)
-		}
+			nonBlockingTrigger(v.progressValidationsChan)
+		})
+		pos += 1
+		atomicStorePos(&v.lastValidationSentA, pos, validatorMsgCountLastValidationSentGauge)
+		log.Trace("validation sent", "pos", pos)
 	}
 }
 

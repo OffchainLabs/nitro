@@ -40,10 +40,10 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -1596,24 +1596,27 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 
-	delayBuffer, err := GetDelayBufferConfig(ctx, b.seqInbox)
-	if err != nil {
-		return false, err
-	}
-	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil {
-		latestHeader, err := b.l1Reader.LastHeader(ctx)
+	var delayBufferConfig *DelayBufferConfig
+	if b.building.firstDelayedMsg != nil { // Only fetch delayBufferConfig config when needed
+		delayBufferConfig, err = GetDelayBufferConfig(ctx, b.seqInbox)
 		if err != nil {
 			return false, err
 		}
-		latestBlock := latestHeader.Number.Uint64()
-		firstDelayedMsgBlock := b.building.firstDelayedMsg.Message.Header.BlockNumber
-		threasholdLimit := firstDelayedMsgBlock + delayBuffer.Threshold - b.config().DelayBufferThresholdMargin
-		if latestBlock >= threasholdLimit {
-			log.Info("force post batch because of the delay buffer",
-				"firstDelayedMsgBlock", firstDelayedMsgBlock,
-				"threshold", delayBuffer.Threshold,
-				"latestBlock", latestBlock)
-			forcePostBatch = true
+		if delayBufferConfig.Enabled {
+			latestHeader, err := b.l1Reader.LastHeader(ctx)
+			if err != nil {
+				return false, err
+			}
+			latestBlock := latestHeader.Number.Uint64()
+			firstDelayedMsgBlock := b.building.firstDelayedMsg.Message.Header.BlockNumber
+			threasholdLimit := firstDelayedMsgBlock + delayBufferConfig.Threshold - b.config().DelayBufferThresholdMargin
+			if latestBlock >= threasholdLimit {
+				log.Info("force post batch because of the delay buffer",
+					"firstDelayedMsgBlock", firstDelayedMsgBlock,
+					"threshold", delayBufferConfig.Threshold,
+					"latestBlock", latestBlock)
+				forcePostBatch = true
+			}
 		}
 	}
 
@@ -1713,8 +1716,8 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	delayProofNeeded := delayBuffer.Enabled && b.building.firstDelayedMsg != nil
-	delayProofNeeded = delayProofNeeded && (config.DelayBufferAlwaysUpdatable || delayBuffer.isUpdatable(latestHeader.Number.Uint64()))
+	delayProofNeeded := b.building.firstDelayedMsg != nil && delayBufferConfig != nil && delayBufferConfig.Enabled // checking if delayBufferConfig is non-nil isnt needed, but better to be safe
+	delayProofNeeded = delayProofNeeded && (config.DelayBufferAlwaysUpdatable || delayBufferConfig.isUpdatable(latestHeader.Number.Uint64()))
 	if delayProofNeeded {
 		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.inbox)
 		if err != nil {

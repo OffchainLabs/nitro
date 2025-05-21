@@ -2,7 +2,6 @@ package conf
 
 import (
 	"fmt"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -10,6 +9,8 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/util"
 )
 
 type InitConfig struct {
@@ -63,7 +64,7 @@ var InitConfigDefault = InitConfig{
 	Prune:                         "",
 	PruneParallelStorageTraversal: false,
 	PruneBloomSize:                2048,
-	PruneThreads:                  runtime.NumCPU(),
+	PruneThreads:                  util.GoMaxProcs(),
 	PruneTrieCleanCache:           600,
 	RecreateMissingStateFrom:      0, // 0 = disabled
 	RebuildLocalWasm:              "auto",

@@ -9,12 +9,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/ethdb/pebble"
+
+	"github.com/offchainlabs/nitro/util"
 )
 
 type PersistentConfig struct {
@@ -119,7 +120,7 @@ type PebbleConfig struct {
 
 var PebbleConfigDefault = PebbleConfig{
 	SyncMode:                 false, // use NO-SYNC mode, see: https://github.com/ethereum/go-ethereum/issues/29819
-	MaxConcurrentCompactions: runtime.NumCPU(),
+	MaxConcurrentCompactions: util.GoMaxProcs(),
 	Experimental:             PebbleExperimentalConfigDefault,
 }
 

@@ -41,7 +41,7 @@ jobs:
         run: sudo apt update && sudo apt install -y wabt gotestsum
 
       - name: Setup nodejs
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
@@ -223,7 +223,7 @@ jobs:
 
       - name: Setup nodejs
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
