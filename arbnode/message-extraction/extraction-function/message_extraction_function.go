@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -45,6 +46,13 @@ type ReceiptFetcher interface {
 	) (*types.Receipt, error)
 }
 
+type logUnpacker struct{}
+
+func (_ *logUnpacker) unpackLogTo(
+	event any, abi *abi.ABI, eventName string, log types.Log) error {
+	return unpackLogTo(event, abi, eventName, log)
+}
+
 // ExtractMessages is a pure function that can read a parent chain block and
 // and input MEL state to run a specific algorithm that extracts Arbitrum messages and
 // delayed messages observed from transactions in the block. This function can be proven
@@ -80,6 +88,7 @@ func ExtractMessages(
 		state,
 		parentChainBlock,
 		receiptFetcher,
+		&logUnpacker{},
 	)
 	if err != nil {
 		return nil, nil, nil, err

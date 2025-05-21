@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode"
@@ -12,11 +13,16 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
+type eventUnpacker interface {
+	unpackLogTo(event any, abi *abi.ABI, eventName string, log types.Log) error
+}
+
 func parseBatchesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
 	parentChainBlock *types.Block,
 	receiptFetcher ReceiptFetcher,
+	eventUnpacker eventUnpacker,
 ) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 	allBatches := make([]*arbnode.SequencerInboxBatch, 0)
 	allBatchTxs := make([]*types.Transaction, 0)
@@ -49,7 +55,7 @@ func parseBatchesFromBlock(
 				continue
 			}
 			event := new(bridgegen.SequencerInboxSequencerBatchDelivered)
-			if err := unpackLogTo(event, seqInboxABI, "SequencerBatchDelivered", *log); err != nil {
+			if err := eventUnpacker.unpackLogTo(event, seqInboxABI, "SequencerBatchDelivered", *log); err != nil {
 				return nil, nil, nil, err
 			}
 			if !event.BatchSequenceNumber.IsUint64() {
