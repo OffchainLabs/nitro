@@ -3,6 +3,7 @@ package extractionfunction
 import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 

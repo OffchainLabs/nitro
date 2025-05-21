@@ -7,15 +7,17 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/stretchr/testify/require"
 )
 
 var _ ParentChainReader = (*mockParentChainReader)(nil)
@@ -23,6 +25,7 @@ var _ meltypes.StateDatabase = (*mockMELDB)(nil)
 
 func TestMessageExtractor(t *testing.T) {
 	ctx := context.Background()
+	emptyblk := types.NewBlock(&types.Header{}, nil, nil, nil)
 	parentChainReader := &mockParentChainReader{
 		blocks: map[common.Hash]*types.Block{
 			{}:                              {},
@@ -32,12 +35,16 @@ func TestMessageExtractor(t *testing.T) {
 			{}: {},
 		},
 	}
+	parentChainReader.blocks[common.BigToHash(big.NewInt(1))] = emptyblk
 	initialStateFetcher := &mockInitialStateFetcher{}
+	mockDB := &mockMELDB{
+		states: make(map[common.Hash]*meltypes.State),
+	}
 	extractor, err := NewMessageExtractor(
 		parentChainReader,
 		&chaininfo.RollupAddresses{},
 		initialStateFetcher,
-		&mockMELDB{},
+		mockDB,
 		[]daprovider.Reader{},
 		common.Hash{},
 		0,
@@ -87,6 +94,37 @@ func TestMessageExtractor(t *testing.T) {
 		parentChainReader.returnErr = ethereum.NotFound
 		_, err = extractor.Act(ctx)
 		require.NoError(t, err)
+		require.True(t, extractor.CurrentFSMState() == ProcessingNextBlock)
+
+		// Correctly transitions to the saving messages state.
+		parentChainReader.returnErr = nil
+		_, err = extractor.Act(ctx)
+		require.NoError(t, err)
+		require.True(t, extractor.CurrentFSMState() == SavingMessages)
+	})
+	t.Run("SavingMessages", func(t *testing.T) {
+		// Correctly transitions back to the ProcessingNextBlock state.
+		_, err = extractor.Act(ctx)
+		require.NoError(t, err)
+		require.True(t, extractor.CurrentFSMState() == ProcessingNextBlock)
+	})
+	t.Run("Reorging", func(t *testing.T) {
+		parentChainReader.blocks[common.BigToHash(big.NewInt(1))] = types.NewBlock(
+			&types.Header{ParentHash: common.MaxHash}, nil, nil, nil,
+		)
+		require.True(t, len(mockDB.states) == 1)
+		mockDB.states[common.Hash{}] = &meltypes.State{}
+
+		// Correctly transitions to the Reorging messages state.
+		parentChainReader.returnErr = nil
+		_, err = extractor.Act(ctx)
+		require.NoError(t, err)
+		require.True(t, extractor.CurrentFSMState() == Reorging)
+
+		// Reorging step should delete the state? and then proceed to ProcessingNextBlock state
+		_, err = extractor.Act(ctx)
+		require.NoError(t, err)
+		require.True(t, len(mockDB.states) == 1)
 		require.True(t, extractor.CurrentFSMState() == ProcessingNextBlock)
 	})
 }
@@ -157,20 +195,32 @@ func (m *mockParentChainReader) TransactionReceipt(ctx context.Context, txHash c
 }
 
 type mockMELDB struct {
+	states map[common.Hash]*meltypes.State
 }
 
 func (m *mockMELDB) State(
 	_ context.Context,
-	_ common.Hash,
+	parentChainBlockHash common.Hash,
 ) (*meltypes.State, error) {
-	return nil, errors.New("unimplemented")
+	if state, ok := m.states[parentChainBlockHash]; ok {
+		return state, nil
+	}
+	return nil, errors.New("doesn't exist")
 }
 
 func (m *mockMELDB) SaveState(
 	_ context.Context,
-	_ *meltypes.State,
+	state *meltypes.State,
 	_ []*arbostypes.MessageWithMetadata,
 ) error {
+	m.states[state.ParentChainBlockHash] = state
+	return nil
+}
+
+func (m *mockMELDB) DeleteState(
+	ctx context.Context, parentChainBlockHash common.Hash,
+) error {
+	delete(m.states, parentChainBlockHash)
 	return nil
 }
 
