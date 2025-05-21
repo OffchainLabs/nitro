@@ -636,6 +636,18 @@ func TestArbNativeTokenManager(t *testing.T) {
 	if err == nil || err.Error() != "execution reverted" {
 		t.Fatal("expected sending L2 to L1 value to fail")
 	}
+
+	// After clearning the native token owners, sending L2 to L1 value should
+	// work again.
+	tx, err = arbOwner.RemoveNativeTokenOwner(&authOwner, nativeTokenOwnerAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	authNativeTokenOwner.Value = big.NewInt(100)
+	_, err = arbSys.SendTxToL1(&authNativeTokenOwner, common.Address{}, []byte{})
+	if err != nil {
+		t.Fatal("expected sending L2 to L1 value to succeed")
+	}
 }
 
 func TestNativeTokenManagementDisabledByDefault(t *testing.T) {

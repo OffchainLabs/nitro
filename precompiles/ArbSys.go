@@ -117,6 +117,15 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	arbosState := c.State
 
 	if arbosState.ArbOSVersion() >= params.ArbosVersion_41 && value.BitLen() != 0 {
+		// As of ArbOS 41, the concept of "native token owners" was introduced.
+		// Native token owners are accounts that are allowed to mint and burn
+		// the chain's native token to and from their own address.
+		// Typically, the "burn" functionality is used to send funds to the
+		// parent chain (L1) through some off-chain mechanism.
+		// If users were allowed to ALSO send value to the parent chain with
+		// the SendTxToL1 precompile, it would be possible to send the value
+		// both to the parent chain through the outbox contract and by burning
+		// the native token.
 		numOwners, err := arbosState.NativeTokenOwners().Size()
 		if err != nil {
 			return nil, err
