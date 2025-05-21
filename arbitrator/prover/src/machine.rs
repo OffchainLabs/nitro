@@ -990,8 +990,6 @@ pub struct Machine {
     preimage_resolver: PreimageResolverWrapper,
     /// Linkable Stylus modules in compressed form. Not part of the machine hash.
     stylus_modules: HashMap<Bytes32, Vec<u8>>,
-    /// Cache of validated preimages. Not part of machine hash.
-    validated_preimages: HashMap<(PreimageType, Bytes32), bool>,
     initial_hash: Bytes32,
     context: u64,
     debug_info: bool, // Not part of machine hash
@@ -1559,7 +1557,6 @@ impl Machine {
             first_too_far,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             stylus_modules: HashMap::default(),
-            validated_preimages: HashMap::default(),
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info,
@@ -1592,7 +1589,6 @@ impl Machine {
             first_too_far: Default::default(),
             preimage_resolver: PreimageResolverWrapper::new(Arc::new(|_, _, _| None)),
             stylus_modules: Default::default(),
-            validated_preimages: Default::default(),
             initial_hash: Default::default(),
             context: Default::default(),
             debug_info: Default::default(),
@@ -1647,7 +1643,6 @@ impl Machine {
             first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             stylus_modules: HashMap::default(),
-            validated_preimages: HashMap::default(),
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info: false,
@@ -2475,7 +2470,8 @@ impl Machine {
                     let preimage_type = value_stack.pop().unwrap().assume_u32();
 
                     // Try to convert preimage_type to PreimageType
-                    let Ok(preimage_ty) = PreimageType::try_from(u8::try_from(preimage_type)?) else {
+                    let Ok(preimage_ty) = PreimageType::try_from(u8::try_from(preimage_type)?)
+                    else {
                         // For invalid preimage types, return 0 (invalid)
                         value_stack.push(Value::from(0u32));
                         continue;
@@ -2492,16 +2488,12 @@ impl Machine {
                         continue;
                     }
 
-                    // For CustomDA, check if it's validated, or try to validate it
-                    let is_valid = if let Some(valid) = self.validated_preimages.get(&(preimage_ty, hash)) {
-                        *valid
-                    } else {
-                        // TODO This will need to call into the DA service to
-						// validate the hash. For now, just check if the preimage exists
-                        let valid = self.preimage_resolver.get(self.context, preimage_ty, hash).is_some();
-                        self.validated_preimages.insert((preimage_ty, hash), valid);
-                        valid
-                    };
+                    // For CustomDA, check if the preimage exists in the resolver
+                    // (which means it was pre-validated during batch processing)
+                    let is_valid = self
+                        .preimage_resolver
+                        .get(self.context, preimage_ty, hash)
+                        .is_some();
 
                     value_stack.push(Value::from(if is_valid { 1u32 } else { 0u32 }));
                 }
@@ -2518,17 +2510,9 @@ impl Machine {
                         error!();
                     };
 
-                    // For CustomDA type, check if it's been validated
-                    if preimage_ty == PreimageType::CustomDA {
-                        if !self.validated_preimages.get(&(preimage_ty, hash)).copied().unwrap_or(false) {
-                            eprintln!(
-                                "{} for hash {}",
-                                "CustomDA preimage not validated".red(),
-                                hash.red(),
-                            );
-                            error!();
-                        }
-                    }
+                    // For CustomDA type, ValidatePreimage should have been called first
+                    // ReadPreImage assumes preimages are valid and available
+                    // The preimage_resolver only contains pre-validated preimages
 
                     let Some(preimage) =
                         self.preimage_resolver.get(self.context, preimage_ty, hash)
