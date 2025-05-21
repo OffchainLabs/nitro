@@ -5,10 +5,16 @@ package daprovider
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbutil"
+)
+
+// Common errors
+var (
+	ErrNoSuchPreimage = errors.New("no such preimage")
 )
 
 // PreimageWithType represents a preimage along with its type

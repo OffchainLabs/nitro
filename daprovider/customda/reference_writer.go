@@ -92,7 +92,7 @@ func (w *Writer) Store(
 	copy(certificate[1:33], keccak256Hash[:])
 	copy(certificate[33:65], sha256Hash[:])
 	copy(certificate[65:81], nonce)
-	binary.BigEndian.PutUint32(certificate[81:85], uint32(len(batchData)))
+	binary.BigEndian.PutUint32(certificate[81:85], uint32(len(batchData))) // #nosec G115
 
 	log.Info("CustomDA batch stored",
 		"keccak256", keccak256Hash.Hex(),

@@ -12,13 +12,17 @@ import (
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/customda"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -27,9 +31,14 @@ import (
 )
 
 type Config struct {
-	ProviderServer   dapserver.ServerConfig      `koanf:"provider-server"`
+	Mode             DAProviderMode           `koanf:"mode"`
+	ProviderServer   dapserver.ServerConfig   `koanf:"provider-server"`
 	WithDataSigner   bool                     `koanf:"with-data-signer"`
 	DataSignerWallet genericconf.WalletConfig `koanf:"data-signer-wallet"`
+
+	// Mode-specific configs
+	Anytrust das.DataAvailabilityConfig `koanf:"anytrust"`
+	Customda customda.Config            `koanf:"customda"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel string                 `koanf:"log-level"`
@@ -42,9 +51,12 @@ type Config struct {
 }
 
 var DefaultConfig = Config{
+	Mode:             ModeAnyTrust,
 	ProviderServer:   dapserver.DefaultServerConfig,
 	WithDataSigner:   false,
 	DataSignerWallet: arbnode.DefaultBatchPosterL1WalletConfig,
+	Anytrust:         das.DefaultDataAvailabilityConfig,
+	Customda:         customda.DefaultConfig,
 	Conf:             genericconf.ConfConfigDefault,
 	LogLevel:         "INFO",
 	LogType:          "plaintext",
@@ -61,6 +73,7 @@ func printSampleUsage(progname string) {
 
 func parseDAProvider(args []string) (*Config, error) {
 	f := flag.NewFlagSet("daprovider", flag.ContinueOnError)
+	f.String("mode", string(DefaultConfig.Mode), "DA provider mode (anytrust or customda)")
 	f.Bool("with-data-signer", DefaultConfig.WithDataSigner, "set to enable data signing when processing store requests. If enabled requires data-signer-wallet config")
 	genericconf.WalletConfigAddOptions("data-signer-wallet", f, DefaultConfig.DataSignerWallet.Pathname)
 
@@ -74,6 +87,11 @@ func parseDAProvider(args []string) (*Config, error) {
 	f.String("log-type", DefaultConfig.LogType, "log type (plaintext or json)")
 
 	dapserver.ServerConfigAddOptions("provider-server", f)
+
+	// Add mode-specific options
+	das.DataAvailabilityConfigAddDaserverOptions("anytrust", f)
+	customda.ConfigAddOptions("customda", f)
+
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -81,7 +99,7 @@ func parseDAProvider(args []string) (*Config, error) {
 		return nil, err
 	}
 
-	if err = das.FixKeysetCLIParsing("provider-server.data-availability.rpc-aggregator.backends", k); err != nil {
+	if err = das.FixKeysetCLIParsing("anytrust.rpc-aggregator.backends", k); err != nil {
 		return nil, err
 	}
 
@@ -92,7 +110,7 @@ func parseDAProvider(args []string) (*Config, error) {
 
 	if config.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"provider-server.data-availability.key.priv-key": "",
+			"anytrust.key.priv-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -124,6 +142,12 @@ func startup() error {
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
+
+	// Validate mode
+	if config.Mode == "" {
+		config.Mode = ModeAnyTrust // default for backwards compatibility
+	}
+
 	logLevel, err := genericconf.ToSlogLevel(config.LogLevel)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -154,50 +178,104 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if !config.ProviderServer.DataAvailability.Enable {
-		return errors.New("--provider-server.data-availability.enable is required to start a provider server")
-	}
-
-	if config.ProviderServer.DataAvailability.ParentChainNodeURL == "" || config.ProviderServer.DataAvailability.ParentChainNodeURL == "none" {
-		return errors.New("--provider-server.data-availability.parent-chain-node-url is required to start a provider server")
-	}
-
-	if config.ProviderServer.DataAvailability.SequencerInboxAddress == "" || config.ProviderServer.DataAvailability.SequencerInboxAddress == "none" {
-		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address")
-	}
-
-	l1Client, err := das.GetL1Client(ctx, config.ProviderServer.DataAvailability.ParentChainConnectionAttempts, config.ProviderServer.DataAvailability.ParentChainNodeURL)
-	if err != nil {
-		return err
-	}
-
-	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
-	l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys)
-	if err != nil {
-		return err
-	}
-
-	seqInboxAddr, err := das.OptionalAddressFromString(config.ProviderServer.DataAvailability.SequencerInboxAddress)
-	if err != nil {
-		return err
-	}
-	if seqInboxAddr == nil {
-		return errors.New("must provide --provider-server.data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
-	}
-
+	// Mode-specific validation and setup
+	var l1Client *ethclient.Client
+	var l1Reader *headerreader.HeaderReader
+	var seqInboxAddr common.Address
 	var dataSigner signature.DataSignerFunc
-	if config.WithDataSigner && config.ProviderServer.EnableDAWriter {
-		l1ChainId, err := l1Client.ChainID(ctx)
-		if err != nil {
-			return fmt.Errorf("couldn't read L1 chainid: %w", err)
+
+	if config.Mode == ModeAnyTrust {
+		if !config.Anytrust.Enable {
+			return errors.New("--anytrust.enable is required to start an AnyTrust provider server")
 		}
-		if _, dataSigner, err = util.OpenWallet("data-signer", &config.DataSignerWallet, l1ChainId); err != nil {
+
+		if config.Anytrust.ParentChainNodeURL == "" || config.Anytrust.ParentChainNodeURL == "none" {
+			return errors.New("--anytrust.parent-chain-node-url is required to start an AnyTrust provider server")
+		}
+
+		if config.Anytrust.SequencerInboxAddress == "" || config.Anytrust.SequencerInboxAddress == "none" {
+			return errors.New("--anytrust.sequencer-inbox-address must be set to a valid L1 contract address")
+		}
+
+		l1Client, err = das.GetL1Client(ctx, config.Anytrust.ParentChainConnectionAttempts, config.Anytrust.ParentChainNodeURL)
+		if err != nil {
 			return err
 		}
+
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys)
+		if err != nil {
+			return err
+		}
+
+		seqInboxAddrPtr, err := das.OptionalAddressFromString(config.Anytrust.SequencerInboxAddress)
+		if err != nil {
+			return err
+		}
+		if seqInboxAddrPtr == nil {
+			return errors.New("must provide --anytrust.sequencer-inbox-address set to a valid contract address")
+		}
+		seqInboxAddr = *seqInboxAddrPtr
+
+		if config.WithDataSigner && config.ProviderServer.EnableDAWriter {
+			l1ChainId, err := l1Client.ChainID(ctx)
+			if err != nil {
+				return fmt.Errorf("couldn't read L1 chainid: %w", err)
+			}
+			if _, dataSigner, err = util.OpenWallet("data-signer", &config.DataSignerWallet, l1ChainId); err != nil {
+				return err
+			}
+		}
+	} else if config.Mode == ModeCustomDA {
+		if !config.Customda.Enable {
+			return errors.New("--customda.enable is required to start a CustomDA provider server")
+		}
 	}
 
-	log.Info("Starting json rpc server", "addr", config.ProviderServer.Addr, "port", config.ProviderServer.Port)
-	providerServer, closeFn, err := dapserver.NewServer(ctx, &config.ProviderServer, dataSigner, l1Client, l1Reader, *seqInboxAddr)
+	// Create DA provider factory based on mode
+	factory, err := NewDAProviderFactory(
+		config.Mode,
+		&config.Anytrust,
+		&config.Customda,
+		dataSigner,
+		l1Client,
+		l1Reader,
+		seqInboxAddr,
+		config.ProviderServer.EnableDAWriter,
+	)
+	if err != nil {
+		return err
+	}
+
+	if err := factory.ValidateConfig(); err != nil {
+		return err
+	}
+
+	// Create reader/writer using factory
+	var cleanupFuncs []func()
+
+	reader, readerCleanup, err := factory.CreateReader(ctx)
+	if err != nil {
+		return err
+	}
+	if readerCleanup != nil {
+		cleanupFuncs = append(cleanupFuncs, readerCleanup)
+	}
+
+	var writer daprovider.Writer
+	if config.ProviderServer.EnableDAWriter {
+		var writerCleanup func()
+		writer, writerCleanup, err = factory.CreateWriter(ctx)
+		if err != nil {
+			return err
+		}
+		if writerCleanup != nil {
+			cleanupFuncs = append(cleanupFuncs, writerCleanup)
+		}
+	}
+
+	log.Info("Starting json rpc server", "mode", config.Mode, "addr", config.ProviderServer.Addr, "port", config.ProviderServer.Port)
+	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer)
 	if err != nil {
 		return err
 	}
@@ -211,9 +289,12 @@ func startup() error {
 	if err = providerServer.Shutdown(ctx); err != nil {
 		return err
 	}
-	if closeFn != nil {
-		closeFn()
+
+	// Call all cleanup functions
+	for _, cleanup := range cleanupFuncs {
+		cleanup()
 	}
+
 	if l1Reader != nil && l1Reader.Started() {
 		l1Reader.StopAndWait()
 	}

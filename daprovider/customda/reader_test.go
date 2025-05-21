@@ -14,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -38,7 +39,7 @@ func TestCustomDAReaderRecoverPayload(t *testing.T) {
 	message := append([]byte{daprovider.CustomDAMessageHeaderFlag}, batchData...)
 
 	// Store the batch via the writer
-	certificate, err := writer.Store(ctx, message, uint64(time.Now().Add(time.Hour).Unix()), false)
+	certificate, err := writer.Store(ctx, message, uint64(time.Now().Add(time.Hour).Unix()), false) // #nosec G115
 	testhelpers.RequireImpl(t, err, "Failed to store batch")
 
 	// Create a preimages map
@@ -47,7 +48,7 @@ func TestCustomDAReaderRecoverPayload(t *testing.T) {
 	// Recover payload from the batch using the reader
 	payload, newPreimages, err := reader.RecoverPayloadFromBatch(
 		ctx,
-		123, // batchNum (arbitrary for test)
+		123,           // batchNum (arbitrary for test)
 		common.Hash{}, // batchBlockHash (arbitrary for test)
 		certificate,
 		preimagesMap,
@@ -66,7 +67,7 @@ func TestCustomDAReaderRecoverPayload(t *testing.T) {
 	}
 
 	// Check if custom preimage type is in the map
-	if customPreimages, exists := newPreimages[arbutil.CustomPreimageType]; !exists {
+	if customPreimages, exists := newPreimages[arbutil.CustomDAPreimageType]; !exists {
 		testhelpers.FailImpl(t, "No CustomPreimageType preimages in the map")
 	} else if len(customPreimages) == 0 {
 		testhelpers.FailImpl(t, "Empty CustomPreimageType preimages map")
@@ -107,7 +108,7 @@ func TestCustomDAReaderInvalidCertificate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := reader.RecoverPayloadFromBatch(
 				ctx,
-				123, // batchNum
+				123,           // batchNum
 				common.Hash{}, // batchBlockHash
 				tc.certificate,
 				preimagesMap,
@@ -133,20 +134,20 @@ func TestCustomDAReaderWithMalformedCertificate(t *testing.T) {
 	// Create valid-looking certificate with wrong hash
 	certificate := make([]byte, 85) // Correct length
 	certificate[0] = daprovider.CustomDAMessageHeaderFlag
-	
+
 	// Set a hash that doesn't exist in our validator
 	nonExistentHash := common.HexToHash("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
 	copy(certificate[1:33], nonExistentHash.Bytes())
-	
+
 	// Set some dummy SHA256 hash
 	dummySha256 := sha256.Sum256([]byte("dummy data"))
 	copy(certificate[33:65], dummySha256[:])
-	
+
 	// Set some dummy nonce
 	for i := 65; i < 81; i++ {
 		certificate[i] = byte(i)
 	}
-	
+
 	// Set length
 	binary.BigEndian.PutUint32(certificate[81:85], 100)
 
@@ -156,7 +157,7 @@ func TestCustomDAReaderWithMalformedCertificate(t *testing.T) {
 	// Recover should fail since the hash doesn't exist
 	_, _, err := reader.RecoverPayloadFromBatch(
 		ctx,
-		123, // batchNum
+		123,           // batchNum
 		common.Hash{}, // batchBlockHash
 		certificate,
 		preimagesMap,
@@ -181,17 +182,17 @@ func TestCustomDAReaderEndToEnd(t *testing.T) {
 
 	// Create test batch data
 	originalData := []byte("This is a test batch with some custom data " + time.Now().String())
-	
+
 	// Prepend CustomDA header flag
 	message := append([]byte{daprovider.CustomDAMessageHeaderFlag}, originalData...)
 
 	// Store the batch
-	certificate, err := writer.Store(ctx, message, uint64(time.Now().Add(time.Hour).Unix()), false)
+	certificate, err := writer.Store(ctx, message, uint64(time.Now().Add(time.Hour).Unix()), false) // #nosec G115
 	testhelpers.RequireImpl(t, err, "Failed to store batch")
 
 	// Extract the keccak256 hash from the certificate
 	keccak256Hash := common.BytesToHash(certificate[1:33])
-	
+
 	// Verify it matches the expected hash
 	expectedHash := crypto.Keccak256Hash(originalData)
 	if keccak256Hash != expectedHash {
@@ -204,7 +205,7 @@ func TestCustomDAReaderEndToEnd(t *testing.T) {
 	// Recover the payload
 	recoveredPayload, newPreimages, err := reader.RecoverPayloadFromBatch(
 		ctx,
-		123, // batchNum
+		123,           // batchNum
 		common.Hash{}, // batchBlockHash
 		certificate,
 		preimagesMap,
@@ -218,17 +219,17 @@ func TestCustomDAReaderEndToEnd(t *testing.T) {
 	}
 
 	// Verify the preimage was added to the map
-	customPreimages, exists := newPreimages[arbutil.CustomPreimageType]
+	customPreimages, exists := newPreimages[arbutil.CustomDAPreimageType]
 	if !exists {
 		testhelpers.FailImpl(t, "No CustomPreimageType preimages in the map")
 	}
-	
+
 	// Verify the preimage hash matches
 	preimage, exists := customPreimages[keccak256Hash]
 	if !exists {
 		testhelpers.FailImpl(t, "Preimage with expected hash not found in the map")
 	}
-	
+
 	// Verify preimage content matches
 	if !bytes.Equal(preimage, originalData) {
 		testhelpers.FailImpl(t, "Preimage content doesn't match original data")

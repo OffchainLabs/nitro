@@ -77,63 +77,36 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 	return nil, errors.New("JWT secret file not found")
 }
 
-func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.DataSignerFunc, l1Client *ethclient.Client, l1Reader *headerreader.HeaderReader, sequencerInboxAddr common.Address) (*http.Server, func(), error) {
-	var err error
-	var daWriter das.DataAvailabilityServiceWriter
-	var daReader das.DataAvailabilityServiceReader
-	var dasKeysetFetcher *das.KeysetFetcher
-	var dasLifecycleManager *das.LifecycleManager
-	if config.EnableDAWriter {
-		daWriter, daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReaderAndWriter(ctx, &config.DataAvailability, dataSigner, l1Client, sequencerInboxAddr)
-		if err != nil {
-			return nil, nil, err
-		}
-	} else {
-		daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReader(ctx, &config.DataAvailability, l1Reader, &sequencerInboxAddr)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
-	if config.DataAvailability.PanicOnError {
-		if daWriter != nil {
-			daWriter = das.NewWriterPanicWrapper(daWriter)
-		}
-		daReader = das.NewReaderPanicWrapper(daReader)
-	}
-
+// NewServerWithDAPProvider creates a new server with pre-created reader/writer components
+func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.Addr, config.Port))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	rpcServer := rpc.NewServer()
 	if config.RPCServerBodyLimit > 0 {
 		rpcServer.SetHTTPBodyLimit(config.RPCServerBodyLimit)
 	}
-	var writer daprovider.Writer
-	if daWriter != nil {
-		writer = dasutil.NewWriterForDAS(daWriter)
-	}
+
 	server := &Server{
-		reader: dasutil.NewReaderForDAS(daReader, dasKeysetFetcher),
+		reader: reader,
 		writer: writer,
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	addr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
-		return nil, nil, errors.New("failed getting provider server address from listener")
+		return nil, errors.New("failed getting provider server address from listener")
 	}
 
 	var handler http.Handler
 	if config.JWTSecret != "" {
 		jwt, err := fetchJWTSecret(config.JWTSecret)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed creating new provider server: %w", err)
+			return nil, fmt.Errorf("failed creating new provider server: %w", err)
 		}
 		handler = node.NewHTTPHandlerStack(rpcServer, nil, nil, jwt)
 	} else {
@@ -160,11 +133,54 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 		_ = srv.Shutdown(context.Background())
 	}()
 
-	return srv, func() {
+	return srv, nil
+}
+
+// NewServer creates a new server with traditional DAS configuration (legacy interface)
+func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.DataSignerFunc, l1Client *ethclient.Client, l1Reader *headerreader.HeaderReader, sequencerInboxAddr common.Address) (*http.Server, func(), error) {
+	var err error
+	var daWriter das.DataAvailabilityServiceWriter
+	var daReader das.DataAvailabilityServiceReader
+	var dasKeysetFetcher *das.KeysetFetcher
+	var dasLifecycleManager *das.LifecycleManager
+	if config.EnableDAWriter {
+		daWriter, daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReaderAndWriter(ctx, &config.DataAvailability, dataSigner, l1Client, sequencerInboxAddr)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReader(ctx, &config.DataAvailability, l1Reader, &sequencerInboxAddr)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
+	if config.DataAvailability.PanicOnError {
+		if daWriter != nil {
+			daWriter = das.NewWriterPanicWrapper(daWriter)
+		}
+		daReader = das.NewReaderPanicWrapper(daReader)
+	}
+
+	var writer daprovider.Writer
+	if daWriter != nil {
+		writer = dasutil.NewWriterForDAS(daWriter)
+	}
+	reader := dasutil.NewReaderForDAS(daReader, dasKeysetFetcher)
+
+	srv, err := NewServerWithDAPProvider(ctx, config, reader, writer)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cleanupFn := func() {
 		if dasLifecycleManager != nil {
 			dasLifecycleManager.StopAndWaitUntil(2 * time.Second)
 		}
-	}, nil
+	}
+
+	return srv, cleanupFn, nil
 }
 
 func (s *Server) IsValidHeaderByte(ctx context.Context, headerByte byte) (*daclient.IsValidHeaderByteResult, error) {

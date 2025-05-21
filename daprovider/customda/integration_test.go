@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -36,7 +37,7 @@ func TestFullCustomDAFlow(t *testing.T) {
 	originalMessage := append([]byte{daprovider.CustomDAMessageHeaderFlag}, batchData...)
 
 	// Store the message and get certificate
-	certificate, err := writer.Store(ctx, originalMessage, uint64(time.Now().Add(time.Hour).Unix()), false)
+	certificate, err := writer.Store(ctx, originalMessage, uint64(time.Now().Add(time.Hour).Unix()), false) // #nosec G115 // #nosec G115
 	testhelpers.RequireImpl(t, err, "Failed to store message")
 
 	// Extract hash from certificate
@@ -54,7 +55,7 @@ func TestFullCustomDAFlow(t *testing.T) {
 	// Recover payload from certificate
 	recoveredPayload, newPreimages, err := reader.RecoverPayloadFromBatch(
 		ctx,
-		1, // batchNum
+		1,             // batchNum
 		common.Hash{}, // batchBlockHash
 		certificate,
 		preimagesMap,
@@ -68,7 +69,7 @@ func TestFullCustomDAFlow(t *testing.T) {
 	}
 
 	// Verify preimages were recorded
-	customPreimages, exists := newPreimages[arbutil.CustomPreimageType]
+	customPreimages, exists := newPreimages[arbutil.CustomDAPreimageType]
 	if !exists || len(customPreimages) == 0 {
 		testhelpers.FailImpl(t, "No CustomPreimageType preimages recorded")
 	}
@@ -85,7 +86,7 @@ func TestFullCustomDAFlow(t *testing.T) {
 	}
 
 	// Generate and verify proof using the validator
-	proof, err := validator.GenerateProof(ctx, arbutil.CustomPreimageType, keccak256Hash, 0)
+	proof, err := validator.GenerateProof(ctx, arbutil.CustomDAPreimageType, keccak256Hash, 0)
 	testhelpers.RequireImpl(t, err, "Failed to generate proof")
 
 	// Proof should not be empty
@@ -106,9 +107,9 @@ func TestCustomDAMessageProcessing(t *testing.T) {
 
 	// Test different message sizes
 	testSizes := []int{
-		100,     // Small message
-		4096,    // Medium message
-		65536,   // Large message
+		100,   // Small message
+		4096,  // Medium message
+		65536, // Large message
 	}
 
 	for _, size := range testSizes {
@@ -122,7 +123,7 @@ func TestCustomDAMessageProcessing(t *testing.T) {
 			message := append([]byte{daprovider.CustomDAMessageHeaderFlag}, batchData...)
 
 			// Store and get certificate
-			certificate, err := writer.Store(ctx, message, uint64(time.Now().Add(time.Hour).Unix()), false)
+			certificate, err := writer.Store(ctx, message, uint64(time.Now().Add(time.Hour).Unix()), false) // #nosec G115
 			testhelpers.RequireImpl(t, err, "Failed to store message")
 
 			// Create preimages map
@@ -131,7 +132,7 @@ func TestCustomDAMessageProcessing(t *testing.T) {
 			// Recover payload
 			recoveredPayload, _, err := reader.RecoverPayloadFromBatch(
 				ctx,
-				1, // batchNum
+				1,             // batchNum
 				common.Hash{}, // batchBlockHash
 				certificate,
 				preimagesMap,
@@ -175,7 +176,7 @@ func TestInvalidCustomDAMessages(t *testing.T) {
 		message := []byte{daprovider.CustomDAMessageHeaderFlag}
 
 		// Store should still work but create minimal certificate
-		certificate, err := writer.Store(ctx, message, uint64(time.Now().Add(time.Hour).Unix()), false)
+		certificate, err := writer.Store(ctx, message, uint64(time.Now().Add(time.Hour).Unix()), false) // #nosec G115
 		testhelpers.RequireImpl(t, err, "Failed to store empty message")
 
 		// Create preimages map
@@ -184,7 +185,7 @@ func TestInvalidCustomDAMessages(t *testing.T) {
 		// Recover payload (should be empty but valid)
 		recoveredPayload, _, err := reader.RecoverPayloadFromBatch(
 			ctx,
-			1, // batchNum
+			1,             // batchNum
 			common.Hash{}, // batchBlockHash
 			certificate,
 			preimagesMap,
@@ -204,7 +205,7 @@ func TestInvalidCustomDAMessages(t *testing.T) {
 		message := []byte{daprovider.BrotliMessageHeaderByte, 1, 2, 3, 4}
 
 		// Store should return the message unchanged
-		returnedMessage, err := writer.Store(ctx, message, uint64(time.Now().Add(time.Hour).Unix()), false)
+		returnedMessage, err := writer.Store(ctx, message, uint64(time.Now().Add(time.Hour).Unix()), false) // #nosec G115
 		testhelpers.RequireImpl(t, err, "Failed to process non-CustomDA message")
 
 		// Verify message is unchanged
@@ -218,7 +219,7 @@ func TestInvalidCustomDAMessages(t *testing.T) {
 		// Recover should fail because it's not a valid CustomDA certificate
 		_, _, err = reader.RecoverPayloadFromBatch(
 			ctx,
-			1, // batchNum
+			1,             // batchNum
 			common.Hash{}, // batchBlockHash
 			returnedMessage,
 			preimagesMap,
