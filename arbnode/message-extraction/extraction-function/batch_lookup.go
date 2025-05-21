@@ -48,10 +48,7 @@ func parseBatchesFromBlock(
 		txIndices := make([]uint, 0, len(receipt.Logs))
 		var lastSeqNum *uint64
 		for _, log := range receipt.Logs {
-			if log == nil {
-				continue
-			}
-			if log.Topics[0] != batchDeliveredID {
+			if log == nil || log.Topics[0] != batchDeliveredID {
 				continue
 			}
 			event := new(bridgegen.SequencerInboxSequencerBatchDelivered)

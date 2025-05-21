@@ -19,8 +19,420 @@ import (
 func Test_parseBatchesFromBlock(t *testing.T) {
 	ctx := context.Background()
 	batchPostingTargetAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
+	event, packedLog, wantedBatch := setupParseBatchesTest(t, big.NewInt(1))
+
+	t.Run("block with no transactions", func(t *testing.T) {
+		blockHeader := &types.Header{}
+		blockBody := &types.Body{}
+		block := types.NewBlock(
+			blockHeader,
+			blockBody,
+			nil,
+			trie.NewStackTrie(nil),
+		)
+		batches, txs, txIndices, err := parseBatchesFromBlock(
+			ctx,
+			nil,
+			block,
+			nil,
+			nil,
+		)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(batches))
+		require.Equal(t, 0, len(txs))
+		require.Equal(t, 0, len(txIndices))
+	})
+	t.Run("block with no transactions with a to field", func(t *testing.T) {
+		blockHeader := &types.Header{}
+		txData := &types.DynamicFeeTx{
+			To:        nil,
+			Nonce:     1,
+			GasFeeCap: big.NewInt(1),
+			GasTipCap: big.NewInt(1),
+			Gas:       1,
+			Value:     big.NewInt(0),
+			Data:      nil,
+		}
+		tx := types.NewTx(txData)
+		blockBody := &types.Body{
+			Transactions: []*types.Transaction{tx},
+		}
+		block := types.NewBlock(
+			blockHeader,
+			blockBody,
+			nil,
+			trie.NewStackTrie(nil),
+		)
+		batches, txs, txIndices, err := parseBatchesFromBlock(
+			ctx,
+			nil,
+			block,
+			nil,
+			nil,
+		)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(batches))
+		require.Equal(t, 0, len(txs))
+		require.Equal(t, 0, len(txIndices))
+	})
+	t.Run("block with transactions not targeting the batch posting target address", func(t *testing.T) {
+		blockHeader := &types.Header{}
+		addr := common.BytesToAddress([]byte("deadbeef"))
+		txData := &types.DynamicFeeTx{
+			To:        &addr,
+			Nonce:     1,
+			GasFeeCap: big.NewInt(1),
+			GasTipCap: big.NewInt(1),
+			Gas:       1,
+			Value:     big.NewInt(0),
+			Data:      nil,
+		}
+		tx := types.NewTx(txData)
+		blockBody := &types.Body{
+			Transactions: []*types.Transaction{tx},
+		}
+		block := types.NewBlock(
+			blockHeader,
+			blockBody,
+			nil,
+			trie.NewStackTrie(nil),
+		)
+		melState := &meltypes.State{
+			BatchPostingTargetAddress: batchPostingTargetAddr,
+		}
+		batches, txs, txIndices, err := parseBatchesFromBlock(
+			ctx,
+			melState,
+			block,
+			nil,
+			nil,
+		)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(batches))
+		require.Equal(t, 0, len(txs))
+		require.Equal(t, 0, len(txIndices))
+	})
+	t.Run("bad receipt fetcher request", func(t *testing.T) {
+		blockHeader := &types.Header{}
+		txData := &types.DynamicFeeTx{
+			To:        &batchPostingTargetAddr,
+			Nonce:     1,
+			GasFeeCap: big.NewInt(1),
+			GasTipCap: big.NewInt(1),
+			Gas:       1,
+			Value:     big.NewInt(0),
+			Data:      nil,
+		}
+		tx := types.NewTx(txData)
+		blockBody := &types.Body{
+			Transactions: []*types.Transaction{tx},
+		}
+		block := types.NewBlock(
+			blockHeader,
+			blockBody,
+			nil,
+			trie.NewStackTrie(nil),
+		)
+		melState := &meltypes.State{
+			BatchPostingTargetAddress: batchPostingTargetAddr,
+		}
+		receiptFetcher := &mockReceiptFetcher{
+			receipts: nil,
+			err:      errors.New("oops"),
+		}
+		_, _, _, err := parseBatchesFromBlock(
+			ctx,
+			melState,
+			block,
+			receiptFetcher,
+			nil,
+		)
+		require.ErrorContains(t, err, "oops")
+	})
+	t.Run("transactions with no receipt logs", func(t *testing.T) {
+		blockHeader := &types.Header{}
+		txData := &types.DynamicFeeTx{
+			To:        &batchPostingTargetAddr,
+			Nonce:     1,
+			GasFeeCap: big.NewInt(1),
+			GasTipCap: big.NewInt(1),
+			Gas:       1,
+			Value:     big.NewInt(0),
+			Data:      nil,
+		}
+		tx := types.NewTx(txData)
+		blockBody := &types.Body{
+			Transactions: []*types.Transaction{tx},
+		}
+		receipt := &types.Receipt{
+			Logs: []*types.Log{},
+		}
+		receipts := []*types.Receipt{receipt}
+		block := types.NewBlock(
+			blockHeader,
+			blockBody,
+			receipts,
+			trie.NewStackTrie(nil),
+		)
+		melState := &meltypes.State{
+			BatchPostingTargetAddress: batchPostingTargetAddr,
+		}
+		receiptFetcher := &mockReceiptFetcher{
+			receipts: receipts,
+			err:      nil,
+		}
+		batches, txs, txIndices, err := parseBatchesFromBlock(
+			ctx,
+			melState,
+			block,
+			receiptFetcher,
+			nil,
+		)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(batches))
+		require.Equal(t, 0, len(txs))
+		require.Equal(t, 0, len(txIndices))
+	})
+	t.Run("receipt log with wrong topic id", func(t *testing.T) {
+		blockHeader := &types.Header{}
+		txData := &types.DynamicFeeTx{
+			To:        &batchPostingTargetAddr,
+			Nonce:     1,
+			GasFeeCap: big.NewInt(1),
+			GasTipCap: big.NewInt(1),
+			Gas:       1,
+			Value:     big.NewInt(0),
+			Data:      nil,
+		}
+		tx := types.NewTx(txData)
+		blockBody := &types.Body{
+			Transactions: []*types.Transaction{tx},
+		}
+		receipt := &types.Receipt{
+			Logs: []*types.Log{
+				{
+					Topics: []common.Hash{common.BytesToHash([]byte("wrong topic"))},
+				},
+			},
+		}
+		receipts := []*types.Receipt{receipt}
+		block := types.NewBlock(
+			blockHeader,
+			blockBody,
+			receipts,
+			trie.NewStackTrie(nil),
+		)
+		melState := &meltypes.State{
+			BatchPostingTargetAddress: batchPostingTargetAddr,
+		}
+		receiptFetcher := &mockReceiptFetcher{
+			receipts: receipts,
+			err:      nil,
+		}
+		batches, txs, txIndices, err := parseBatchesFromBlock(
+			ctx,
+			melState,
+			block,
+			receiptFetcher,
+			nil,
+		)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(batches))
+		require.Equal(t, 0, len(txs))
+		require.Equal(t, 0, len(txIndices))
+	})
+	t.Run("Unpack log fails", func(t *testing.T) {
+		blockHeader := &types.Header{}
+		txData := &types.DynamicFeeTx{
+			To:        &batchPostingTargetAddr,
+			Nonce:     1,
+			GasFeeCap: big.NewInt(1),
+			GasTipCap: big.NewInt(1),
+			Gas:       1,
+			Value:     big.NewInt(0),
+			Data:      nil,
+		}
+		tx := types.NewTx(txData)
+		blockBody := &types.Body{
+			Transactions: []*types.Transaction{tx},
+		}
+		receipt := &types.Receipt{
+			Logs: []*types.Log{
+				{
+					Topics: []common.Hash{batchDeliveredID},
+					Data:   packedLog,
+				},
+			},
+		}
+		receipts := []*types.Receipt{receipt}
+		block := types.NewBlock(
+			blockHeader,
+			blockBody,
+			receipts,
+			trie.NewStackTrie(nil),
+		)
+		melState := &meltypes.State{
+			BatchPostingTargetAddress: batchPostingTargetAddr,
+		}
+		receiptFetcher := &mockReceiptFetcher{
+			receipts: receipts,
+			err:      nil,
+		}
+		eventUnpacker := &mockEventUnpacker{
+			events: []*bridgegen.SequencerInboxSequencerBatchDelivered{event},
+			idx:    0,
+			err:    errors.New("oops event unpacking error"),
+		}
+		_, _, _, err := parseBatchesFromBlock(
+			ctx,
+			melState,
+			block,
+			receiptFetcher,
+			eventUnpacker,
+		)
+		require.ErrorContains(t, err, "oops event unpacking error")
+	})
+	t.Run("OK", func(t *testing.T) {
+		blockHeader := &types.Header{}
+		txData := &types.DynamicFeeTx{
+			To:        &batchPostingTargetAddr,
+			Nonce:     1,
+			GasFeeCap: big.NewInt(1),
+			GasTipCap: big.NewInt(1),
+			Gas:       1,
+			Value:     big.NewInt(0),
+			Data:      nil,
+		}
+		tx := types.NewTx(txData)
+		blockBody := &types.Body{
+			Transactions: []*types.Transaction{tx},
+		}
+		receipt := &types.Receipt{
+			Logs: []*types.Log{
+				{
+					Topics: []common.Hash{batchDeliveredID},
+					Data:   packedLog,
+				},
+			},
+		}
+		receipts := []*types.Receipt{receipt}
+		block := types.NewBlock(
+			blockHeader,
+			blockBody,
+			receipts,
+			trie.NewStackTrie(nil),
+		)
+		melState := &meltypes.State{
+			BatchPostingTargetAddress: batchPostingTargetAddr,
+		}
+		receiptFetcher := &mockReceiptFetcher{
+			receipts: receipts,
+			err:      nil,
+		}
+		eventUnpacker := &mockEventUnpacker{
+			events: []*bridgegen.SequencerInboxSequencerBatchDelivered{event},
+			idx:    0,
+		}
+		batches, txs, txIndices, err := parseBatchesFromBlock(
+			ctx,
+			melState,
+			block,
+			receiptFetcher,
+			eventUnpacker,
+		)
+		require.NoError(t, err)
+
+		require.Equal(t, 1, len(batches))
+		require.Equal(t, 1, len(txs))
+		require.Equal(t, 1, len(txIndices))
+		require.Equal(t, wantedBatch.SequenceNumber, batches[0].SequenceNumber)
+		require.Equal(t, wantedBatch.BeforeInboxAcc, batches[0].BeforeInboxAcc)
+		require.Equal(t, wantedBatch.AfterInboxAcc, batches[0].AfterInboxAcc)
+		require.Equal(t, wantedBatch.AfterDelayedAcc, batches[0].AfterDelayedAcc)
+		require.Equal(t, wantedBatch.AfterDelayedCount, batches[0].AfterDelayedCount)
+	})
+}
+
+func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
+	ctx := context.Background()
+	batchPostingTargetAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
+	event1, packedLog1, _ := setupParseBatchesTest(t, big.NewInt(2))
+	event2, packedLog2, _ := setupParseBatchesTest(t, big.NewInt(1))
+
+	blockHeader := &types.Header{}
+	txData1 := &types.DynamicFeeTx{
+		To:        &batchPostingTargetAddr,
+		Nonce:     1,
+		GasFeeCap: big.NewInt(1),
+		GasTipCap: big.NewInt(1),
+		Gas:       1,
+		Value:     big.NewInt(0),
+		Data:      nil,
+	}
+	txData2 := &types.DynamicFeeTx{
+		To:        &batchPostingTargetAddr,
+		Nonce:     2,
+		GasFeeCap: big.NewInt(1),
+		GasTipCap: big.NewInt(1),
+		Gas:       1,
+		Value:     big.NewInt(0),
+		Data:      nil,
+	}
+	tx1 := types.NewTx(txData1)
+	tx2 := types.NewTx(txData2)
+	blockBody := &types.Body{
+		Transactions: []*types.Transaction{tx1, tx2},
+	}
+	receipt := &types.Receipt{
+		Logs: []*types.Log{
+			{
+				Topics: []common.Hash{batchDeliveredID},
+				Data:   packedLog1,
+			},
+			{
+				Topics: []common.Hash{batchDeliveredID},
+				Data:   packedLog2,
+			},
+		},
+	}
+	receipts := []*types.Receipt{receipt}
+	block := types.NewBlock(
+		blockHeader,
+		blockBody,
+		receipts,
+		trie.NewStackTrie(nil),
+	)
+	melState := &meltypes.State{
+		BatchPostingTargetAddress: batchPostingTargetAddr,
+	}
+	receiptFetcher := &mockReceiptFetcher{
+		receipts: receipts,
+		err:      nil,
+	}
+	eventUnpacker := &mockEventUnpacker{
+		events: []*bridgegen.SequencerInboxSequencerBatchDelivered{
+			event1,
+			event2,
+		},
+		idx: 0,
+	}
+	_, _, _, err := parseBatchesFromBlock(
+		ctx,
+		melState,
+		block,
+		receiptFetcher,
+		eventUnpacker,
+	)
+	require.ErrorContains(t, err, "sequencer batches out of order")
+}
+
+func setupParseBatchesTest(t *testing.T, seqNumber *big.Int) (
+	*bridgegen.SequencerInboxSequencerBatchDelivered,
+	[]byte,
+	*arbnode.SequencerInboxBatch,
+) {
 	event := &bridgegen.SequencerInboxSequencerBatchDelivered{
-		BatchSequenceNumber:      big.NewInt(1),
+		BatchSequenceNumber:      seqNumber,
 		BeforeAcc:                common.BytesToHash([]byte{1}),
 		AfterAcc:                 common.BytesToHash([]byte{2}),
 		DelayedAcc:               common.BytesToHash([]byte{3}),
@@ -44,55 +456,6 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		event.DataLocation,
 	)
 	require.NoError(t, err)
-
-	receipt := &types.Receipt{
-		Logs: []*types.Log{
-			{
-				Topics: []common.Hash{batchDeliveredID},
-				Data:   packedLog,
-			},
-		},
-	}
-
-	blockHeader := &types.Header{}
-	txData := &types.DynamicFeeTx{
-		To:        &batchPostingTargetAddr,
-		Nonce:     1,
-		GasFeeCap: big.NewInt(1),
-		GasTipCap: big.NewInt(1),
-		Gas:       1,
-		Value:     big.NewInt(0),
-		Data:      nil,
-	}
-	tx := types.NewTx(txData)
-	blockBody := &types.Body{
-		Transactions: []*types.Transaction{tx},
-	}
-	block := types.NewBlock(
-		blockHeader,
-		blockBody,
-		[]*types.Receipt{receipt},
-		trie.NewStackTrie(nil),
-	)
-	melState := &meltypes.State{
-		BatchPostingTargetAddress: batchPostingTargetAddr,
-	}
-	receiptFetcher := &mockReceiptFetcher{
-		receipt: receipt,
-		err:     nil,
-	}
-	eventUnpacker := &mockEventUnpacker{
-		returnEvent: event,
-	}
-	batches, txs, txIndices, err := parseBatchesFromBlock(
-		ctx,
-		melState,
-		block,
-		receiptFetcher,
-		eventUnpacker,
-	)
-	require.NoError(t, err)
-
 	wantedBatch := &arbnode.SequencerInboxBatch{
 		SequenceNumber:    event.BatchSequenceNumber.Uint64(),
 		BeforeInboxAcc:    event.BeforeAcc,
@@ -100,41 +463,41 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		AfterDelayedAcc:   event.DelayedAcc,
 		AfterDelayedCount: event.AfterDelayedMessagesRead.Uint64(),
 	}
-	require.Equal(t, 1, len(batches))
-	require.Equal(t, wantedBatch.SequenceNumber, batches[0].SequenceNumber)
-	require.Equal(t, wantedBatch.BeforeInboxAcc, batches[0].BeforeInboxAcc)
-	require.Equal(t, wantedBatch.AfterInboxAcc, batches[0].AfterInboxAcc)
-	require.Equal(t, wantedBatch.AfterDelayedAcc, batches[0].AfterDelayedAcc)
-	require.Equal(t, wantedBatch.AfterDelayedCount, batches[0].AfterDelayedCount)
-	_ = txs
-	_ = txIndices
+	return event, packedLog, wantedBatch
 }
 
 type mockEventUnpacker struct {
-	returnEvent *bridgegen.SequencerInboxSequencerBatchDelivered
+	events []*bridgegen.SequencerInboxSequencerBatchDelivered
+	idx    uint
+	err    error
 }
 
 func (m *mockEventUnpacker) unpackLogTo(
-	event any, abi *abi.ABI, eventName string, log types.Log) error {
+	event any, abi *abi.ABI, eventName string, log types.Log,
+) error {
+	if m.err != nil {
+		return m.err
+	}
 	ev, ok := event.(*bridgegen.SequencerInboxSequencerBatchDelivered)
 	if !ok {
 		return errors.New("wrong event type")
 	}
-	*ev = *m.returnEvent
+	*ev = *m.events[m.idx]
+	m.idx += 1
 	return nil
 }
 
 type mockReceiptFetcher struct {
-	receipt *types.Receipt
-	err     error
+	receipts []*types.Receipt
+	err      error
 }
 
 func (m *mockReceiptFetcher) ReceiptForTransactionIndex(
 	_ context.Context,
-	_ uint,
+	idx uint,
 ) (*types.Receipt, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return m.receipt, nil
+	return m.receipts[idx], nil
 }
