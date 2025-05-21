@@ -48,8 +48,6 @@ func (s *SimpleStorage) Store(ctx context.Context, data []byte) error {
 
 	// Hash the data with SHA-256 and use as key
 	hashBytes := sha256.Sum256(data)
-	// Mark first byte with CustomDA type (3)
-	hashBytes[0] = 3
 	hash := common.BytesToHash(hashBytes[:])
 
 	s.byHash[hash] = data
@@ -388,7 +386,6 @@ func TestCustomDABasic(t *testing.T) {
 
 		// Verify that the preimage's hash matches
 		hashBytes := sha256.Sum256(preimageData)
-		hashBytes[0] = 3 // CustomDA type identifier
 		computedHash := common.BytesToHash(hashBytes[:])
 
 		if computedHash != hash {

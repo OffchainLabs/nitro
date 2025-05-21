@@ -51,10 +51,6 @@ func (v *DefaultValidator) RecordPreimages(ctx context.Context, batch []byte) ([
 
 	// Hash the batch data with SHA-256
 	hashBytes := sha256.Sum256(batch)
-
-	// Mark the first byte with CustomDA type identifier (3)
-	hashBytes[0] = 3 // CustomDA type identifier
-
 	hash := common.BytesToHash(hashBytes[:])
 
 	log.Debug("DefaultCustomDAValidator: Recording CustomDA preimage",
