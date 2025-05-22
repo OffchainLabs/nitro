@@ -3,13 +3,16 @@ package extractionfunction
 import (
 	"context"
 	"math/big"
+	"sort"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/stretchr/testify/require"
 )
@@ -514,6 +517,54 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		require.Equal(t, 1, len(delayedMessages))
 		require.Equal(t, delayedMessages[0].Message.L2msg, msgData)
 	})
+}
+
+func Test_parseMessageScaffoldsFromLogs(t *testing.T) {
+	t.Run("empty logs", func(t *testing.T) {
+		delayedMsgs, events, err := delayedMessageScaffoldsFromLogs(nil, nil)
+		require.NoError(t, err)
+		require.Empty(t, delayedMsgs)
+		require.Empty(t, events)
+	})
+	t.Run("nil logs", func(t *testing.T) {
+		delayedMsgs, events, err := delayedMessageScaffoldsFromLogs(nil, []*types.Log{nil, nil})
+		require.NoError(t, err)
+		require.Empty(t, delayedMsgs)
+		require.Empty(t, events)
+	})
+	t.Run("log unpacking fails", func(t *testing.T) {
+		log := &types.Log{
+			Address: common.BytesToAddress([]byte("deadbeef")),
+			Data:    []byte("foobar"),
+			Topics:  []common.Hash{},
+		}
+		_, _, err := delayedMessageScaffoldsFromLogs(nil, []*types.Log{log})
+		require.ErrorContains(t, err, "no event signature")
+	})
+}
+
+func Test_sortableMessageList(t *testing.T) {
+	hash1 := common.BigToHash(big.NewInt(1))
+	hash2 := common.BigToHash(big.NewInt(2))
+	messages := []*arbnode.DelayedInboxMessage{
+		{
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{
+					RequestId: &hash2,
+				},
+			},
+		},
+		{
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{
+					RequestId: &hash1,
+				},
+			},
+		},
+	}
+	sort.Sort(sortableMessageList(messages))
+	require.Equal(t, hash1, *messages[0].Message.Header.RequestId)
+	require.Equal(t, hash2, *messages[1].Message.Header.RequestId)
 }
 
 func setupParseDelayedMessagesTest(t *testing.T) (*bridgegen.IBridgeMessageDelivered, []byte) {
