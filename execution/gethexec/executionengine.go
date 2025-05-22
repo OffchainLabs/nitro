@@ -1086,15 +1086,15 @@ func (s *ExecutionEngine) ShouldTriggerMaintenance(trieLimitBeforeFlushMaintenan
 	if trieLimitBeforeFlushMaintenance == 0 {
 		return false
 	}
-	timeBeforeFlush, err := s.bc.TimeBeforeFlush()
+	procTimeBeforeFlush, err := s.bc.ProcTimeBeforeFlush()
 	if err != nil {
 		log.Error("failed to get time before flush", "err")
 		return false
 	}
-	if timeBeforeFlush < trieLimitBeforeFlushMaintenance/2 {
-		log.Warn("Time before flush is too low, maintenance should be triggered soon", "timeBeforeFlush", timeBeforeFlush)
+	if procTimeBeforeFlush < trieLimitBeforeFlushMaintenance/2 {
+		log.Warn("Time before flush is too low, maintenance should be triggered soon", "procTimeBeforeFlush", procTimeBeforeFlush)
 	}
-	return timeBeforeFlush < trieLimitBeforeFlushMaintenance
+	return procTimeBeforeFlush < trieLimitBeforeFlushMaintenance
 }
 
 func (s *ExecutionEngine) TriggerMaintenance(capLimit uint64) error {
