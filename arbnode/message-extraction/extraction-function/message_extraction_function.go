@@ -132,7 +132,6 @@ func ExtractMessages(
 		serialized, err := serializeBatch(
 			ctx,
 			batch,
-			parentChainBlock,
 			batchTx,
 			txIndex,
 			receiptFetcher,

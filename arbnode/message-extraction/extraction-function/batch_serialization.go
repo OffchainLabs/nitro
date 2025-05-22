@@ -19,7 +19,6 @@ import (
 func serializeBatch(
 	ctx context.Context,
 	batch *arbnode.SequencerInboxBatch,
-	parentChainBlock *types.Block,
 	tx *types.Transaction,
 	txIndex uint,
 	receiptFetcher ReceiptFetcher,
@@ -48,7 +47,6 @@ func serializeBatch(
 	data, err := getSequencerBatchData(
 		ctx,
 		batch,
-		parentChainBlock,
 		tx,
 		txIndex,
 		seqInboxABI,
@@ -66,7 +64,6 @@ func serializeBatch(
 func getSequencerBatchData(
 	ctx context.Context,
 	batch *arbnode.SequencerInboxBatch,
-	parentChainBlock *types.Block,
 	tx *types.Transaction,
 	txIndex uint,
 	seqInboxAbi *abi.ABI,
