@@ -52,6 +52,9 @@ import (
 
 var notFoundError = errors.New("file not found")
 
+// Based on https://github.com/wasmerio/wasmer/blob/6de934035a4b34c2878552320f058862faea4651/lib/types/src/serialize.rs#L16
+const WasmerSerializeVersion = 8
+
 func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
 	cleanUpTmp := func() {}
 	if initConfig.DownloadPath == "" {
@@ -455,9 +458,7 @@ func extractSnapshot(archive string, location string, importWasm bool) error {
 	return nil
 }
 
-// removes all entries with keys prefixed with prefixes and of length used in initial version of wasm store schema
-func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
-	prefixes, keyLength := rawdb.DeprecatedPrefixesV0()
+func deleteWasmEntries(db ethdb.Database, prefixes [][]byte, checkKeyLength bool, expectedKeyLength int) error {
 	batch := db.NewBatch()
 	notMatchingLengthKeyLogged := false
 	for _, prefix := range prefixes {
@@ -465,7 +466,7 @@ func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
 		defer it.Release()
 		for it.Next() {
 			key := it.Key()
-			if len(key) != keyLength {
+			if checkKeyLength && len(key) != expectedKeyLength {
 				if !notMatchingLengthKeyLogged {
 					log.Warn("Found key with deprecated prefix but not matching length, skipping removal. (this warning is logged only once)", "key", key)
 					notMatchingLengthKeyLogged = true
@@ -497,6 +498,29 @@ func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
 	return nil
 }
 
+func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
+	if !databaseIsEmpty(db) {
+		versionInDB, err := rawdb.ReadWasmerSerializeVersion(db)
+		if err != nil {
+			if dbutil.IsErrNotFound(err) {
+				versionInDB = 0
+			} else {
+				return fmt.Errorf("Failed to retrieve wasmer serialize version: %w", err)
+			}
+		}
+		if versionInDB != WasmerSerializeVersion {
+			log.Warn("Detected wasmer serialize version %v, expected version %v - removing all old wasm store entries", versionInDB, WasmerSerializeVersion)
+			prefixes := rawdb.WasmPrefixesExceptWavm()
+			if err := deleteWasmEntries(db, prefixes, false, 0); err != nil {
+				return fmt.Errorf("Failed to purge wasm store version 0 entries: %w", err)
+			}
+			log.Info("Wasmer serialize version entries successfully removed.")
+			rawdb.WriteWasmerSerializeVersion(db, WasmerSerializeVersion)
+		}
+	}
+	return nil
+}
+
 // if db is not empty, validates if wasm database schema version matches current version
 // otherwise persists current version
 func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
@@ -515,7 +539,8 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 		// special step for upgrading from version 0 - remove all entries added in version 0
 		if version[0] == 0 {
 			log.Warn("Detected wasm store schema version 0 - removing all old wasm store entries")
-			if err := purgeVersion0WasmStoreEntries(db); err != nil {
+			prefixes, keyLength := rawdb.DeprecatedPrefixesV0()
+			if err := deleteWasmEntries(db, prefixes, true, keyLength); err != nil {
 				return fmt.Errorf("Failed to purge wasm store version 0 entries: %w", err)
 			}
 			log.Info("Wasm store schama version 0 entries successfully removed.")
@@ -590,6 +615,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					return nil, nil, err
 				}
 				if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
+					return nil, nil, err
+				}
+				if err := validateOrUpgradeWasmerSerializeVersion(wasmDb); err != nil {
 					return nil, nil, err
 				}
 				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
