@@ -627,6 +627,10 @@ func mainImpl() int {
 		if err != nil && errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
 			log.Info("Finality not supported by parent chain, disabling the check to verify if rollup deployment tx was finalized", "err", err)
 		} else {
+			if !l1Reader.Started() {
+				l1Reader.Start(ctx)
+				defer l1Reader.StopAndWait()
+			}
 			newHeaders, unsubscribe := l1Reader.Subscribe(false)
 			retriesOnError := 10
 			sigint := make(chan os.Signal, 1)
