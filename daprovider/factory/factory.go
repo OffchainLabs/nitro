@@ -1,4 +1,4 @@
-package main
+package factory
 
 import (
 	"context"
@@ -9,9 +9,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/adapters"
 	"github.com/offchainlabs/nitro/daprovider/customda"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -108,13 +108,13 @@ func (f *AnyTrustFactory) CreateReader(ctx context.Context) (daprovider.Reader, 
 			daReader = das.NewReaderPanicWrapper(daReader)
 		}
 
-		adapter := adapters.NewAnyTrustReaderAdapter(daReader, keysetFetcher)
+		reader := dasutil.NewReaderForDAS(daReader, keysetFetcher)
 		cleanupFn := func() {
 			if lifecycleManager != nil {
 				lifecycleManager.StopAndWaitUntil(0)
 			}
 		}
-		return adapter, cleanupFn, nil
+		return reader, cleanupFn, nil
 	} else {
 		daReader, keysetFetcher, lifecycleManager, err := das.CreateDAReader(
 			ctx, f.config, f.l1Reader, &f.seqInboxAddr)
@@ -127,13 +127,13 @@ func (f *AnyTrustFactory) CreateReader(ctx context.Context) (daprovider.Reader, 
 			daReader = das.NewReaderPanicWrapper(daReader)
 		}
 
-		adapter := adapters.NewAnyTrustReaderAdapter(daReader, keysetFetcher)
+		reader := dasutil.NewReaderForDAS(daReader, keysetFetcher)
 		cleanupFn := func() {
 			if lifecycleManager != nil {
 				lifecycleManager.StopAndWaitUntil(0)
 			}
 		}
-		return adapter, cleanupFn, nil
+		return reader, cleanupFn, nil
 	}
 }
 
@@ -152,13 +152,13 @@ func (f *AnyTrustFactory) CreateWriter(ctx context.Context) (daprovider.Writer, 
 		daWriter = das.NewWriterPanicWrapper(daWriter)
 	}
 
-	adapter := adapters.NewAnyTrustWriterAdapter(daWriter)
+	writer := dasutil.NewWriterForDAS(daWriter)
 	cleanupFn := func() {
 		if lifecycleManager != nil {
 			lifecycleManager.StopAndWaitUntil(0)
 		}
 	}
-	return adapter, cleanupFn, nil
+	return writer, cleanupFn, nil
 }
 
 // CustomDA Factory Implementation

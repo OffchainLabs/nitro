@@ -9,13 +9,11 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -23,10 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
-	"github.com/offchainlabs/nitro/daprovider/das"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/signature"
 )
 
 type Server struct {
@@ -39,7 +33,6 @@ type ServerConfig struct {
 	Port               uint64                              `koanf:"port"`
 	JWTSecret          string                              `koanf:"jwtsecret"`
 	EnableDAWriter     bool                                `koanf:"enable-da-writer"`
-	DataAvailability   das.DataAvailabilityConfig          `koanf:"data-availability"`
 	ServerTimeouts     genericconf.HTTPServerTimeoutConfig `koanf:"server-timeouts"`
 	RPCServerBodyLimit int                                 `koanf:"rpc-server-body-limit"`
 }
@@ -49,7 +42,6 @@ var DefaultServerConfig = ServerConfig{
 	Port:               9880,
 	JWTSecret:          "",
 	EnableDAWriter:     false,
-	DataAvailability:   das.DefaultDataAvailabilityConfig,
 	ServerTimeouts:     genericconf.HTTPServerTimeoutConfigDefault,
 	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
 }
@@ -60,7 +52,6 @@ func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".jwtsecret", DefaultServerConfig.JWTSecret, "path to file with jwtsecret for validation")
 	f.Bool(prefix+".enable-da-writer", DefaultServerConfig.EnableDAWriter, "implies if the das server supports daprovider's writer interface")
 	f.Int("rpc-server-body-limit", DefaultServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
-	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	genericconf.HTTPServerTimeoutConfigAddOptions(prefix+".server-timeouts", f)
 }
 
@@ -134,53 +125,6 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	}()
 
 	return srv, nil
-}
-
-// NewServer creates a new server with traditional DAS configuration (legacy interface)
-func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.DataSignerFunc, l1Client *ethclient.Client, l1Reader *headerreader.HeaderReader, sequencerInboxAddr common.Address) (*http.Server, func(), error) {
-	var err error
-	var daWriter das.DataAvailabilityServiceWriter
-	var daReader das.DataAvailabilityServiceReader
-	var dasKeysetFetcher *das.KeysetFetcher
-	var dasLifecycleManager *das.LifecycleManager
-	if config.EnableDAWriter {
-		daWriter, daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReaderAndWriter(ctx, &config.DataAvailability, dataSigner, l1Client, sequencerInboxAddr)
-		if err != nil {
-			return nil, nil, err
-		}
-	} else {
-		daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReader(ctx, &config.DataAvailability, l1Reader, &sequencerInboxAddr)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
-	if config.DataAvailability.PanicOnError {
-		if daWriter != nil {
-			daWriter = das.NewWriterPanicWrapper(daWriter)
-		}
-		daReader = das.NewReaderPanicWrapper(daReader)
-	}
-
-	var writer daprovider.Writer
-	if daWriter != nil {
-		writer = dasutil.NewWriterForDAS(daWriter)
-	}
-	reader := dasutil.NewReaderForDAS(daReader, dasKeysetFetcher)
-
-	srv, err := NewServerWithDAPProvider(ctx, config, reader, writer)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	cleanupFn := func() {
-		if dasLifecycleManager != nil {
-			dasLifecycleManager.StopAndWaitUntil(2 * time.Second)
-		}
-	}
-
-	return srv, cleanupFn, nil
 }
 
 func (s *Server) IsValidHeaderByte(ctx context.Context, headerByte byte) (*daclient.IsValidHeaderByteResult, error) {

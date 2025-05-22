@@ -40,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/factory"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -596,11 +597,58 @@ func getDAS(
 
 		serverConfig := dapserver.DefaultServerConfig
 		serverConfig.Port = 0 // Initializes server at a random available port
-		serverConfig.DataAvailability = config.DataAvailability
 		serverConfig.EnableDAWriter = config.BatchPoster.Enable
 		serverConfig.JWTSecret = jwtPath
 		withDAWriter = config.BatchPoster.Enable
-		providerServer, closeFn, err := dapserver.NewServer(ctx, &serverConfig, dataSigner, l1client, l1Reader, deployInfo.SequencerInbox)
+
+		// Create factory for AnyTrust mode (nitro node currently only uses AnyTrust)
+		daFactory, err := factory.NewDAProviderFactory(
+			factory.ModeAnyTrust,
+			&config.DataAvailability,
+			nil, // no custom DA config for now
+			dataSigner,
+			l1client,
+			l1Reader,
+			deployInfo.SequencerInbox,
+			config.BatchPoster.Enable,
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		if err := daFactory.ValidateConfig(); err != nil {
+			return nil, nil, nil, err
+		}
+
+		var cleanupFuncs []func()
+		reader, readerCleanup, err := daFactory.CreateReader(ctx)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if readerCleanup != nil {
+			cleanupFuncs = append(cleanupFuncs, readerCleanup)
+		}
+
+		var writer daprovider.Writer
+		if config.BatchPoster.Enable {
+			var writerCleanup func()
+			writer, writerCleanup, err = daFactory.CreateWriter(ctx)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if writerCleanup != nil {
+				cleanupFuncs = append(cleanupFuncs, writerCleanup)
+			}
+		}
+
+		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer)
+
+		// Create combined cleanup function
+		closeFn := func() {
+			for _, cleanup := range cleanupFuncs {
+				cleanup()
+			}
+		}
 		if err != nil {
 			return nil, nil, nil, err
 		}

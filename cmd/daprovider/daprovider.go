@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/customda"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/factory"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -31,7 +32,7 @@ import (
 )
 
 type Config struct {
-	Mode             DAProviderMode           `koanf:"mode"`
+	Mode             factory.DAProviderMode   `koanf:"mode"`
 	ProviderServer   dapserver.ServerConfig   `koanf:"provider-server"`
 	WithDataSigner   bool                     `koanf:"with-data-signer"`
 	DataSignerWallet genericconf.WalletConfig `koanf:"data-signer-wallet"`
@@ -51,7 +52,7 @@ type Config struct {
 }
 
 var DefaultConfig = Config{
-	Mode:             ModeAnyTrust,
+	Mode:             "", // Must be explicitly set
 	ProviderServer:   dapserver.DefaultServerConfig,
 	WithDataSigner:   false,
 	DataSignerWallet: arbnode.DefaultBatchPosterL1WalletConfig,
@@ -73,7 +74,7 @@ func printSampleUsage(progname string) {
 
 func parseDAProvider(args []string) (*Config, error) {
 	f := flag.NewFlagSet("daprovider", flag.ContinueOnError)
-	f.String("mode", string(DefaultConfig.Mode), "DA provider mode (anytrust or customda)")
+	f.String("mode", string(DefaultConfig.Mode), "DA provider mode (anytrust or customda) - REQUIRED")
 	f.Bool("with-data-signer", DefaultConfig.WithDataSigner, "set to enable data signing when processing store requests. If enabled requires data-signer-wallet config")
 	genericconf.WalletConfigAddOptions("data-signer-wallet", f, DefaultConfig.DataSignerWallet.Pathname)
 
@@ -145,7 +146,7 @@ func startup() error {
 
 	// Validate mode
 	if config.Mode == "" {
-		config.Mode = ModeAnyTrust // default for backwards compatibility
+		return errors.New("--mode must be explicitly specified (anytrust or customda)")
 	}
 
 	logLevel, err := genericconf.ToSlogLevel(config.LogLevel)
@@ -184,7 +185,7 @@ func startup() error {
 	var seqInboxAddr common.Address
 	var dataSigner signature.DataSignerFunc
 
-	if config.Mode == ModeAnyTrust {
+	if config.Mode == factory.ModeAnyTrust {
 		if !config.Anytrust.Enable {
 			return errors.New("--anytrust.enable is required to start an AnyTrust provider server")
 		}
@@ -226,14 +227,14 @@ func startup() error {
 				return err
 			}
 		}
-	} else if config.Mode == ModeCustomDA {
+	} else if config.Mode == factory.ModeCustomDA {
 		if !config.Customda.Enable {
 			return errors.New("--customda.enable is required to start a CustomDA provider server")
 		}
 	}
 
 	// Create DA provider factory based on mode
-	factory, err := NewDAProviderFactory(
+	providerFactory, err := factory.NewDAProviderFactory(
 		config.Mode,
 		&config.Anytrust,
 		&config.Customda,
@@ -247,14 +248,14 @@ func startup() error {
 		return err
 	}
 
-	if err := factory.ValidateConfig(); err != nil {
+	if err := providerFactory.ValidateConfig(); err != nil {
 		return err
 	}
 
 	// Create reader/writer using factory
 	var cleanupFuncs []func()
 
-	reader, readerCleanup, err := factory.CreateReader(ctx)
+	reader, readerCleanup, err := providerFactory.CreateReader(ctx)
 	if err != nil {
 		return err
 	}
@@ -265,7 +266,7 @@ func startup() error {
 	var writer daprovider.Writer
 	if config.ProviderServer.EnableDAWriter {
 		var writerCleanup func()
-		writer, writerCleanup, err = factory.CreateWriter(ctx)
+		writer, writerCleanup, err = providerFactory.CreateWriter(ctx)
 		if err != nil {
 			return err
 		}
