@@ -165,6 +165,8 @@ type BatchPosterConfig struct {
 	WaitForMaxDelay bool `koanf:"wait-for-max-delay" reload:"hot"`
 	// Batch post polling interval.
 	PollInterval time.Duration `koanf:"poll-interval" reload:"hot"`
+	// After batch post polling interval.
+	PollIntervalAfterBatchPost time.Duration `koanf:"poll-interval-after-batch-post" reload:"hot"`
 	// Batch posting error delay.
 	ErrorDelay                     time.Duration               `koanf:"error-delay" reload:"hot"`
 	CompressionLevel               int                         `koanf:"compression-level" reload:"hot"`
@@ -242,6 +244,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
 	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxDelay, "wait for the max batch delay, even if the batch is full")
 	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
+	f.Duration(prefix+".poll-interval-after-batch-post", DefaultBatchPosterConfig.PollIntervalAfterBatchPost, "how long to wait after batch post before checking again")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.ErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
@@ -278,6 +281,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	// Try to fill 3 blobs per batch
 	Max4844BatchSize:               blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)/2 - 2000,
 	PollInterval:                   time.Second * 10,
+	PollIntervalAfterBatchPost:     time.Second * 10,
 	ErrorDelay:                     time.Second * 10,
 	MaxDelay:                       time.Hour,
 	WaitForMaxDelay:                false,
@@ -319,6 +323,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	MaxSize:                        100000,
 	Max4844BatchSize:               DefaultBatchPosterConfig.Max4844BatchSize,
 	PollInterval:                   time.Millisecond * 10,
+	PollIntervalAfterBatchPost:     time.Millisecond * 10,
 	ErrorDelay:                     time.Millisecond * 10,
 	MaxDelay:                       0,
 	WaitForMaxDelay:                false,
@@ -947,10 +952,12 @@ func (s *batchSegments) recompressAll() error {
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
+		log.Debug("Adding to batch would cause overflow: s.totalUncompressedSize > arbstate.MaxDecompressedLen", "s.totalUncompressedSize", s.totalUncompressedSize, "arbstate.MaxDecompressedLen", arbstate.MaxDecompressedLen)
 		return true, nil
 	}
 	// we've reached the max number of segments
 	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+		log.Debug("Adding to batch would cause overflow: len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage", "len(s.rawSegments)", len(s.rawSegments), "arbstate.MaxSegmentsPerSequencerMessage", arbstate.MaxSegmentsPerSequencerMessage)
 		return true, nil
 	}
 	// there is room, no need to flush
@@ -963,11 +970,13 @@ func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	}
 	err := s.compressedWriter.Flush()
 	if err != nil {
+		log.Debug("Adding to batch would cause overflow: Error in compressedWriter.Flush()")
 		return true, err
 	}
 	s.lastCompressedSize = s.compressedBuffer.Len()
 	s.newUncompressedSize = 0
 	if s.lastCompressedSize >= s.sizeLimit {
+		log.Debug("Adding to batch would cause overflow: s.lastCompressedSize >= s.sizeLimit", "s.lastCompressedSize", s.lastCompressedSize, "s.sizeLimit", s.sizeLimit)
 		return true, nil
 	}
 	return false, nil
@@ -1010,6 +1019,7 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 		return false, err
 	}
 	if overflow {
+		log.Info("Batch is full and closed. Adding next message would cause an overflow.")
 		return false, s.close()
 	}
 	s.rawSegments = append(s.rawSegments, segment)
@@ -2056,7 +2066,8 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			batchPosterFailureCounter.Inc(1)
 			return b.config().ErrorDelay
 		} else if posted {
-			return 0
+			log.Info("Will wait for next batch post", "delay", b.config().PollIntervalAfterBatchPost)
+			return b.config().PollIntervalAfterBatchPost
 		} else {
 			return b.config().PollInterval
 		}

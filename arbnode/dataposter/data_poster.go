@@ -515,6 +515,11 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if latestHeader.BaseFee == nil {
 		return nil, nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
+	log.Info("Base fee", "baseFee", latestHeader.BaseFee, "maxBaseFee", (big.NewInt(int64(config.MaxBaseFee))))
+
+	if (*latestHeader.BaseFee).Cmp(big.NewInt(int64(config.MaxBaseFee))) > 0 {
+		return nil, nil, nil, fmt.Errorf("latest parent chain block %v BaseFee %v is greater than max base fee %v", latestHeader.Number, latestHeader.BaseFee, config.MaxBaseFee)
+	}
 	currentBlobFee := big.NewInt(0)
 	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
 		currentBlobFee = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
@@ -1270,6 +1275,7 @@ type DataPosterConfig struct {
 	Dangerous              DangerousConfig   `koanf:"dangerous"`
 	ExternalSigner         ExternalSignerCfg `koanf:"external-signer"`
 	MaxFeeCapFormula       string            `koanf:"max-fee-cap-formula" reload:"hot"`
+	MaxBaseFee             int64             `koanf:"max-base-fee" reload:"hot"`
 	ElapsedTimeBase        time.Duration     `koanf:"elapsed-time-base" reload:"hot"`
 	ElapsedTimeImportance  float64           `koanf:"elapsed-time-importance" reload:"hot"`
 	// When set, dataposter will not post new batches, but will keep running to
@@ -1347,6 +1353,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 		"Currently available variables to construct the formula are BacklogOfBatches, UrgencyGWei, ElapsedTime, ElapsedTimeBase, ElapsedTimeImportance, and TargetPriceGWei")
 	f.Duration(prefix+".elapsed-time-base", defaultDataPosterConfig.ElapsedTimeBase, "unit to measure the time elapsed since creation of transaction used for maximum fee cap calculation")
 	f.Float64(prefix+".elapsed-time-importance", defaultDataPosterConfig.ElapsedTimeImportance, "weight given to the units of time elapsed used for maximum fee cap calculation")
+	f.Int64(prefix+".max-base-fee", defaultDataPosterConfig.MaxBaseFee, "maximum base fee")
 
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 	addDangerousOptions(prefix+".dangerous", f)
@@ -1389,6 +1396,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: false},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
+	MaxBaseFee:             5000000000,
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
 	DisableNewTx:           false,
@@ -1423,6 +1431,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	LegacyStorageEncoding:  false,
 	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: true},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
+	MaxBaseFee:             5000000000,
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
 	DisableNewTx:           false,
