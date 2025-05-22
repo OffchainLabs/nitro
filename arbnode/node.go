@@ -38,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/customda"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/factory"
@@ -60,6 +61,16 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+type DAConfig struct {
+	Mode     string          `koanf:"mode"`
+	CustomDA customda.Config `koanf:"customda"`
+}
+
+func DAConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".mode", "", "DA mode (anytrust or customda)")
+	customda.ConfigAddOptions(prefix+".customda", f)
+}
+
 type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
 	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
@@ -73,6 +84,7 @@ type Config struct {
 	Bold                     boldstaker.BoldConfig          `koanf:"bold"`
 	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
+	DA                       DAConfig                       `koanf:"da"`
 	DAProvider               daclient.ClientConfig          `koanf:"da-provider" reload:"hot"`
 	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
 	Dangerous                DangerousConfig                `koanf:"dangerous"`
@@ -146,6 +158,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	boldstaker.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
+	DAConfigAddOptions(prefix+".da", f)
 	daclient.ClientConfigAddOptions(prefix+".da-provider", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
@@ -168,6 +181,7 @@ var ConfigDefault = Config{
 	Bold:                     boldstaker.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
+	DA:                       DAConfig{Mode: "", CustomDA: customda.DefaultConfig},
 	DAProvider:               daclient.DefaultClientConfig,
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
@@ -601,11 +615,35 @@ func getDAS(
 		serverConfig.JWTSecret = jwtPath
 		withDAWriter = config.BatchPoster.Enable
 
-		// Create factory for AnyTrust mode (nitro node currently only uses AnyTrust)
+		// Determine effective DA mode and config
+		var effectiveMode factory.DAProviderMode
+		var anytrustConfig *das.DataAvailabilityConfig
+		var customdaConfig *customda.Config
+
+		switch config.DA.Mode {
+		case "customda":
+			if !config.DA.CustomDA.Enable {
+				return nil, nil, nil, errors.New("--node.da.customda.enable must be true when using customda mode")
+			}
+			effectiveMode = factory.ModeCustomDA
+			customdaConfig = &config.DA.CustomDA
+
+		case "anytrust", "": // Default to anytrust for backwards compatibility
+			if !config.DataAvailability.Enable {
+				return nil, nil, nil, errors.New("--node.data-availability.enable must be true when using anytrust mode")
+			}
+			effectiveMode = factory.ModeAnyTrust
+			anytrustConfig = &config.DataAvailability
+
+		default:
+			return nil, nil, nil, fmt.Errorf("unsupported DA mode: %s", config.DA.Mode)
+		}
+
+		// Create factory with appropriate config
 		daFactory, err := factory.NewDAProviderFactory(
-			factory.ModeAnyTrust,
-			&config.DataAvailability,
-			nil, // no custom DA config for now
+			effectiveMode,
+			anytrustConfig, // nil for customda mode
+			customdaConfig, // nil for anytrust mode
 			dataSigner,
 			l1client,
 			l1Reader,
