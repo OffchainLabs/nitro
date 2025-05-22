@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/filters"
@@ -49,7 +48,6 @@ func serializeBatch(
 		batch,
 		tx,
 		txIndex,
-		seqInboxABI,
 		receiptFetcher,
 	)
 	if err != nil {
@@ -66,10 +64,9 @@ func getSequencerBatchData(
 	batch *arbnode.SequencerInboxBatch,
 	tx *types.Transaction,
 	txIndex uint,
-	seqInboxAbi *abi.ABI,
 	receiptFetcher ReceiptFetcher,
 ) ([]byte, error) {
-	addSequencerL2BatchFromOriginCallABI := seqInboxAbi.Methods["addSequencerL2BatchFromOrigin0"]
+	addSequencerL2BatchFromOriginCallABI := seqInboxABI.Methods["addSequencerL2BatchFromOrigin0"]
 	switch batch.DataLocation {
 	case arbnode.BatchDataTxInput:
 		data := tx.Data()
@@ -86,7 +83,7 @@ func getSequencerBatchData(
 		}
 		return dataBytes, nil
 	case arbnode.BatchDataSeparateEvent:
-		sequencerBatchDataABI := seqInboxAbi.Events["SequencerBatchData"].ID
+		sequencerBatchDataABI := seqInboxABI.Events["SequencerBatchData"].ID
 		var numberAsHash common.Hash
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
@@ -105,7 +102,7 @@ func getSequencerBatchData(
 			return nil, errors.New("expected to find only one matching sequencer batch data")
 		}
 		event := new(bridgegen.SequencerInboxSequencerBatchData)
-		err = seqInboxAbi.UnpackIntoInterface(event, "SequencerBatchData", filteredLogs[0].Data)
+		err = seqInboxABI.UnpackIntoInterface(event, "SequencerBatchData", filteredLogs[0].Data)
 		if err != nil {
 			return nil, err
 		}
