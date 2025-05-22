@@ -23,13 +23,13 @@ import (
 func parseDelayedMessagesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
-	parentChainBlock *types.Block,
+	parentChainBlockNum *big.Int,
+	parentChainBlockTxs []*types.Transaction,
 	receiptFetcher ReceiptFetcher,
 ) ([]*arbnode.DelayedInboxMessage, error) {
 	msgScaffolds := make([]*arbnode.DelayedInboxMessage, 0)
 	messageDeliveredEvents := make([]*bridgegen.IBridgeMessageDelivered, 0)
-	txes := parentChainBlock.Transactions()
-	for i, tx := range txes {
+	for i, tx := range parentChainBlockTxs {
 		if tx.To() == nil {
 			continue
 		}
@@ -52,7 +52,7 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		delayedMessageScaffolds, parsedLogs, err := delayedMessageScaffoldsFromLogs(
-			parentChainBlock,
+			parentChainBlockNum,
 			relevantLogs,
 		)
 		if err != nil {
@@ -72,7 +72,7 @@ func parseDelayedMessagesFromBlock(
 		inboxAddressList = append(inboxAddressList, addr)
 	}
 	messageData := make(map[common.Hash][]byte)
-	for i, tx := range txes {
+	for i, tx := range parentChainBlockTxs {
 		if tx.To() == nil {
 			continue
 		}
@@ -122,7 +122,7 @@ func parseDelayedMessagesFromBlock(
 }
 
 func delayedMessageScaffoldsFromLogs(
-	parentChainBlock *types.Block, logs []*types.Log,
+	parentChainBlockNum *big.Int, logs []*types.Log,
 ) ([]*arbnode.DelayedInboxMessage, []*bridgegen.IBridgeMessageDelivered, error) {
 	if len(logs) == 0 {
 		return nil, nil, nil
@@ -158,7 +158,7 @@ func delayedMessageScaffoldsFromLogs(
 				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:        parsedLog.Kind,
 					Poster:      parsedLog.Sender,
-					BlockNumber: parentChainBlock.NumberU64(),
+					BlockNumber: parentChainBlockNum.Uint64(),
 					Timestamp:   parsedLog.Timestamp,
 					RequestId:   &requestId,
 					L1BaseFee:   parsedLog.BaseFeeL1,
@@ -191,7 +191,7 @@ func parseDelayedMessage(
 		if err := unpackLogTo(event, iDelayedMessageProviderABI, "InboxMessageDeliveredFromOrigin", *ethLog); err != nil {
 			return nil, nil, err
 		}
-		args := make(map[string]interface{})
+		args := make(map[string]any)
 		data := tx.Data()
 		if len(data) < 4 {
 			return nil, nil, fmt.Errorf("tx data %#x too short", data)

@@ -48,7 +48,7 @@ type ReceiptFetcher interface {
 
 type logUnpacker struct{}
 
-func (_ *logUnpacker) unpackLogTo(
+func (*logUnpacker) unpackLogTo(
 	event any, abi *abi.ABI, eventName string, log types.Log) error {
 	return unpackLogTo(event, abi, eventName, log)
 }
@@ -96,7 +96,8 @@ func ExtractMessages(
 	delayedMessages, err := parseDelayedMessagesFromBlock(
 		ctx,
 		state,
-		parentChainBlock,
+		parentChainBlock.Number(),
+		parentChainBlock.Transactions(),
 		receiptFetcher,
 	)
 	if err != nil {
