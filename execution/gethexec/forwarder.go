@@ -376,7 +376,7 @@ func (f *RedisTxForwarder) CheckHealth(ctx context.Context) error {
 // not thread safe vs update and itself
 func (f *RedisTxForwarder) Initialize(ctx context.Context) error {
 	var err error
-	f.redisCoordinator, err = redisutil.NewRedisCoordinator(f.config.RedisUrl)
+	f.redisCoordinator, err = redisutil.NewRedisCoordinator(f.config.RedisUrl, 1)
 	if err != nil {
 		return fmt.Errorf("unable to create redis coordinator: %w", err)
 	}
