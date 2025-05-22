@@ -419,8 +419,8 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	stack, err := node.New(stackConfig)
-	defer stack.Close()
 	Require(t, err)
+	defer stack.Close()
 
 	nodeConfig := NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
@@ -578,7 +578,8 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 	checkKeys(t, db, version0Keys, true)
 	checkKeys(t, db, collidedKeys, true)
 	checkKeys(t, db, otherKeys, true)
-	err = purgeVersion0WasmStoreEntries(db)
+	prefixes, keyLength := rawdb.DeprecatedPrefixesV0()
+	err = deleteWasmEntries(db, prefixes, true, keyLength)
 	if err != nil {
 		t.Fatal("Failed to purge version 0 keys, err:", err)
 	}
@@ -595,8 +596,8 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	stack, err := node.New(stackConfig)
-	defer stack.Close()
 	Require(t, err)
+	defer stack.Close()
 
 	nodeConfig := NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = env.GetTestStateScheme()
