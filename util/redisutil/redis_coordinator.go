@@ -156,6 +156,8 @@ func (rc *RedisCoordinator) GetLiveliness(ctx context.Context) ([]string, error)
 	return livelinessList, nil
 }
 
+// GetIfInQuorum acts as normal redis GET, but also error out if the key is not in the quorum of redis nodes
+// if redis is a sentinel client.
 func (rc *RedisCoordinator) GetIfInQuorum(ctx context.Context, key string) (string, error) {
 	// If redis is not a sentinel client, or if the quorum size is less than 2, no need to check quorum
 	if rc.sentinelMaster == "" || rc.quorumSize < 2 {
