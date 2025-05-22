@@ -1748,7 +1748,7 @@ func setupExpressLaneAuction(
 	stack, err := node.New(&stackConf)
 	Require(t, err)
 	cfg := &timeboost.BidValidatorConfig{
-		SequencerEndpoint:      fmt.Sprintf("http://localhost:%d", seqPort),
+		RpcEndpoint:            fmt.Sprintf("http://localhost:%d", seqPort),
 		AuctionContractAddress: proxyAddr.Hex(),
 		RedisURL:               redisURL,
 		ProducerConfig:         pubsub.TestProducerConfig,
