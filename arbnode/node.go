@@ -62,13 +62,15 @@ import (
 )
 
 type DAConfig struct {
-	Mode     string          `koanf:"mode"`
-	CustomDA customda.Config `koanf:"customda"`
+	Mode             string                `koanf:"mode"`
+	CustomDA         customda.Config       `koanf:"customda"`
+	ExternalProvider daclient.ClientConfig `koanf:"external-provider"`
 }
 
 func DAConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".mode", "", "DA mode (anytrust or customda)")
+	f.String(prefix+".mode", "", "DA mode (anytrust, customda, or external)")
 	customda.ConfigAddOptions(prefix+".customda", f)
+	daclient.ClientConfigAddOptions(prefix+".external-provider", f)
 }
 
 type Config struct {
@@ -85,7 +87,6 @@ type Config struct {
 	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
 	DA                       DAConfig                       `koanf:"da"`
-	DAProvider               daclient.ClientConfig          `koanf:"da-provider" reload:"hot"`
 	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
 	Dangerous                DangerousConfig                `koanf:"dangerous"`
 	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
@@ -159,7 +160,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	DAConfigAddOptions(prefix+".da", f)
-	daclient.ClientConfigAddOptions(prefix+".da-provider", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
@@ -181,8 +181,7 @@ var ConfigDefault = Config{
 	Bold:                     boldstaker.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
-	DA:                       DAConfig{Mode: "", CustomDA: customda.DefaultConfig},
-	DAProvider:               daclient.DefaultClientConfig,
+	DA:                       DAConfig{Mode: "", CustomDA: customda.DefaultConfig, ExternalProvider: daclient.DefaultClientConfig},
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
 	TransactionStreamer:      DefaultTransactionStreamerConfig,
@@ -581,22 +580,33 @@ func getDAS(
 	l1client *ethclient.Client,
 	stack *node.Node,
 ) (daprovider.Writer, func(), []daprovider.Reader, error) {
-	if config.DAProvider.Enable && config.DataAvailability.Enable {
-		return nil, nil, nil, errors.New("da-provider and data-availability cannot be enabled together")
+	// Validate DA configuration
+	if config.DA.Mode == "external" {
+		if !config.DA.ExternalProvider.Enable {
+			return nil, nil, nil, errors.New("--node.da.external-provider.enable must be true when mode=external")
+		}
+		if config.DataAvailability.Enable {
+			return nil, nil, nil, errors.New("cannot use external DA provider with embedded data-availability")
+		}
+		if config.DA.CustomDA.Enable {
+			return nil, nil, nil, errors.New("cannot use external DA provider with embedded customda")
+		}
 	}
 
 	var err error
 	var daClient *daclient.Client
 	var withDAWriter bool
 	var providerServerCloseFn func()
-	if config.DAProvider.Enable {
-		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DAProvider.RPC })
+
+	if config.DA.Mode == "external" {
+		// External DA provider mode
+		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DA.ExternalProvider.RPC })
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		// Only allow dawriter if batchposter is enabled
-		withDAWriter = config.DAProvider.WithWriter && config.BatchPoster.Enable
-	} else if config.DataAvailability.Enable {
+		withDAWriter = config.DA.ExternalProvider.WithWriter && config.BatchPoster.Enable
+	} else if config.DataAvailability.Enable || config.DA.Mode != "" {
 		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
 			return nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
@@ -635,8 +645,11 @@ func getDAS(
 			effectiveMode = factory.ModeAnyTrust
 			anytrustConfig = &config.DataAvailability
 
+		case "external":
+			return nil, nil, nil, errors.New("external mode should not reach factory creation - this is a bug")
+
 		default:
-			return nil, nil, nil, fmt.Errorf("unsupported DA mode: %s", config.DA.Mode)
+			return nil, nil, nil, fmt.Errorf("unsupported embedded DA mode: %s (supported: anytrust, customda)", config.DA.Mode)
 		}
 
 		// Create factory with appropriate config

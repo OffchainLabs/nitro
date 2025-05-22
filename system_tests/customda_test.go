@@ -283,10 +283,11 @@ func configureNodeForCustomDA(nodeConfig *arbnode.Config, serverURL string) {
 	// Disable traditional DAS (Anytrust) data availability service
 	nodeConfig.DataAvailability.Enable = false
 
-	// Enable custom DA provider
-	nodeConfig.DAProvider.Enable = true
-	nodeConfig.DAProvider.WithWriter = true // This is critical! Enables batch posting to our CustomDA server
-	nodeConfig.DAProvider.RPC.URL = serverURL
+	// Enable external DA provider
+	nodeConfig.DA.Mode = "external"
+	nodeConfig.DA.ExternalProvider.Enable = true
+	nodeConfig.DA.ExternalProvider.WithWriter = true // This is critical! Enables batch posting to our CustomDA server
+	nodeConfig.DA.ExternalProvider.RPC.URL = serverURL
 
 	// Note: We're keeping default log levels for now
 
@@ -294,9 +295,9 @@ func configureNodeForCustomDA(nodeConfig *arbnode.Config, serverURL string) {
 		"serverURL", serverURL,
 		"batchPosterEnabled", nodeConfig.BatchPoster.Enable,
 		"batchPosterUseCustomDA", nodeConfig.BatchPoster.UseCustomDA,
-		"daProviderEnabled", nodeConfig.DAProvider.Enable,
-		"daProviderWithWriter", nodeConfig.DAProvider.WithWriter,
-		"daProviderURL", nodeConfig.DAProvider.RPC.URL,
+		"daProviderEnabled", nodeConfig.DA.ExternalProvider.Enable,
+		"daProviderWithWriter", nodeConfig.DA.ExternalProvider.WithWriter,
+		"daProviderURL", nodeConfig.DA.ExternalProvider.RPC.URL,
 		"dataAvailabilityEnabled", nodeConfig.DataAvailability.Enable)
 }
 
@@ -354,8 +355,8 @@ func TestCustomDABasic(t *testing.T) {
 		"storedPreimages", len(customDAServer.storage.byHash),
 		"batchPosterUseCustomDA", builder.nodeConfig.BatchPoster.UseCustomDA,
 		"dataAvailabilityEnabled", builder.nodeConfig.DataAvailability.Enable,
-		"daProviderEnabled", builder.nodeConfig.DAProvider.Enable,
-		"daProviderURL", builder.nodeConfig.DAProvider.RPC.URL)
+		"daProviderEnabled", builder.nodeConfig.DA.ExternalProvider.Enable,
+		"daProviderURL", builder.nodeConfig.DA.ExternalProvider.RPC.URL)
 
 	// Verify that preimages were properly recorded in the CustomDA storage
 	if len(customDAServer.storage.allData) == 0 {

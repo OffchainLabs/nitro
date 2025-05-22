@@ -90,8 +90,9 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	// Configure validator based on DA mode
 	if opts.dasModeString == "customda" {
-		// For custom DA, copy the DAProvider configuration
-		validatorConfig.DAProvider = l1NodeConfigA.DAProvider
+		// For custom DA, copy the external provider configuration
+		validatorConfig.DA.Mode = "external"
+		validatorConfig.DA.ExternalProvider = l1NodeConfigA.DA.ExternalProvider
 
 		// Disable traditional DAS for validator
 		validatorConfig.DataAvailability.Enable = false
