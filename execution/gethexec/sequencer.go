@@ -420,6 +420,7 @@ type Sequencer struct {
 	expectedSurplusMutex              sync.RWMutex
 	expectedSurplus                   int64
 	expectedSurplusUpdated            bool
+	expectedSurplusFailureCount       int
 	auctioneerAddr                    common.Address
 	timeboostAuctionResolutionTxQueue chan txQueueItem
 }
@@ -1322,10 +1323,25 @@ func (s *Sequencer) InitializeExpressLaneService(
 	return nil
 }
 
+const maxConsecutiveExpectedSurplusFailures = 20
+
 var (
 	usableBytesInBlob    = big.NewInt(int64(len(kzg4844.Blob{}) * 31 / 32))
 	blobTxBlobGasPerBlob = big.NewInt(params.BlobTxBlobGasPerBlob)
 )
+
+func (s *Sequencer) logExpectedSurplusError(err error) {
+	s.expectedSurplusFailureCount++
+
+	logLevel := log.Error
+	if s.expectedSurplusFailureCount <= maxConsecutiveExpectedSurplusFailures {
+		logLevel = log.Warn
+	}
+
+	logLevel("expected surplus soft/hard thresholds are enabled but unable to fetch latest expected surplus, retrying",
+		"err", err,
+		"consecutiveFailures", s.expectedSurplusFailureCount)
+}
 
 func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	header, err := s.l1Reader.LastHeader(ctx)
@@ -1367,6 +1383,7 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	if config.ExpectedSurplusSoftThreshold != "default" && expectedSurplus < int64(config.expectedSurplusSoftThreshold) {
 		log.Warn("expected surplus is below soft threshold", "value", expectedSurplus, "threshold", config.expectedSurplusSoftThreshold)
 	}
+	s.expectedSurplusFailureCount = 0
 	return expectedSurplus, nil
 }
 
@@ -1405,7 +1422,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			defer s.expectedSurplusMutex.Unlock()
 			if err != nil {
 				s.expectedSurplusUpdated = false
-				log.Error("expected surplus soft/hard thresholds are enabled but unable to fetch latest expected surplus, retrying", "err", err)
+				s.logExpectedSurplusError(err)
 				return 0
 			}
 			s.expectedSurplusUpdated = true

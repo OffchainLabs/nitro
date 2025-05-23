@@ -15,7 +15,11 @@ import (
 // ArbNativeTokenManager precompile enables minting and burning native tokens.
 // All calls to this precompile are authorized by the NativeTokenPrecompile wrapper.
 type ArbNativeTokenManager struct {
-	Address addr // 0x73
+	Address                  addr // 0x73
+	NativeTokenBurned        func(ctx, mech, addr, huge) error
+	NativeTokenBurnedGasCost func(addr, huge) (uint64, error)
+	NativeTokenMinted        func(ctx, mech, addr, huge) error
+	NativeTokenMintedGasCost func(addr, huge) (uint64, error)
 }
 
 var mintBurnGasCost = params.WarmStorageReadCostEIP2929 + params.CallValueTransferGas
@@ -31,7 +35,7 @@ func (con ArbNativeTokenManager) MintNativeToken(c ctx, evm mech, amount huge) e
 
 	evm.StateDB.ExpectBalanceMint(amount)
 	evm.StateDB.AddBalance(c.caller, uint256.MustFromBig(amount), tracing.BalanceIncreaseMintNativeToken)
-	return nil
+	return con.NativeTokenMinted(c, evm, c.caller, amount)
 }
 
 // Burns some amount of the native gas token for this chain from the given address
@@ -49,7 +53,7 @@ func (con ArbNativeTokenManager) BurnNativeToken(c ctx, evm mech, amount huge) e
 	}
 	evm.StateDB.ExpectBalanceBurn(amount)
 	evm.StateDB.SubBalance(c.caller, toSub, tracing.BalanceDecreaseBurnNativeToken)
-	return nil
+	return con.NativeTokenBurned(c, evm, c.caller, amount)
 }
 
 func (con ArbNativeTokenManager) hasAccess(c ctx) bool {
