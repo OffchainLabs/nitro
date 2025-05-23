@@ -1323,7 +1323,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if execClient != nil {
 		execClient.SetConsensusClient(n)
 	}
-	_, err = n.ExecutionClient.Start(ctx).Await(ctx)
+	err = n.ExecutionClient.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting exec client: %w", err)
 	}
@@ -1508,10 +1508,7 @@ func (n *Node) StopAndWait() {
 		n.dasServerCloseFn()
 	}
 	if n.ExecutionClient != nil {
-		_, err := n.ExecutionClient.StopAndWait().Await(n.ctx)
-		if err != nil {
-			log.Error("error stopping execution client", "err", err)
-		}
+		n.ExecutionClient.StopAndWait()
 	}
 	if err := n.Stack.Close(); err != nil {
 		log.Error("error on stack close", "err", err)

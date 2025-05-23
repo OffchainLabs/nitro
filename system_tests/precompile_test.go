@@ -7,9 +7,12 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"slices"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -495,6 +498,8 @@ func TestArbNativeTokenManager(t *testing.T) {
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
+	arbOwnerPub, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
+	Require(t, err)
 
 	nativeTokenOwnerName := "NativeTokenOwner"
 	builder.L2Info.GenerateAccount(nativeTokenOwnerName)
@@ -507,6 +512,17 @@ func TestArbNativeTokenManager(t *testing.T) {
 		t.Fatal("expected native token owner to not be set")
 	}
 	nativeTokenOwners, err := arbOwner.GetAllNativeTokenOwners(callOpts)
+	Require(t, err)
+	if len(nativeTokenOwners) != 0 {
+		t.Fatal("expected no native token owners")
+	}
+	// same checks to exercise the public interface
+	isNativeTokenOwner, err = arbOwnerPub.IsNativeTokenOwner(callOpts, nativeTokenOwnerAddr)
+	Require(t, err)
+	if isNativeTokenOwner {
+		t.Fatal("expected native token owner to not be set")
+	}
+	nativeTokenOwners, err = arbOwnerPub.GetAllNativeTokenOwners(callOpts)
 	Require(t, err)
 	if len(nativeTokenOwners) != 0 {
 		t.Fatal("expected no native token owners")
@@ -529,21 +545,27 @@ func TestArbNativeTokenManager(t *testing.T) {
 		t.Fatal("expected native token owner to be set")
 	}
 	expectedNativeTokenOwners := []common.Address{nativeTokenOwnerAddr, ownerAddr}
-	sort.Slice(expectedNativeTokenOwners, func(i, j int) bool {
-		return expectedNativeTokenOwners[i].Cmp(expectedNativeTokenOwners[j]) < 0
-	})
+	addrSorter := func(a, b common.Address) int {
+		return a.Cmp(b)
+	}
+	slices.SortFunc(expectedNativeTokenOwners, addrSorter)
 	nativeTokenOwners, err = arbOwner.GetAllNativeTokenOwners(callOpts)
 	Require(t, err)
-	sort.Slice(nativeTokenOwners, func(i, j int) bool {
-		return nativeTokenOwners[i].Cmp(nativeTokenOwners[j]) < 0
-	})
-	if len(nativeTokenOwners) != len(expectedNativeTokenOwners) {
-		t.Fatal("expected native token owners to be the same length")
+	slices.SortFunc(nativeTokenOwners, addrSorter)
+	if diff := cmp.Diff(nativeTokenOwners, expectedNativeTokenOwners); diff != "" {
+		t.Errorf("native token owners differ: %s", diff)
 	}
-	for i := 0; i < len(nativeTokenOwners); i += 1 {
-		if nativeTokenOwners[i].Cmp(expectedNativeTokenOwners[i]) != 0 {
-			t.Fatal("expected native token owners to be the same")
-		}
+	// same checks to exercise the public interface
+	isNativeTokenOwner, err = arbOwnerPub.IsNativeTokenOwner(callOpts, nativeTokenOwnerAddr)
+	Require(t, err)
+	if !isNativeTokenOwner {
+		t.Fatal("expected native token owner to be set")
+	}
+	nativeTokenOwners, err = arbOwnerPub.GetAllNativeTokenOwners(callOpts)
+	slices.SortFunc(nativeTokenOwners, addrSorter)
+	Require(t, err)
+	if diff := cmp.Diff(nativeTokenOwners, expectedNativeTokenOwners); diff != "" {
+		t.Errorf("native token owners differ: %s", diff)
 	}
 
 	// removes native token owner
@@ -566,6 +588,11 @@ func TestArbNativeTokenManager(t *testing.T) {
 	}
 
 	// tests minting and burning native tokens
+
+	nativeTokenOwnerABI, err := precompilesgen.ArbNativeTokenManagerMetaData.GetAbi()
+	Require(t, err)
+	mintTopic := nativeTokenOwnerABI.Events["NativeTokenMinted"].ID
+	burnTopic := nativeTokenOwnerABI.Events["NativeTokenBurned"].ID
 
 	arbNativeTokenManager, err := precompilesgen.NewArbNativeTokenManager(types.ArbNativeTokenManagerAddress, builder.L2.Client)
 	Require(t, err)
@@ -604,6 +631,23 @@ func TestArbNativeTokenManager(t *testing.T) {
 	Require(t, err)
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+	mintLogged := false
+	for _, log := range receipt.Logs {
+		if log.Topics[0] == mintTopic {
+			mintLogged = true
+			parsedLog, err := arbNativeTokenManager.ParseNativeTokenMinted(*log)
+			Require(t, err)
+			if parsedLog.To != nativeTokenOwnerAddr {
+				t.Fatal("expected mint to be to", nativeTokenOwnerAddr, "got", parsedLog.To)
+			}
+			if parsedLog.Amount.Cmp(toMint) != 0 {
+				t.Fatal("expected mint amount to be", toMint, "got", parsedLog.Amount)
+			}
+		}
+	}
+	if !mintLogged {
+		t.Fatal("expected mint event to be logged")
+	}
 	balanceAfterMinting, err := builder.L2.Client.BalanceAt(ctx, nativeTokenOwnerAddr, nil)
 	Require(t, err)
 	gasUsed := getGasUsed(receipt)
@@ -619,6 +663,23 @@ func TestArbNativeTokenManager(t *testing.T) {
 	Require(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+	burnLogged := false
+	for _, log := range receipt.Logs {
+		if log.Topics[0] == burnTopic {
+			burnLogged = true
+			parsedLog, err := arbNativeTokenManager.ParseNativeTokenBurned(*log)
+			Require(t, err)
+			if parsedLog.From != nativeTokenOwnerAddr {
+				t.Fatal("expected mint to be from", nativeTokenOwnerAddr, "got", parsedLog.From)
+			}
+			if parsedLog.Amount.Cmp(toBurn) != 0 {
+				t.Fatal("expected mint amount to be", toBurn, "got", parsedLog.Amount)
+			}
+		}
+	}
+	if !burnLogged {
+		t.Fatal("expected burn event to be logged")
+	}
 	balanceAfterBurning, err := builder.L2.Client.BalanceAt(ctx, nativeTokenOwnerAddr, nil)
 	Require(t, err)
 	gasUsed = getGasUsed(receipt)
