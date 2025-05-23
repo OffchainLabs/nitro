@@ -157,6 +157,8 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	_, valStack := createTestValidationNode(t, ctx, &valCfg)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
+	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
@@ -166,7 +168,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
-		valCfg.Wasm.RootPath,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -182,7 +184,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStackB,
-		valCfg.Wasm.RootPath,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)
@@ -622,11 +624,13 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	parentChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
 	currentNode, err = arbnode.CreateNodeFullExecutionClient(
 		ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
 		nil, // Blob reader.
-		"",  // Wasm root path.
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 
@@ -833,7 +837,9 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, "" /* wasm root path */)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack)
