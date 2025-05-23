@@ -85,6 +85,7 @@ type SequencerConfig struct {
 
 type DangerousConfig struct {
 	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
+	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
 
 type TimeboostConfig struct {
@@ -184,6 +185,7 @@ var DefaultSequencerConfig = SequencerConfig{
 
 var DefaultDangerousConfig = DangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
+	DisableBlobBaseFeeCheck:         false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -222,6 +224,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 
 func DangerousAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
+	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
 }
 
 type txQueueItem struct {
@@ -417,6 +420,7 @@ type Sequencer struct {
 	expectedSurplusMutex              sync.RWMutex
 	expectedSurplus                   int64
 	expectedSurplusUpdated            bool
+	expectedSurplusFailureCount       int
 	auctioneerAddr                    common.Address
 	timeboostAuctionResolutionTxQueue chan txQueueItem
 }
@@ -1319,10 +1323,25 @@ func (s *Sequencer) InitializeExpressLaneService(
 	return nil
 }
 
+const maxConsecutiveExpectedSurplusFailures = 20
+
 var (
 	usableBytesInBlob    = big.NewInt(int64(len(kzg4844.Blob{}) * 31 / 32))
 	blobTxBlobGasPerBlob = big.NewInt(params.BlobTxBlobGasPerBlob)
 )
+
+func (s *Sequencer) logExpectedSurplusError(err error) {
+	s.expectedSurplusFailureCount++
+
+	logLevel := log.Error
+	if s.expectedSurplusFailureCount <= maxConsecutiveExpectedSurplusFailures {
+		logLevel = log.Warn
+	}
+
+	logLevel("expected surplus soft/hard thresholds are enabled but unable to fetch latest expected surplus, retrying",
+		"err", err,
+		"consecutiveFailures", s.expectedSurplusFailureCount)
+}
 
 func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	header, err := s.l1Reader.LastHeader(ctx)
@@ -1330,7 +1349,7 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("error encountered getting latest header from l1reader while updating expectedSurplus: %w", err)
 	}
 	l1GasPrice := header.BaseFee.Uint64()
-	if header.BlobGasUsed != nil {
+	if header.BlobGasUsed != nil && !s.config().Dangerous.DisableBlobBaseFeeCheck {
 		if header.ExcessBlobGas != nil {
 			blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
 			if err != nil {
@@ -1364,6 +1383,7 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	if config.ExpectedSurplusSoftThreshold != "default" && expectedSurplus < int64(config.expectedSurplusSoftThreshold) {
 		log.Warn("expected surplus is below soft threshold", "value", expectedSurplus, "threshold", config.expectedSurplusSoftThreshold)
 	}
+	s.expectedSurplusFailureCount = 0
 	return expectedSurplus, nil
 }
 
@@ -1402,7 +1422,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			defer s.expectedSurplusMutex.Unlock()
 			if err != nil {
 				s.expectedSurplusUpdated = false
-				log.Error("expected surplus soft/hard thresholds are enabled but unable to fetch latest expected surplus, retrying", "err", err)
+				s.logExpectedSurplusError(err)
 				return 0
 			}
 			s.expectedSurplusUpdated = true
