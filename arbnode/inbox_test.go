@@ -59,7 +59,11 @@ func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) containers.Pr
 	return containers.NewReadyPromise(markFeedStartWithReturn(to))
 }
 
-func (w *execClientWrapper) Maintenance() containers.PromiseInterface[struct{}] {
+func (w *execClientWrapper) ShouldTriggerMaintenance() containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(false, nil)
+}
+
+func (w *execClientWrapper) TriggerMaintenance() containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 

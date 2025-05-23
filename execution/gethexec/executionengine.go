@@ -1104,7 +1104,22 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	}
 }
 
-func (s *ExecutionEngine) Maintenance(capLimit uint64) error {
+func (s *ExecutionEngine) ShouldTriggerMaintenance(trieLimitBeforeFlushMaintenance time.Duration) bool {
+	if trieLimitBeforeFlushMaintenance == 0 {
+		return false
+	}
+	procTimeBeforeFlush, err := s.bc.ProcTimeBeforeFlush()
+	if err != nil {
+		log.Error("failed to get time before flush", "err")
+		return false
+	}
+	if procTimeBeforeFlush < trieLimitBeforeFlushMaintenance/2 {
+		log.Warn("Time before flush is too low, maintenance should be triggered soon", "procTimeBeforeFlush", procTimeBeforeFlush)
+	}
+	return procTimeBeforeFlush < trieLimitBeforeFlushMaintenance
+}
+
+func (s *ExecutionEngine) TriggerMaintenance(capLimit uint64) error {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 	return s.bc.FlushTrieDB(common.StorageSize(capLimit))
