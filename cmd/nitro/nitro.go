@@ -531,6 +531,10 @@ func mainImpl() int {
 		log.Error("failed to create execution node", "err", err)
 		return 1
 	}
+	locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
+	if err != nil {
+		log.Error("failed to create machine locator: %w", err)
+	}
 
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(
 		ctx,
@@ -550,7 +554,7 @@ func mainImpl() int {
 		fatalErrChan,
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
-		liveNodeConfig.Get().Validation.Wasm.RootPath,
+		locator.LatestWasmModuleRoot(),
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)

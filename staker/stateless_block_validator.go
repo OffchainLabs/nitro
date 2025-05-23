@@ -26,7 +26,6 @@ import (
 	validatorclient "github.com/offchainlabs/nitro/validator/client"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 type StatelessBlockValidator struct {
@@ -38,13 +37,13 @@ type StatelessBlockValidator struct {
 
 	recorder execution.ExecutionRecorder
 
-	inboxReader  InboxReaderInterface
-	inboxTracker InboxTrackerInterface
-	streamer     TransactionStreamerInterface
-	db           ethdb.Database
-	dapReaders   []daprovider.Reader
-	stack        *node.Node
-	locator      *server_common.MachineLocator
+	inboxReader          InboxReaderInterface
+	inboxTracker         InboxTrackerInterface
+	streamer             TransactionStreamerInterface
+	db                   ethdb.Database
+	dapReaders           []daprovider.Reader
+	stack                *node.Node
+	latestWasmModuleRoot common.Hash
 }
 
 type BlockValidatorRegistrer interface {
@@ -238,7 +237,7 @@ func NewStatelessBlockValidator(
 	dapReaders []daprovider.Reader,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
-	wasmRootPath string,
+	latestWasmModuleRoot common.Hash,
 ) (*StatelessBlockValidator, error) {
 	var executionSpawners []validator.ExecutionSpawner
 	var boldExecutionSpawners []validator.BOLDExecutionSpawner
@@ -264,24 +263,23 @@ func NewStatelessBlockValidator(
 		return nil, errors.New("no enabled execution servers")
 	}
 
-	locator, err := server_common.NewMachineLocator(wasmRootPath)
-	if err != nil {
-		return nil, fmt.Errorf("creating new machine locator: %w", err)
+	if latestWasmModuleRoot == (common.Hash{}) {
+		return nil, errors.New("latestWasmModuleRoot not set")
 	}
 
 	return &StatelessBlockValidator{
-		config:           config(),
-		recorder:         recorder,
-		redisValidator:   redisValClient,
-		inboxReader:      inboxReader,
-		inboxTracker:     inbox,
-		streamer:         streamer,
-		db:               arbdb,
-		dapReaders:       dapReaders,
-		execSpawners:     executionSpawners,
-		boldExecSpawners: boldExecutionSpawners,
-		stack:            stack,
-		locator:          locator,
+		config:               config(),
+		recorder:             recorder,
+		redisValidator:       redisValClient,
+		inboxReader:          inboxReader,
+		inboxTracker:         inbox,
+		streamer:             streamer,
+		db:                   arbdb,
+		dapReaders:           dapReaders,
+		execSpawners:         executionSpawners,
+		boldExecSpawners:     boldExecutionSpawners,
+		stack:                stack,
+		latestWasmModuleRoot: latestWasmModuleRoot,
 	}, nil
 }
 
@@ -568,7 +566,7 @@ func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execut
 }
 
 func (v *StatelessBlockValidator) GetLatestWasmModuleRoot() common.Hash {
-	return v.locator.LatestWasmModuleRoot()
+	return v.latestWasmModuleRoot
 }
 
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
