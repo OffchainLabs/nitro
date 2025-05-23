@@ -63,7 +63,7 @@ func (a *contractAdapter) CodeAt(ctx context.Context, contract common.Address, b
 }
 
 func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
-	var num rpc.BlockNumber = rpc.LatestBlockNumber
+	var num = rpc.LatestBlockNumber
 	if blockNumber != nil {
 		num = rpc.BlockNumber(blockNumber.Int64())
 	}
