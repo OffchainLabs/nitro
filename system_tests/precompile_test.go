@@ -757,27 +757,27 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	eightDaysFromNow := uint64(now.Add(24 * 8 * time.Hour).Unix())
 
 	// attempts to enable the feature too early (6 days from now, instead of 7)
-	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sixDaysFromNow)
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sixDaysFromNow)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}
 
 	// succeeds to enable the feature enough in the future (8 days from now)
-	tx, err := arbOwner.SetNativeTokenEnabledFrom(&authOwner, eightDaysFromNow)
+	tx, err := arbOwner.SetNativeTokenManagementFrom(&authOwner, eightDaysFromNow)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// succeeds to shorten the time to enable the feature as long as it is still
 	// far enough in the future (7.5 days from now)
-	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sevenAndAHalfDaysFromNow)
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sevenAndAHalfDaysFromNow)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// fails to shorten the time to enable the feature if it is too close to
 	// the current time (6 days from now)
-	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sixDaysFromNow)
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sixDaysFromNow)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}
@@ -790,7 +790,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	// than 7 days from now.
 	// #nosec G115
 	sevenDaysFiveSecondsFromNow := uint64(now.Add(24*7*time.Hour + 5*time.Second).Unix())
-	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sevenDaysFiveSecondsFromNow)
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sevenDaysFiveSecondsFromNow)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -807,7 +807,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	// less than 7 days from now. ~ 6.23:59:55
 	// #nosec G115
 	almostSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 5*time.Second).Unix())
-	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, almostSevenDaysFromNow)
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, almostSevenDaysFromNow)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -816,7 +816,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	// ~ 6.23:59:40
 	// #nosec G115
 	tooFarFromSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 20*time.Second).Unix())
-	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, tooFarFromSevenDaysFromNow)
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, tooFarFromSevenDaysFromNow)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}

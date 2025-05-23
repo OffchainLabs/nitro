@@ -60,15 +60,15 @@ func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error)
 	return c.State.ChainOwners().AllMembers(65536)
 }
 
-// SetNativeTokenEnabledFrom sets a time in epoch seconds when the native token
+// SetNativeTokenManagementFrom sets a time in epoch seconds when the native token
 // management becomes enabled. Setting it to 0 disables the feature.
 // If the feature is disabled, then the time must be at least 7 days in the
 // future.
-func (con ArbOwner) SetNativeTokenEnabledFrom(c ctx, evm mech, timestamp uint64) error {
+func (con ArbOwner) SetNativeTokenManagementFrom(c ctx, evm mech, timestamp uint64) error {
 	if timestamp == 0 {
-		return c.State.SetNativeTokenEnabledFromTime(0)
+		return c.State.SetNativeTokenManagementFromTime(0)
 	}
-	stored, err := c.State.NativeTokenEnabledFromTime()
+	stored, err := c.State.NativeTokenManagementFromTime()
 	if err != nil {
 		return err
 	}
@@ -87,12 +87,12 @@ func (con ArbOwner) SetNativeTokenEnabledFrom(c ctx, evm mech, timestamp uint64)
 	if stored > now && stored <= now+NativeTokenEnableDelay && timestamp < stored {
 		return ErrNativeTokenBackward
 	}
-	return c.State.SetNativeTokenEnabledFromTime(timestamp)
+	return c.State.SetNativeTokenManagementFromTime(timestamp)
 }
 
 // AddNativeTokenOwner adds account as a native token owner
 func (con ArbOwner) AddNativeTokenOwner(c ctx, evm mech, newOwner addr) error {
-	enabledTime, err := c.State.NativeTokenEnabledFromTime()
+	enabledTime, err := c.State.NativeTokenManagementFromTime()
 	if err != nil {
 		return err
 	}
