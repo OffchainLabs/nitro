@@ -378,7 +378,7 @@ func extractArbosMessage(
 			}
 			if delayed == nil {
 				log.Error("No more delayed messages in queue", "delayedMessagesRead", p.melState.DelayedMessagesRead)
-				return nil, p, fmt.Errorf("no more delayed messages in queue")
+				return nil, p, fmt.Errorf("no more delayed messages in db")
 			}
 			p.melState.DelayedMessagesRead += 1
 			msg = &arbostypes.MessageWithMetadata{
