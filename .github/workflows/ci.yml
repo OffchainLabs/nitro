@@ -132,7 +132,7 @@ jobs:
         run: make -j build-node-deps
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
           skip-pkg-cache: true

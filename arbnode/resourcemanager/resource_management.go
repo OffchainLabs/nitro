@@ -60,7 +60,7 @@ func Init(conf *Config) error {
 
 func ParseMemLimit(limitStr string) (int, error) {
 	var (
-		limit int = 1
+		limit = 1
 		s     string
 	)
 	if _, err := fmt.Sscanf(limitStr, "%d%s", &limit, &s); err != nil {
@@ -164,11 +164,11 @@ func NewCgroupsMemoryLimitCheckerIfSupported(memLimitBytes int) (*cgroupsMemoryL
 // trivialLimitChecker checks no limits, so its limits are never exceeded.
 type trivialLimitChecker struct{}
 
-func (_ trivialLimitChecker) IsLimitExceeded() (bool, error) {
+func (trivialLimitChecker) IsLimitExceeded() (bool, error) {
 	return false, nil
 }
 
-func (_ trivialLimitChecker) String() string { return "trivial" }
+func (trivialLimitChecker) String() string { return "trivial" }
 
 type cgroupsMemoryFiles struct {
 	limitFile, usageFile, statsFile string
