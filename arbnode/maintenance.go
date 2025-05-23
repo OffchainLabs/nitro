@@ -21,7 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-// Regularly runs db compaction if configured
 type MaintenanceRunner struct {
 	stopwaiter.StopWaiter
 
@@ -40,13 +39,13 @@ type MaintenanceConfig struct {
 	Lock        redislock.SimpleCfg `koanf:"lock" reload:"hot"`
 	Triggerable bool                `koanf:"triggerable" reload:"hot"`
 
-	// Generated: the minutes since start of UTC day to compact at
+	// Generated: the minutes since start of UTC day to run maintenance at
 	minutesAfterMidnight int
 	enabled              bool
 }
 
 // Returns true if successful
-func (c *MaintenanceConfig) parseDbCompactionTime() bool {
+func (c *MaintenanceConfig) parseMaintenanceRunTime() bool {
 	if c.TimeOfDay == "" {
 		return true
 	}
@@ -68,8 +67,8 @@ func (c *MaintenanceConfig) parseDbCompactionTime() bool {
 }
 
 func (c *MaintenanceConfig) Validate() error {
-	if !c.parseDbCompactionTime() {
-		return fmt.Errorf("expected sequencer coordinator db compaction time to be in 24-hour HH:MM format but got \"%v\"", c.TimeOfDay)
+	if !c.parseMaintenanceRunTime() {
+		return fmt.Errorf("expected maintenance run time to be in 24-hour HH:MM format but got \"%v\"", c.TimeOfDay)
 	}
 	return nil
 }
@@ -132,11 +131,11 @@ func wentPastTimeOfDay(before time.Time, after time.Time, timeOfDay int) bool {
 	if newMinutes < prevMinutes {
 		newMinutes += 60 * 24
 	}
-	dbCompactionMinutes := timeOfDay
-	if dbCompactionMinutes < prevMinutes {
-		dbCompactionMinutes += 60 * 24
+	maintenanceRunTimeMinutes := timeOfDay
+	if maintenanceRunTimeMinutes < prevMinutes {
+		maintenanceRunTimeMinutes += 60 * 24
 	}
-	return prevMinutes < dbCompactionMinutes && newMinutes >= dbCompactionMinutes
+	return prevMinutes < maintenanceRunTimeMinutes && newMinutes >= maintenanceRunTimeMinutes
 }
 
 // bool if running currently, if false - time of last time it was running
