@@ -189,9 +189,19 @@ func (mr *MaintenanceRunner) maybeRunScheduledMaintenance(ctx context.Context) t
 		return time.Minute
 	}
 
-	err := mr.attemptMaintenance(ctx)
+	shouldTriggerMaintenance, err := mr.exec.ShouldTriggerMaintenance().Await(mr.GetContext())
 	if err != nil {
-		log.Warn("scheduled maintenance error", "err", err)
+		log.Error("error checking if maintenance should be triggered", "err", err)
+		return time.Minute
+	}
+	if !shouldTriggerMaintenance {
+		log.Debug("skipping maintenance, not triggered")
+		return time.Minute
+	}
+
+	err = mr.attemptMaintenance(ctx)
+	if err != nil {
+		log.Error("scheduled maintenance error", "err", err)
 	}
 
 	return time.Minute
@@ -215,15 +225,6 @@ func (mr *MaintenanceRunner) Trigger() error {
 }
 
 func (mr *MaintenanceRunner) attemptMaintenance(ctx context.Context) error {
-	shouldTriggerMaintenance, err := mr.exec.ShouldTriggerMaintenance().Await(mr.GetContext())
-	if err != nil {
-		return err
-	}
-	if !shouldTriggerMaintenance {
-		log.Debug("skipping maintenance, not triggered")
-		return nil
-	}
-
 	if mr.seqCoordinator == nil {
 		return mr.runMaintenance()
 	}
