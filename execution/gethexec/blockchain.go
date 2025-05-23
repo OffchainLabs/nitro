@@ -52,7 +52,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".archive", DefaultCachingConfig.Archive, "retain past block state")
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age of recent blocks to keep in memory")
-	f.Duration(prefix+".trie-time-limit-before-flush-maintenance", DefaultCachingConfig.TrieTimeLimitBeforeFlushMaintenance, "maximum block processing time before trie is written to hard-disk during maintenance operation")
+	f.Duration(prefix+".trie-time-limit-before-flush-maintenance", DefaultCachingConfig.TrieTimeLimitBeforeFlushMaintenance, "triggers maintenance if the block processing time required to reach trie-time-limit is smaller or equal than trie-time-limit-before-flush-maintenance (0 = disables this requirement)")
 	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
 	f.Duration(prefix+".trie-time-limit-random-offset", DefaultCachingConfig.TrieTimeLimitRandomOffset, "if greater then 0, the block processing time period of each trie write to hard-disk is shortened by a random value from range [0, trie-time-limit-random-offset)")
 	f.Int(prefix+".trie-dirty-cache", DefaultCachingConfig.TrieDirtyCache, "amount of memory in megabytes to cache state diffs against disk with (larger cache lowers database growth)")
