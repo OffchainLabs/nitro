@@ -91,7 +91,7 @@ type Config struct {
 	MemFreeLimit string `koanf:"mem-free-limit" reload:"hot"`
 }
 
-// DefaultConfig has the defaul resourcemanager configuration,
+// DefaultConfig has the default resourcemanager configuration,
 // all limits are disabled.
 var DefaultConfig = Config{
 	MemFreeLimit: "",
@@ -99,7 +99,9 @@ var DefaultConfig = Config{
 
 // ConfigAddOptions adds the configuration options for resourcemanager.
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".mem-free-limit", DefaultConfig.MemFreeLimit, "RPC calls are throttled if free system memory excluding the page cache is below this amount, expressed in bytes or multiples of bytes with suffix B, K, M, G. The limit should be set such that sufficient free memory is left for the page cache in order for the system to be performant")
+	// mem-free-limit is specified in bytes or multiples of bytes with suffix B, K, M, G, T. The limit should be
+	// set such that sufficient free memory is left for the page cache in order for the system to be performant.
+	f.String(prefix+".mem-free-limit", DefaultConfig.MemFreeLimit, "Decline RPC calls if free memory excluding the page cache is below this amount")
 }
 
 // httpServer implements http.Handler and wraps calls to inner with a resource
