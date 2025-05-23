@@ -7,11 +7,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
@@ -37,7 +40,7 @@ const (
 // containing only the computation-only opcodes and that the gas in the computation
 // only opcodes is equal to the OneDimensionalGasCost.
 func TestDimLogComputationOnlyOpcodes(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
 
@@ -80,7 +83,7 @@ func TestDimLogComputationOnlyOpcodes(t *testing.T) {
 // #########################################################################################################
 
 // common setup for all gas_dimension_logger tests
-func gasDimensionTestSetup(t *testing.T) (
+func gasDimensionTestSetup(t *testing.T, expectRevert bool) (
 	ctx context.Context,
 	cancel context.CancelFunc,
 	builder *NodeBuilder,
@@ -93,6 +96,22 @@ func gasDimensionTestSetup(t *testing.T) (
 	builder.execConfig.Caching.Archive = true
 	// For now Archive node should use HashScheme
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	if expectRevert {
+		postTxFilter := func(
+			_ *types.Header,
+			statedb *state.StateDB,
+			_ *arbosState.ArbosState,
+			tx *types.Transaction,
+			_ common.Address,
+			_ uint64,
+			_ *core.ExecutionResult) error {
+			if statedb.IsTxFiltered() {
+				return state.ErrArbTxFilter
+			}
+			return nil
+		}
+		builder.execConfig.Sequencer.PostTxFilter = postTxFilter
+	}
 	cleanup = builder.Build(t)
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	return ctx, cancel, builder, auth, cleanup

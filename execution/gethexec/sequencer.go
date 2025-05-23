@@ -62,13 +62,21 @@ var (
 )
 
 type SequencerConfig struct {
-	Enable                       bool            `koanf:"enable"`
-	MaxBlockSpeed                time.Duration   `koanf:"max-block-speed" reload:"hot"`
-	MaxRevertGasReject           uint64          `koanf:"max-revert-gas-reject" reload:"hot"`
-	MaxAcceptableTimestampDelta  time.Duration   `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist              []string        `koanf:"sender-whitelist"`
-	Forwarder                    ForwarderConfig `koanf:"forwarder"`
-	QueueSize                    int             `koanf:"queue-size"`
+	Enable                      bool            `koanf:"enable"`
+	MaxBlockSpeed               time.Duration   `koanf:"max-block-speed" reload:"hot"`
+	MaxRevertGasReject          uint64          `koanf:"max-revert-gas-reject" reload:"hot"`
+	MaxAcceptableTimestampDelta time.Duration   `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
+	SenderWhitelist             []string        `koanf:"sender-whitelist"`
+	Forwarder                   ForwarderConfig `koanf:"forwarder"`
+	QueueSize                   int             `koanf:"queue-size"`
+	PostTxFilter                func(
+		header *types.Header,
+		statedb *state.StateDB,
+		arbosState *arbosState.ArbosState,
+		tx *types.Transaction,
+		sender common.Address,
+		dataGas uint64,
+		result *core.ExecutionResult) error `koanf:"post-tx-filter"`
 	QueueTimeout                 time.Duration   `koanf:"queue-timeout" reload:"hot"`
 	NonceCacheSize               int             `koanf:"nonce-cache-size" reload:"hot"`
 	MaxTxDataSize                int             `koanf:"max-tx-data-size" reload:"hot"`
@@ -169,6 +177,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	SenderWhitelist:             []string{},
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
+	PostTxFilter:                nil,
 	QueueTimeout:                time.Second * 12,
 	NonceCacheSize:              1024,
 	// 95% of the default batch poster limit, leaving 5KB for headers and such
@@ -1140,6 +1149,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	timeboostedTxs := make(map[common.Hash]struct{})
 	hooks := s.makeSequencingHooks()
 	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
+	if config.PostTxFilter != nil {
+		hooks.PostTxFilter = config.PostTxFilter
+	}
 	totalBlockSize = 0 // recompute the totalBlockSize to double check it
 	for i, queueItem := range queueItems {
 		txes[i] = queueItem.tx
