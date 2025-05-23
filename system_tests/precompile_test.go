@@ -561,7 +561,7 @@ func TestArbNativeTokenManager(t *testing.T) {
 	if !isNativeTokenOwner {
 		t.Fatal("expected native token owner to be set")
 	}
-	nativeTokenOwners, err = arbOwner.GetAllNativeTokenOwners(callOpts)
+	nativeTokenOwners, err = arbOwnerPub.GetAllNativeTokenOwners(callOpts)
 	slices.SortFunc(nativeTokenOwners, addrSorter)
 	Require(t, err)
 	if diff := cmp.Diff(nativeTokenOwners, expectedNativeTokenOwners); diff != "" {
