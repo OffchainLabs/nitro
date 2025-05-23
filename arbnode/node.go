@@ -150,6 +150,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
+	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
 }
