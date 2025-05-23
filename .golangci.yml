@@ -1,60 +1,75 @@
-# golangci-lint configuration
-
-run:
-  timeout: 10m
-
-issues:
-  exclude-dirs:
-    - go-ethereum
-    - fastcache
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - staticcheck
-
+version: "2"
 linters:
   enable:
-    - asciicheck  # check for non-ascii characters
-    - errorlint   # enure error wrapping is safely done
-    - gci         # keep imports sorted deterministically
-    - gocritic    # check for certain simplifications
-    - gofmt       # ensure code is formatted
-    - gosec       # check for security concerns
-    - nilerr      # ensure errors aren't mishandled
-    - staticcheck # check for suspicious constructs
-    - unused      # check for unused constructs
-
-linters-settings:
-  errcheck:
-    # report when type assertions aren't checked for errors as in
-    #         a := b.(MyStruct)
-    #
-    check-type-assertions: true
-
-  gci:
-    sections:
-      - standard
-      - default
-      - prefix(github.com/ethereum/go-ethereum)
-      - prefix(github.com/offchainlabs)
-
-  gocritic:
-    disabled-tags:
-      - experimental
-      - opinionated
-
-    disabled-checks:
-      - ifElseChain
-      - assignOp
-      - unlambda
-      - exitAfterDefer
-
-  gosec:
-    excludes:
-      - G404  # checks that random numbers are securely generated
-
-  govet:
-    enable-all: true
-    disable:
-      - shadow
-      - fieldalignment
+    - asciicheck
+    - errorlint
+    - gocritic
+    - gosec
+    - nilerr
+  settings:
+    errcheck:
+      check-type-assertions: true
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - assignOp
+        - unlambda
+        - exitAfterDefer
+      disabled-tags:
+        - experimental
+        - opinionated
+    gosec:
+      excludes:
+        - G404
+    govet:
+      disable:
+        - shadow
+        - fieldalignment
+      enable-all: true
+    staticcheck:
+      checks:
+        - all
+        - '-QF1001' # Apply De Morgan's law
+        - '-QF1003' # Tagged switch instead of if/else blocks
+        - '-QF1006' # Lift break into loop condition
+        - '-QF1008' # Remove embeded fields
+        - '-ST1005' # Errors shouldn't end in punctuation or start with capitals
+        - '-ST1012' # Errors should be named errFoo or ErrFoo
+        - '-ST1003' # Variable naming rules (e.g. underscores in packages, and abbreviations)
+        - '-ST1016' # Methods on the same type should ahve the same reciever name
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - staticcheck
+        path: _test\.go
+    paths:
+      - go-ethereum
+      - fastcache
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/ethereum/go-ethereum)
+        - prefix(github.com/offchainlabs)
+  exclusions:
+    generated: lax
+    paths:
+      - go-ethereum
+      - fastcache
+      - third_party$
+      - builtin$
+      - examples$

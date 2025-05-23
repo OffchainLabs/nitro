@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -469,6 +470,331 @@ func TestCurrentTxL1GasFees(t *testing.T) {
 	}
 	if currTxL1GasFees.Cmp(big.NewInt(0)) != 1 {
 		Fatal(t, "expected currTxL1GasFees to be greater than 0, got", currTxL1GasFees)
+	}
+}
+
+func TestArbNativeTokenManager(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// The chain being tested will have the feature enabled.
+	arbOSInit := &params.ArbOSInit{
+		NativeTokenSupplyManagementEnabled: true,
+	}
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_41)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	authOwner := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	ownerAddr := builder.L2Info.GetAddress("Owner")
+
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	// first tests native token owner management
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+
+	nativeTokenOwnerName := "NativeTokenOwner"
+	builder.L2Info.GenerateAccount(nativeTokenOwnerName)
+	nativeTokenOwnerAddr := builder.L2Info.GetAddress(nativeTokenOwnerName)
+
+	// checks that no native token owners are set
+	isNativeTokenOwner, err := arbOwner.IsNativeTokenOwner(callOpts, nativeTokenOwnerAddr)
+	Require(t, err)
+	if isNativeTokenOwner {
+		t.Fatal("expected native token owner to not be set")
+	}
+	nativeTokenOwners, err := arbOwner.GetAllNativeTokenOwners(callOpts)
+	Require(t, err)
+	if len(nativeTokenOwners) != 0 {
+		t.Fatal("expected no native token owners")
+	}
+
+	// adds native token owners
+	tx, err := arbOwner.AddNativeTokenOwner(&authOwner, nativeTokenOwnerAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.AddNativeTokenOwner(&authOwner, ownerAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// checks that the native token owners are set
+	isNativeTokenOwner, err = arbOwner.IsNativeTokenOwner(callOpts, nativeTokenOwnerAddr)
+	Require(t, err)
+	if !isNativeTokenOwner {
+		t.Fatal("expected native token owner to be set")
+	}
+	expectedNativeTokenOwners := []common.Address{nativeTokenOwnerAddr, ownerAddr}
+	sort.Slice(expectedNativeTokenOwners, func(i, j int) bool {
+		return expectedNativeTokenOwners[i].Cmp(expectedNativeTokenOwners[j]) < 0
+	})
+	nativeTokenOwners, err = arbOwner.GetAllNativeTokenOwners(callOpts)
+	Require(t, err)
+	sort.Slice(nativeTokenOwners, func(i, j int) bool {
+		return nativeTokenOwners[i].Cmp(nativeTokenOwners[j]) < 0
+	})
+	if len(nativeTokenOwners) != len(expectedNativeTokenOwners) {
+		t.Fatal("expected native token owners to be the same length")
+	}
+	for i := 0; i < len(nativeTokenOwners); i += 1 {
+		if nativeTokenOwners[i].Cmp(expectedNativeTokenOwners[i]) != 0 {
+			t.Fatal("expected native token owners to be the same")
+		}
+	}
+
+	// removes native token owner
+	tx, err = arbOwner.RemoveNativeTokenOwner(&authOwner, ownerAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	isNativeTokenOwner, err = arbOwner.IsNativeTokenOwner(callOpts, ownerAddr)
+	Require(t, err)
+	if isNativeTokenOwner {
+		t.Fatal("expected native token owner to not be set")
+	}
+	nativeTokenOwners, err = arbOwner.GetAllNativeTokenOwners(callOpts)
+	Require(t, err)
+	if len(nativeTokenOwners) != 1 {
+		t.Fatal("expected one native token owner")
+	}
+	if nativeTokenOwners[0].Cmp(nativeTokenOwnerAddr) != 0 {
+		t.Fatal("expected native token owner to be", nativeTokenOwnerAddr, "got", nativeTokenOwners[0])
+	}
+
+	// tests minting and burning native tokens
+
+	arbNativeTokenManager, err := precompilesgen.NewArbNativeTokenManager(types.ArbNativeTokenManagerAddress, builder.L2.Client)
+	Require(t, err)
+
+	// tries to mint and burn without being a native token owner
+	_, err = arbNativeTokenManager.MintNativeToken(&authOwner, big.NewInt(100))
+	if err == nil || err.Error() != "execution reverted" {
+		t.Fatal("expected minting to fail")
+	}
+	_, err = arbNativeTokenManager.BurnNativeToken(&authOwner, big.NewInt(100))
+	if err == nil || err.Error() != "execution reverted" {
+		t.Fatal("expected burning to fail")
+	}
+
+	// funds the native token owner
+	tx = builder.L2Info.PrepareTx("Owner", nativeTokenOwnerName, builder.L2Info.TransferGas, big.NewInt(500000000000000000), nil)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	authNativeTokenOwner := builder.L2Info.GetDefaultTransactOpts(nativeTokenOwnerName, ctx)
+	authNativeTokenOwner.GasLimit = 32000000
+
+	getGasUsed := func(receipt *types.Receipt) *big.Int {
+		gasUsed := new(big.Int).SetUint64(receipt.GasUsed)
+		gasUsed.Mul(gasUsed, receipt.EffectiveGasPrice)
+		return gasUsed
+	}
+
+	// checks minting
+	toMint := big.NewInt(100)
+	balanceBeforeMinting, err := builder.L2.Client.BalanceAt(ctx, nativeTokenOwnerAddr, nil)
+	Require(t, err)
+	tx, err = arbNativeTokenManager.MintNativeToken(&authNativeTokenOwner, toMint)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	balanceAfterMinting, err := builder.L2.Client.BalanceAt(ctx, nativeTokenOwnerAddr, nil)
+	Require(t, err)
+	gasUsed := getGasUsed(receipt)
+	expectedBalance := new(big.Int).Sub(balanceBeforeMinting, gasUsed)
+	expectedBalance = expectedBalance.Add(expectedBalance, toMint)
+	if balanceAfterMinting.Cmp(expectedBalance) != 0 {
+		t.Fatal("expected balance to be", expectedBalance, "got", balanceAfterMinting)
+	}
+
+	// checks burning
+	toBurn := big.NewInt(50)
+	tx, err = arbNativeTokenManager.BurnNativeToken(&authNativeTokenOwner, toBurn)
+	Require(t, err)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	balanceAfterBurning, err := builder.L2.Client.BalanceAt(ctx, nativeTokenOwnerAddr, nil)
+	Require(t, err)
+	gasUsed = getGasUsed(receipt)
+	expectedBalance = new(big.Int).Sub(balanceAfterMinting, gasUsed)
+	expectedBalance = expectedBalance.Sub(expectedBalance, toBurn)
+	if balanceAfterBurning.Cmp(expectedBalance) != 0 {
+		t.Fatal("expected balance to be", expectedBalance, "got", balanceAfterBurning)
+	}
+
+	// checks sending L2 to L1 value is disabled while native token owners exist
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
+	Require(t, err)
+	authNativeTokenOwner.Value = big.NewInt(100)
+	_, err = arbSys.SendTxToL1(&authNativeTokenOwner, common.Address{}, []byte{})
+	if err == nil || err.Error() != "execution reverted" {
+		t.Fatal("expected sending L2 to L1 value to fail")
+	}
+
+	// After clearning the native token owners, sending L2 to L1 value should
+	// work again.
+	tx, err = arbOwner.RemoveNativeTokenOwner(&authOwner, nativeTokenOwnerAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	authNativeTokenOwner.Value = big.NewInt(100)
+	_, err = arbSys.SendTxToL1(&authNativeTokenOwner, common.Address{}, []byte{})
+	if err != nil {
+		t.Fatal("expected sending L2 to L1 value to succeed")
+	}
+}
+
+func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_41)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	authOwner := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	// tests that native token owner management is disabled by default
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+
+	nativeTokenOwnerName := "NativeTokenOwner"
+	builder.L2Info.GenerateAccount(nativeTokenOwnerName)
+	nativeTokenOwnerAddr := builder.L2Info.GetAddress(nativeTokenOwnerName)
+
+	// checks that no native token owners are set
+	isNativeTokenOwner, err := arbOwner.IsNativeTokenOwner(callOpts, nativeTokenOwnerAddr)
+	Require(t, err)
+	if isNativeTokenOwner {
+		t.Fatal("expected native token owner to not be set")
+	}
+	nativeTokenOwners, err := arbOwner.GetAllNativeTokenOwners(callOpts)
+	Require(t, err)
+	if len(nativeTokenOwners) != 0 {
+		t.Fatal("expected no native token owners")
+	}
+
+	// attempts to add native token owners before the feature is enabled
+	_, err = arbOwner.AddNativeTokenOwner(&authOwner, nativeTokenOwnerAddr)
+	if err == nil || err.Error() != "execution reverted" {
+		t.Error("expected adding native token owner to fail")
+	}
+
+	now := time.Now()
+	// #nosec G115
+	sixDaysFromNow := uint64(now.Add(24 * 6 * time.Hour).Unix())
+	// #nosec G115
+	sevenAndAHalfDaysFromNow := uint64(now.Add(24*7*time.Hour + 12*time.Hour).Unix())
+	// #nosec G115
+	eightDaysFromNow := uint64(now.Add(24 * 8 * time.Hour).Unix())
+
+	// attempts to enable the feature too early (6 days from now, instead of 7)
+	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sixDaysFromNow)
+	if err == nil || err.Error() != "execution reverted" {
+		t.Error("expected enabling native token management to fail")
+	}
+
+	// succeeds to enable the feature enough in the future (8 days from now)
+	tx, err := arbOwner.SetNativeTokenEnabledFrom(&authOwner, eightDaysFromNow)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// succeeds to shorten the time to enable the feature as long as it is still
+	// far enough in the future (7.5 days from now)
+	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sevenAndAHalfDaysFromNow)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// fails to shorten the time to enable the feature if it is too close to
+	// the current time (6 days from now)
+	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sixDaysFromNow)
+	if err == nil || err.Error() != "execution reverted" {
+		t.Error("expected enabling native token management to fail")
+	}
+
+	// About to test some very specific time-sensitive boundaries. Setting
+	// a new value for now.
+	now = time.Now()
+
+	// succeeds to shorten the time to enable the feature to just 5 seconds more
+	// than 7 days from now.
+	// #nosec G115
+	sevenDaysFiveSecondsFromNow := uint64(now.Add(24*7*time.Hour + 5*time.Second).Unix())
+	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sevenDaysFiveSecondsFromNow)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// Sleep for 15 seconds to ensure that that the time the feature is will be
+	// enabled is <= 7 days from now.
+	time.Sleep(15 * time.Second)
+	// Time to Enable ~ 6.23:59:50
+	// Resetting now after the sleep
+	now = time.Now()
+
+	// Now is should be okay to set the time to enable the feature to some time
+	// greater than 6 days, 23 hours, 59 minutes and 50 seconds from now, but
+	// less than 7 days from now. ~ 6.23:59:55
+	// #nosec G115
+	almostSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 5*time.Second).Unix())
+	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, almostSevenDaysFromNow)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// It should not, however, be okay to set the time to an even earlier time.
+	// ~ 6.23:59:40
+	// #nosec G115
+	tooFarFromSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 20*time.Second).Unix())
+	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, tooFarFromSevenDaysFromNow)
+	if err == nil || err.Error() != "execution reverted" {
+		t.Error("expected enabling native token management to fail")
+	}
+}
+
+func TestNativeTokenManagementNotAvailableBeforeArbos41(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_40)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	accountName := "User2"
+	builder.L2Info.GenerateAccount(accountName)
+	accountAddr := builder.L2Info.GetAddress(accountName)
+	_, err = arbOwner.AddNativeTokenOwner(&auth, accountAddr)
+	if err == nil || err.Error() != "execution reverted" {
+		t.Fatal("expected adding native token owner to fail")
+	}
+
+	// checks that minting doesn't work
+	balanceBeforeMinting, err := builder.L2.Client.BalanceAt(ctx, accountAddr, nil)
+	Require(t, err)
+	arbNativeTokenManager, err := precompilesgen.NewArbNativeTokenManager(types.ArbNativeTokenManagerAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbNativeTokenManager.MintNativeToken(&auth, big.NewInt(100))
+	// It doesn't fail because it is handled as ArbNativeTokenManager doesn't exist
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	balanceAfterMinting, err := builder.L2.Client.BalanceAt(ctx, accountAddr, nil)
+	Require(t, err)
+	if balanceBeforeMinting.Cmp(balanceAfterMinting) != 0 {
+		t.Fatal("expected balance to be the same before and after minting")
 	}
 }
 

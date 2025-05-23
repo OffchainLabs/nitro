@@ -13,6 +13,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -116,7 +117,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 }
 
 func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, error) {
-	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	preimages := make(daprovider.PreimagesMap)
 	for ty, jsonPreimages := range entry.PreimagesB64 {
 		preimages[ty] = jsonPreimages.Map
 	}
