@@ -150,6 +150,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
+	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
 }
@@ -1322,7 +1323,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if execClient != nil {
 		execClient.SetConsensusClient(n)
 	}
-	_, err = n.ExecutionClient.Start(ctx).Await(ctx)
+	err = n.ExecutionClient.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting exec client: %w", err)
 	}
@@ -1507,10 +1508,7 @@ func (n *Node) StopAndWait() {
 		n.dasServerCloseFn()
 	}
 	if n.ExecutionClient != nil {
-		_, err := n.ExecutionClient.StopAndWait().Await(n.ctx)
-		if err != nil {
-			log.Error("error stopping execution client", "err", err)
-		}
+		n.ExecutionClient.StopAndWait()
 	}
 	if err := n.Stack.Close(); err != nil {
 		log.Error("error on stack close", "err", err)

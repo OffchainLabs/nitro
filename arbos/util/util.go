@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -43,10 +42,10 @@ func init() {
 	ParseL2ToL1TxLog = NewLogParser[pgen.ArbSysL2ToL1Tx](pgen.ArbSysABI, "L2ToL1Tx")
 	ParseL2ToL1TransactionLog = NewLogParser[pgen.ArbSysL2ToL1Transaction](pgen.ArbSysABI, "L2ToL1Transaction")
 
-	acts := precompilesgen.ArbosActsABI
+	acts := pgen.ArbosActsABI
 	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = NewCallParser(acts, "startBlock")
 	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = NewCallParser(acts, "batchPostingReport")
-	PackArbRetryableTxRedeem, _ = NewCallParser(precompilesgen.ArbRetryableTxABI, "redeem")
+	PackArbRetryableTxRedeem, _ = NewCallParser(pgen.ArbRetryableTxABI, "redeem")
 }
 
 // Create a mechanism for packing and unpacking calls
