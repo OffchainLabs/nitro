@@ -85,6 +85,7 @@ type SequencerConfig struct {
 
 type DangerousConfig struct {
 	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
+	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
 
 type TimeboostConfig struct {
@@ -184,6 +185,7 @@ var DefaultSequencerConfig = SequencerConfig{
 
 var DefaultDangerousConfig = DangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
+	DisableBlobBaseFeeCheck:         false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -222,6 +224,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 
 func DangerousAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
+	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
 }
 
 type txQueueItem struct {
@@ -1346,7 +1349,7 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("error encountered getting latest header from l1reader while updating expectedSurplus: %w", err)
 	}
 	l1GasPrice := header.BaseFee.Uint64()
-	if header.BlobGasUsed != nil {
+	if header.BlobGasUsed != nil && !s.config().Dangerous.DisableBlobBaseFeeCheck {
 		if header.ExcessBlobGas != nil {
 			blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
 			if err != nil {
