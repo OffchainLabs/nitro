@@ -25,7 +25,7 @@ type OpcodeSumTraceResult = native.TxGasDimensionByOpcodeExecutionResult
 // used for a transaction as the TX receipt, for
 // computation-only opcodes.
 func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
-	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t)
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
 
@@ -115,6 +115,10 @@ func sumUpDimensionalGasCosts(
 // basically all of the TxOp tests do the same checks, the only difference is the setup.
 func TxOpTraceAndCheck(t *testing.T, ctx context.Context, builder *NodeBuilder, receipt *types.Receipt) {
 	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
+
+	if receipt.Status != traceResult.Status {
+		Fatal(t, "Transaction success/failure status mismatch", receipt.Status, traceResult.Status)
+	}
 
 	CheckEqual(t, receipt.GasUsed, traceResult.GasUsed)
 	CheckEqual(t, receipt.GasUsedForL1, traceResult.GasUsedForL1)

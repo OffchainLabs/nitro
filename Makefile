@@ -605,6 +605,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	yarn --cwd contracts build
 	yarn --cwd contracts build:forge:yul
 	yarn --cwd contracts build:forge:gas-dimensions
+	yarn --cwd contracts build:forge:gas-dimensions-yul
 	yarn --cwd contracts-legacy build
 	yarn --cwd contracts-legacy build:forge:yul
 	@touch $@
