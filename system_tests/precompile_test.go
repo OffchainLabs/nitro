@@ -627,6 +627,27 @@ func TestArbNativeTokenManager(t *testing.T) {
 	if balanceAfterBurning.Cmp(expectedBalance) != 0 {
 		t.Fatal("expected balance to be", expectedBalance, "got", balanceAfterBurning)
 	}
+
+	// checks sending L2 to L1 value is disabled while native token owners exist
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
+	Require(t, err)
+	authNativeTokenOwner.Value = big.NewInt(100)
+	_, err = arbSys.SendTxToL1(&authNativeTokenOwner, common.Address{}, []byte{})
+	if err == nil || err.Error() != "execution reverted" {
+		t.Fatal("expected sending L2 to L1 value to fail")
+	}
+
+	// After clearning the native token owners, sending L2 to L1 value should
+	// work again.
+	tx, err = arbOwner.RemoveNativeTokenOwner(&authOwner, nativeTokenOwnerAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	authNativeTokenOwner.Value = big.NewInt(100)
+	_, err = arbSys.SendTxToL1(&authNativeTokenOwner, common.Address{}, []byte{})
+	if err != nil {
+		t.Fatal("expected sending L2 to L1 value to succeed")
+	}
 }
 
 func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
