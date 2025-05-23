@@ -355,7 +355,17 @@ func (m *Manager) checkLatestDesiredBlock(ctx context.Context) {
 				log.Error("Latest block number not a uint64")
 				continue
 			}
-			safeBlockDelayInSeconds := (latestBlock.Number.Uint64() - latestSafeBlock.Number.Uint64()) * uint64(m.times.avgBlockTime.Seconds())
+			latestBlockTime, err := safecast.ToInt64(latestBlock.Time)
+			if err != nil {
+				log.Error("Error casting latest block time to int64", "err", err)
+				continue
+			}
+			latestSafeBlockTime, err := safecast.ToInt64(latestSafeBlock.Time)
+			if err != nil {
+				log.Error("Error casting latest safe block time to int64", "err", err)
+				continue
+			}
+			safeBlockDelayInSeconds := time.Unix(latestBlockTime, 0).Sub(time.Unix(latestSafeBlockTime, 0)).Seconds()
 			if safeBlockDelayInSeconds > 1200 {
 				log.Warn("Latest safe block is delayed by more that 20 minutes", "latestSafeBlock", latestSafeBlock.Number.Uint64(), "latestBlock", latestBlock.Number.Uint64())
 				safeBlockDelayCounter.Inc(1)
