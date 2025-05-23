@@ -168,7 +168,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 
 	var endpointManager SequencerEndpointManager
 	if cfg.UseRedisCoordinator {
-		redisCoordinator, err := redisutil.NewRedisCoordinator(cfg.RedisCoordinatorURL)
+		redisCoordinator, err := redisutil.NewRedisCoordinator(cfg.RedisCoordinatorURL, 1)
 		if err != nil {
 			return nil, err
 		}

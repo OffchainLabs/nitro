@@ -49,7 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 	redisURL := args[0]
-	redisutilCoordinator, err := redisutil.NewRedisCoordinator(redisURL)
+	redisutilCoordinator, err := redisutil.NewRedisCoordinator(redisURL, 1)
 	if err != nil {
 		panic(err)
 	}
