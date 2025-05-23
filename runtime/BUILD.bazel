@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/offchainlabs/bold/runtime",
     visibility = ["//visibility:public"],
     deps = [
+        "//logs/ephemeral",
         "@com_github_ethereum_go_ethereum//log",
         "@com_github_ethereum_go_ethereum//metrics",
     ],

@@ -14,6 +14,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+
+	"github.com/offchainlabs/bold/logs/ephemeral"
 )
 
 const defaultSleepTime = time.Second * 30
@@ -44,6 +46,11 @@ func UntilSucceedsMultipleReturnValue[T, U any](ctx context.Context, fn func() (
 		o(cfg)
 	}
 	count := 0
+	// Retry until succeeds is usually used for cases where its believed that retrying a function will most likely succeed
+	// or the function has a some chance of failing even if it's not expected to fail, based on this assumption,
+	// we use a commonEphemeralErrorHandler to log the errors at warn level for the first 10 minutes
+	// and only after that we log the errors at error level.
+	commonEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(time.Minute*10, "", 0)
 	for {
 		if ctx.Err() != nil {
 			return zeroVal[T](), zeroVal[U](), ctx.Err()
@@ -52,6 +59,7 @@ func UntilSucceedsMultipleReturnValue[T, U any](ctx context.Context, fn func() (
 		if err != nil {
 			count++
 			logLevel := log.Error
+			logLevel = commonEphemeralErrorHandler.LogLevel(err, logLevel)
 			if cfg.LevelWarningError != "" && strings.Contains(err.Error(), cfg.LevelWarningError) {
 				logLevel = log.Warn
 			}
@@ -67,6 +75,7 @@ func UntilSucceedsMultipleReturnValue[T, U any](ctx context.Context, fn func() (
 			}
 			continue
 		}
+		commonEphemeralErrorHandler.Reset()
 		return got, got2, nil
 	}
 }
