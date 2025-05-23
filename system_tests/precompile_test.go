@@ -7,9 +7,12 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"slices"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -495,6 +498,8 @@ func TestArbNativeTokenManager(t *testing.T) {
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
+	arbOwnerPub, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
+	Require(t, err)
 
 	nativeTokenOwnerName := "NativeTokenOwner"
 	builder.L2Info.GenerateAccount(nativeTokenOwnerName)
@@ -507,6 +512,17 @@ func TestArbNativeTokenManager(t *testing.T) {
 		t.Fatal("expected native token owner to not be set")
 	}
 	nativeTokenOwners, err := arbOwner.GetAllNativeTokenOwners(callOpts)
+	Require(t, err)
+	if len(nativeTokenOwners) != 0 {
+		t.Fatal("expected no native token owners")
+	}
+	// same checks to exercise the public interface
+	isNativeTokenOwner, err = arbOwnerPub.IsNativeTokenOwner(callOpts, nativeTokenOwnerAddr)
+	Require(t, err)
+	if isNativeTokenOwner {
+		t.Fatal("expected native token owner to not be set")
+	}
+	nativeTokenOwners, err = arbOwnerPub.GetAllNativeTokenOwners(callOpts)
 	Require(t, err)
 	if len(nativeTokenOwners) != 0 {
 		t.Fatal("expected no native token owners")
@@ -529,21 +545,27 @@ func TestArbNativeTokenManager(t *testing.T) {
 		t.Fatal("expected native token owner to be set")
 	}
 	expectedNativeTokenOwners := []common.Address{nativeTokenOwnerAddr, ownerAddr}
-	sort.Slice(expectedNativeTokenOwners, func(i, j int) bool {
-		return expectedNativeTokenOwners[i].Cmp(expectedNativeTokenOwners[j]) < 0
-	})
+	addrSorter := func(a, b common.Address) int {
+		return a.Cmp(b)
+	}
+	slices.SortFunc(expectedNativeTokenOwners, addrSorter)
 	nativeTokenOwners, err = arbOwner.GetAllNativeTokenOwners(callOpts)
 	Require(t, err)
-	sort.Slice(nativeTokenOwners, func(i, j int) bool {
-		return nativeTokenOwners[i].Cmp(nativeTokenOwners[j]) < 0
-	})
-	if len(nativeTokenOwners) != len(expectedNativeTokenOwners) {
-		t.Fatal("expected native token owners to be the same length")
+	slices.SortFunc(nativeTokenOwners, addrSorter)
+	if diff := cmp.Diff(nativeTokenOwners, expectedNativeTokenOwners); diff != "" {
+		t.Errorf("native token owners differ: %s", diff)
 	}
-	for i := 0; i < len(nativeTokenOwners); i += 1 {
-		if nativeTokenOwners[i].Cmp(expectedNativeTokenOwners[i]) != 0 {
-			t.Fatal("expected native token owners to be the same")
-		}
+	// same checks to exercise the public interface
+	isNativeTokenOwner, err = arbOwnerPub.IsNativeTokenOwner(callOpts, nativeTokenOwnerAddr)
+	Require(t, err)
+	if !isNativeTokenOwner {
+		t.Fatal("expected native token owner to be set")
+	}
+	nativeTokenOwners, err = arbOwnerPub.GetAllNativeTokenOwners(callOpts)
+	slices.SortFunc(nativeTokenOwners, addrSorter)
+	Require(t, err)
+	if diff := cmp.Diff(nativeTokenOwners, expectedNativeTokenOwners); diff != "" {
+		t.Errorf("native token owners differ: %s", diff)
 	}
 
 	// removes native token owner
@@ -566,6 +588,11 @@ func TestArbNativeTokenManager(t *testing.T) {
 	}
 
 	// tests minting and burning native tokens
+
+	nativeTokenOwnerABI, err := precompilesgen.ArbNativeTokenManagerMetaData.GetAbi()
+	Require(t, err)
+	mintTopic := nativeTokenOwnerABI.Events["NativeTokenMinted"].ID
+	burnTopic := nativeTokenOwnerABI.Events["NativeTokenBurned"].ID
 
 	arbNativeTokenManager, err := precompilesgen.NewArbNativeTokenManager(types.ArbNativeTokenManagerAddress, builder.L2.Client)
 	Require(t, err)
@@ -604,6 +631,23 @@ func TestArbNativeTokenManager(t *testing.T) {
 	Require(t, err)
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+	mintLogged := false
+	for _, log := range receipt.Logs {
+		if log.Topics[0] == mintTopic {
+			mintLogged = true
+			parsedLog, err := arbNativeTokenManager.ParseNativeTokenMinted(*log)
+			Require(t, err)
+			if parsedLog.To != nativeTokenOwnerAddr {
+				t.Fatal("expected mint to be to", nativeTokenOwnerAddr, "got", parsedLog.To)
+			}
+			if parsedLog.Amount.Cmp(toMint) != 0 {
+				t.Fatal("expected mint amount to be", toMint, "got", parsedLog.Amount)
+			}
+		}
+	}
+	if !mintLogged {
+		t.Fatal("expected mint event to be logged")
+	}
 	balanceAfterMinting, err := builder.L2.Client.BalanceAt(ctx, nativeTokenOwnerAddr, nil)
 	Require(t, err)
 	gasUsed := getGasUsed(receipt)
@@ -619,6 +663,23 @@ func TestArbNativeTokenManager(t *testing.T) {
 	Require(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+	burnLogged := false
+	for _, log := range receipt.Logs {
+		if log.Topics[0] == burnTopic {
+			burnLogged = true
+			parsedLog, err := arbNativeTokenManager.ParseNativeTokenBurned(*log)
+			Require(t, err)
+			if parsedLog.From != nativeTokenOwnerAddr {
+				t.Fatal("expected mint to be from", nativeTokenOwnerAddr, "got", parsedLog.From)
+			}
+			if parsedLog.Amount.Cmp(toBurn) != 0 {
+				t.Fatal("expected mint amount to be", toBurn, "got", parsedLog.Amount)
+			}
+		}
+	}
+	if !burnLogged {
+		t.Fatal("expected burn event to be logged")
+	}
 	balanceAfterBurning, err := builder.L2.Client.BalanceAt(ctx, nativeTokenOwnerAddr, nil)
 	Require(t, err)
 	gasUsed = getGasUsed(receipt)
@@ -696,27 +757,27 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	eightDaysFromNow := uint64(now.Add(24 * 8 * time.Hour).Unix())
 
 	// attempts to enable the feature too early (6 days from now, instead of 7)
-	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sixDaysFromNow)
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sixDaysFromNow)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}
 
 	// succeeds to enable the feature enough in the future (8 days from now)
-	tx, err := arbOwner.SetNativeTokenEnabledFrom(&authOwner, eightDaysFromNow)
+	tx, err := arbOwner.SetNativeTokenManagementFrom(&authOwner, eightDaysFromNow)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// succeeds to shorten the time to enable the feature as long as it is still
 	// far enough in the future (7.5 days from now)
-	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sevenAndAHalfDaysFromNow)
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sevenAndAHalfDaysFromNow)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// fails to shorten the time to enable the feature if it is too close to
 	// the current time (6 days from now)
-	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sixDaysFromNow)
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sixDaysFromNow)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}
@@ -729,7 +790,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	// than 7 days from now.
 	// #nosec G115
 	sevenDaysFiveSecondsFromNow := uint64(now.Add(24*7*time.Hour + 5*time.Second).Unix())
-	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, sevenDaysFiveSecondsFromNow)
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sevenDaysFiveSecondsFromNow)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -746,7 +807,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	// less than 7 days from now. ~ 6.23:59:55
 	// #nosec G115
 	almostSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 5*time.Second).Unix())
-	tx, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, almostSevenDaysFromNow)
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, almostSevenDaysFromNow)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -755,7 +816,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	// ~ 6.23:59:40
 	// #nosec G115
 	tooFarFromSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 20*time.Second).Unix())
-	_, err = arbOwner.SetNativeTokenEnabledFrom(&authOwner, tooFarFromSevenDaysFromNow)
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, tooFarFromSevenDaysFromNow)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}
