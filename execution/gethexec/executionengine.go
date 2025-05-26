@@ -1122,7 +1122,7 @@ func (s *ExecutionEngine) TriggerMaintenance(capLimit uint64) {
 		if err != nil {
 			log.Error("Failed to flush trie db through maintenance", "err", err)
 		} else {
-			log.Info("Flushing trie db through maintenance completed")
+			log.Info("Flushed trie db through maintenance completed successfully")
 		}
 
 		s.runningMaintenance.Store(false)
