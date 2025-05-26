@@ -24,6 +24,7 @@ import (
 	"runtime/pprof"
 	"runtime/trace"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -105,6 +106,8 @@ type ExecutionEngine struct {
 	wasmTargets []rawdb.WasmTarget
 
 	syncTillBlock uint64
+
+	runningMaintenance atomic.Bool
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -1083,22 +1086,45 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 }
 
 func (s *ExecutionEngine) ShouldTriggerMaintenance(trieLimitBeforeFlushMaintenance time.Duration) bool {
+	if s.runningMaintenance.Load() {
+		return false
+	}
+
 	if trieLimitBeforeFlushMaintenance == 0 {
 		return true
 	}
+
 	procTimeBeforeFlush, err := s.bc.ProcTimeBeforeFlush()
 	if err != nil {
 		log.Error("failed to get time before flush", "err")
 		return false
 	}
+
 	if procTimeBeforeFlush <= trieLimitBeforeFlushMaintenance/2 {
 		log.Warn("Time before flush is too low, maintenance should be triggered soon", "procTimeBeforeFlush", procTimeBeforeFlush)
 	}
 	return procTimeBeforeFlush <= trieLimitBeforeFlushMaintenance
 }
 
-func (s *ExecutionEngine) TriggerMaintenance(capLimit uint64) error {
-	s.createBlocksMutex.Lock()
-	defer s.createBlocksMutex.Unlock()
-	return s.bc.FlushTrieDB(common.StorageSize(capLimit))
+func (s *ExecutionEngine) TriggerMaintenance(capLimit uint64) {
+	if s.runningMaintenance.Swap(true) {
+		log.Info("Maintenance already running, skipping")
+		return
+	}
+
+	// Flushing the trie DB can be a long operation, so we run it in a new thread
+	s.LaunchThread(func(ctx context.Context) {
+		s.createBlocksMutex.Lock()
+		defer s.createBlocksMutex.Unlock()
+
+		log.Info("Flushing trie db through maintenance, it can take a while")
+		err := s.bc.FlushTrieDB(common.StorageSize(capLimit))
+		if err != nil {
+			log.Error("Failed to flush trie db through maintenance", "err", err)
+		} else {
+			log.Info("Flushing trie db through maintenance completed")
+		}
+
+		s.runningMaintenance.Store(false)
+	})
 }
