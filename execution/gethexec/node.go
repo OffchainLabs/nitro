@@ -538,8 +538,8 @@ func (n *ExecutionNode) ShouldTriggerMaintenance() containers.PromiseInterface[b
 
 func (n *ExecutionNode) TriggerMaintenance() containers.PromiseInterface[struct{}] {
 	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
-	err := n.ExecEngine.TriggerMaintenance(trieCapLimitBytes)
-	return containers.NewReadyPromise(struct{}{}, err)
+	n.ExecEngine.TriggerMaintenance(trieCapLimitBytes)
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) Synced(ctx context.Context) bool {
