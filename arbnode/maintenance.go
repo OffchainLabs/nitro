@@ -255,8 +255,7 @@ func (mr *MaintenanceRunner) runMaintenance() error {
 	}
 	defer mr.setMaintenanceDone()
 
-	log.Info("Flushing triedb to disk (this may take a while...)")
+	log.Info("Triggering maintenance")
 	_, err = mr.exec.TriggerMaintenance().Await(mr.GetContext())
-	log.Info("Done flushing triedb to disk")
 	return err
 }
