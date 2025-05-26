@@ -60,7 +60,7 @@ func Init(conf *Config) error {
 
 func ParseMemLimit(limitStr string) (int, error) {
 	var (
-		limit int = 1
+		limit = 1
 		s     string
 	)
 	if _, err := fmt.Sscanf(limitStr, "%d%s", &limit, &s); err != nil {
@@ -91,7 +91,7 @@ type Config struct {
 	MemFreeLimit string `koanf:"mem-free-limit" reload:"hot"`
 }
 
-// DefaultConfig has the defaul resourcemanager configuration,
+// DefaultConfig has the default resourcemanager configuration,
 // all limits are disabled.
 var DefaultConfig = Config{
 	MemFreeLimit: "",
@@ -99,7 +99,9 @@ var DefaultConfig = Config{
 
 // ConfigAddOptions adds the configuration options for resourcemanager.
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".mem-free-limit", DefaultConfig.MemFreeLimit, "RPC calls are throttled if free system memory excluding the page cache is below this amount, expressed in bytes or multiples of bytes with suffix B, K, M, G. The limit should be set such that sufficient free memory is left for the page cache in order for the system to be performant")
+	// mem-free-limit is specified in bytes or multiples of bytes with suffix B, K, M, G, T. The limit should be
+	// set such that sufficient free memory is left for the page cache in order for the system to be performant.
+	f.String(prefix+".mem-free-limit", DefaultConfig.MemFreeLimit, "Decline RPC calls if free memory excluding the page cache is below this amount")
 }
 
 // httpServer implements http.Handler and wraps calls to inner with a resource
@@ -162,11 +164,11 @@ func NewCgroupsMemoryLimitCheckerIfSupported(memLimitBytes int) (*cgroupsMemoryL
 // trivialLimitChecker checks no limits, so its limits are never exceeded.
 type trivialLimitChecker struct{}
 
-func (_ trivialLimitChecker) IsLimitExceeded() (bool, error) {
+func (trivialLimitChecker) IsLimitExceeded() (bool, error) {
 	return false, nil
 }
 
-func (_ trivialLimitChecker) String() string { return "trivial" }
+func (trivialLimitChecker) String() string { return "trivial" }
 
 type cgroupsMemoryFiles struct {
 	limitFile, usageFile, statsFile string

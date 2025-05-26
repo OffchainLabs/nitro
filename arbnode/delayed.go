@@ -313,14 +313,14 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		}
 		b.messageProviders[ethLog.Address] = con
 	}
-	switch {
-	case ethLog.Topics[0] == inboxMessageDeliveredID:
+	switch ethLog.Topics[0] {
+	case inboxMessageDeliveredID:
 		parsedLog, err := con.ParseInboxMessageDelivered(ethLog)
 		if err != nil {
 			return nil, nil, err
 		}
 		return parsedLog.MessageNum, parsedLog.Data, nil
-	case ethLog.Topics[0] == inboxMessageFromOriginID:
+	case inboxMessageFromOriginID:
 		parsedLog, err := con.ParseInboxMessageDeliveredFromOrigin(ethLog)
 		if err != nil {
 			return nil, nil, err

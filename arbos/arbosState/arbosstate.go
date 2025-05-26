@@ -476,11 +476,11 @@ func (state *ArbosState) ChainOwners() *addressSet.AddressSet {
 	return state.chainOwners
 }
 
-func (state *ArbosState) NativeTokenEnabledFromTime() (uint64, error) {
+func (state *ArbosState) NativeTokenManagementFromTime() (uint64, error) {
 	return state.nativeTokenEnabledTime.Get()
 }
 
-func (state *ArbosState) SetNativeTokenEnabledFromTime(val uint64) error {
+func (state *ArbosState) SetNativeTokenManagementFromTime(val uint64) error {
 	return state.nativeTokenEnabledTime.Set(val)
 }
 
