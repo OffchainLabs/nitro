@@ -618,7 +618,7 @@ func TestTimeboostExpressLaneTransactionHandling(t *testing.T) {
 	failTxDueToTimeout := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
 
 	currSeqNumber := uint64(3)
-	wg.Add(2) // We send a failing and a passing tx with cummulative future seq numbers, followed by a unblocking seq num tx
+	wg.Add(2) // We send a failing and a passing tx with cumulative future seq numbers, followed by a unblocking seq num tx
 	var failErr error
 	go func(w *sync.WaitGroup) {
 		failErr = expressLaneClient.SendTransactionWithSequence(ctx, failTx, currSeqNumber+1) // Should give out nonce too high error
@@ -1095,7 +1095,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 // 	Require(t, err)
 
 // 	time.Sleep(time.Second) // Wait for controller to change on the sequencer side
-// 	// Check that now Alice's tx gets priority since she's the controller after bob transfered it
+// 	// Check that now Alice's tx gets priority since she's the controller after bob transferred it
 // 	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
 
 // 	// Alice and Bob submit bids and Alice wins for the next round
@@ -1300,7 +1300,7 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespecte
 	verifyTimeboostedCorrectness(t, ctx, "Alice", seq, seqClient, false, aliceTx, aliceBlock)
 	verifyTimeboostedCorrectness(t, ctx, "Charlie", seq, seqClient, true, charlie0, charlieBlock)
 
-	// Verify that timeboosted byte array receieved via sequencer feed is correct
+	// Verify that timeboosted byte array received via sequencer feed is correct
 	_, err = WaitForTx(ctx, feedListener.Client, charlie0.Hash(), time.Second*5)
 	Require(t, err)
 	_, err = WaitForTx(ctx, feedListener.Client, aliceTx.Hash(), time.Second*5)
@@ -1338,7 +1338,7 @@ func verifyTimeboostedCorrectness(t *testing.T, ctx context.Context, user string
 				t.Fatalf("incorrect timeboosted bit for %s's tx, it should be timeboosted", user)
 			}
 		} else if got {
-			// Other tx's right now shouln't be timeboosted
+			// Other tx's right now shouldn't be timeboosted
 			t.Fatalf("incorrect timeboosted bit for nonspecified tx with index: %d, it shouldn't be timeboosted", txIndex)
 		}
 	}
