@@ -509,12 +509,12 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 			}
 		}
 		if versionInDB != WasmerSerializeVersion {
-			log.Warn("Detected wasmer serialize version %v, expected version %v - removing all old wasm store entries", versionInDB, WasmerSerializeVersion)
+			log.Warn("Detected wasmer serialize version %v, expected version %v - removing old wasm entries", versionInDB, WasmerSerializeVersion)
 			prefixes := rawdb.WasmPrefixesExceptWavm()
 			if err := deleteWasmEntries(db, prefixes, false, 0); err != nil {
-				return fmt.Errorf("Failed to purge wasm store version 0 entries: %w", err)
+				return fmt.Errorf("Failed to purge wasm entries: %w", err)
 			}
-			log.Info("Wasmer serialize version entries successfully removed.")
+			log.Info("Wasm entries successfully removed.")
 			err = rawdb.WriteWasmerSerializeVersion(db, WasmerSerializeVersion)
 			if err != nil {
 				return fmt.Errorf("Failed to write wasmer serialize version: %w", err)
