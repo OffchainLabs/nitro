@@ -589,7 +589,7 @@ func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
 	}
 
 	// if Nitro's WasmerSerializeVersion is not compatible with WasmerSerializeVersion
-	// stored in the database then all keys, expect wavm and other keys, should be removed
+	// stored in the database then all keys, except wavm and other keys, should be removed
 	err = rawdb.WriteWasmerSerializeVersion(db, WasmerSerializeVersion-1)
 	Require(t, err)
 	err = validateOrUpgradeWasmerSerializeVersion(db)
