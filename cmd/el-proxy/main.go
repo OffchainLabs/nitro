@@ -1,5 +1,5 @@
 // Copyright 2025, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/offchainlabs/nitro/blob/master/LICENSE
 
 // el-proxy is an example implementation of a Timeboost Express Lane proxy
 // and should only be used for testing purposes. It listens for
@@ -168,7 +168,7 @@ func (p *ExpressLaneProxy) Start(ctx context.Context) {
 }
 
 func (p *ExpressLaneProxy) StopAndWait() {
-	p.StopWaiterSafe.StopAndWait()
+	p.StopWaiter.StopAndWait()
 	p.expressLaneTracker.StopAndWait()
 }
 
@@ -272,7 +272,7 @@ func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil
 	return goWrapper.Transaction.Hash(), nil
 }
 
-//// We need to proxy some other methods for tools like cast to use when building txs.
+// We need to proxy some other methods for tools like cast to use when building txs.
 
 func (p *ExpressLaneProxy) ChainId(_ context.Context) hexutil.Uint64 {
 	chainId := p.config.ChainId
