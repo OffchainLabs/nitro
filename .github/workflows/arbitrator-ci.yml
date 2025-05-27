@@ -13,7 +13,7 @@ on:
   pull_request:
     paths:
       - 'arbitrator/**'
-      - 'contracts'
+      - 'contracts/**'
       - '.github/workflows/arbitrator-ci.yml'
       - 'Makefile'
   push:
@@ -60,7 +60,7 @@ jobs:
           go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup nodejs
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
@@ -85,8 +85,12 @@ jobs:
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
+      - name: Get Rust version
+        id: rust-version
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+
       - name: Cache Rust intermediate build products
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -95,14 +99,14 @@ jobs:
             ~/.cargo/git/db/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
-          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-full-${{ hashFiles('arbitrator/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-full-${{ hashFiles('arbitrator/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-full-
-            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
+            ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-full-
+            ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-
 
       - name: Cache wabt build
         id: cache-wabt
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/wabt-prefix
           key: ${{ runner.os }}-wabt-${{ env.WABT_VERSION }}
@@ -125,7 +129,7 @@ jobs:
           cache: false
 
       - name: Cache cbrotli
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: cache-cbrotli
         with:
           path: |

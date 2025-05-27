@@ -763,7 +763,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 
 	// Rebuild blockMetadata and cleanup trackers from ArbDB
 	rebuildStartPos := uint64(5)
-	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, newNode.ExecNode, rebuildStartPos)
+	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, newNode.ExecNode, rebuildStartPos, builder.chainConfig.ChainID.Uint64())
 	Require(t, err)
 	blockMetadataFetcher.Update(ctx)
 
@@ -1748,10 +1748,11 @@ func setupExpressLaneAuction(
 	stack, err := node.New(&stackConf)
 	Require(t, err)
 	cfg := &timeboost.BidValidatorConfig{
-		SequencerEndpoint:      fmt.Sprintf("http://localhost:%d", seqPort),
+		RpcEndpoint:            fmt.Sprintf("http://localhost:%d", seqPort),
 		AuctionContractAddress: proxyAddr.Hex(),
 		RedisURL:               redisURL,
 		ProducerConfig:         pubsub.TestProducerConfig,
+		MaxBidsPerSender:       5,
 	}
 	fetcher := func() *timeboost.BidValidatorConfig {
 		return cfg

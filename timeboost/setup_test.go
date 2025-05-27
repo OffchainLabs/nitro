@@ -233,7 +233,7 @@ func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *simulated
 	withRPC := func(n *node.Config, _ *ethconfig.Config) {
 		n.HTTPHost = "localhost"
 		n.HTTPPort = randPort
-		n.HTTPModules = []string{"eth", "net", "web3", "debug", "personal"}
+		n.HTTPModules = []string{"eth", "net", "web3", "debug"}
 	}
 	backend := simulated.NewBackend(genesis, simulated.WithBlockGasLimit(gasLimit), withRPC)
 	return accs, backend, fmt.Sprintf("http://localhost:%d", randPort)

@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [race, legacychallenge, long, challenge]
+        test-mode: [race, legacychallenge, long, challenge, l3challenge]
 
     if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
     
@@ -41,14 +41,14 @@ jobs:
         run: sudo apt update && sudo apt install -y wabt gotestsum
 
       - name: Setup nodejs
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 1.23.x
 
@@ -76,6 +76,10 @@ jobs:
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
+      - name: Get Rust version
+        id: rust-version
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
@@ -89,8 +93,8 @@ jobs:
         with:
           path: |
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ matrix.test-mode }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-${{ matrix.test-mode }}-
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
 
       - name: Cache Rust Build Products
         uses: actions/cache@v3
@@ -102,8 +106,8 @@ jobs:
             arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
             /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.rustc_hash }}-
+          key: ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v3
@@ -115,7 +119,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ matrix.test-mode }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
 
       - name: Build cbrotli-local
         run: ./scripts/build-brotli.sh -l
@@ -130,10 +134,11 @@ jobs:
         run: make -j build-node-deps
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
-          skip-pkg-cache: true
+          skip-cache: true
+          skip-save-cache: true
           
       - name: Custom Lint
         run: |
@@ -156,6 +161,10 @@ jobs:
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
         run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --timeout 120m --cover
+
+      - name: run L3 challenge tests
+        if: matrix.test-mode == 'l3challenge'
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestL3Challenge --timeout 120m --cover
 
       - name: run legacy challenge tests
         if: matrix.test-mode == 'legacychallenge'
@@ -215,7 +224,7 @@ jobs:
 
       - name: Setup nodejs
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
@@ -223,7 +232,7 @@ jobs:
 
       - name: Install go
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 1.23.x
 
@@ -255,6 +264,10 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
+      - name: Get Rust version
+        id: rust-version
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+
       - name: Install Foundry
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: foundry-rs/foundry-toolchain@v1
@@ -285,8 +298,10 @@ jobs:
             arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
             /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.rustc_hash }}-
+          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-
+            ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-
 
       - name: Cache cbrotli
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -299,7 +314,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ matrix.test-mode }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
 
       - name: Build cbrotli-local
         if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -319,10 +334,11 @@ jobs:
 
       - name: Lint
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
-          skip-pkg-cache: true
+          skip-cache: true
+          skip-save-cache: true
           
       - name: Custom Lint
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -346,11 +362,11 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.test-mode }}-full.log
+          name: full.log
           path: full.log
 
       - name: Upload coverage to Codecov
-        if: steps.changed-files.outputs.any_changed == 'true' && matrix.test-mode == 'defaults'
+        if: steps.changed-files.outputs.any_changed == 'true'
         uses: codecov/codecov-action@v2
         with:
           fail_ci_if_error: false

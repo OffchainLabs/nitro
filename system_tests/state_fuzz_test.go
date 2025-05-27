@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -26,10 +25,9 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -38,7 +36,6 @@ func BuildBlock(
 	statedb *state.StateDB,
 	lastBlockHeader *types.Header,
 	chainContext core.ChainContext,
-	chainConfig *params.ChainConfig,
 	inbox arbstate.InboxBackend,
 	seqBatch []byte,
 	runMode core.MessageRunMode,
@@ -144,7 +141,7 @@ func FuzzStateTransition(f *testing.F) {
 			return
 		}
 		chainDb := rawdb.NewMemoryDatabase()
-		chainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
+		chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 		serializedChainConfig, err := json.Marshal(chainConfig)
 		if err != nil {
 			panic(err)
@@ -161,6 +158,7 @@ func FuzzStateTransition(f *testing.F) {
 			cacheConfig,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
+			nil,
 			initMessage,
 			0,
 			0,
@@ -173,20 +171,7 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
-		genesis := &types.Header{
-			Number:     new(big.Int),
-			Nonce:      types.EncodeNonce(0),
-			Time:       0,
-			ParentHash: common.Hash{},
-			Extra:      []byte("Arbitrum"),
-			GasLimit:   l2pricing.GethBlockGasLimit,
-			GasUsed:    0,
-			BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
-			Difficulty: big.NewInt(1),
-			MixDigest:  common.Hash{},
-			Coinbase:   common.Address{},
-			Root:       stateRoot,
-		}
+		genesis := arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, stateRoot, chainConfig)
 
 		// Append a header to the input (this part is authenticated by L1).
 		// The first 32 bytes encode timestamp and L1 block number bounds.
@@ -215,7 +200,7 @@ func FuzzStateTransition(f *testing.F) {
 		}
 		numberOfMessageRunModes := uint8(core.MessageReplayMode) + 1 // TODO update number of run modes when new mode is added
 		runMode := core.MessageRunMode(runModeSeed % numberOfMessageRunModes)
-		_, err = BuildBlock(statedb, genesis, noopChainContext{chainConfig: chaininfo.ArbitrumOneChainConfig()}, chaininfo.ArbitrumOneChainConfig(), inbox, seqBatch, runMode)
+		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: chaininfo.ArbitrumDevTestChainConfig()}, inbox, seqBatch, runMode)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.

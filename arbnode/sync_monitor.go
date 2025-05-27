@@ -57,17 +57,20 @@ func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *Transacti
 
 func (s *SyncMonitor) updateSyncTarget(ctx context.Context) time.Duration {
 	nextSyncTarget, err := s.maxMessageCount()
-	if err != nil {
-		log.Warn("failed readin max msg count", "err", err)
-		return s.config().MsgLag
-	}
 	s.syncTargetLock.Lock()
 	defer s.syncTargetLock.Unlock()
-	s.syncTarget = s.nextSyncTarget
-	s.nextSyncTarget = nextSyncTarget
+	if err == nil {
+		s.syncTarget = s.nextSyncTarget
+		s.nextSyncTarget = nextSyncTarget
+	} else {
+		log.Warn("failed readin max msg count", "err", err)
+		s.nextSyncTarget = 0
+		s.syncTarget = 0
+	}
 	return s.config().MsgLag
 }
 
+// note: if this returns 0 - node is not synced (init message is 1)
 func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
 	s.syncTargetLock.Lock()
 	defer s.syncTargetLock.Unlock()
@@ -201,6 +204,9 @@ func (s *SyncMonitor) Synced() bool {
 		return false
 	}
 	syncTarget := s.SyncTargetMessageCount()
+	if syncTarget == 0 {
+		return false
+	}
 
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {

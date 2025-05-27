@@ -9,14 +9,12 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
@@ -36,8 +34,6 @@ var (
 	_ l2stateprovider.MachineHashCollector    = (*BOLDStateProvider)(nil)
 	_ l2stateprovider.ExecutionProvider       = (*BOLDStateProvider)(nil)
 )
-
-var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
 
 type BOLDStateProvider struct {
 	validator                *staker.BlockValidator
@@ -373,16 +369,14 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		return nil, err
 	}
 	// TODO: Enable Redis streams.
-	wasmModRoot := cfg.AssertionMetadata.WasmModuleRoot
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input, true).Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer execRun.Close()
-	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
-	defer cancelCheckAlive()
-	stepLeaves := execRun.GetMachineHashesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
-	result, err := stepLeaves.Await(ctxCheckAlive)
+	result, err := s.statelessValidator.BOLDExecutionSpawners()[0].GetMachineHashesWithStepSize(
+		ctx,
+		cfg.AssertionMetadata.WasmModuleRoot,
+		input,
+		uint64(cfg.MachineStartIndex),
+		uint64(cfg.StepSize),
+		cfg.NumDesiredHashes,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -455,40 +449,6 @@ func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit l2st
 	return gs, nil
 }
 
-// CtxWithCheckAlive Creates a context with a check alive routine that will
-// cancel the context if the check alive routine fails.
-func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (context.Context, context.CancelFunc) {
-	// Create a context that will cancel if the check alive routine fails.
-	// This is to ensure that we do not have the validator froze indefinitely if
-	// the execution run is no longer alive.
-	ctx, cancel := context.WithCancel(ctxIn)
-	go func() {
-		// Call cancel so that the calling function is canceled if the check alive
-		// routine fails/returns.
-		defer cancel()
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				// Create a context with a timeout, so that the check alive routine does
-				// not run indefinitely.
-				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctx, 5*time.Second)
-				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
-				if err != nil {
-					executionNodeOfflineGauge.Inc(1)
-					cancelCheckAliveWithTimeout()
-					return
-				}
-				cancelCheckAliveWithTimeout()
-			}
-		}
-	}()
-	return ctx, cancel
-}
-
 // CollectProof collects a one-step proof at a message number and OpcodeIndex.
 func (s *BOLDStateProvider) CollectProof(
 	ctx context.Context,
@@ -535,14 +495,10 @@ func (s *BOLDStateProvider) CollectProof(
 		"machineIndex", machineIndex,
 		"startState", fmt.Sprintf("%+v", input.StartState),
 	)
-	wasmModRoot := assertionMetadata.WasmModuleRoot
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input, true).Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer execRun.Close()
-	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
-	defer cancelCheckAlive()
-	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
-	return oneStepProofPromise.Await(ctxCheckAlive)
+	return s.statelessValidator.BOLDExecutionSpawners()[0].GetProofAt(
+		ctx,
+		assertionMetadata.WasmModuleRoot,
+		input,
+		uint64(machineIndex),
+	)
 }

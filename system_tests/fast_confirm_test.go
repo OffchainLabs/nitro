@@ -40,6 +40,7 @@ import (
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -264,6 +265,8 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
+	Require(t, err)
 	stateless, err := staker.NewStatelessBlockValidator(
 		l2node.InboxReader,
 		l2node.InboxTracker,
@@ -273,6 +276,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = stateless.Start(ctx)
@@ -452,6 +456,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
+	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
@@ -461,6 +467,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -513,6 +520,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)

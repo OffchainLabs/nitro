@@ -14,6 +14,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -82,7 +83,10 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 	}
 	msgIdx := msgCount - 1
 	msgResult, err := c.txStreamer.ResultAtMessageIndex(msgIdx)
-	if err != nil {
+	if errors.Is(err, gethexec.ResultNotFound) {
+		log.Debug("Message result not found, node out of sync", "msgIdx", msgIdx, "err", err)
+		return nil, nil
+	} else if err != nil {
 		log.Error("Error getting message result", "msgIdx", msgIdx, "err", err)
 		return nil, err
 	}
@@ -121,7 +125,17 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 	if err != nil {
 		log.Error("Error pushing finality data from consensus to execution", "err", err)
 	} else {
-		log.Debug("Pushed finality data from consensus to execution", "SafeMsgCount", safeMsgCount, "FinalizedMsgCount", finalizedMsgCount, "ValidatedMsgCount", validatedMsgCount)
+		finalityMsgCount := func(fd *arbutil.FinalityData) arbutil.MessageIndex {
+			if fd != nil {
+				return fd.MsgIdx + 1
+			}
+			return 0
+		}
+		log.Debug("Pushed finality data from consensus to execution",
+			"safeMsgCount", finalityMsgCount(safeFinalityData),
+			"finalizedMsgCount", finalityMsgCount(finalizedFinalityData),
+			"validatedMsgCount", finalityMsgCount(validatedFinalityData),
+		)
 	}
 
 	return c.config().SyncInterval

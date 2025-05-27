@@ -29,6 +29,7 @@ type ChainInfo struct {
 	SecondaryFeedUrl          string              `json:"secondary-feed-url"`
 	DasIndexUrl               string              `json:"das-index-url"`
 	HasGenesisState           bool                `json:"has-genesis-state"`
+	BlockMetadataUrl          string              `json:"block-metadata-url"`
 	TrackBlockMetadataFrom    uint64              `json:"track-block-metadata-from,omitempty"`
 	ChainConfig               *params.ChainConfig `json:"chain-config"`
 	RollupAddresses           *RollupAddresses    `json:"rollup"`
