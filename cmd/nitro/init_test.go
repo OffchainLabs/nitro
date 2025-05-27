@@ -518,6 +518,93 @@ func checkKeys(t *testing.T, db ethdb.Database, keys [][]byte, shouldExist bool)
 	}
 }
 
+func generateKeys(prefix []byte, numKeys int) [][]byte {
+	var keys [][]byte
+	for i := 0; i < numKeys; i++ {
+		keys = append(keys, append(prefix, testhelpers.RandomSlice(32)...))
+	}
+	return keys
+}
+
+func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithExtraOptions("wasm", NodeConfigDefault.Execution.Caching.DatabaseCache, NodeConfigDefault.Persistent.Handles, "wasm/", false, nil)
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	version0Keys := generateKeys([]byte{0x00, 'w', 'a'}, 20)
+	version0Keys = append(version0Keys, generateKeys([]byte{0x00, 'w', 'm'}, 20)...)
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 20)
+	armKeys := generateKeys([]byte{0x00, 'w', 'r'}, 20)
+	x86Keys := generateKeys([]byte{0x00, 'w', 'x'}, 20)
+	hostKeys := generateKeys([]byte{0x00, 'w', 'h'}, 20)
+
+	var otherKeys [][]byte
+	for i := 0x00; i <= 0xff; i++ {
+		if byte(i) == 'a' || byte(i) == 'm' || byte(i) == 'w' || byte(i) == 'r' || byte(i) == 'x' || byte(i) == 'h' {
+			continue
+		}
+		for k := 0x00; k <= 0xff; k++ {
+			otherKeys = append(otherKeys, generateKeys([]byte{0x00, byte(k), byte(i)}, 2)...)
+		}
+	}
+
+	// write all keys and check they exist in the db
+	writeKeys(t, db, version0Keys)
+	writeKeys(t, db, wavmKeys)
+	writeKeys(t, db, armKeys)
+	writeKeys(t, db, x86Keys)
+	writeKeys(t, db, hostKeys)
+	writeKeys(t, db, otherKeys)
+	checkKeys(t, db, version0Keys, true)
+	checkKeys(t, db, wavmKeys, true)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+
+	// if Nitro's WasmerSerializeVersion is compatible WasmerSerializeVersion
+	// stored in the database then all keys should still exist
+	rawdb.WriteWasmerSerializeVersion(db, WasmerSerializeVersion)
+	err = validateOrUpgradeWasmerSerializeVersion(db)
+	Require(t, err)
+	checkKeys(t, db, version0Keys, true)
+	checkKeys(t, db, wavmKeys, true)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+	currWasmerSerializeVersion, err := rawdb.ReadWasmerSerializeVersion(db)
+	Require(t, err)
+	if currWasmerSerializeVersion != WasmerSerializeVersion {
+		t.Fatalf("Expected current WasmerSerializeVersion to be %d, got %d", WasmerSerializeVersion, currWasmerSerializeVersion)
+	}
+
+	// if Nitro's WasmerSerializeVersion is not compatible with WasmerSerializeVersion
+	// stored in the database then all keys, expect wavm and other keys, should be removed
+	rawdb.WriteWasmerSerializeVersion(db, WasmerSerializeVersion-1)
+	err = validateOrUpgradeWasmerSerializeVersion(db)
+	Require(t, err)
+	checkKeys(t, db, version0Keys, false)
+	checkKeys(t, db, wavmKeys, true)
+	checkKeys(t, db, armKeys, false)
+	checkKeys(t, db, x86Keys, false)
+	checkKeys(t, db, hostKeys, false)
+	checkKeys(t, db, otherKeys, true)
+	currWasmerSerializeVersion, err = rawdb.ReadWasmerSerializeVersion(db)
+	Require(t, err)
+	if currWasmerSerializeVersion != WasmerSerializeVersion {
+		t.Fatalf("Expected current WasmerSerializeVersion to be %d, got %d", WasmerSerializeVersion, currWasmerSerializeVersion)
+	}
+}
+
 func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = t.TempDir()
