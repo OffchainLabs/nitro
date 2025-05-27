@@ -16,14 +16,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"time"
 
@@ -88,10 +86,6 @@ type ExpressLaneProxy struct {
 	auctionContractAddr common.Address
 	expressLaneTracker  *gethexec.ExpressLaneTracker
 	dataSignerFunc      signature.DataSignerFunc
-
-	seqNumAssignmentMutex sync.Mutex
-	lastRoundNumber       uint64
-	nextSequenceNumber    uint64
 }
 
 type HeaderProviderAdapter struct {
@@ -148,7 +142,6 @@ func NewExpressLaneProxy(
 		auctionContractAddr: auctionContractAddr,
 		expressLaneTracker:  expressLaneTracker,
 		dataSignerFunc:      dataSignerFunc,
-		lastRoundNumber:     math.MaxUint64,
 	}
 
 	elAPIs := []rpc.API{{
@@ -215,23 +208,14 @@ func (p *ExpressLaneProxy) buildSignature(data []byte) ([]byte, error) {
 }
 
 func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (common.Hash, error) {
-	p.seqNumAssignmentMutex.Lock()
 	roundNumber := p.roundTimingInfo.RoundNumber()
-	if roundNumber != p.lastRoundNumber {
-		p.nextSequenceNumber = 0
-		p.lastRoundNumber = roundNumber
-	}
-
-	curSeqNumber := p.nextSequenceNumber
-	p.nextSequenceNumber++
-	p.seqNumAssignmentMutex.Unlock()
 
 	wrapper := timeboost.JsonExpressLaneSubmission{
 		ChainId:                (*hexutil.Big)(big.NewInt(p.config.ChainId)),
 		Round:                  (hexutil.Uint64)(roundNumber),
 		AuctionContractAddress: p.auctionContractAddr,
 		Transaction:            input,
-		SequenceNumber:         (hexutil.Uint64)(curSeqNumber),
+		SequenceNumber:         (hexutil.Uint64)(gethexec.DontCareSequence),
 		Signature:              []byte{}, // It is set below
 	}
 	goWrapper, err := timeboost.JsonSubmissionToGo(&wrapper)
@@ -253,19 +237,9 @@ func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil
 		return common.Hash{}, fmt.Errorf("Error getting client: %w", err)
 	}
 
-	log.Info("Sending timeboost_sendExpressLaneTransaction", "round", roundNumber, "seqNum", curSeqNumber, "txHash", goWrapper.Transaction.Hash().Hex())
+	log.Info("Sending timeboost_sendExpressLaneTransaction", "round", roundNumber, "txHash", goWrapper.Transaction.Hash().Hex())
 	err = client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", &wrapper)
 	if err != nil {
-		// Immediately rejected EL txs don't consume sequence numbers.
-		p.seqNumAssignmentMutex.Lock()
-		if p.nextSequenceNumber == curSeqNumber+1 {
-			// As long as no further sequence numbers were assigned we can just decrement this.
-			p.nextSequenceNumber--
-		} else {
-			// TODO We need to implement gap filling here to handle parallel failed txs.
-			log.Warn("Request failed but sequence number not able to be rolled back")
-		}
-		p.seqNumAssignmentMutex.Unlock()
 		return common.Hash{}, fmt.Errorf("Error forwarding msg: %w", err)
 	}
 
