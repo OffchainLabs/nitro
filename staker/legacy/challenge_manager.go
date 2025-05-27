@@ -485,7 +485,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 	var execRun validator.ExecutionRun
 	for _, spawner := range m.validator.ExecutionSpawners() {
 		if validator.SpawnerSupportsModule(spawner, m.wasmModuleRoot) {
-			execRun, err = spawner.CreateExecutionRun(m.wasmModuleRoot, input, false).Await(ctx)
+			execRun, err = spawner.CreateExecutionRun(m.wasmModuleRoot, input).Await(ctx)
 			if err != nil {
 				return fmt.Errorf("error creating execution backend for msg %v: %w", initialCount, err)
 			}

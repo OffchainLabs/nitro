@@ -26,7 +26,7 @@ type ValidationRun interface {
 
 type ExecutionSpawner interface {
 	ValidationSpawner
-	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput, useBoldMachine bool) containers.PromiseInterface[ExecutionRun]
+	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) containers.PromiseInterface[ExecutionRun]
 }
 
 type BOLDExecutionSpawner interface {

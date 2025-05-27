@@ -80,7 +80,7 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 	}
 }
 
-func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON, useBoldMachineOptional *bool) (uint64, error) {
+func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON) (uint64, error) {
 	if a.Stopped() {
 		return 0, errors.New("ExecServerAPI is stopped")
 	}
@@ -88,11 +88,7 @@ func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot c
 	if err != nil {
 		return 0, err
 	}
-	useBoldMachine := false
-	if useBoldMachineOptional != nil {
-		useBoldMachine = *useBoldMachineOptional
-	}
-	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input, useBoldMachine).Await(ctx)
+	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return 0, err
 	}

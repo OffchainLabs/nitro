@@ -85,7 +85,7 @@ func (s *mockSpawner) Stop()        {}
 func (s *mockSpawner) Name() string { return "mock" }
 func (s *mockSpawner) Room() int    { return 4 }
 
-func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput, _ bool) containers.PromiseInterface[validator.ExecutionRun] {
+func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	s.ExecSpawned = append(s.ExecSpawned, input.Id)
 	return containers.NewReadyPromise[validator.ExecutionRun](&mockExecRun{
 		startState: input.StartState,
@@ -250,7 +250,7 @@ func TestValidationServerAPI(t *testing.T) {
 	if res != endState {
 		t.Error("unexpected mock validation run")
 	}
-	execRun, err := client.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
+	execRun, err := client.CreateExecutionRun(mockWasmModuleRoots[0], &valInput).Await(ctx)
 	Require(t, err)
 	step0 := execRun.GetStepAt(0)
 	step0Res, err := step0.Await(ctx)
@@ -369,9 +369,9 @@ func TestExecutionKeepAlive(t *testing.T) {
 	Require(t, err)
 
 	valInput := validator.ValidationInput{}
-	runDefault, err := clientDefault.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
+	runDefault, err := clientDefault.CreateExecutionRun(mockWasmModuleRoots[0], &valInput).Await(ctx)
 	Require(t, err)
-	runShortTO, err := clientShortTO.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
+	runShortTO, err := clientShortTO.CreateExecutionRun(mockWasmModuleRoots[0], &valInput).Await(ctx)
 	Require(t, err)
 	<-time.After(time.Second * 10)
 	stepDefault := runDefault.GetStepAt(0)

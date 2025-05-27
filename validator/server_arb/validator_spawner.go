@@ -32,6 +32,7 @@ type ArbitratorSpawnerConfig struct {
 	Execution                   MachineCacheConfig           `koanf:"execution" reload:"hot"` // hot reloading for new executions only
 	ExecutionRunTimeout         time.Duration                `koanf:"execution-run-timeout" reload:"hot"`
 	RedisValidationServerConfig redis.ValidationServerConfig `koanf:"redis-validation-server-config"`
+	UsePreBoldMachine           bool                         `koanf:"use-prebold-machine" reload:"hot"`
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
@@ -42,12 +43,14 @@ var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
 	Execution:                   DefaultMachineCacheConfig,
 	ExecutionRunTimeout:         time.Minute * 15,
 	RedisValidationServerConfig: redis.DefaultValidationServerConfig,
+	UsePreBoldMachine:           false,
 }
 
 func ArbitratorSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".workers", DefaultArbitratorSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecutionRunTimeout, "timeout before discarding execution run")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
+	f.Bool(prefix+".use-prebold-machine", DefaultArbitratorSpawnerConfig.UsePreBoldMachine, "use pre-Bold machine for validation")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
 	redis.ValidationServerConfigAddOptions(prefix+".redis-validation-server-config", f)
 }
@@ -227,7 +230,7 @@ func (v *ArbitratorSpawner) Room() int {
 	return avail
 }
 
-func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput, useBoldMachine bool) containers.PromiseInterface[validator.ExecutionRun] {
+func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	getMachine := func(ctx context.Context) (MachineInterface, error) {
 		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
 		if err != nil {
@@ -240,10 +243,10 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 			return nil, err
 		}
 		var wrapped MachineInterface
-		if useBoldMachine {
-			wrapped = BoldMachineWrapper(machine)
-		} else {
+		if v.config().UsePreBoldMachine {
 			wrapped = MachineInterface(machine)
+		} else {
+			wrapped = BoldMachineWrapper(machine)
 		}
 		for _, wrapper := range v.machineWrappers {
 			wrapped = wrapper(wrapped)
