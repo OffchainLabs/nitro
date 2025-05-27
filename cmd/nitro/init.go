@@ -515,7 +515,10 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 				return fmt.Errorf("Failed to purge wasm store version 0 entries: %w", err)
 			}
 			log.Info("Wasmer serialize version entries successfully removed.")
-			rawdb.WriteWasmerSerializeVersion(db, WasmerSerializeVersion)
+			err = rawdb.WriteWasmerSerializeVersion(db, WasmerSerializeVersion)
+			if err != nil {
+				return fmt.Errorf("Failed to write wasmer serialize version: %w", err)
+			}
 		}
 	}
 	return nil
