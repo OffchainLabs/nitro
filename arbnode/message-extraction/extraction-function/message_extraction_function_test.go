@@ -29,6 +29,7 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
+		_ = block
 	})
 }
 
