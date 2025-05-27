@@ -6,31 +6,30 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/trie"
+
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/stretchr/testify/require"
 )
 
-func TestExtractMessages(t *testing.T) {
-	t.Run("parent chain block hash mismatch", func(t *testing.T) {
-		prevParentBlockHash := common.Hex2Bytes("0x1234")
-		block := types.NewBlock(
-			&types.Header{
-				ParentHash: common.Hash(prevParentBlockHash),
-			},
-			&types.Body{},
-			nil,
-			trie.NewStackTrie(nil),
-		)
-	})
-}
+// func TestExtractMessages(t *testing.T) {
+// 	t.Run("parent chain block hash mismatch", func(t *testing.T) {
+// 		prevParentBlockHash := common.Hex2Bytes("0x1234")
+// 		block := types.NewBlock(
+// 			&types.Header{
+// 				ParentHash: common.Hash(prevParentBlockHash),
+// 			},
+// 			&types.Body{},
+// 			nil,
+// 			trie.NewStackTrie(nil),
+// 		)
+// 	})
+// }
 
 func Test_extractMessagesInBatch(t *testing.T) {
 	ctx := context.Background()

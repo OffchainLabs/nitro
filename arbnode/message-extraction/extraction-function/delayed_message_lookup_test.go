@@ -6,15 +6,17 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_parseDelayedMessagesFromBlock(t *testing.T) {
@@ -157,8 +159,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 	t.Run("fetching message data from inbox message delivered event, but hash mismatched", func(t *testing.T) {
 		delayedMsgEvent, delayedMsgPackedLog := setupParseDelayedMessagesTest(t)
 		msgDataEvent := &bridgegen.IDelayedMessageProviderInboxMessageDelivered{
-			MessageNum: big.NewInt(1),
-			Data:       []byte("foobar"),
+			Data: []byte("foobar"),
 		}
 		eventABI := iDelayedMessageProviderABI.Events["InboxMessageDelivered"]
 		packedMsgDataLog, err := eventABI.Inputs.NonIndexed().Pack(msgDataEvent.Data)
@@ -446,7 +447,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		l2MessageFromOriginCallABI := iInboxABI.Methods["sendL2MessageFromOrigin"]
 		originTxData, err := l2MessageFromOriginCallABI.Inputs.Pack(msgData)
 		require.NoError(t, err)
-		fullTxData := append(l2MessageFromOriginCallABI.ID, originTxData...)
+		fullTxData := append(l2MessageFromOriginCallABI.ID, originTxData...) //nolint:gocritic
 
 		txData1 := &types.DynamicFeeTx{
 			To:        &delayedMsgPostingAddr,
