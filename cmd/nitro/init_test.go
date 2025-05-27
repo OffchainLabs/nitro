@@ -563,7 +563,7 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 		var j int
 		for j = 0; j < 10; j++ {
 			randomSlice = testhelpers.RandomSlice(testhelpers.RandomUint64(1, 40))
-			if len(randomSlice) >= 3 && !bytes.Equal(randomSlice[:3], []byte{0x00, 'w', 'm'}) && !bytes.Equal(randomSlice[:3], []byte{0x00, 'w', 'm'}) {
+			if len(randomSlice) >= 3 && !bytes.Equal(randomSlice[:3], []byte{0x00, 'w', 'm'}) && !bytes.Equal(randomSlice[:3], []byte{0x00, 'w', 'a'}) {
 				break
 			}
 		}
