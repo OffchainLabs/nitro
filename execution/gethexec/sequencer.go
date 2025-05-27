@@ -1115,8 +1115,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 				queueItem.blockStamp,
 				queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks,
 			)
-			queueItem.returnResult(err) // this isnt read by anyone, so we log a debug line
-			log.Debug("Error sequencing timeboost tx", "err", err)
+			queueItem.returnResult(err) // this isnt read by anyone, so we log
+			log.Info("Error sequencing timeboost tx", "err", err)
 			continue
 		}
 		if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), lastBlock.BaseFee) {
