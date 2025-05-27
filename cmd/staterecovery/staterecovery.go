@@ -43,9 +43,9 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 		HashDB:    &hashConfig,
 	}
 
-	database := state.NewDatabaseWithConfig(chainDb, trieConfig)
+	database := state.NewDatabase(triedb.NewDatabase(chainDb, trieConfig), nil)
 	defer database.TrieDB().Close()
-	previousState, err := state.New(previousBlock.Root(), database, nil)
+	previousState, err := state.New(previousBlock.Root(), database)
 	if err != nil {
 		return fmt.Errorf("state of start block parent is missing: %w", err)
 	}
@@ -64,13 +64,13 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 			log.Info("Recreating missing states", "block", current, "target", target, "remaining", int64(target)-int64(current), "elapsed", time.Since(start), "recreated", recreated)
 			logged = time.Now()
 		}
-		currentState, err := state.New(currentBlock.Root(), database, nil)
+		currentState, err := state.New(currentBlock.Root(), database)
 		if err != nil {
-			_, _, _, err := bc.Processor().Process(currentBlock, previousState, vm.Config{})
+			_, err := bc.Processor().Process(currentBlock, previousState, vm.Config{})
 			if err != nil {
 				return fmt.Errorf("processing block %d failed: %w", current, err)
 			}
-			root, err := previousState.Commit(current, bc.Config().IsEIP158(currentBlock.Number()))
+			root, err := previousState.Commit(current, bc.Config().IsEIP158(currentBlock.Number()), false)
 			if err != nil {
 				return fmt.Errorf("StateDB commit failed, number %d root %v: %w", current, currentBlock.Root(), err)
 			}
@@ -82,7 +82,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 			if err != nil {
 				return fmt.Errorf("TrieDB commit failed, number %d root %v: %w", current, root, err)
 			}
-			currentState, err = state.New(currentBlock.Root(), database, nil)
+			currentState, err = state.New(currentBlock.Root(), database)
 			if err != nil {
 				return fmt.Errorf("state reset after block %d failed: %w", current, err)
 			}

@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Warning: this code is for testing only and has not been audited
 

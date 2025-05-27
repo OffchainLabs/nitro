@@ -8,8 +8,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 )
 
 type GoGlobalState struct {
@@ -55,21 +55,21 @@ func (s GoGlobalState) Hash() common.Hash {
 	return crypto.Keccak256Hash(data)
 }
 
-func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
-	return challengegen.GlobalState{
+func (s GoGlobalState) AsLegacySolidityStruct() rollup_legacy_gen.GlobalState {
+	return rollup_legacy_gen.GlobalState{
 		Bytes32Vals: [2][32]byte{s.BlockHash, s.SendRoot},
 		U64Vals:     [2]uint64{s.Batch, s.PosInBatch},
 	}
 }
 
-func NewExecutionStateFromSolidity(eth rollupgen.ExecutionState) *ExecutionState {
+func NewExecutionStateFromLegacySolidity(eth rollup_legacy_gen.ExecutionState) *ExecutionState {
 	return &ExecutionState{
-		GlobalState:   GoGlobalStateFromSolidity(challengegen.GlobalState(eth.GlobalState)),
+		GlobalState:   GoGlobalStateFromLegacySolidity(rollup_legacy_gen.GlobalState(eth.GlobalState)),
 		MachineStatus: MachineStatus(eth.MachineStatus),
 	}
 }
 
-func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
+func GoGlobalStateFromLegacySolidity(gs rollup_legacy_gen.GlobalState) GoGlobalState {
 	return GoGlobalState{
 		BlockHash:  gs.Bytes32Vals[0],
 		SendRoot:   gs.Bytes32Vals[1],
@@ -78,9 +78,18 @@ func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
 	}
 }
 
-func (s *ExecutionState) AsSolidityStruct() rollupgen.ExecutionState {
-	return rollupgen.ExecutionState{
-		GlobalState:   rollupgen.GlobalState(s.GlobalState.AsSolidityStruct()),
+func GoGlobalStateFromLegacyChallengeSolidity(gs challenge_legacy_gen.GlobalState) GoGlobalState {
+	return GoGlobalState{
+		BlockHash:  gs.Bytes32Vals[0],
+		SendRoot:   gs.Bytes32Vals[1],
+		Batch:      gs.U64Vals[0],
+		PosInBatch: gs.U64Vals[1],
+	}
+}
+
+func (s *ExecutionState) AsLegacySolidityStruct() rollup_legacy_gen.ExecutionState {
+	return rollup_legacy_gen.ExecutionState{
+		GlobalState:   s.GlobalState.AsLegacySolidityStruct(),
 		MachineStatus: uint8(s.MachineStatus),
 	}
 }

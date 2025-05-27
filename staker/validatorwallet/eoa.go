@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package validatorwallet
 
@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 )
 
 // EOA is a ValidatorWallet that uses an Externally Owned Account to sign transactions.
@@ -24,7 +24,7 @@ type EOA struct {
 	auth                    *bind.TransactOpts
 	client                  *ethclient.Client
 	rollupAddress           common.Address
-	challengeManager        *challengegen.ChallengeManager
+	challengeManager        *challenge_legacy_gen.ChallengeManager
 	challengeManagerAddress common.Address
 	dataPoster              *dataposter.DataPoster
 	getExtraGas             func() uint64
@@ -41,7 +41,7 @@ func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1C
 }
 
 func (w *EOA) Initialize(ctx context.Context) error {
-	rollup, err := rollupgen.NewRollupUserLogic(w.rollupAddress, w.client)
+	rollup, err := rollup_legacy_gen.NewRollupUserLogic(w.rollupAddress, w.client)
 	if err != nil {
 		return err
 	}
@@ -50,7 +50,7 @@ func (w *EOA) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	w.challengeManager, err = challengegen.NewChallengeManager(w.challengeManagerAddress, w.client)
+	w.challengeManager, err = challenge_legacy_gen.NewChallengeManager(w.challengeManagerAddress, w.client)
 	return err
 }
 

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbosState
 
@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -65,10 +66,10 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 
 	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
-	stateroot, err := InitializeArbosInDatabase(raw, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
+	stateroot, err := InitializeArbosInDatabase(raw, cacheConfig, initReader, chainConfig, nil, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
 	triedbConfig := cacheConfig.TriedbConfig()
-	stateDb, err := state.New(stateroot, state.NewDatabaseWithConfig(raw, triedbConfig), nil)
+	stateDb, err := state.New(stateroot, state.NewDatabase(triedb.NewDatabase(raw, triedbConfig), nil))
 	Require(t, err)
 
 	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
@@ -76,6 +77,41 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	checkAddressTable(arbState, input.AddressTableContents, t)
 	checkRetryables(arbState, input.RetryableData, t)
 	checkAccounts(stateDb, arbState, input.Accounts, t)
+	checkFeatures(t, arbState)
+}
+
+func checkFeatures(t *testing.T, arbState *ArbosState) {
+	t.Helper()
+	want := false
+	got, err := arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
+	if err = arbState.Features().SetCalldataPriceIncrease(true); err != nil {
+		t.Error(err)
+	}
+	want = true
+	got, err = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
+	if err = arbState.Features().SetCalldataPriceIncrease(false); err != nil {
+		t.Error(err)
+	}
+	want = false
+	got, err = arbState.Features().IsIncreasedCalldataPriceEnabled()
+	if err != nil {
+		t.Error(err)
+	}
+	if got != want {
+		t.Error("IsIncreasedCalldataPriceEnabled got:", got, " want:", want)
+	}
 }
 
 func pseudorandomRetryableInitForTesting(prand *testhelpers.PseudoRandomDataSource) statetransfer.InitializationDataForRetryable {
@@ -146,7 +182,43 @@ func checkRetryables(arbState *ArbosState, expected []statetransfer.Initializati
 		if found == nil {
 			Fail(t)
 		}
-		// TODO: detailed comparison
+
+		// Detailed comparison
+		from, err := found.From()
+		Require(t, err)
+		if from != exp.From {
+			t.Fatalf("Retryable %v: from mismatch. Expected %v, got %v", exp.Id, exp.From, from)
+		}
+
+		to, err := found.To()
+		Require(t, err)
+		if (to == nil && exp.To != common.Address{}) || (to != nil && exp.To == common.Address{}) || (to != nil && exp.To != common.Address{} && *to != exp.To) {
+			t.Fatalf("Retryable %v: to mismatch. Expected %v, got %v", exp.Id, exp.To, to)
+		}
+
+		callvalue, err := found.Callvalue()
+		Require(t, err)
+		if callvalue.Cmp(exp.Callvalue) != 0 {
+			t.Fatalf("Retryable %v: callvalue mismatch. Expected %v, got %v", exp.Id, exp.Callvalue, callvalue)
+		}
+
+		beneficiary, err := found.Beneficiary()
+		Require(t, err)
+		if beneficiary != exp.Beneficiary {
+			t.Fatalf("Retryable %v: beneficiary mismatch. Expected %v, got %v", exp.Id, exp.Beneficiary, beneficiary)
+		}
+
+		calldata, err := found.Calldata()
+		Require(t, err)
+		if !bytes.Equal(calldata, exp.Calldata) {
+			t.Fatalf("Retryable %v: calldata mismatch. Expected %v, got %v", exp.Id, exp.Calldata, calldata)
+		}
+
+		timeout, err := found.CalculateTimeout()
+		Require(t, err)
+		if timeout != exp.Timeout {
+			t.Fatalf("Retryable %v: timeout mismatch. Expected %v, got %v", exp.Id, exp.Timeout, timeout)
+		}
 	}
 }
 

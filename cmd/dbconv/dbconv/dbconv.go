@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/util/dbutil"
 )
@@ -26,7 +26,7 @@ func NewDBConverter(config *DBConvConfig) *DBConverter {
 }
 
 func openDB(config *DBConfig, name string, readonly bool) (ethdb.Database, error) {
-	db, err := rawdb.Open(rawdb.OpenOptions{
+	db, err := node.OpenDatabase(node.OpenOptions{
 		Type:      config.DBEngine,
 		Directory: config.Data,
 		// we don't open freezer, it doesn't need to be converted as it has format independent of db-engine

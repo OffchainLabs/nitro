@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethhook
 
@@ -25,11 +25,14 @@ import (
 )
 
 type TestChainContext struct {
+	chainConfig *params.ChainConfig
 }
 
 func (r *TestChainContext) Engine() consensus.Engine {
 	return arbos.Engine{}
 }
+
+func (r *TestChainContext) Config() *params.ChainConfig { return r.chainConfig }
 
 func (r *TestChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
 	return &types.Header{}
@@ -128,14 +131,16 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		if err != nil {
 			t.Error(err)
 		}
-		chainContext := &TestChainContext{}
+		chainContext := &TestChainContext{chainConfig: testChainConfig}
 		header := &types.Header{
 			Number:     big.NewInt(1000),
 			Difficulty: big.NewInt(1000),
 		}
+		blockContext := core.NewEVMBlockContext(header, chainContext, nil)
+		evm := vm.NewEVM(blockContext, statedb, testChainConfig, vm.Config{})
 		gasPool := core.GasPool(100000)
 		for _, tx := range txes {
-			_, _, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
+			_, _, err := core.ApplyTransaction(evm, &gasPool, statedb, header, tx, &header.GasUsed)
 			if err != nil {
 				Fail(t, err)
 			}

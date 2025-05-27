@@ -1,5 +1,5 @@
 // Copyright 2021-2025, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -32,7 +32,7 @@ func TestMaintenance(t *testing.T) {
 		Require(t, err)
 	}
 
-	err := builder.L2.ExecNode.Maintenance()
+	_, err := builder.L2.ExecNode.Maintenance().Await(ctx)
 	Require(t, err)
 
 	for i := 2; i < 3+numberOfTransfers; i++ {

@@ -1,5 +1,5 @@
 // Copyright 2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
 
@@ -257,15 +257,15 @@ func fundBoldStaker(t *testing.T, ctx context.Context, builder *NodeBuilder, nam
 	Require(t, err)
 }
 
-// TODO: https://github.com/Layr-Labs/nitro/issues/66
-// func TestChallengeProtocolBOLDNearLastVirtualBlock(t *testing.T) {
-// 	testChallengeProtocolBOLDVirtualBlocks(t, false)
-// }
+func TestChallengeProtocolBOLDNearLastVirtualBlock(t *testing.T) {
+	t.Skip("This test is flaky and needs to be fixed")
+	testChallengeProtocolBOLDVirtualBlocks(t, false)
+}
 
-// TODO: https://github.com/Layr-Labs/nitro/issues/66
-// func TestChallengeProtocolBOLDFirstVirtualBlock(t *testing.T) {
-// 	testChallengeProtocolBOLDVirtualBlocks(t, true)
-// }
+func TestChallengeProtocolBOLDFirstVirtualBlock(t *testing.T) {
+	t.Skip("This test is flaky and needs to be fixed")
+	testChallengeProtocolBOLDVirtualBlocks(t, true)
+}
 
 type BoldStateProviderInterface interface {
 	l2stateprovider.L2MessageStateCollector

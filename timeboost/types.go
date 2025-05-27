@@ -83,14 +83,15 @@ type JsonBid struct {
 }
 
 type ValidatedBid struct {
-	ExpressLaneController common.Address
-	Amount                *big.Int
-	Signature             []byte
-	// For tie breaking
 	ChainId                *big.Int
 	AuctionContractAddress common.Address
-	Round                  uint64
-	Bidder                 common.Address
+	Signature              []byte
+
+	// For tie breaking
+	Bidder                common.Address
+	ExpressLaneController common.Address
+	Round                 uint64
+	Amount                *big.Int
 }
 
 // BigIntHash returns the hash of the bidder and bidBytes in the form of a big.Int.
@@ -100,31 +101,18 @@ type ValidatedBid struct {
 //
 // This is only used for breaking ties amongst equivalent bids and not used for
 // Bid signing, which uses EIP 712 as the hashing scheme.
-func (v *ValidatedBid) bigIntHash() *big.Int {
-	bidBytes := v.bidBytes()
+func (v *ValidatedBid) BigIntHash(domainSeparator [32]byte) *big.Int {
+	bid := &Bid{
+		ExpressLaneController: v.ExpressLaneController,
+		Round:                 v.Round,
+		Amount:                v.Amount,
+	}
+	// Since ToEIP712Hash is deterministic, this error can be ignored here, as the bidvalidator
+	// would have previously validated it when calculating bidHash
+	bidHash, _ := bid.ToEIP712Hash(domainSeparator)
 	bidder := v.Bidder.Bytes()
 
-	return new(big.Int).SetBytes(crypto.Keccak256Hash(bidder, bidBytes).Bytes())
-}
-
-// bidBytes returns the byte representation equivalent to the Solidity implementation of
-//
-//	abi.encodePacked(BID_DOMAIN, block.chainid, address(this), _round, _amount, _expressLaneController)
-func (v *ValidatedBid) bidBytes() []byte {
-	var buffer bytes.Buffer
-
-	buffer.Write(domainValue)
-	buffer.Write(v.ChainId.Bytes())
-	buffer.Write(v.AuctionContractAddress.Bytes())
-
-	roundBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(roundBytes, v.Round)
-	buffer.Write(roundBytes)
-
-	buffer.Write(v.Amount.Bytes())
-	buffer.Write(v.ExpressLaneController.Bytes())
-
-	return buffer.Bytes()
+	return new(big.Int).SetBytes(crypto.Keccak256Hash(bidder, bidHash.Bytes()).Bytes())
 }
 
 func (v *ValidatedBid) ToJson() *JsonValidatedBid {

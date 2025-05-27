@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -21,30 +19,40 @@ import (
 const EXPRESS_LANE_ROUND_SEQUENCE_KEY_PREFIX string = "expressLane.roundSequence." // Only written by sequencer holding CHOSEN (seqCoordinator) key
 const EXPRESS_LANE_ACCEPTED_TX_KEY_PREFIX string = "expressLane.acceptedTx."       // Only written by sequencer holding CHOSEN (seqCoordinator) key
 
-type RedisCoordinator struct {
-	stopwaiter.StopWaiter
-	roundDuration time.Duration
-	client        redis.UniversalClient
-
-	roundSeqMapMutex sync.Mutex
-	roundSeqMap      *containers.LruCache[uint64, uint64]
+type roundSeqUpdateItem struct {
+	round    uint64
+	sequence uint64
 }
 
-func NewRedisCoordinator(redisUrl string, roundDuration time.Duration) (*RedisCoordinator, error) {
+type RedisCoordinator struct {
+	stopwaiter.StopWaiter
+	roundTimingInfo *RoundTimingInfo
+	client          redis.UniversalClient
+
+	roundSeqMap        *containers.LruCache[uint64, uint64]
+	roundSeqUpdateChan chan roundSeqUpdateItem
+	msgChan            chan *ExpressLaneSubmission
+}
+
+func NewRedisCoordinator(redisUrl string, roundTimingInfo *RoundTimingInfo, updateEventsChannelSize uint64) (*RedisCoordinator, error) {
 	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
 	if err != nil {
 		return nil, err
 	}
 
 	return &RedisCoordinator{
-		roundDuration: roundDuration,
-		client:        redisClient,
-		roundSeqMap:   containers.NewLruCache[uint64, uint64](4),
+		roundTimingInfo:    roundTimingInfo,
+		client:             redisClient,
+		roundSeqMap:        containers.NewLruCache[uint64, uint64](4),
+		roundSeqUpdateChan: make(chan roundSeqUpdateItem, updateEventsChannelSize),
+		msgChan:            make(chan *ExpressLaneSubmission, updateEventsChannelSize),
 	}, nil
 }
 
 func (rc *RedisCoordinator) Start(ctxIn context.Context) {
 	rc.StopWaiter.Start(ctxIn, rc)
+	rc.LaunchThread(rc.trackSequenceCountUpdates)
+	rc.LaunchThread(rc.trackAcceptedTxAddition)
 }
 
 func roundSequenceKeyFor(round uint64) string {
@@ -64,23 +72,60 @@ func (rc *RedisCoordinator) GetSequenceCount(round uint64) (uint64, error) {
 	return arbmath.BytesToUint(seqCountBytes), nil
 }
 
-// Thread safe
-func (rc *RedisCoordinator) UpdateSequenceCount(round, seqCount uint64) error {
-	ctx := rc.GetContext()
-	rc.roundSeqMapMutex.Lock()
-	defer rc.roundSeqMapMutex.Unlock()
-
-	curSeq, _ := rc.roundSeqMap.Get(round)
-	if seqCount < curSeq {
-		return nil // We only update seqCount to redis if it is greater than all the previously seen values
+func (rc *RedisCoordinator) UpdateSequenceCount(round, sequence uint64) error {
+	roundSeqUpdate := roundSeqUpdateItem{
+		round:    round,
+		sequence: sequence,
 	}
-	rc.roundSeqMap.Add(round, seqCount)
-
-	key := roundSequenceKeyFor(round)
-	if err := rc.client.Set(ctx, key, arbmath.UintToBytes(seqCount), rc.roundDuration*2).Err(); err != nil {
-		return fmt.Errorf("couldn't set %s key for current round's global sequence count in redis: %w", key, err)
+	select {
+	case rc.roundSeqUpdateChan <- roundSeqUpdate:
+	default:
+		log.Warn("Unable to queue round sequence update operation in redis coordinator", "round", round, "sequence", sequence)
 	}
 	return nil
+}
+
+func (rc *RedisCoordinator) trackSequenceCountUpdates(ctx context.Context) {
+	for {
+		var roundSeqUpdate roundSeqUpdateItem
+		select {
+		case update := <-rc.roundSeqUpdateChan:
+			if update.round < rc.roundTimingInfo.RoundNumber() ||
+				update.round < roundSeqUpdate.round ||
+				(update.round == roundSeqUpdate.round && update.sequence < roundSeqUpdate.sequence) {
+				// This prevents stale roundSeqUpdates from being written to redis and unclogs roundSeqUpdateChan
+				continue
+			}
+			roundSeqUpdate = update
+			// Attempt to pull upto next 5 updates from the channel (batching logic)
+			for i := 0; i < 5; i++ {
+				select {
+				case update := <-rc.roundSeqUpdateChan:
+					if update.round < rc.roundTimingInfo.RoundNumber() ||
+						update.round < roundSeqUpdate.round ||
+						(update.round == roundSeqUpdate.round && update.sequence < roundSeqUpdate.sequence) {
+						// This prevents stale roundSeqUpdates from being written to redis and unclogs roundSeqUpdateChan
+						continue
+					}
+					roundSeqUpdate = update // update roundSeqUpdate with local maxima
+				case <-ctx.Done():
+					return
+				default:
+				}
+			}
+		case <-ctx.Done():
+			return
+		}
+		curSeq, _ := rc.roundSeqMap.Get(roundSeqUpdate.round)
+		if roundSeqUpdate.sequence <= curSeq {
+			continue
+		}
+		rc.roundSeqMap.Add(roundSeqUpdate.round, roundSeqUpdate.sequence)
+		key := roundSequenceKeyFor(roundSeqUpdate.round)
+		if err := rc.client.Set(ctx, key, arbmath.UintToBytes(roundSeqUpdate.sequence), rc.roundTimingInfo.Round*2).Err(); err != nil {
+			log.Error("Error updating round's sequence count in redis", "key", key, "err", err) // this shouldn't be a problem if future msgs succeed in updating the count
+		}
+	}
 }
 
 func acceptedTxKeyFor(round, seqNum uint64) string {
@@ -92,11 +137,11 @@ func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum, endSeqNum uint64)
 	fetchMsg := func(key string) *ExpressLaneSubmission {
 		msgBytes, err := rc.client.Get(ctx, key).Bytes()
 		if errors.Is(err, redis.Nil) {
-			log.Debug("ExpressLane tx not found in redis", "key", key, "err", err)
+			log.Debug("ExpressLane tx not found in redis", "key", key)
 			return nil
 		}
 		if err != nil {
-			log.Error("Error fetching accepted expressLane tx", "key", key, "err", err)
+			log.Warn("Error fetching accepted expressLane tx", "key", key, "err", err)
 			return nil
 		}
 		msgJson := JsonExpressLaneSubmission{}
@@ -122,18 +167,39 @@ func (rc *RedisCoordinator) GetAcceptedTxs(round, startSeqNum, endSeqNum uint64)
 }
 
 func (rc *RedisCoordinator) AddAcceptedTx(msg *ExpressLaneSubmission) error {
-	ctx := rc.GetContext()
-	msgJson, err := msg.ToJson()
-	if err != nil {
-		return fmt.Errorf("failed to convert ExpressLaneSubmission to JsonExpressLaneSubmission: %w", err)
-	}
-	msgBytes, err := json.Marshal(msgJson)
-	if err != nil {
-		return fmt.Errorf("failed to marshal JsonExpressLaneSubmission: %w", err)
-	}
-	key := acceptedTxKeyFor(msg.Round, msg.SequenceNumber)
-	if err := rc.client.Set(ctx, key, msgBytes, rc.roundDuration*2).Err(); err != nil {
-		return fmt.Errorf("couldn't set %s key for accepted expressLane transaction in redis: %w", key, err)
+	select {
+	case rc.msgChan <- msg:
+	default:
+		return errors.New("couldn't queue addition of expressLaneSubmission to redis")
 	}
 	return nil
+}
+
+func (rc *RedisCoordinator) trackAcceptedTxAddition(ctx context.Context) {
+	for {
+		var msg *ExpressLaneSubmission
+		select {
+		case msg = <-rc.msgChan:
+			if msg.Round < rc.roundTimingInfo.RoundNumber() {
+				// This prevents stale messages from being written to redis and unclogs msgChan
+				continue
+			}
+		case <-ctx.Done():
+			return
+		}
+		msgJson, err := msg.ToJson()
+		if err != nil {
+			log.Error("Failed to convert ExpressLaneSubmission to JsonExpressLaneSubmission", "err", err)
+			continue
+		}
+		msgBytes, err := json.Marshal(msgJson)
+		if err != nil {
+			log.Error("Failed to marshal JsonExpressLaneSubmission", "err", err)
+			continue
+		}
+		key := acceptedTxKeyFor(msg.Round, msg.SequenceNumber)
+		if err := rc.client.Set(ctx, key, msgBytes, rc.roundTimingInfo.Round*2).Err(); err != nil {
+			log.Error("Couldn't set key for accepted expressLane transaction in redis", "key", key, "err", err)
+		}
+	}
 }

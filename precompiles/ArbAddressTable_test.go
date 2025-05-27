@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
@@ -184,7 +184,7 @@ func newMockEVMForTestingWithVersion(version *uint64) *vm.EVM {
 		GasLimit:    ^uint64(0),
 		Time:        0,
 	}
-	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+	evm := vm.NewEVM(context, statedb, chainConfig, vm.Config{})
 	evm.ProcessingHook = &arbos.TxProcessor{}
 	return evm
 }

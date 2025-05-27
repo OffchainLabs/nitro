@@ -13,12 +13,16 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
-func TestRedisSeqCoordinatorAtomic(t *testing.T) {
+func TestTimeboostRedisCoordinator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
-	redisCoordinator, err := NewRedisCoordinator(redisUrl, 5*time.Second)
+	timingInfo := &RoundTimingInfo{
+		Offset: time.Now(),
+		Round:  time.Second * 5,
+	}
+	redisCoordinator, err := NewRedisCoordinator(redisUrl, timingInfo, 50)
 	if err != nil {
 		t.Fatalf("error initializing redis coordinator: %v", err)
 	}
@@ -36,17 +40,20 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		}
 	}
 	err = redisCoordinator.UpdateSequenceCount(round, 3) // should succeed
+	time.Sleep(10 * time.Millisecond)                    // necessary since channels are being used to carry out the updates
 	if err != nil {
 		t.Fatalf("error setting round number and sequence count: %v", err)
 	}
 	checkSeqCountInRedis(3)
 	err = redisCoordinator.UpdateSequenceCount(round, 1) // shouldn't succeed as the sequence count is a lower value
+	time.Sleep(10 * time.Millisecond)
 	if err != nil {
 		t.Fatalf("error setting round number and sequence count: %v", err)
 	}
 	checkSeqCountInRedis(3)
 	round = 1
-	err = redisCoordinator.UpdateSequenceCount(round, 4) // shouldn't succeed as the sequence count is a lower value
+	err = redisCoordinator.UpdateSequenceCount(round, 4) // should succeed
+	time.Sleep(10 * time.Millisecond)
 	if err != nil {
 		t.Fatalf("error setting round number and sequence count: %v", err)
 	}
@@ -60,6 +67,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		if err := redisCoordinator.AddAcceptedTx(msg); err != nil {
 			t.Fatalf("error adding expressLane msg to redis: %v", err)
 		}
+		time.Sleep(10 * time.Millisecond)
 		addedMsgs = append(addedMsgs, msg)
 	}
 

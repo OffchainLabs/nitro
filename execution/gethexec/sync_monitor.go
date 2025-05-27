@@ -2,11 +2,13 @@ package gethexec
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -41,10 +43,19 @@ func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonit
 	}
 }
 
-func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
-	res := s.consensus.FullSyncProgressMap()
+func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
+	res, err := s.consensus.FullSyncProgressMap().Await(ctx)
+	if err != nil {
+		res = make(map[string]interface{})
+		res["fullSyncProgressMapError"] = err
+	}
 
-	res["consensusSyncTarget"] = s.consensus.SyncTargetMessageCount()
+	consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
+	if err != nil {
+		res["consensusSyncTargetError"] = err
+	} else {
+		res["consensusSyncTarget"] = consensusSyncTarget
+	}
 
 	header, err := s.exec.getCurrentHeader()
 	if err != nil {
@@ -63,60 +74,36 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	return res
 }
 
-func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
-	if s.Synced() {
+func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{} {
+	if s.Synced(ctx) {
 		return make(map[string]interface{})
 	}
-	return s.FullSyncProgressMap()
+	return s.FullSyncProgressMap(ctx)
 }
 
-func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
-	if s.consensus == nil {
-		return 0, errors.New("not set up for safeblock")
-	}
-	msg, err := s.consensus.GetSafeMsgCount(ctx)
+func (s *SyncMonitor) Synced(ctx context.Context) bool {
+	synced, err := s.consensus.Synced().Await(ctx)
 	if err != nil {
-		return 0, err
+		log.Error("Error checking if consensus is synced", "err", err)
+		return false
 	}
-	if s.config.SafeBlockWaitForBlockValidator {
-		latestValidatedCount, err := s.consensus.ValidatedMessageCount()
+	if synced {
+		built, err := s.exec.HeadMessageIndex()
 		if err != nil {
-			return 0, err
+			log.Error("Error getting head message index", "err", err)
+			return false
 		}
-		if msg > latestValidatedCount {
-			msg = latestValidatedCount
-		}
-	}
-	block := s.exec.MessageIndexToBlockNumber(msg - 1)
-	return block, nil
-}
 
-func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
-	if s.consensus == nil {
-		return 0, errors.New("not set up for safeblock")
-	}
-	msg, err := s.consensus.GetFinalizedMsgCount(ctx)
-	if err != nil {
-		return 0, err
-	}
-	if s.config.FinalizedBlockWaitForBlockValidator {
-		latestValidatedCount, err := s.consensus.ValidatedMessageCount()
+		consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
 		if err != nil {
-			return 0, err
+			log.Error("Error getting consensus sync target", "err", err)
+			return false
 		}
-		if msg > latestValidatedCount {
-			msg = latestValidatedCount
+		if consensusSyncTarget == 0 {
+			return false
 		}
-	}
-	block := s.exec.MessageIndexToBlockNumber(msg - 1)
-	return block, nil
-}
 
-func (s *SyncMonitor) Synced() bool {
-	if s.consensus.Synced() {
-		built, err := s.exec.HeadMessageNumber()
-		consensusSyncTarget := s.consensus.SyncTargetMessageCount()
-		if err == nil && built+1 >= consensusSyncTarget {
+		if built+1 >= consensusSyncTarget {
 			return true
 		}
 	}
@@ -127,15 +114,86 @@ func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
 	s.consensus = consensus
 }
 
-func (s *SyncMonitor) BlockMetadataByNumber(blockNum uint64) (common.BlockMetadata, error) {
+func (s *SyncMonitor) BlockMetadataByNumber(ctx context.Context, blockNum uint64) (common.BlockMetadata, error) {
 	genesis := s.exec.GetGenesisBlockNumber()
 	if blockNum < genesis { // Arbitrum classic block
 		return nil, nil
 	}
-	pos := arbutil.MessageIndex(blockNum - genesis)
+	msgIdx := arbutil.MessageIndex(blockNum - genesis)
 	if s.consensus != nil {
-		return s.consensus.BlockMetadataAtCount(pos + 1)
+		return s.consensus.BlockMetadataAtMessageIndex(msgIdx).Await(ctx)
 	}
 	log.Debug("FullConsensusClient is not accessible to execution, BlockMetadataByNumber will return nil")
 	return nil, nil
+}
+
+func (s *SyncMonitor) getFinalityBlockHeader(
+	waitForBlockValidator bool,
+	validatedFinalityData *arbutil.FinalityData,
+	finalityFinalityData *arbutil.FinalityData,
+) (*types.Header, error) {
+	if finalityFinalityData == nil {
+		return nil, nil
+	}
+
+	finalityMsgIdx := finalityFinalityData.MsgIdx
+	finalityBlockHash := finalityFinalityData.BlockHash
+	if waitForBlockValidator {
+		if validatedFinalityData == nil {
+			return nil, errors.New("block validator not set")
+		}
+		if finalityFinalityData.MsgIdx > validatedFinalityData.MsgIdx {
+			finalityMsgIdx = validatedFinalityData.MsgIdx
+			finalityBlockHash = validatedFinalityData.BlockHash
+		}
+	}
+
+	finalityBlockNumber := s.exec.MessageIndexToBlockNumber(finalityMsgIdx)
+	finalityBlock := s.exec.bc.GetBlockByNumber(finalityBlockNumber)
+	if finalityBlock == nil {
+		log.Debug("Finality block not found", "blockNumber", finalityBlockNumber)
+		return nil, nil
+	}
+	if finalityBlock.Hash() != finalityBlockHash {
+		errorMsg := fmt.Sprintf(
+			"finality block hash mismatch, blockNumber=%v, block hash provided by consensus=%v, block hash from execution=%v",
+			finalityBlockNumber,
+			finalityBlockHash,
+			finalityBlock.Hash(),
+		)
+		return nil, errors.New(errorMsg)
+	}
+	return finalityBlock.Header(), nil
+}
+
+func (s *SyncMonitor) SetFinalityData(
+	ctx context.Context,
+	safeFinalityData *arbutil.FinalityData,
+	finalizedFinalityData *arbutil.FinalityData,
+	validatedFinalityData *arbutil.FinalityData,
+) error {
+	s.exec.createBlocksMutex.Lock()
+	defer s.exec.createBlocksMutex.Unlock()
+
+	finalizedBlockHeader, err := s.getFinalityBlockHeader(
+		s.config.FinalizedBlockWaitForBlockValidator,
+		validatedFinalityData,
+		finalizedFinalityData,
+	)
+	if err != nil {
+		return err
+	}
+	s.exec.bc.SetFinalized(finalizedBlockHeader)
+
+	safeBlockHeader, err := s.getFinalityBlockHeader(
+		s.config.SafeBlockWaitForBlockValidator,
+		validatedFinalityData,
+		safeFinalityData,
+	)
+	if err != nil {
+		return err
+	}
+	s.exec.bc.SetSafe(safeBlockHeader)
+
+	return nil
 }

@@ -3,6 +3,7 @@ package timeboost
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -121,10 +122,10 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 
 	// UploadBatches should upload only the first bid and only one bid (round = 2) should remain in the sql database
 	s3StorageService.uploadBatches(ctx)
-	verifyBatchUploadCorrectness(0, 1, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
-2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,0,10,signature0
-1,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,1,100,signature1
-`))
+	verifyBatchUploadCorrectness(0, 1, []byte(fmt.Sprintf(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,0,10,%s
+1,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,1,100,%s
+`, hex.EncodeToString([]byte("signature0")), hex.EncodeToString([]byte("signature1")))))
 	checkUploadedBidsRemoval(2)
 
 	// UploadBatches should continue adding bids to the batch until round ends, even if its past MaxBatchSize
@@ -160,16 +161,16 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 
 	// Round 2 bids should all be in the same batch even though the resulting batch exceeds MaxBatchSize
 	s3StorageService.uploadBatches(ctx)
-	verifyBatchUploadCorrectness(2, 2, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
-2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,2,200,signature2
-1,0x0000000000000000000000000000000000000009,0x0000000000000000000000000000000000000007,0x0000000000000000000000000000000000000008,2,150,signature3
-`))
+	verifyBatchUploadCorrectness(2, 2, []byte(fmt.Sprintf(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,2,200,%s
+1,0x0000000000000000000000000000000000000009,0x0000000000000000000000000000000000000007,0x0000000000000000000000000000000000000008,2,150,%s
+`, hex.EncodeToString([]byte("signature2")), hex.EncodeToString([]byte("signature3")))))
 
 	// After Batching Round 2 bids we end that batch and create a new batch for Round 3 bids to adhere to MaxBatchSize rule
 	s3StorageService.uploadBatches(ctx)
-	verifyBatchUploadCorrectness(3, 3, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
-2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,3,250,signature4
-`))
+	verifyBatchUploadCorrectness(3, 3, []byte(fmt.Sprintf(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,3,250,%s
+`, hex.EncodeToString([]byte("signature4")))))
 	checkUploadedBidsRemoval(4)
 
 	// Verify chunked reading of sql db
@@ -223,14 +224,14 @@ func TestS3StorageServiceUploadAndDownload(t *testing.T) {
 	// Since config.MaxBatchSize is kept same and config.MaxDbRows is 5, sqldb.GetBids would return all bids from round 4 and 5, with round used for DeletBids as 6
 	// maxBatchSize would then batch bids from round 4 & 5 separately and uploads them to s3
 	s3StorageService.uploadBatches(ctx)
-	verifyBatchUploadCorrectness(4, 4, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
-2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,4,350,signature5
-1,0x0000000000000000000000000000000000000009,0x0000000000000000000000000000000000000007,0x0000000000000000000000000000000000000008,4,450,signature6
-`))
-	verifyBatchUploadCorrectness(5, 5, []byte(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
-2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,5,550,signature7
-2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,5,650,signature8
-`))
+	verifyBatchUploadCorrectness(4, 4, []byte(fmt.Sprintf(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,4,350,%s
+1,0x0000000000000000000000000000000000000009,0x0000000000000000000000000000000000000007,0x0000000000000000000000000000000000000008,4,450,%s
+`, hex.EncodeToString([]byte("signature5")), hex.EncodeToString([]byte("signature6")))))
+	verifyBatchUploadCorrectness(5, 5, []byte(fmt.Sprintf(`ChainID,Bidder,ExpressLaneController,AuctionContractAddress,Round,Amount,Signature
+2,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,5,550,%s
+2,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,5,650,%s
+`, hex.EncodeToString([]byte("signature7")), hex.EncodeToString([]byte("signature8")))))
 	require.NoError(t, db.sqlDB.Select(&sqlDBbids, "SELECT * FROM Bids ORDER BY Round ASC"))
 	require.Equal(t, 2, len(sqlDBbids))
 	require.Equal(t, uint64(6), sqlDBbids[0].Round)

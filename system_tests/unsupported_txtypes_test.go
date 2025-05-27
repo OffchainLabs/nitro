@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -100,7 +100,7 @@ func TestBlobAndInternalTxsAsDelayedMsgReject(t *testing.T) {
 	l1tx = WrapL2ForDelayed(t, delayedTx2, builder.L1Info, "User", 100000)
 	l1Txs = append(l1Txs, l1tx)
 
-	errs := builder.L1.L1Backend.TxPool().Add(l1Txs, true, false)
+	errs := builder.L1.L1Backend.TxPool().Add(l1Txs, false)
 	for _, err := range errs {
 		Require(t, err)
 	}

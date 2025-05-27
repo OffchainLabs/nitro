@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -38,7 +39,7 @@ var sendRootKey = common.HexToHash("0x55667788")
 var batchNumKey = common.HexToHash("0x99aabbcc")
 var posInBatchKey = common.HexToHash("0xddeeff")
 
-func globalstateFromTestPreimages(preimages map[arbutil.PreimageType]map[common.Hash][]byte) validator.GoGlobalState {
+func globalstateFromTestPreimages(preimages daprovider.PreimagesMap) validator.GoGlobalState {
 	keccakPreimages := preimages[arbutil.Keccak256PreimageType]
 	return validator.GoGlobalState{
 		Batch:      new(big.Int).SetBytes(keccakPreimages[batchNumKey]).Uint64(),
@@ -90,10 +91,6 @@ func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *vali
 		startState: input.StartState,
 		endState:   globalstateFromTestPreimages(input.Preimages),
 	}, nil)
-}
-
-func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoots[0], nil)
 }
 
 type mockValRun struct {
@@ -214,13 +211,6 @@ func TestValidationServerAPI(t *testing.T) {
 	err := client.Start(ctx)
 	Require(t, err)
 
-	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
-	Require(t, err)
-
-	if wasmRoot != mockWasmModuleRoots[0] {
-		t.Error("unexpected mock wasmModuleRoot")
-	}
-
 	roots, err := client.WasmModuleRoots()
 	Require(t, err)
 	if len(roots) != len(mockWasmModuleRoots) {
@@ -250,17 +240,17 @@ func TestValidationServerAPI(t *testing.T) {
 
 	valInput := validator.ValidationInput{
 		StartState: startState,
-		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
+		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
 	}
-	valRun := client.Launch(&valInput, wasmRoot)
+	valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 	res, err := valRun.Await(ctx)
 	Require(t, err)
 	if res != endState {
 		t.Error("unexpected mock validation run")
 	}
-	execRun, err := client.CreateExecutionRun(wasmRoot, &valInput, false).Await(ctx)
+	execRun, err := client.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
 	step0 := execRun.GetStepAt(0)
 	step0Res, err := step0.Await(ctx)
@@ -291,9 +281,6 @@ func TestValidationClientRoom(t *testing.T) {
 	err := client.Start(ctx)
 	Require(t, err)
 
-	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
-	Require(t, err)
-
 	if client.Room() != 4 {
 		Fatal(t, "wrong initial room ", client.Room())
 	}
@@ -316,7 +303,7 @@ func TestValidationClientRoom(t *testing.T) {
 
 	valInput := validator.ValidationInput{
 		StartState: startState,
-		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
+		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
 	}
@@ -324,7 +311,7 @@ func TestValidationClientRoom(t *testing.T) {
 	valRuns := make([]validator.ValidationRun, 0, 4)
 
 	for i := 0; i < 4; i++ {
-		valRun := client.Launch(&valInput, wasmRoot)
+		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 		valRuns = append(valRuns, valRun)
 	}
 
@@ -342,7 +329,7 @@ func TestValidationClientRoom(t *testing.T) {
 	valRuns = make([]validator.ValidationRun, 0, 3)
 
 	for i := 0; i < 4; i++ {
-		valRun := client.Launch(&valInput, wasmRoot)
+		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 		valRuns = append(valRuns, valRun)
 		room := client.Room()
 		if room != 3-i {
@@ -381,13 +368,10 @@ func TestExecutionKeepAlive(t *testing.T) {
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 
-	wasmRoot, err := clientDefault.LatestWasmModuleRoot().Await(ctx)
-	Require(t, err)
-
 	valInput := validator.ValidationInput{}
-	runDefault, err := clientDefault.CreateExecutionRun(wasmRoot, &valInput, false).Await(ctx)
+	runDefault, err := clientDefault.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
-	runShortTO, err := clientShortTO.CreateExecutionRun(wasmRoot, &valInput, false).Await(ctx)
+	runShortTO, err := clientShortTO.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
 	<-time.After(time.Second * 10)
 	stepDefault := runDefault.GetStepAt(0)
@@ -415,7 +399,7 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 	if err != nil {
 		return nil, err
 	}
-	res, err := m.streamer.ResultAtCount(pos + 1)
+	res, err := m.streamer.ResultAtMessageIndex(pos)
 	if err != nil {
 		return nil, err
 	}

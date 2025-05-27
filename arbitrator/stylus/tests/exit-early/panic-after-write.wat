@@ -1,5 +1,5 @@
 ;; Copyright 2024, Offchain Labs, Inc.
-;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 (module
     (import "vm_hooks" "read_args"    (func $read_args    (param i32)))
