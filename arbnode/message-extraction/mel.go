@@ -211,10 +211,8 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			return m.retryInterval, err
 		}
 		// Begin the next FSM state immediately.
-		var stage savingStage
 		return 0, m.fsm.Do(saveMessages{
 			preStateMsgCount: preState.MsgCount,
-			stage:            &stage,
 			postState:        postState,
 			messages:         msgs,
 			delayedMessages:  delayedMsgs,
@@ -230,28 +228,15 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if !ok {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		if saveAction.stage == nil {
-			return m.retryInterval, errors.New("stage of SavingMessages fsm state is nil")
+		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
+			return m.retryInterval, err
 		}
-		switch *saveAction.stage {
-		case atDelayed:
-			if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
-				return m.retryInterval, err
-			}
-			*saveAction.stage = atMessages
-			fallthrough
-		case atMessages:
-			if err := m.msgConsumer.PushMessages(ctx, saveAction.preStateMsgCount, saveAction.messages); err != nil {
-				return m.retryInterval, err
-			}
-			*saveAction.stage = atState
-			fallthrough
-		case atState:
-			if err := m.melDB.SaveState(ctx, saveAction.postState); err != nil {
-				log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
-				return m.retryInterval, err
-			}
-			*saveAction.stage++
+		if err := m.msgConsumer.PushMessages(ctx, saveAction.preStateMsgCount, saveAction.messages); err != nil {
+			return m.retryInterval, err
+		}
+		if err := m.melDB.SaveState(ctx, saveAction.postState); err != nil {
+			log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
+			return m.retryInterval, err
 		}
 		return 0, m.fsm.Do(processNextBlock{
 			melState: saveAction.postState,
@@ -265,8 +250,6 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if !ok {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		// TODO: we need access to melstate via db here
-		// First gets previous state and then delete dirtyMelState from db so that if node crashes midway its recoverable
 		currentDirtyState := reorgAction.melState
 		if currentDirtyState.ParentChainBlockNumber == 0 {
 			return m.retryInterval, errors.New("invalid reorging stage, ParentChainBlockNumber of current mel state has reached 0")

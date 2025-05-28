@@ -49,18 +49,9 @@ type processNextBlock struct {
 	melState *meltypes.State
 }
 
-type savingStage int
-
-const (
-	atDelayed savingStage = iota
-	atMessages
-	atState
-)
-
 // An action that transitions the FSM to the saving messages state.
 type saveMessages struct {
 	preStateMsgCount uint64
-	stage            *savingStage
 	postState        *meltypes.State
 	messages         []*arbostypes.MessageWithMetadata
 	delayedMessages  []*arbnode.DelayedInboxMessage

@@ -106,19 +106,7 @@ func TestMessageExtractor(t *testing.T) {
 		require.True(t, extractor.CurrentFSMState() == SavingMessages)
 	})
 	t.Run("SavingMessages", func(t *testing.T) {
-		getSavingStage := func() savingStage {
-			saveAction, ok := extractor.fsm.Current().SourceEvent.(saveMessages)
-			require.True(t, ok)
-			return *saveAction.stage
-		}
-
-		// If messageConsumer errors at PushMessages then we retry from that stage in the savingMessages step
-		messageConsumer.returnErr = errors.New("oops")
-		_, err = extractor.Act(ctx)
-		require.True(t, extractor.CurrentFSMState() == SavingMessages)
-		require.True(t, getSavingStage() == atMessages)
-
-		messageConsumer.returnErr = nil
+		// Correctly transitions back to the ProcessingNextBlock state.
 		_, err = extractor.Act(ctx)
 		require.NoError(t, err)
 		require.True(t, extractor.CurrentFSMState() == ProcessingNextBlock)
