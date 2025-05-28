@@ -248,6 +248,35 @@ func (mr *MaintenanceRunner) attemptMaintenance(ctx context.Context) error {
 	return res
 }
 
+func (mr *MaintenanceRunner) waitMaintenanceToComplete(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Warn("Maintenance wait interrupted", "err", ctx.Err())
+			return
+		default:
+			select {
+			case <-ctx.Done():
+				log.Warn("Maintenance wait interrupted", "err", ctx.Err())
+				return
+			case <-ticker.C:
+				maintenanceStatus, err := mr.exec.MaintenanceStatus().Await(ctx)
+				if err != nil {
+					log.Error("Error checking maintenance status", "err", err)
+					continue
+				}
+				if maintenanceStatus.IsRunning {
+					log.Debug("Maintenance is still running, waiting for completion")
+				} else {
+					log.Info("Execution is not running maintenance anymore, maintenance completed successfully")
+					return
+				}
+			}
+		}
+	}
+}
+
 func (mr *MaintenanceRunner) runMaintenance() error {
 	err := mr.setMaintenanceStart()
 	if err != nil {
@@ -257,5 +286,10 @@ func (mr *MaintenanceRunner) runMaintenance() error {
 
 	log.Info("Triggering maintenance")
 	_, err = mr.exec.TriggerMaintenance().Await(mr.GetContext())
-	return err
+	if err != nil {
+		return err
+	}
+
+	mr.waitMaintenanceToComplete(mr.GetContext())
+	return nil
 }
