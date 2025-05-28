@@ -125,7 +125,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	for i := 0; i < NumOfThreads; i++ {
 		config := coordConfig
 		config.MyUrl = fmt.Sprint(i)
-		redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
+		redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
 		Require(t, err)
 		coordinator := &SeqCoordinator{
 			redisCoordinator: *redisCoordinator,
@@ -181,7 +181,7 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 
 	config := coordConfig
 	config.MyUrl = "test"
-	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
+	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
 	Require(t, err)
 	coordinator := &SeqCoordinator{
 		redisCoordinator: *redisCoordinator,
@@ -272,7 +272,7 @@ func TestSeqCoordinatorAddsBlockMetadata(t *testing.T) {
 
 	config := coordConfig
 	config.MyUrl = "test"
-	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
+	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
 	Require(t, err)
 	coordinator := &SeqCoordinator{
 		redisCoordinator: *redisCoordinator,
