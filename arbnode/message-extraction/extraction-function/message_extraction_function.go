@@ -62,6 +62,9 @@ func ExtractMessages(
 	)
 }
 
+// Defines an internal implementation of the ExtractMessages function where many internal details
+// can be mocked out for testing purposes, while the public function is clear about what dependencies it
+// needs from callers.
 func extractMessagesImpl(
 	ctx context.Context,
 	inputState *meltypes.State,
