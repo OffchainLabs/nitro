@@ -179,14 +179,14 @@ func parseDelayedMessage(
 	if ethLog == nil {
 		return nil, nil, nil
 	}
-	switch {
-	case ethLog.Topics[0] == inboxMessageDeliveredID:
+	switch ethLog.Topics[0] {
+	case inboxMessageDeliveredID:
 		event := new(bridgegen.IDelayedMessageProviderInboxMessageDelivered)
 		if err := unpackLogTo(event, iDelayedMessageProviderABI, "InboxMessageDelivered", *ethLog); err != nil {
 			return nil, nil, err
 		}
 		return event.MessageNum, event.Data, nil
-	case ethLog.Topics[0] == inboxMessageFromOriginID:
+	case inboxMessageFromOriginID:
 		event := new(bridgegen.IDelayedMessageProviderInboxMessageDeliveredFromOrigin)
 		if err := unpackLogTo(event, iDelayedMessageProviderABI, "InboxMessageDeliveredFromOrigin", *ethLog); err != nil {
 			return nil, nil, err
