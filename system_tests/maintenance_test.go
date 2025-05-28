@@ -8,15 +8,21 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
+
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestMaintenance(t *testing.T) {
-	t.Parallel()
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.nodeConfig.Maintenance.Triggerable = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -32,8 +38,18 @@ func TestMaintenance(t *testing.T) {
 		Require(t, err)
 	}
 
-	_, err := builder.L2.ExecNode.Maintenance().Await(ctx)
+	l2rpc := builder.L2.Stack.Attach()
+	err := l2rpc.CallContext(ctx, nil, "maintenance_trigger")
 	Require(t, err)
+
+	time.Sleep(12 * time.Second)
+
+	if !logHandler.WasLogged("Flushed trie db through maintenance completed successfully") {
+		t.Fatal("Expected log message not found")
+	}
+	if !logHandler.WasLogged("Execution is not running maintenance anymore, maintenance completed successfully") {
+		t.Fatal("Expected log message not found")
+	}
 
 	for i := 2; i < 3+numberOfTransfers; i++ {
 		account := fmt.Sprintf("User%d", i)
