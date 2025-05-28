@@ -223,10 +223,13 @@ func (mr *MaintenanceRunner) attemptMaintenance(ctx context.Context) error {
 		return mr.runMaintenance()
 	}
 
-	if !mr.lock.AttemptLock(ctx) {
+	release := make(chan struct{})
+	if !mr.lock.AttemptLockAndPeriodicallyRefreshIt(ctx, release) {
 		return errors.New("did not catch maintenance lock")
 	}
-	defer mr.lock.Release(ctx)
+	defer func() {
+		release <- struct{}{}
+	}()
 
 	res := errors.New("maintenance failed to hand-off chosen one")
 

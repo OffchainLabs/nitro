@@ -86,8 +86,8 @@ func (w *execClientWrapper) ResultAtMessageIndex(pos arbutil.MessageIndex) conta
 	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtMessageIndex(pos))
 }
 
-func (w *execClientWrapper) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise(struct{}{}, nil)
+func (w *execClientWrapper) Start(ctx context.Context) error {
+	return nil
 }
 
 func (w *execClientWrapper) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
@@ -98,8 +98,7 @@ func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) container
 	return containers.NewReadyPromise(w.ExecutionEngine.BlockNumberToMessageIndex(blockNum))
 }
 
-func (w *execClientWrapper) StopAndWait() containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise(struct{}{}, nil)
+func (w *execClientWrapper) StopAndWait() {
 }
 
 func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
