@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -65,6 +67,83 @@ func ExtractMessages(
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
 ) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
+	return extractMessagesImpl(
+		ctx,
+		inputState,
+		parentChainBlock,
+		dataProviders,
+		delayedMsgDatabase,
+		receiptFetcher,
+		&logUnpacker{},
+		parseBatchesFromBlock,
+		parseDelayedMessagesFromBlock,
+		serializeBatch,
+		extractMessagesInBatch,
+		arbstate.ParseSequencerMessage,
+		arbostypes.ParseBatchPostingReportMessageFields,
+	)
+}
+
+type batchLookupFunc func(
+	ctx context.Context,
+	melState *meltypes.State,
+	parentChainBlock *types.Block,
+	receiptFetcher ReceiptFetcher,
+	eventUnpacker eventUnpacker,
+) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error)
+
+type delayedMsgLookupFunc func(
+	ctx context.Context,
+	melState *meltypes.State,
+	parentChainBlockNum *big.Int,
+	parentChainBlockTxs []*types.Transaction,
+	receiptFetcher ReceiptFetcher,
+) ([]*arbnode.DelayedInboxMessage, error)
+
+type batchSerializingFunc func(
+	ctx context.Context,
+	batch *arbnode.SequencerInboxBatch,
+	tx *types.Transaction,
+	txIndex uint,
+	receiptFetcher ReceiptFetcher,
+) ([]byte, error)
+
+type sequencerMessageParserFunc func(
+	ctx context.Context,
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	data []byte,
+	dapReaders []daprovider.Reader,
+	keysetValidationMode daprovider.KeysetValidationMode,
+) (*arbstate.SequencerMessage, error)
+
+type batchMsgExtractionFunc func(
+	ctx context.Context,
+	melState *meltypes.State,
+	seqMsg *arbstate.SequencerMessage,
+	delayedMsgDB DelayedMessageDatabase,
+) ([]*arbostypes.MessageWithMetadata, error)
+
+type batchPostingReportParserFunc func(
+	rd io.Reader,
+) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error)
+
+func extractMessagesImpl(
+	ctx context.Context,
+	inputState *meltypes.State,
+	parentChainBlock *types.Block,
+	dataProviders []daprovider.Reader,
+	delayedMsgDatabase DelayedMessageDatabase,
+	receiptFetcher ReceiptFetcher,
+	eventUnpacker eventUnpacker,
+	lookupBatches batchLookupFunc,
+	lookupDelayedMsgs delayedMsgLookupFunc,
+	serialize batchSerializingFunc,
+	extractBatchMessages batchMsgExtractionFunc,
+	parseSequencerMessage sequencerMessageParserFunc,
+	parseBatchPostingReport batchPostingReportParserFunc,
+) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
+
 	state := inputState.Clone()
 	// Clones the state to avoid mutating the input pointer in case of errors.
 	// Check parent chain block hash linkage.
@@ -83,17 +162,17 @@ func ExtractMessages(
 	state.ParentChainPreviousBlockHash = parentChainBlock.ParentHash()
 	// Now, check for any logs emitted by the sequencer inbox by txs
 	// included in the parent chain block.
-	batches, batchTxs, batchTxIndices, err := parseBatchesFromBlock(
+	batches, batchTxs, batchTxIndices, err := lookupBatches(
 		ctx,
 		state,
 		parentChainBlock,
 		receiptFetcher,
-		&logUnpacker{},
+		eventUnpacker,
 	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	delayedMessages, err := parseDelayedMessagesFromBlock(
+	delayedMessages, err := lookupDelayedMsgs(
 		ctx,
 		state,
 		parentChainBlock.Number(),
@@ -130,7 +209,7 @@ func ExtractMessages(
 	for i, batch := range batches {
 		batchTx := batchTxs[i]
 		txIndex := batchTxIndices[i]
-		serialized, err := serializeBatch(
+		serialized, err := serialize(
 			ctx,
 			batch,
 			batchTx,
@@ -142,7 +221,7 @@ func ExtractMessages(
 		}
 
 		batchPostReport := batchPostingReports[i]
-		_, _, batchHash, _, _, _, err := arbostypes.ParseBatchPostingReportMessageFields(bytes.NewReader(batchPostReport.Message.L2msg))
+		_, _, batchHash, _, _, _, err := parseBatchPostingReport(bytes.NewReader(batchPostReport.Message.L2msg))
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
 		}
@@ -160,7 +239,7 @@ func ExtractMessages(
 		// Fill in the batch gas cost into the batch posting report.
 		batchPostReport.Message.BatchGasCost = &gas
 
-		rawSequencerMsg, err := arbstate.ParseSequencerMessage(
+		rawSequencerMsg, err := parseSequencerMessage(
 			ctx,
 			batch.SequenceNumber,
 			batch.BlockHash,
@@ -171,8 +250,7 @@ func ExtractMessages(
 		if err != nil {
 			return nil, nil, nil, err
 		}
-
-		messagesInBatch, err := extractMessagesInBatch(
+		messagesInBatch, err := extractBatchMessages(
 			ctx,
 			state,
 			rawSequencerMsg,
