@@ -1141,6 +1141,8 @@ func (s *ExecutionEngine) TriggerMaintenance(capLimit uint64) {
 
 	// Flushing the trie DB can be a long operation, so we run it in a new thread
 	s.LaunchThread(func(ctx context.Context) {
+		defer s.runningMaintenance.Store(false)
+
 		s.createBlocksMutex.Lock()
 		defer s.createBlocksMutex.Unlock()
 
@@ -1151,7 +1153,5 @@ func (s *ExecutionEngine) TriggerMaintenance(capLimit uint64) {
 		} else {
 			log.Info("Flushed trie db through maintenance completed successfully")
 		}
-
-		s.runningMaintenance.Store(false)
 	})
 }
