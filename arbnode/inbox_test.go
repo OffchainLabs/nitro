@@ -63,6 +63,10 @@ func (w *execClientWrapper) ShouldTriggerMaintenance() containers.PromiseInterfa
 	return containers.NewReadyPromise(false, nil)
 }
 
+func (w *execClientWrapper) MaintenanceStatus() containers.PromiseInterface[*execution.MaintenanceStatus] {
+	return containers.NewReadyPromise(&execution.MaintenanceStatus{}, nil)
+}
+
 func (w *execClientWrapper) TriggerMaintenance() containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }

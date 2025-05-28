@@ -12,6 +12,10 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
+type MaintenanceStatus struct {
+	IsRunning bool
+}
+
 type MessageResult struct {
 	BlockHash common.Hash
 	SendRoot  common.Hash
@@ -45,6 +49,7 @@ type ExecutionClient interface {
 
 	TriggerMaintenance() containers.PromiseInterface[struct{}]
 	ShouldTriggerMaintenance() containers.PromiseInterface[bool]
+	MaintenanceStatus() containers.PromiseInterface[*MaintenanceStatus]
 
 	Start(ctx context.Context) error
 	StopAndWait()
