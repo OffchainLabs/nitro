@@ -6,7 +6,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 )
 
 const (
@@ -15,7 +16,7 @@ const (
 )
 
 func IsEigenDAMessageHeaderByte(header byte) bool {
-	return hasBits(header, daprovider.EigenDAMessageHeaderFlag)
+	return hasBits(header, dasutil.EigenDAMessageHeaderFlag)
 }
 
 // hasBits returns true if `checking` has all `bits`
