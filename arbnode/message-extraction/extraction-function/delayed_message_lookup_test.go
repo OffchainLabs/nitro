@@ -6,15 +6,17 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_parseDelayedMessagesFromBlock(t *testing.T) {
