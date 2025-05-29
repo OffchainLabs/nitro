@@ -6,12 +6,14 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_serializeBatch(t *testing.T) {
