@@ -6,12 +6,14 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/holiman/uint256"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_serializeBatch(t *testing.T) {
@@ -146,7 +148,7 @@ func Test_getSequencerBatchData(t *testing.T) {
 		newMsgCount := big.NewInt(1)
 		originTxData, err := addSequencerL2BatchFromOriginCallABI.Inputs.Pack(seqNumber, msgData, afterDelayedRead, gasRefunder, prevMsgCount, newMsgCount)
 		require.NoError(t, err)
-		fullTxData := append(addSequencerL2BatchFromOriginCallABI.ID, originTxData...)
+		fullTxData := append(addSequencerL2BatchFromOriginCallABI.ID, originTxData...) //nolint:gocritic
 		txData := &types.DynamicFeeTx{
 			To:        nil,
 			Nonce:     1,

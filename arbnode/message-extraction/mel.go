@@ -39,6 +39,7 @@ type MessageExtractor struct {
 	initialStateFetcher       meltypes.StateFetcher
 	addrs                     *chaininfo.RollupAddresses
 	melDB                     meltypes.StateDatabase
+	msgConsumer               meltypes.MessageConsumer
 	dataProviders             []daprovider.Reader
 	startParentChainBlockHash common.Hash
 	fsm                       *fsm.Fsm[action, FSMState]
@@ -53,6 +54,7 @@ func NewMessageExtractor(
 	rollupAddrs *chaininfo.RollupAddresses,
 	initialStateFetcher meltypes.StateFetcher,
 	melDB meltypes.StateDatabase,
+	msgConsumer meltypes.MessageConsumer,
 	dataProviders []daprovider.Reader,
 	startParentChainBlockHash common.Hash,
 	retryInterval time.Duration,
@@ -69,6 +71,7 @@ func NewMessageExtractor(
 		addrs:                     rollupAddrs,
 		initialStateFetcher:       initialStateFetcher,
 		melDB:                     melDB,
+		msgConsumer:               msgConsumer,
 		dataProviders:             dataProviders,
 		startParentChainBlockHash: startParentChainBlockHash,
 		fsm:                       fsm,
@@ -209,9 +212,10 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		}
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(saveMessages{
-			postState:       postState,
-			messages:        msgs,
-			delayedMessages: delayedMsgs,
+			preStateMsgCount: preState.MsgCount,
+			postState:        postState,
+			messages:         msgs,
+			delayedMessages:  delayedMsgs,
 		})
 	// `SavingMessages` is the state responsible for saving the extracted messages
 	// and delayed messages to the database. It stores data in the node's consensus database
@@ -224,12 +228,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if !ok {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		// TODO: Use a DB batch to ensure these writes atomic, so if one fails, nothing will be persisted.
-		// The ArbDB batcher has support for this.
 		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
 			return m.retryInterval, err
 		}
-		if err := m.melDB.SaveState(ctx, saveAction.postState, saveAction.messages); err != nil {
+		if err := m.msgConsumer.PushMessages(ctx, saveAction.preStateMsgCount, saveAction.messages); err != nil {
+			return m.retryInterval, err
+		}
+		if err := m.melDB.SaveState(ctx, saveAction.postState); err != nil {
+			log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
 			return m.retryInterval, err
 		}
 		return 0, m.fsm.Do(processNextBlock{
@@ -244,16 +250,12 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if !ok {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		// TODO: we need access to melstate via db here
-		// First gets previous state and then delete dirtyMelState from db so that if node crashes midway its recoverable
 		currentDirtyState := reorgAction.melState
-		previousState, err := m.melDB.State(ctx, currentDirtyState.ParentChainPreviousBlockHash)
-		if err != nil {
-			return m.retryInterval, err
+		if currentDirtyState.ParentChainBlockNumber == 0 {
+			return m.retryInterval, errors.New("invalid reorging stage, ParentChainBlockNumber of current mel state has reached 0")
 		}
-		// TODO: update melstate `head` blockhash in DB and delete sequencer messages etc...
-		// m.melDB.updateHeadMELState(currentDirtyState.ParentChainPreviousBlockHash)
-		if err := m.melDB.DeleteState(ctx, currentDirtyState.ParentChainBlockHash); err != nil {
+		previousState, err := m.melDB.State(ctx, currentDirtyState.ParentChainBlockNumber-1)
+		if err != nil {
 			return m.retryInterval, err
 		}
 		return 0, m.fsm.Do(processNextBlock{
