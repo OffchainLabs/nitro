@@ -14,6 +14,8 @@ var (
 	parentChainBlockNumberPrefix        []byte = []byte("p") // maps a delayed sequence number to a parent chain block number
 	sequencerBatchMetaPrefix            []byte = []byte("s") // maps a batch sequence number to BatchMetadata
 	delayedSequencedPrefix              []byte = []byte("a") // maps a delayed message count to the first sequencer batch sequence number with this delayed count
+	MelStatePrefix                      []byte = []byte("l") // maps a parent chain block number to its computed MEL state
+	MelDelayedMessagePrefix             []byte = []byte("y") // maps a delayed sequence number to an accumulator and an RLP encoded message [Note: might need to replace or be replaced by rlpDelayedMessagePrefix]
 
 	messageCountKey             []byte = []byte("_messageCount")                // contains the current message count
 	lastPrunedMessageKey        []byte = []byte("_lastPrunedMessageKey")        // contains the last pruned message key
@@ -21,6 +23,7 @@ var (
 	delayedMessageCountKey      []byte = []byte("_delayedMessageCount")         // contains the current delayed message count
 	sequencerBatchCountKey      []byte = []byte("_sequencerBatchCount")         // contains the current sequencer message count
 	dbSchemaVersion             []byte = []byte("_schemaVersion")               // contains a uint64 representing the database schema version
+	HeadMelStateBlockNumKey     []byte = []byte("_headMelStateBlockNum")        // contains the latest computed MEL state's parent chain block number
 )
 
 const currentDbSchemaVersion uint64 = 1

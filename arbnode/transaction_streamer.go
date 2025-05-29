@@ -719,6 +719,14 @@ func endBatch(batch ethdb.Batch) error {
 	return batch.Write()
 }
 
+func (s *TransactionStreamer) PushMessages(firstMsgIdx uint64, msgs []*arbostypes.MessageWithMetadata) error {
+	var messages []arbostypes.MessageWithMetadata
+	for _, msg := range msgs {
+		messages = append(messages, *msg)
+	}
+	return s.AddMessagesAndEndBatch(arbutil.MessageIndex(firstMsgIdx), true, messages, nil, nil)
+}
+
 func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, blockMetadataArr []common.BlockMetadata, batch ethdb.Batch) error {
 	messagesWithBlockInfo := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(messages))
 	for _, message := range messages {
