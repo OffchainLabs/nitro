@@ -400,8 +400,10 @@ func DivCeil[T Unsigned](value, divisor T) T {
 	return value/divisor + 1
 }
 
-// ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where x is denominated in basis points.
-// The quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
+// ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where
+// x is denominated in basis points.
+// The quartic polynomial (accuracy = 4) will underestimate e^x by about 5% as
+// x approaches 20000 bips.
 func ApproxExpBasisPoints(value Bips, accuracy uint64) Bips {
 	input := value
 	negative := value < 0
@@ -411,15 +413,25 @@ func ApproxExpBasisPoints(value Bips, accuracy uint64) Bips {
 	// This cast is safe because input is always positive
 	// #nosec G115
 	x := uint64(input)
-	bips := uint64(OneInBips)
+	one := uint64(OneInBips)
 
-	res := bips + x/accuracy
-	for i := uint64(1); i < accuracy; i++ {
-		res = bips + SaturatingUMul(res, x)/((accuracy-i)*bips)
+	// This is actually an optimization for computing the Maclaurin series
+	// inspired by Horner's method for solving taylor polynomials.
+	// It is used to reduce the number of multiplications and divisions required
+	// to compute the polynomial series.
+	// However, this is not a "pure" implementation of Horner's method, as it
+	// takes a short-cut and initializes the result with the nth term of
+	// the series before iterating through the rest of the terms.
+	// In Horner's method, the nth term would not normally be included in the
+	// result, but this is an optimization to improve accuracy for small values
+	// of accuracy.
+	res := one + x/accuracy
+	for i := accuracy - 1; i > 0; i-- {
+		res = one + SaturatingUMul(res, x)/(i*one)
 	}
 
 	if negative {
-		return Bips(SaturatingCast[int64](bips * bips / res))
+		return Bips(SaturatingCast[int64](one * one / res))
 	} else {
 		return Bips(SaturatingCast[int64](res))
 	}
