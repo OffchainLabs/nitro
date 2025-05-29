@@ -32,14 +32,21 @@ func NewDatabase(db ethdb.Database) *Database {
 	return &Database{db}
 }
 
-// GetState method of the StateFetcher interface is implemented by the database as it would be the most used after the initial fetch
+// GetState method of the StateFetcher interface is implemented by the database as it would be used after the initial fetch
 func (d *Database) GetState(ctx context.Context, parentChainBlockHash common.Hash) (*meltypes.State, error) {
-	// We check if our current mel state corresponds to this parentChainBlockHash
 	headMelStateBlockNum, err := d.GetHeadMelStateBlockNum()
 	if err != nil {
 		return nil, fmt.Errorf("error getting HeadMelStateBlockNum from database: %w", err)
 	}
-	return d.State(ctx, headMelStateBlockNum)
+	state, err := d.State(ctx, headMelStateBlockNum)
+	if err != nil {
+		return nil, err
+	}
+	// We check if our current head mel state corresponds to this parentChainBlockHash
+	if state.ParentChainBlockHash != parentChainBlockHash {
+		return nil, fmt.Errorf("head mel state's parentChainBlockHash in db: %v doesnt match the given parentChainBlockHash: %v ", state.ParentChainBlockHash, parentChainBlockHash)
+	}
+	return state, nil
 }
 
 func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentChainBlockNumber uint64) error {
@@ -79,8 +86,7 @@ func (d *Database) setMelState(batch ethdb.KeyValueWriter, parentChainBlockNumbe
 	return nil
 }
 
-// SaveState should exclusively called for saving the recently generated "head" MEL state.
-// TODO: should we strictly enforce this? by returning an error if state.ParentChainBlockNumber <= GetHeadMelStateBlockNum()
+// SaveState should exclusively be called for saving the recently generated "head" MEL state
 func (d *Database) SaveState(ctx context.Context, state *meltypes.State) error {
 	dbBatch := d.db.NewBatch()
 	if err := d.setMelState(dbBatch, state.ParentChainBlockNumber, *state); err != nil {
