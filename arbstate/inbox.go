@@ -37,30 +37,30 @@ type InboxBackend interface {
 	ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error)
 }
 
-type sequencerMessage struct {
-	minTimestamp         uint64
-	maxTimestamp         uint64
-	minL1Block           uint64
-	maxL1Block           uint64
-	afterDelayedMessages uint64
-	segments             [][]byte
+type SequencerMessage struct {
+	MinTimestamp         uint64
+	MaxTimestamp         uint64
+	MinL1Block           uint64
+	MaxL1Block           uint64
+	AfterDelayedMessages uint64
+	Segments             [][]byte
 }
 
 const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 
-func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
-	parsedMsg := &sequencerMessage{
-		minTimestamp:         binary.BigEndian.Uint64(data[:8]),
-		maxTimestamp:         binary.BigEndian.Uint64(data[8:16]),
-		minL1Block:           binary.BigEndian.Uint64(data[16:24]),
-		maxL1Block:           binary.BigEndian.Uint64(data[24:32]),
-		afterDelayedMessages: binary.BigEndian.Uint64(data[32:40]),
-		segments:             [][]byte{},
+	parsedMsg := &SequencerMessage{
+		MinTimestamp:         binary.BigEndian.Uint64(data[:8]),
+		MaxTimestamp:         binary.BigEndian.Uint64(data[8:16]),
+		MinL1Block:           binary.BigEndian.Uint64(data[16:24]),
+		MaxL1Block:           binary.BigEndian.Uint64(data[24:32]),
+		AfterDelayedMessages: binary.BigEndian.Uint64(data[32:40]),
+		Segments:             [][]byte{},
 	}
 	payload := data[40:]
 
@@ -140,11 +140,11 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 					}
 					break
 				}
-				if len(parsedMsg.segments) >= MaxSegmentsPerSequencerMessage {
+				if len(parsedMsg.Segments) >= MaxSegmentsPerSequencerMessage {
 					log.Warn("too many segments in sequence batch")
 					break
 				}
-				parsedMsg.segments = append(parsedMsg.segments, segment)
+				parsedMsg.Segments = append(parsedMsg.Segments, segment)
 			}
 		} else {
 			log.Warn("sequencer msg decompression failed", "err", err)
@@ -166,7 +166,7 @@ type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
 	dapReaders                []daprovider.Reader
-	cachedSequencerMessage    *sequencerMessage
+	cachedSequencerMessage    *SequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
 	cachedSegmentTimestamp    uint64
@@ -225,7 +225,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 
 func (r *inboxMultiplexer) advanceSequencerMsg() {
 	if r.cachedSequencerMessage != nil {
-		r.delayedMessagesRead = r.cachedSequencerMessage.afterDelayedMessages
+		r.delayedMessagesRead = r.cachedSequencerMessage.AfterDelayedMessages
 	}
 	r.backend.SetPositionWithinMessage(0)
 	r.backend.AdvanceSequencerInbox()
@@ -244,11 +244,11 @@ func (r *inboxMultiplexer) advanceSubMsg() {
 func (r *inboxMultiplexer) IsCachedSegementLast() bool {
 	seqMsg := r.cachedSequencerMessage
 	// we issue delayed messages until reaching afterDelayedMessages
-	if r.delayedMessagesRead < seqMsg.afterDelayedMessages {
+	if r.delayedMessagesRead < seqMsg.AfterDelayedMessages {
 		return false
 	}
-	for segmentNum := r.cachedSegmentNum + 1; segmentNum < uint64(len(seqMsg.segments)); segmentNum++ {
-		segment := seqMsg.segments[segmentNum]
+	for segmentNum := r.cachedSegmentNum + 1; segmentNum < uint64(len(seqMsg.Segments)); segmentNum++ {
+		segment := seqMsg.Segments[segmentNum]
 		if len(segment) == 0 {
 			continue
 		}
@@ -274,10 +274,10 @@ func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error)
 	submessageNumber := r.cachedSubMessageNumber
 	var segment []byte
 	for {
-		if segmentNum >= uint64(len(seqMsg.segments)) {
+		if segmentNum >= uint64(len(seqMsg.Segments)) {
 			break
 		}
-		segment = seqMsg.segments[segmentNum]
+		segment = seqMsg.Segments[segmentNum]
 		if len(segment) == 0 {
 			segmentNum++
 			continue
@@ -308,22 +308,22 @@ func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error)
 	r.cachedSegmentTimestamp = timestamp
 	r.cachedSegmentBlockNumber = blockNumber
 	r.cachedSubMessageNumber = submessageNumber
-	if timestamp < seqMsg.minTimestamp {
-		timestamp = seqMsg.minTimestamp
-	} else if timestamp > seqMsg.maxTimestamp {
-		timestamp = seqMsg.maxTimestamp
+	if timestamp < seqMsg.MinTimestamp {
+		timestamp = seqMsg.MinTimestamp
+	} else if timestamp > seqMsg.MaxTimestamp {
+		timestamp = seqMsg.MaxTimestamp
 	}
-	if blockNumber < seqMsg.minL1Block {
-		blockNumber = seqMsg.minL1Block
-	} else if blockNumber > seqMsg.maxL1Block {
-		blockNumber = seqMsg.maxL1Block
+	if blockNumber < seqMsg.MinL1Block {
+		blockNumber = seqMsg.MinL1Block
+	} else if blockNumber > seqMsg.MaxL1Block {
+		blockNumber = seqMsg.MaxL1Block
 	}
-	if segmentNum >= uint64(len(seqMsg.segments)) {
+	if segmentNum >= uint64(len(seqMsg.Segments)) {
 		// after end of batch there might be "virtual" delayedMsgSegments
-		log.Warn("reading virtual delayed message segment", "delayedMessagesRead", r.delayedMessagesRead, "afterDelayedMessages", seqMsg.afterDelayedMessages)
+		log.Warn("reading virtual delayed message segment", "delayedMessagesRead", r.delayedMessagesRead, "afterDelayedMessages", seqMsg.AfterDelayedMessages)
 		segment = []byte{BatchSegmentKindDelayedMessages}
 	} else {
-		segment = seqMsg.segments[segmentNum]
+		segment = seqMsg.Segments[segmentNum]
 	}
 	if len(segment) == 0 {
 		log.Error("empty sequencer message segment", "sequence", r.cachedSegmentNum, "segmentNum", segmentNum)
@@ -358,17 +358,17 @@ func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error)
 			DelayedMessagesRead: r.delayedMessagesRead,
 		}
 	} else if kind == BatchSegmentKindDelayedMessages {
-		if r.delayedMessagesRead >= seqMsg.afterDelayedMessages {
-			if segmentNum < uint64(len(seqMsg.segments)) {
+		if r.delayedMessagesRead >= seqMsg.AfterDelayedMessages {
+			if segmentNum < uint64(len(seqMsg.Segments)) {
 				log.Warn(
 					"attempt to read past batch delayed message count",
 					"delayedMessagesRead", r.delayedMessagesRead,
-					"batchAfterDelayedMessages", seqMsg.afterDelayedMessages,
+					"batchAfterDelayedMessages", seqMsg.AfterDelayedMessages,
 				)
 			}
 			msg = &arbostypes.MessageWithMetadata{
 				Message:             arbostypes.InvalidL1Message,
-				DelayedMessagesRead: seqMsg.afterDelayedMessages,
+				DelayedMessagesRead: seqMsg.AfterDelayedMessages,
 			}
 		} else {
 			delayed, realErr := r.backend.ReadDelayedInbox(r.delayedMessagesRead)
