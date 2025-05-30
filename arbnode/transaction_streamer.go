@@ -55,7 +55,7 @@ type TransactionStreamer struct {
 	config         TransactionStreamerConfigFetcher
 	snapSyncConfig *SnapSyncConfig
 
-	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
+	insertionMutex     *sync.Mutex // cannot be acquired while reorgMutex is held
 	reorgMutex         sync.RWMutex
 	newMessageNotifier chan struct{}
 
@@ -118,6 +118,7 @@ func NewTransactionStreamer(
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
 	snapSyncConfig *SnapSyncConfig,
+	insertionMutex *sync.Mutex,
 ) (*TransactionStreamer, error) {
 	streamer := &TransactionStreamer{
 		execClient:         execClient,
@@ -129,6 +130,7 @@ func NewTransactionStreamer(
 		fatalErrChan:       fatalErrChan,
 		config:             config,
 		snapSyncConfig:     snapSyncConfig,
+		insertionMutex:     insertionMutex,
 	}
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
