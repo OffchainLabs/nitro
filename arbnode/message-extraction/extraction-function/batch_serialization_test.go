@@ -148,7 +148,9 @@ func Test_getSequencerBatchData(t *testing.T) {
 		newMsgCount := big.NewInt(1)
 		originTxData, err := addSequencerL2BatchFromOriginCallABI.Inputs.Pack(seqNumber, msgData, afterDelayedRead, gasRefunder, prevMsgCount, newMsgCount)
 		require.NoError(t, err)
-		fullTxData := append(addSequencerL2BatchFromOriginCallABI.ID, originTxData...)
+		fullTxData := make([]byte, 0)
+		fullTxData = append(fullTxData, addSequencerL2BatchFromOriginCallABI.ID...)
+		fullTxData = append(fullTxData, originTxData...)
 		txData := &types.DynamicFeeTx{
 			To:        nil,
 			Nonce:     1,
