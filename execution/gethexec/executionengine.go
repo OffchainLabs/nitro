@@ -286,14 +286,16 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) EnqueueDelayedMessage(msg *arbostypes.L1IncomingMessage, msgIdx uint64) {
+func (s *ExecutionEngine) EnqueueDelayedMessages(msgs []*arbostypes.L1IncomingMessage, firstMsgIdx uint64) {
 	s.delayedMsgsMutex.Lock()
 	defer s.delayedMsgsMutex.Unlock()
 
-	s.delayedMsgs.Push(&delayedMsg{
-		msg:    msg,
-		msgIdx: msgIdx,
-	})
+	for i, msg := range msgs {
+		s.delayedMsgs.Push(&delayedMsg{
+			msg:    msg,
+			msgIdx: firstMsgIdx + uint64(i),
+		})
+	}
 }
 
 func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) ([]*execution.MessageResult, error) {
