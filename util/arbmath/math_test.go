@@ -246,12 +246,8 @@ func TestApproxExpBasisPoints(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("ApproxExp(%d) = %d", tc.input, tc.expected), func(t *testing.T) {
 			result := ApproxExpBasisPoints(tc.input, 4)
-			r2 := ApproxExpBasisPointsOld(tc.input, 4)
 			if result != tc.expected {
 				t.Errorf("ApproxExpBasisPoints(%d) = %d: expected %d", tc.input, result, tc.expected)
-			}
-			if result != r2 {
-				t.Errorf("ApproxExpBasisPoints(%d) = %d: expected %d from old implementation", tc.input, r2, result)
 			}
 		})
 	}
