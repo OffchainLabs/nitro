@@ -90,6 +90,11 @@ type sequencedBlockInfo struct {
 	msgIdx        arbutil.MessageIndex
 }
 
+type delayedMsg struct {
+	msg    *arbostypes.L1IncomingMessage
+	seqNum uint64
+}
+
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
@@ -120,6 +125,9 @@ type ExecutionEngine struct {
 	exposeMultiGas bool
 
 	runningMaintenance atomic.Bool
+
+	delayedMsgs      containers.Queue[*delayedMsg]
+	delayedMsgsMutex sync.Mutex
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -279,10 +287,26 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
+func (s *ExecutionEngine) EnqueueDelayedMessage(msg *arbostypes.L1IncomingMessage, seqNum uint64) {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+
+	s.delayedMsgs.Push(&delayedMsg{
+		msg:    msg,
+		seqNum: seqNum,
+	})
+}
+
 func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) ([]*execution.MessageResult, error) {
 	if msgIdxOfFirstMsgToAdd == 0 {
 		return nil, errors.New("cannot reorg out genesis")
 	}
+
+	// Clears delayedMsgs to remove any possible inconsistencies due to the reorg.
+	// delayedMsgs will eventually be filled again by Consensus.
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	s.delayedMsgs = containers.Queue[*delayedMsg]{}
 
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
@@ -364,6 +388,13 @@ func (s *ExecutionEngine) HeadMessageIndexSync(t *testing.T) (arbutil.MessageInd
 }
 
 func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	lastDelayedMsg := s.delayedMsgs.Tail()
+	if lastDelayedMsg != nil {
+		return lastDelayedMsg.seqNum + 1, nil
+	}
+
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return 0, err
@@ -615,10 +646,25 @@ func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboosted
 	return bits
 }
 
-func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, error) {
+func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, error) {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	if s.delayedMsgs.Len() == 0 {
+		return nil, nil
+	}
+	delayedMsgToSequence := s.delayedMsgs.Pop()
+
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
-	return s.sequenceDelayedMessageWithBlockMutex(message, delayedMsgIdx)
+
+	sequencedMsg, err := s.sequenceDelayedMessageWithBlockMutex(delayedMsgToSequence.msg, delayedMsgToSequence.seqNum)
+	if err != nil {
+		// Unexpected error occurred.
+		// Clears delayedMsgs to remove any possible inconsistencies.
+		// delayedMsgs will eventually be filled again by Consensus.
+		s.delayedMsgs = containers.Queue[*delayedMsg]{}
+	}
+	return sequencedMsg, err
 }
 
 func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, error) {
