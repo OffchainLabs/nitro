@@ -91,15 +91,15 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 	return d.exec.NextDelayedMessageNumber()
 }
 
-func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
+func (d *DelayedSequencer) tryToEnqueue(ctx context.Context, lastBlockHeader *types.Header) error {
 	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
 		return nil
 	}
 
-	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
+	return d.enqueueWithoutLockout(ctx, lastBlockHeader)
 }
 
-func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
+func (d *DelayedSequencer) enqueueWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
 	config := d.config()
 	if !config.Enable {
 		return nil
@@ -200,12 +200,12 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 }
 
 // Dangerous: bypasses lockout check!
-func (d *DelayedSequencer) ForceSequenceDelayed(ctx context.Context) error {
+func (d *DelayedSequencer) ForceEnqueue(ctx context.Context) error {
 	lastBlockHeader, err := d.l1Reader.LastHeader(ctx)
 	if err != nil {
 		return err
 	}
-	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
+	return d.enqueueWithoutLockout(ctx, lastBlockHeader)
 }
 
 func (d *DelayedSequencer) run(ctx context.Context) {
@@ -243,7 +243,7 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 			log.Debug("delayed sequencer: context done", "err", ctx.Err())
 			return
 		}
-		if err := d.trySequence(ctx, latestHeader); err != nil {
+		if err := d.tryToEnqueue(ctx, latestHeader); err != nil {
 			if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
 				log.Info("stopping block creation in delayed sequencer because execution engine has stopped")
 				return
