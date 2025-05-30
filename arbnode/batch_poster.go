@@ -436,17 +436,24 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 
 		// check if the pos is already finalized on L1
 		// and get the current finalized block number from L1
-		finalizedBlockNumber, err := opts.L1Reader.LatestFinalizedBlockNr(context.Background())
+		blockNumber, err := opts.L1Reader.LatestFinalizedBlockNr(context.Background())
 		if err != nil {
 			return nil, fmt.Errorf("failed to get finalized block number: %w", err)
 		}
 
+		// Edge case: its possible that batch poster is started even before the `DeployedAt` block is finalized
+		// in that case we should use the `DeployedAt` block number because no message would have been posted before that
+		if blockNumber < opts.DeployInfo.DeployedAt {
+			blockNumber = opts.DeployInfo.DeployedAt
+		}
+
 		sequencerMessageCount, err := bridge.SequencerReportedSubMessageCount(&bind.CallOpts{
-			BlockNumber: new(big.Int).SetUint64(finalizedBlockNumber),
+			BlockNumber: new(big.Int).SetUint64(blockNumber),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get sequencerMessageCount: %w", err)
 		}
+
 		opts.Streamer.InitialFinalizedSequencerMessageCount = sequencerMessageCount
 	}
 
