@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 
 	"github.com/spf13/pflag"
 
@@ -890,9 +891,10 @@ func getTransactionStreamer(
 	broadcastServer *broadcaster.Broadcaster,
 	configFetcher ConfigFetcher,
 	fatalErrChan chan error,
+	insertionMutex *sync.Mutex,
 ) (*TransactionStreamer, error) {
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(ctx, arbDb, l2Config, execClient, execSequencer, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
+	txStreamer, err := NewTransactionStreamer(ctx, arbDb, l2Config, execClient, execSequencer, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest, insertionMutex)
 	if err != nil {
 		return nil, err
 	}
@@ -1048,11 +1050,12 @@ func getDelayedSequencer(
 func getSequencerTriggerer(
 	execSequencer execution.ExecutionSequencer,
 	txStreamer *TransactionStreamer,
+	insertionMutex *sync.Mutex,
 ) *SequencerTriggerer {
 	if execSequencer == nil {
 		return nil
 	}
-	return NewSequencerTriggerer(execSequencer, txStreamer)
+	return NewSequencerTriggerer(execSequencer, txStreamer, insertionMutex)
 }
 
 func getNodeParentChainReaderDisabled(
@@ -1156,7 +1159,9 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	txStreamer, err := getTransactionStreamer(ctx, arbDb, l2Config, executionClient, executionSequencer, broadcastServer, configFetcher, fatalErrChan)
+	insertionMutex := &sync.Mutex{}
+
+	txStreamer, err := getTransactionStreamer(ctx, arbDb, l2Config, executionClient, executionSequencer, broadcastServer, configFetcher, fatalErrChan, insertionMutex)
 	if err != nil {
 		return nil, err
 	}
@@ -1186,7 +1191,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	sequencerTriggerer := getSequencerTriggerer(executionSequencer, txStreamer)
+	sequencerTriggerer := getSequencerTriggerer(executionSequencer, txStreamer, insertionMutex)
 
 	if !config.ParentChainReader.Enable {
 		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher, sequencerTriggerer), nil
