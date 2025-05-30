@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/spf13/pflag"
 
 	"github.com/offchainlabs/bold/containers/fsm"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
@@ -23,6 +24,20 @@ import (
 // The default retry interval for the message extractor FSM. After each tick of the FSM,
 // the extractor service stop waiter will wait for this duration before trying to act again.
 const defaultRetryInterval = time.Second
+
+type MessageExtractionConfig struct {
+	Enable        bool          `koanf:"enable"`
+	RetryInterval time.Duration `koanf:"retry-interval"`
+}
+
+var DefaultMessageExtractionConfig = MessageExtractionConfig{
+	Enable:        false,
+	RetryInterval: defaultRetryInterval,
+}
+
+func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultMessageExtractionConfig.Enable, "enable message extraction service")
+}
 
 type ParentChainReader interface {
 	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
