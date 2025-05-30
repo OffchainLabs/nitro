@@ -29,7 +29,6 @@ type DelayedSequencer struct {
 	bridge                   *DelayedBridge
 	inbox                    *InboxTracker
 	reader                   *InboxReader
-	txStreamer               *TransactionStreamer
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock *uint64
@@ -70,13 +69,12 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	RescanInterval:      time.Millisecond * 100,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher, txStreamer *TransactionStreamer) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
 	d := &DelayedSequencer{
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
 		inbox:       reader.Tracker(),
 		reader:      reader,
-		txStreamer:  txStreamer,
 		coordinator: coordinator,
 		exec:        exec,
 		config:      config,
