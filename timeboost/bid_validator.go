@@ -32,7 +32,7 @@ type BidValidatorConfig struct {
 	RedisURL       string                `koanf:"redis-url"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 	// Timeout on polling for existence of each redis stream.
-	SequencerEndpoint      string `koanf:"sequencer-endpoint"`
+	RpcEndpoint            string `koanf:"rpc-endpoint"`
 	AuctionContractAddress string `koanf:"auction-contract-address"`
 	MaxBidsPerSender       uint8  `koanf:"max-bids-per-sender"`
 }
@@ -55,7 +55,7 @@ func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBidValidatorConfig.Enable, "enable bid validator")
 	f.String(prefix+".redis-url", DefaultBidValidatorConfig.RedisURL, "url of redis server")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
-	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
+	f.String(prefix+".rpc-endpoint", DefaultBidValidatorConfig.RpcEndpoint, "url of rpc endpoint")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.Uint8(prefix+".max-bids-per-sender", DefaultBidValidatorConfig.MaxBidsPerSender, "maximum number of bids a sender can submit per round")
 
@@ -100,16 +100,16 @@ func NewBidValidator(
 		return nil, err
 	}
 
-	client, err := rpc.DialContext(ctx, cfg.SequencerEndpoint)
+	client, err := rpc.DialContext(ctx, cfg.RpcEndpoint)
 	if err != nil {
 		return nil, err
 	}
-	sequencerClient := ethclient.NewClient(client)
-	chainId, err := sequencerClient.ChainID(ctx)
+	rpcClient := ethclient.NewClient(client)
+	chainId, err := rpcClient.ChainID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, rpcClient)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func NewBidValidator(
 
 	bidValidator := &BidValidator{
 		chainId:                        chainId,
-		client:                         sequencerClient,
+		client:                         rpcClient,
 		redisClient:                    redisClient,
 		stack:                          stack,
 		auctionContract:                auctionContract,
@@ -277,6 +277,23 @@ func (bv *BidValidator) fetchReservePrice() *big.Int {
 	return bv.reservePrice
 }
 
+// Check time-related constraints for bid.
+// It's useful to split out to be able to re-check just these contraints after
+// time has elapsed.
+func validateBidTimeConstraints(roundTimingInfo *RoundTimingInfo, bidRound uint64) error {
+	// Check if the bid is intended for upcoming round.
+	upcomingRound := roundTimingInfo.RoundNumber() + 1
+	if bidRound != upcomingRound {
+		return errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bidRound)
+	}
+
+	// Check if the auction is closed.
+	if roundTimingInfo.isAuctionRoundClosed() {
+		return errors.Wrap(ErrBadRoundNumber, "auction is closed")
+	}
+	return nil
+}
+
 func (bv *BidValidator) validateBid(
 	bid *Bid,
 	balanceCheckerFn func(opts *bind.CallOpts, account common.Address) (*big.Int, error)) (*JsonValidatedBid, error) {
@@ -299,15 +316,8 @@ func (bv *BidValidator) validateBid(
 		return nil, errors.Wrapf(ErrWrongChainId, "can not auction for chain id: %d", bid.ChainId)
 	}
 
-	// Check if the bid is intended for upcoming round.
-	upcomingRound := bv.roundTimingInfo.RoundNumber() + 1
-	if bid.Round != upcomingRound {
-		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
-	}
-
-	// Check if the auction is closed.
-	if bv.roundTimingInfo.isAuctionRoundClosed() {
-		return nil, errors.Wrap(ErrBadRoundNumber, "auction is closed")
+	if err := validateBidTimeConstraints(&bv.roundTimingInfo, (uint64)(bid.Round)); err != nil {
+		return nil, err
 	}
 
 	// Check bid is higher than or equal to reserve price.

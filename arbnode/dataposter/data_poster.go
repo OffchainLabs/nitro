@@ -946,7 +946,13 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	}
 
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
-		if !rpcclient.IsAlreadyKnownError(err) && !strings.Contains(err.Error(), "nonce too low") {
+		isAlreadyKnown := rpcclient.IsAlreadyKnownError(err)
+		isAlreadyKnown = isAlreadyKnown || strings.Contains(err.Error(), "nonce too low")
+		// If we previously sent this nonce and the same tx, some L1 clients may return ReplacementNotAllowed instead of
+		// an already known error (might be due to their cache size constraints) so we dont return an error in such a case
+		_, _, errTxByHash := p.client.TransactionByHash(ctx, newTx.FullTx.Hash())
+		isAlreadyKnown = isAlreadyKnown || (strings.Contains(err.Error(), "ReplacementNotAllowed") && errTxByHash == nil)
+		if !isAlreadyKnown {
 			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "blobFeeCap", newTx.FullTx.BlobGasFeeCap(), "gas", newTx.FullTx.Gas())
 			return err
 		}

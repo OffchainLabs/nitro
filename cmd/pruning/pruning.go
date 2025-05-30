@@ -160,7 +160,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		}
 	} else if initConfig.Prune == "full" || initConfig.Prune == "minimal" {
 		if validatorRequired {
-			return nil, fmt.Errorf("refusing to prune in %s mode when validator is enabled (you should not prune in validator mode)", initConfig.Prune)
+			return nil, fmt.Errorf("refusing to prune in %s mode when validator is enabled (you should use \"validator\" pruning mode)", initConfig.Prune)
 		}
 	} else if hashListRegex.MatchString(initConfig.Prune) {
 		parts := strings.Split(initConfig.Prune, ",")

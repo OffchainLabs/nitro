@@ -566,7 +566,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 	statedb.StartPrefetcher("Sequencer", witness)
 	defer statedb.StopPrefetcher()
-
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
 	startTime := time.Now()
@@ -791,12 +790,20 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 		logs = append(logs, receipt.Logs...)
 	}
 	startTime := time.Now()
-	status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, duration)
-	if err != nil {
-		return err
-	}
-	if status == core.SideStatTy {
-		return errors.New("geth rejected block as non-canonical")
+	if s.bc.GetVMConfig().Tracer != nil {
+		// InsertChain is basically WriteBlockAndSetHeadWithTime along with recomputing
+		// the entire block which is also traced which works directly for live-tracing
+		if _, err := s.bc.InsertChain([]*types.Block{block}); err != nil {
+			return err
+		}
+	} else {
+		status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, duration)
+		if err != nil {
+			return err
+		}
+		if status == core.SideStatTy { // TODO: This check can be removed as this WriteStatus is never returned when setting head
+			return errors.New("geth rejected block as non-canonical")
+		}
 	}
 	blockWriteToDbTimer.Update(time.Since(startTime))
 	baseFeeGauge.Update(block.BaseFee().Int64())

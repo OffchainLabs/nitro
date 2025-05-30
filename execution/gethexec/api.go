@@ -356,7 +356,7 @@ func (api *ArbTraceForwarderAPI) getFallbackClient() (types.FallbackClient, erro
 	if api.initialized.Load() {
 		return api.fallbackClient, nil
 	}
-	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout)
+	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout, false)
 	if err != nil {
 		return nil, err
 	}
