@@ -91,7 +91,7 @@ type sequencedBlockInfo struct {
 
 type delayedMsg struct {
 	msg    *arbostypes.L1IncomingMessage
-	seqNum uint64
+	msgIdx uint64
 }
 
 type ExecutionEngine struct {
@@ -286,13 +286,13 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) EnqueueDelayedMessage(msg *arbostypes.L1IncomingMessage, seqNum uint64) {
+func (s *ExecutionEngine) EnqueueDelayedMessage(msg *arbostypes.L1IncomingMessage, msgIdx uint64) {
 	s.delayedMsgsMutex.Lock()
 	defer s.delayedMsgsMutex.Unlock()
 
 	s.delayedMsgs.Push(&delayedMsg{
 		msg:    msg,
-		seqNum: seqNum,
+		msgIdx: msgIdx,
 	})
 }
 
@@ -391,7 +391,7 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 	defer s.delayedMsgsMutex.Unlock()
 	lastDelayedMsg := s.delayedMsgs.Tail()
 	if lastDelayedMsg != nil {
-		return lastDelayedMsg.seqNum + 1, nil
+		return lastDelayedMsg.msgIdx + 1, nil
 	}
 
 	currentHeader, err := s.getCurrentHeader()
@@ -656,7 +656,7 @@ func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, err
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 
-	sequencedMsg, err := s.sequenceDelayedMessageWithBlockMutex(delayedMsgToSequence.msg, delayedMsgToSequence.seqNum)
+	sequencedMsg, err := s.sequenceDelayedMessageWithBlockMutex(delayedMsgToSequence.msg, delayedMsgToSequence.msgIdx)
 	if err != nil {
 		// Unexpected error occurred.
 		// Clears delayedMsgs to remove any possible inconsistencies.
