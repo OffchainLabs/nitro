@@ -100,9 +100,6 @@ func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *typ
 }
 
 func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
-	d.txStreamer.insertionMutex.Lock()
-	defer d.txStreamer.insertionMutex.Unlock()
-
 	config := d.config()
 	if !config.Enable {
 		return nil
