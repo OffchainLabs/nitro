@@ -159,8 +159,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 	t.Run("fetching message data from inbox message delivered event, but hash mismatched", func(t *testing.T) {
 		delayedMsgEvent, delayedMsgPackedLog := setupParseDelayedMessagesTest(t)
 		msgDataEvent := &bridgegen.IDelayedMessageProviderInboxMessageDelivered{
-			MessageNum: big.NewInt(1),
-			Data:       []byte("foobar"),
+			Data: []byte("foobar"),
 		}
 		eventABI := iDelayedMessageProviderABI.Events["InboxMessageDelivered"]
 		packedMsgDataLog, err := eventABI.Inputs.NonIndexed().Pack(msgDataEvent.Data)
@@ -448,7 +447,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		l2MessageFromOriginCallABI := iInboxABI.Methods["sendL2MessageFromOrigin"]
 		originTxData, err := l2MessageFromOriginCallABI.Inputs.Pack(msgData)
 		require.NoError(t, err)
-		fullTxData := append(l2MessageFromOriginCallABI.ID, originTxData...)
+		fullTxData := make([]byte, 0)
+		fullTxData = append(fullTxData, l2MessageFromOriginCallABI.ID...)
+		fullTxData = append(fullTxData, originTxData...)
 
 		txData1 := &types.DynamicFeeTx{
 			To:        &delayedMsgPostingAddr,
