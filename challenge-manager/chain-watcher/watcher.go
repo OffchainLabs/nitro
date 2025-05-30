@@ -522,9 +522,9 @@ func (w *Watcher) AddVerifiedHonestEdge(ctx context.Context, edge protocol.Verif
 	start, startRoot := edge.StartCommitment()
 	end, endRoot := edge.EndCommitment()
 	fields := []any{
-		"edgeId", fmt.Sprintf("%#x", edge.Id().Hash.Bytes()[:4]),
+		"edgeId", fmt.Sprintf("%#x", edge.Id().Bytes()[:4]),
 		"challengeLevel", edge.GetChallengeLevel(),
-		"challengedAssertionHash", fmt.Sprintf("%#x", assertionHash.Hash.Bytes()[:4]),
+		"challengedAssertionHash", fmt.Sprintf("%#x", assertionHash.Bytes()[:4]),
 		"startHeight", start,
 		"endHeight", end,
 		"startCommit", fmt.Sprintf("%#x", startRoot[:4]),
@@ -628,9 +628,9 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) (bool, er
 		}
 	}
 	fields := []any{
-		"edgeId", fmt.Sprintf("%#x", edge.Id().Hash.Bytes()[:4]),
+		"edgeId", fmt.Sprintf("%#x", edge.Id().Bytes()[:4]),
 		"challengeLevel", edge.GetChallengeLevel(),
-		"challengedAssertionHash", fmt.Sprintf("%#x", challengeParentAssertionHash.Hash.Bytes()[:4]),
+		"challengedAssertionHash", fmt.Sprintf("%#x", challengeParentAssertionHash.Bytes()[:4]),
 		"startHeight", start,
 		"endHeight", end,
 		"startCommit", fmt.Sprintf("%#x", startRoot[:4]),
@@ -857,7 +857,7 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 		return
 	}
 	challengeGracePeriodBlocks, err := retry.UntilSucceeds(ctx, func() (uint64, error) {
-		return w.chain.RollupUserLogic().RollupUserLogicCaller.ChallengeGracePeriodBlocks(w.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+		return w.chain.RollupUserLogic().ChallengeGracePeriodBlocks(w.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	})
 	if err != nil {
 		log.Error("Could not get challenge grace period blocks", "err", err)

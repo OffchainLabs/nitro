@@ -265,7 +265,7 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 		return nil, errors.New("could not set big int")
 	}
 	for _, acc := range a.accounts[1:] {
-		transferTx, err := tokenBindings.TestWETH9Transactor.Transfer(a.accounts[0], acc.From, seed)
+		transferTx, err := tokenBindings.Transfer(a.accounts[0], acc.From, seed)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not approve account")
 		}
@@ -279,7 +279,7 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 		if receipt.Status != types.ReceiptStatusSuccessful {
 			return nil, errors.New("receipt not successful")
 		}
-		approveTx, err := tokenBindings.TestWETH9Transactor.Approve(acc, result.Rollup, value)
+		approveTx, err := tokenBindings.Approve(acc, result.Rollup, value)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not approve account")
 		}
@@ -293,7 +293,7 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 		if receipt.Status != types.ReceiptStatusSuccessful {
 			return nil, errors.New("receipt not successful")
 		}
-		approveTx, err = tokenBindings.TestWETH9Transactor.Approve(acc, chalManagerAddr, value)
+		approveTx, err = tokenBindings.Approve(acc, chalManagerAddr, value)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not approve account")
 		}

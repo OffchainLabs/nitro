@@ -249,9 +249,10 @@ func (s *Server) AllChallengeEdges(w http.ResponseWriter, r *http.Request) {
 	}
 	if val, ok := query["royal"]; ok {
 		v := strings.Join(val, "")
-		if v == "false" {
+		switch v {
+		case "false":
 			opts = append(opts, db.WithRoyal(false))
-		} else if v == "true" {
+		case "true":
 			opts = append(opts, db.WithRoyal(true))
 		}
 	}
@@ -260,9 +261,10 @@ func (s *Server) AllChallengeEdges(w http.ResponseWriter, r *http.Request) {
 	}
 	if val, ok := query["rivaled"]; ok {
 		v := strings.Join(val, "")
-		if v == "false" {
+		switch v {
+		case "false":
 			opts = append(opts, db.WithRival(false))
-		} else if v == "true" {
+		case "true":
 			opts = append(opts, db.WithRival(true))
 		}
 	}
@@ -383,9 +385,10 @@ func (s *Server) AllChallengeEdges(w http.ResponseWriter, r *http.Request) {
 
 func parseEdgeStatus(str string) (protocol.EdgeStatus, error) {
 	s := strings.TrimSpace(strings.ToLower(str))
-	if s == "pending" {
+	switch s {
+	case "pending":
 		return protocol.EdgePending, nil
-	} else if s == "confirmed" {
+	case "confirmed":
 		return protocol.EdgeConfirmed, nil
 	}
 	return protocol.EdgePending, errors.New("unknown edge status, expected pending or confirmed")

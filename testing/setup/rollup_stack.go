@@ -413,7 +413,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 			return nil, err
 		}
 		var challengeManagerAddr common.Address
-		challengeManagerAddr, err = assertionChainBinding.RollupUserLogicCaller.ChallengeManager(
+		challengeManagerAddr, err = assertionChainBinding.ChallengeManager(
 			&bind.CallOpts{Context: ctx},
 		)
 		if err != nil {
@@ -447,7 +447,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 	}
 	for i := 0; i < len(accs); i++ {
 		acc := accs[i]
-		transferTx, err := tokenBindings.TestWETH9Transactor.Transfer(accs[0].TxOpts, acc.TxOpts.From, seed)
+		transferTx, err := tokenBindings.Transfer(accs[0].TxOpts, acc.TxOpts.From, seed)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not approve account")
 		}
@@ -461,7 +461,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		if receipt.Status != types.ReceiptStatusSuccessful {
 			return nil, errors.New("receipt not successful")
 		}
-		approveTx, err := tokenBindings.TestWETH9Transactor.Approve(acc.TxOpts, addresses.Rollup, value)
+		approveTx, err := tokenBindings.Approve(acc.TxOpts, addresses.Rollup, value)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not approve account")
 		}
@@ -475,7 +475,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		if receipt.Status != types.ReceiptStatusSuccessful {
 			return nil, errors.New("receipt not successful")
 		}
-		approveTx, err = tokenBindings.TestWETH9Transactor.Approve(acc.TxOpts, chalManagerAddr, value)
+		approveTx, err = tokenBindings.Approve(acc.TxOpts, chalManagerAddr, value)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not approve account")
 		}

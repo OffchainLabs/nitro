@@ -527,7 +527,7 @@ func (a *AssertionChain) NewStake(
 		return nil
 	}
 	_, err = a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
-		return a.userLogic.RollupUserLogicTransactor.NewStake(opts, new(big.Int), a.withdrawalAddress)
+		return a.userLogic.NewStake(opts, new(big.Int), a.withdrawalAddress)
 	})
 	return err
 }
@@ -546,7 +546,7 @@ func (a *AssertionChain) NewStakeOnNewAssertion(
 		assertionInputs rollupgen.AssertionInputs,
 		expectedAssertionHash [32]byte,
 	) (*types.Transaction, error) {
-		return a.userLogic.RollupUserLogicTransactor.NewStakeOnNewAssertion50f32f68(
+		return a.userLogic.NewStakeOnNewAssertion50f32f68(
 			opts,
 			tokenAmount,
 			assertionInputs,
@@ -571,7 +571,7 @@ func (a *AssertionChain) StakeOnNewAssertion(
 	postState *protocol.ExecutionState,
 ) (protocol.Assertion, error) {
 	stakeFn := func(opts *bind.TransactOpts, _ *big.Int, assertionInputs rollupgen.AssertionInputs, assertionHash [32]byte) (*types.Transaction, error) {
-		return a.userLogic.RollupUserLogicTransactor.StakeOnNewAssertion(
+		return a.userLogic.StakeOnNewAssertion(
 			opts,
 			assertionInputs,
 			assertionHash,
@@ -612,7 +612,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	if err != nil {
 		return nil, ErrBatchNotYetFound
 	}
-	computedHash, err := a.userLogic.RollupUserLogicCaller.ComputeAssertionHash(
+	computedHash, err := a.userLogic.ComputeAssertionHash(
 		a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}),
 		parentAssertionCreationInfo.AssertionHash.Hash,
 		postState.AsSolidityStruct(),
@@ -830,7 +830,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 		return errors.New("assertion prev creation info inbox max count was not a uint64")
 	}
 	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
-		return a.userLogic.RollupUserLogicTransactor.ConfirmAssertion(
+		return a.userLogic.ConfirmAssertion(
 			opts,
 			b,
 			creationInfo.ParentAssertionHash.Hash,
@@ -864,7 +864,7 @@ func (a *AssertionChain) FastConfirmAssertion(
 		return a.fastConfirmSafe.fastConfirmAssertion(ctx, assertionCreationInfo)
 	}
 	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
-		return a.userLogic.RollupUserLogicTransactor.FastConfirmAssertion(
+		return a.userLogic.FastConfirmAssertion(
 			opts,
 			assertionCreationInfo.AssertionHash.Hash,
 			assertionCreationInfo.ParentAssertionHash.Hash,

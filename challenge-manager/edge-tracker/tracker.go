@@ -421,7 +421,7 @@ func (et *Tracker) uniqueTrackerLogFields() []any {
 	endHeight, endCommit := et.edge.EndCommitment()
 	chalLevel := et.edge.GetChallengeLevel()
 	return []any{
-		"id", fmt.Sprintf("%#x", et.edge.Id().Hash.Bytes()[:4]),
+		"id", fmt.Sprintf("%#x", et.edge.Id().Bytes()[:4]),
 		"fromBatch", et.associatedAssertionMetadata.FromState.Batch,
 		"fromPosInBatch", et.associatedAssertionMetadata.FromState.PosInBatch,
 		"batchLimit", et.associatedAssertionMetadata.BatchLimit,

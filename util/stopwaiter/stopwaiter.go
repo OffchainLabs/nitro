@@ -230,19 +230,19 @@ func (s *StopWaiter) StopAndWait() {
 
 // If stop was already called, thread might silently not be launched
 func (s *StopWaiter) LaunchThread(foo func(context.Context)) {
-	if err := s.StopWaiterSafe.LaunchThreadSafe(foo); err != nil {
+	if err := s.LaunchThreadSafe(foo); err != nil {
 		panic(err)
 	}
 }
 
 func (s *StopWaiter) CallIteratively(foo func(context.Context) time.Duration) {
-	if err := s.StopWaiterSafe.CallIterativelySafe(foo); err != nil {
+	if err := s.CallIterativelySafe(foo); err != nil {
 		panic(err)
 	}
 }
 
 func (s *StopWaiter) GetContext() context.Context {
-	ctx, err := s.StopWaiterSafe.GetContextSafe()
+	ctx, err := s.GetContextSafe()
 	if err != nil {
 		panic(err)
 	}
@@ -250,7 +250,7 @@ func (s *StopWaiter) GetContext() context.Context {
 }
 
 func (s *StopWaiter) GetParentContext() context.Context {
-	ctx, err := s.StopWaiterSafe.GetParentContextSafe()
+	ctx, err := s.GetParentContextSafe()
 	if err != nil {
 		panic(err)
 	}

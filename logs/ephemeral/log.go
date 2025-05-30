@@ -49,7 +49,7 @@ func (h *EphemeralErrorHandler) LogLevel(err error, currentLogLevel func(msg str
 		return currentLogLevel
 	}
 
-	if *h.FirstOccurrence == (time.Time{}) {
+	if h.FirstOccurrence.Equal((time.Time{})) {
 		*h.FirstOccurrence = time.Now()
 	}
 

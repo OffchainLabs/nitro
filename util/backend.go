@@ -28,7 +28,7 @@ func NewBackendWrapper(client *ethclient.Client, desiredBlockNum rpc.BlockNumber
 }
 
 func (b BackendWrapper) HeaderU64(ctx context.Context) (uint64, error) {
-	header, err := b.ethClient.HeaderByNumber(ctx, big.NewInt(int64(b.desiredBlockNum)))
+	header, err := b.HeaderByNumber(ctx, big.NewInt(int64(b.desiredBlockNum)))
 	if err != nil {
 		return 0, err
 	}
