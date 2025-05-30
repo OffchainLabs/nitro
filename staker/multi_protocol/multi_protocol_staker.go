@@ -62,6 +62,7 @@ func NewMultiProtocolStaker(
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
 	stakeTokenAddress common.Address,
+	rollupAddress common.Address,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
 	bridgeAddress common.Address,
@@ -83,6 +84,7 @@ func NewMultiProtocolStaker(
 		stakedNotifiers,
 		confirmedNotifiers,
 		validatorUtilsAddress,
+		rollupAddress,
 		fatalErr,
 	)
 	if err != nil {

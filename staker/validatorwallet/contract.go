@@ -49,22 +49,19 @@ func init() {
 }
 
 type Contract struct {
-	con                     *rollup_legacy_gen.ValidatorWallet
-	address                 atomic.Pointer[common.Address]
-	onWalletCreated         func(common.Address)
-	l1Reader                *headerreader.HeaderReader
-	auth                    *bind.TransactOpts
-	walletFactoryAddr       common.Address
-	rollupFromBlock         int64
-	rollup                  *rollup_legacy_gen.RollupUserLogic
-	rollupAddress           common.Address
-	challengeManagerAddress common.Address
-	dataPoster              *dataposter.DataPoster
-	getExtraGas             func() uint64
-	populateWalletMutex     sync.Mutex
+	con                 *rollup_legacy_gen.ValidatorWallet
+	address             atomic.Pointer[common.Address]
+	onWalletCreated     func(common.Address)
+	l1Reader            *headerreader.HeaderReader
+	auth                *bind.TransactOpts
+	walletFactoryAddr   common.Address
+	rollupFromBlock     int64
+	dataPoster          *dataposter.DataPoster
+	getExtraGas         func() uint64
+	populateWalletMutex sync.Mutex
 }
 
-func NewContract(dp *dataposter.DataPoster, address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address),
+func NewContract(dp *dataposter.DataPoster, address *common.Address, walletFactoryAddr common.Address, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address),
 	getExtraGas func() uint64) (*Contract, error) {
 	var con *rollup_legacy_gen.ValidatorWallet
 	if address != nil {
@@ -74,18 +71,12 @@ func NewContract(dp *dataposter.DataPoster, address *common.Address, walletFacto
 			return nil, err
 		}
 	}
-	rollup, err := rollup_legacy_gen.NewRollupUserLogic(rollupAddress, l1Reader.Client())
-	if err != nil {
-		return nil, err
-	}
 	wallet := &Contract{
 		con:               con,
 		onWalletCreated:   onWalletCreated,
 		l1Reader:          l1Reader,
 		auth:              auth,
 		walletFactoryAddr: walletFactoryAddr,
-		rollupAddress:     rollupAddress,
-		rollup:            rollup,
 		rollupFromBlock:   rollupFromBlock,
 		dataPoster:        dp,
 		getExtraGas:       getExtraGas,
@@ -120,11 +111,6 @@ func (v *Contract) Initialize(ctx context.Context) error {
 		return err
 	}
 	err = v.validateWallet(ctx)
-	if err != nil {
-		return err
-	}
-	callOpts := &bind.CallOpts{Context: ctx}
-	v.challengeManagerAddress, err = v.rollup.ChallengeManager(callOpts)
 	return err
 }
 
@@ -341,8 +327,8 @@ func (v *Contract) gasForTxData(ctx context.Context, data []byte, value *big.Int
 	return gasForTxData(ctx, v.l1Reader, v.From(), v.Address(), data, value, v.getExtraGas)
 }
 
-func (v *Contract) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
-	data, err := validatorABI.Pack("timeoutChallenges", v.challengeManagerAddress, challenges)
+func (v *Contract) TimeoutChallenges(ctx context.Context, challenges []uint64, challengeManagerAddress common.Address) (*types.Transaction, error) {
+	data, err := validatorABI.Pack("timeoutChallenges", challengeManagerAddress, challenges)
 	if err != nil {
 		return nil, fmt.Errorf("packing arguments for timeoutChallenges: %w", err)
 	}
@@ -355,14 +341,6 @@ func (v *Contract) TimeoutChallenges(ctx context.Context, challenges []uint64) (
 
 func (v *Contract) L1Client() *ethclient.Client {
 	return v.l1Reader.Client()
-}
-
-func (v *Contract) RollupAddress() common.Address {
-	return v.rollupAddress
-}
-
-func (v *Contract) ChallengeManagerAddress() common.Address {
-	return v.challengeManagerAddress
 }
 
 func (v *Contract) TestTransactions(ctx context.Context, txs []*types.Transaction) error {

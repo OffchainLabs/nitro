@@ -63,6 +63,7 @@ func NewL1Validator(
 	client *ethclient.Client,
 	wallet ValidatorWalletInterface,
 	validatorUtilsAddress common.Address,
+	rollupAddress common.Address,
 	gasRefunder common.Address,
 	callOpts bind.CallOpts,
 	inboxTracker staker.InboxTrackerInterface,
@@ -73,7 +74,7 @@ func NewL1Validator(
 	if err != nil {
 		return nil, err
 	}
-	rollup, err := NewRollupWatcher(wallet.RollupAddress(), wallet.L1Client(), callOpts)
+	rollup, err := NewRollupWatcher(rollupAddress, wallet.L1Client(), callOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +87,7 @@ func NewL1Validator(
 	}
 	return &L1Validator{
 		rollup:         rollup,
-		rollupAddress:  wallet.RollupAddress(),
+		rollupAddress:  rollupAddress,
 		validatorUtils: validatorUtils,
 		client:         client,
 		builder:        builder,
@@ -140,7 +141,11 @@ func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Tra
 		return nil, nil
 	}
 	log.Info("timing out challenges", "count", len(challengesToEliminate))
-	return v.wallet.TimeoutChallenges(ctx, challengesToEliminate)
+	challengeManagerAddress, err := v.rollup.ChallengeManager(v.getCallOpts(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return v.wallet.TimeoutChallenges(ctx, challengesToEliminate, challengeManagerAddress)
 }
 
 func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, latestConfirmedNode *uint64) (bool, error) {
