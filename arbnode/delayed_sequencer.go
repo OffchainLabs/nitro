@@ -195,10 +195,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			// Probably a reorg that hasn't been picked up by the inbox reader
 			return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
 		}
-		for i, msg := range messages {
-			// #nosec G115
-			d.exec.EnqueueDelayedMessage(msg, startPos+uint64(i))
-		}
+		d.exec.EnqueueDelayedMessages(messages, startPos)
 		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
 	}
 
