@@ -499,11 +499,11 @@ func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.M
 func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 	return n.ExecEngine.NextDelayedMessageNumber()
 }
-func (n *ExecutionNode) EnqueueDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) {
+func (n *ExecutionNode) EnqueueDelayedMessage(msg *arbostypes.L1IncomingMessage, msgIdx uint64) {
 	if n.Sequencer == nil {
 		return
 	}
-	n.ExecEngine.EnqueueDelayedMessage(message, delayedSeqNum)
+	n.ExecEngine.EnqueueDelayedMessage(msg, msgIdx)
 }
 func (n *ExecutionNode) AppendLastSequencedBlock() error {
 	return n.ExecEngine.AppendLastSequencedBlock()
