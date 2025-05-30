@@ -825,9 +825,9 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			}
 			log.Info("caught chosen-coordinator lock", "myUrl", c.config.Url())
 			if c.delayedSequencer != nil {
-				err = c.delayedSequencer.ForceSequenceDelayed(ctx)
+				err = c.delayedSequencer.ForceEnqueue(ctx)
 				if err != nil {
-					log.Warn("failed sequencing delayed messages after catching lock", "err", err)
+					log.Warn("failed enqueueing delayed messages after catching lock", "err", err)
 				}
 			}
 			// This should be redundant now that even non-primary sequencers broadcast over the feed,
