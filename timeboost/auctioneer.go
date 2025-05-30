@@ -7,10 +7,15 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/sha3"
 
@@ -36,6 +41,9 @@ var domainValue []byte
 const (
 	AuctioneerNamespace      = "auctioneer"
 	validatedBidsRedisStream = "validated_bids"
+
+	// Auctioneer coordination key for failover
+	AUCTIONEER_CHOSEN_KEY = "auctioneer.chosen"
 )
 
 var (
@@ -130,6 +138,13 @@ type AuctioneerServer struct {
 	s3StorageService               *S3StorageService
 	unackedBidsMutex               sync.Mutex
 	unackedBids                    map[string]*pubsub.Message[*JsonValidatedBid]
+
+	// Coordination fields
+	redisClient               redis.UniversalClient
+	myId                      string
+	isPrimary                 atomic.Bool
+	lastPrimaryStatus         bool // Track state changes for logging
+	auctioneerLivenessTimeout time.Duration
 }
 
 // NewAuctioneerServer creates a new autonomous auctioneer struct.
@@ -212,6 +227,14 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err = roundTimingInfo.ValidateResolutionWaitTime(cfg.AuctionResolutionWaitTime); err != nil {
 		return nil, err
 	}
+
+	// Generate unique ID for this auctioneer instance
+	myId := fmt.Sprintf("auctioneer-%s-%d",
+		uuid.New().String()[:8], // Short UUID
+		time.Now().UnixNano())   // Timestamp for uniqueness
+
+	log.Info("Auctioneer coordinator initialized", "id", myId)
+
 	return &AuctioneerServer{
 		txOpts:                         txOpts,
 		endpointManager:                endpointManager,
@@ -228,10 +251,18 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,
 		streamTimeout:                  cfg.StreamTimeout,
 		unackedBids:                    make(map[string]*pubsub.Message[*JsonValidatedBid]),
+		redisClient:                    redisClient,
+		myId:                           myId,
+		auctioneerLivenessTimeout:      cfg.ConsumerConfig.IdletimeToAutoclaim * 3,
 	}, nil
 }
 
 func (a *AuctioneerServer) consumeNextBid(ctx context.Context) time.Duration {
+	// Only consume if we're primary
+	if !a.isPrimary.Load() {
+		return 250 * time.Millisecond
+	}
+
 	req, err := a.consumer.Consume(ctx)
 	if err != nil {
 		log.Error("Consuming request", "error", err)
@@ -286,12 +317,85 @@ func (a *AuctioneerServer) consumeNextBid(ctx context.Context) time.Duration {
 	return 0
 }
 
+// updateCoordination manages the primary/secondary status of this auctioneer
+func (a *AuctioneerServer) updateCoordination(ctx context.Context) time.Duration {
+	var success bool
+	candidateValue := fmt.Sprintf("%s:%d", a.myId, time.Now().UnixMilli())
+	storedValue, err := a.redisClient.Get(ctx, AUCTIONEER_CHOSEN_KEY).Result()
+	if err == nil {
+		parts := strings.SplitN(storedValue, ":", 2)
+		var storedId string
+		var storedTimestamp int64
+
+		if len(parts) == 2 {
+			storedId = parts[0]
+			storedTimestamp, _ = strconv.ParseInt(parts[1], 10, 64)
+		} else {
+			log.Error("AUCTIONEER_CHOSEN_KEY in wrong format, deleting it before proceeding", "value", candidateValue)
+			_, _ = a.redisClient.Del(ctx, AUCTIONEER_CHOSEN_KEY).Result()
+			return a.auctioneerLivenessTimeout / 6
+		}
+
+		if storedId == a.myId {
+			log.Trace("Refreshing our lock", "id", a.myId)
+			err = a.redisClient.Set(ctx, AUCTIONEER_CHOSEN_KEY, candidateValue, a.auctioneerLivenessTimeout).Err()
+			success = err == nil
+		} else {
+			elapsed := time.Now().UnixMilli() - storedTimestamp
+			if elapsed > a.auctioneerLivenessTimeout.Milliseconds() {
+				log.Trace("Lock is stale, deleting and trying to acquire", "id", a.myId, "storedId", storedId, "elapsedMs", elapsed)
+				// Delete the stale lock
+				deleted := a.redisClient.Del(ctx, AUCTIONEER_CHOSEN_KEY).Val()
+				if deleted > 0 {
+					// Try to acquire with SetNX
+					success = a.redisClient.SetNX(ctx, AUCTIONEER_CHOSEN_KEY, candidateValue, a.auctioneerLivenessTimeout).Val()
+					if success {
+						log.Info("Successfully acquired stale lock", "id", a.myId)
+					} else {
+						log.Info("Failed to acquire after deleting stale lock (lost race)", "id", a.myId)
+					}
+				}
+			} else {
+				log.Trace("Lock held by someone else", "id", a.myId, "current", storedId, "remainingMs", a.auctioneerLivenessTimeout.Milliseconds()-elapsed)
+			}
+		}
+	} else if errors.Is(err, redis.Nil) {
+		log.Trace("Lock is free, trying to acquire", "id", a.myId)
+		success = a.redisClient.SetNX(ctx, AUCTIONEER_CHOSEN_KEY, candidateValue, a.auctioneerLivenessTimeout).Val()
+		if success {
+			log.Info("Successfully acquired lock", "id", a.myId)
+		} else {
+			log.Info("Failed to acquire lock (other auctioneer won the race)", "id", a.myId)
+		}
+	} else {
+		log.Warn("Redis error when checking lock", "id", a.myId, "err", err)
+	}
+
+	if success != a.lastPrimaryStatus {
+		if success {
+			log.Info("Became primary auctioneer", "id", a.myId)
+		} else {
+			log.Info("No longer primary auctioneer", "id", a.myId)
+		}
+		a.lastPrimaryStatus = success
+	}
+	a.isPrimary.Store(success)
+
+	// Refresh more frequently than expiry, with defaults is this is every 500ms.
+	// Needs to be parameterized rather than hardcoded for tests which run more quickly.
+	return a.auctioneerLivenessTimeout / 6
+}
+
 func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	// Start S3 storage service to persist validated bids to s3
 	if a.s3StorageService != nil {
 		a.s3StorageService.Start(ctx_in)
 	}
+
+	// Start coordination to manage primary/secondary status
+	a.StopWaiter.CallIteratively(a.updateCoordination)
+
 	// Channel that consumer uses to indicate its readiness.
 	readyStream := make(chan struct{}, 1)
 	a.consumer.Start(ctx_in)
@@ -589,7 +693,21 @@ func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {
 	return copied
 }
 
+// IsPrimary returns whether this auctioneer is currently the primary
+func (a *AuctioneerServer) IsPrimary() bool {
+	return a.isPrimary.Load()
+}
+
+// GetId returns the unique identifier for this auctioneer instance
+func (a *AuctioneerServer) GetId() string {
+	return a.myId
+}
+
 func (a *AuctioneerServer) StopAndWait() {
+	// The AUCTIONEER_CHOSEN_KEY lock will be considered expired by other auctioneers after
+	// auctioneerLivenessTimeout. This timeout gives time for existing messages to  become
+	// unclaimed after IdleTimeToAutoclaim before the secondary auctioneer starts consuming
+	// messages.
 	a.StopWaiter.StopAndWait()
 	a.consumer.StopAndWait()
 }
