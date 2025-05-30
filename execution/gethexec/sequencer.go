@@ -1709,6 +1709,14 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 }
 
 func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
+	sequencedMsg, err := s.execEngine.SequenceDelayedMessage()
+	if err != nil {
+		return nil, 0
+	}
+	if sequencedMsg != nil {
+		return sequencedMsg, 0
+	}
+
 	sequencedMsg, waitUntilSequencingNextBlock := s.createBlock(ctx)
 	if waitUntilSequencingNextBlock {
 		return sequencedMsg, s.config().MaxBlockSpeed
