@@ -197,20 +197,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		}
 		for i, msg := range messages {
 			// #nosec G115
-			sequencedMsg, err := d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
-			if err != nil {
-				return err
-			}
-			if sequencedMsg != nil {
-				err = d.txStreamer.WriteSequencedMsg(sequencedMsg)
-				if err != nil {
-					return err
-				}
-				err = d.exec.AppendLastSequencedBlock()
-				if err != nil {
-					return err
-				}
-			}
+			d.exec.EnqueueDelayedMessage(msg, startPos+uint64(i))
 		}
 		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
 	}
