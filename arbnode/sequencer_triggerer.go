@@ -5,6 +5,7 @@ package arbnode
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -16,17 +17,20 @@ import (
 type SequencerTriggerer struct {
 	stopwaiter.StopWaiter
 
-	execSequencer execution.ExecutionSequencer
-	txStreamer    *TransactionStreamer
+	execSequencer  execution.ExecutionSequencer
+	txStreamer     *TransactionStreamer
+	insertionMutex *sync.Mutex
 }
 
 func NewSequencerTriggerer(
 	execSequencer execution.ExecutionSequencer,
 	txStreamer *TransactionStreamer,
+	insertionMutex *sync.Mutex,
 ) *SequencerTriggerer {
 	return &SequencerTriggerer{
-		execSequencer: execSequencer,
-		txStreamer:    txStreamer,
+		execSequencer:  execSequencer,
+		txStreamer:     txStreamer,
+		insertionMutex: insertionMutex,
 	}
 }
 
@@ -38,8 +42,8 @@ func (s *SequencerTriggerer) Start(ctx_in context.Context) {
 func (s *SequencerTriggerer) triggerSequencing(ctx context.Context) time.Duration {
 	startSequencingTime := time.Now()
 
-	s.txStreamer.insertionMutex.Lock()
-	defer s.txStreamer.insertionMutex.Unlock()
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
 
 	if err := s.txStreamer.ExpectChosenSequencer(); err != nil {
 		log.Debug("Not active sequencer, retrying", "err", err)
