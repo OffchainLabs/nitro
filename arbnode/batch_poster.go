@@ -941,7 +941,7 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		if b.config().Max4844BatchSize != 0 {
 			maxSize = b.config().Max4844BatchSize
 		} else if useEigenDA {
-			maxSize = b.config.MaxEigenDABatchSize
+			maxSize = b.config().MaxEigenDABatchSize
 		} else {
 			maxBlobGasPerBlock, err := b.parentChain.MaxBlobGasPerBlock(ctx, nil)
 			if err != nil {
@@ -1333,6 +1333,7 @@ func (b *BatchPoster) estimateGasForFutureTx(
 	delayedMessagesAfter uint64,
 	realAccessList types.AccessList,
 	usingBlobs bool,
+	eigenDAV1Cert *eigenda.EigenDAV1Cert,
 	delayProof *bridgegen.DelayProof,
 ) (uint64, error) {
 	config := b.config()
@@ -1910,7 +1911,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			} else if b.building.firstNonDelayedMsg != nil {
 				delayedMsgBefore = b.building.firstNonDelayedMsg.DelayedMessagesRead
 			}
-			gasLimit, err = b.estimateGasForFutureTx(ctx, sequencerMsg, delayedMsgBefore, b.building.segments.delayedMsg, accessList, len(kzgBlobs) > 0, delayProof)
+			gasLimit, err = b.estimateGasForFutureTx(ctx, sequencerMsg, delayedMsgBefore, b.building.segments.delayedMsg, accessList, len(kzgBlobs) > 0, eigenDAV1Cert, delayProof)
 		}
 	}
 	if err != nil {

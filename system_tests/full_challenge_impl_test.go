@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/daprovider"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -177,7 +178,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	Require(t, err, "failed to get batch metadata after adding batch:")
 }
 
-func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
+func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocks_legacy_gen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
 	ctx := context.Background()
 
 	batchBuffer := bytes.NewBuffer([]byte{})
@@ -209,20 +210,20 @@ func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTest
 	Require(t, err)
 
 	// cast EigenDA V1 certificate to a solidity compatible representation for inbox submission
-	bh := mocksgen.BatchHeader{
+	bh := mocks_legacy_gen.BatchHeader{
 		BlobHeadersRoot:       certV1.BlobVerificationProof.BatchMetadata.BatchHeader.BlobHeadersRoot,
 		QuorumNumbers:         certV1.BlobVerificationProof.BatchMetadata.BatchHeader.QuorumNumbers,
 		SignedStakeForQuorums: certV1.BlobVerificationProof.BatchMetadata.BatchHeader.SignedStakeForQuorums,
 		ReferenceBlockNumber:  certV1.BlobVerificationProof.BatchMetadata.BatchHeader.ReferenceBlockNumber,
 	}
 
-	bm := mocksgen.BatchMetadata{
+	bm := mocks_legacy_gen.BatchMetadata{
 		BatchHeader:             bh,
 		SignatoryRecordHash:     certV1.BlobVerificationProof.BatchMetadata.SignatoryRecordHash,
 		ConfirmationBlockNumber: certV1.BlobVerificationProof.BatchMetadata.ConfirmationBlockNumber,
 	}
 
-	bvp := mocksgen.BlobVerificationProof{
+	bvp := mocks_legacy_gen.BlobVerificationProof{
 		BatchId:        certV1.BlobVerificationProof.BatchId,
 		BlobIndex:      certV1.BlobVerificationProof.BlobIndex,
 		BatchMetadata:  bm,
@@ -230,9 +231,9 @@ func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTest
 		QuorumIndices:  certV1.BlobVerificationProof.QuorumIndices,
 	}
 
-	solQps := make([]mocksgen.QuorumBlobParam, len(certV1.BlobHeader.QuorumBlobParams))
+	solQps := make([]mocks_legacy_gen.QuorumBlobParam, len(certV1.BlobHeader.QuorumBlobParams))
 	for i, qp := range certV1.BlobHeader.QuorumBlobParams {
-		solQps[i] = mocksgen.QuorumBlobParam{
+		solQps[i] = mocks_legacy_gen.QuorumBlobParam{
 			QuorumNumber:                    qp.QuorumNumber,
 			AdversaryThresholdPercentage:    qp.AdversaryThresholdPercentage,
 			ConfirmationThresholdPercentage: qp.ConfirmationThresholdPercentage,
@@ -240,8 +241,8 @@ func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTest
 		}
 	}
 
-	blobHeader := mocksgen.BlobHeader{
-		Commitment: mocksgen.BN254G1Point{
+	blobHeader := mocks_legacy_gen.BlobHeader{
+		Commitment: mocks_legacy_gen.BN254G1Point{
 			X: certV1.BlobHeader.Commitment.X,
 			Y: certV1.BlobHeader.Commitment.Y,
 		},
@@ -249,7 +250,7 @@ func makeBatchEigenDA(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTest
 		QuorumBlobParams: solQps,
 	}
 
-	daCert := mocksgen.ISequencerInboxEigenDACert{
+	daCert := mocks_legacy_gen.ISequencerInboxEigenDACert{
 		BlobVerificationProof: bvp,
 		BlobHeader:            blobHeader,
 	}

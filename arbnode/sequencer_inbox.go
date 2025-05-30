@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/eigenda"
 
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -215,7 +216,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 			return nil, err
 		}
 
-		msgData := []byte{daprovider.EigenDAMessageHeaderFlag}
+		msgData := []byte{dasutil.EigenDAMessageHeaderFlag}
 		msgData = append(msgData, b...)
 
 		return msgData, nil

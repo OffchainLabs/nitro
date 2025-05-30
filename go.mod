@@ -8,19 +8,11 @@ replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 replace github.com/offchainlabs/bold => ./bold
 
-// These manual remappings are performed to mitigate dependency conflicts between
-// layr-labs/eigenda && ./go-ethereum
-replace github.com/wealdtech/go-merkletree => github.com/wealdtech/go-merkletree v1.0.0
-
-replace github.com/crate-crypto/go-ipa => github.com/crate-crypto/go-ipa v0.0.0-20231025140028-3c0104f4b233
-
-replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.2
-
 require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible
-	github.com/Layr-Labs/eigenda v0.9.0-rc.0
+	github.com/Layr-Labs/eigenda v0.9.0-rc.4
 	github.com/Layr-Labs/eigenda-proxy/clients v0.2.0
 	github.com/Shopify/toxiproxy v2.1.4+incompatible
 	github.com/alicebob/miniredis/v2 v2.32.1
@@ -34,7 +26,7 @@ require (
 	github.com/ccoveille/go-safecast v1.1.0
 	github.com/cockroachdb/pebble v1.1.2
 	github.com/codeclysm/extract/v3 v3.0.2
-	github.com/consensys/gnark-crypto v0.14.0
+	github.com/consensys/gnark-crypto v0.17.0
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/enescakir/emoji v1.0.0
 	github.com/ethereum/go-ethereum v1.15.5
@@ -59,14 +51,14 @@ require (
 	github.com/r3labs/diff/v3 v3.0.1
 	github.com/redis/go-redis/v9 v9.6.3
 	github.com/rivo/tview v0.0.0-20240307173318-e804876934a1
-	github.com/spf13/pflag v1.0.5
+	github.com/spf13/pflag v1.0.6
 	github.com/stretchr/testify v1.10.0
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/wealdtech/go-merkletree v1.0.1-0.20230205101955-ec7a95ea11ca
 	go.uber.org/automaxprocs v1.5.2
 	golang.org/x/crypto v0.36.0
-	golang.org/x/sync v0.12.0
-	golang.org/x/sys v0.31.0
+	golang.org/x/sync v0.14.0
+	golang.org/x/sys v0.33.0
 	golang.org/x/term v0.30.0
 	golang.org/x/tools v0.29.0
 	google.golang.org/api v0.187.0
@@ -132,13 +124,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.31.4 // indirect
 	github.com/aws/smithy-go v1.22.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.17.0 // indirect
+	github.com/bits-and-blooms/bitset v1.22.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cockroachdb/errors v1.11.3 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
-	github.com/consensys/bavard v0.1.22 // indirect
+	github.com/consensys/bavard v0.1.30 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/crate-crypto/go-ipa v0.0.0-20240724233137-53bbb0ceb27a // indirect
 	github.com/crate-crypto/go-kzg-4844 v1.1.0 // indirect
@@ -221,6 +213,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.31.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/kms v1.31.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.28.6 // indirect
+	github.com/beevik/ntp v1.4.3 // indirect
 	github.com/fxamacker/cbor/v2 v2.5.0 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect

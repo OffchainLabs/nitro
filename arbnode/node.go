@@ -572,9 +572,9 @@ func getDAS(
 	dataSigner signature.DataSignerFunc,
 	l1client *ethclient.Client,
 	stack *node.Node,
-) (daprovider.Writer, func(), []daprovider.Reader, error) {
+) (daprovider.Writer, func(), []daprovider.Reader, eigenda.EigenDAWriter, error) {
 	if config.DAProvider.Enable && config.DataAvailability.Enable {
-		return nil, nil, nil, errors.New("da-provider and data-availability cannot be enabled together")
+		return nil, nil, nil, nil, errors.New("da-provider and data-availability cannot be enabled together")
 	}
 
 	var err error
@@ -584,14 +584,14 @@ func getDAS(
 	if config.DAProvider.Enable {
 		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DAProvider.RPC })
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		// Only allow dawriter if batchposter is enabled
 		withDAWriter = config.DAProvider.WithWriter && config.BatchPoster.Enable
 	} else if config.DataAvailability.Enable {
 		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
-			return nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
 		}
 		log.Info("Generated ephemeral JWT secret for dasserver", "jwtPath", jwtPath)
 		// JWTSecret is no longer needed, cleanup when returning
@@ -609,14 +609,14 @@ func getDAS(
 		withDAWriter = config.BatchPoster.Enable
 		dasServer, closeFn, err := dasserver.NewServer(ctx, &serverConfig, dataSigner, l1client, l1Reader, deployInfo.SequencerInbox)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		clientConfig := rpcclient.DefaultClientConfig
 		clientConfig.URL = dasServer.Addr
 		clientConfig.JWTSecret = jwtPath
 		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &clientConfig })
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		dasServerCloseFn = func() {
 			_ = dasServer.Shutdown(ctx)
@@ -625,28 +625,30 @@ func getDAS(
 			}
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
-		return nil, nil, nil, errors.New("a data availability service is required for this chain, but it was not configured")
+		return nil, nil, nil, nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
 	if config.EigenDA.Enable && config.DataAvailability.Enable && !config.BatchPoster.EnableEigenDAFailover {
-		return nil, errors.New("eigenDA and anytrust cannot both be enabled without EnableEigenDAFailover=true in batch poster config")
+		return nil, nil, nil, nil, errors.New("eigenDA and anytrust cannot both be enabled without EnableEigenDAFailover=true in batch poster config")
 	}
 
+	var dapReaders []daprovider.Reader
+	var eigenDAWriter eigenda.EigenDAWriter
 	if config.EigenDA.Enable {
 		log.Info("EigenDA enabled", "failover", config.BatchPoster.EnableEigenDAFailover, "anytrust", config.DataAvailability.Enable)
 		eigenDAService, err := eigenda.NewEigenDA(&config.EigenDA)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, nil, err
 		}
-		eigenDAReader = eigenDAService
+		dapReaders = append(dapReaders, eigenda.NewReaderForEigenDA(eigenDAService))
 		eigenDAWriter = eigenDAService
 	}
 
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daClient == nil {
-		return nil, nil, nil, errors.New("data availability service required but unconfigured")
+		return nil, nil, nil, nil, errors.New("data availability service required but unconfigured")
 	}
-	var dapReaders []daprovider.Reader
+
 	if daClient != nil {
 		dapReaders = append(dapReaders, daClient)
 	}
@@ -654,9 +656,9 @@ func getDAS(
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
 	}
 	if withDAWriter {
-		return daClient, dasServerCloseFn, dapReaders, nil
+		return daClient, dasServerCloseFn, dapReaders, eigenDAWriter, nil
 	}
-	return nil, dasServerCloseFn, dapReaders, nil
+	return nil, dasServerCloseFn, dapReaders, eigenDAWriter, nil
 }
 
 func getInboxTrackerAndReader(
@@ -926,6 +928,7 @@ func getBatchPoster(
 	parentChainID *big.Int,
 	dapReaders []daprovider.Reader,
 	stakerAddr common.Address,
+	eigenDAWriter eigenda.EigenDAWriter,
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
@@ -1111,7 +1114,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	dapWriter, dasServerCloseFn, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
+	dapWriter, dasServerCloseFn, dapReaders, eigenDAWriter, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
 	if err != nil {
 		return nil, err
 	}
@@ -1136,7 +1139,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr, eigenDAWriter)
 	if err != nil {
 		return nil, err
 	}
