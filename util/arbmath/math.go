@@ -437,6 +437,33 @@ func ApproxExpBasisPoints(value Bips, accuracy uint64) Bips {
 	}
 }
 
+// ApproxExpBasisPointsOld returns the Maclaurin series approximation of e^x, where
+// x is denominated in basis points.
+// The quartic polynomial (accuracy = 4) will underestimate e^x by about 5% as
+// x approaches 20000 bips.
+func ApproxExpBasisPointsOld(value Bips, accuracy uint64) Bips {
+	input := value
+	negative := value < 0
+	if negative {
+		input = -value
+	}
+	// This cast is safe because input is always positive
+	// #nosec G115
+	x := uint64(input)
+	bips := uint64(OneInBips)
+
+	res := bips + x/accuracy
+	for i := uint64(1); i < accuracy; i++ {
+		res = bips + SaturatingUMul(res, x)/((accuracy-i)*bips)
+	}
+
+	if negative {
+		return Bips(SaturatingCast[int64](bips * bips / res))
+	} else {
+		return Bips(SaturatingCast[int64](res))
+	}
+}
+
 // ApproxSquareRoot return the Newton's method approximation of sqrt(x)
 // The error should be no more than 1 for values up to 2^63
 func ApproxSquareRoot(value uint64) uint64 {
