@@ -27,7 +27,7 @@ func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (t
 	case arbostypes.L1MessageType_L2Message:
 		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.Timestamp, msg.Header.RequestId, chainId, 0)
 	case arbostypes.L1MessageType_Initialize:
-		return nil, errors.New("ParseL2Transactions encounted initialize message (should've been handled explicitly at genesis)")
+		return nil, errors.New("ParseL2Transactions encountered initialize message (should've been handled explicitly at genesis)")
 	case arbostypes.L1MessageType_EndOfBlock:
 		return nil, nil
 	case arbostypes.L1MessageType_L2FundedByL1:
@@ -180,7 +180,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		return nil, errors.New("L2 message kind SignedCompressedTx is unimplemented")
 	default:
 		// ignore invalid message kind
-		return nil, fmt.Errorf("unkown L2 message kind %v", l2KindBuf[0])
+		return nil, fmt.Errorf("unknown L2 message kind %v", l2KindBuf[0])
 	}
 }
 
