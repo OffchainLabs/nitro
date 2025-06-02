@@ -22,6 +22,7 @@ type State struct {
 	ParentChainBlockHash               common.Hash
 	ParentChainPreviousBlockHash       common.Hash
 	DelayedMessagesSeenRoot            common.Hash
+	MessageAccumulator                 common.Hash
 	MsgCount                           uint64
 	DelayedMessagesRead                uint64
 	DelayedMessagedSeen                uint64
@@ -70,11 +71,13 @@ func (s *State) Clone() *State {
 	parentChainHash := common.Hash{}
 	parentChainPrevHash := common.Hash{}
 	delayedMsgAcc := common.Hash{}
+	msgAcc := common.Hash{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
 	copy(delayedMsgAcc[:], s.DelayedMessagesSeenRoot[:])
+	copy(msgAcc[:], s.MessageAccumulator[:])
 	return &State{
 		Version:                            s.Version,
 		ParentChainId:                      s.ParentChainId,
@@ -84,6 +87,7 @@ func (s *State) Clone() *State {
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
 		DelayedMessagesSeenRoot:            delayedMsgAcc,
+		MessageAccumulator:                 msgAcc,
 		MsgCount:                           s.MsgCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagedSeen:                s.DelayedMessagedSeen,
@@ -91,6 +95,11 @@ func (s *State) Clone() *State {
 }
 
 func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) *State {
+	// TODO: Unimplemented.
+	return s
+}
+
+func (s *State) AccumulateMessage(msg *arbnode.DelayedInboxMessage) *State {
 	// TODO: Unimplemented.
 	return s
 }
