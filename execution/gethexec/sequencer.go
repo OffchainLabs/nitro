@@ -465,8 +465,8 @@ type Sequencer struct {
 	auctioneerAddr                    common.Address
 	timeboostAuctionResolutionTxQueue chan txQueueItem
 
-	lastCreatedBlockInfo *createdBlockInfo
-	createBlockMutex     sync.Mutex
+	lastCreatedBlockWithRegularTxsInfo *createdBlockInfo
+	createBlockMutex                   sync.Mutex
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChainId *big.Int) (*Sequencer, error) {
@@ -1194,11 +1194,11 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	return outputQueueItems
 }
 
-func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.SequencedMsg, returnValue bool) {
+func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, returnValue bool) {
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
-	s.lastCreatedBlockInfo = nil
+	s.lastCreatedBlockWithRegularTxsInfo = nil
 
 	pause, forwarder := s.GetPauseAndForwarder()
 	if pause != nil {
@@ -1223,7 +1223,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 					item.returnResult(sequencerInternalError)
 				}
 			}
-			s.lastCreatedBlockInfo = nil
+			s.lastCreatedBlockWithRegularTxsInfo = nil
 			// Wait for the MaxBlockSpeed until attempting to create a block again
 			returnValue = true
 		}
@@ -1260,7 +1260,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 				log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
 			default:
 				// The txRetryQueue is not modeled as a channel because it is only added to from
-				// this function (Sequencer.createBlock). So it is sufficient to check its
+				// this function (Sequencer.createBlockWithRegularTxs). So it is sufficient to check its
 				// len at the start of this loop, since items can't be added to it asynchronously,
 				// which is not true for the main txQueue or timeboostAuctionResolutionQueue.
 				queueItem = s.txRetryQueue.Pop()
@@ -1443,7 +1443,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (sequencedMsg *execution.Se
 		}
 	}
 
-	s.lastCreatedBlockInfo = &createdBlockInfo{
+	s.lastCreatedBlockWithRegularTxsInfo = &createdBlockInfo{
 		block:      block,
 		hooks:      hooks,
 		queueItems: queueItems,
@@ -1456,7 +1456,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
-	if s.lastCreatedBlockInfo == nil {
+	if s.lastCreatedBlockWithRegularTxsInfo == nil {
 		return
 	}
 
@@ -1464,35 +1464,35 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		_, forwarder := s.GetPauseAndForwarder()
 		if forwarder != nil {
 			// forward if we have where to
-			s.handleInactive(ctx, forwarder, s.lastCreatedBlockInfo.queueItems)
+			s.handleInactive(ctx, forwarder, s.lastCreatedBlockWithRegularTxsInfo.queueItems)
 			return
 		}
 
 		// adds back to queue otherwise
-		for _, item := range s.lastCreatedBlockInfo.queueItems {
+		for _, item := range s.lastCreatedBlockWithRegularTxsInfo.queueItems {
 			s.txRetryQueue.Push(item)
 		}
 
-		s.lastCreatedBlockInfo = nil
+		s.lastCreatedBlockWithRegularTxsInfo = nil
 		return
 	}
 
-	if s.lastCreatedBlockInfo.block != nil {
+	if s.lastCreatedBlockWithRegularTxsInfo.block != nil {
 		successfulBlocksCounter.Inc(1)
-		s.nonceCache.Finalize(s.lastCreatedBlockInfo.block)
+		s.nonceCache.Finalize(s.lastCreatedBlockWithRegularTxsInfo.block)
 	}
 
 	if errWhileSequencing != nil {
-		for _, queueItem := range s.lastCreatedBlockInfo.queueItems {
+		for _, queueItem := range s.lastCreatedBlockWithRegularTxsInfo.queueItems {
 			queueItem.returnResult(errWhileSequencing)
 		}
 	} else {
 		madeBlock := false
-		for i, err := range s.lastCreatedBlockInfo.hooks.txErrors {
+		for i, err := range s.lastCreatedBlockWithRegularTxsInfo.hooks.txErrors {
 			if err == nil {
 				madeBlock = true
 			}
-			queueItem := s.lastCreatedBlockInfo.queueItems[i]
+			queueItem := s.lastCreatedBlockWithRegularTxsInfo.queueItems[i]
 			if errors.Is(err, core.ErrGasLimitReached) {
 				// There's not enough gas left in the block for this tx.
 				if madeBlock {
@@ -1505,7 +1505,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		}
 	}
 
-	s.lastCreatedBlockInfo = nil
+	s.lastCreatedBlockWithRegularTxsInfo = nil
 }
 
 func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {
@@ -1717,7 +1717,7 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 		return sequencedMsg, 0
 	}
 
-	sequencedMsg, waitUntilSequencingNextBlock := s.createBlock(ctx)
+	sequencedMsg, waitUntilSequencingNextBlock := s.createBlockWithRegularTxs(ctx)
 	if waitUntilSequencingNextBlock {
 		return sequencedMsg, s.config().MaxBlockSpeed
 	}
