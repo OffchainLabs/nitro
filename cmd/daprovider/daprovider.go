@@ -22,9 +22,9 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/customda"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/factory"
+	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -38,8 +38,8 @@ type Config struct {
 	DataSignerWallet genericconf.WalletConfig `koanf:"data-signer-wallet"`
 
 	// Mode-specific configs
-	Anytrust das.DataAvailabilityConfig `koanf:"anytrust"`
-	Customda customda.Config            `koanf:"customda"`
+	Anytrust    das.DataAvailabilityConfig `koanf:"anytrust"`
+	ReferenceDA referenceda.Config         `koanf:"referenceda"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel string                 `koanf:"log-level"`
@@ -57,7 +57,7 @@ var DefaultConfig = Config{
 	WithDataSigner:   false,
 	DataSignerWallet: arbnode.DefaultBatchPosterL1WalletConfig,
 	Anytrust:         das.DefaultDataAvailabilityConfig,
-	Customda:         customda.DefaultConfig,
+	ReferenceDA:      referenceda.DefaultConfig,
 	Conf:             genericconf.ConfConfigDefault,
 	LogLevel:         "INFO",
 	LogType:          "plaintext",
@@ -74,7 +74,7 @@ func printSampleUsage(progname string) {
 
 func parseDAProvider(args []string) (*Config, error) {
 	f := flag.NewFlagSet("daprovider", flag.ContinueOnError)
-	f.String("mode", string(DefaultConfig.Mode), "DA provider mode (anytrust or customda) - REQUIRED")
+	f.String("mode", string(DefaultConfig.Mode), "DA provider mode (anytrust or referenceda) - REQUIRED")
 	f.Bool("with-data-signer", DefaultConfig.WithDataSigner, "set to enable data signing when processing store requests. If enabled requires data-signer-wallet config")
 	genericconf.WalletConfigAddOptions("data-signer-wallet", f, DefaultConfig.DataSignerWallet.Pathname)
 
@@ -91,7 +91,7 @@ func parseDAProvider(args []string) (*Config, error) {
 
 	// Add mode-specific options
 	das.DataAvailabilityConfigAddDaserverOptions("anytrust", f)
-	customda.ConfigAddOptions("customda", f)
+	referenceda.ConfigAddOptions("referenceda", f)
 
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -146,7 +146,7 @@ func startup() error {
 
 	// Validate mode
 	if config.Mode == "" {
-		return errors.New("--mode must be explicitly specified (anytrust or customda)")
+		return errors.New("--mode must be explicitly specified (anytrust or referenceda)")
 	}
 
 	logLevel, err := genericconf.ToSlogLevel(config.LogLevel)
@@ -227,9 +227,9 @@ func startup() error {
 				return err
 			}
 		}
-	} else if config.Mode == factory.ModeCustomDA {
-		if !config.Customda.Enable {
-			return errors.New("--customda.enable is required to start a CustomDA provider server")
+	} else if config.Mode == factory.ModeReferenceDA {
+		if !config.ReferenceDA.Enable {
+			return errors.New("--referenceda.enable is required to start a ReferenceDA provider server")
 		}
 	}
 
@@ -237,7 +237,7 @@ func startup() error {
 	providerFactory, err := factory.NewDAProviderFactory(
 		config.Mode,
 		&config.Anytrust,
-		&config.Customda,
+		&config.ReferenceDA,
 		dataSigner,
 		l1Client,
 		l1Reader,

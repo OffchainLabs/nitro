@@ -1,7 +1,7 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package customda
+package referenceda
 
 import (
 	"bytes"
@@ -72,7 +72,7 @@ func (v *MockValidator) GenerateProof(
 	return nil, daprovider.ErrNoSuchPreimage
 }
 
-func TestCustomDAWriterStoreAndGetBatch(t *testing.T) {
+func TestReferenceDAWriterStoreAndGetBatch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -109,7 +109,7 @@ func TestCustomDAWriterStoreAndGetBatch(t *testing.T) {
 	}
 }
 
-func TestCustomDAWriterWithNonCustomDAMessage(t *testing.T) {
+func TestReferenceDAWriterWithNonReferenceDAMessage(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -129,7 +129,7 @@ func TestCustomDAWriterWithNonCustomDAMessage(t *testing.T) {
 	}
 }
 
-func TestCustomDAValidatorIntegration(t *testing.T) {
+func TestReferenceDAValidatorIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -181,7 +181,7 @@ func TestCustomDAValidatorIntegration(t *testing.T) {
 	}
 }
 
-func TestCustomDAWriterCertificateFormat(t *testing.T) {
+func TestReferenceDAWriterCertificateFormat(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

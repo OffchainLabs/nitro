@@ -1,7 +1,7 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package customda
+package referenceda
 
 import (
 	"context"
@@ -18,14 +18,14 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
-// Writer implements the daprovider.Writer interface for CustomDA
+// Writer implements the daprovider.Writer interface for ReferenceDA
 type Writer struct {
 	mu            sync.Mutex
 	storedBatches map[common.Hash][]byte
 	validator     daprovider.Validator
 }
 
-// NewWriter creates a new CustomDA writer
+// NewWriter creates a new ReferenceDA writer
 func NewWriter(validator daprovider.Validator) *Writer {
 	return &Writer{
 		storedBatches: make(map[common.Hash][]byte),
@@ -34,7 +34,7 @@ func NewWriter(validator daprovider.Validator) *Writer {
 }
 
 // Store processes the message data and returns a reference to retrieve it
-// in the CustomDA system
+// in the ReferenceDA system
 func (w *Writer) Store(
 	ctx context.Context,
 	message []byte,

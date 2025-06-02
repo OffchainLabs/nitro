@@ -1,7 +1,7 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package customda
+package referenceda
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
-// DefaultValidator is a basic implementation of the Validator interface
+// DefaultValidator is a reference implementation of the Validator interface
 // that provides simple SHA-256 based hash verification for CustomDA type preimages
 type DefaultValidator struct {
 	storage PreimageStorage
@@ -36,7 +36,7 @@ func NewDefaultValidator(storage PreimageStorage) *DefaultValidator {
 }
 
 // RecordPreimages extracts CustomDA preimages from a batch
-// In this default implementation, we hash the entire batch with SHA-256
+// In this reference implementation, we hash the entire batch with SHA-256
 // and record it as a CustomDA preimage
 func (v *DefaultValidator) RecordPreimages(ctx context.Context, batch []byte) ([]daprovider.PreimageWithType, error) {
 	if len(batch) == 0 {

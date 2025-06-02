@@ -1,7 +1,7 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package customda
+package referenceda
 
 import (
 	"bytes"
@@ -18,8 +18,8 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-// TestFullCustomDAFlow tests the entire CustomDA flow from message creation to payload recovery
-func TestFullCustomDAFlow(t *testing.T) {
+// TestFullReferenceDAFlow tests the entire ReferenceDA flow from message creation to payload recovery
+func TestFullReferenceDAFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -95,8 +95,8 @@ func TestFullCustomDAFlow(t *testing.T) {
 	}
 }
 
-// TestCustomDAMessageProcessing tests the processing of CustomDA messages in the complete flow
-func TestCustomDAMessageProcessing(t *testing.T) {
+// TestReferenceDAMessageProcessing tests the processing of CustomDA messages in the reference implementation
+func TestReferenceDAMessageProcessing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -160,8 +160,8 @@ func testSizeName(size int) string {
 	}
 }
 
-// TestInvalidCustomDAMessages tests handling of invalid CustomDA messages
-func TestInvalidCustomDAMessages(t *testing.T) {
+// TestInvalidReferenceDAMessages tests handling of invalid CustomDA messages in the reference implementation
+func TestInvalidReferenceDAMessages(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

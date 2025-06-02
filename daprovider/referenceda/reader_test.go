@@ -1,7 +1,7 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package customda
+package referenceda
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ import (
 )
 
 // TestCustomDAReaderRecoverPayload tests the CustomDA reader's ability to recover payload from a batch
-func TestCustomDAReaderRecoverPayload(t *testing.T) {
+func TestReferenceDAReaderRecoverPayload(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -75,7 +75,7 @@ func TestCustomDAReaderRecoverPayload(t *testing.T) {
 }
 
 // TestCustomDAReaderInvalidCertificate tests how the reader handles invalid certificates
-func TestCustomDAReaderInvalidCertificate(t *testing.T) {
+func TestReferenceDAReaderInvalidCertificate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -124,7 +124,7 @@ func TestCustomDAReaderInvalidCertificate(t *testing.T) {
 }
 
 // TestCustomDAReaderWithMalformedCertificate tests how the reader handles malformed but valid-length certificates
-func TestCustomDAReaderWithMalformedCertificate(t *testing.T) {
+func TestReferenceDAReaderWithMalformedCertificate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -171,7 +171,7 @@ func TestCustomDAReaderWithMalformedCertificate(t *testing.T) {
 }
 
 // TestCustomDAReaderEndToEnd tests a complete flow from storing to recovering
-func TestCustomDAReaderEndToEnd(t *testing.T) {
+func TestReferenceDAReaderEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

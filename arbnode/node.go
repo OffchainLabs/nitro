@@ -38,10 +38,10 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/customda"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/factory"
+	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -63,13 +63,13 @@ import (
 
 type DAConfig struct {
 	Mode             string                `koanf:"mode"`
-	CustomDA         customda.Config       `koanf:"customda"`
+	ReferenceDA      referenceda.Config    `koanf:"referenceda"`
 	ExternalProvider daclient.ClientConfig `koanf:"external-provider"`
 }
 
 func DAConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".mode", "", "DA mode (anytrust, customda, or external)")
-	customda.ConfigAddOptions(prefix+".customda", f)
+	f.String(prefix+".mode", "", "DA mode (anytrust, referenceda, or external)")
+	referenceda.ConfigAddOptions(prefix+".referenceda", f)
 	daclient.ClientConfigAddOptions(prefix+".external-provider", f)
 }
 
@@ -181,7 +181,7 @@ var ConfigDefault = Config{
 	Bold:                     boldstaker.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
-	DA:                       DAConfig{Mode: "", CustomDA: customda.DefaultConfig, ExternalProvider: daclient.DefaultClientConfig},
+	DA:                       DAConfig{Mode: "", ReferenceDA: referenceda.DefaultConfig, ExternalProvider: daclient.DefaultClientConfig},
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
 	TransactionStreamer:      DefaultTransactionStreamerConfig,
@@ -588,8 +588,8 @@ func getDAS(
 		if config.DataAvailability.Enable {
 			return nil, nil, nil, errors.New("cannot use external DA provider with embedded data-availability")
 		}
-		if config.DA.CustomDA.Enable {
-			return nil, nil, nil, errors.New("cannot use external DA provider with embedded customda")
+		if config.DA.ReferenceDA.Enable {
+			return nil, nil, nil, errors.New("cannot use external DA provider with embedded referenceda")
 		}
 	}
 
@@ -628,15 +628,15 @@ func getDAS(
 		// Determine effective DA mode and config
 		var effectiveMode factory.DAProviderMode
 		var anytrustConfig *das.DataAvailabilityConfig
-		var customdaConfig *customda.Config
+		var referencedaConfig *referenceda.Config
 
 		switch config.DA.Mode {
-		case "customda":
-			if !config.DA.CustomDA.Enable {
-				return nil, nil, nil, errors.New("--node.da.customda.enable must be true when using customda mode")
+		case "referenceda":
+			if !config.DA.ReferenceDA.Enable {
+				return nil, nil, nil, errors.New("--node.da.referenceda.enable must be true when using referenceda mode")
 			}
-			effectiveMode = factory.ModeCustomDA
-			customdaConfig = &config.DA.CustomDA
+			effectiveMode = factory.ModeReferenceDA
+			referencedaConfig = &config.DA.ReferenceDA
 
 		case "anytrust", "": // Default to anytrust for backwards compatibility
 			if !config.DataAvailability.Enable {
@@ -649,14 +649,14 @@ func getDAS(
 			return nil, nil, nil, errors.New("external mode should not reach factory creation - this is a bug")
 
 		default:
-			return nil, nil, nil, fmt.Errorf("unsupported embedded DA mode: %s (supported: anytrust, customda)", config.DA.Mode)
+			return nil, nil, nil, fmt.Errorf("unsupported embedded DA mode: %s (supported: anytrust, referenceda)", config.DA.Mode)
 		}
 
 		// Create factory with appropriate config
 		daFactory, err := factory.NewDAProviderFactory(
 			effectiveMode,
-			anytrustConfig, // nil for customda mode
-			customdaConfig, // nil for anytrust mode
+			anytrustConfig,    // nil for referenceda mode
+			referencedaConfig, // nil for anytrust mode
 			dataSigner,
 			l1client,
 			l1Reader,

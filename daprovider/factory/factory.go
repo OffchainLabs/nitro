@@ -1,3 +1,6 @@
+// Copyright 2024-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package factory
 
 import (
@@ -9,9 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/customda"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -19,8 +22,8 @@ import (
 type DAProviderMode string
 
 const (
-	ModeAnyTrust DAProviderMode = "anytrust"
-	ModeCustomDA DAProviderMode = "customda"
+	ModeAnyTrust    DAProviderMode = "anytrust"
+	ModeReferenceDA DAProviderMode = "referenceda"
 )
 
 type DAProviderFactory interface {
@@ -39,17 +42,17 @@ type AnyTrustFactory struct {
 	enableWriter bool
 }
 
-type CustomDAFactory struct {
-	config       *customda.Config
+type ReferenceDAFactory struct {
+	config       *referenceda.Config
 	enableWriter bool
-	storage      customda.PreimageStorage
+	storage      referenceda.PreimageStorage
 	validator    daprovider.Validator
 }
 
 func NewDAProviderFactory(
 	mode DAProviderMode,
 	anytrust *das.DataAvailabilityConfig,
-	customdaCfg *customda.Config,
+	referencedaCfg *referenceda.Config,
 	dataSigner signature.DataSignerFunc,
 	l1Client *ethclient.Client,
 	l1Reader *headerreader.HeaderReader,
@@ -66,9 +69,9 @@ func NewDAProviderFactory(
 			seqInboxAddr: seqInboxAddr,
 			enableWriter: enableWriter,
 		}, nil
-	case ModeCustomDA:
-		factory := &CustomDAFactory{
-			config:       customdaCfg,
+	case ModeReferenceDA:
+		factory := &ReferenceDAFactory{
+			config:       referencedaCfg,
 			enableWriter: enableWriter,
 		}
 		// Initialize storage and validator based on config
@@ -174,49 +177,35 @@ func (f *AnyTrustFactory) CreateValidator(ctx context.Context) (daprovider.Valid
 	return nil, nil, nil
 }
 
-// CustomDA Factory Implementation
-func (f *CustomDAFactory) ValidateConfig() error {
+// ReferenceDA Factory Implementation
+func (f *ReferenceDAFactory) ValidateConfig() error {
 	if !f.config.Enable {
-		return errors.New("customda must be enabled")
+		return errors.New("referenceda must be enabled")
 	}
-
-	if f.config.ValidatorType == "" {
-		return errors.New("customda validator-type must be specified")
-	}
-
-	if f.config.StorageType == "" {
-		return errors.New("customda storage-type must be specified")
-	}
-
 	return nil
 }
 
-func (f *CustomDAFactory) initializeComponents() error {
-	switch f.config.ValidatorType {
-	case "reference":
-		// For the reference implementation, storage type is always in-memory
-		f.storage = customda.NewInMemoryStorage()
-		f.validator = customda.NewDefaultValidator(f.storage)
-		return nil
-	default:
-		return fmt.Errorf("unsupported CustomDA validator type: %s", f.config.ValidatorType)
-	}
+func (f *ReferenceDAFactory) initializeComponents() error {
+	// Reference implementation always uses in-memory storage
+	f.storage = referenceda.NewInMemoryStorage()
+	f.validator = referenceda.NewDefaultValidator(f.storage)
+	return nil
 }
 
-func (f *CustomDAFactory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
-	reader := customda.NewReader(f.validator)
+func (f *ReferenceDAFactory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
+	reader := referenceda.NewReader(f.validator)
 	return reader, nil, nil
 }
 
-func (f *CustomDAFactory) CreateWriter(ctx context.Context) (daprovider.Writer, func(), error) {
+func (f *ReferenceDAFactory) CreateWriter(ctx context.Context) (daprovider.Writer, func(), error) {
 	if !f.enableWriter {
 		return nil, nil, nil
 	}
 
-	writer := customda.NewWriter(f.validator)
+	writer := referenceda.NewWriter(f.validator)
 	return writer, nil, nil
 }
 
-func (f *CustomDAFactory) CreateValidator(ctx context.Context) (daprovider.Validator, func(), error) {
+func (f *ReferenceDAFactory) CreateValidator(ctx context.Context) (daprovider.Validator, func(), error) {
 	return f.validator, nil, nil
 }
