@@ -90,7 +90,7 @@ type AssociatedAssertionMetadata struct {
 //
 // NOTE: It is NOT possible to request a history commitment which starts at
 // some height other than 0 for the current challenge level. This is because
-// the edge tracker only needs to be able to provide history committments for
+// the edge tracker only needs to be able to provide history commitments for
 // all machine state hases at the current challenge level, or sets of leaves
 // which are prefixes to that full set of leaves. In all cases, the first leaf
 // is the one in relative position 0 for the challenge level.

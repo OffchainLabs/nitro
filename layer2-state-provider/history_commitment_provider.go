@@ -56,7 +56,7 @@ type ProofCollector interface {
 // needs to collect can vary. But, it will always be some set of machine hashes
 // which represent states of the Arbitrator machine when executing a specific
 // "challenged" block.  The "challenged" block is the block within the range
-// of an assertion where the rival assertion and this staker's assersions
+// of an assertion where the rival assertion and this staker's assertions
 // diverge.
 //
 // To determine the exact block from which to collect the machine hashes, the
@@ -70,7 +70,7 @@ type ProofCollector interface {
 // where the `BlockChallengeHeight` is greater than the number of blocks in the
 // assertion.
 //
-// Most of this infomation is configured using an `AssociatedAssertionMetadata`
+// Most of this information is configured using an `AssociatedAssertionMetadata`
 // instance.
 //
 // The collector then starts collecting hashes at a specific `MachineStartIndex`
