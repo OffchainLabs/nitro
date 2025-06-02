@@ -692,7 +692,16 @@ func getDAS(
 			}
 		}
 
-		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer)
+		// Create validator (may be nil for AnyTrust mode)
+		validator, validatorCleanup, err := daFactory.CreateValidator(ctx)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if validatorCleanup != nil {
+			cleanupFuncs = append(cleanupFuncs, validatorCleanup)
+		}
+
+		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator)
 
 		// Create combined cleanup function
 		closeFn := func() {

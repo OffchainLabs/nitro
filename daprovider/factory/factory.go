@@ -26,6 +26,7 @@ const (
 type DAProviderFactory interface {
 	CreateReader(ctx context.Context) (daprovider.Reader, func(), error)
 	CreateWriter(ctx context.Context) (daprovider.Writer, func(), error)
+	CreateValidator(ctx context.Context) (daprovider.Validator, func(), error)
 	ValidateConfig() error
 }
 
@@ -41,12 +42,14 @@ type AnyTrustFactory struct {
 type CustomDAFactory struct {
 	config       *customda.Config
 	enableWriter bool
+	storage      customda.PreimageStorage
+	validator    daprovider.Validator
 }
 
 func NewDAProviderFactory(
 	mode DAProviderMode,
 	anytrust *das.DataAvailabilityConfig,
-	customda *customda.Config,
+	customdaCfg *customda.Config,
 	dataSigner signature.DataSignerFunc,
 	l1Client *ethclient.Client,
 	l1Reader *headerreader.HeaderReader,
@@ -64,10 +67,15 @@ func NewDAProviderFactory(
 			enableWriter: enableWriter,
 		}, nil
 	case ModeCustomDA:
-		return &CustomDAFactory{
-			config:       customda,
+		factory := &CustomDAFactory{
+			config:       customdaCfg,
 			enableWriter: enableWriter,
-		}, nil
+		}
+		// Initialize storage and validator based on config
+		if err := factory.initializeComponents(); err != nil {
+			return nil, err
+		}
+		return factory, nil
 	default:
 		return nil, fmt.Errorf("unsupported DA provider mode: %s", mode)
 	}
@@ -161,6 +169,11 @@ func (f *AnyTrustFactory) CreateWriter(ctx context.Context) (daprovider.Writer, 
 	return writer, cleanupFn, nil
 }
 
+func (f *AnyTrustFactory) CreateValidator(ctx context.Context) (daprovider.Validator, func(), error) {
+	// AnyTrust doesn't use the Validator interface
+	return nil, nil, nil
+}
+
 // CustomDA Factory Implementation
 func (f *CustomDAFactory) ValidateConfig() error {
 	if !f.config.Enable {
@@ -178,16 +191,21 @@ func (f *CustomDAFactory) ValidateConfig() error {
 	return nil
 }
 
-func (f *CustomDAFactory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
+func (f *CustomDAFactory) initializeComponents() error {
 	switch f.config.ValidatorType {
 	case "reference":
-		storage := customda.NewInMemoryStorage()
-		validator := customda.NewDefaultValidator(storage)
-		reader := customda.NewReader(validator)
-		return reader, nil, nil
+		// For the reference implementation, storage type is always in-memory
+		f.storage = customda.NewInMemoryStorage()
+		f.validator = customda.NewDefaultValidator(f.storage)
+		return nil
 	default:
-		return nil, nil, fmt.Errorf("unsupported CustomDA validator type: %s", f.config.ValidatorType)
+		return fmt.Errorf("unsupported CustomDA validator type: %s", f.config.ValidatorType)
 	}
+}
+
+func (f *CustomDAFactory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
+	reader := customda.NewReader(f.validator)
+	return reader, nil, nil
 }
 
 func (f *CustomDAFactory) CreateWriter(ctx context.Context) (daprovider.Writer, func(), error) {
@@ -195,13 +213,10 @@ func (f *CustomDAFactory) CreateWriter(ctx context.Context) (daprovider.Writer, 
 		return nil, nil, nil
 	}
 
-	switch f.config.ValidatorType {
-	case "reference":
-		storage := customda.NewInMemoryStorage()
-		validator := customda.NewDefaultValidator(storage)
-		writer := customda.NewWriter(validator)
-		return writer, nil, nil
-	default:
-		return nil, nil, fmt.Errorf("unsupported CustomDA validator type: %s", f.config.ValidatorType)
-	}
+	writer := customda.NewWriter(f.validator)
+	return writer, nil, nil
+}
+
+func (f *CustomDAFactory) CreateValidator(ctx context.Context) (daprovider.Validator, func(), error) {
+	return f.validator, nil, nil
 }

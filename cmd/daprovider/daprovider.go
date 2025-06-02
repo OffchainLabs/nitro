@@ -252,7 +252,7 @@ func startup() error {
 		return err
 	}
 
-	// Create reader/writer using factory
+	// Create reader/writer/validator using factory
 	var cleanupFuncs []func()
 
 	reader, readerCleanup, err := providerFactory.CreateReader(ctx)
@@ -275,8 +275,17 @@ func startup() error {
 		}
 	}
 
+	// Create validator (may be nil for AnyTrust mode)
+	validator, validatorCleanup, err := providerFactory.CreateValidator(ctx)
+	if err != nil {
+		return err
+	}
+	if validatorCleanup != nil {
+		cleanupFuncs = append(cleanupFuncs, validatorCleanup)
+	}
+
 	log.Info("Starting json rpc server", "mode", config.Mode, "addr", config.ProviderServer.Addr, "port", config.ProviderServer.Port)
-	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer)
+	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer, validator)
 	if err != nil {
 		return err
 	}

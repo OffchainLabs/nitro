@@ -18,14 +18,16 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 )
 
 type Server struct {
-	reader daprovider.Reader
-	writer daprovider.Writer
+	reader    daprovider.Reader
+	writer    daprovider.Writer
+	validator daprovider.Validator
 }
 
 type ServerConfig struct {
@@ -68,8 +70,8 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 	return nil, errors.New("JWT secret file not found")
 }
 
-// NewServerWithDAPProvider creates a new server with pre-created reader/writer components
-func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer) (*http.Server, error) {
+// NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components
+func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.Addr, config.Port))
 	if err != nil {
 		return nil, err
@@ -81,8 +83,9 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	}
 
 	server := &Server{
-		reader: reader,
-		writer: writer,
+		reader:    reader,
+		writer:    writer,
+		validator: validator,
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
 		return nil, err
@@ -160,4 +163,22 @@ func (s *Server) Store(
 		return nil, err
 	}
 	return &daclient.StoreResult{SerializedDACert: serializedDACert}, nil
+}
+
+func (s *Server) RecordPreimages(ctx context.Context, batch hexutil.Bytes) ([]daprovider.PreimageWithType, error) {
+	if s.validator == nil {
+		return nil, errors.New("validator not available")
+	}
+	return s.validator.RecordPreimages(ctx, batch)
+}
+
+func (s *Server) GenerateProof(ctx context.Context, preimageType uint8, hash common.Hash, offset hexutil.Uint64) (hexutil.Bytes, error) {
+	if s.validator == nil {
+		return nil, errors.New("validator not available")
+	}
+	proof, err := s.validator.GenerateProof(ctx, arbutil.PreimageType(preimageType), hash, uint64(offset))
+	if err != nil {
+		return nil, err
+	}
+	return hexutil.Bytes(proof), nil
 }
