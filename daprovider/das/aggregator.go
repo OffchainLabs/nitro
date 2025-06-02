@@ -298,7 +298,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		if returned == 1 &&
 			a.maxAllowedServiceStoreFailures > 0 && // Ignore the case where AssumedHonest = 1, probably a testnet
 			int(storeFailures.Load())+1 > a.maxAllowedServiceStoreFailures {
-			log.Error("das.Aggregator: storing the batch data succeeded to enough DAS commitee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
+			log.Error("das.Aggregator: storing the batch data succeeded to enough DAS committee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
 		}
 	}()
 
