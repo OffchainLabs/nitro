@@ -552,6 +552,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = params.ArbosVersion_11
 	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = params.ArbosVersion_20
 	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = params.ArbosVersion_20
+	ArbOwnerPublic.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
+	ArbOwnerPublic.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(pgen.ArbWasmMetaData, ArbWasmImpl))
@@ -639,7 +641,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbOwner.methodsByName["SetWasmMaxSize"].arbosVersion = params.ArbosVersion_40
 
-	ArbOwner.methodsByName["SetNativeTokenEnabledFrom"].arbosVersion = params.ArbosVersion_41
+	ArbOwner.methodsByName["SetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["AddNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["RemoveNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41

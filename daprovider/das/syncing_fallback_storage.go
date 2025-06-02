@@ -154,7 +154,7 @@ func writeSyncState(syncDir string, blockNr uint64) error {
 	if err != nil {
 		return err
 	}
-	_, err = f.WriteString(fmt.Sprintf("%d\n", blockNr))
+	_, err = fmt.Fprintf(f, "%d\n", blockNr)
 	if err != nil {
 		return err
 	}

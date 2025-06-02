@@ -226,6 +226,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		bidCache:                       newBidCache(domainSeparator),
 		roundTimingInfo:                *roundTimingInfo,
 		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,
+		streamTimeout:                  cfg.StreamTimeout,
 		unackedBids:                    make(map[string]*pubsub.Message[*JsonValidatedBid]),
 	}, nil
 }
@@ -306,7 +307,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 			}
 			select {
 			case <-ctx.Done():
-				log.Info("Context done while checking redis stream existance", "error", ctx.Err().Error())
+				log.Info("Context done while checking redis stream existence", "error", ctx.Err().Error())
 				return
 			case <-time.After(time.Millisecond * 100):
 			}

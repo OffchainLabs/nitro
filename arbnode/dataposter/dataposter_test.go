@@ -242,7 +242,7 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 	// This is multiplied with the normalizedGas to get targetMaxCost.
 	// This is greatly in excess of currentTotalCost * MaxFeeBidMultipleBips,
 	// so targetMaxCost is reduced to the current base fee + suggested tip cap +
-	// current blob fee multipled by MaxFeeBidMultipleBips (factor of 10).
+	// current blob fee multiplied by MaxFeeBidMultipleBips (factor of 10).
 	// The blob and non blob factors are then proportionally split out and so
 	// the newGasFeeCap is set to (current base fee + suggested tip cap) * 10
 	// and newBlobFeeCap is set to current blob gas base fee (1 wei
@@ -378,7 +378,7 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 	// This is multiplied with the normalizedGas to get targetMaxCost.
 	// This is greatly in excess of currentTotalCost * MaxFeeBidMultipleBips,
 	// so targetMaxCost is reduced to the current base fee + suggested tip cap +
-	// current blob fee multipled by MaxFeeBidMultipleBips (factor of 10).
+	// current blob fee multiplied by MaxFeeBidMultipleBips (factor of 10).
 	// The blob and non blob factors are then proportionally split out and so
 	// the newGasFeeCap is set to (current base fee + suggested tip cap) * 10
 	// and newBlobFeeCap is set to current blob gas base fee (1 wei

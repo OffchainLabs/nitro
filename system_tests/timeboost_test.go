@@ -1095,7 +1095,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 // 	Require(t, err)
 
 // 	time.Sleep(time.Second) // Wait for controller to change on the sequencer side
-// 	// Check that now Alice's tx gets priority since she's the controller after bob transfered it
+// 	// Check that now Alice's tx gets priority since she's the controller after bob transferred it
 // 	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
 
 // 	// Alice and Bob submit bids and Alice wins for the next round
