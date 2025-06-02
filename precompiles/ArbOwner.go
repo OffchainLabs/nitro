@@ -82,7 +82,7 @@ func (con ArbOwner) SetNativeTokenManagementFrom(c ctx, evm mech, timestamp uint
 		(stored > now+NativeTokenEnableDelay && timestamp < now+NativeTokenEnableDelay) {
 		return ErrNativeTokenDelay
 	}
-	// If the feature is scheduled to be enabled earlier than the minumum delay,
+	// If the feature is scheduled to be enabled earlier than the minimum delay,
 	// then the new time to enable it must be only further in the future.
 	if stored > now && stored <= now+NativeTokenEnableDelay && timestamp < stored {
 		return ErrNativeTokenBackward
