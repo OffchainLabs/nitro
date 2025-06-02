@@ -127,9 +127,6 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-        
-      - name: Install cbindgen
-        run: cargo install --force cbindgen
 
       - name: Install cbindgen
         run: cargo install --force cbindgen
@@ -244,7 +241,7 @@ jobs:
         run: |
           make build-prover-bin
           target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/TestProgramStorage/block_inputs.json"
-      
+
       - name: run jit prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |

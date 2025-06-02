@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	espressoClient "github.com/EspressoSystems/espresso-network-go/client"
+	espressoClient "github.com/EspressoSystems/espresso-network/sdks/go/client"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"

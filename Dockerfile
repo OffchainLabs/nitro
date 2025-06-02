@@ -56,10 +56,6 @@ COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY brotli brotli
-ARG ESPRESSO_NETWORK_GO_VER=0.0.37
-ADD https://github.com/EspressoSystems/espresso-network-go/archive/refs/tags/v$ESPRESSO_NETWORK_GO_VER.tar.gz .
-RUN tar -xzf v${ESPRESSO_NETWORK_GO_VER}.tar.gz && \
-    mv espresso-network-go-${ESPRESSO_NETWORK_GO_VER} espresso-network-go
 COPY scripts/build-brotli.sh scripts/
 COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
@@ -94,10 +90,6 @@ COPY ./safe-smart-account ./safe-smart-account
 COPY ./solgen/gen.go ./solgen/
 COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
-ARG ESPRESSO_NETWORK_GO_VER=0.0.37
-ADD https://github.com/EspressoSystems/espresso-network-go/archive/refs/tags/v$ESPRESSO_NETWORK_GO_VER.tar.gz .
-RUN tar -xzf v${ESPRESSO_NETWORK_GO_VER}.tar.gz && \
-    mv espresso-network-go-${ESPRESSO_NETWORK_GO_VER} espresso-network-go
 COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
 COPY --from=contracts-builder workspace/contracts/build/contracts/src/precompiles/ contracts/build/contracts/src/precompiles/
@@ -137,7 +129,6 @@ RUN apt-get update && \
     perl-modules-5.36 \
     libfindbin-libs-perl
 
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-espresso-crypto-lib
 
 FROM scratch AS prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
@@ -260,14 +251,11 @@ RUN apt-get update && \
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
+COPY scripts/prepare-espresso-crypto-helper scripts/
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 COPY bold/go.mod bold/go.sum bold/
-ARG ESPRESSO_NETWORK_GO_VER=0.0.37
-ADD https://github.com/EspressoSystems/espresso-network-go/archive/refs/tags/v$ESPRESSO_NETWORK_GO_VER.tar.gz .
-RUN tar -xzf v${ESPRESSO_NETWORK_GO_VER}.tar.gz && \
-    mv espresso-network-go-${ESPRESSO_NETWORK_GO_VER} espresso-network-go
 RUN go mod download
 COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
@@ -294,7 +282,6 @@ ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "FuzzStateTransition", "--binary-path",
 
 FROM debian:bookworm-slim AS nitro-node-slim
 WORKDIR /home/user
-COPY --from=node-builder /workspace/target/lib/libespresso_crypto_helper-*.so /usr/local/lib/
 RUN ldconfig
 COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/

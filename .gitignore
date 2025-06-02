@@ -25,5 +25,3 @@ system_tests/testdata/*
 arbos/testdata/*
 
 /.pre-commit-config.yaml
-espresso-network-go
-*.tar.gz

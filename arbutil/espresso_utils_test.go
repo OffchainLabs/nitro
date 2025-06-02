@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	espressoTypes "github.com/EspressoSystems/espresso-network-go/types"
+	espressoTypes "github.com/EspressoSystems/espresso-network/sdks/go/types"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"

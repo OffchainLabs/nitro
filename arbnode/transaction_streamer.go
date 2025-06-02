@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
-	espressoClient "github.com/EspressoSystems/espresso-network-go/client"
-	lightclient "github.com/EspressoSystems/espresso-network-go/light-client"
-	tagged_base64 "github.com/EspressoSystems/espresso-network-go/tagged-base64"
-	espressoTypes "github.com/EspressoSystems/espresso-network-go/types"
+	espressoClient "github.com/EspressoSystems/espresso-network/sdks/go/client"
+	lightclient "github.com/EspressoSystems/espresso-network/sdks/go/light-client"
+	tagged_base64 "github.com/EspressoSystems/espresso-network/sdks/go/tagged-base64"
+	espressoTypes "github.com/EspressoSystems/espresso-network/sdks/go/types"
 	"github.com/ccoveille/go-safecast"
 	flag "github.com/spf13/pflag"
 
