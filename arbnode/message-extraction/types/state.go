@@ -21,8 +21,7 @@ type State struct {
 	DelayedMessagePostingTargetAddress common.Address
 	ParentChainBlockHash               common.Hash
 	ParentChainPreviousBlockHash       common.Hash
-	MessageAccumulator                 common.Hash
-	DelayedMessageAccumulator          common.Hash
+	DelayedMessagesSeenRoot            common.Hash
 	MsgCount                           uint64
 	DelayedMessagesRead                uint64
 	DelayedMessagedSeen                uint64
@@ -45,6 +44,10 @@ type StateDatabase interface {
 		state *State,
 		delayedMessages []*arbnode.DelayedInboxMessage,
 	) error
+	DelayedMessageDatabase
+}
+
+type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
 		ctx context.Context,
 		state *State,
@@ -66,14 +69,12 @@ func (s *State) Clone() *State {
 	delayedMessageTarget := common.Address{}
 	parentChainHash := common.Hash{}
 	parentChainPrevHash := common.Hash{}
-	msgAcc := common.Hash{}
 	delayedMsgAcc := common.Hash{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
-	copy(msgAcc[:], s.MessageAccumulator[:])
-	copy(delayedMsgAcc[:], s.DelayedMessageAccumulator[:])
+	copy(delayedMsgAcc[:], s.DelayedMessagesSeenRoot[:])
 	return &State{
 		Version:                            s.Version,
 		ParentChainId:                      s.ParentChainId,
@@ -82,17 +83,11 @@ func (s *State) Clone() *State {
 		DelayedMessagePostingTargetAddress: delayedMessageTarget,
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
-		MessageAccumulator:                 msgAcc,
-		DelayedMessageAccumulator:          delayedMsgAcc,
+		DelayedMessagesSeenRoot:            delayedMsgAcc,
 		MsgCount:                           s.MsgCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagedSeen:                s.DelayedMessagedSeen,
 	}
-}
-
-func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
-	// TODO: Unimplemented.
-	return s
 }
 
 func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) *State {
