@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/params"
 	"math/big"
 	"strings"
 	"time"
@@ -348,7 +349,7 @@ func (b *BOLDStaker) updateStakerBalanceMetric(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("error getting amount staked: %w", err)
 		}
-		boldStakerAmountStakedGauge.Update(amountStaked.Int64())
+		boldStakerAmountStakedGauge.Update(arbmath.BigDivByUint(amountStaked, params.Ether).Int64())
 	} else {
 		boldStakerAmountStakedGauge.Update(0)
 	}
