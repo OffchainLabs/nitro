@@ -141,6 +141,9 @@ func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error 
 
 // SetSpeedLimit sets the computational speed limit for the chain
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
+	if limit == 0 {
+		return errors.New("speed limit must be nonzero")
+	}
 	return c.State.L2PricingState().SetSpeedLimitPerSecond(limit)
 }
 
@@ -151,6 +154,9 @@ func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
 
 // SetL2GasPricingInertia sets the L2 gas pricing inertia
 func (con ArbOwner) SetL2GasPricingInertia(c ctx, evm mech, sec uint64) error {
+	if sec == 0 {
+		return errors.New("price inertia must be nonzero")
+	}
 	return c.State.L2PricingState().SetPricingInertia(sec)
 }
 
