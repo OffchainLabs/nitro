@@ -51,13 +51,15 @@ type processNextBlock struct {
 
 // An action that transitions the FSM to the saving messages state.
 type saveMessages struct {
-	postState       *meltypes.State
-	messages        []*arbostypes.MessageWithMetadata
-	delayedMessages []*arbnode.DelayedInboxMessage
+	preStateMsgCount uint64
+	postState        *meltypes.State
+	messages         []*arbostypes.MessageWithMetadata
+	delayedMessages  []*arbnode.DelayedInboxMessage
 }
 
-// An action that transitions the FSM to the reorging state.
-type reorgToOldBlock struct{}
+type reorgToOldBlock struct {
+	melState *meltypes.State
+}
 
 func (backToStart) String() string {
 	return "back_to_start"

@@ -11,12 +11,15 @@ import (
 	"context"
 	"math/big"
 	"math/rand"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/filters"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
@@ -111,6 +114,18 @@ func TestBloom(t *testing.T) {
 	if len(logs) != len(nullEventCounts) {
 		Fatal(t, "expected ", len(nullEventCounts), " logs, got ", len(logs))
 	}
+
+	// Test that calling filters.FilterLogs is equivalent to calling ethclient's FilterLogs(ctx, filterQuery)
+	allLogs := getAllLogs(t, ctx, builder.L2)
+	haveLogs := filters.FilterLogs(allLogs, nil, nil, nil, [][]common.Hash{{simpleABI.Events["NullEvent"].ID}})
+	var haveLogs2 []types.Log
+	for _, log := range haveLogs {
+		haveLogs2 = append(haveLogs2, *log)
+	}
+	if !reflect.DeepEqual(logs, haveLogs2) {
+		t.Fatal("ethclient FilterLogs rpc call and filters.FilterLogs function call result mismatch")
+	}
+
 	incrementEventQuery := ethereum.FilterQuery{
 		Topics: [][]common.Hash{{simpleABI.Events["CounterEvent"].ID}},
 	}
@@ -127,4 +142,30 @@ func TestBloom(t *testing.T) {
 			Fatal(t, "unxpected count in logs: ", parsedLog.Count)
 		}
 	}
+
+	haveLogs = filters.FilterLogs(allLogs, nil, nil, nil, [][]common.Hash{{simpleABI.Events["CounterEvent"].ID}})
+	haveLogs2 = []types.Log{}
+	for _, log := range haveLogs {
+		haveLogs2 = append(haveLogs2, *log)
+	}
+	if !reflect.DeepEqual(logs, haveLogs2) {
+		t.Fatal("ethclient FilterLogs rpc call and filters.FilterLogs function call result mismatch")
+	}
+}
+
+func getAllLogs(t *testing.T, ctx context.Context, l2 *TestClient) []*types.Log {
+	t.Helper()
+
+	lastBlockNum, err := l2.Client.BlockNumber(ctx)
+	Require(t, err)
+	var logs []*types.Log
+	for i := uint64(0); i < lastBlockNum; i++ {
+		// #nosec G115
+		receipts, err := l2.Client.BlockReceipts(ctx, rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(i)))
+		Require(t, err)
+		for _, receipt := range receipts {
+			logs = append(logs, receipt.Logs...)
+		}
+	}
+	return logs
 }
