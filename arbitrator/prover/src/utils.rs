@@ -205,12 +205,9 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
             Ok(commitment_hash)
         }
         PreimageType::CustomDA => {
-            // TODO: Implement proper CustomDA hashing
-            // For now, use SHA-256 as a placeholder implementation
-            let mut hash: [u8; 32] = Sha256::digest(preimage).into();
-            // Add a type prefix to identify this as CustomDA hash
-            hash[0] = 3; // CustomDA type identifier
-            Ok(hash)
+            // CustomDA uses SHA-256 hashing
+            // No need to modify the hash as CustomDA preimages are stored in their own map
+            Ok(Sha256::digest(preimage).into())
         }
     }
 }
