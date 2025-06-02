@@ -445,16 +445,30 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		)
 	}
 
-	// Start from 1 to ignore the init message and check the messages we extracted from MEL and the inbox tracker are the same.
-	for i := uint64(1); i < numDelayedMessages; i++ {
-		fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
+	newInitialState, err := melDB.GetState(ctx, lastState.ParentChainBlockHash)
+	Require(t, err)
+	for i := newInitialState.DelayedMessagesRead; i < newInitialState.DelayedMessagedSeen; i++ {
+		// Validates the pending unread delayed messages via accumulator
+		delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(ctx, newInitialState, newInitialState.DelayedMessagesRead)
 		Require(t, err)
-		delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(ctx, nil, i)
+		fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
 		if !fetchedDelayedMsg.Equals(delayedMsgSavedByMel.Message) {
 			t.Fatal("Messages from MEL and inbox tracker do not match")
 		}
+		t.Logf("validated delayed message of index: %d", i)
 	}
+
+	// // Start from 1 to ignore the init message and check the messages we extracted from MEL and the inbox tracker are the same.
+	// for i := uint64(1); i < numDelayedMessages; i++ {
+	// 	fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
+	// 	Require(t, err)
+	// 	delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(ctx, newInitialState, i)
+	// 	Require(t, err)
+	// 	if !fetchedDelayedMsg.Equals(delayedMsgSavedByMel.Message) {
+	// 		t.Fatal("Messages from MEL and inbox tracker do not match")
+	// 	}
+	// }
 }
 
 type mockMELDB struct {

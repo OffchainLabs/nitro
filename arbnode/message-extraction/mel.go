@@ -7,11 +7,13 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/spf13/pflag"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/bold/containers/fsm"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
@@ -211,6 +213,12 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				melState: preState,
 			})
 		}
+		// Question: should move this to a separate pruning thread that has access to current state?
+		finalizedBlk, err := m.parentChainReader.BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+		if err != nil {
+			return m.retryInterval, err
+		}
+		preState.TrimSeenDelayedMsgInfoQueue(finalizedBlk.NumberU64())
 		// Creates a receipt fetcher for the specific parent chain block, to be used
 		// by the message extraction function.
 		receiptFetcher := newBlockReceiptFetcher(m.parentChainReader, parentChainBlock)
@@ -272,6 +280,24 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		previousState, err := m.melDB.State(ctx, currentDirtyState.ParentChainBlockNumber-1)
 		if err != nil {
 			return m.retryInterval, err
+		}
+		// Adjust seenDelayedMsgInfoQueue
+		seenDelayedMsgInfoQueue := currentDirtyState.GetSeenDelayedMsgInfoQueue()
+		if len(seenDelayedMsgInfoQueue) > 0 {
+			if previousState.DelayedMessagedSeen < currentDirtyState.DelayedMessagedSeen {
+				// DelayedMessagedSeen rewinded
+				rightTrimPos := previousState.DelayedMessagedSeen - seenDelayedMsgInfoQueue[0].Index
+				seenDelayedMsgInfoQueue = seenDelayedMsgInfoQueue[:rightTrimPos]
+			}
+			if previousState.DelayedMessagesRead < currentDirtyState.DelayedMessagesRead {
+				// DelayedMessagesRead rewinded
+				for _, delayedInfo := range seenDelayedMsgInfoQueue {
+					if delayedInfo.Index > previousState.DelayedMessagesRead && delayedInfo.Read {
+						delayedInfo.Read = false
+					}
+				}
+			}
+			previousState.SetSeenDelayedMsgInfoQueue(seenDelayedMsgInfoQueue)
 		}
 		return 0, m.fsm.Do(processNextBlock{
 			melState: previousState,

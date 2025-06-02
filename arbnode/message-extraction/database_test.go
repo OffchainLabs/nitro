@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
 func TestMelDatabase(t *testing.T) {
@@ -60,7 +61,7 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	// Init
 	exec, streamer, arbDb, _ := arbnode.NewTransactionStreamerForTest(t, ctx, common.Address{})
 	err := streamer.Start(ctx)
-	arbnode.Require(t, err)
+	require.NoError(t, err)
 	exec.Start(ctx)
 	melDb := NewDatabase(arbDb)
 
@@ -86,11 +87,38 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 			},
 		},
 	}
-	require.NoError(t, melDb.SaveDelayedMessages(ctx, &meltypes.State{DelayedMessagedSeen: 1}, []*arbnode.DelayedInboxMessage{delayedMsg}))
-	have, err := melDb.ReadDelayedMessage(ctx, nil, 0)
+	state := &meltypes.State{}
+	state.SetReadDelayedMsgsAcc(merkleAccumulator.NewNonpersistentMerkleAccumulator())
+	require.NoError(t, err)
+	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize SeenDelayedMsgInfoQueue
+	state.DelayedMessagedSeen++
+
+	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*arbnode.DelayedInboxMessage{delayedMsg}))
+	have, err := melDb.ReadDelayedMessage(ctx, state, 0)
 	require.NoError(t, err)
 
 	if !reflect.DeepEqual(have, delayedMsg) {
 		t.Fatal("delayed message mismatch")
 	}
 }
+
+// func TestMelDelayedMessage(t *testing.T) {
+// 	var delayedMsgs []*arbnode.DelayedInboxMessage
+// 	for i := int64(0); i < 20; i++ {
+// 		requestID := common.BigToHash(big.NewInt(i))
+// 		delayedMsgs = append(delayedMsgs, &arbnode.DelayedInboxMessage{
+// 			BlockHash: [32]byte{},
+// 			Message: &arbostypes.L1IncomingMessage{
+// 				Header: &arbostypes.L1IncomingMessageHeader{
+// 					Kind:        arbostypes.L1MessageType_EndOfBlock,
+// 					Poster:      [20]byte{},
+// 					BlockNumber: 0,
+// 					Timestamp:   0,
+// 					RequestId:   &requestID,
+// 					L1BaseFee:   common.Big0,
+// 				},
+// 			},
+// 		})
+// 	}
+
+// }
