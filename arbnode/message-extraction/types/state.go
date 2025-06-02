@@ -107,7 +107,7 @@ func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) *Stat
 	return s
 }
 
-func (s *State) AccumulateMessage(msg *arbnode.DelayedInboxMessage) *State {
+func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
 	// TODO: Unimplemented.
 	return s
 }

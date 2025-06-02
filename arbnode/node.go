@@ -29,7 +29,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -64,7 +63,6 @@ type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
 	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
 	InboxReader              InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
-	MessageExtraction        mel.MessageExtractionConfig    `koanf:"message-extraction" reload:"hot"`
 	DelayedSequencer         DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster              BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
 	MessagePruner            MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
@@ -109,9 +107,6 @@ func (c *Config) Validate() error {
 	if err := c.InboxReader.Validate(); err != nil {
 		return err
 	}
-	if err := c.MessageExtraction.Validate(); err != nil {
-		return err
-	}
 	if err := c.BatchPoster.Validate(); err != nil {
 		return err
 	}
@@ -141,7 +136,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	f.Bool(prefix+".sequencer", ConfigDefault.Sequencer, "enable sequencer")
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
-	mel.MessageExtractionConfigAddOptions(prefix+".message-extraction", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
@@ -165,7 +159,6 @@ var ConfigDefault = Config{
 	Sequencer:                false,
 	ParentChainReader:        headerreader.DefaultConfig,
 	InboxReader:              DefaultInboxReaderConfig,
-	MessageExtraction:        mel.DefaultMessageExtractionConfig,
 	DelayedSequencer:         DefaultDelayedSequencerConfig,
 	BatchPoster:              DefaultBatchPosterConfig,
 	MessagePruner:            DefaultMessagePrunerConfig,
@@ -265,7 +258,6 @@ type Node struct {
 	ExecutionSequencer       execution.ExecutionSequencer
 	ExecutionRecorder        execution.ExecutionRecorder
 	L1Reader                 *headerreader.HeaderReader
-	MEL                      *mel.MessageExtractor
 	TxStreamer               *TransactionStreamer
 	DeployInfo               *chaininfo.RollupAddresses
 	BlobReader               daprovider.BlobReader
