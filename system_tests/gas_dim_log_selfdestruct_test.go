@@ -87,7 +87,7 @@ func TestDimLogSelfdestructColdNoTransferFunded(t *testing.T) {
 
 	// prefund the selfDestructor and payableCounter with some funds
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
-	_, _ = builder.L2.TransferBalanceTo(t, "Owner", payableCounterAddress, big.NewInt(1e17), builder.L2Info)
+	builder.L2.TransferBalanceTo(t, "Owner", payableCounterAddress, big.NewInt(1e17), builder.L2Info)
 
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, payableCounterAddress)
@@ -127,7 +127,7 @@ func TestDimLogSelfdestructColdPayingVirgin(t *testing.T) {
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
-	_, _ = builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
+	builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
 
 	// call selfDestructor.SelfDestruct(emptyAccountAddress) - which is cold
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccountAddress)
@@ -168,7 +168,7 @@ func TestDimLogSelfdestructColdPayingFunded(t *testing.T) {
 
 	// send some money to the self destructor address ahead of time
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
-	_, _ = builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
+	builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
 
 	// call selfDestructor.SelfDestruct(emptyAccountAddress) - which is cold
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccount)
@@ -244,7 +244,7 @@ func TestDimLogSelfdestructWarmNoTransferFunded(t *testing.T) {
 
 	// prefund the payableCounter with some funds, but not the selfDestructor
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
-	_, _ = builder.L2.TransferBalanceTo(t, "Owner", payableCounterAddress, big.NewInt(1e17), builder.L2Info)
+	builder.L2.TransferBalanceTo(t, "Owner", payableCounterAddress, big.NewInt(1e17), builder.L2Info)
 
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmSelfDestructor, payableCounterAddress)
@@ -284,7 +284,7 @@ func TestDimLogSelfdestructWarmPayingVirgin(t *testing.T) {
 	emptyAccountAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
-	_, _ = builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
+	builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
 
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmEmptySelfDestructor, emptyAccountAddress)
@@ -322,8 +322,8 @@ func TestDimLogSelfdestructWarmPayingFunded(t *testing.T) {
 
 	// prefund the selfDestructor and payableCounter with some funds
 	// the TransferBalanceTo helper function does the require statements and waiting etc for us
-	_, _ = builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
-	_, _ = builder.L2.TransferBalanceTo(t, "Owner", payableCounterAddress, big.NewInt(1e17), builder.L2Info)
+	builder.L2.TransferBalanceTo(t, "Owner", selfDestructorAddress, big.NewInt(1e17), builder.L2Info)
+	builder.L2.TransferBalanceTo(t, "Owner", payableCounterAddress, big.NewInt(1e17), builder.L2Info)
 
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmSelfDestructor, payableCounterAddress)

@@ -50,27 +50,25 @@ func TestDimLogComputationOnlyOpcodes(t *testing.T) {
 	for i, log := range traceResult.DimensionLogs {
 		// Basic field validation
 		if log.Op == "" {
-			t.Errorf("Log entry %d: Expected non-empty opcode", i)
+			Fatal(t, "Log entry %d: Expected non-empty opcode", i)
 		}
 		if log.Depth < 1 {
-			t.Errorf("Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
+			Fatal(t, "Log entry %d: Expected depth >= 1, got %d", i, log.Depth)
 		}
 
 		// Check that OneDimensionalGasCost equals Computation for computation-only opcodes
 		if log.OneDimensionalGasCost != log.Computation {
-			t.Errorf("Log entry %d: For computation-only opcode %s pc %d, expected OneDimensionalGasCost (%d) to equal Computation (%d): %v",
+			Fatal(t, "Log entry %d: For computation-only opcode %s pc %d, expected OneDimensionalGasCost (%d) to equal Computation (%d): %v",
 				i, log.Op, log.Pc, log.OneDimensionalGasCost, log.Computation, log)
 		}
 		// check that there are only computation-only opcodes
 		if log.StateAccess != 0 || log.StateGrowth != 0 || log.HistoryGrowth != 0 {
-			t.Errorf("Log entry %d: For computation-only opcode %s pc %d, expected StateAccess (%d), StateGrowth (%d), HistoryGrowth (%d) to be 0: %v",
+			Fatal(t, "Log entry %d: For computation-only opcode %s pc %d, expected StateAccess (%d), StateGrowth (%d), HistoryGrowth (%d) to be 0: %v",
 				i, log.Op, log.Pc, log.StateAccess, log.StateGrowth, log.HistoryGrowth, log)
 		}
 
 		// Validate error field
-		if log.Err != nil {
-			t.Errorf("Log entry %d: Unexpected error: %v", i, log.Err)
-		}
+		Require(t, log.Err, "Log entry %d: Unexpected error: %v", i, log.Err)
 	}
 }
 

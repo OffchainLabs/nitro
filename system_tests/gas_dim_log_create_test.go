@@ -19,6 +19,28 @@ import (
 // MemExpansion vs MemUnchanged (does the creation write to new additional memory?)
 
 // #########################################################################################################
+// #########################################################################################################
+//                                              CONSTANTS
+// #########################################################################################################
+
+const (
+	memUnchangedContractInitCodeSize     uint64 = 359
+	memUnchangedContractDeployedCodeSize uint64 = 181
+	memUnchangedChildExecutionCost       uint64 = 22477
+	memUnchangedMemoryExpansionCost      uint64 = 0
+
+	memExpansionContractInitCodeSize     uint64 = 416
+	memExpansionContractDeployedCodeSize uint64 = 181
+	memExpansionChildExecutionCost       uint64 = 2586
+	memExpansionMemoryExpansionCost      uint64 = 6
+)
+
+var (
+	expectedStaticCostAssignedToCompute     uint64 = (params.CreateGas - params.CallNewAccountGas) / 2
+	expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
+)
+
+// #########################################################################################################
 //                                              CREATE
 // #########################################################################################################
 
@@ -60,27 +82,16 @@ func TestDimLogCreateNoTransferMemUnchanged(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
 
-	var initCodeSize uint64 = 359
-	var deployedCodeSize uint64 = 181
-	var expectedCallExecutionCost uint64 = 22477
-	var expectedMemoryExpansionCost uint64 = 0
-
-	var minimumWordSize uint64 = (initCodeSize + 31) / 32
-
-	var expectedInitCodeCost uint64 = 2 * minimumWordSize
-	var expectedCodeDepositCost uint64 = 200 * deployedCodeSize
-
-	var expectedStaticCostAssignedToCompute uint64 = (params.CreateGas - params.CallNewAccountGas) / 2
-	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
+	_, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memUnchangedContractInitCodeSize, memUnchangedContractDeployedCodeSize)
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost,
-		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + memUnchangedMemoryExpansionCost + expectedCodeDepositCost,
+		Computation:           expectedInitCodeCost + memUnchangedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
 		StateAccess:           0,
 		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedCallExecutionCost,
+		ChildExecutionCost:    memUnchangedChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, createLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
@@ -101,27 +112,16 @@ func TestDimLogCreateNoTransferMemExpansion(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
 
-	var initCodeSize uint64 = 416
-	var deployedCodeSize uint64 = 181
-	var expectedCallExecutionCost uint64 = 2586
-	var expectedMemoryExpansionCost uint64 = 6
-
-	var minimumWordSize uint64 = (initCodeSize + 31) / 32
-
-	var expectedInitCodeCost uint64 = 2 * minimumWordSize
-	var expectedCodeDepositCost uint64 = 200 * deployedCodeSize
-
-	var expectedStaticCostAssignedToCompute uint64 = (params.CreateGas - params.CallNewAccountGas) / 2
-	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
+	_, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memExpansionContractInitCodeSize, memExpansionContractDeployedCodeSize)
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost,
-		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + memExpansionMemoryExpansionCost + expectedCodeDepositCost,
+		Computation:           expectedInitCodeCost + memExpansionMemoryExpansionCost + expectedStaticCostAssignedToCompute,
 		StateAccess:           0,
 		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedCallExecutionCost,
+		ChildExecutionCost:    memExpansionChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, createLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
@@ -140,34 +140,23 @@ func TestDimLogCreatePayingMemUnchanged(t *testing.T) {
 
 	creatorAddress, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreator)
 	// transfer some eth to the creator contract
-	_, _ = builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
+	builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreatePayableMemUnchanged)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
 
-	var initCodeSize uint64 = 359
-	var deployedCodeSize uint64 = 181
-	var expectedCallExecutionCost uint64 = 22477
-	var expectedMemoryExpansionCost uint64 = 0
-
-	var minimumWordSize uint64 = (initCodeSize + 31) / 32
-
-	var expectedInitCodeCost uint64 = 2 * minimumWordSize
-	var expectedCodeDepositCost uint64 = 200 * deployedCodeSize
-
-	var expectedStaticCostAssignedToCompute uint64 = (params.CreateGas - params.CallNewAccountGas) / 2
-	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
+	_, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memUnchangedContractInitCodeSize, memUnchangedContractDeployedCodeSize)
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost,
-		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + memUnchangedMemoryExpansionCost + expectedCodeDepositCost,
+		Computation:           expectedInitCodeCost + memUnchangedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
 		StateAccess:           0,
 		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedCallExecutionCost,
+		ChildExecutionCost:    memUnchangedChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, createLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
@@ -183,34 +172,23 @@ func TestDimLogCreatePayingMemExpansion(t *testing.T) {
 
 	creatorAddress, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreator)
 	// transfer some eth to the creator contract
-	_, _ = builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
+	builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreatePayableMemExpansion)
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
 
-	var initCodeSize uint64 = 416
-	var deployedCodeSize uint64 = 181
-	var expectedCallExecutionCost uint64 = 2586
-	var expectedMemoryExpansionCost uint64 = 6
-
-	var minimumWordSize uint64 = (initCodeSize + 31) / 32
-
-	var expectedInitCodeCost uint64 = 2 * minimumWordSize
-	var expectedCodeDepositCost uint64 = 200 * deployedCodeSize
-
-	var expectedStaticCostAssignedToCompute uint64 = (params.CreateGas - params.CallNewAccountGas) / 2
-	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
+	_, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memExpansionContractInitCodeSize, memExpansionContractDeployedCodeSize)
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost,
-		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + memExpansionMemoryExpansionCost + expectedCodeDepositCost,
+		Computation:           expectedInitCodeCost + memExpansionMemoryExpansionCost + expectedStaticCostAssignedToCompute,
 		StateAccess:           0,
 		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedCallExecutionCost,
+		ChildExecutionCost:    memExpansionChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, createLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
@@ -260,28 +238,18 @@ func TestDimLogCreate2NoTransferMemUnchanged(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE2")
 
-	var initCodeSize uint64 = 359
-	var deployedCodeSize uint64 = 181
-	var expectedCallExecutionCost uint64 = 22477
-	var expectedMemoryExpansionCost uint64 = 0
+	minimumWordSize, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memUnchangedContractInitCodeSize, memUnchangedContractDeployedCodeSize)
 
-	var minimumWordSize uint64 = (initCodeSize + 31) / 32
-
-	var expectedInitCodeCost uint64 = 2 * minimumWordSize
-	var expectedCodeDepositCost uint64 = 200 * deployedCodeSize
 	var expectedHashCost uint64 = 6 * minimumWordSize
 
-	var expectedStaticCostAssignedToCompute uint64 = (params.CreateGas - params.CallNewAccountGas) / 2
-	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
-		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + memUnchangedMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
+		Computation:           expectedInitCodeCost + memUnchangedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
 		StateAccess:           0,
 		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedCallExecutionCost,
+		ChildExecutionCost:    memUnchangedChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, createLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
@@ -302,28 +270,18 @@ func TestDimLogCreate2NoTransferMemExpansion(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE2")
 
-	var initCodeSize uint64 = 416
-	var deployedCodeSize uint64 = 181
-	var expectedCallExecutionCost uint64 = 2586
-	var expectedMemoryExpansionCost uint64 = 6
+	minimumWordSize, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memExpansionContractInitCodeSize, memExpansionContractDeployedCodeSize)
 
-	var minimumWordSize uint64 = (initCodeSize + 31) / 32
-
-	var expectedInitCodeCost uint64 = 2 * minimumWordSize
-	var expectedCodeDepositCost uint64 = 200 * deployedCodeSize
 	var expectedHashCost uint64 = 6 * minimumWordSize
 
-	var expectedStaticCostAssignedToCompute uint64 = (params.CreateGas - params.CallNewAccountGas) / 2
-	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
-		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + memExpansionMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
+		Computation:           expectedInitCodeCost + memExpansionMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
 		StateAccess:           0,
 		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedCallExecutionCost,
+		ChildExecutionCost:    memExpansionChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, createLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
@@ -347,28 +305,18 @@ func TestDimLogCreate2PayingMemUnchanged(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE2")
 
-	var initCodeSize uint64 = 359
-	var deployedCodeSize uint64 = 181
-	var expectedCallExecutionCost uint64 = 22477
-	var expectedMemoryExpansionCost uint64 = 0
+	minimumWordSize, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memUnchangedContractInitCodeSize, memUnchangedContractDeployedCodeSize)
 
-	var minimumWordSize uint64 = (initCodeSize + 31) / 32
-
-	var expectedInitCodeCost uint64 = 2 * minimumWordSize
-	var expectedCodeDepositCost uint64 = 200 * deployedCodeSize
 	var expectedHashCost uint64 = 6 * minimumWordSize
 
-	var expectedStaticCostAssignedToCompute uint64 = (params.CreateGas - params.CallNewAccountGas) / 2
-	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
-		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + memUnchangedMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
+		Computation:           expectedInitCodeCost + memUnchangedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
 		StateAccess:           0,
 		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedCallExecutionCost,
+		ChildExecutionCost:    memUnchangedChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, createLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
@@ -384,36 +332,45 @@ func TestDimLogCreate2PayingMemExpansion(t *testing.T) {
 
 	creatorAddress, creator := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCreatorTwo)
 	// transfer some eth to the creator contract
-	_, _ = builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
+	builder.L2.TransferBalanceTo(t, "Owner", creatorAddress, big.NewInt(1e17), builder.L2Info)
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoPayableMemExpansion, [32]byte{0x13, 0x37})
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE2")
 
-	var initCodeSize uint64 = 416
-	var deployedCodeSize uint64 = 181
-	var expectedCallExecutionCost uint64 = 2586
-	var expectedMemoryExpansionCost uint64 = 6
+	minimumWordSize, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memExpansionContractInitCodeSize, memExpansionContractDeployedCodeSize)
 
-	var minimumWordSize uint64 = (initCodeSize + 31) / 32
-
-	var expectedInitCodeCost uint64 = 2 * minimumWordSize
-	var expectedCodeDepositCost uint64 = 200 * deployedCodeSize
 	var expectedHashCost uint64 = 6 * minimumWordSize
 
-	var expectedStaticCostAssignedToCompute uint64 = (params.CreateGas - params.CallNewAccountGas) / 2
-	var expectedStaticCostAssignedToStateGrowth uint64 = params.CreateGas - params.CallNewAccountGas - expectedStaticCostAssignedToCompute
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + expectedMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
-		Computation:           expectedInitCodeCost + expectedMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
+		OneDimensionalGasCost: params.CreateGas + expectedInitCodeCost + memExpansionMemoryExpansionCost + expectedCodeDepositCost + expectedHashCost,
+		Computation:           expectedInitCodeCost + memExpansionMemoryExpansionCost + expectedStaticCostAssignedToCompute + expectedHashCost,
 		StateAccess:           0,
 		StateGrowth:           expectedStaticCostAssignedToStateGrowth + params.CallNewAccountGas + expectedCodeDepositCost,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedCallExecutionCost,
+		ChildExecutionCost:    memExpansionChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, createLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, createLog)
+}
+
+// #########################################################################################################
+// #########################################################################################################
+//                                              HELPER FUNCTIONS
+// #########################################################################################################
+// #########################################################################################################
+
+// return the minimum word size,
+// the expected init code cost, and the expected code deposit cost
+func getCodeInitAndDepositCosts(initCodeSize uint64, deployedCodeSize uint64) (
+	minimumWordSize uint64,
+	expectedInitCodeCost uint64,
+	expectedCodeDepositCost uint64,
+) {
+	minimumWordSize = (initCodeSize + 31) / 32
+	expectedInitCodeCost = 2 * minimumWordSize
+	expectedCodeDepositCost = 200 * deployedCodeSize
+	return minimumWordSize, expectedInitCodeCost, expectedCodeDepositCost
 }

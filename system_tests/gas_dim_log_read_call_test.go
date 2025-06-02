@@ -13,10 +13,16 @@ import (
 
 // #########################################################################################################
 // #########################################################################################################
-//	                                    DELEGATECALL & STATICCALL
-// #########################################################################################################
-// #########################################################################################################
 //
+//	DELEGATECALL & STATICCALL
+//
+// #########################################################################################################
+// #########################################################################################################
+const (
+	delegateCallChildExecutionCost uint64 = 22712
+	staticCallChildExecutionCost   uint64 = 2409
+)
+
 // DELEGATECALL and STATICCALL have many permutations
 // Warm vs Cold (in the access list)
 // Contract vs NoCode  (is there code at the target address that we are calling to? or is it an EOA?)
@@ -51,7 +57,6 @@ func TestDimLogDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
-	var expectedChildGasExecutionCost uint64 = 0
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
@@ -60,7 +65,7 @@ func TestDimLogDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    0,
 	}
 	checkGasDimensionsMatch(t, expected, delegateCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
@@ -89,7 +94,6 @@ func TestDimLogDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
-	var expectedChildGasExecutionCost uint64 = 0
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
@@ -98,7 +102,7 @@ func TestDimLogDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    0,
 	}
 	checkGasDimensionsMatch(t, expected, delegateCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
@@ -129,7 +133,6 @@ func TestDimLogDelegateCallColdContractMemUnchanged(t *testing.T) {
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
-	var expectedChildGasExecutionCost uint64 = 22712
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
@@ -138,7 +141,7 @@ func TestDimLogDelegateCallColdContractMemUnchanged(t *testing.T) {
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    delegateCallChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, delegateCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
@@ -169,7 +172,6 @@ func TestDimLogDelegateCallWarmContractMemUnchanged(t *testing.T) {
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
-	var expectedChildGasExecutionCost uint64 = 22712
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
@@ -178,7 +180,7 @@ func TestDimLogDelegateCallWarmContractMemUnchanged(t *testing.T) {
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    delegateCallChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, delegateCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
@@ -211,17 +213,14 @@ func TestDimLogDelegateCallColdNoCodeMemExpansion(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
-	var memoryExpansionCost uint64 = 6
-	var expectedChildGasExecutionCost uint64 = 0
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
-		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memExpansionMemoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
 		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    0,
 	}
 	checkGasDimensionsMatch(t, expected, delegateCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
@@ -252,17 +251,14 @@ func TestDimLogDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
-	var memoryExpansionCost uint64 = 6
-	var expectedChildGasExecutionCost uint64 = 0
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
-		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
 		StateAccess:           0,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    0,
 	}
 	checkGasDimensionsMatch(t, expected, delegateCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
@@ -295,17 +291,14 @@ func TestDimLogDelegateCallColdContractMemExpansion(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
-	var memoryExpansionCost uint64 = 6
-	var expectedChildGasExecutionCost uint64 = 22712
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
-		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memExpansionMemoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
 		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    delegateCallChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, delegateCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
@@ -338,17 +331,14 @@ func TestDimLogDelegateCallWarmContractMemExpansion(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
-	var memoryExpansionCost uint64 = 6
-	var expectedChildGasExecutionCost uint64 = 22712
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
-		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
 		StateAccess:           0,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    delegateCallChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, delegateCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, delegateCallLog)
@@ -410,7 +400,6 @@ func TestDimLogStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
-	var expectedChildGasExecutionCost uint64 = 0
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
@@ -419,7 +408,7 @@ func TestDimLogStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    0,
 	}
 	checkGasDimensionsMatch(t, expected, staticCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, staticCallLog)
@@ -445,7 +434,6 @@ func TestDimLogStaticCallColdContractMemUnchanged(t *testing.T) {
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
-	var expectedChildGasExecutionCost uint64 = 2409
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929,
@@ -454,7 +442,7 @@ func TestDimLogStaticCallColdContractMemUnchanged(t *testing.T) {
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    staticCallChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, staticCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, staticCallLog)
@@ -480,7 +468,6 @@ func TestDimLogStaticCallWarmContractMemUnchanged(t *testing.T) {
 
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
-	var expectedChildGasExecutionCost uint64 = 2409
 
 	expected := ExpectedGasCosts{
 		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
@@ -489,7 +476,7 @@ func TestDimLogStaticCallWarmContractMemUnchanged(t *testing.T) {
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    staticCallChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, staticCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, staticCallLog)
@@ -518,17 +505,14 @@ func TestDimLogStaticCallColdNoCodeMemExpansion(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
-	var memoryExpansionCost uint64 = 6
-	var expectedChildGasExecutionCost uint64 = 0
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
-		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memExpansionMemoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
 		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    0,
 	}
 	checkGasDimensionsMatch(t, expected, staticCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, staticCallLog)
@@ -557,17 +541,14 @@ func TestDimLogStaticCallWarmNoCodeMemExpansion(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
-	var memoryExpansionCost uint64 = 6
-	var expectedChildGasExecutionCost uint64 = 0
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
-		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
 		StateAccess:           0,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    0,
 	}
 	checkGasDimensionsMatch(t, expected, staticCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, staticCallLog)
@@ -596,17 +577,14 @@ func TestDimLogStaticCallColdContractMemExpansion(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
-	var memoryExpansionCost uint64 = 6
-	var expectedChildGasExecutionCost uint64 = 2409
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memoryExpansionCost,
-		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		OneDimensionalGasCost: params.ColdAccountAccessCostEIP2929 + memExpansionMemoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
 		StateAccess:           ColdMinusWarmAccountAccessCost,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    staticCallChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, staticCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, staticCallLog)
@@ -635,17 +613,14 @@ func TestDimLogStaticCallWarmContractMemExpansion(t *testing.T) {
 	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
-	var memoryExpansionCost uint64 = 6
-	var expectedChildGasExecutionCost uint64 = 2409
-
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
-		Computation:           params.WarmStorageReadCostEIP2929 + memoryExpansionCost,
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
+		Computation:           params.WarmStorageReadCostEIP2929 + memExpansionMemoryExpansionCost,
 		StateAccess:           0,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
-		ChildExecutionCost:    expectedChildGasExecutionCost,
+		ChildExecutionCost:    staticCallChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, staticCallLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, staticCallLog)

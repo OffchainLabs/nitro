@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 )

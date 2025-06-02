@@ -24,7 +24,7 @@ import (
 //
 // Gas dimensionally, SSTORE has one rule basically: if the total gas is
 // greater than 20,000 gas, then we know that a write of a 0->non-zero
-// occured. That is the only case that actually grows state database size
+// occurred. That is the only case that actually grows state database size
 // all of the other cases are either writing to existing values, or
 // writing to a local cache that will eventually be written to the existing
 // database values.
