@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/stretchr/testify/require"
 )
 
 var _ preimageResolver = (*mockPreimageResolver)(nil)
@@ -78,7 +80,9 @@ func TestReadDelayedMessage(t *testing.T) {
 		encodedMsgB, err := rlp.EncodeToBytes(msgB)
 		require.NoError(t, err)
 
-		rootPreimage := append(msgAHash[:], msgBHash[:]...)
+		rootPreimage := make([]byte, 0, 64)
+		rootPreimage = append(rootPreimage, msgAHash[:]...)
+		rootPreimage = append(rootPreimage, msgBHash[:]...)
 		root := crypto.Keccak256Hash(msgAHash[:], msgBHash[:])
 
 		resolver := &mockPreimageResolver{
@@ -127,12 +131,18 @@ func TestReadDelayedMessage(t *testing.T) {
 		encodedMsgD, err := rlp.EncodeToBytes(msgD)
 		require.NoError(t, err)
 
-		middleLeftPreimage := append(msgAHash[:], msgBHash[:]...)
-		middleRightPreimage := append(msgCHash[:], msgDHash[:]...)
+		middleLeftPreimage := make([]byte, 0, 64)
+		middleLeftPreimage = append(middleLeftPreimage, msgAHash[:]...)
+		middleLeftPreimage = append(middleLeftPreimage, msgBHash[:]...)
+		middleRightPreimage := make([]byte, 0, 64)
+		middleRightPreimage = append(middleRightPreimage, msgCHash[:]...)
+		middleRightPreimage = append(middleRightPreimage, msgDHash[:]...)
 		middleLeftRoot := crypto.Keccak256Hash(msgAHash[:], msgBHash[:])
 		middleRightRoot := crypto.Keccak256Hash(msgCHash[:], msgDHash[:])
 
-		rootPreimage := append(middleLeftRoot[:], middleRightRoot[:]...)
+		rootPreimage := make([]byte, 0, 64)
+		rootPreimage = append(rootPreimage, middleLeftRoot[:]...)
+		rootPreimage = append(rootPreimage, middleRightRoot[:]...)
 		root := crypto.Keccak256Hash(middleLeftRoot[:], middleRightRoot[:])
 
 		resolver := &mockPreimageResolver{
