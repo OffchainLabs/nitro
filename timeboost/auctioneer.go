@@ -183,7 +183,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 
 	var endpointManager SequencerEndpointManager
 	if cfg.UseRedisCoordinator {
-		redisCoordinator, err := redisutil.NewRedisCoordinator(cfg.RedisCoordinatorURL)
+		redisCoordinator, err := redisutil.NewRedisCoordinator(cfg.RedisCoordinatorURL, 1)
 		if err != nil {
 			return nil, err
 		}
@@ -515,7 +515,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 
 	makeAuctionResolutionTx := func(onRetry bool) (*types.Transaction, error) {
 		opts := copyTxOpts(a.txOpts)
-		opts.GasMargin = 1000 // Add a 10% buffer to GasLimit to avoid running out of gas
+		opts.GasMargin = 2000 // Add a 20% buffer to GasLimit to avoid running out of gas
 		opts.NoSend = true
 
 		// Both bids are present
@@ -591,7 +591,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 			break
 		}
 		if tx != nil {
-			log.Error("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex())
+			log.Warn("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex())
 		}
 		if retryCount == retryLimit {
 			return errors.New("could not resolve auction after multiple attempts")
