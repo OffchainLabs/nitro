@@ -18,20 +18,13 @@ import (
 // DefaultValidator is a reference implementation of the Validator interface
 // that provides simple SHA-256 based hash verification for CustomDA type preimages
 type DefaultValidator struct {
-	storage PreimageStorage
-}
-
-// PreimageStorage defines an interface for storing and retrieving preimages
-// This is a simplification of the Storage interface to avoid dependencies
-type PreimageStorage interface {
-	Store(ctx context.Context, data []byte) error
-	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
+	storage *InMemoryStorage
 }
 
 // NewDefaultValidator creates a new DefaultValidator with the given storage
-func NewDefaultValidator(storage PreimageStorage) *DefaultValidator {
+func NewDefaultValidator() *DefaultValidator {
 	return &DefaultValidator{
-		storage: storage,
+		storage: GetInMemoryStorage(),
 	}
 }
 
@@ -43,7 +36,6 @@ func (v *DefaultValidator) RecordPreimages(ctx context.Context, batch []byte) ([
 		return nil, fmt.Errorf("empty batch data")
 	}
 
-	// Store the batch data
 	err := v.storage.Store(ctx, batch)
 	if err != nil {
 		return nil, fmt.Errorf("failed to store batch data: %w", err)
@@ -67,37 +59,6 @@ func (v *DefaultValidator) RecordPreimages(ctx context.Context, batch []byte) ([
 	}, nil
 }
 
-// Storage returns the underlying storage implementation
-// This method is mainly for testing and debugging
-func (v *DefaultValidator) Storage() PreimageStorage {
-	return v.storage
-}
-
-// GenerateProof generates a proof for a specific preimage
-// In this default implementation, we use a simple proof format:
-// [proof_type (1 byte) | preimage_data (variable length)]
-// where proof_type is 0 for a simple hash-based proof
 func (v *DefaultValidator) GenerateProof(ctx context.Context, preimageType arbutil.PreimageType, hash common.Hash, offset uint64) ([]byte, error) {
-	if preimageType != arbutil.CustomDAPreimageType {
-		return nil, fmt.Errorf("unsupported preimage type: %d", preimageType)
-	}
-
-	// Retrieve the preimage data
-	data, err := v.storage.GetByHash(ctx, hash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get preimage data for hash %s: %w", hash.Hex(), err)
-	}
-
-	// For the default implementation, the proof is simply:
-	// - A type byte (0 for simple hash proof)
-	// - Followed by the entire preimage data
-	proofType := byte(0) // Simple hash-based proof
-	proof := append([]byte{proofType}, data...)
-
-	log.Debug("DefaultCustomDAValidator: Generated proof",
-		"hash", hash.Hex(),
-		"offset", offset,
-		"proofSize", len(proof))
-
-	return proof, nil
+	panic("not implemented yet")
 }

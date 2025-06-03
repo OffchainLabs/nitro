@@ -45,7 +45,6 @@ type AnyTrustFactory struct {
 type ReferenceDAFactory struct {
 	config       *referenceda.Config
 	enableWriter bool
-	storage      referenceda.PreimageStorage
 	validator    daprovider.Validator
 }
 
@@ -186,9 +185,7 @@ func (f *ReferenceDAFactory) ValidateConfig() error {
 }
 
 func (f *ReferenceDAFactory) initializeComponents() error {
-	// Reference implementation always uses in-memory storage
-	f.storage = referenceda.GetInMemoryStorage()
-	f.validator = referenceda.NewDefaultValidator(f.storage)
+	f.validator = referenceda.NewDefaultValidator()
 	return nil
 }
 
