@@ -14,7 +14,6 @@ import (
 
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode/redislock"
@@ -22,14 +21,12 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-// Regularly runs db compaction if configured
 type MaintenanceRunner struct {
 	stopwaiter.StopWaiter
 
 	exec            execution.ExecutionClient
 	config          MaintenanceConfigFetcher
 	seqCoordinator  *SeqCoordinator
-	dbs             []ethdb.Database
 	lastMaintenance atomic.Int64
 
 	// lock is used to ensures that at any given time, only single node is on
@@ -42,13 +39,13 @@ type MaintenanceConfig struct {
 	Lock        redislock.SimpleCfg `koanf:"lock" reload:"hot"`
 	Triggerable bool                `koanf:"triggerable" reload:"hot"`
 
-	// Generated: the minutes since start of UTC day to compact at
+	// Generated: the minutes since start of UTC day to run maintenance at
 	minutesAfterMidnight int
 	enabled              bool
 }
 
 // Returns true if successful
-func (c *MaintenanceConfig) parseDbCompactionTime() bool {
+func (c *MaintenanceConfig) parseMaintenanceRunTime() bool {
 	if c.TimeOfDay == "" {
 		return true
 	}
@@ -70,8 +67,8 @@ func (c *MaintenanceConfig) parseDbCompactionTime() bool {
 }
 
 func (c *MaintenanceConfig) Validate() error {
-	if !c.parseDbCompactionTime() {
-		return fmt.Errorf("expected sequencer coordinator db compaction time to be in 24-hour HH:MM format but got \"%v\"", c.TimeOfDay)
+	if !c.parseMaintenanceRunTime() {
+		return fmt.Errorf("expected maintenance run time to be in 24-hour HH:MM format but got \"%v\"", c.TimeOfDay)
 	}
 	return nil
 }
@@ -92,7 +89,7 @@ var DefaultMaintenanceConfig = MaintenanceConfig{
 
 type MaintenanceConfigFetcher func() *MaintenanceConfig
 
-func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, dbs []ethdb.Database, exec execution.ExecutionClient) (*MaintenanceRunner, error) {
+func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, exec execution.ExecutionClient) (*MaintenanceRunner, error) {
 	cfg := config()
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
@@ -101,7 +98,6 @@ func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCo
 		exec:           exec,
 		config:         config,
 		seqCoordinator: seqCoordinator,
-		dbs:            dbs,
 	}
 
 	// node restart is considered "maintenance"
@@ -135,11 +131,11 @@ func wentPastTimeOfDay(before time.Time, after time.Time, timeOfDay int) bool {
 	if newMinutes < prevMinutes {
 		newMinutes += 60 * 24
 	}
-	dbCompactionMinutes := timeOfDay
-	if dbCompactionMinutes < prevMinutes {
-		dbCompactionMinutes += 60 * 24
+	maintenanceRunTimeMinutes := timeOfDay
+	if maintenanceRunTimeMinutes < prevMinutes {
+		maintenanceRunTimeMinutes += 60 * 24
 	}
-	return prevMinutes < dbCompactionMinutes && newMinutes >= dbCompactionMinutes
+	return prevMinutes < maintenanceRunTimeMinutes && newMinutes >= maintenanceRunTimeMinutes
 }
 
 // bool if running currently, if false - time of last time it was running
@@ -193,9 +189,19 @@ func (mr *MaintenanceRunner) maybeRunScheduledMaintenance(ctx context.Context) t
 		return time.Minute
 	}
 
-	err := mr.attemptMaintenance(ctx)
+	shouldTriggerMaintenance, err := mr.exec.ShouldTriggerMaintenance().Await(mr.GetContext())
 	if err != nil {
-		log.Warn("scheduled maintenance error", "err", err)
+		log.Error("error checking if maintenance should be triggered", "err", err)
+		return time.Minute
+	}
+	if !shouldTriggerMaintenance {
+		log.Debug("skipping maintenance, not triggered")
+		return time.Minute
+	}
+
+	err = mr.attemptMaintenance(ctx)
+	if err != nil {
+		log.Error("scheduled maintenance error", "err", err)
 	}
 
 	return time.Minute
@@ -242,6 +248,35 @@ func (mr *MaintenanceRunner) attemptMaintenance(ctx context.Context) error {
 	return res
 }
 
+func (mr *MaintenanceRunner) waitMaintenanceToComplete(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Warn("Maintenance wait interrupted", "err", ctx.Err())
+			return
+		default:
+			select {
+			case <-ctx.Done():
+				log.Warn("Maintenance wait interrupted", "err", ctx.Err())
+				return
+			case <-ticker.C:
+				maintenanceStatus, err := mr.exec.MaintenanceStatus().Await(ctx)
+				if err != nil {
+					log.Error("Error checking maintenance status", "err", err)
+					continue
+				}
+				if maintenanceStatus.IsRunning {
+					log.Debug("Maintenance is still running, waiting for completion")
+				} else {
+					log.Info("Execution is not running maintenance anymore, maintenance completed successfully")
+					return
+				}
+			}
+		}
+	}
+}
+
 func (mr *MaintenanceRunner) runMaintenance() error {
 	err := mr.setMaintenanceStart()
 	if err != nil {
@@ -249,28 +284,12 @@ func (mr *MaintenanceRunner) runMaintenance() error {
 	}
 	defer mr.setMaintenanceDone()
 
-	log.Info("Compacting databases and flushing triedb to disk (this may take a while...)")
-	results := make(chan error, len(mr.dbs))
-	expected := 0
-	for _, db := range mr.dbs {
-		expected++
-		db := db
-		go func() {
-			results <- db.Compact(nil, nil)
-		}()
+	log.Info("Triggering maintenance")
+	_, err = mr.exec.TriggerMaintenance().Await(mr.GetContext())
+	if err != nil {
+		return err
 	}
-	expected++
-	go func() {
-		_, res := mr.exec.Maintenance().Await(mr.GetContext())
-		results <- res
-	}()
-	for i := 0; i < expected; i++ {
-		subErr := <-results
-		if subErr != nil {
-			err = errors.Join(err, subErr)
-			log.Warn("maintenance error", "err", subErr)
-		}
-	}
-	log.Info("Done compacting databases and flushing triedb to disk")
-	return err
+
+	mr.waitMaintenanceToComplete(mr.GetContext())
+	return nil
 }
