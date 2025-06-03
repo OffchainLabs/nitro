@@ -36,7 +36,6 @@ const (
 	batchDataSeparateEvent
 	batchDataNone
 	batchDataBlobHashes
-	batchDataCustomDA
 )
 
 func init() {
@@ -170,23 +169,6 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 			data = append(data, h[:]...)
 		}
 		return data, nil
-	case batchDataCustomDA:
-		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.rawLog)
-		if err != nil {
-			return nil, err
-		}
-		args := make(map[string]interface{})
-		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:])
-		if err != nil {
-			return nil, err
-		}
-		dataBytes, ok := args["data"].([]byte)
-		if !ok {
-			return nil, errors.New("args[\"data\"] not a byte array")
-		}
-		// Ensure the header byte is set correctly for CustomDA
-		dataBytes[0] = daprovider.CustomDAMessageHeaderFlag
-		return dataBytes, nil
 	default:
 		return nil, fmt.Errorf("batch has invalid data location %v", m.dataLocation)
 	}
