@@ -224,7 +224,7 @@ func mainImpl() int {
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
 	// If sequencer and signing is enabled or batchposter is enabled without
 	// external signing sequencer will need a key.
-	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
+	sequencerNeedsKey := (nodeConfig.Node.Sequencer && nodeConfig.Node.Feed.Output.Signed) ||
 		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DataAvailability.Enable))
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
@@ -531,9 +531,13 @@ func mainImpl() int {
 		log.Error("failed to create execution node", "err", err)
 		return 1
 	}
-	locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
-	if err != nil {
-		log.Error("failed to create machine locator: %w", err)
+	var wasmModuleRoot common.Hash
+	if liveNodeConfig.Get().Node.ValidatorRequired() {
+		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
+		if err != nil {
+			log.Error("failed to create machine locator: %w", err)
+		}
+		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(
@@ -554,7 +558,7 @@ func mainImpl() int {
 		fatalErrChan,
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
-		locator.LatestWasmModuleRoot(),
+		wasmModuleRoot,
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)
