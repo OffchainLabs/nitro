@@ -216,7 +216,6 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *meltypes.Stat
 	return dbBatch.Write()
 }
 
-// { 4, 10 } - > {2, 9}
 func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.State, msg *arbnode.DelayedInboxMessage, index uint64) (bool, error) {
 	delayedMeta := state.GetSeenUnreadDelayedMetaDeque().GetByIndex(index)
 	acc := state.GetReadDelayedMsgsAcc()

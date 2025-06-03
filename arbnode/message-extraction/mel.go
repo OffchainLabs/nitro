@@ -202,6 +202,9 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
 		preState := processAction.melState
+		if preState.GetSeenUnreadDelayedMetaDeque() == nil { // Safety check to avoid panics in the later codepath
+			return m.retryInterval, errors.New("detected nil seenUnreadDelayedMetaDeque of melState, shouldnt be possible")
+		}
 
 		parentChainBlock, err := m.parentChainReader.BlockByNumber(
 			ctx,
