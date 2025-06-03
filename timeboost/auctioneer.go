@@ -307,7 +307,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 			}
 			select {
 			case <-ctx.Done():
-				log.Info("Context done while checking redis stream existance", "error", ctx.Err().Error())
+				log.Info("Context done while checking redis stream existence", "error", ctx.Err().Error())
 				return
 			case <-time.After(time.Millisecond * 100):
 			}
@@ -411,7 +411,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 
 	makeAuctionResolutionTx := func(onRetry bool) (*types.Transaction, error) {
 		opts := copyTxOpts(a.txOpts)
-		opts.GasMargin = 1000 // Add a 10% buffer to GasLimit to avoid running out of gas
+		opts.GasMargin = 2000 // Add a 20% buffer to GasLimit to avoid running out of gas
 		opts.NoSend = true
 
 		// Both bids are present
@@ -487,7 +487,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 			break
 		}
 		if tx != nil {
-			log.Error("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex())
+			log.Warn("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex())
 		}
 		if retryCount == retryLimit {
 			return errors.New("could not resolve auction after multiple attempts")
