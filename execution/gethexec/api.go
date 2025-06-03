@@ -76,6 +76,9 @@ func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
 }
 
 func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
+	if msg == nil {
+		return errors.New("missing required parameter")
+	}
 	goMsg, err := timeboost.JsonSubmissionToGo(msg)
 	if err != nil {
 		return err
