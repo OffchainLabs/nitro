@@ -53,7 +53,7 @@ type ParentChainReader interface {
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	parentChainReader         ParentChainReader
-	initialStateFetcher       meltypes.StateFetcher
+	initialStateFetcher       meltypes.InitialStateFetcher
 	addrs                     *chaininfo.RollupAddresses
 	melDB                     meltypes.StateDatabase
 	msgConsumer               meltypes.MessageConsumer
@@ -69,7 +69,7 @@ type MessageExtractor struct {
 func NewMessageExtractor(
 	parentChainReader ParentChainReader,
 	rollupAddrs *chaininfo.RollupAddresses,
-	initialStateFetcher meltypes.StateFetcher,
+	initialStateFetcher meltypes.InitialStateFetcher,
 	melDB meltypes.StateDatabase,
 	msgConsumer meltypes.MessageConsumer,
 	dataProviders []daprovider.Reader,
@@ -168,13 +168,23 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				err,
 			)
 		}
+		// Finalized block number is used in FetchInitialState to initialize seenUnreadDelayedMetaDeque
+		finalizedBlk, err := m.parentChainReader.BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+		if err != nil {
+			return m.retryInterval, err
+		}
 		// Fetch the initial state for MEL from a state fetcher interface by parent chain block hash.
-		melState, err := m.initialStateFetcher.GetState(
+		melState, err := m.initialStateFetcher.FetchInitialState(
 			ctx,
 			m.startParentChainBlockHash,
+			finalizedBlk.NumberU64(),
 		)
 		if err != nil {
 			return m.retryInterval, err
+		}
+		// Initialize seenUnreadDelayedMetaDeque if its nil
+		if melState.GetSeenUnreadDelayedMetaDeque() == nil {
+			melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		}
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(processNextBlock{
@@ -218,7 +228,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if err != nil {
 			return m.retryInterval, err
 		}
-		preState.TrimSeenDelayedMsgInfoQueue(finalizedBlk.NumberU64())
+		preState.GetSeenUnreadDelayedMetaDeque().ClearReadAndFinalized(finalizedBlk.NumberU64())
 		// Creates a receipt fetcher for the specific parent chain block, to be used
 		// by the message extraction function.
 		receiptFetcher := newBlockReceiptFetcher(m.parentChainReader, parentChainBlock)
@@ -281,24 +291,10 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if err != nil {
 			return m.retryInterval, err
 		}
-		// Adjust seenDelayedMsgInfoQueue
-		seenDelayedMsgInfoQueue := currentDirtyState.GetSeenDelayedMsgInfoQueue()
-		if len(seenDelayedMsgInfoQueue) > 0 {
-			if previousState.DelayedMessagedSeen < currentDirtyState.DelayedMessagedSeen {
-				// DelayedMessagedSeen rewinded
-				rightTrimPos := previousState.DelayedMessagedSeen - seenDelayedMsgInfoQueue[0].Index
-				seenDelayedMsgInfoQueue = seenDelayedMsgInfoQueue[:rightTrimPos]
-			}
-			if previousState.DelayedMessagesRead < currentDirtyState.DelayedMessagesRead {
-				// DelayedMessagesRead rewinded
-				for _, delayedInfo := range seenDelayedMsgInfoQueue {
-					if delayedInfo.Index > previousState.DelayedMessagesRead && delayedInfo.Read {
-						delayedInfo.Read = false
-					}
-				}
-			}
-			previousState.SetSeenDelayedMsgInfoQueue(seenDelayedMsgInfoQueue)
-		}
+		// Adjust seenUnreadDelayedMetaDeque
+		seenUnreadDelayedMetaDeque := currentDirtyState.GetSeenUnreadDelayedMetaDeque()
+		seenUnreadDelayedMetaDeque.ClearReorged(currentDirtyState.DelayedMessagesRead, previousState.DelayedMessagesRead, currentDirtyState.DelayedMessagedSeen, previousState.DelayedMessagedSeen)
+		previousState.SetSeenUnreadDelayedMetaDeque(seenUnreadDelayedMetaDeque)
 		return 0, m.fsm.Do(processNextBlock{
 			melState: previousState,
 		})

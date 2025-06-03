@@ -445,7 +445,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		)
 	}
 
-	newInitialState, err := melDB.GetState(ctx, lastState.ParentChainBlockHash)
+	newInitialState, err := melDB.FetchInitialState(ctx, lastState.ParentChainBlockHash, 0)
 	Require(t, err)
 	for i := newInitialState.DelayedMessagesRead; i < newInitialState.DelayedMessagedSeen; i++ {
 		// Validates the pending unread delayed messages via accumulator
@@ -499,8 +499,8 @@ func (m *mockMELDB) SaveState(
 	return nil
 }
 
-func (m *mockMELDB) GetState(
-	ctx context.Context, parentChainBlockHash common.Hash,
+func (m *mockMELDB) FetchInitialState(
+	ctx context.Context, parentChainBlockHash common.Hash, _ uint64,
 ) (*meltypes.State, error) {
 	if m.lastState.ParentChainBlockHash != parentChainBlockHash {
 		return nil, fmt.Errorf("parentChainBlockHash of db doesnt match the hash queried by initialStateFetcher")

@@ -11,12 +11,74 @@ import (
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
-// DelayedMsgInfoQueueItem contains metadata relating to delayed messages
-type DelayedMsgInfoQueueItem struct {
+// DelayedMeta contains metadata relating to delayed messages
+type DelayedMeta struct {
 	Index                       uint64
 	Read                        bool
 	MerkleRoot                  common.Hash
 	MelStateParentChainBlockNum uint64
+}
+
+type DelayedMetaDeque struct {
+	deque []*DelayedMeta
+}
+
+func (d *DelayedMetaDeque) Add(item *DelayedMeta) {
+	d.deque = append(d.deque, item)
+}
+
+func (d *DelayedMetaDeque) GetByIndex(index uint64) *DelayedMeta {
+	pos := index - d.deque[0].Index
+	return d.deque[pos]
+}
+
+func (d *DelayedMetaDeque) Clone() *DelayedMetaDeque {
+	var deque []*DelayedMeta
+	for _, item := range d.deque {
+		merkleRoot := common.Hash{}
+		copy(merkleRoot[:], item.MerkleRoot[:])
+		deque = append(deque, &DelayedMeta{
+			Index:                       item.Index,
+			Read:                        item.Read,
+			MerkleRoot:                  merkleRoot,
+			MelStateParentChainBlockNum: item.MelStateParentChainBlockNum,
+		})
+	}
+	return &DelayedMetaDeque{deque}
+}
+
+func (d *DelayedMetaDeque) ClearReorged(delayedMessagesRead, newDelayedMessagesRead, delayedMessagedSeen, newDelayedMessagedSeen uint64) {
+	if len(d.deque) > 0 {
+		if newDelayedMessagedSeen < delayedMessagedSeen {
+			// DelayedMessagedSeen rewinded
+			rightTrimPos := newDelayedMessagedSeen - d.deque[0].Index
+			d.deque = d.deque[:rightTrimPos]
+		}
+		if newDelayedMessagesRead < delayedMessagesRead {
+			// DelayedMessagesRead rewinded
+			for _, delayedMeta := range d.deque {
+				if !delayedMeta.Read {
+					break
+				}
+				if delayedMeta.Index > newDelayedMessagesRead {
+					delayedMeta.Read = false
+				}
+			}
+		}
+	}
+}
+
+// ClearReadAndFinalized trims the DelayedMetaDeque from left, such that the item is only removed if the corresponding delayed message is
+// read and the MelStateParentChainBlockNum is finalized- this is to make DelayedMetaDeque as reorg resistant as possible
+func (d *DelayedMetaDeque) ClearReadAndFinalized(finalizedBlock uint64) {
+	i := 0
+	for i < len(d.deque) {
+		if !d.deque[i].Read || d.deque[i].MelStateParentChainBlockNum > finalizedBlock {
+			break
+		}
+		i++
+	}
+	d.deque = d.deque[i:]
 }
 
 // State defines the main struct describing the results of processing a single parent
@@ -37,10 +99,10 @@ type State struct {
 	DelayedMessagedSeen                uint64
 	DelayedMessageMerklePartials       []common.Hash `rlp:"optional"`
 
-	// seenDelayedMsgInfoQueue represents the queue containing DelayedMsgInfoQueueItems that hold metadata relating to delayed messages that have been seen but not yet read
+	// seenUnreadDelayedMetaDeque represents the deque containing DelayedMeta that hold metadata relating to delayed messages that have been seen but not yet read
 	// queue is trimmed from left by pruner function defined on the state, after corresponding delayed message is read and its melStateParentChainBlockNum is finalized
 	// trimmed from right in case of a reorg by the Reorging fsm step one melstate at a time
-	seenDelayedMsgInfoQueue []*DelayedMsgInfoQueueItem
+	seenUnreadDelayedMetaDeque *DelayedMetaDeque // this is initialized in FetchInitialState and is never `nil` from then onwards
 
 	// seen and read DelayedMsgsAcc are MerkleAccumulators that reset after the current melstate is finished generating, to prevent stale validations
 	seenDelayedMsgsAcc *merkleAccumulator.MerkleAccumulator
@@ -81,15 +143,15 @@ type MessageConsumer interface {
 
 // Defines an interface for fetching a MEL state by parent chain block hash.
 //
-// If the initial implementation is melDB then the melState's seenDelayedMsgInfoQueue will be
+// If the initial implementation is melDB then the melState's seenUnreadDelayedMetaDeque will be
 // initialized automatically but for non-melDB implementations:
 //   - either DelayedMessagesSeen must equal DelayedMessagesRead
 //     (OR)
-//   - seenDelayedMsgInfoQueue must be manually initialized using SetSeenDelayedMsgInfoQueue
-type StateFetcher interface {
-	// GetState should initialize seenDelayedMsgInfoQueue in case the initial state's DelayedMessagedSeen is ahead of DelayedMessagedRead
-	GetState(
-		ctx context.Context, parentChainBlockHash common.Hash,
+//   - seenUnreadDelayedMetaDeque must be manually initialized using SetSeenUnreadDelayedMetaDeque
+type InitialStateFetcher interface {
+	// FetchInitialState should initialize seenUnreadDelayedMetaDeque in case the initial state's DelayedMessagedSeen is ahead of DelayedMessagedRead
+	FetchInitialState(
+		ctx context.Context, parentChainBlockHash common.Hash, finalizedBlock uint64,
 	) (*State, error)
 }
 
@@ -112,17 +174,6 @@ func (s *State) Clone() *State {
 		copy(clone[:], partial[:])
 		delayedMessageMerklePartials = append(delayedMessageMerklePartials, clone)
 	}
-	var seenDelayedMsgInfoQueue []*DelayedMsgInfoQueueItem
-	for _, item := range s.seenDelayedMsgInfoQueue {
-		merkleRoot := common.Hash{}
-		copy(merkleRoot[:], item.MerkleRoot[:])
-		seenDelayedMsgInfoQueue = append(seenDelayedMsgInfoQueue, &DelayedMsgInfoQueueItem{
-			Index:                       item.Index,
-			Read:                        item.Read,
-			MerkleRoot:                  merkleRoot,
-			MelStateParentChainBlockNum: item.MelStateParentChainBlockNum,
-		})
-	}
 	return &State{
 		Version:                            s.Version,
 		ParentChainId:                      s.ParentChainId,
@@ -136,7 +187,7 @@ func (s *State) Clone() *State {
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagedSeen:                s.DelayedMessagedSeen,
 		DelayedMessageMerklePartials:       delayedMessageMerklePartials,
-		seenDelayedMsgInfoQueue:            seenDelayedMsgInfoQueue,
+		seenUnreadDelayedMetaDeque:         s.seenUnreadDelayedMetaDeque.Clone(),
 	}
 }
 
@@ -162,7 +213,7 @@ func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) error
 	if err != nil {
 		return err
 	}
-	s.seenDelayedMsgInfoQueue = append(s.seenDelayedMsgInfoQueue, &DelayedMsgInfoQueueItem{
+	s.seenUnreadDelayedMetaDeque.Add(&DelayedMeta{
 		Index:                       s.DelayedMessagedSeen,
 		MerkleRoot:                  merkleRoot,
 		MelStateParentChainBlockNum: s.ParentChainBlockNumber,
@@ -187,25 +238,12 @@ func (s *State) SetReadDelayedMsgsAcc(acc *merkleAccumulator.MerkleAccumulator) 
 	s.readDelayedMsgsAcc = acc
 }
 
-func (s *State) GetSeenDelayedMsgInfoQueue() []*DelayedMsgInfoQueueItem {
-	return s.seenDelayedMsgInfoQueue
+func (s *State) GetSeenUnreadDelayedMetaDeque() *DelayedMetaDeque {
+	return s.seenUnreadDelayedMetaDeque
 }
 
-func (s *State) SetSeenDelayedMsgInfoQueue(seenDelayedMsgInfoQueue []*DelayedMsgInfoQueueItem) {
-	s.seenDelayedMsgInfoQueue = seenDelayedMsgInfoQueue
-}
-
-// TrimSeenDelayedMsgInfoQueue trims the seenDelayedMsgInfoQueue from left, such that the item is only removed if the corresponding delayed message is
-// read and the MelStateParentChainBlockNum is finalized- this is to make seenDelayedMsgInfoQueue as reorg resistant as possible
-func (s *State) TrimSeenDelayedMsgInfoQueue(finalizedBlock uint64) {
-	i := 0
-	for i < len(s.seenDelayedMsgInfoQueue) {
-		if !s.seenDelayedMsgInfoQueue[i].Read || s.seenDelayedMsgInfoQueue[i].MelStateParentChainBlockNum > finalizedBlock {
-			break
-		}
-		i++
-	}
-	s.seenDelayedMsgInfoQueue = s.seenDelayedMsgInfoQueue[i:]
+func (s *State) SetSeenUnreadDelayedMetaDeque(seenUnreadDelayedMetaDeque *DelayedMetaDeque) {
+	s.seenUnreadDelayedMetaDeque = seenUnreadDelayedMetaDeque
 }
 
 func ToPtrSlice[T any](list []T) []*T {

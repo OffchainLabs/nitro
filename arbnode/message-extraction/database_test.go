@@ -43,7 +43,7 @@ func TestMelDatabase(t *testing.T) {
 			t.Fatal("unexpected melState retrieved via GetState using parentChainBlockHash")
 		}
 	}
-	melState, err = melDb.GetState(ctx, headMelState.ParentChainBlockHash)
+	melState, err = melDb.FetchInitialState(ctx, headMelState.ParentChainBlockHash, headMelState.ParentChainBlockNumber)
 	checkMelState()
 	melState, err = melDb.State(ctx, headMelState.ParentChainBlockNumber)
 	checkMelState()
@@ -88,9 +88,10 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 		},
 	}
 	state := &meltypes.State{}
+	state.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 	state.SetReadDelayedMsgsAcc(merkleAccumulator.NewNonpersistentMerkleAccumulator())
 	require.NoError(t, err)
-	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize SeenDelayedMsgInfoQueue
+	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize seenUnreadDelayedMetaDeque
 	state.DelayedMessagedSeen++
 
 	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*arbnode.DelayedInboxMessage{delayedMsg}))

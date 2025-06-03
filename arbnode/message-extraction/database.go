@@ -33,11 +33,23 @@ func NewDatabase(db ethdb.Database) *Database {
 	return &Database{db}
 }
 
-// initializeSeenDelayedMsgInfoQueue is to be only called by the Start fsm step of MEL
-func (d *Database) initializeSeenDelayedMsgInfoQueue(ctx context.Context, state *meltypes.State) error {
-	if state.DelayedMessagedSeen == state.DelayedMessagesRead {
+// initializeSeenUnreadDelayedMetaDeque is to be only called by the Start fsm step of MEL
+func (d *Database) initializeSeenUnreadDelayedMetaDeque(ctx context.Context, state *meltypes.State, finalizedBlock uint64) error {
+	if state.DelayedMessagedSeen == state.DelayedMessagesRead && state.ParentChainBlockNumber <= finalizedBlock {
 		return nil
 	}
+	// To make the deque reorg resistant we will need to add more delayedMeta even though those messages are `Read`
+	// this is only relevant if finalizedBlock is behind the current head Mel state's ParentChainBlockNumber
+	targetDelayedMessagesRead := state.DelayedMessagesRead
+	if finalizedBlock > 0 && state.ParentChainBlockNumber > finalizedBlock {
+		finalizedMelState, err := d.State(ctx, finalizedBlock)
+		if err != nil {
+			return err
+		}
+		targetDelayedMessagesRead = finalizedMelState.DelayedMessagesRead
+	}
+	// We first find the melState whose DelayedMessagedSeen is just before the targetDelayedMessagesRead, so that we can construct a merkleAccumulator
+	// thats relevant to us
 	var err error
 	var prev *meltypes.State
 	delayedMsgIndexToParentChainBlockNum := make(map[uint64]uint64)
@@ -52,7 +64,7 @@ func (d *Database) initializeSeenDelayedMsgInfoQueue(ctx context.Context, state 
 				delayedMsgIndexToParentChainBlockNum[j] = curr.ParentChainBlockNumber
 			}
 		}
-		if prev.DelayedMessagedSeen <= state.DelayedMessagesRead {
+		if prev.DelayedMessagedSeen <= targetDelayedMessagesRead {
 			break
 		}
 		curr = prev
@@ -63,7 +75,8 @@ func (d *Database) initializeSeenDelayedMsgInfoQueue(ctx context.Context, state 
 	if err != nil {
 		return err
 	}
-	for index := prev.DelayedMessagedSeen; index < state.DelayedMessagesRead; index++ {
+	// We then walk forward the merkleAccumulator till targetDelayedMessagesRead
+	for index := prev.DelayedMessagedSeen; index < targetDelayedMessagesRead; index++ {
 		msg, err := d.fetchDelayedMessage(ctx, index)
 		if err != nil {
 			return err
@@ -73,8 +86,9 @@ func (d *Database) initializeSeenDelayedMsgInfoQueue(ctx context.Context, state 
 			return err
 		}
 	}
-	var seenDelayedMsgInfoQueue []*meltypes.DelayedMsgInfoQueueItem
-	for index := state.DelayedMessagesRead; index < state.DelayedMessagedSeen; index++ {
+	// Accumulator is now at the step we need, hence we start creating DelayedMeta for all the delayed messages that are seen but not read
+	seenUnreadDelayedMetaDeque := &meltypes.DelayedMetaDeque{}
+	for index := targetDelayedMessagesRead; index < state.DelayedMessagedSeen; index++ {
 		msg, err := d.fetchDelayedMessage(ctx, index)
 		if err != nil {
 			return err
@@ -87,18 +101,19 @@ func (d *Database) initializeSeenDelayedMsgInfoQueue(ctx context.Context, state 
 		if err != nil {
 			return err
 		}
-		seenDelayedMsgInfoQueue = append(seenDelayedMsgInfoQueue, &meltypes.DelayedMsgInfoQueueItem{
+		seenUnreadDelayedMetaDeque.Add(&meltypes.DelayedMeta{
 			Index:                       index,
+			Read:                        index < state.DelayedMessagesRead,
 			MerkleRoot:                  merkleRoot,
 			MelStateParentChainBlockNum: delayedMsgIndexToParentChainBlockNum[index],
 		})
 	}
-	state.SetSeenDelayedMsgInfoQueue(seenDelayedMsgInfoQueue)
+	state.SetSeenUnreadDelayedMetaDeque(seenUnreadDelayedMetaDeque)
 	return nil
 }
 
-// GetState method of the StateFetcher interface is implemented by the database as it would be used after the initial fetch
-func (d *Database) GetState(ctx context.Context, parentChainBlockHash common.Hash) (*meltypes.State, error) {
+// FetchInitialState method of the StateFetcher interface is implemented by the database as it would be used after the initial fetch
+func (d *Database) FetchInitialState(ctx context.Context, parentChainBlockHash common.Hash, finalizedBlock uint64) (*meltypes.State, error) {
 	headMelStateBlockNum, err := d.GetHeadMelStateBlockNum()
 	if err != nil {
 		return nil, fmt.Errorf("error getting HeadMelStateBlockNum from database: %w", err)
@@ -111,7 +126,7 @@ func (d *Database) GetState(ctx context.Context, parentChainBlockHash common.Has
 	if state.ParentChainBlockHash != parentChainBlockHash {
 		return nil, fmt.Errorf("head mel state's parentChainBlockHash in db: %v doesnt match the given parentChainBlockHash: %v ", state.ParentChainBlockHash, parentChainBlockHash)
 	}
-	if err = d.initializeSeenDelayedMsgInfoQueue(ctx, state); err != nil {
+	if err = d.initializeSeenUnreadDelayedMetaDeque(ctx, state, finalizedBlock); err != nil {
 		return nil, err
 	}
 	return state, nil
@@ -201,13 +216,12 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *meltypes.Stat
 	return dbBatch.Write()
 }
 
+// { 4, 10 } - > {2, 9}
 func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.State, msg *arbnode.DelayedInboxMessage, index uint64) (bool, error) {
-	seenDelayedInfoQueue := state.GetSeenDelayedMsgInfoQueue()
-	pos := index - seenDelayedInfoQueue[0].Index
-	delayedInfo := seenDelayedInfoQueue[pos]
+	delayedMeta := state.GetSeenUnreadDelayedMetaDeque().GetByIndex(index)
 	acc := state.GetReadDelayedMsgsAcc()
 	if acc == nil {
-		melStateParentChainBlockNum := delayedInfo.MelStateParentChainBlockNum
+		melStateParentChainBlockNum := delayedMeta.MelStateParentChainBlockNum
 		targetState, err := d.State(ctx, melStateParentChainBlockNum-1)
 		if err != nil {
 			return false, err
@@ -237,8 +251,8 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.
 	if err != nil {
 		return false, err
 	}
-	if merkleRoot == delayedInfo.MerkleRoot {
-		delayedInfo.Read = true
+	if merkleRoot == delayedMeta.MerkleRoot {
+		delayedMeta.Read = true
 		return true, nil
 	}
 	return false, nil
