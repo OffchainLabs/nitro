@@ -187,7 +187,7 @@ func (f *ReferenceDAFactory) ValidateConfig() error {
 
 func (f *ReferenceDAFactory) initializeComponents() error {
 	// Reference implementation always uses in-memory storage
-	f.storage = referenceda.NewInMemoryStorage()
+	f.storage = referenceda.GetInMemoryStorage()
 	f.validator = referenceda.NewDefaultValidator(f.storage)
 	return nil
 }

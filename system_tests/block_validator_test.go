@@ -81,7 +81,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	defer cleanup()
 
 	// Only authorize DAS keyset if we're using traditional DAS
-	if opts.dasModeString != "customda" && opts.dasModeString != "onchain" && dasSignerKey != nil {
+	if opts.dasModeString != "referenceda" && opts.dasModeString != "onchain" && dasSignerKey != nil {
 		authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
 	}
 
@@ -89,18 +89,15 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	validatorConfig.BlockValidator.Enable = true
 
 	// Configure validator based on DA mode
-	if opts.dasModeString == "customda" {
-		// For custom DA, copy the external provider configuration
-		validatorConfig.DA.Mode = "external"
-		validatorConfig.DA.ExternalProvider = l1NodeConfigA.DA.ExternalProvider
+	if opts.dasModeString == "referenceda" {
+		// For embedded referenceda, copy the configuration
+		validatorConfig.DA.Mode = "referenceda"
+		validatorConfig.DA.ReferenceDA.Enable = true
 
 		// Disable traditional DAS for validator
 		validatorConfig.DataAvailability.Enable = false
 
-		// CustomDA validators also need batch poster configuration
-		// to recognize custom DA messages
-		validatorConfig.BatchPoster.Enable = false
-		validatorConfig.BatchPoster.UseCustomDA = true
+		// No batch poster configuration needed for validator
 	} else {
 		// For traditional DAS, copy DataAvailability configuration
 		validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
@@ -397,10 +394,10 @@ func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-// TestBlockValidatorCustomDA tests the block validator with custom DA
-func TestBlockValidatorCustomDA(t *testing.T) {
+// TestBlockValidatorReferenceDA tests the block validator with embedded reference DA
+func TestBlockValidatorReferenceDA(t *testing.T) {
 	opts := Options{
-		dasModeString: "customda",
+		dasModeString: "referenceda",
 		workloadLoops: 1,
 		workload:      ethSend,
 		arbitrator:    true,

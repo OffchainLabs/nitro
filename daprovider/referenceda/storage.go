@@ -17,11 +17,20 @@ type InMemoryStorage struct {
 	preimages map[common.Hash][]byte
 }
 
-// NewInMemoryStorage creates a new in-memory storage implementation
-func NewInMemoryStorage() *InMemoryStorage {
-	return &InMemoryStorage{
-		preimages: make(map[common.Hash][]byte),
-	}
+var (
+	// singleton instance of InMemoryStorage
+	storageInstance *InMemoryStorage
+	storageOnce     sync.Once
+)
+
+// GetInMemoryStorage returns the singleton instance of InMemoryStorage
+func GetInMemoryStorage() *InMemoryStorage {
+	storageOnce.Do(func() {
+		storageInstance = &InMemoryStorage{
+			preimages: make(map[common.Hash][]byte),
+		}
+	})
+	return storageInstance
 }
 
 func (s *InMemoryStorage) Store(ctx context.Context, data []byte) error {

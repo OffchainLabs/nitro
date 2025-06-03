@@ -1661,6 +1661,10 @@ func setupConfigWithDAS(
 		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	case "onchain":
 		enableDas = false
+	case "referenceda":
+		// For referenceda, we use DAS chain config but will configure embedded referenceda later
+		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+		enableDas = false // We'll use referenceda instead of traditional DAS
 	default:
 		Fatal(t, "unknown storage type")
 	}
@@ -1695,7 +1699,7 @@ func setupConfigWithDAS(
 	var daWriter das.DataAvailabilityServiceWriter
 	var daHealthChecker das.DataAvailabilityServiceHealthChecker
 	var signatureVerifier *das.SignatureVerifier
-	if dasModeString != "onchain" {
+	if dasModeString != "onchain" && dasModeString != "referenceda" {
 		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, dasConfig, nil, nil)
 
 		Require(t, err)
@@ -1718,6 +1722,12 @@ func setupConfigWithDAS(
 		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
 		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
 		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
+	} else if dasModeString == "referenceda" {
+		// Configure for embedded referenceda mode
+		l1NodeConfigA.DA.Mode = "referenceda"
+		l1NodeConfigA.DA.ReferenceDA.Enable = true
+		l1NodeConfigA.DataAvailability.Enable = false
+		// Note: BatchPoster configuration is handled by the specific test that needs it
 	}
 
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
