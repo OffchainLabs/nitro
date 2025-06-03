@@ -202,7 +202,7 @@ func (f *ReferenceDAFactory) CreateWriter(ctx context.Context) (daprovider.Write
 		return nil, nil, nil
 	}
 
-	writer := referenceda.NewWriter(f.validator)
+	writer := referenceda.NewWriter()
 	return writer, nil, nil
 }
 

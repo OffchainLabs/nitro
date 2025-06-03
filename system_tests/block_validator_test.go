@@ -77,6 +77,12 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
+
+	// Configure batch poster for referenceda mode
+	if opts.dasModeString == "referenceda" {
+		builder.nodeConfig.BatchPoster.UseCustomDA = true
+	}
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 

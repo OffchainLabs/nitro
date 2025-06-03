@@ -1143,12 +1143,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	compressedBytes := s.compressedBuffer.Bytes()
 	fullMsg := make([]byte, 1, len(compressedBytes)+1)
 
-	// Use the CustomDA header flag if specified, otherwise use Brotli header
-	if s.useCustomDA {
-		fullMsg[0] = daprovider.CustomDAMessageHeaderFlag
-	} else {
-		fullMsg[0] = daprovider.BrotliMessageHeaderByte
-	}
+	fullMsg[0] = daprovider.BrotliMessageHeaderByte
 
 	fullMsg = append(fullMsg, compressedBytes...)
 	return fullMsg, nil

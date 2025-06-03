@@ -76,7 +76,7 @@ const BlobHashesHeaderFlag byte = L1AuthenticatedMessageHeaderFlag | 0x10 // 0x5
 const BrotliMessageHeaderByte byte = 0
 
 // CustomDAMessageHeaderFlag indicates that this message uses a custom data availability system.
-const CustomDAMessageHeaderFlag byte = L1AuthenticatedMessageHeaderFlag | 0x01 // 0x41
+const CustomDAMessageHeaderFlag byte = 0x01
 
 // KnownHeaderBits is all header bits with known meaning to this nitro version
 const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | BrotliMessageHeaderByte | CustomDAMessageHeaderFlag
@@ -109,7 +109,7 @@ func IsBlobHashesHeaderByte(header byte) bool {
 }
 
 func IsCustomDAMessageHeaderByte(header byte) bool {
-	return hasBits(header, CustomDAMessageHeaderFlag)
+	return header == CustomDAMessageHeaderFlag
 }
 
 func IsBrotliMessageHeaderByte(b uint8) bool {
