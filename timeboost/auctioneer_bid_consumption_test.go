@@ -42,6 +42,8 @@ func (h *auctioneerTestHelper) resetState() {
 	h.auctioneer.unackedBids = make(map[string]*pubsub.Message[*JsonValidatedBid])
 	h.auctioneer.unackedBidsMutex.Unlock()
 
+	h.auctioneer.isPrimary.Store(true)
+
 	for {
 		select {
 		case <-h.auctioneer.bidsReceiver:
