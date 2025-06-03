@@ -3123,8 +3123,7 @@ impl Machine {
                                     .expect("Failed to generate KZG preimage proof");
                             }
                             PreimageType::CustomDA => {
-                                // TODO: Implement proper CustomDA proof generation
-                                // For now, just use the raw preimage as a simple proof
+                                // The proofs for these preimage types are just the raw preimages.
                                 data.extend(preimage);
                             }
                         }
