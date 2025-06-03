@@ -411,7 +411,7 @@ func (s *BOLDStateProvider) messageNum(md *l2stateprovider.AssociatedAssertionMe
 // virtualState returns an optional global state.
 //
 // If messageNum is a virtual block or the last real block to which this
-// validator's assertion committed, then this function retuns a global state
+// validator's assertion committed, then this function returns a global state
 // representing that virtual block's finished machine. Otherwise, it returns
 // an Option.None.
 //

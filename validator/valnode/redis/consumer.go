@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -13,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/pubsub"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -66,7 +66,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	}
 	workers := s.config.Workers
 	if workers == 0 {
-		workers = runtime.NumCPU()
+		workers = util.GoMaxProcs()
 	}
 	workQueue := make(chan workUnit, workers)
 	tokensCount := workers
@@ -93,7 +93,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				}
 				select {
 				case <-ctx.Done():
-					log.Info("Context done while checking redis stream existance", "error", ctx.Err().Error())
+					log.Info("Context done while checking redis stream existence", "error", ctx.Err().Error())
 					return
 				case <-time.After(time.Millisecond * 100):
 				}

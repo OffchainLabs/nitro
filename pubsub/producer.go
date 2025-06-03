@@ -154,7 +154,7 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 			// If we found the error key, then delete it and return the error to the promise and continue.
 			p.client.Del(ctx, errorKey)
 			promise.ProduceError(errors.New(errorResponse))
-			log.Error("error getting response", "error", errorResponse)
+			log.Debug("consumer returned error", "error", errorResponse, "msgId", id)
 			errored++
 			delete(p.promises, id)
 			continue
@@ -169,7 +169,7 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 				// The request this producer is waiting for has been past its TTL or is older than current PEL's lower,
 				// so safe to error and stop tracking this promise
 				promise.ProduceError(errors.New("error getting response, request has been waiting for too long"))
-				log.Error("error getting response, request has been waiting past its TTL")
+				log.Debug("request timed out waiting for response", "msgId", id, "allowedOldestId", allowedOldestID)
 				errored++
 				delete(p.promises, id)
 			}

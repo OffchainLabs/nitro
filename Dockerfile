@@ -81,7 +81,9 @@ COPY ./gethhook ./gethhook
 COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
-COPY ./das/dastree ./das/dastree
+COPY ./daprovider ./daprovider
+COPY ./daprovider/das/dasutil ./daprovider/das/dasutil
+COPY ./daprovider/das/dastree ./daprovider/das/dastree
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
@@ -313,6 +315,7 @@ FROM nitro-node-slim AS nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/daprovider  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/

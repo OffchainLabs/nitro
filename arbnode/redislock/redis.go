@@ -126,6 +126,48 @@ func (l *Simple) attemptLock(ctx context.Context) (bool, error) {
 	return gotLock, nil
 }
 
+func (l *Simple) AttemptLockAndPeriodicallyRefreshIt(ctx context.Context, release <-chan struct{}) bool {
+	gotLock, err := l.attemptLock(ctx)
+	if err != nil {
+		log.Error("attemptLock returned error", "err", err)
+		return false
+	}
+	if !gotLock {
+		return false
+	}
+
+	refreshLock := func() {
+		defer l.Release(ctx)
+		refreshTick := time.Tick(l.config().RefreshDuration)
+		for {
+			select {
+			case <-release:
+				return
+			case <-ctx.Done():
+				return
+			default:
+				select {
+				case <-release:
+					return
+				case <-ctx.Done():
+					return
+				case <-refreshTick:
+					gotLock, err := l.attemptLock(ctx)
+					if err != nil {
+						log.Error("attemptLock returned error during refresh: %w", err)
+					}
+					if !gotLock {
+						log.Error("unable to refresh lock since it is already taken by other")
+					}
+				}
+			}
+		}
+	}
+	go refreshLock()
+
+	return true
+}
+
 func (l *Simple) AttemptLock(ctx context.Context) bool {
 	if l.Locked() {
 		return true
@@ -203,6 +245,8 @@ func (l *Simple) Release(ctx context.Context) {
 
 	if err != nil {
 		log.Error("release returned error", "err", err)
+	} else {
+		atomicTimeWrite(&l.lockedUntil, time.Time{})
 	}
 }
 

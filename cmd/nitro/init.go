@@ -18,7 +18,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/dbutil"
 )
@@ -718,6 +718,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	var chainConfig *params.ChainConfig
+	var genesisArbOSInit *params.ArbOSInit
 
 	if config.Init.GenesisJsonFile != "" {
 		if initDataReader != nil {
@@ -747,6 +748,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			Accounts: accounts,
 		})
 		chainConfig = gen.Config
+		genesisArbOSInit = gen.ArbOSInit
 	}
 
 	var l2BlockChain *core.BlockChain
@@ -855,8 +857,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
 			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
 		}
-
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, tracer, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -916,7 +917,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 	}
 
 	var localWg sync.WaitGroup
-	threads := runtime.NumCPU()
+	threads := util.GoMaxProcs()
 	var failedTxIndiciesMutex sync.Mutex
 	failedTxIndicies := make(map[common.Hash]uint64)
 	for thread := 0; thread < threads; thread++ {
