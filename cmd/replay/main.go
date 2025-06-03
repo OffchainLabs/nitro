@@ -162,6 +162,8 @@ func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
 	return nil
 }
 
+// TODO daprovider.Reader implementation for CustomDA
+
 // To generate:
 // key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
 // sig, _ := crypto.Sign(make([]byte, 32), key)
