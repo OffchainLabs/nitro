@@ -7,7 +7,8 @@ import (
 	"testing"
 	"time"
 
-	lightclientmock "github.com/EspressoSystems/espresso-network-go/light-client-mock"
+	lightclientmock "github.com/EspressoSystems/espresso-network/sdks/go/light-client-mock"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"

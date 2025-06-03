@@ -160,29 +160,6 @@ stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(st
 CBROTLI_WASM_BUILD_ARGS ?=-d
 
 
-ESPRESSO_NETWORK_GO_VER ?= 0.0.37
-ESPRESSO_TAR = espresso-network-go-$(ESPRESSO_NETWORK_GO_VER).tar.gz
-ESPRESSO_URL = https://github.com/EspressoSystems/espresso-network-go/archive/refs/tags/v$(ESPRESSO_NETWORK_GO_VER).tar.gz
-ESPRESSO_DIR = espresso-network-go
-
-# Download the tarball
-$(ESPRESSO_TAR):
-	curl -L -o $@ $(ESPRESSO_URL)
-
-# Extract into target directory (strip the top-level folder)
-$(ESPRESSO_DIR): $(ESPRESSO_TAR)
-	@echo "Extracting $(ESPRESSO_TAR) into $(ESPRESSO_DIR)/..."
-	rm -rf $(ESPRESSO_DIR)
-	mkdir -p $(ESPRESSO_DIR)
-	tar -xzf $(ESPRESSO_TAR) --strip-components=1 -C $(ESPRESSO_DIR)
-
-espresso_crypto_dir = $(ESPRESSO_DIR)/verification/rust
-espresso_crypto_files = $(wildcard $(espresso_crypto_dir)/*.toml $(espresso_crypto_dir)/src/*.rs)
-espresso_crypto_lib = $(output_root)/lib/libespresso_crypto_helper
-espresso_crypto_filename = libespresso_crypto_helper.so
-espresso_target_lib = $(ESPRESSO_DIR)/target/lib
-
-
 # Normalize architecture names
 ifeq ($(UNAME_M),arm64)
     # Apple Silicon reports as arm64, but Rust uses aarch64
@@ -217,16 +194,10 @@ else
 	export LD_LIBRARY_PATH := $(shell pwd)/target/lib:$LD_LIBRARY_PATH
 endif
 
-
 # user targets
 .PHONY: build-espresso-crypto-lib
-build-espresso-crypto-lib: $(ESPRESSO_DIR)
-	mkdir -p `dirname $(espresso_crypto_lib)`
-	cargo build --release --manifest-path $(espresso_crypto_dir)/Cargo.toml
-	mkdir -p $(espresso_target_lib)
-	install $(espresso_crypto_dir)/target/release/libespresso_crypto_helper.$(LIB_EXT) \
-		$(espresso_target_lib)/libespresso_crypto_helper-$(TRIPLE).$(LIB_EXT)
-	install $(espresso_crypto_dir)/target/release/$(espresso_crypto_filename) $(output_root)/lib/libespresso_crypto_helper-$(TRIPLE).$(LIB_EXT)
+build-espresso-crypto-lib:
+	./scripts/prepare-espresso-crypto-helper
 
 .PHONY: push
 push: lint test-go .make/fmt

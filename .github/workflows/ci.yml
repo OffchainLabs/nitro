@@ -149,9 +149,6 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-        
-      - name: Install cbindgen
-        run: cargo install --force cbindgen
 
       - name: Cache Build Products
         uses: actions/cache@v3
@@ -278,7 +275,7 @@ jobs:
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GITHUB_WORKSPACE/target/lib
           make build-prover-bin
           target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/TestProgramStorage/block_inputs.json"
-      
+
       - name: run jit prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Use `id -u` to check if the script is being run as root.
+# If not, prepend `sudo` to commands.
+SUDO=$(if [ "$(id -u)" -ne 0 ]; then echo sudo; fi)
+
+arch=$(uname -m)
+os=$(uname -s)
+
+if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then
+    if [ "$os" = "Darwin" ]; then
+        triple="aarch64-apple-darwin.dylib"
+    else
+        triple="aarch64-unknown-linux-gnu.so"
+    fi
+elif [ "$arch" = "x86_64" ]; then
+    if [ "$os" = "Darwin" ]; then
+        triple="x86_64-apple-darwin.dylib"
+    else
+        triple="x86_64-unknown-linux-gnu.so"
+    fi
+else
+    echo "ERROR: $arch is not supported"
+    exit 1
+fi
+
+go get github.com/EspressoSystems/espresso-network/sdks/go
+go get github.com/EspressoSystems/espresso-network/sdks/go/download
+
+$SUDO go run github.com/EspressoSystems/espresso-network/sdks/go/download clean
+
+fileName="libespresso_crypto_helper-$triple"
+
+# Dynamically fetch the latest Go SDK release tag from GitHub
+latest_tag=$(curl -s https://api.github.com/repos/EspressoSystems/espresso-network/releases | grep -o 'sdks/go/v[0-9.]*' | head -n 1)
+if [ -z "$latest_tag" ]; then
+    echo "ERROR: Could not fetch latest Espresso Go SDK release tag."
+    exit 1
+fi
+echo "using Espresso Go SDK release tag: $latest_tag"
+checksum=$(curl -L "https://github.com/EspressoSystems/espresso-network/releases/download/${latest_tag//\//%2F}/$fileName.sha256")
+
+echo "Checksum: $checksum"
+
+url="https://github.com/EspressoSystems/espresso-network/releases/download/${latest_tag//\//%2F}/$fileName"
+
+echo "downloading from $url"
+
+mkdir -p ./target/lib
+curl -L "$url" -o ./target/lib/$fileName
+
+$SUDO go run github.com/EspressoSystems/espresso-network/sdks/go/download link -c $checksum -f ./target/lib/$fileName
