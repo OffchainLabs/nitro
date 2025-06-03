@@ -224,7 +224,7 @@ func mainImpl() int {
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
 	// If sequencer and signing is enabled or batchposter is enabled without
 	// external signing sequencer will need a key.
-	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
+	sequencerNeedsKey := (nodeConfig.Node.Sequencer && nodeConfig.Node.Feed.Output.Signed) ||
 		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DataAvailability.Enable))
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
