@@ -950,8 +950,8 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 		isAlreadyKnown = isAlreadyKnown || strings.Contains(err.Error(), "nonce too low")
 		// If we previously sent this nonce and the same tx, some L1 clients may return ReplacementNotAllowed instead of
 		// an already known error (might be due to their cache size constraints) so we dont return an error in such a case
-		_, _, err := p.client.TransactionByHash(ctx, newTx.FullTx.Hash())
-		isAlreadyKnown = isAlreadyKnown || (strings.Contains(err.Error(), "ReplacementNotAllowed") && err == nil)
+		_, _, errTxByHash := p.client.TransactionByHash(ctx, newTx.FullTx.Hash())
+		isAlreadyKnown = isAlreadyKnown || (strings.Contains(err.Error(), "ReplacementNotAllowed") && errTxByHash == nil)
 		if !isAlreadyKnown {
 			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "blobFeeCap", newTx.FullTx.BlobGasFeeCap(), "gas", newTx.FullTx.Gas())
 			return err
@@ -1315,7 +1315,7 @@ type ExternalSignerCfg struct {
 	// API method name (e.g. eth_signTransaction).
 	Method string `koanf:"method"`
 	// (Optional) Path to the external signer root CA certificate.
-	// This allows us to use self-signed certificats on the external signer.
+	// This allows us to use self-signed certificates on the external signer.
 	RootCA string `koanf:"root-ca"`
 	// (Optional) Client certificate for mtls.
 	ClientCert string `koanf:"client-cert"`

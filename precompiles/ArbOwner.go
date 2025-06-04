@@ -60,15 +60,15 @@ func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error)
 	return c.State.ChainOwners().AllMembers(65536)
 }
 
-// SetNativeTokenEnabledFrom sets a time in epoch seconds when the native token
+// SetNativeTokenManagementFrom sets a time in epoch seconds when the native token
 // management becomes enabled. Setting it to 0 disables the feature.
 // If the feature is disabled, then the time must be at least 7 days in the
 // future.
-func (con ArbOwner) SetNativeTokenEnabledFrom(c ctx, evm mech, timestamp uint64) error {
+func (con ArbOwner) SetNativeTokenManagementFrom(c ctx, evm mech, timestamp uint64) error {
 	if timestamp == 0 {
-		return c.State.SetNativeTokenEnabledFromTime(0)
+		return c.State.SetNativeTokenManagementFromTime(0)
 	}
-	stored, err := c.State.NativeTokenEnabledFromTime()
+	stored, err := c.State.NativeTokenManagementFromTime()
 	if err != nil {
 		return err
 	}
@@ -82,17 +82,17 @@ func (con ArbOwner) SetNativeTokenEnabledFrom(c ctx, evm mech, timestamp uint64)
 		(stored > now+NativeTokenEnableDelay && timestamp < now+NativeTokenEnableDelay) {
 		return ErrNativeTokenDelay
 	}
-	// If the feature is scheduled to be enabled earlier than the minumum delay,
+	// If the feature is scheduled to be enabled earlier than the minimum delay,
 	// then the new time to enable it must be only further in the future.
 	if stored > now && stored <= now+NativeTokenEnableDelay && timestamp < stored {
 		return ErrNativeTokenBackward
 	}
-	return c.State.SetNativeTokenEnabledFromTime(timestamp)
+	return c.State.SetNativeTokenManagementFromTime(timestamp)
 }
 
 // AddNativeTokenOwner adds account as a native token owner
 func (con ArbOwner) AddNativeTokenOwner(c ctx, evm mech, newOwner addr) error {
-	enabledTime, err := c.State.NativeTokenEnabledFromTime()
+	enabledTime, err := c.State.NativeTokenManagementFromTime()
 	if err != nil {
 		return err
 	}
@@ -141,6 +141,9 @@ func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error 
 
 // SetSpeedLimit sets the computational speed limit for the chain
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
+	if limit == 0 {
+		return errors.New("speed limit must be nonzero")
+	}
 	return c.State.L2PricingState().SetSpeedLimitPerSecond(limit)
 }
 
@@ -151,6 +154,9 @@ func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
 
 // SetL2GasPricingInertia sets the L2 gas pricing inertia
 func (con ArbOwner) SetL2GasPricingInertia(c ctx, evm mech, sec uint64) error {
+	if sec == 0 {
+		return errors.New("price inertia must be nonzero")
+	}
 	return c.State.L2PricingState().SetPricingInertia(sec)
 }
 
