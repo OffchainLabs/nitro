@@ -196,13 +196,6 @@ func (r *CustomDAPreimageReader) RecoverPayloadFromBatch(
 		panic(fmt.Errorf("failed to resolve CustomDA preimage after validation: %w", err))
 	}
 
-	// Record the sequencer message as a preimage if requested
-	// This is needed for fraud proof verification
-	if preimages != nil {
-		preimageRecorder := daprovider.RecordPreimagesTo(preimages)
-		preimageRecorder(customDAPreimageHash, sequencerMsg, arbutil.CustomDAPreimageType)
-	}
-
 	log.Info("CustomDA batch recovered",
 		"batchNum", batchNum,
 		"hash", customDAPreimageHash.Hex(),
