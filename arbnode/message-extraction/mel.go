@@ -32,6 +32,10 @@ type MessageExtractionConfig struct {
 	RetryInterval time.Duration `koanf:"retry-interval"`
 }
 
+func (c *MessageExtractionConfig) Validate() error {
+	return nil
+}
+
 var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	Enable:        false,
 	RetryInterval: defaultRetryInterval,
