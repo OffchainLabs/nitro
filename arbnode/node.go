@@ -28,10 +28,12 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
 	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -49,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/bold"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
@@ -706,6 +709,7 @@ func getInboxTrackerAndReader(
 }
 
 func getMessageExtractor(
+	ctx context.Context,
 	config *Config,
 	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
@@ -716,16 +720,71 @@ func getMessageExtractor(
 		return nil, nil
 	}
 	melDB := mel.NewDatabase(arbDb)
+	initialState, err := createInitialMELState(ctx, deployInfo, l1client)
+	if err != nil {
+		return nil, err
+	}
+	if err = melDB.SaveState(ctx, initialState); err != nil {
+		return nil, fmt.Errorf("failed to save initial mel state: %w", err)
+	}
 	return mel.NewMessageExtractor(
 		l1client,
 		deployInfo,
-		nil, // TODO: Provide an initial state fetcher.
+		melDB, // MEL db can also act as the initial state fetcher.
 		melDB,
 		txStreamer,
 		nil, // TODO: Pass in da readers.
-		common.Hash{},
+		initialState.ParentChainBlockHash,
 		time.Second,
 	)
+}
+
+func createInitialMELState(
+	ctx context.Context,
+	addrs *chaininfo.RollupAddresses,
+	client *ethclient.Client,
+) (*meltypes.State, error) {
+	// Create an initial MEL state from the latest confirmed assertion.
+	rollup, err := rollupgen.NewRollupUserLogic(addrs.Rollup, client)
+	if err != nil {
+		return nil, err
+	}
+	confirmedHash, err := rollup.LatestConfirmed(&bind.CallOpts{})
+	if err != nil {
+		return nil, err
+	}
+	latestConfirmedAssertion, err := bold.ReadBoldAssertionCreationInfo(
+		ctx,
+		rollup,
+		client,
+		addrs.Rollup,
+		confirmedHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+	startBlock, err := client.BlockByNumber(ctx, new(big.Int).SetUint64(latestConfirmedAssertion.CreationL1Block))
+	if err != nil {
+		return nil, err
+	}
+	chainId, err := client.ChainID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &meltypes.State{
+		Version:                            0,
+		BatchPostingTargetAddress:          addrs.SequencerInbox,
+		DelayedMessagePostingTargetAddress: addrs.Bridge,
+		ParentChainId:                      chainId.Uint64(),
+		ParentChainBlockNumber:             startBlock.NumberU64(),
+		ParentChainBlockHash:               startBlock.Hash(),
+		ParentChainPreviousBlockHash:       startBlock.ParentHash(),
+		MessageAccumulator:                 common.Hash{},
+		DelayedMessagedSeen:                1,
+		DelayedMessagesRead:                1, // Assumes we have read the init message.
+		DelayedMessageMerklePartials:       make([]common.Hash, 0),
+		MsgCount:                           1,
+	}, nil
 }
 
 func getBlockValidator(
@@ -990,6 +1049,9 @@ func getDelayedSequencer(
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
+	if inboxReader == nil {
+		return nil, nil
+	}
 	if exec == nil {
 		return nil, nil
 	}
@@ -1136,7 +1198,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	messageExtractor, err := getMessageExtractor(config, l1client, deployInfo, arbDb, txStreamer)
+	messageExtractor, err := getMessageExtractor(ctx, config, l1client, deployInfo, arbDb, txStreamer)
 	if err != nil {
 		return nil, err
 	}
