@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -547,7 +546,7 @@ func Test_parseMessageScaffoldsFromLogs(t *testing.T) {
 func Test_sortableMessageList(t *testing.T) {
 	hash1 := common.BigToHash(big.NewInt(1))
 	hash2 := common.BigToHash(big.NewInt(2))
-	messages := []*arbnode.DelayedInboxMessage{
+	messages := []*meltypes.DelayedInboxMessage{
 		{
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{

@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -232,7 +231,7 @@ func (m *mockMELDB) SaveState(
 func (m *mockMELDB) SaveDelayedMessages(
 	_ context.Context,
 	_ *meltypes.State,
-	_ []*arbnode.DelayedInboxMessage,
+	_ []*meltypes.DelayedInboxMessage,
 ) error {
 	return nil
 }
@@ -240,6 +239,6 @@ func (m *mockMELDB) ReadDelayedMessage(
 	_ context.Context,
 	_ *meltypes.State,
 	_ uint64,
-) (*arbnode.DelayedInboxMessage, error) {
+) (*meltypes.DelayedInboxMessage, error) {
 	return nil, errors.New("unimplemented")
 }

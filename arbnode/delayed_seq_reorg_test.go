@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -29,13 +30,13 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	init, err := streamer.GetMessage(0)
 	Require(t, err)
 
-	initMsgDelayed := &DelayedInboxMessage{
+	initMsgDelayed := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: [32]byte{},
 		Message:        init.Message,
 	}
 	delayedRequestId := common.BigToHash(common.Big1)
-	userDelayed := &DelayedInboxMessage{
+	userDelayed := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
 		Message: &arbostypes.L1IncomingMessage{
@@ -50,7 +51,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		},
 	}
 	delayedRequestId2 := common.BigToHash(common.Big2)
-	userDelayed2 := &DelayedInboxMessage{
+	userDelayed2 := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: userDelayed.AfterInboxAcc(),
 		Message: &arbostypes.L1IncomingMessage{
@@ -64,12 +65,12 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
+	err = tracker.AddDelayedMessages([]*meltypes.DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
 	Require(t, err)
 
 	serializedInitMsgBatch := make([]byte, 40)
 	binary.BigEndian.PutUint64(serializedInitMsgBatch[32:], 1)
-	initMsgBatch := &SequencerInboxBatch{
+	initMsgBatch := &meltypes.SequencerInboxBatch{
 		BlockHash:              [32]byte{},
 		ParentChainBlockNumber: 0,
 		SequenceNumber:         0,
@@ -85,7 +86,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	}
 	serializedUserMsgBatch := make([]byte, 40)
 	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 2)
-	userMsgBatch := &SequencerInboxBatch{
+	userMsgBatch := &meltypes.SequencerInboxBatch{
 		BlockHash:              [32]byte{},
 		ParentChainBlockNumber: 0,
 		SequenceNumber:         1,
@@ -99,7 +100,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		BridgeAddress:          [20]byte{},
 		Serialized:             serializedUserMsgBatch,
 	}
-	emptyBatch := &SequencerInboxBatch{
+	emptyBatch := &meltypes.SequencerInboxBatch{
 		BlockHash:              [32]byte{},
 		ParentChainBlockNumber: 0,
 		SequenceNumber:         2,
@@ -113,7 +114,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		BridgeAddress:          [20]byte{},
 		Serialized:             serializedUserMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
+	err = tracker.AddSequencerBatches(ctx, nil, []*meltypes.SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
 	Require(t, err)
 
 	msgCount, err := streamer.GetMessageCount()
@@ -135,7 +136,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	}
 
 	// By modifying the timestamp of the userDelayed message, and adding it again, we cause a reorg
-	userDelayedModified := &DelayedInboxMessage{
+	userDelayedModified := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
 		Message: &arbostypes.L1IncomingMessage{
@@ -149,7 +150,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayedModified})
+	err = tracker.AddDelayedMessages([]*meltypes.DelayedInboxMessage{userDelayedModified})
 	Require(t, err)
 
 	// userMsgBatch, and emptyBatch will be reorged out
@@ -185,7 +186,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		Fail(t, "Unexpected delayed message timestamp", userDelayedModified.Message.Header.Timestamp, "(expected", userDelayed.Message.Header.Timestamp, ")")
 	}
 
-	emptyBatch = &SequencerInboxBatch{
+	emptyBatch = &meltypes.SequencerInboxBatch{
 		BlockHash:              [32]byte{},
 		ParentChainBlockNumber: 0,
 		SequenceNumber:         1,
@@ -199,7 +200,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		BridgeAddress:          [20]byte{},
 		Serialized:             serializedInitMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{emptyBatch})
+	err = tracker.AddSequencerBatches(ctx, nil, []*meltypes.SequencerInboxBatch{emptyBatch})
 	Require(t, err)
 
 	msgCount, err = streamer.GetMessageCount()
@@ -229,13 +230,13 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	init, err := streamer.GetMessage(0)
 	Require(t, err)
 
-	initMsgDelayed := &DelayedInboxMessage{
+	initMsgDelayed := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: [32]byte{},
 		Message:        init.Message,
 	}
 	delayedRequestId := common.BigToHash(common.Big1)
-	userDelayed := &DelayedInboxMessage{
+	userDelayed := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
 		Message: &arbostypes.L1IncomingMessage{
@@ -250,7 +251,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		},
 	}
 	delayedRequestId2 := common.BigToHash(common.Big2)
-	userDelayed2 := &DelayedInboxMessage{
+	userDelayed2 := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: userDelayed.AfterInboxAcc(),
 		Message: &arbostypes.L1IncomingMessage{
@@ -264,12 +265,12 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
+	err = tracker.AddDelayedMessages([]*meltypes.DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
 	Require(t, err)
 
 	serializedInitMsgBatch := make([]byte, 40)
 	binary.BigEndian.PutUint64(serializedInitMsgBatch[32:], 1)
-	initMsgBatch := &SequencerInboxBatch{
+	initMsgBatch := &meltypes.SequencerInboxBatch{
 		BlockHash:              [32]byte{},
 		ParentChainBlockNumber: 0,
 		SequenceNumber:         0,
@@ -285,7 +286,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	}
 	serializedUserMsgBatch := make([]byte, 40)
 	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 2)
-	userMsgBatch := &SequencerInboxBatch{
+	userMsgBatch := &meltypes.SequencerInboxBatch{
 		BlockHash:              [32]byte{},
 		ParentChainBlockNumber: 0,
 		SequenceNumber:         1,
@@ -299,7 +300,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		BridgeAddress:          [20]byte{},
 		Serialized:             serializedUserMsgBatch,
 	}
-	emptyBatch := &SequencerInboxBatch{
+	emptyBatch := &meltypes.SequencerInboxBatch{
 		BlockHash:              [32]byte{},
 		ParentChainBlockNumber: 0,
 		SequenceNumber:         2,
@@ -313,7 +314,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		BridgeAddress:          [20]byte{},
 		Serialized:             serializedUserMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
+	err = tracker.AddSequencerBatches(ctx, nil, []*meltypes.SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
 	Require(t, err)
 
 	msgCount, err := streamer.GetMessageCount()
@@ -336,7 +337,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 
 	// Adding an already existing message alongside a new one shouldn't cause a reorg
 	delayedRequestId3 := common.BigToHash(common.Big3)
-	userDelayed3 := &DelayedInboxMessage{
+	userDelayed3 := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: userDelayed2.AfterInboxAcc(),
 		Message: &arbostypes.L1IncomingMessage{
@@ -350,7 +351,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayed2, userDelayed3})
+	err = tracker.AddDelayedMessages([]*meltypes.DelayedInboxMessage{userDelayed2, userDelayed3})
 	Require(t, err)
 
 	msgCount, err = streamer.GetMessageCount()
@@ -366,7 +367,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	}
 
 	// By modifying the timestamp of the userDelayed2 message, and adding it again, we cause a reorg
-	userDelayed2Modified := &DelayedInboxMessage{
+	userDelayed2Modified := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: userDelayed.AfterInboxAcc(),
 		Message: &arbostypes.L1IncomingMessage{
@@ -380,7 +381,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayed2Modified})
+	err = tracker.AddDelayedMessages([]*meltypes.DelayedInboxMessage{userDelayed2Modified})
 	Require(t, err)
 
 	msgCount, err = streamer.GetMessageCount()
@@ -414,7 +415,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		Fail(t, "Unexpected delayed message timestamp", userDelayed2Modified.Message.Header.Timestamp, "(expected", userDelayed2.Message.Header.Timestamp, ")")
 	}
 
-	emptyBatch = &SequencerInboxBatch{
+	emptyBatch = &meltypes.SequencerInboxBatch{
 		BlockHash:              [32]byte{},
 		ParentChainBlockNumber: 0,
 		SequenceNumber:         1,
@@ -428,7 +429,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		BridgeAddress:          [20]byte{},
 		Serialized:             serializedInitMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{emptyBatch})
+	err = tracker.AddSequencerBatches(ctx, nil, []*meltypes.SequencerInboxBatch{emptyBatch})
 	Require(t, err)
 
 	msgCount, err = streamer.GetMessageCount()

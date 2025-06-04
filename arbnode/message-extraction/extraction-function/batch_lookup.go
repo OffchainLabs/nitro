@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -23,8 +22,8 @@ func parseBatchesFromBlock(
 	parentChainBlock *types.Block,
 	receiptFetcher ReceiptFetcher,
 	eventUnpacker eventUnpacker,
-) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-	allBatches := make([]*arbnode.SequencerInboxBatch, 0)
+) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+	allBatches := make([]*meltypes.SequencerInboxBatch, 0)
 	allBatchTxs := make([]*types.Transaction, 0)
 	allBatchTxIndices := make([]uint, 0)
 	for i, tx := range parentChainBlock.Transactions() {
@@ -43,7 +42,7 @@ func parseBatchesFromBlock(
 		if len(receipt.Logs) == 0 {
 			continue
 		}
-		batches := make([]*arbnode.SequencerInboxBatch, 0, len(receipt.Logs))
+		batches := make([]*meltypes.SequencerInboxBatch, 0, len(receipt.Logs))
 		txs := make([]*types.Transaction, 0, len(receipt.Logs))
 		txIndices := make([]uint, 0, len(receipt.Logs))
 		var lastSeqNum *uint64
@@ -69,7 +68,7 @@ func parseBatchesFromBlock(
 				}
 			}
 			lastSeqNum = &seqNum
-			batch := &arbnode.SequencerInboxBatch{
+			batch := &meltypes.SequencerInboxBatch{
 				BlockHash:              log.BlockHash,
 				ParentChainBlockNumber: log.BlockNumber,
 				SequenceNumber:         seqNum,
@@ -79,7 +78,7 @@ func parseBatchesFromBlock(
 				AfterDelayedCount:      event.AfterDelayedMessagesRead.Uint64(),
 				RawLog:                 *log,
 				TimeBounds:             event.TimeBounds,
-				DataLocation:           arbnode.BatchDataLocation(event.DataLocation),
+				DataLocation:           meltypes.BatchDataLocation(event.DataLocation),
 				BridgeAddress:          log.Address,
 			}
 			batches = append(batches, batch)

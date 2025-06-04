@@ -70,13 +70,13 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 
 	init, err := streamer.GetMessage(0)
 	require.NoError(t, err)
-	initMsgDelayed := &arbnode.DelayedInboxMessage{
+	initMsgDelayed := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: [32]byte{},
 		Message:        init.Message,
 	}
 	delayedRequestId := common.BigToHash(common.Big1)
-	delayedMsg := &arbnode.DelayedInboxMessage{
+	delayedMsg := &meltypes.DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
 		Message: &arbostypes.L1IncomingMessage{
@@ -97,7 +97,7 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize seenUnreadDelayedMetaDeque
 	state.DelayedMessagedSeen++
 
-	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*arbnode.DelayedInboxMessage{delayedMsg}))
+	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*meltypes.DelayedInboxMessage{delayedMsg}))
 	have, err := melDb.ReadDelayedMessage(ctx, state, 0)
 	require.NoError(t, err)
 
@@ -124,10 +124,10 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	require.NoError(t, melDb.SaveState(ctx, genesis))
 
 	numDelayed := 5
-	var delayedMsgs []*arbnode.DelayedInboxMessage
+	var delayedMsgs []*meltypes.DelayedInboxMessage
 	for i := int64(1); i <= int64(numDelayed); i++ {
 		requestID := common.BigToHash(big.NewInt(i))
-		delayedMsgs = append(delayedMsgs, &arbnode.DelayedInboxMessage{
+		delayedMsgs = append(delayedMsgs, &meltypes.DelayedInboxMessage{
 			BlockHash: [32]byte{},
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
@@ -193,10 +193,10 @@ func TestMelFetchInitialStateAndSeenUnreadDelayedMetaDeque(t *testing.T) {
 	require.NoError(t, melDb.SaveState(ctx, genesis))
 
 	numMelStates := 5
-	var delayedMsgs []*arbnode.DelayedInboxMessage
+	var delayedMsgs []*meltypes.DelayedInboxMessage
 	for i := int64(1); i <= int64(numMelStates)*5; i++ {
 		requestID := common.BigToHash(big.NewInt(i))
-		delayedMsgs = append(delayedMsgs, &arbnode.DelayedInboxMessage{
+		delayedMsgs = append(delayedMsgs, &meltypes.DelayedInboxMessage{
 			BlockHash: [32]byte{},
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{

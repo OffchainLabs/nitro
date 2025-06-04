@@ -195,7 +195,7 @@ func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*m
 	return &state, nil
 }
 
-func (d *Database) SaveDelayedMessages(ctx context.Context, state *meltypes.State, delayedMessages []*arbnode.DelayedInboxMessage) error {
+func (d *Database) SaveDelayedMessages(ctx context.Context, state *meltypes.State, delayedMessages []*meltypes.DelayedInboxMessage) error {
 	dbBatch := d.db.NewBatch()
 	if state.DelayedMessagedSeen < uint64(len(delayedMessages)) {
 		return fmt.Errorf("mel state's DelayedMessagedSeen: %d is lower than number of delayed messages: %d queued to be added", state.DelayedMessagedSeen, len(delayedMessages))
@@ -216,7 +216,7 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *meltypes.Stat
 	return dbBatch.Write()
 }
 
-func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.State, msg *arbnode.DelayedInboxMessage, index uint64) (bool, error) {
+func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.State, msg *meltypes.DelayedInboxMessage, index uint64) (bool, error) {
 	delayedMeta := state.GetSeenUnreadDelayedMetaDeque().GetByIndex(index)
 	acc := state.GetReadDelayedMsgsAcc()
 	if acc == nil {
@@ -257,20 +257,20 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.
 	return false, nil
 }
 
-func (d *Database) fetchDelayedMessage(ctx context.Context, index uint64) (*arbnode.DelayedInboxMessage, error) {
+func (d *Database) fetchDelayedMessage(ctx context.Context, index uint64) (*meltypes.DelayedInboxMessage, error) {
 	key := dbKey(arbnode.MelDelayedMessagePrefix, index)
 	delayedBytes, err := d.db.Get(key)
 	if err != nil {
 		return nil, err
 	}
-	var delayed arbnode.DelayedInboxMessage
+	var delayed meltypes.DelayedInboxMessage
 	if err = rlp.DecodeBytes(delayedBytes, &delayed); err != nil {
 		return nil, err
 	}
 	return &delayed, nil
 }
 
-func (d *Database) ReadDelayedMessage(ctx context.Context, state *meltypes.State, index uint64) (*arbnode.DelayedInboxMessage, error) {
+func (d *Database) ReadDelayedMessage(ctx context.Context, state *meltypes.State, index uint64) (*meltypes.DelayedInboxMessage, error) {
 	delayed, err := d.fetchDelayedMessage(ctx, index)
 	if err != nil {
 		return nil, err

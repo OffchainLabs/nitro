@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -21,7 +20,7 @@ type DelayedMessageDatabase interface {
 		ctx context.Context,
 		state *meltypes.State,
 		index uint64,
-	) (*arbnode.DelayedInboxMessage, error)
+	) (*meltypes.DelayedInboxMessage, error)
 }
 
 // Defines a method that can fetch the receipt for a specific
@@ -44,7 +43,7 @@ func ExtractMessages(
 	dataProviders []daprovider.Reader,
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
-) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
+) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*meltypes.DelayedInboxMessage, error) {
 	return extractMessagesImpl(
 		ctx,
 		inputState,
@@ -79,7 +78,7 @@ func extractMessagesImpl(
 	extractBatchMessages batchMsgExtractionFunc,
 	parseSequencerMessage sequencerMessageParserFunc,
 	parseBatchPostingReport batchPostingReportParserFunc,
-) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
+) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*meltypes.DelayedInboxMessage, error) {
 
 	state := inputState.Clone()
 	// Clones the state to avoid mutating the input pointer in case of errors.
@@ -119,7 +118,7 @@ func extractMessagesImpl(
 		return nil, nil, nil, err
 	}
 	// Update the delayed message accumulator in the MEL state.
-	batchPostingReports := make([]*arbnode.DelayedInboxMessage, 0)
+	batchPostingReports := make([]*meltypes.DelayedInboxMessage, 0)
 	for _, delayed := range delayedMessages {
 		// If this message is a batch posting report, we save it for later
 		// use in this function once we extract messages from batches and

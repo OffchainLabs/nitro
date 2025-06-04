@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -409,7 +410,7 @@ func (t *InboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64
 	return msg.Serialize()
 }
 
-func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error {
+func (t *InboxTracker) AddDelayedMessages(messages []*meltypes.DelayedInboxMessage) error {
 	var nextAcc common.Hash
 	firstDelayedMsgToKeep := uint64(0)
 	if len(messages) == 0 {
@@ -619,7 +620,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firs
 
 type multiplexerBackend struct {
 	batchSeqNum           uint64
-	batches               []*SequencerInboxBatch
+	batches               []*meltypes.SequencerInboxBatch
 	positionWithinMessage uint64
 
 	ctx    context.Context
@@ -631,7 +632,7 @@ func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	if len(b.batches) == 0 {
 		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
-	bytes, err := b.batches[0].Serialize(b.ctx, b.client)
+	bytes, err := SerializeSequencerInboxBatch(b.ctx, b.batches[0], b.client)
 	return bytes, b.batches[0].BlockHash, err
 }
 
@@ -663,7 +664,7 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1Inco
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
-func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) error {
+func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*meltypes.SequencerInboxBatch) error {
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
 	sequenceNumberToKeep := uint64(0)

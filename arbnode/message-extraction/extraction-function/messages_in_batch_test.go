@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -29,7 +28,7 @@ func Test_extractMessagesInBatch(t *testing.T) {
 		},
 	}
 	mockDB := &mockDelayedMessageDB{
-		DelayedMessages: map[uint64]*arbnode.DelayedInboxMessage{
+		DelayedMessages: map[uint64]*meltypes.DelayedInboxMessage{
 			0: {
 				Message: &arbostypes.L1IncomingMessage{
 					L2msg: []byte("foobar"),
@@ -199,7 +198,7 @@ func Test_extractArbosMessage(t *testing.T) {
 			},
 		}
 		mockDB := &mockDelayedMessageDB{
-			DelayedMessages: map[uint64]*arbnode.DelayedInboxMessage{},
+			DelayedMessages: map[uint64]*meltypes.DelayedInboxMessage{},
 		}
 		params := &arbosExtractionParams{
 			melState:         melState,
@@ -224,7 +223,7 @@ func Test_extractArbosMessage(t *testing.T) {
 			},
 		}
 		mockDB := &mockDelayedMessageDB{
-			DelayedMessages: map[uint64]*arbnode.DelayedInboxMessage{
+			DelayedMessages: map[uint64]*meltypes.DelayedInboxMessage{
 				0: {
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -323,7 +322,7 @@ func Test_isLastSegment(t *testing.T) {
 
 type mockDelayedMessageDB struct {
 	DelayedMessagesRead uint64
-	DelayedMessages     map[uint64]*arbnode.DelayedInboxMessage
+	DelayedMessages     map[uint64]*meltypes.DelayedInboxMessage
 	err                 error
 }
 
@@ -331,7 +330,7 @@ func (m *mockDelayedMessageDB) ReadDelayedMessage(
 	_ context.Context,
 	_ *meltypes.State,
 	delayedMsgsRead uint64,
-) (*arbnode.DelayedInboxMessage, error) {
+) (*meltypes.DelayedInboxMessage, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

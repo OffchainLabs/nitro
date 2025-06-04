@@ -14,9 +14,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -28,15 +28,6 @@ var addSequencerL2BatchFromOriginCallABI abi.Method
 var sequencerBatchDataABI abi.Event
 
 const sequencerBatchDataEvent = "SequencerBatchData"
-
-type BatchDataLocation uint8
-
-const (
-	BatchDataTxInput BatchDataLocation = iota
-	BatchDataSeparateEvent
-	BatchDataNone
-	BatchDataBlobHashes
-)
 
 func init() {
 	var err error
@@ -97,25 +88,10 @@ func (i *SequencerInbox) GetAccumulator(ctx context.Context, sequenceNumber uint
 	return acc, err
 }
 
-type SequencerInboxBatch struct {
-	BlockHash              common.Hash
-	ParentChainBlockNumber uint64
-	SequenceNumber         uint64
-	BeforeInboxAcc         common.Hash
-	AfterInboxAcc          common.Hash
-	AfterDelayedAcc        common.Hash
-	AfterDelayedCount      uint64
-	TimeBounds             bridgegen.IBridgeTimeBounds
-	RawLog                 types.Log
-	DataLocation           BatchDataLocation
-	BridgeAddress          common.Address
-	Serialized             []byte // nil if serialization isn't cached yet
-}
-
-func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethclient.Client) ([]byte, error) {
-	switch m.DataLocation {
-	case BatchDataTxInput:
-		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.RawLog)
+func getSequencerDataFromBatch(ctx context.Context, batch *meltypes.SequencerInboxBatch, client *ethclient.Client) ([]byte, error) {
+	switch batch.DataLocation {
+	case meltypes.BatchDataTxInput:
+		data, err := arbutil.GetLogEmitterTxData(ctx, client, batch.RawLog)
 		if err != nil {
 			return nil, err
 		}
@@ -129,12 +105,12 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 			return nil, errors.New("args[\"data\"] not a byte array")
 		}
 		return dataBytes, nil
-	case BatchDataSeparateEvent:
+	case meltypes.BatchDataSeparateEvent:
 		var numberAsHash common.Hash
-		binary.BigEndian.PutUint64(numberAsHash[(32-8):], m.SequenceNumber)
+		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
 		query := ethereum.FilterQuery{
-			BlockHash: &m.BlockHash,
-			Addresses: []common.Address{m.BridgeAddress},
+			BlockHash: &batch.BlockHash,
+			Addresses: []common.Address{batch.BridgeAddress},
 			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {numberAsHash}},
 		}
 		logs, err := client.FilterLogs(ctx, query)
@@ -153,11 +129,11 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 			return nil, err
 		}
 		return event.Data, nil
-	case BatchDataNone:
+	case meltypes.BatchDataNone:
 		// No data when in a force inclusion batch
 		return nil, nil
-	case BatchDataBlobHashes:
-		tx, err := arbutil.GetLogTransaction(ctx, client, m.RawLog)
+	case meltypes.BatchDataBlobHashes:
+		tx, err := arbutil.GetLogTransaction(ctx, client, batch.RawLog)
 		if err != nil {
 			return nil, err
 		}
@@ -170,24 +146,24 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 		}
 		return data, nil
 	default:
-		return nil, fmt.Errorf("batch has invalid data location %v", m.DataLocation)
+		return nil, fmt.Errorf("batch has invalid data location %v", batch.DataLocation)
 	}
 }
 
-func (m *SequencerInboxBatch) Serialize(ctx context.Context, client *ethclient.Client) ([]byte, error) {
-	if m.Serialized != nil {
-		return m.Serialized, nil
+func SerializeSequencerInboxBatch(ctx context.Context, batch *meltypes.SequencerInboxBatch, client *ethclient.Client) ([]byte, error) {
+	if batch.Serialized != nil {
+		return batch.Serialized, nil
 	}
 
 	var fullData []byte
 
 	// Serialize the header
 	headerVals := []uint64{
-		m.TimeBounds.MinTimestamp,
-		m.TimeBounds.MaxTimestamp,
-		m.TimeBounds.MinBlockNumber,
-		m.TimeBounds.MaxBlockNumber,
-		m.AfterDelayedCount,
+		batch.TimeBounds.MinTimestamp,
+		batch.TimeBounds.MaxTimestamp,
+		batch.TimeBounds.MinBlockNumber,
+		batch.TimeBounds.MaxBlockNumber,
+		batch.AfterDelayedCount,
 	}
 	for _, bound := range headerVals {
 		var intData [8]byte
@@ -196,17 +172,17 @@ func (m *SequencerInboxBatch) Serialize(ctx context.Context, client *ethclient.C
 	}
 
 	// Append the batch data
-	data, err := m.getSequencerData(ctx, client)
+	data, err := getSequencerDataFromBatch(ctx, batch, client)
 	if err != nil {
 		return nil, err
 	}
 	fullData = append(fullData, data...)
 
-	m.Serialized = fullData
+	batch.Serialized = fullData
 	return fullData, nil
 }
 
-func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big.Int) ([]*SequencerInboxBatch, error) {
+func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big.Int) ([]*meltypes.SequencerInboxBatch, error) {
 	query := ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
@@ -217,7 +193,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 	if err != nil {
 		return nil, err
 	}
-	messages := make([]*SequencerInboxBatch, 0, len(logs))
+	messages := make([]*meltypes.SequencerInboxBatch, 0, len(logs))
 	var lastSeqNum *uint64
 	for _, log := range logs {
 		if log.Topics[0] != batchDeliveredID {
@@ -241,7 +217,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			}
 		}
 		lastSeqNum = &seqNum
-		batch := &SequencerInboxBatch{
+		batch := &meltypes.SequencerInboxBatch{
 			BlockHash:              log.BlockHash,
 			ParentChainBlockNumber: log.BlockNumber,
 			SequenceNumber:         seqNum,
@@ -251,7 +227,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			AfterDelayedCount:      parsedLog.AfterDelayedMessagesRead.Uint64(),
 			RawLog:                 log,
 			TimeBounds:             parsedLog.TimeBounds,
-			DataLocation:           BatchDataLocation(parsedLog.DataLocation),
+			DataLocation:           meltypes.BatchDataLocation(parsedLog.DataLocation),
 			BridgeAddress:          log.Address,
 		}
 		messages = append(messages, batch)
