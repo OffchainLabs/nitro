@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -13,11 +14,19 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/gethhook"
 	melwavmio "github.com/offchainlabs/nitro/wavmio/mel"
 )
+
+type wavmPreimageResolver struct{}
+
+func (w *wavmPreimageResolver) ResolveTypedPreimage(
+	preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error) {
+	return melwavmio.ResolveTypedPreimage(preimageType, hash)
+}
 
 func main() {
 	melwavmio.StubInit()
@@ -34,12 +43,13 @@ func main() {
 		startMelRoot,
 	)
 	if err != nil {
-		panic(fmt.Errorf("Error resolving preimage: %w", err))
+		panic(fmt.Errorf("error resolving preimage: %w", err))
 	}
 	startState := new(meltypes.State)
 	if err := rlp.Decode(bytes.NewBuffer(startStateBytes), &startState); err != nil {
-		panic(fmt.Errorf("Error decoding start MEL state: %w", err))
+		panic(fmt.Errorf("error decoding start MEL state: %w", err))
 	}
+	ctx := context.Background()
 
 	// Extract the relevant blocks in the range from the
 	// block hash of the start MEL state to the end parent chain block hash.
@@ -51,32 +61,38 @@ func main() {
 		endParentChainBlockHash,
 	)
 	currentState := startState
-	// Loops backwards over blocks, feeding them one by one into
-	// the extract messages function.
 
+	// Loops backwards over blocks, feeding them one by one into the extract messages function.
+	delayedMsgDatabase := &delayedMessageDatabase{
+		preimageResolver: &wavmPreimageResolver{},
+	}
 	for i := len(blocks) - 1; i >= 0; i-- {
 		block := blocks[i]
 		log.Info("Extracting messages from block", "number", block.NumberU64(), "hash", block.Hash().Hex())
+		receiptFetcher := &receiptFetcherForBlock{
+			block:            block,
+			preimageResolver: &wavmPreimageResolver{},
+		}
+		postState, _, _, err := extractionfunction.ExtractMessages(
+			ctx,
+			currentState,
+			block,
+			nil, // TODO: Provide da readers here.
+			delayedMsgDatabase,
+			receiptFetcher,
+		)
+		if err != nil {
+			panic(fmt.Errorf("error extracting messages from block %s: %w", block.Hash().Hex(), err))
+		}
+		currentState = postState
 	}
 
-	// In the end, we set the global state's MEL root to the hash
-	// of the post MEL state that is created by running extract
-	// messages over the blocks we processed.
-
-	//	ExtractMessages(
-	//	ctx context.Context,
-	//	inputState *meltypes.State,
-	//	parentChainBlock *types.Block,
-	//	dataProviders []daprovider.Reader,
-	//	delayedMsgDatabase DelayedMessageDatabase,
-	//	receiptFetcher ReceiptFetcher,
-	//
-	// ) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error)
+	// In the end, we set the global state's MEL root to the hash of the post MEL state
+	// that is created by running extract messages over the blocks we processed.
 	melwavmio.SetMELStateHash(currentState.Hash())
 	melwavmio.StubFinal()
 }
 
-// TODO: Define a max lookback?
 func walkBackwards(
 	startHash,
 	endHash common.Hash,
@@ -97,12 +113,12 @@ func walkBackwards(
 func getBlockByHash(hash common.Hash) *types.Block {
 	enc, err := melwavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
 	if err != nil {
-		panic(fmt.Errorf("Error resolving preimage: %w", err))
+		panic(fmt.Errorf("error resolving preimage: %w", err))
 	}
 	block := &types.Block{}
 	err = rlp.DecodeBytes(enc, &block)
 	if err != nil {
-		panic(fmt.Errorf("Error parsing resolved block: %w", err))
+		panic(fmt.Errorf("error parsing resolved block: %w", err))
 	}
 	return block
 }
