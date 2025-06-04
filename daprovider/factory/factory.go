@@ -45,7 +45,6 @@ type AnyTrustFactory struct {
 type ReferenceDAFactory struct {
 	config       *referenceda.Config
 	enableWriter bool
-	validator    daprovider.Validator
 }
 
 func NewDAProviderFactory(
@@ -72,10 +71,6 @@ func NewDAProviderFactory(
 		factory := &ReferenceDAFactory{
 			config:       referencedaCfg,
 			enableWriter: enableWriter,
-		}
-		// Initialize storage and validator based on config
-		if err := factory.initializeComponents(); err != nil {
-			return nil, err
 		}
 		return factory, nil
 	default:
@@ -185,12 +180,11 @@ func (f *ReferenceDAFactory) ValidateConfig() error {
 }
 
 func (f *ReferenceDAFactory) initializeComponents() error {
-	f.validator = referenceda.NewDefaultValidator()
 	return nil
 }
 
 func (f *ReferenceDAFactory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
-	reader := referenceda.NewReader(f.validator)
+	reader := referenceda.NewReader()
 	return reader, nil, nil
 }
 
@@ -204,5 +198,5 @@ func (f *ReferenceDAFactory) CreateWriter(ctx context.Context) (daprovider.Write
 }
 
 func (f *ReferenceDAFactory) CreateValidator(ctx context.Context) (daprovider.Validator, func(), error) {
-	return f.validator, nil, nil
+	return referenceda.NewValidator(), nil, nil
 }

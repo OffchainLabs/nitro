@@ -17,15 +17,12 @@ import (
 
 // Reader implements the daprovider.Reader interface for ReferenceDA
 type Reader struct {
-	storage   *InMemoryStorage
-	validator daprovider.Validator
+	storage *InMemoryStorage
 }
 
-// NewReader creates a new ReferenceDA reader with the provided validator
-func NewReader(validator daprovider.Validator) *Reader {
+func NewReader() *Reader {
 	return &Reader{
-		storage:   GetInMemoryStorage(),
-		validator: validator,
+		storage: GetInMemoryStorage(),
 	}
 }
 
@@ -78,23 +75,9 @@ func (r *Reader) RecoverPayloadFromBatch(
 		preimageRecorder := daprovider.RecordPreimagesTo(preimages)
 
 		// Record the mapping from sequencer message hash to actual payload data
-		// This is what the replay binary expects: keccak256(sequencerMsg) → payload
+		// This is what the replay binary expects: keccak256(sequencerMsg) -> payload
 		certHash := crypto.Keccak256Hash(sequencerMsg)
 		preimageRecorder(certHash, payload, arbutil.CustomDAPreimageType)
-
-		// If validator is provided, extract additional preimages
-		if r.validator != nil {
-			extractedPreimages, err := r.validator.RecordPreimages(ctx, payload)
-			if err != nil {
-				log.Warn("Failed to extract preimages from ReferenceDA batch",
-					"batchNum", batchNum,
-					"error", err)
-			} else {
-				for _, p := range extractedPreimages {
-					preimageRecorder(p.Hash, p.Data, p.PreimageType)
-				}
-			}
-		}
 	}
 
 	log.Debug("ReferenceDA batch recovery completed",
