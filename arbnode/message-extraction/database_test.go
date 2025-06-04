@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/offchainlabs/nitro/arbnode"
+	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
@@ -62,23 +62,13 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	defer cancel()
 
 	// Init
-	exec, streamer, arbDb, _ := arbnode.NewTransactionStreamerForTest(t, ctx, common.Address{})
-	err := streamer.Start(ctx)
-	require.NoError(t, err)
-	exec.Start(ctx)
+	// Create database
+	arbDb := rawdb.NewMemoryDatabase()
 	melDb := NewDatabase(arbDb)
 
-	init, err := streamer.GetMessage(0)
-	require.NoError(t, err)
-	initMsgDelayed := &meltypes.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: [32]byte{},
-		Message:        init.Message,
-	}
 	delayedRequestId := common.BigToHash(common.Big1)
 	delayedMsg := &meltypes.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
+		BlockHash: [32]byte{},
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind:        arbostypes.L1MessageType_EndOfBlock,
@@ -93,7 +83,6 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	state := &meltypes.State{}
 	state.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 	state.SetReadDelayedMsgsAcc(merkleAccumulator.NewNonpersistentMerkleAccumulator())
-	require.NoError(t, err)
 	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize seenUnreadDelayedMetaDeque
 	state.DelayedMessagedSeen++
 

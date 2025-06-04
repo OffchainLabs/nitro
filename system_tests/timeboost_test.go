@@ -682,9 +682,6 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	cleanupSeq := builder.Build(t)
 	defer cleanupSeq()
 
-	dbschema.BlockMetadataInputFeedPrefix := []byte("t")
-	dbschema.MissingBlockMetadataInputFeedPrefix := []byte("x")
-
 	// Generate blocks until current block is > 20
 	arbDb := builder.L2.ConsensusNode.ArbDB
 	builder.L2Info.GenerateAccount("User")
