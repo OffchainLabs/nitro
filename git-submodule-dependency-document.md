@@ -3,16 +3,20 @@
 - 🌟 [**nitro**](https://github.com/Layr-Labs/nitro)
   - 🌟 [**go-ethereum**](https://github.com/Layr-Labs/nitro-go-ethereum) ([2a973e02](https://github.com/Layr-Labs/nitro-go-ethereum/commit/2a973e02b8c98fc3be7dce12ef28750f8b0f3ef6)) [[eigenda-3.1-rebase](https://github.com/Layr-Labs/nitro-go-ethereum/tree/eigenda-3.1-rebase)]
     - 🔗 [tests/testdata](https://github.com/ethereum/tests) ([faf33b47](https://github.com/ethereum/tests/commit/faf33b471465d3c6cdc3d04fbd690895f78d33f2))
+      - 🔗 [LegacyTests](https://github.com/ethereum/tests) ([7387366b](https://github.com/ethereum/tests/commit/7387366b56261544e8145832033f269c707b6c51))
     - 🔗 [tests/evm-benchmarks](https://github.com/ipsilon/evm-benchmarks) ([d8b88f40](https://github.com/ipsilon/evm-benchmarks/commit/d8b88f4046a87d6b902378cef752591f95427b43))
-  - 🌟 [**contracts**](https://github.com/Layr-Labs/nitro-contracts) 🗑️ ([e1fa3dd4](https://github.com/Layr-Labs/nitro-contracts/commit/e1fa3dd4cd7fda74b5739cdf6e71823c5cfa2f44)) [[eigenda-v3.1.0](https://github.com/Layr-Labs/nitro-contracts/tree/eigenda-v3.1.0)]
+  - 🌟 [**contracts**](https://github.com/Layr-Labs/nitro-contracts) ([828cdfdc](https://github.com/Layr-Labs/nitro-contracts/commit/828cdfdc6e4751dce9c5d51a9c93814716bb18fd))
     - 🔗 [lib/forge-std](https://github.com/foundry-rs/forge-std) ([e8a047e3](https://github.com/foundry-rs/forge-std/commit/e8a047e3f40f13fa37af6fe14e6e06283d9a060e))
+      - 🔗 [lib/ds-test](https://github.com/dapphub/ds-test) ([e282159d](https://github.com/dapphub/ds-test/commit/e282159d5170298eb2455a6c05280ab5a73a4ef0))
   - 🌟 [**contracts-legacy**](https://github.com/Layr-Labs/nitro-contracts) 🗑️ ([278fdbc3](https://github.com/Layr-Labs/nitro-contracts/commit/278fdbc39089fa86330f0c23f0a05aee61972c84)) [[eigenda-v2.1.3](https://github.com/Layr-Labs/nitro-contracts/tree/eigenda-v2.1.3)]
     - 🔗 [lib/forge-std](https://github.com/foundry-rs/forge-std) ([e8a047e3](https://github.com/foundry-rs/forge-std/commit/e8a047e3f40f13fa37af6fe14e6e06283d9a060e))
+      - 🔗 [lib/ds-test](https://github.com/dapphub/ds-test) ([e282159d](https://github.com/dapphub/ds-test/commit/e282159d5170298eb2455a6c05280ab5a73a4ef0))
   - 🌟 [**nitro-testnode**](https://github.com/Layr-Labs/nitro-testnode) 🗑️ ([17bcd652](https://github.com/Layr-Labs/nitro-testnode/commit/17bcd652a229457994e525313c46c31c1f5c235e)) [[v3-upstream-merge](https://github.com/Layr-Labs/nitro-testnode/tree/v3-upstream-merge)]
     - ⚙️ [blockscout](https://github.com/OffchainLabs/blockscout) 🗑️ ([60d60cb3](https://github.com/OffchainLabs/blockscout/commit/60d60cb331b0289d39c7480379a14a86100af37a))
-  - 🌟 [**bold**](https://github.com/Layr-Labs/bold) 🗑️ ([a18ebad9](https://github.com/Layr-Labs/bold/commit/a18ebad9d9a9b9c169699e4f5d534a0d8e660654)) [[merge-upstream](https://github.com/Layr-Labs/bold/tree/merge-upstream)]
-    - 🌟 [contracts](https://github.com/Layr-Labs/nitro-contracts) 🗑️ ([e1fa3dd4](https://github.com/Layr-Labs/nitro-contracts/commit/e1fa3dd4cd7fda74b5739cdf6e71823c5cfa2f44))
+  - 🌟 [**bold**](https://github.com/Layr-Labs/bold) ([6d8d8b74](https://github.com/Layr-Labs/bold/commit/6d8d8b74877e294131c2a44521ec1f8ef477a8fe))
+    - 🌟 [contracts](https://github.com/Layr-Labs/nitro-contracts) ([828cdfdc](https://github.com/Layr-Labs/nitro-contracts/commit/828cdfdc6e4751dce9c5d51a9c93814716bb18fd))
       - 🔗 [lib/forge-std](https://github.com/foundry-rs/forge-std) ([e8a047e3](https://github.com/foundry-rs/forge-std/commit/e8a047e3f40f13fa37af6fe14e6e06283d9a060e))
+        - 🔗 [lib/ds-test](https://github.com/dapphub/ds-test) ([e282159d](https://github.com/dapphub/ds-test/commit/e282159d5170298eb2455a6c05280ab5a73a4ef0))
     - 🔗 [safe-smart-account](https://github.com/safe-global/safe-smart-account) ([192c7dc6](https://github.com/safe-global/safe-smart-account/commit/192c7dc67290940fcbc75165522bb86a37187069))
   - 🌟 [**arbitrator/rust-kzg-bn254**](https://github.com/Layr-Labs/rust-kzg-bn254) ([1991550a](https://github.com/Layr-Labs/rust-kzg-bn254/commit/1991550adbc5de0cdea8bd406480c45bc2aecdb7)) [[epociask--better-linting](https://github.com/Layr-Labs/rust-kzg-bn254/tree/epociask--better-linting)]
   - ⚙️ [**fastcache**](https://github.com/OffchainLabs/fastcache) ([cd4f9b8d](https://github.com/OffchainLabs/fastcache/commit/cd4f9b8d15b0b22bc628cbbf1dba11540d023904))
@@ -73,10 +77,11 @@ Execute from nitro repository root:
 1. **Extract hierarchy** from `git submodule status --recursive` output
 2. **Get full hashes** using `git submodule foreach` command  
 3. **Check all .gitmodules** files for branch specifications
-4. **Build nested structure** matching git submodule nesting exactly
-5. **Add clickable links**: 8-char SHA display, 40-char URLs
-6. **Apply status emojis** based on git output analysis
-7. **Verify using process below**
+4. **MANDATORY: Identify version conflicts** - Same repo URL at different commits (add ⚠️)
+5. **Build nested structure** matching git submodule nesting exactly
+6. **Add clickable links**: 8-char SHA display, 40-char URLs
+7. **Apply status emojis** based on git output analysis
+8. **MANDATORY: Run verification process below** - Do not skip this step
 
 ### Verification Process
 
