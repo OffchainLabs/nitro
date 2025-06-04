@@ -17,7 +17,7 @@
 [submodule "contracts"]
 	path = contracts
 	url = https://github.com/Layr-Labs/nitro-contracts.git
-	branch = working-v3.1.0
+	branch = eigenda-v3.1.0
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/Layr-Labs/nitro-testnode.git
@@ -32,6 +32,7 @@
 [submodule "bold"]
 	path = bold
 	url = https://github.com/Layr-Labs/bold.git
+	branch = merge-upstream
 [submodule "arbitrator/langs/rust"]
 	path = arbitrator/langs/rust
 	url = https://github.com/OffchainLabs/stylus-sdk-rs.git

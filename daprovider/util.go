@@ -75,8 +75,11 @@ const BlobHashesHeaderFlag byte = L1AuthenticatedMessageHeaderFlag | 0x10 // 0x5
 // BrotliMessageHeaderByte indicates that the message is brotli-compressed.
 const BrotliMessageHeaderByte byte = 0
 
+// EigenDAMessageHeaderFlag indicates that this message contains EigenDA blob data.
+const EigenDAMessageHeaderFlag byte = 0xed
+
 // KnownHeaderBits is all header bits with known meaning to this nitro version
-const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | BrotliMessageHeaderByte
+const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | BrotliMessageHeaderByte | EigenDAMessageHeaderFlag
 
 var DefaultDASRetentionPeriod time.Duration = time.Hour * 24 * 15
 

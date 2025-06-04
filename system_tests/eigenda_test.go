@@ -26,10 +26,13 @@ const (
 	proxyURL = "http://127.0.0.1:4242"
 )
 
-func TestEigenDAIntegration(t * testing.T) {
+func TestEigenDAIntegration(t *testing.T) {
 	// single threaded test execution since conflicts can happen
 	// on proxy memconfig states if ran in parallel.
 	// TODO: https://github.com/Layr-Labs/nitro/issues/73
+
+	// 0 - Test that the proxy is reachable
+	testEigenDAProxyReachability(t)
 
 	// 1 - Batch posting / derivation
 	testEigenDAProxyBatchPosting(t)
@@ -314,4 +317,18 @@ func checkEigenDABatchPosting(t *testing.T, ctx context.Context, l1client, l2cli
 		}
 
 	}
+}
+
+// TestEigenDAProxyReachability tests that the EigenDA proxy is accessible
+func testEigenDAProxyReachability(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	memCfgClient := memconfig_client.New(&memconfig_client.Config{URL: proxyURL})
+
+	_, err := memCfgClient.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("❌ EigenDA proxy not reachable at %s: %v", proxyURL, err)
+	}
+	t.Logf("✅ EigenDA proxy reachable at %s", proxyURL)
 }
