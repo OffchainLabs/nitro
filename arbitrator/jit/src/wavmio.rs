@@ -199,6 +199,29 @@ pub fn resolve_preimage_impl(
     Ok(read.len() as u32)
 }
 
+pub fn validate_preimage(
+    mut env: WasmEnvMut,
+    hash_ptr: GuestPtr,
+    preimage_type: u8,
+) -> Result<u32, Escape> {
+    let (mut mem, exec) = env.jit_env();
+    let hash = mem.read_bytes32(hash_ptr);
+
+    let Ok(preimage_type) = preimage_type.try_into() else {
+        // Invalid preimage type
+        return Ok(0);
+    };
+
+    // Check if preimage exists
+    let exists = exec
+        .preimages
+        .get(&preimage_type)
+        .and_then(|m| m.get(&hash))
+        .is_some();
+
+    Ok(if exists { 1 } else { 0 })
+}
+
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let debug = env.process.debug;
 

@@ -162,7 +162,54 @@ func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
 	return nil
 }
 
-// TODO daprovider.Reader implementation for CustomDA
+type CustomDAPreimageReader struct {
+}
+
+func (r *CustomDAPreimageReader) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
+	return daprovider.IsCustomDAMessageHeaderByte(headerByte)
+}
+
+func (r *CustomDAPreimageReader) RecoverPayloadFromBatch(
+	ctx context.Context,
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+	preimages daprovider.PreimagesMap,
+	validateSeqMsg bool,
+) ([]byte, daprovider.PreimagesMap, error) {
+	// Hash the entire sequencer message to get the preimage key
+	customDAPreimageHash := crypto.Keccak256Hash(sequencerMsg)
+
+	// Validate the preimage exists before trying to read it
+	if !wavmio.ValidatePreimage(arbutil.CustomDAPreimageType, customDAPreimageHash) {
+		// Preimage is not available - treat as invalid batch
+		log.Info("CustomDA preimage validation failed, treating as invalid batch",
+			"batchNum", batchNum,
+			"hash", customDAPreimageHash.Hex())
+		return []byte{}, preimages, nil
+	}
+
+	// Read the preimage (which contains the actual batch data)
+	payload, err := wavmio.ResolveTypedPreimage(arbutil.CustomDAPreimageType, customDAPreimageHash)
+	if err != nil {
+		// This should not happen after successful validation
+		panic(fmt.Errorf("failed to resolve CustomDA preimage after validation: %w", err))
+	}
+
+	// Record the sequencer message as a preimage if requested
+	// This is needed for fraud proof verification
+	if preimages != nil {
+		preimageRecorder := daprovider.RecordPreimagesTo(preimages)
+		preimageRecorder(customDAPreimageHash, sequencerMsg, arbutil.CustomDAPreimageType)
+	}
+
+	log.Info("CustomDA batch recovered",
+		"batchNum", batchNum,
+		"hash", customDAPreimageHash.Hex(),
+		"payloadSize", len(payload))
+
+	return payload, preimages, nil
+}
 
 // To generate:
 // key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
@@ -243,6 +290,7 @@ func main() {
 			dapReaders = append(dapReaders, dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher))
 		}
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
+		dapReaders = append(dapReaders, &CustomDAPreimageReader{})
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
