@@ -57,7 +57,7 @@ func (d *delayedMessageDatabase) ReadDelayedMessage(
 		left := result[:mid]
 		right := result[mid:]
 
-		// Calculate which subtree contains our index
+		// Calculate which subtree contains our index.
 		subtreeSize := uint64(1) << (currentDepth - 1)
 		if msgIndex < subtreeSize {
 			// Go left.
@@ -65,11 +65,11 @@ func (d *delayedMessageDatabase) ReadDelayedMessage(
 		} else {
 			// Go right.
 			currentHash = common.BytesToHash(right)
-			msgIndex -= subtreeSize // Adjust index for right subtree
+			msgIndex -= subtreeSize
 		}
 		currentDepth--
 	}
-	// At this point, currentHash should be the hash of the delayed message
+	// At this point, currentHash should be the hash of the delayed message.
 	delayedMsgBytes, err := d.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, currentHash)
 	if err != nil {
 		return nil, err
