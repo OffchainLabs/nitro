@@ -359,7 +359,7 @@ func TestRedisProduceComplex(t *testing.T) {
 			// Check each producers all promises were responded to
 			for i := 0; i < tc.numProducers; i++ {
 				if cnt := producers[i].promisesLen(); cnt != 0 {
-					t.Errorf("Producer%d still has %d unfullfilled promises", i, cnt)
+					t.Errorf("Producer%d still has %d unfulfilled promises", i, cnt)
 				}
 			}
 
