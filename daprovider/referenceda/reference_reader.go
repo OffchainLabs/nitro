@@ -77,9 +77,10 @@ func (r *Reader) RecoverPayloadFromBatch(
 	if preimages != nil {
 		preimageRecorder := daprovider.RecordPreimagesTo(preimages)
 
-		// Record the full sequencer message as a preimage
-		batchHash := crypto.Keccak256Hash(sequencerMsg)
-		preimageRecorder(batchHash, sequencerMsg, arbutil.CustomDAPreimageType)
+		// Record the mapping from sequencer message hash to actual payload data
+		// This is what the replay binary expects: keccak256(sequencerMsg) → payload
+		certHash := crypto.Keccak256Hash(sequencerMsg)
+		preimageRecorder(certHash, payload, arbutil.CustomDAPreimageType)
 
 		// If validator is provided, extract additional preimages
 		if r.validator != nil {
