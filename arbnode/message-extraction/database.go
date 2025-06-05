@@ -103,7 +103,6 @@ func (d *Database) initializeSeenUnreadDelayedMetaDeque(ctx context.Context, sta
 		}
 		seenUnreadDelayedMetaDeque.Add(&meltypes.DelayedMeta{
 			Index:                       index,
-			Read:                        index < state.DelayedMessagesRead,
 			MerkleRoot:                  merkleRoot,
 			MelStateParentChainBlockNum: delayedMsgIndexToParentChainBlockNum[index],
 		})
@@ -250,11 +249,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.
 	if err != nil {
 		return false, err
 	}
-	if merkleRoot == delayedMeta.MerkleRoot {
-		delayedMeta.Read = true
-		return true, nil
-	}
-	return false, nil
+	return merkleRoot == delayedMeta.MerkleRoot, nil
 }
 
 func (d *Database) fetchDelayedMessage(ctx context.Context, index uint64) (*arbnode.DelayedInboxMessage, error) {

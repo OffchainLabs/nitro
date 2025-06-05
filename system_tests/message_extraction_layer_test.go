@@ -487,7 +487,11 @@ func (m *mockMELDB) State(
 	ctx context.Context,
 	parentChainBlockNumber uint64,
 ) (*meltypes.State, error) {
-	return m.savedStates[parentChainBlockNumber], nil
+	state, ok := m.savedStates[parentChainBlockNumber]
+	if !ok {
+		return nil, errors.New("state not found")
+	}
+	return state, nil
 }
 
 func (m *mockMELDB) SaveState(

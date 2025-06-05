@@ -5,7 +5,6 @@ import "github.com/ethereum/go-ethereum/common"
 // DelayedMeta contains metadata relating to delayed messages
 type DelayedMeta struct {
 	Index                       uint64
-	Read                        bool
 	MerkleRoot                  common.Hash
 	MelStateParentChainBlockNum uint64
 }
@@ -33,7 +32,6 @@ func (d *DelayedMetaDeque) Clone() *DelayedMetaDeque {
 		copy(merkleRoot[:], item.MerkleRoot[:])
 		deque = append(deque, &DelayedMeta{
 			Index:                       item.Index,
-			Read:                        item.Read,
 			MerkleRoot:                  merkleRoot,
 			MelStateParentChainBlockNum: item.MelStateParentChainBlockNum,
 		})
@@ -41,36 +39,25 @@ func (d *DelayedMetaDeque) Clone() *DelayedMetaDeque {
 	return &DelayedMetaDeque{deque}
 }
 
-func (d *DelayedMetaDeque) ClearReorged(delayedMessagesRead, newDelayedMessagesRead, delayedMessagedSeen, newDelayedMessagedSeen uint64) {
-	if len(d.deque) > 0 {
-		if newDelayedMessagedSeen < delayedMessagedSeen {
-			// DelayedMessagedSeen rewinded
-			rightTrimPos := newDelayedMessagedSeen - d.deque[0].Index
-			d.deque = d.deque[:rightTrimPos]
-		}
-		if newDelayedMessagesRead < delayedMessagesRead {
-			// DelayedMessagesRead rewinded
-			for _, delayedMeta := range d.deque {
-				if !delayedMeta.Read {
-					break
-				}
-				if delayedMeta.Index >= newDelayedMessagesRead {
-					delayedMeta.Read = false
-				}
-			}
-		}
+func (d *DelayedMetaDeque) ClearReorged(newDelayedMessagedSeen uint64) {
+	if len(d.deque) == 0 {
+		return
+	}
+	if newDelayedMessagedSeen >= d.deque[0].Index {
+		// DelayedMessagedSeen rewinded
+		rightTrimPos := newDelayedMessagedSeen - d.deque[0].Index
+		d.deque = d.deque[:rightTrimPos]
 	}
 }
 
 // ClearReadAndFinalized trims the DelayedMetaDeque from left, such that the item is only removed if the corresponding delayed message is
 // read and the MelStateParentChainBlockNum is finalized- this is to make DelayedMetaDeque as reorg resistant as possible
-func (d *DelayedMetaDeque) ClearReadAndFinalized(finalizedBlock uint64) {
-	i := 0
-	for i < len(d.deque) {
-		if !d.deque[i].Read || d.deque[i].MelStateParentChainBlockNum > finalizedBlock {
-			break
-		}
-		i++
+func (d *DelayedMetaDeque) ClearReadAndFinalized(finalizedDelayedMessagesRead uint64) {
+	if len(d.deque) == 0 {
+		return
 	}
-	d.deque = d.deque[i:]
+	if finalizedDelayedMessagesRead > d.deque[0].Index {
+		leftTrimPos := finalizedDelayedMessagesRead - d.deque[0].Index
+		d.deque = d.deque[leftTrimPos:]
+	}
 }

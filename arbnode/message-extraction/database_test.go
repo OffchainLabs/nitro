@@ -270,41 +270,21 @@ func TestMelFetchInitialStateAndSeenUnreadDelayedMetaDeque(t *testing.T) {
 	require.True(t, seenUnreadDelayedMetaDeque != nil)
 	// Notice that instead of having seenUnread list from delayed index 13 to 25 inclusive we will have it from 7 to 25 as only till block=7 the chain has finalized and that block has DelayedMessagesRead=7
 	require.True(t, seenUnreadDelayedMetaDeque.Len() == 19)
-	// Verify that delayed indexes from 7 to 12 inclusive would be marked as Read where as the rest would be marked as UnRead
+
 	for i := uint64(7); i < newHeadState.DelayedMessagedSeen; i++ {
-		if i < newHeadState.DelayedMessagesRead {
-			require.True(t, seenUnreadDelayedMetaDeque.GetByIndex(i).Read)
-		} else {
-			require.True(t, !seenUnreadDelayedMetaDeque.GetByIndex(i).Read)
-		}
 		require.True(t, seenUnreadDelayedMetaDeque.GetByIndex(i).Index == i)                                                       // sanity check
 		require.True(t, seenUnreadDelayedMetaDeque.GetByIndex(i).MelStateParentChainBlockNum == uint64(math.Ceil(float64(i)/5))+1) // sanity check
 	}
 
 	// Now lets verify that advancing the finalized block number will trim the read but not finalized delayedMeta while keeping the unread ones
-	seenUnreadDelayedMetaDeque.ClearReadAndFinalized(8)
+	seenUnreadDelayedMetaDeque.ClearReadAndFinalized(newHeadState.DelayedMessagesRead)
 	require.True(t, seenUnreadDelayedMetaDeque.Len() == int(newHeadState.DelayedMessagedSeen-newHeadState.DelayedMessagesRead)) // #nosec G115
 	require.True(t, seenUnreadDelayedMetaDeque.GetByPos(0).Index == newHeadState.DelayedMessagesRead)
 
 	// Verify that Reorg handling works as expected
 	// Move DelayedMessagesRead manually ahead in seenUnreadDelayedMetaDeque by marking the meta's as `Read`
-	oldRead := newHeadState.DelayedMessagesRead + 5
-	oldSeen := newHeadState.DelayedMessagedSeen
-	for i := newHeadState.DelayedMessagesRead; i < oldRead; i++ {
-		seenUnreadDelayedMetaDeque.GetByIndex(i).Read = true
-	}
-	newRead := oldRead - 2 // indicating that reorg moved back our state by two delayedMsg reads
-	newSeen := oldSeen - 5 // move back seen by a certain value too
-	seenUnreadDelayedMetaDeque.ClearReorged(oldRead, newRead, oldSeen, newSeen)
+	newSeen := newHeadState.DelayedMessagedSeen - 5 // move back seen by a certain value too
+	seenUnreadDelayedMetaDeque.ClearReorged(newSeen)
 	// as seenUnreadDelayedMetaDeque hasnt updated with new finalized info, its starting elements remain unchanged, just that the right parts are trimmed till (newSeen-1) delayed index
 	require.True(t, seenUnreadDelayedMetaDeque.Len() == int(newSeen-newHeadState.DelayedMessagesRead)) // #nosec G115
-	for i := newHeadState.DelayedMessagesRead; i < newRead; i++ {
-		// These meta should still have read set to true
-		require.True(t, seenUnreadDelayedMetaDeque.GetByIndex(i).Read)
-	}
-	for i := newRead; i < newSeen; i++ {
-		// Afected `read` i.e from newRead to oldRead meta should be rewinded and set to false due to reorg
-		// Others from oldRead to newSeen should be anyway remain false
-		require.True(t, !seenUnreadDelayedMetaDeque.GetByIndex(i).Read)
-	}
 }

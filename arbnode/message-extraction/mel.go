@@ -227,11 +227,15 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			})
 		}
 		// Question: should move this to a separate pruning thread that has access to current state?
-		finalizedBlk, err := m.parentChainReader.BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
-		if err != nil {
-			return m.retryInterval, err
+		if finalizedBlk, err := m.parentChainReader.BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64())); err != nil {
+			log.Error("Error fetching FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the SeenUnreadDelayedMetaDeque will be retried again later", "err", err)
+		} else {
+			if finalizedMelState, err := m.melDB.State(ctx, finalizedBlk.NumberU64()); err != nil {
+				log.Error("Error fetching melState corresponding to FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the SeenUnreadDelayedMetaDeque will be retried again later", "err", err)
+			} else {
+				preState.GetSeenUnreadDelayedMetaDeque().ClearReadAndFinalized(finalizedMelState.DelayedMessagesRead)
+			}
 		}
-		preState.GetSeenUnreadDelayedMetaDeque().ClearReadAndFinalized(finalizedBlk.NumberU64())
 		// Creates a receipt fetcher for the specific parent chain block, to be used
 		// by the message extraction function.
 		receiptFetcher := newBlockReceiptFetcher(m.parentChainReader, parentChainBlock)
@@ -296,7 +300,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		}
 		// Adjust seenUnreadDelayedMetaDeque
 		seenUnreadDelayedMetaDeque := currentDirtyState.GetSeenUnreadDelayedMetaDeque()
-		seenUnreadDelayedMetaDeque.ClearReorged(currentDirtyState.DelayedMessagesRead, previousState.DelayedMessagesRead, currentDirtyState.DelayedMessagedSeen, previousState.DelayedMessagedSeen)
+		seenUnreadDelayedMetaDeque.ClearReorged(previousState.DelayedMessagedSeen)
 		previousState.SetSeenUnreadDelayedMetaDeque(seenUnreadDelayedMetaDeque)
 		return 0, m.fsm.Do(processNextBlock{
 			melState: previousState,
