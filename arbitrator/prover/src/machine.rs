@@ -2466,8 +2466,8 @@ impl Machine {
                     }
                 }
                 Opcode::ValidatePreimage => {
-                    let hash_ptr = value_stack.pop().unwrap().assume_u32();
                     let preimage_type = value_stack.pop().unwrap().assume_u32();
+                    let hash_ptr = value_stack.pop().unwrap().assume_u32();
 
                     // Try to convert preimage_type to PreimageType
                     let Ok(preimage_ty) = PreimageType::try_from(u8::try_from(preimage_type)?)

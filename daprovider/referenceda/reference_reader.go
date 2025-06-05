@@ -76,7 +76,7 @@ func (r *Reader) RecoverPayloadFromBatch(
 
 		// Record the mapping from sequencer message hash to actual payload data
 		// This is what the replay binary expects: keccak256(sequencerMsg) -> payload
-		certHash := crypto.Keccak256Hash(sequencerMsg)
+		certHash := crypto.Keccak256Hash(certificate)
 		preimageRecorder(certHash, payload, arbutil.CustomDAPreimageType)
 	}
 

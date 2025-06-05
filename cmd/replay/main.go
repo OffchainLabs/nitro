@@ -177,8 +177,13 @@ func (r *CustomDAPreimageReader) RecoverPayloadFromBatch(
 	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
 ) ([]byte, daprovider.PreimagesMap, error) {
+	if len(sequencerMsg) <= 40 {
+		return nil, nil, fmt.Errorf("sequencer message too small")
+	}
+	certificate := sequencerMsg[40:]
+
 	// Hash the entire sequencer message to get the preimage key
-	customDAPreimageHash := crypto.Keccak256Hash(sequencerMsg)
+	customDAPreimageHash := crypto.Keccak256Hash(certificate)
 
 	// Validate the preimage exists before trying to read it
 	if !wavmio.ValidatePreimage(arbutil.CustomDAPreimageType, customDAPreimageHash) {

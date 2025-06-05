@@ -283,8 +283,8 @@ impl Hostio {
                 opcode!(SetGlobalStateU64);
             }
             WavmValidatePreimage => {
-                opcode!(LocalGet, 0);
-                opcode!(LocalGet, 1);
+                opcode!(LocalGet, 0); // hash
+                opcode!(LocalGet, 1); // preimage_ty
                 opcode!(ValidatePreimage);
             }
             WavmReadKeccakPreimage => {
