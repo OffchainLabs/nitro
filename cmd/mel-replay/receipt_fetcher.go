@@ -12,7 +12,7 @@ import (
 )
 
 type receiptFetcherForBlock struct {
-	block            *types.Block
+	header           *types.Header
 	preimageResolver preimageResolver
 }
 
@@ -20,11 +20,7 @@ func (rf *receiptFetcherForBlock) ReceiptForTransactionIndex(
 	ctx context.Context,
 	txIndex uint,
 ) (*types.Receipt, error) {
-	txes := rf.block.Transactions()
-	if int(txIndex) >= len(txes) {
-		return nil, fmt.Errorf("transaction index %d out of bounds for block with %d transactions", txIndex, len(txes))
-	}
-	return fetchReceiptFromBlock(rf.block.ReceiptHash(), txIndex, rf.preimageResolver)
+	return fetchReceiptFromBlock(rf.header.ReceiptHash, txIndex, rf.preimageResolver)
 }
 
 // Fetches a specific receipt index from a block's receipt trie by navigating its

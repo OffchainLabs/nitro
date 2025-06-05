@@ -51,12 +51,12 @@ func main() {
 	}
 	ctx := context.Background()
 
-	// Extract the relevant blocks in the range from the
+	// Extract the relevant headers in the range from the
 	// block hash of the start MEL state to the end parent chain block hash.
 	// This is done by walking backwards from the end parent chain block hash
 	// until we reach the block hash of the start MEL state as blocks are
 	// only connected by parent linkages.
-	blocks := walkBackwards(
+	blockHeaders := walkBackwards(
 		startState.ParentChainBlockHash,
 		endParentChainBlockHash,
 	)
@@ -66,23 +66,28 @@ func main() {
 	delayedMsgDatabase := &delayedMessageDatabase{
 		preimageResolver: &wavmPreimageResolver{},
 	}
-	for i := len(blocks) - 1; i >= 0; i-- {
-		block := blocks[i]
-		log.Info("Extracting messages from block", "number", block.NumberU64(), "hash", block.Hash().Hex())
+	for i := len(blockHeaders) - 1; i >= 0; i-- {
+		header := blockHeaders[i]
+		log.Info("Extracting messages from block", "number", header.Number.Uint64(), "hash", header.Hash().Hex())
 		receiptFetcher := &receiptFetcherForBlock{
-			block:            block,
+			header:           header,
+			preimageResolver: &wavmPreimageResolver{},
+		}
+		txsFetcher := &txsFetcherForBlock{
+			header:           header,
 			preimageResolver: &wavmPreimageResolver{},
 		}
 		postState, _, _, err := extractionfunction.ExtractMessages(
 			ctx,
 			currentState,
-			block,
+			header,
 			nil, // TODO: Provide da readers here.
 			delayedMsgDatabase,
 			receiptFetcher,
+			txsFetcher,
 		)
 		if err != nil {
-			panic(fmt.Errorf("error extracting messages from block %s: %w", block.Hash().Hex(), err))
+			panic(fmt.Errorf("error extracting messages from block %s: %w", header.Hash().Hex(), err))
 		}
 		currentState = postState
 	}
@@ -96,29 +101,29 @@ func main() {
 func walkBackwards(
 	startHash,
 	endHash common.Hash,
-) []*types.Block {
-	blocks := make([]*types.Block, 0)
+) []*types.Header {
+	headers := make([]*types.Header, 0)
 	curr := endHash
 	for {
-		block := getBlockByHash(curr)
-		blocks = append(blocks, block)
-		curr = block.ParentHash()
+		header := getHeaderByHash(curr)
+		headers = append(headers, header)
+		curr = header.ParentHash
 		if curr == startHash {
 			break
 		}
 	}
-	return blocks
+	return headers
 }
 
-func getBlockByHash(hash common.Hash) *types.Block {
+func getHeaderByHash(hash common.Hash) *types.Header {
 	enc, err := melwavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
 	if err != nil {
 		panic(fmt.Errorf("error resolving preimage: %w", err))
 	}
-	block := &types.Block{}
-	err = rlp.DecodeBytes(enc, &block)
+	header := &types.Header{}
+	err = rlp.DecodeBytes(enc, &header)
 	if err != nil {
-		panic(fmt.Errorf("error parsing resolved block: %w", err))
+		panic(fmt.Errorf("error parsing resolved block header: %w", err))
 	}
-	return block
+	return header
 }
