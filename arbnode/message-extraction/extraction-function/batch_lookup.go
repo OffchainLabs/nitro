@@ -19,14 +19,19 @@ type eventUnpacker interface {
 func parseBatchesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
-	parentChainBlock *types.Block,
+	parentChainHeader *types.Header,
+	txsFetcher TransactionsFetcher,
 	receiptFetcher ReceiptFetcher,
 	eventUnpacker eventUnpacker,
 ) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 	allBatches := make([]*meltypes.SequencerInboxBatch, 0)
 	allBatchTxs := make([]*types.Transaction, 0)
 	allBatchTxIndices := make([]uint, 0)
-	for i, tx := range parentChainBlock.Transactions() {
+	parentChainBlockTxs, err := txsFetcher.TransactionsByHeader(ctx, parentChainHeader.Hash())
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to fetch transactions for parent chain block %v: %w", parentChainHeader.Hash(), err)
+	}
+	for i, tx := range parentChainBlockTxs {
 		if tx.To() == nil {
 			continue
 		}

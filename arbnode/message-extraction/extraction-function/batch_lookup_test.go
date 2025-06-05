@@ -34,7 +34,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			nil,
-			block,
+			block.Header(),
+			&mockTxsFetcher{},
 			nil,
 			nil,
 		)
@@ -58,6 +59,9 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		block := types.NewBlock(
 			blockHeader,
 			blockBody,
@@ -67,7 +71,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			nil,
-			block,
+			block.Header(),
+			txsFetcher,
 			nil,
 			nil,
 		)
@@ -92,6 +97,9 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		block := types.NewBlock(
 			blockHeader,
 			blockBody,
@@ -104,7 +112,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			nil,
 			nil,
 		)
@@ -128,6 +137,9 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		block := types.NewBlock(
 			blockHeader,
 			blockBody,
@@ -144,7 +156,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		_, _, _, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			receiptFetcher,
 			nil,
 		)
@@ -164,6 +177,9 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		tx := types.NewTx(txData)
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
+		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
 		}
 		receipt := &types.Receipt{
 			Logs: []*types.Log{},
@@ -185,7 +201,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			receiptFetcher,
 			nil,
 		)
@@ -230,10 +247,14 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts: receipts,
 			err:      nil,
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			receiptFetcher,
 			nil,
 		)
@@ -284,10 +305,14 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			idx:    0,
 			err:    errors.New("oops event unpacking error"),
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		_, _, _, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			receiptFetcher,
 			eventUnpacker,
 		)
@@ -334,10 +359,14 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			events: []*bridgegen.SequencerInboxSequencerBatchDelivered{event},
 			idx:    0,
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			receiptFetcher,
 			eventUnpacker,
 		)
@@ -417,10 +446,14 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 		},
 		idx: 0,
 	}
+	txsFetcher := &mockTxsFetcher{
+		txs: []*types.Transaction{tx1, tx2},
+	}
 	_, _, _, err := parseBatchesFromBlock(
 		ctx,
 		melState,
-		block,
+		block.Header(),
+		txsFetcher,
 		receiptFetcher,
 		eventUnpacker,
 	)
@@ -486,6 +519,21 @@ func (m *mockEventUnpacker) unpackLogTo(
 	*ev = *m.events[m.idx]
 	m.idx += 1
 	return nil
+}
+
+type mockTxsFetcher struct {
+	txs types.Transactions
+	err error
+}
+
+func (m *mockTxsFetcher) TransactionsByHeader(
+	ctx context.Context,
+	parentChainHeaderHash common.Hash,
+) (types.Transactions, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.txs, nil
 }
 
 type mockReceiptFetcher struct {
