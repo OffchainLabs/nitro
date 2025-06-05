@@ -35,7 +35,7 @@ func TestFetchReceiptFromBlock_Multiple(t *testing.T) {
 		preimages: preimages,
 	}
 	receiptFetcher := &receiptFetcherForBlock{
-		block:            blk,
+		header:           blk.Header(),
 		preimageResolver: mockPreimageResolver,
 	}
 	for i := 0; i < numReceipts; i++ {
