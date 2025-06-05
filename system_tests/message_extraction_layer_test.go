@@ -361,33 +361,33 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	}
 }
 
-func TestMessageExtractionLayer_RunningNode(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+// func TestMessageExtractionLayer_RunningNode(t *testing.T) {
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	defer cancel()
 
-	threshold := uint64(0)
-	messagesPerBatch := uint64(3)
+// 	threshold := uint64(0)
+// 	messagesPerBatch := uint64(3)
 
-	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, true).
-		WithBoldDeployment().
-		WithDelayBuffer(threshold)
-	// try disabling batchposter
-	builder.nodeConfig.MessageExtraction.Enable = true
-	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
-	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
-	cleanup := builder.Build(t)
-	defer cleanup()
+// 	builder := NewNodeBuilder(ctx).
+// 		DefaultConfig(t, true).
+// 		WithBoldDeployment().
+// 		WithDelayBuffer(threshold)
+// 	// try disabling batchposter
+// 	builder.nodeConfig.MessageExtraction.Enable = true
+// 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
+// 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+// 	cleanup := builder.Build(t)
+// 	defer cleanup()
 
-	builder.L2Info.GenerateAccount("User2")
+// 	builder.L2Info.GenerateAccount("User2")
 
-	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
-	defer cleanupB()
+// 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+// 	defer cleanupB()
 
-	// Force a batch to be posted as a delayed message and ensure it is reflected in the onchain contracts.
-	forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
-	time.Sleep(time.Hour)
-}
+// 	// Force a batch to be posted as a delayed message and ensure it is reflected in the onchain contracts.
+// 	forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
+// 	time.Sleep(time.Hour)
+// }
 
 func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

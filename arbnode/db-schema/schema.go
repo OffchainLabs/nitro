@@ -15,7 +15,7 @@ var (
 	SequencerBatchMetaPrefix            []byte = []byte("s") // maps a batch sequence number to BatchMetadata
 	DelayedSequencedPrefix              []byte = []byte("a") // maps a delayed message count to the first sequencer batch sequence number with this delayed count
 	MelStatePrefix                      []byte = []byte("l") // maps a parent chain block number to its computed MEL state
-	MelDelayedMessagePrefix             []byte = []byte("y") // maps a delayed sequence number to an accumulator and an RLP encoded message [Note: might need to replace or be replaced by dbschema.RlpDelayedMessagePrefix]
+	MelDelayedMessagePrefix             []byte = []byte("y") // maps a delayed sequence number to an accumulator and an RLP encoded message [Note: might need to replace or be replaced by RlpDelayedMessagePrefix]
 
 	MessageCountKey             []byte = []byte("_messageCount")                // contains the current message count
 	LastPrunedMessageKey        []byte = []byte("_lastPrunedMessageKey")        // contains the last pruned message key
