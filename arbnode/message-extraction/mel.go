@@ -48,6 +48,7 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type ParentChainReader interface {
 	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
+	BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error)
 	HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error)
 	TransactionInBlock(ctx context.Context, blockHash common.Hash, index uint) (*types.Transaction, error)
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
@@ -145,6 +146,29 @@ func (rf *blockReceiptFetcher) ReceiptForTransactionIndex(
 		return nil, err
 	}
 	return rf.client.TransactionReceipt(ctx, tx.Hash())
+}
+
+type blockTxsFetcher struct {
+	client           ParentChainReader
+	parentChainBlock *types.Block
+}
+
+func newBlockTxsFetcher(client ParentChainReader, parentChainBlock *types.Block) *blockTxsFetcher {
+	return &blockTxsFetcher{
+		client:           client,
+		parentChainBlock: parentChainBlock,
+	}
+}
+
+func (tf *blockTxsFetcher) TransactionsByHeader(
+	ctx context.Context,
+	parentChainHeaderHash common.Hash,
+) (types.Transactions, error) {
+	blk, err := tf.client.BlockByHash(ctx, parentChainHeaderHash)
+	if err != nil {
+		return nil, err
+	}
+	return blk.Transactions(), nil
 }
 
 func (m *MessageExtractor) CurrentFSMState() FSMState {
@@ -247,13 +271,15 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		// Creates a receipt fetcher for the specific parent chain block, to be used
 		// by the message extraction function.
 		receiptFetcher := newBlockReceiptFetcher(m.parentChainReader, parentChainBlock)
+		txsFetcher := newBlockTxsFetcher(m.parentChainReader, parentChainBlock)
 		postState, msgs, delayedMsgs, err := extractionfunction.ExtractMessages(
 			ctx,
 			preState,
-			parentChainBlock,
+			parentChainBlock.Header(),
 			m.dataProviders,
 			m.melDB,
 			receiptFetcher,
+			txsFetcher,
 		)
 		if err != nil {
 			return m.retryInterval, err

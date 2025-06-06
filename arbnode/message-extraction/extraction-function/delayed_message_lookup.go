@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth/filters"
 
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -22,12 +21,19 @@ import (
 func parseDelayedMessagesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
-	parentChainBlockNum *big.Int,
-	parentChainBlockTxs []*types.Transaction,
+	parentChainHeader *types.Header,
 	receiptFetcher ReceiptFetcher,
+	txsFetcher TransactionsFetcher,
 ) ([]*meltypes.DelayedInboxMessage, error) {
 	msgScaffolds := make([]*meltypes.DelayedInboxMessage, 0)
 	messageDeliveredEvents := make([]*bridgegen.IBridgeMessageDelivered, 0)
+	parentChainBlockTxs, err := txsFetcher.TransactionsByHeader(
+		ctx,
+		parentChainHeader.Hash(),
+	)
+	if err != nil {
+		return nil, err
+	}
 	for i, tx := range parentChainBlockTxs {
 		if tx.To() == nil {
 			continue
@@ -51,7 +57,7 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		delayedMessageScaffolds, parsedLogs, err := delayedMessageScaffoldsFromLogs(
-			parentChainBlockNum,
+			parentChainHeader.Number,
 			relevantLogs,
 		)
 		if err != nil {
@@ -91,7 +97,9 @@ func parseDelayedMessagesFromBlock(
 			{inboxMessageDeliveredID, inboxMessageFromOriginID}, // matches either of these IDs.
 			messageIds, // matches any of the message IDs.
 		}
-		filteredInboxMessageLogs := filters.FilterLogs(receipt.Logs, nil, nil, inboxAddressList, topics)
+		_ = topics
+		// filteredInboxMessageLogs := filters.FilterLogs(receipt.Logs, nil, nil, inboxAddressList, topics)
+		filteredInboxMessageLogs := make([]*types.Log, 0, len(receipt.Logs))
 		for _, inboxMsgLog := range filteredInboxMessageLogs {
 			msgNum, msg, err := parseDelayedMessage(
 				inboxMsgLog,

@@ -29,7 +29,8 @@ func (*logUnpacker) unpackLogTo(
 type batchLookupFunc func(
 	ctx context.Context,
 	melState *meltypes.State,
-	parentChainBlock *types.Block,
+	parentChainHeader *types.Header,
+	txsFetcher TransactionsFetcher,
 	receiptFetcher ReceiptFetcher,
 	eventUnpacker eventUnpacker,
 ) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error)
@@ -39,9 +40,9 @@ type batchLookupFunc func(
 type delayedMsgLookupFunc func(
 	ctx context.Context,
 	melState *meltypes.State,
-	parentChainBlockNum *big.Int,
-	parentChainBlockTxs []*types.Transaction,
+	parentChainHeader *types.Header,
 	receiptFetcher ReceiptFetcher,
+	txsFetcher TransactionsFetcher,
 ) ([]*meltypes.DelayedInboxMessage, error)
 
 // Defines a function that can serialize a batch.

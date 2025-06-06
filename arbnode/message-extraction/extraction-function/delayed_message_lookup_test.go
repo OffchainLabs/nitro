@@ -25,17 +25,21 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		DelayedMessagePostingTargetAddress: delayedMsgPostingAddr,
 	}
 
-	parentChainBlockNum := big.NewInt(1)
-	parentChainBlockTxs := []*types.Transaction{}
+	header := &types.Header{
+		Number: big.NewInt(1),
+	}
+	txsFetcher := &mockTxsFetcher{
+		txs: []*types.Transaction{},
+	}
 	receiptFetcher := &mockReceiptFetcher{}
 
 	t.Run("no transactions", func(t *testing.T) {
 		msgs, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
-			parentChainBlockNum,
-			parentChainBlockTxs,
+			header,
 			receiptFetcher,
+			txsFetcher,
 		)
 		require.NoError(t, err)
 		require.Empty(t, msgs)
@@ -54,6 +58,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
+		txsFetcher = &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		block := types.NewBlock(
 			&types.Header{},
 			blockBody,
@@ -63,9 +70,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		msgs, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
-			block.Number(),
-			block.Transactions(),
+			block.Header(),
 			receiptFetcher,
+			txsFetcher,
 		)
 		require.NoError(t, err)
 		require.Empty(t, msgs)
@@ -84,6 +91,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
+		txsFetcher = &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		receipt := &types.Receipt{
 			Logs: []*types.Log{},
 		}
@@ -100,9 +110,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		msgs, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
-			block.Number(),
-			block.Transactions(),
+			block.Header(),
 			receiptFetcher,
+			txsFetcher,
 		)
 		require.NoError(t, err)
 		require.Empty(t, msgs)
@@ -121,6 +131,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		tx := types.NewTx(txData)
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
+		}
+		txsFetcher = &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
 		}
 		messageIndexBytes := common.BigToHash(event.MessageIndex)
 		receipt := &types.Receipt{
@@ -149,9 +162,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		_, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
-			block.Number(),
-			block.Transactions(),
+			block.Header(),
 			receiptFetcher,
+			txsFetcher,
 		)
 		require.ErrorContains(t, err, "message 1 data not found")
 	})
@@ -186,6 +199,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		tx2 := types.NewTx(txData2)
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx1, tx2},
+		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx1, tx2},
 		}
 		messageIndexBytes := common.BigToHash(delayedMsgEvent.MessageIndex)
 		receipt1 := &types.Receipt{
@@ -226,9 +242,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		_, err = parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
-			block.Number(),
-			block.Transactions(),
+			block.Header(),
 			receiptFetcher,
+			txsFetcher,
 		)
 		require.ErrorContains(t, err, "mismatched hash")
 	})
@@ -284,6 +300,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx1, tx2},
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx1, tx2},
+		}
 		messageIndexBytes := common.BigToHash(delayedMsgEvent.MessageIndex)
 		receipt1 := &types.Receipt{
 			Logs: []*types.Log{
@@ -323,9 +342,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		delayedMessages, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
-			block.Number(),
-			block.Transactions(),
+			block.Header(),
 			receiptFetcher,
+			txsFetcher,
 		)
 		require.NoError(t, err)
 		require.Equal(t, 1, len(delayedMessages))
@@ -376,6 +395,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx1, tx2},
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx1, tx2},
+		}
 		messageIndexBytes := common.BigToHash(delayedMsgEvent.MessageIndex)
 		receipt1 := &types.Receipt{
 			Logs: []*types.Log{
@@ -414,9 +436,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		_, err = parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
-			block.Number(),
-			block.Transactions(),
+			block.Header(),
 			receiptFetcher,
+			txsFetcher,
 		)
 		require.ErrorContains(t, err, "too short")
 	})
@@ -471,6 +493,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx1, tx2},
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx1, tx2},
+		}
 		messageIndexBytes := common.BigToHash(delayedMsgEvent.MessageIndex)
 		receipt1 := &types.Receipt{
 			Logs: []*types.Log{
@@ -509,9 +534,9 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		delayedMessages, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
-			block.Number(),
-			block.Transactions(),
+			block.Header(),
 			receiptFetcher,
+			txsFetcher,
 		)
 		require.NoError(t, err)
 		require.Equal(t, 1, len(delayedMessages))

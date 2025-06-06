@@ -25,7 +25,8 @@ var _ meltypes.StateDatabase = (*mockMELDB)(nil)
 
 func TestMessageExtractor(t *testing.T) {
 	ctx := context.Background()
-	emptyblk := types.NewBlock(&types.Header{Number: common.Big2}, nil, nil, nil)
+	emptyblk1 := types.NewBlock(&types.Header{Number: common.Big2}, nil, nil, nil)
+	emptyblk2 := types.NewBlock(&types.Header{Number: common.Big3}, nil, nil, nil)
 	parentChainReader := &mockParentChainReader{
 		blocks: map[common.Hash]*types.Block{
 			{}: {},
@@ -34,8 +35,10 @@ func TestMessageExtractor(t *testing.T) {
 			{}: {},
 		},
 	}
-	parentChainReader.blocks[common.BigToHash(big.NewInt(2))] = emptyblk
-	parentChainReader.blocks[common.BigToHash(big.NewInt(3))] = emptyblk
+	parentChainReader.blocks[emptyblk1.Hash()] = emptyblk1
+	parentChainReader.blocks[emptyblk2.Hash()] = emptyblk2
+	parentChainReader.blocks[common.BigToHash(common.Big2)] = emptyblk1
+	parentChainReader.blocks[common.BigToHash(common.Big3)] = emptyblk2
 	initialStateFetcher := &mockInitialStateFetcher{}
 	mockDB := &mockMELDB{
 		states: make(map[uint64]*meltypes.State),
@@ -164,6 +167,17 @@ func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.I
 		return types.NewBlock(&types.Header{Number: common.Big0}, nil, nil, nil), nil
 	}
 	block, ok := m.blocks[common.BigToHash(number)]
+	if !ok {
+		return nil, fmt.Errorf("block not found")
+	}
+	return block, nil
+}
+
+func (m *mockParentChainReader) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
+	if m.returnErr != nil {
+		return nil, m.returnErr
+	}
+	block, ok := m.blocks[hash]
 	if !ok {
 		return nil, fmt.Errorf("block not found")
 	}
