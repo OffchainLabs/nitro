@@ -231,9 +231,12 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				melState: preState,
 			})
 		}
-		// Question: should move this to a separate pruning thread that has access to current state?
-		if finalizedBlk, err := m.parentChainReader.BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64())); err != nil {
+		finalizedBlk, err := m.parentChainReader.BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+		if err != nil {
 			log.Error("Error fetching FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the SeenUnreadDelayedMetaDeque will be retried again later", "err", err)
+		}
+		if preState.ParentChainBlockNumber <= finalizedBlk.NumberU64() {
+			preState.GetSeenUnreadDelayedMetaDeque().ClearReadAndFinalized(preState.DelayedMessagesRead)
 		} else {
 			if finalizedMelState, err := m.melDB.State(ctx, finalizedBlk.NumberU64()); err != nil {
 				log.Error("Error fetching melState corresponding to FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the SeenUnreadDelayedMetaDeque will be retried again later", "err", err)
