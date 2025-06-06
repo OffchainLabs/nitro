@@ -8,7 +8,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth/filters"
 
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -94,7 +93,7 @@ func getSequencerBatchData(
 			return nil, errors.New("no logs found in transaction receipt")
 		}
 		topics := [][]common.Hash{{sequencerBatchDataABI}, {numberAsHash}}
-		filteredLogs := filters.FilterLogs(receipt.Logs, nil, nil, []common.Address{batch.BridgeAddress}, topics)
+		filteredLogs := types.FilterLogs(receipt.Logs, nil, nil, []common.Address{batch.BridgeAddress}, topics)
 		if len(filteredLogs) == 0 {
 			return nil, errors.New("expected to find sequencer batch data")
 		}

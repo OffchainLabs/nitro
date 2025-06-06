@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth/filters"
 
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -91,7 +90,7 @@ func parseDelayedMessagesFromBlock(
 			{inboxMessageDeliveredID, inboxMessageFromOriginID}, // matches either of these IDs.
 			messageIds, // matches any of the message IDs.
 		}
-		filteredInboxMessageLogs := filters.FilterLogs(receipt.Logs, nil, nil, inboxAddressList, topics)
+		filteredInboxMessageLogs := types.FilterLogs(receipt.Logs, nil, nil, inboxAddressList, topics)
 		for _, inboxMsgLog := range filteredInboxMessageLogs {
 			msgNum, msg, err := parseDelayedMessage(
 				inboxMsgLog,
