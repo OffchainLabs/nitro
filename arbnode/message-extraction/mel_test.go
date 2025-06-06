@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
@@ -141,8 +142,8 @@ type mockInitialStateFetcher struct {
 	returnErr error
 }
 
-func (m *mockInitialStateFetcher) GetState(
-	_ context.Context, _ common.Hash,
+func (m *mockInitialStateFetcher) FetchInitialState(
+	_ context.Context, _ common.Hash, _ uint64,
 ) (*meltypes.State, error) {
 	if m.returnErr != nil {
 		return nil, m.returnErr
@@ -159,6 +160,9 @@ type mockParentChainReader struct {
 func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
 	if m.returnErr != nil {
 		return nil, m.returnErr
+	}
+	if number.Int64() == rpc.FinalizedBlockNumber.Int64() {
+		return types.NewBlock(&types.Header{Number: common.Big0}, nil, nil, nil), nil
 	}
 	block, ok := m.blocks[common.BigToHash(number)]
 	if !ok {

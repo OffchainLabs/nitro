@@ -155,6 +155,20 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 	return crypto.Keccak256Hash(m.BeforeInboxAcc[:], hash)
 }
 
+// Hash will replace AfterInboxAcc
+func (m *DelayedInboxMessage) Hash() common.Hash {
+	hash := crypto.Keccak256(
+		[]byte{m.Message.Header.Kind},
+		m.Message.Header.Poster.Bytes(),
+		arbmath.UintToBytes(m.Message.Header.BlockNumber),
+		arbmath.UintToBytes(m.Message.Header.Timestamp),
+		m.Message.Header.RequestId.Bytes(),
+		arbmath.U256Bytes(m.Message.Header.L1BaseFee),
+		crypto.Keccak256(m.Message.L2msg),
+	)
+	return crypto.Keccak256Hash(hash)
+}
+
 func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int, batchFetcher arbostypes.FallibleBatchFetcher) ([]*DelayedInboxMessage, error) {
 	query := ethereum.FilterQuery{
 		BlockHash: nil,

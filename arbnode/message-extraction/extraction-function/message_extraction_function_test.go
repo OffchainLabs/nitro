@@ -23,6 +23,7 @@ import (
 
 func TestExtractMessages(t *testing.T) {
 	ctx := context.Background()
+	requestId := common.MaxHash
 	t.Run("parent chain block hash mismatch", func(t *testing.T) {
 		prevParentBlockHash := common.HexToHash("0x1234")
 		block := types.NewBlock(
@@ -36,6 +37,7 @@ func TestExtractMessages(t *testing.T) {
 		melState := &meltypes.State{
 			ParentChainBlockHash: common.HexToHash("0x5678"),
 		}
+		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		_, _, _, err := ExtractMessages(
 			ctx,
 			melState,
@@ -59,6 +61,7 @@ func TestExtractMessages(t *testing.T) {
 		melState := &meltypes.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
+		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
@@ -98,6 +101,7 @@ func TestExtractMessages(t *testing.T) {
 		melState := &meltypes.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
+		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
@@ -147,6 +151,7 @@ func TestExtractMessages(t *testing.T) {
 		melState := &meltypes.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
+		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
@@ -168,7 +173,9 @@ func TestExtractMessages(t *testing.T) {
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
 						Header: &arbostypes.L1IncomingMessageHeader{
-							Kind: arbostypes.L1MessageType_BatchPostingReport,
+							Kind:      arbostypes.L1MessageType_BatchPostingReport,
+							RequestId: &requestId,
+							L1BaseFee: common.Big0,
 						},
 					},
 				},
@@ -206,6 +213,7 @@ func TestExtractMessages(t *testing.T) {
 		melState := &meltypes.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
+		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
@@ -232,7 +240,9 @@ func TestExtractMessages(t *testing.T) {
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
 						Header: &arbostypes.L1IncomingMessageHeader{
-							Kind: arbostypes.L1MessageType_BatchPostingReport,
+							Kind:      arbostypes.L1MessageType_BatchPostingReport,
+							RequestId: &requestId,
+							L1BaseFee: common.Big0,
 						},
 					},
 				},
@@ -277,6 +287,7 @@ func TestExtractMessages(t *testing.T) {
 		melState := &meltypes.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
+		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
@@ -303,7 +314,9 @@ func TestExtractMessages(t *testing.T) {
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
 						Header: &arbostypes.L1IncomingMessageHeader{
-							Kind: arbostypes.L1MessageType_BatchPostingReport,
+							Kind:      arbostypes.L1MessageType_BatchPostingReport,
+							RequestId: &requestId,
+							L1BaseFee: common.Big0,
 						},
 					},
 				},
@@ -353,6 +366,7 @@ func TestExtractMessages(t *testing.T) {
 		melState := &meltypes.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
+		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
@@ -379,7 +393,9 @@ func TestExtractMessages(t *testing.T) {
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
 						Header: &arbostypes.L1IncomingMessageHeader{
-							Kind: arbostypes.L1MessageType_BatchPostingReport,
+							Kind:      arbostypes.L1MessageType_BatchPostingReport,
+							RequestId: &requestId,
+							L1BaseFee: common.Big0,
 						},
 					},
 				},
@@ -429,6 +445,7 @@ func TestExtractMessages(t *testing.T) {
 		melState := &meltypes.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
+		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
@@ -455,7 +472,9 @@ func TestExtractMessages(t *testing.T) {
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
 						Header: &arbostypes.L1IncomingMessageHeader{
-							Kind: arbostypes.L1MessageType_BatchPostingReport,
+							Kind:      arbostypes.L1MessageType_BatchPostingReport,
+							RequestId: &requestId,
+							L1BaseFee: common.Big0,
 						},
 					},
 				},
@@ -515,6 +534,7 @@ func TestExtractMessages(t *testing.T) {
 		melState := &meltypes.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
+		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
@@ -541,7 +561,9 @@ func TestExtractMessages(t *testing.T) {
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
 						Header: &arbostypes.L1IncomingMessageHeader{
-							Kind: arbostypes.L1MessageType_BatchPostingReport,
+							Kind:      arbostypes.L1MessageType_BatchPostingReport,
+							RequestId: &requestId,
+							L1BaseFee: common.Big0,
 						},
 					},
 				},
@@ -609,6 +631,7 @@ func TestExtractMessages(t *testing.T) {
 		melState := &meltypes.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
+		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
@@ -635,7 +658,9 @@ func TestExtractMessages(t *testing.T) {
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
 						Header: &arbostypes.L1IncomingMessageHeader{
-							Kind: arbostypes.L1MessageType_BatchPostingReport,
+							Kind:      arbostypes.L1MessageType_BatchPostingReport,
+							RequestId: &requestId,
+							L1BaseFee: common.Big0,
 						},
 					},
 				},

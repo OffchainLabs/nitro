@@ -127,8 +127,16 @@ func extractMessagesImpl(
 		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
 			batchPostingReports = append(batchPostingReports, delayed)
 		}
+		if err = state.AccumulateDelayedMessage(delayed); err != nil {
+			return nil, nil, nil, err
+		}
 		state.DelayedMessagedSeen += 1
-		state = state.AccumulateDelayedMessage(delayed)
+	}
+	if len(delayedMessages) > 0 {
+		// Only need to calculate partials once, after all the delayed messages are `seen`
+		if err := state.GenerateDelayedMessageMerklePartials(); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 
 	// Batch posting reports are included in the same transaction as a batch, so there should

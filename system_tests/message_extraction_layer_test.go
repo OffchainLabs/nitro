@@ -445,16 +445,30 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		)
 	}
 
-	// Start from 1 to ignore the init message and check the messages we extracted from MEL and the inbox tracker are the same.
-	for i := uint64(1); i < numDelayedMessages; i++ {
-		fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
+	newInitialState, err := melDB.FetchInitialState(ctx, lastState.ParentChainBlockHash, 0)
+	Require(t, err)
+	for i := newInitialState.DelayedMessagesRead; i < newInitialState.DelayedMessagedSeen; i++ {
+		// Validates the pending unread delayed messages via accumulator
+		delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(ctx, newInitialState, newInitialState.DelayedMessagesRead)
 		Require(t, err)
-		delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(ctx, nil, i)
+		fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
 		if !fetchedDelayedMsg.Equals(delayedMsgSavedByMel.Message) {
 			t.Fatal("Messages from MEL and inbox tracker do not match")
 		}
+		t.Logf("validated delayed message of index: %d", i)
 	}
+
+	// // Start from 1 to ignore the init message and check the messages we extracted from MEL and the inbox tracker are the same.
+	// for i := uint64(1); i < numDelayedMessages; i++ {
+	// 	fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
+	// 	Require(t, err)
+	// 	delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(ctx, newInitialState, i)
+	// 	Require(t, err)
+	// 	if !fetchedDelayedMsg.Equals(delayedMsgSavedByMel.Message) {
+	// 		t.Fatal("Messages from MEL and inbox tracker do not match")
+	// 	}
+	// }
 }
 
 type mockMELDB struct {
@@ -473,7 +487,11 @@ func (m *mockMELDB) State(
 	ctx context.Context,
 	parentChainBlockNumber uint64,
 ) (*meltypes.State, error) {
-	return m.savedStates[parentChainBlockNumber], nil
+	state, ok := m.savedStates[parentChainBlockNumber]
+	if !ok {
+		return nil, errors.New("state not found")
+	}
+	return state, nil
 }
 
 func (m *mockMELDB) SaveState(
@@ -485,8 +503,8 @@ func (m *mockMELDB) SaveState(
 	return nil
 }
 
-func (m *mockMELDB) GetState(
-	ctx context.Context, parentChainBlockHash common.Hash,
+func (m *mockMELDB) FetchInitialState(
+	ctx context.Context, parentChainBlockHash common.Hash, _ uint64,
 ) (*meltypes.State, error) {
 	if m.lastState.ParentChainBlockHash != parentChainBlockHash {
 		return nil, fmt.Errorf("parentChainBlockHash of db doesnt match the hash queried by initialStateFetcher")
