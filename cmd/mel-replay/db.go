@@ -1,54 +1,60 @@
 package main
 
-import "github.com/ethereum/go-ethereum/ethdb"
+import (
+	"fmt"
 
-type Hooks struct {
-	Get    func(key []byte) []byte
-	Put    func(key []byte, value []byte)
-	Delete func(key []byte)
-}
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/offchainlabs/nitro/arbutil"
+)
 
-// DB implements the ethdb.Database to back the StateDB of Geth.
+var _ ethdb.Database = (*DB)(nil)
+
 type DB struct {
-	db Hooks
+	resolver preimageResolver
 }
 
-func (p *DB) Has(key []byte) (bool, error) {
-	panic("not supported")
+func (d *DB) Get(key []byte) ([]byte, error) {
+	if len(key) != 32 {
+		panic(fmt.Sprintf("expected 32 byte key query, but got %d bytes: %x", len(key), key))
+	}
+	preimage, err := d.resolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, common.BytesToHash(key))
+	if err != nil {
+		panic(fmt.Errorf("error resolving preimage for %#x: %w", key, err))
+	}
+	return preimage, nil
 }
 
-func (p *DB) Get(key []byte) ([]byte, error) {
-	return p.db.Get(key), nil
+func (d *DB) Has(key []byte) (bool, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) Put(key []byte, value []byte) error {
-	p.db.Put(key, value)
-	return nil
+func (d *DB) Put(key []byte, value []byte) error {
+	panic("unimplemented")
 }
 
 func (p DB) Delete(key []byte) error {
-	p.db.Delete(key)
-	return nil
+	panic("unimplemented")
 }
 
-func (p *DB) DeleteRange(start, end []byte) error {
-	panic("not supported")
+func (d *DB) DeleteRange(start, end []byte) error {
+	panic("unimplemented")
 }
 
 func (p DB) Stat() (string, error) {
-	panic("not supported")
+	panic("unimplemented")
 }
 
 func (p DB) NewBatch() ethdb.Batch {
-	panic("not supported")
+	panic("unimplemented")
 }
 
 func (p DB) NewBatchWithSize(size int) ethdb.Batch {
-	panic("not supported")
+	panic("unimplemented")
 }
 
 func (p DB) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
-	panic("not supported")
+	panic("unimplemented")
 }
 
 func (p DB) Compact(start []byte, limit []byte) error {
@@ -62,64 +68,62 @@ func (p DB) Close() error {
 // We implement the full ethdb.Database bloat because the StateDB takes this full interface,
 // even though it only uses the KeyValue subset.
 
-func (p *DB) HasAncient(kind string, number uint64) (bool, error) {
-	panic("not supported")
+func (d *DB) HasAncient(kind string, number uint64) (bool, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) Ancient(kind string, number uint64) ([]byte, error) {
-	panic("not supported")
+func (d *DB) Ancient(kind string, number uint64) ([]byte, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) AncientRange(kind string, start, count, maxBytes uint64) ([][]byte, error) {
-	panic("not supported")
+func (d *DB) AncientRange(kind string, start, count, maxBytes uint64) ([][]byte, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) Ancients() (uint64, error) {
-	panic("not supported")
+func (d *DB) Ancients() (uint64, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) Tail() (uint64, error) {
-	panic("not supported")
+func (d *DB) Tail() (uint64, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) AncientSize(kind string) (uint64, error) {
-	panic("not supported")
+func (d *DB) AncientSize(kind string) (uint64, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) ReadAncients(fn func(ethdb.AncientReaderOp) error) (err error) {
-	panic("not supported")
+func (d *DB) ReadAncients(fn func(ethdb.AncientReaderOp) error) (err error) {
+	panic("unimplemented")
 }
 
-func (p *DB) ModifyAncients(f func(ethdb.AncientWriteOp) error) (int64, error) {
-	panic("not supported")
+func (d *DB) ModifyAncients(f func(ethdb.AncientWriteOp) error) (int64, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) TruncateHead(n uint64) (uint64, error) {
-	panic("not supported")
+func (d *DB) TruncateHead(n uint64) (uint64, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) TruncateTail(n uint64) (uint64, error) {
-	panic("not supported")
+func (d *DB) TruncateTail(n uint64) (uint64, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) Sync() error {
-	panic("not supported")
+func (d *DB) Sync() error {
+	panic("unimplemented")
 }
 
-func (p *DB) MigrateTable(s string, f func([]byte) ([]byte, error)) error {
-	panic("not supported")
+func (d *DB) MigrateTable(s string, f func([]byte) ([]byte, error)) error {
+	panic("unimplemented")
 }
 
-func (p *DB) AncientDatadir() (string, error) {
-	panic("not supported")
+func (d *DB) AncientDatadir() (string, error) {
+	panic("unimplemented")
 }
 
-func (p *DB) WasmDataBase() (ethdb.KeyValueStore, uint32) {
-	panic("not supported")
+func (d *DB) WasmDataBase() (ethdb.KeyValueStore, uint32) {
+	panic("unimplemented")
 }
 
-func (p *DB) WasmTargets() []ethdb.WasmTarget {
-	panic("not supported")
+func (d *DB) WasmTargets() []ethdb.WasmTarget {
+	panic("unimplemented")
 }
-
-var _ ethdb.Database = (*DB)(nil)

@@ -63,19 +63,20 @@ func main() {
 	currentState := startState
 
 	// Loops backwards over blocks, feeding them one by one into the extract messages function.
+	resolver := &wavmPreimageResolver{}
 	delayedMsgDatabase := &delayedMessageDatabase{
-		preimageResolver: &wavmPreimageResolver{},
+		preimageResolver: resolver,
 	}
 	for i := len(blockHeaders) - 1; i >= 0; i-- {
 		header := blockHeaders[i]
 		log.Info("Extracting messages from block", "number", header.Number.Uint64(), "hash", header.Hash().Hex())
 		receiptFetcher := &receiptFetcherForBlock{
 			header:           header,
-			preimageResolver: &wavmPreimageResolver{},
+			preimageResolver: resolver,
 		}
 		txsFetcher := &txsFetcherForBlock{
 			header:           header,
-			preimageResolver: &wavmPreimageResolver{},
+			preimageResolver: resolver,
 		}
 		postState, _, _, err := extractionfunction.ExtractMessages(
 			ctx,

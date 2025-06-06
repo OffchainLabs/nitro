@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/triedb"
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type txsFetcherForBlock struct {
@@ -24,65 +23,70 @@ func (tf *txsFetcherForBlock) TransactionsByHeader(
 	parentChainHeaderHash common.Hash,
 ) (types.Transactions, error) {
 	preimageDB := &DB{
-		Hooks{
-			Get: func(key []byte) []byte {
-				if len(key) != 32 {
-					panic(fmt.Sprintf("expected 32 byte key query, but got %d bytes: %x", len(key), key))
-				}
-				preimage, err := tf.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, common.BytesToHash(key))
-				if err != nil {
-					panic(fmt.Errorf("error resolving preimage for %#x: %w", key, err))
-				}
-				return preimage
-			},
-			Put: func(key []byte, value []byte) {
-				panic("put not supported")
-			},
-			Delete: func(key []byte) {
-				panic("delete not supported")
-			},
-		},
+		resolver: tf.preimageResolver,
 	}
 	tdb := triedb.NewDatabase(preimageDB, nil)
 	tr, err := trie.New(trie.TrieID(tf.header.TxHash), tdb)
 	if err != nil {
 		panic(err)
 	}
-	iter, err := tr.NodeIterator(nil)
-	if err != nil {
-		panic(err)
+	entries, indices := tf.collectTrieEntries(tr)
+	rawTxs := tf.reconstructOrderedData(entries, indices)
+	return tf.decodeTransactionData(rawTxs)
+}
+
+func (btr *txsFetcherForBlock) collectTrieEntries(txTrie *trie.Trie) ([][]byte, []uint64) {
+	nodeIterator, iterErr := txTrie.NodeIterator(nil)
+	if iterErr != nil {
+		panic(iterErr)
 	}
-	var values [][]byte
-	var keys []uint64
-	for iter.Next(true) {
-		if iter.Leaf() {
-			k := iter.LeafKey()
-			var x uint64
-			err := rlp.DecodeBytes(k, &x)
-			if err != nil {
-				panic(fmt.Errorf("invalid key: %w", err))
-			}
-			keys = append(keys, x)
-			values = append(values, iter.LeafBlob())
+
+	var rawValues [][]byte
+	var indexKeys []uint64
+
+	for nodeIterator.Next(true) {
+		if !nodeIterator.Leaf() {
+			continue
 		}
+
+		leafKey := nodeIterator.LeafKey()
+		var decodedIndex uint64
+
+		decodeErr := rlp.DecodeBytes(leafKey, &decodedIndex)
+		if decodeErr != nil {
+			panic(fmt.Errorf("key decoding error: %w", decodeErr))
+		}
+
+		indexKeys = append(indexKeys, decodedIndex)
+		rawValues = append(rawValues, nodeIterator.LeafBlob())
 	}
-	out := make([]hexutil.Bytes, len(values))
-	for i, x := range keys {
-		if x >= uint64(len(values)) {
-			panic(fmt.Sprintf("bad key: %d", x))
+
+	return rawValues, indexKeys
+}
+
+func (btr *txsFetcherForBlock) reconstructOrderedData(rawValues [][]byte, indices []uint64) []hexutil.Bytes {
+	orderedData := make([]hexutil.Bytes, len(rawValues))
+	for position, index := range indices {
+		if index >= uint64(len(rawValues)) {
+			panic(fmt.Sprintf("index out of bounds: %d", index))
 		}
-		if out[x] != nil {
-			panic(fmt.Sprintf("duplicate key %d", x))
+		if orderedData[index] != nil {
+			panic(fmt.Sprintf("index collision detected: %d", index))
 		}
-		out[x] = values[i]
+		orderedData[index] = rawValues[position]
 	}
-	txs := make(types.Transactions, 0, len(out))
-	for _, v := range out {
-		tx := new(types.Transaction)
-		if err := rlp.Decode(bytes.NewBuffer(v), &tx); err != nil {
-			return nil, fmt.Errorf("error decoding transaction: %w", err)
+	return orderedData
+}
+
+func (btr *txsFetcherForBlock) decodeTransactionData(encodedData []hexutil.Bytes) (types.Transactions, error) {
+	transactionList := make(types.Transactions, 0, len(encodedData))
+	for _, encodedTx := range encodedData {
+		decodedTx := new(types.Transaction)
+		dataReader := bytes.NewBuffer(encodedTx)
+		if decodeErr := rlp.Decode(dataReader, &decodedTx); decodeErr != nil {
+			return nil, fmt.Errorf("transaction decoding failed: %w", decodeErr)
 		}
-		txs = append(txs, tx)
+		transactionList = append(transactionList, decodedTx)
 	}
-	return txs, nil
+	return transactionList, nil
 }
