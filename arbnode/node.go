@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -27,8 +28,12 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
+	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -66,6 +71,7 @@ type Config struct {
 	DelayedSequencer         DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster              BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
 	MessagePruner            MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
+	MessageExtraction        mel.MessageExtractionConfig    `koanf:"message-extraction" reload:"hot"`
 	BlockValidator           staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
 	Feed                     broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
 	Staker                   legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
@@ -104,6 +110,9 @@ func (c *Config) Validate() error {
 	if err := c.Maintenance.Validate(); err != nil {
 		return err
 	}
+	if err := c.MessageExtraction.Validate(); err != nil {
+		return err
+	}
 	if err := c.InboxReader.Validate(); err != nil {
 		return err
 	}
@@ -139,6 +148,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
+	mel.MessageExtractionConfigAddOptions(prefix+".message-extraction", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	legacystaker.L1ValidatorConfigAddOptions(prefix+".staker", f)
@@ -165,6 +175,7 @@ var ConfigDefault = Config{
 	BlockValidator:           staker.DefaultBlockValidatorConfig,
 	Feed:                     broadcastclient.FeedConfigDefault,
 	Staker:                   legacystaker.DefaultL1ValidatorConfig,
+	MessageExtraction:        mel.DefaultMessageExtractionConfig,
 	Bold:                     boldstaker.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
@@ -261,6 +272,7 @@ type Node struct {
 	TxStreamer               *TransactionStreamer
 	DeployInfo               *chaininfo.RollupAddresses
 	BlobReader               daprovider.BlobReader
+	MessageExtractor         *mel.MessageExtractor
 	InboxReader              *InboxReader
 	InboxTracker             *InboxTracker
 	DelayedSequencer         *DelayedSequencer
@@ -309,18 +321,18 @@ type ConfigFetcher interface {
 
 func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	var version uint64
-	hasVersion, err := arbDb.Has(dbSchemaVersion)
+	hasVersion, err := arbDb.Has(dbschema.DbSchemaVersion)
 	if err != nil {
 		return err
 	}
 	if hasVersion {
-		versionBytes, err := arbDb.Get(dbSchemaVersion)
+		versionBytes, err := arbDb.Get(dbschema.DbSchemaVersion)
 		if err != nil {
 			return err
 		}
 		version = binary.BigEndian.Uint64(versionBytes)
 	}
-	for version != currentDbSchemaVersion {
+	for version != dbschema.CurrentDbSchemaVersion {
 		batch := arbDb.NewBatch()
 		switch version {
 		case 0:
@@ -335,7 +347,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 		version++
 		versionBytes := make([]uint8, 8)
 		binary.BigEndian.PutUint64(versionBytes, version)
-		err = batch.Put(dbSchemaVersion, versionBytes)
+		err = batch.Put(dbschema.DbSchemaVersion, versionBytes)
 		if err != nil {
 			return err
 		}
@@ -653,6 +665,9 @@ func getInboxTrackerAndReader(
 	sequencerInbox *SequencerInbox,
 	exec execution.ExecutionSequencer,
 ) (*InboxTracker, *InboxReader, error) {
+	if config.MessageExtraction.Enable {
+		return nil, nil, nil
+	}
 	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
 	if err != nil {
 		return nil, nil, err
@@ -690,6 +705,85 @@ func getInboxTrackerAndReader(
 	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	return inboxTracker, inboxReader, nil
+}
+
+func getMessageExtractor(
+	ctx context.Context,
+	config *Config,
+	l1client *ethclient.Client,
+	deployInfo *chaininfo.RollupAddresses,
+	arbDb ethdb.Database,
+	txStreamer *TransactionStreamer,
+) (*mel.MessageExtractor, error) {
+	if !config.MessageExtraction.Enable {
+		return nil, nil
+	}
+	melDB := mel.NewDatabase(arbDb)
+	initialState, err := createInitialMELState(ctx, deployInfo, l1client)
+	if err != nil {
+		return nil, err
+	}
+	if err = melDB.SaveState(ctx, initialState); err != nil {
+		return nil, fmt.Errorf("failed to save initial mel state: %w", err)
+	}
+	return mel.NewMessageExtractor(
+		l1client,
+		deployInfo,
+		melDB, // MEL db can also act as the initial state fetcher.
+		melDB,
+		txStreamer,
+		nil, // TODO: Pass in da readers.
+		initialState.ParentChainBlockHash,
+		time.Second,
+	)
+}
+
+func createInitialMELState(
+	ctx context.Context,
+	addrs *chaininfo.RollupAddresses,
+	client *ethclient.Client,
+) (*meltypes.State, error) {
+	// Create an initial MEL state from the latest confirmed assertion.
+	rollup, err := rollupgen.NewRollupUserLogic(addrs.Rollup, client)
+	if err != nil {
+		return nil, err
+	}
+	confirmedHash, err := rollup.LatestConfirmed(&bind.CallOpts{})
+	if err != nil {
+		return nil, err
+	}
+	latestConfirmedAssertion, err := boldstaker.ReadBoldAssertionCreationInfo(
+		ctx,
+		rollup,
+		client,
+		addrs.Rollup,
+		confirmedHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+	startBlock, err := client.BlockByNumber(ctx, new(big.Int).SetUint64(latestConfirmedAssertion.CreationL1Block))
+	if err != nil {
+		return nil, err
+	}
+	chainId, err := client.ChainID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &meltypes.State{
+		Version:                            0,
+		BatchPostingTargetAddress:          addrs.SequencerInbox,
+		DelayedMessagePostingTargetAddress: addrs.Bridge,
+		ParentChainId:                      chainId.Uint64(),
+		ParentChainBlockNumber:             startBlock.NumberU64(),
+		ParentChainBlockHash:               startBlock.Hash(),
+		ParentChainPreviousBlockHash:       startBlock.ParentHash(),
+		MessageAccumulator:                 common.Hash{},
+		DelayedMessagedSeen:                1,
+		DelayedMessagesRead:                1, // Assumes we have read the init message.
+		DelayedMessageMerklePartials:       make([]common.Hash, 0),
+		MsgCount:                           1,
+	}, nil
 }
 
 func getBlockValidator(
@@ -954,6 +1048,9 @@ func getDelayedSequencer(
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
+	if inboxReader == nil {
+		return nil, nil
+	}
 	if exec == nil {
 		return nil, nil
 	}
@@ -1100,6 +1197,11 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	messageExtractor, err := getMessageExtractor(ctx, config, l1client, deployInfo, arbDb, txStreamer)
+	if err != nil {
+		return nil, err
+	}
+
 	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
@@ -1142,6 +1244,7 @@ func createNodeImpl(
 		BlobReader:               blobReader,
 		InboxReader:              inboxReader,
 		InboxTracker:             inboxTracker,
+		MessageExtractor:         messageExtractor,
 		DelayedSequencer:         delayedSequencer,
 		BatchPoster:              batchPoster,
 		MessagePruner:            messagePruner,
@@ -1361,6 +1464,12 @@ func (n *Node) Start(ctx context.Context) error {
 		err = n.InboxReader.Start(ctx)
 		if err != nil {
 			return fmt.Errorf("error starting inbox reader: %w", err)
+		}
+	}
+	if n.MessageExtractor != nil {
+		err = n.MessageExtractor.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting message extractor: %w", err)
 		}
 	}
 	// must init broadcast server before trying to sequence anything

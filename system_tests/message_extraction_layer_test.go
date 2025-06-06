@@ -61,7 +61,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	mockDB := &mockMELDB{
 		savedMsgs:        make([]*arbostypes.MessageWithMetadata, 0),
 		savedStates:      make(map[uint64]*meltypes.State),
-		savedDelayedMsgs: make([]*arbnode.DelayedInboxMessage, 0),
+		savedDelayedMsgs: make([]*meltypes.DelayedInboxMessage, 0),
 	}
 	Require(t, mockDB.SaveState(ctx, melState))
 	extractor, err := mel.NewMessageExtractor(
@@ -183,7 +183,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	mockDB := &mockMELDB{
 		savedMsgs:        make([]*arbostypes.MessageWithMetadata, 0),
 		savedStates:      make(map[uint64]*meltypes.State),
-		savedDelayedMsgs: make([]*arbnode.DelayedInboxMessage, 0),
+		savedDelayedMsgs: make([]*meltypes.DelayedInboxMessage, 0),
 	}
 	Require(t, mockDB.SaveState(ctx, melState))
 	extractor, err := mel.NewMessageExtractor(
@@ -272,7 +272,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	mockDB := &mockMELDB{
 		savedMsgs:        make([]*arbostypes.MessageWithMetadata, 0),
 		savedStates:      make(map[uint64]*meltypes.State),
-		savedDelayedMsgs: make([]*arbnode.DelayedInboxMessage, 0),
+		savedDelayedMsgs: make([]*meltypes.DelayedInboxMessage, 0),
 	}
 	Require(t, mockDB.SaveState(ctx, melState))
 	extractor, err := mel.NewMessageExtractor(
@@ -361,6 +361,34 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	}
 }
 
+// func TestMessageExtractionLayer_RunningNode(t *testing.T) {
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	defer cancel()
+
+// 	threshold := uint64(0)
+// 	messagesPerBatch := uint64(3)
+
+// 	builder := NewNodeBuilder(ctx).
+// 		DefaultConfig(t, true).
+// 		WithBoldDeployment().
+// 		WithDelayBuffer(threshold)
+// 	// try disabling batchposter
+// 	builder.nodeConfig.MessageExtraction.Enable = true
+// 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
+// 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+// 	cleanup := builder.Build(t)
+// 	defer cleanup()
+
+// 	builder.L2Info.GenerateAccount("User2")
+
+// 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+// 	defer cleanupB()
+
+// 	// Force a batch to be posted as a delayed message and ensure it is reflected in the onchain contracts.
+// 	forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
+// 	time.Sleep(time.Hour)
+// }
+
 func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -372,11 +400,13 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		DefaultConfig(t, true).
 		WithBoldDeployment().
 		WithDelayBuffer(threshold)
-	builder.L2Info.GenerateAccount("User2")
+	// try disabling batchposter
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
 	cleanup := builder.Build(t)
 	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User2")
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
@@ -473,7 +503,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 
 type mockMELDB struct {
 	savedMsgs        []*arbostypes.MessageWithMetadata
-	savedDelayedMsgs []*arbnode.DelayedInboxMessage
+	savedDelayedMsgs []*meltypes.DelayedInboxMessage
 	savedStates      map[uint64]*meltypes.State
 	lastState        *meltypes.State
 }
@@ -515,7 +545,7 @@ func (m *mockMELDB) FetchInitialState(
 func (m *mockMELDB) SaveDelayedMessages(
 	ctx context.Context,
 	state *meltypes.State,
-	delayedMessages []*arbnode.DelayedInboxMessage,
+	delayedMessages []*meltypes.DelayedInboxMessage,
 ) error {
 	m.savedDelayedMsgs = append(m.savedDelayedMsgs, delayedMessages...)
 	return nil
@@ -524,7 +554,7 @@ func (m *mockMELDB) ReadDelayedMessage(
 	ctx context.Context,
 	_ *meltypes.State,
 	index uint64,
-) (*arbnode.DelayedInboxMessage, error) {
+) (*meltypes.DelayedInboxMessage, error) {
 	if index == 0 {
 		return nil, errors.New("index cannot be 0")
 	}

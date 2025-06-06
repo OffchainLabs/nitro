@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -135,41 +136,7 @@ func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber uint6
 	return hash, nil
 }
 
-type DelayedInboxMessage struct {
-	BlockHash              common.Hash
-	BeforeInboxAcc         common.Hash
-	Message                *arbostypes.L1IncomingMessage
-	ParentChainBlockNumber uint64
-}
-
-func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
-	hash := crypto.Keccak256(
-		[]byte{m.Message.Header.Kind},
-		m.Message.Header.Poster.Bytes(),
-		arbmath.UintToBytes(m.Message.Header.BlockNumber),
-		arbmath.UintToBytes(m.Message.Header.Timestamp),
-		m.Message.Header.RequestId.Bytes(),
-		arbmath.U256Bytes(m.Message.Header.L1BaseFee),
-		crypto.Keccak256(m.Message.L2msg),
-	)
-	return crypto.Keccak256Hash(m.BeforeInboxAcc[:], hash)
-}
-
-// Hash will replace AfterInboxAcc
-func (m *DelayedInboxMessage) Hash() common.Hash {
-	hash := crypto.Keccak256(
-		[]byte{m.Message.Header.Kind},
-		m.Message.Header.Poster.Bytes(),
-		arbmath.UintToBytes(m.Message.Header.BlockNumber),
-		arbmath.UintToBytes(m.Message.Header.Timestamp),
-		m.Message.Header.RequestId.Bytes(),
-		arbmath.U256Bytes(m.Message.Header.L1BaseFee),
-		crypto.Keccak256(m.Message.L2msg),
-	)
-	return crypto.Keccak256Hash(hash)
-}
-
-func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int, batchFetcher arbostypes.FallibleBatchFetcher) ([]*DelayedInboxMessage, error) {
+func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int, batchFetcher arbostypes.FallibleBatchFetcher) ([]*meltypes.DelayedInboxMessage, error) {
 	query := ethereum.FilterQuery{
 		BlockHash: nil,
 		FromBlock: from,
@@ -184,7 +151,7 @@ func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big
 	return b.logsToDeliveredMessages(ctx, logs, batchFetcher)
 }
 
-type sortableMessageList []*DelayedInboxMessage
+type sortableMessageList []*meltypes.DelayedInboxMessage
 
 func (l sortableMessageList) Len() int {
 	return len(l)
@@ -198,7 +165,7 @@ func (l sortableMessageList) Less(i, j int) bool {
 	return bytes.Compare(l[i].Message.Header.RequestId.Bytes(), l[j].Message.Header.RequestId.Bytes()) < 0
 }
 
-func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []types.Log, batchFetcher arbostypes.FallibleBatchFetcher) ([]*DelayedInboxMessage, error) {
+func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []types.Log, batchFetcher arbostypes.FallibleBatchFetcher) ([]*meltypes.DelayedInboxMessage, error) {
 	if len(logs) == 0 {
 		return nil, nil
 	}
@@ -229,7 +196,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		return nil, err
 	}
 
-	messages := make([]*DelayedInboxMessage, 0, len(logs))
+	messages := make([]*meltypes.DelayedInboxMessage, 0, len(logs))
 	var lastParentChainBlockHash common.Hash
 	var lastL1BlockNumber uint64
 	for _, parsedLog := range parsedLogs {
@@ -256,7 +223,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 			lastParentChainBlockHash = parentChainBlockHash
 			lastL1BlockNumber = l1BlockNumber
 		}
-		msg := &DelayedInboxMessage{
+		msg := &meltypes.DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
 			BeforeInboxAcc: parsedLog.BeforeInboxAcc,
 			Message: &arbostypes.L1IncomingMessage{

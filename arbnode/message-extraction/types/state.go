@@ -6,7 +6,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
@@ -53,13 +52,13 @@ type StateDatabase interface {
 	SaveDelayedMessages(
 		ctx context.Context,
 		state *State,
-		delayedMessages []*arbnode.DelayedInboxMessage,
+		delayedMessages []*DelayedInboxMessage,
 	) error
 	ReadDelayedMessage(
 		ctx context.Context,
 		state *State,
 		index uint64,
-	) (*arbnode.DelayedInboxMessage, error)
+	) (*DelayedInboxMessage, error)
 }
 
 // MessageConsumer is an interface to be implemented by readers of MEL such as transaction streamer of the nitro node
@@ -126,7 +125,7 @@ func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
 	return s
 }
 
-func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) error {
+func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	if s.seenDelayedMsgsAcc == nil {
 		log.Debug("Initializing MelState's seenDelayedMsgsAcc")
 		// This is very low cost hence better to reconstruct seenDelayedMsgsAcc from fresh partals instead of risking using a dirty acc

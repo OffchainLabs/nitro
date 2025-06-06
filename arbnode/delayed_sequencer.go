@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -164,7 +165,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		}
 		if lastDelayedAcc != (common.Hash{}) {
 			// Ensure that there hasn't been a reorg and this message follows the last
-			fullMsg := DelayedInboxMessage{
+			fullMsg := meltypes.DelayedInboxMessage{
 				BeforeInboxAcc:         lastDelayedAcc,
 				Message:                msg,
 				ParentChainBlockNumber: parentChainBlockNumber,

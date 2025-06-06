@@ -10,14 +10,14 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/filters"
 
-	"github.com/offchainlabs/nitro/arbnode"
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
 func serializeBatch(
 	ctx context.Context,
-	batch *arbnode.SequencerInboxBatch,
+	batch *meltypes.SequencerInboxBatch,
 	tx *types.Transaction,
 	txIndex uint,
 	receiptFetcher ReceiptFetcher,
@@ -61,14 +61,14 @@ func serializeBatch(
 
 func getSequencerBatchData(
 	ctx context.Context,
-	batch *arbnode.SequencerInboxBatch,
+	batch *meltypes.SequencerInboxBatch,
 	tx *types.Transaction,
 	txIndex uint,
 	receiptFetcher ReceiptFetcher,
 ) ([]byte, error) {
 	addSequencerL2BatchFromOriginCallABI := seqInboxABI.Methods["addSequencerL2BatchFromOrigin0"]
 	switch batch.DataLocation {
-	case arbnode.BatchDataTxInput:
+	case meltypes.BatchDataTxInput:
 		data := tx.Data()
 		if len(data) < 4 {
 			return nil, errors.New("transaction data too short")
@@ -82,7 +82,7 @@ func getSequencerBatchData(
 			return nil, errors.New("args[\"data\"] not a byte array")
 		}
 		return dataBytes, nil
-	case arbnode.BatchDataSeparateEvent:
+	case meltypes.BatchDataSeparateEvent:
 		sequencerBatchDataABI := seqInboxABI.Events["SequencerBatchData"].ID
 		var numberAsHash common.Hash
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
@@ -107,10 +107,10 @@ func getSequencerBatchData(
 			return nil, err
 		}
 		return event.Data, nil
-	case arbnode.BatchDataNone:
+	case meltypes.BatchDataNone:
 		// No data when in a force inclusion batch
 		return nil, nil
-	case arbnode.BatchDataBlobHashes:
+	case meltypes.BatchDataBlobHashes:
 		if len(tx.BlobHashes()) == 0 {
 			return nil, fmt.Errorf("blob batch transaction %v has no blobs", tx.Hash())
 		}

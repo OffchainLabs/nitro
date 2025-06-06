@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -33,7 +32,7 @@ type batchLookupFunc func(
 	parentChainBlock *types.Block,
 	receiptFetcher ReceiptFetcher,
 	eventUnpacker eventUnpacker,
-) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error)
+) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error)
 
 // Defines a function that can lookup delayed messages for a given parent chain block.
 // See: parseDelayedMessagesFromBlock.
@@ -43,13 +42,13 @@ type delayedMsgLookupFunc func(
 	parentChainBlockNum *big.Int,
 	parentChainBlockTxs []*types.Transaction,
 	receiptFetcher ReceiptFetcher,
-) ([]*arbnode.DelayedInboxMessage, error)
+) ([]*meltypes.DelayedInboxMessage, error)
 
 // Defines a function that can serialize a batch.
 // See: serializeBatch.
 type batchSerializingFunc func(
 	ctx context.Context,
-	batch *arbnode.SequencerInboxBatch,
+	batch *meltypes.SequencerInboxBatch,
 	tx *types.Transaction,
 	txIndex uint,
 	receiptFetcher ReceiptFetcher,

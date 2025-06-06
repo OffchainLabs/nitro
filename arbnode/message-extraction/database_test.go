@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/offchainlabs/nitro/arbnode"
+	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
@@ -62,23 +62,13 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	defer cancel()
 
 	// Init
-	exec, streamer, arbDb, _ := arbnode.NewTransactionStreamerForTest(t, ctx, common.Address{})
-	err := streamer.Start(ctx)
-	require.NoError(t, err)
-	exec.Start(ctx)
+	// Create database
+	arbDb := rawdb.NewMemoryDatabase()
 	melDb := NewDatabase(arbDb)
 
-	init, err := streamer.GetMessage(0)
-	require.NoError(t, err)
-	initMsgDelayed := &arbnode.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: [32]byte{},
-		Message:        init.Message,
-	}
 	delayedRequestId := common.BigToHash(common.Big1)
-	delayedMsg := &arbnode.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
+	delayedMsg := &meltypes.DelayedInboxMessage{
+		BlockHash: [32]byte{},
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind:        arbostypes.L1MessageType_EndOfBlock,
@@ -93,11 +83,10 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	state := &meltypes.State{}
 	state.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
 	state.SetReadDelayedMsgsAcc(merkleAccumulator.NewNonpersistentMerkleAccumulator())
-	require.NoError(t, err)
 	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize seenUnreadDelayedMetaDeque
 	state.DelayedMessagedSeen++
 
-	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*arbnode.DelayedInboxMessage{delayedMsg}))
+	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*meltypes.DelayedInboxMessage{delayedMsg}))
 	have, err := melDb.ReadDelayedMessage(ctx, state, 0)
 	require.NoError(t, err)
 
@@ -124,10 +113,10 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	require.NoError(t, melDb.SaveState(ctx, genesis))
 
 	numDelayed := 5
-	var delayedMsgs []*arbnode.DelayedInboxMessage
+	var delayedMsgs []*meltypes.DelayedInboxMessage
 	for i := int64(1); i <= int64(numDelayed); i++ {
 		requestID := common.BigToHash(big.NewInt(i))
-		delayedMsgs = append(delayedMsgs, &arbnode.DelayedInboxMessage{
+		delayedMsgs = append(delayedMsgs, &meltypes.DelayedInboxMessage{
 			BlockHash: [32]byte{},
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
@@ -165,7 +154,7 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	corruptIndex := uint64(3)
 	corruptDelayed := delayedMsgs[corruptIndex]
 	corruptDelayed.Message.L2msg = []byte("corrupt")
-	key := dbKey(arbnode.MelDelayedMessagePrefix, corruptIndex) // #nosec G115
+	key := dbKey(dbschema.MelDelayedMessagePrefix, corruptIndex) // #nosec G115
 	delayedBytes, err := rlp.EncodeToBytes(*corruptDelayed)
 	require.NoError(t, err)
 	require.NoError(t, arbDb.Put(key, delayedBytes))
@@ -193,10 +182,10 @@ func TestMelFetchInitialStateAndSeenUnreadDelayedMetaDeque(t *testing.T) {
 	require.NoError(t, melDb.SaveState(ctx, genesis))
 
 	numMelStates := 5
-	var delayedMsgs []*arbnode.DelayedInboxMessage
+	var delayedMsgs []*meltypes.DelayedInboxMessage
 	for i := int64(1); i <= int64(numMelStates)*5; i++ {
 		requestID := common.BigToHash(big.NewInt(i))
-		delayedMsgs = append(delayedMsgs, &arbnode.DelayedInboxMessage{
+		delayedMsgs = append(delayedMsgs, &meltypes.DelayedInboxMessage{
 			BlockHash: [32]byte{},
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{

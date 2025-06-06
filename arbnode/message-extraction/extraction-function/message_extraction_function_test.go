@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -68,7 +67,7 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlock *types.Block,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 			return nil, nil, nil, errors.New("failed to lookup batches")
 		}
 		_, _, _, err := extractMessagesImpl(
@@ -108,7 +107,7 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlock *types.Block,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 			return nil, nil, nil, nil
 		}
 		lookupDelayedMsgs := func(
@@ -117,7 +116,7 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlockNum *big.Int,
 			parentChainBlockTxs []*types.Transaction,
 			receiptFetcher ReceiptFetcher,
-		) ([]*arbnode.DelayedInboxMessage, error) {
+		) ([]*meltypes.DelayedInboxMessage, error) {
 			return nil, errors.New("failed to lookup delayed messages")
 		}
 
@@ -158,7 +157,7 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlock *types.Block,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 			return nil, nil, nil, nil
 		}
 		lookupDelayedMsgs := func(
@@ -167,8 +166,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlockNum *big.Int,
 			parentChainBlockTxs []*types.Transaction,
 			receiptFetcher ReceiptFetcher,
-		) ([]*arbnode.DelayedInboxMessage, error) {
-			delayedMsgs := []*arbnode.DelayedInboxMessage{
+		) ([]*meltypes.DelayedInboxMessage, error) {
+			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -220,8 +219,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlock *types.Block,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*arbnode.SequencerInboxBatch{
+		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*meltypes.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -234,8 +233,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlockNum *big.Int,
 			parentChainBlockTxs []*types.Transaction,
 			receiptFetcher ReceiptFetcher,
-		) ([]*arbnode.DelayedInboxMessage, error) {
-			delayedMsgs := []*arbnode.DelayedInboxMessage{
+		) ([]*meltypes.DelayedInboxMessage, error) {
+			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -250,7 +249,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *arbnode.SequencerInboxBatch,
+			batch *meltypes.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -294,8 +293,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlock *types.Block,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*arbnode.SequencerInboxBatch{
+		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*meltypes.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -308,8 +307,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlockNum *big.Int,
 			parentChainBlockTxs []*types.Transaction,
 			receiptFetcher ReceiptFetcher,
-		) ([]*arbnode.DelayedInboxMessage, error) {
-			delayedMsgs := []*arbnode.DelayedInboxMessage{
+		) ([]*meltypes.DelayedInboxMessage, error) {
+			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -324,7 +323,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *arbnode.SequencerInboxBatch,
+			batch *meltypes.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -373,8 +372,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlock *types.Block,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*arbnode.SequencerInboxBatch{
+		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*meltypes.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -387,8 +386,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlockNum *big.Int,
 			parentChainBlockTxs []*types.Transaction,
 			receiptFetcher ReceiptFetcher,
-		) ([]*arbnode.DelayedInboxMessage, error) {
-			delayedMsgs := []*arbnode.DelayedInboxMessage{
+		) ([]*meltypes.DelayedInboxMessage, error) {
+			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -403,7 +402,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *arbnode.SequencerInboxBatch,
+			batch *meltypes.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -452,8 +451,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlock *types.Block,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*arbnode.SequencerInboxBatch{
+		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*meltypes.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -466,8 +465,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlockNum *big.Int,
 			parentChainBlockTxs []*types.Transaction,
 			receiptFetcher ReceiptFetcher,
-		) ([]*arbnode.DelayedInboxMessage, error) {
-			delayedMsgs := []*arbnode.DelayedInboxMessage{
+		) ([]*meltypes.DelayedInboxMessage, error) {
+			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -482,7 +481,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *arbnode.SequencerInboxBatch,
+			batch *meltypes.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -541,8 +540,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlock *types.Block,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*arbnode.SequencerInboxBatch{
+		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*meltypes.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -555,8 +554,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlockNum *big.Int,
 			parentChainBlockTxs []*types.Transaction,
 			receiptFetcher ReceiptFetcher,
-		) ([]*arbnode.DelayedInboxMessage, error) {
-			delayedMsgs := []*arbnode.DelayedInboxMessage{
+		) ([]*meltypes.DelayedInboxMessage, error) {
+			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -571,7 +570,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *arbnode.SequencerInboxBatch,
+			batch *meltypes.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -638,8 +637,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlock *types.Block,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*arbnode.SequencerInboxBatch{
+		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*meltypes.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -652,8 +651,8 @@ func TestExtractMessages(t *testing.T) {
 			parentChainBlockNum *big.Int,
 			parentChainBlockTxs []*types.Transaction,
 			receiptFetcher ReceiptFetcher,
-		) ([]*arbnode.DelayedInboxMessage, error) {
-			delayedMsgs := []*arbnode.DelayedInboxMessage{
+		) ([]*meltypes.DelayedInboxMessage, error) {
+			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -668,7 +667,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *arbnode.SequencerInboxBatch,
+			batch *meltypes.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,

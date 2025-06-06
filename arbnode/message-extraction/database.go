@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/offchainlabs/nitro/arbnode"
+	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
@@ -136,7 +136,7 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 	if err != nil {
 		return err
 	}
-	err = batch.Put(arbnode.HeadMelStateBlockNumKey, parentChainBlockNumberBytes)
+	err = batch.Put(dbschema.HeadMelStateBlockNumKey, parentChainBlockNumberBytes)
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 }
 
 func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
-	parentChainBlockNumberBytes, err := d.db.Get(arbnode.HeadMelStateBlockNumKey)
+	parentChainBlockNumberBytes, err := d.db.Get(dbschema.HeadMelStateBlockNumKey)
 	if err != nil {
 		return 0, err
 	}
@@ -157,7 +157,7 @@ func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
 }
 
 func (d *Database) setMelState(batch ethdb.KeyValueWriter, parentChainBlockNumber uint64, state meltypes.State) error {
-	key := dbKey(arbnode.MelStatePrefix, parentChainBlockNumber)
+	key := dbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
 	melStateBytes, err := rlp.EncodeToBytes(state)
 	if err != nil {
 		return err
@@ -181,7 +181,7 @@ func (d *Database) SaveState(ctx context.Context, state *meltypes.State) error {
 }
 
 func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*meltypes.State, error) {
-	key := dbKey(arbnode.MelStatePrefix, parentChainBlockNumber)
+	key := dbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
 	data, err := d.db.Get(key)
 	if err != nil {
 		return nil, err
@@ -194,14 +194,14 @@ func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*m
 	return &state, nil
 }
 
-func (d *Database) SaveDelayedMessages(ctx context.Context, state *meltypes.State, delayedMessages []*arbnode.DelayedInboxMessage) error {
+func (d *Database) SaveDelayedMessages(ctx context.Context, state *meltypes.State, delayedMessages []*meltypes.DelayedInboxMessage) error {
 	dbBatch := d.db.NewBatch()
 	if state.DelayedMessagedSeen < uint64(len(delayedMessages)) {
 		return fmt.Errorf("mel state's DelayedMessagedSeen: %d is lower than number of delayed messages: %d queued to be added", state.DelayedMessagedSeen, len(delayedMessages))
 	}
 	firstPos := state.DelayedMessagedSeen - uint64(len(delayedMessages))
 	for i, msg := range delayedMessages {
-		key := dbKey(arbnode.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
+		key := dbKey(dbschema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
 		delayedBytes, err := rlp.EncodeToBytes(*msg)
 		if err != nil {
 			return err
@@ -215,7 +215,7 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *meltypes.Stat
 	return dbBatch.Write()
 }
 
-func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.State, msg *arbnode.DelayedInboxMessage, index uint64) (bool, error) {
+func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.State, msg *meltypes.DelayedInboxMessage, index uint64) (bool, error) {
 	delayedMeta := state.GetSeenUnreadDelayedMetaDeque().GetByIndex(index)
 	acc := state.GetReadDelayedMsgsAcc()
 	if acc == nil {
@@ -252,20 +252,20 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.
 	return merkleRoot == delayedMeta.MerkleRoot, nil
 }
 
-func (d *Database) fetchDelayedMessage(ctx context.Context, index uint64) (*arbnode.DelayedInboxMessage, error) {
-	key := dbKey(arbnode.MelDelayedMessagePrefix, index)
+func (d *Database) fetchDelayedMessage(ctx context.Context, index uint64) (*meltypes.DelayedInboxMessage, error) {
+	key := dbKey(dbschema.MelDelayedMessagePrefix, index)
 	delayedBytes, err := d.db.Get(key)
 	if err != nil {
 		return nil, err
 	}
-	var delayed arbnode.DelayedInboxMessage
+	var delayed meltypes.DelayedInboxMessage
 	if err = rlp.DecodeBytes(delayedBytes, &delayed); err != nil {
 		return nil, err
 	}
 	return &delayed, nil
 }
 
-func (d *Database) ReadDelayedMessage(ctx context.Context, state *meltypes.State, index uint64) (*arbnode.DelayedInboxMessage, error) {
+func (d *Database) ReadDelayedMessage(ctx context.Context, state *meltypes.State, index uint64) (*meltypes.DelayedInboxMessage, error) {
 	delayed, err := d.fetchDelayedMessage(ctx, index)
 	if err != nil {
 		return nil, err

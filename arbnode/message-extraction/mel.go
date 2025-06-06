@@ -32,6 +32,10 @@ type MessageExtractionConfig struct {
 	RetryInterval time.Duration `koanf:"retry-interval"`
 }
 
+func (c *MessageExtractionConfig) Validate() error {
+	return nil
+}
+
 var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	Enable:        false,
 	RetryInterval: defaultRetryInterval,
@@ -39,6 +43,7 @@ var DefaultMessageExtractionConfig = MessageExtractionConfig{
 
 func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessageExtractionConfig.Enable, "enable message extraction service")
+	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retring upon a failure")
 }
 
 type ParentChainReader interface {

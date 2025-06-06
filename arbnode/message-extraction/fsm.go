@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/offchainlabs/bold/containers/fsm"
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
@@ -54,7 +53,7 @@ type saveMessages struct {
 	preStateMsgCount uint64
 	postState        *meltypes.State
 	messages         []*arbostypes.MessageWithMetadata
-	delayedMessages  []*arbnode.DelayedInboxMessage
+	delayedMessages  []*meltypes.DelayedInboxMessage
 }
 
 type reorgToOldBlock struct {

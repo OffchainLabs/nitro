@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -431,7 +430,7 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 func setupParseBatchesTest(t *testing.T, seqNumber *big.Int) (
 	*bridgegen.SequencerInboxSequencerBatchDelivered,
 	[]byte,
-	*arbnode.SequencerInboxBatch,
+	*meltypes.SequencerInboxBatch,
 ) {
 	event := &bridgegen.SequencerInboxSequencerBatchDelivered{
 		BatchSequenceNumber:      seqNumber,
@@ -458,7 +457,7 @@ func setupParseBatchesTest(t *testing.T, seqNumber *big.Int) (
 		event.DataLocation,
 	)
 	require.NoError(t, err)
-	wantedBatch := &arbnode.SequencerInboxBatch{
+	wantedBatch := &meltypes.SequencerInboxBatch{
 		SequenceNumber:    event.BatchSequenceNumber.Uint64(),
 		BeforeInboxAcc:    event.BeforeAcc,
 		AfterInboxAcc:     event.AfterAcc,
