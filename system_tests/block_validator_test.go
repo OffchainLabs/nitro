@@ -400,13 +400,26 @@ func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-// TestBlockValidatorReferenceDA tests the block validator with embedded reference DA
-func TestBlockValidatorReferenceDA(t *testing.T) {
+// TestBlockValidatorReferenceDAWithProver tests the block validator with prover
+// with the embedded reference DA
+func TestBlockValidatorReferenceDAWithProver(t *testing.T) {
 	opts := Options{
 		dasModeString: "referenceda",
 		workloadLoops: 1,
 		workload:      ethSend,
 		arbitrator:    true,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+// TestBlockValidatorReferenceDAWithJIT tests the block validator with JIT
+// with the embedded reference DA
+func TestBlockValidatorReferenceDAWithJIT(t *testing.T) {
+	opts := Options{
+		dasModeString: "referenceda",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    false,
 	}
 	testBlockValidatorSimple(t, opts)
 }
