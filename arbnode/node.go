@@ -51,7 +51,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/bold"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
@@ -753,7 +752,7 @@ func createInitialMELState(
 	if err != nil {
 		return nil, err
 	}
-	latestConfirmedAssertion, err := bold.ReadBoldAssertionCreationInfo(
+	latestConfirmedAssertion, err := boldstaker.ReadBoldAssertionCreationInfo(
 		ctx,
 		rollup,
 		client,
