@@ -2,8 +2,9 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -22,8 +23,9 @@ func TestSimulateV1Push0(t *testing.T) {
 		Code:            []byte{byte(vm.PUSH0)},
 		ContractStorage: make(map[common.Hash]common.Hash),
 	}
+	contractAddr := "0x9930da85e75d753ca1b704ee53ebff948174384a"
 	accountInfo := statetransfer.AccountInitializationInfo{
-		Addr:         common.HexToAddress("0x9930da85e75d753ca1b704ee53ebff948174384a"),
+		Addr:         common.HexToAddress(contractAddr),
 		EthBalance:   big.NewInt(0),
 		Nonce:        1,
 		ContractInfo: contractInfo,
@@ -32,22 +34,17 @@ func TestSimulateV1Push0(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	code, err := builder.L2.Client.CodeAt(ctx, common.HexToAddress("0x9930da85e75d753ca1b704ee53ebff948174384a"), nil)
-	Require(t, err)
-
-	println(code)
-
-	var callResponse interface{}
-	err = builder.L2.Client.Client().CallContext(
+	// Make sure the same works for eth_call before testing eth_simulateV1.
+	err := builder.L2.Client.Client().CallContext(
 		ctx,
-		&callResponse,
+		nil,
 		"eth_call",
 		map[string]interface{}{
-			"to": "0x9930da85e75d753ca1b704ee53ebff948174384a",
+			"to": contractAddr,
 		},
 	)
 	Require(t, err)
-	fmt.Println(callResponse)
+
 	var simulateResponse interface{}
 	err = builder.L2.Client.Client().CallContext(
 		ctx,
@@ -58,7 +55,7 @@ func TestSimulateV1Push0(t *testing.T) {
 				{
 					"calls": []map[string]interface{}{
 						{
-							"to": "0x9930da85e75d753ca1b704ee53ebff948174384a",
+							"to": contractAddr,
 						},
 					},
 				},
@@ -66,5 +63,9 @@ func TestSimulateV1Push0(t *testing.T) {
 		},
 	)
 	Require(t, err)
-	fmt.Println(simulateResponse)
+	simulateResponseByte, err := json.Marshal(simulateResponse)
+	Require(t, err)
+	if strings.Contains(string(simulateResponseByte), "error") {
+		Fatal(t, "simulateV1 response contains error", simulateResponse)
+	}
 }

@@ -41,6 +41,39 @@ func CopyArbitrumChainParams(arbChainParams params.ArbitrumChainParams) params.A
 	}
 }
 
+func CopyBlobScheduleConfig(blobSchedule *params.BlobScheduleConfig) *params.BlobScheduleConfig {
+	blobScheduleCopy := &params.BlobScheduleConfig{}
+	if blobSchedule.Cancun != nil {
+		blobScheduleCopy.Cancun = &params.BlobConfig{
+			Target:         blobSchedule.Cancun.Target,
+			Max:            blobSchedule.Cancun.Max,
+			UpdateFraction: blobSchedule.Cancun.UpdateFraction,
+		}
+	}
+	if blobSchedule.Prague != nil {
+		blobScheduleCopy.Prague = &params.BlobConfig{
+			Target:         blobSchedule.Prague.Target,
+			Max:            blobSchedule.Prague.Max,
+			UpdateFraction: blobSchedule.Prague.UpdateFraction,
+		}
+	}
+	if blobSchedule.Osaka != nil {
+		blobScheduleCopy.Osaka = &params.BlobConfig{
+			Target:         blobSchedule.Osaka.Target,
+			Max:            blobSchedule.Osaka.Max,
+			UpdateFraction: blobSchedule.Osaka.UpdateFraction,
+		}
+	}
+	if blobSchedule.Verkle != nil {
+		blobScheduleCopy.Verkle = &params.BlobConfig{
+			Target:         blobSchedule.Verkle.Target,
+			Max:            blobSchedule.Verkle.Max,
+			UpdateFraction: blobSchedule.Verkle.UpdateFraction,
+		}
+	}
+	return blobScheduleCopy
+}
+
 func CopyChainConfig(chainConfig *params.ChainConfig) *params.ChainConfig {
 	copy := &params.ChainConfig{
 		DAOForkSupport:      chainConfig.DAOForkSupport,
@@ -88,6 +121,9 @@ func CopyChainConfig(chainConfig *params.ChainConfig) *params.ChainConfig {
 	}
 	if chainConfig.LondonBlock != nil {
 		copy.LondonBlock = new(big.Int).Set(chainConfig.LondonBlock)
+	}
+	if chainConfig.BlobScheduleConfig != nil {
+		copy.BlobScheduleConfig = CopyBlobScheduleConfig(chainConfig.BlobScheduleConfig)
 	}
 	return copy
 }
