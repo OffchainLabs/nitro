@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/offchainlabs/bold/containers/fsm"
-	"github.com/offchainlabs/nitro/arbnode"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
@@ -51,13 +50,15 @@ type processNextBlock struct {
 
 // An action that transitions the FSM to the saving messages state.
 type saveMessages struct {
-	postState       *meltypes.State
-	messages        []*arbostypes.MessageWithMetadata
-	delayedMessages []*arbnode.DelayedInboxMessage
+	preStateMsgCount uint64
+	postState        *meltypes.State
+	messages         []*arbostypes.MessageWithMetadata
+	delayedMessages  []*meltypes.DelayedInboxMessage
 }
 
-// An action that transitions the FSM to the reorging state.
-type reorgToOldBlock struct{}
+type reorgToOldBlock struct {
+	melState *meltypes.State
+}
 
 func (backToStart) String() string {
 	return "back_to_start"
