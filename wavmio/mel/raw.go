@@ -5,3 +5,8 @@
 // +build wasm
 
 package melwavmio
+
+import "unsafe"
+
+//go:wasmimport wavmio resolveTypedPreimage
+func resolveTypedPreimage(ty uint32, hash unsafe.Pointer, offset uint32, output unsafe.Pointer) uint32

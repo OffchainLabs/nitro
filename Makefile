@@ -468,8 +468,7 @@ $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wa
 
 $(output_latest)/mel_machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(mel_replay_wasm)
 	$(prover_bin) $(mel_replay_wasm) --generate-binaries $(output_latest) \
-	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress program_exec) \
-	--output-filename mel_machine.wavm.br
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress program_exec)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
