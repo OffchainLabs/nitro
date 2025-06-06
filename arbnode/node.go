@@ -974,7 +974,7 @@ func getStatelessBlockValidator(
 		err = errors.New("no validator url specified")
 	}
 	if err != nil {
-		if config.ValidatorRequired() || config.Staker.Enable {
+		if config.ValidatorRequired() {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
 		}
 		log.Warn("validation not supported", "err", err)
