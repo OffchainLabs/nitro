@@ -22,6 +22,7 @@ type State struct {
 	DelayedMessagePostingTargetAddress common.Address
 	ParentChainBlockHash               common.Hash
 	ParentChainPreviousBlockHash       common.Hash
+	DelayedMessagesSeenRoot            common.Hash
 	MessageAccumulator                 common.Hash
 	MsgCount                           uint64
 	DelayedMessagesRead                uint64
@@ -54,6 +55,10 @@ type StateDatabase interface {
 		state *State,
 		delayedMessages []*DelayedInboxMessage,
 	) error
+	DelayedMessageDatabase
+}
+
+type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
 		ctx context.Context,
 		state *State,
@@ -84,6 +89,10 @@ type InitialStateFetcher interface {
 	) (*State, error)
 }
 
+func (s *State) Hash() common.Hash {
+	return common.Hash{}
+}
+
 // Performs a deep clone of the state struct to prevent any unintended
 // mutations of pointers at runtime.
 func (s *State) Clone() *State {
@@ -92,10 +101,12 @@ func (s *State) Clone() *State {
 	parentChainHash := common.Hash{}
 	parentChainPrevHash := common.Hash{}
 	msgAcc := common.Hash{}
+	delayedMsgAcc := common.Hash{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
+	copy(delayedMsgAcc[:], s.DelayedMessagesSeenRoot[:])
 	copy(msgAcc[:], s.MessageAccumulator[:])
 	var delayedMessageMerklePartials []common.Hash
 	for _, partial := range s.DelayedMessageMerklePartials {
@@ -111,6 +122,7 @@ func (s *State) Clone() *State {
 		DelayedMessagePostingTargetAddress: delayedMessageTarget,
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
+		DelayedMessagesSeenRoot:            delayedMsgAcc,
 		MessageAccumulator:                 msgAcc,
 		MsgCount:                           s.MsgCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
