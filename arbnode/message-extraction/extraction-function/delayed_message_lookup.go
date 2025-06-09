@@ -21,12 +21,19 @@ import (
 func parseDelayedMessagesFromBlock(
 	ctx context.Context,
 	melState *meltypes.State,
-	parentChainBlockNum *big.Int,
-	parentChainBlockTxs []*types.Transaction,
+	parentChainHeader *types.Header,
 	receiptFetcher ReceiptFetcher,
+	txsFetcher TransactionsFetcher,
 ) ([]*meltypes.DelayedInboxMessage, error) {
 	msgScaffolds := make([]*meltypes.DelayedInboxMessage, 0)
 	messageDeliveredEvents := make([]*bridgegen.IBridgeMessageDelivered, 0)
+	parentChainBlockTxs, err := txsFetcher.TransactionsByHeader(
+		ctx,
+		parentChainHeader.Hash(),
+	)
+	if err != nil {
+		return nil, err
+	}
 	for i, tx := range parentChainBlockTxs {
 		if tx.To() == nil {
 			continue
@@ -50,7 +57,7 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		delayedMessageScaffolds, parsedLogs, err := delayedMessageScaffoldsFromLogs(
-			parentChainBlockNum,
+			parentChainHeader.Number,
 			relevantLogs,
 		)
 		if err != nil {

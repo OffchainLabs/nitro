@@ -33,6 +33,7 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
+		txsFetcher := &mockTxsFetcher{}
 		melState := &meltypes.State{
 			ParentChainBlockHash: common.HexToHash("0x5678"),
 		}
@@ -40,10 +41,11 @@ func TestExtractMessages(t *testing.T) {
 		_, _, _, err := ExtractMessages(
 			ctx,
 			melState,
-			block,
+			block.Header(),
 			nil,
 			nil,
 			nil,
+			txsFetcher,
 		)
 		require.ErrorContains(t, err, "parent chain block hash in MEL state does not match")
 	})
@@ -64,18 +66,21 @@ func TestExtractMessages(t *testing.T) {
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlock *types.Block,
+			parentChainBlock *types.Header,
+			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
 		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 			return nil, nil, nil, errors.New("failed to lookup batches")
 		}
+		txsFetcher := &mockTxsFetcher{}
 		_, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
-			block,
+			block.Header(),
 			nil,
 			nil,
+			txsFetcher,
 			nil,
 			nil,
 			lookupBatches,
@@ -104,7 +109,8 @@ func TestExtractMessages(t *testing.T) {
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlock *types.Block,
+			parentChainBlock *types.Header,
+			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
 		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
@@ -113,19 +119,21 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlockNum *big.Int,
-			parentChainBlockTxs []*types.Transaction,
+			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
+			txsFetcher TransactionsFetcher,
 		) ([]*meltypes.DelayedInboxMessage, error) {
 			return nil, errors.New("failed to lookup delayed messages")
 		}
 
+		txsFetcher := &mockTxsFetcher{}
 		_, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
-			block,
+			block.Header(),
 			nil,
 			nil,
+			txsFetcher,
 			nil,
 			nil,
 			lookupBatches,
@@ -154,7 +162,8 @@ func TestExtractMessages(t *testing.T) {
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlock *types.Block,
+			parentChainBlock *types.Header,
+			txFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
 		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
@@ -163,9 +172,9 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlockNum *big.Int,
-			parentChainBlockTxs []*types.Transaction,
+			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
+			txsFetcher TransactionsFetcher,
 		) ([]*meltypes.DelayedInboxMessage, error) {
 			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
@@ -182,12 +191,14 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 
+		txsFetcher := &mockTxsFetcher{}
 		_, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
-			block,
+			block.Header(),
 			nil,
 			nil,
+			txsFetcher,
 			nil,
 			nil,
 			lookupBatches,
@@ -216,7 +227,8 @@ func TestExtractMessages(t *testing.T) {
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlock *types.Block,
+			parentChainBlock *types.Header,
+			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
 		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
@@ -230,9 +242,9 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlockNum *big.Int,
-			parentChainBlockTxs []*types.Transaction,
+			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
+			txsFetcher TransactionsFetcher,
 		) ([]*meltypes.DelayedInboxMessage, error) {
 			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
@@ -259,9 +271,10 @@ func TestExtractMessages(t *testing.T) {
 		_, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
-			block,
+			block.Header(),
 			nil,
 			nil,
+			&mockTxsFetcher{},
 			nil,
 			nil,
 			lookupBatches,
@@ -290,7 +303,8 @@ func TestExtractMessages(t *testing.T) {
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlock *types.Block,
+			parentChainBlock *types.Header,
+			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
 		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
@@ -304,9 +318,9 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlockNum *big.Int,
-			parentChainBlockTxs []*types.Transaction,
+			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
+			txsFetcher TransactionsFetcher,
 		) ([]*meltypes.DelayedInboxMessage, error) {
 			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
@@ -338,9 +352,10 @@ func TestExtractMessages(t *testing.T) {
 		_, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
-			block,
+			block.Header(),
 			nil,
 			nil,
+			&mockTxsFetcher{},
 			nil,
 			nil,
 			lookupBatches,
@@ -369,7 +384,8 @@ func TestExtractMessages(t *testing.T) {
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlock *types.Block,
+			parentChainBlock *types.Header,
+			txFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
 		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
@@ -383,9 +399,9 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlockNum *big.Int,
-			parentChainBlockTxs []*types.Transaction,
+			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
+			txsFetcher TransactionsFetcher,
 		) ([]*meltypes.DelayedInboxMessage, error) {
 			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
@@ -417,9 +433,10 @@ func TestExtractMessages(t *testing.T) {
 		_, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
-			block,
+			block.Header(),
 			nil,
 			nil,
+			&mockTxsFetcher{},
 			nil,
 			nil,
 			lookupBatches,
@@ -448,7 +465,8 @@ func TestExtractMessages(t *testing.T) {
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlock *types.Block,
+			parentChainBlock *types.Header,
+			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
 		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
@@ -462,9 +480,9 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlockNum *big.Int,
-			parentChainBlockTxs []*types.Transaction,
+			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
+			txsFetcher TransactionsFetcher,
 		) ([]*meltypes.DelayedInboxMessage, error) {
 			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
@@ -506,9 +524,10 @@ func TestExtractMessages(t *testing.T) {
 		_, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
-			block,
+			block.Header(),
 			nil,
 			nil,
+			&mockTxsFetcher{},
 			nil,
 			nil,
 			lookupBatches,
@@ -537,7 +556,8 @@ func TestExtractMessages(t *testing.T) {
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlock *types.Block,
+			parentChainBlock *types.Header,
+			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
 		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
@@ -551,9 +571,9 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlockNum *big.Int,
-			parentChainBlockTxs []*types.Transaction,
+			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
+			txsFetcher TransactionsFetcher,
 		) ([]*meltypes.DelayedInboxMessage, error) {
 			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
@@ -603,9 +623,10 @@ func TestExtractMessages(t *testing.T) {
 		_, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
-			block,
+			block.Header(),
 			nil,
 			nil,
+			&mockTxsFetcher{},
 			nil,
 			nil,
 			lookupBatches,
@@ -634,7 +655,8 @@ func TestExtractMessages(t *testing.T) {
 		lookupBatches := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlock *types.Block,
+			parentChainBlock *types.Header,
+			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
 		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
@@ -648,9 +670,9 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs := func(
 			ctx context.Context,
 			melState *meltypes.State,
-			parentChainBlockNum *big.Int,
-			parentChainBlockTxs []*types.Transaction,
+			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
+			txsFetcher TransactionsFetcher,
 		) ([]*meltypes.DelayedInboxMessage, error) {
 			delayedMsgs := []*meltypes.DelayedInboxMessage{
 				{
@@ -717,9 +739,10 @@ func TestExtractMessages(t *testing.T) {
 		postState, messages, delayedMessages, err := extractMessagesImpl(
 			ctx,
 			melState,
-			block,
+			block.Header(),
 			nil,
 			nil,
+			&mockTxsFetcher{},
 			nil,
 			nil,
 			lookupBatches,

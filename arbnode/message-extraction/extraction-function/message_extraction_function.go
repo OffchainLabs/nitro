@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -32,6 +33,15 @@ type ReceiptFetcher interface {
 	) (*types.Receipt, error)
 }
 
+// Defines a method that can fetch transactions for
+// a parent chain block by its header hash.
+type TransactionsFetcher interface {
+	TransactionsByHeader(
+		ctx context.Context,
+		parentChainHeaderHash common.Hash,
+	) (types.Transactions, error)
+}
+
 // ExtractMessages is a pure function that can read a parent chain block and
 // and input MEL state to run a specific algorithm that extracts Arbitrum messages and
 // delayed messages observed from transactions in the block. This function can be proven
@@ -39,17 +49,19 @@ type ReceiptFetcher interface {
 func ExtractMessages(
 	ctx context.Context,
 	inputState *meltypes.State,
-	parentChainBlock *types.Block,
+	parentChainHeader *types.Header,
 	dataProviders []daprovider.Reader,
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
+	txsFetcher TransactionsFetcher,
 ) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*meltypes.DelayedInboxMessage, error) {
 	return extractMessagesImpl(
 		ctx,
 		inputState,
-		parentChainBlock,
+		parentChainHeader,
 		dataProviders,
 		delayedMsgDatabase,
+		txsFetcher,
 		receiptFetcher,
 		&logUnpacker{},
 		parseBatchesFromBlock,
@@ -67,9 +79,10 @@ func ExtractMessages(
 func extractMessagesImpl(
 	ctx context.Context,
 	inputState *meltypes.State,
-	parentChainBlock *types.Block,
+	parentChainHeader *types.Header,
 	dataProviders []daprovider.Reader,
 	delayedMsgDatabase DelayedMessageDatabase,
+	txsFetcher TransactionsFetcher,
 	receiptFetcher ReceiptFetcher,
 	eventUnpacker eventUnpacker,
 	lookupBatches batchLookupFunc,
@@ -83,24 +96,25 @@ func extractMessagesImpl(
 	state := inputState.Clone()
 	// Clones the state to avoid mutating the input pointer in case of errors.
 	// Check parent chain block hash linkage.
-	if state.ParentChainBlockHash != parentChainBlock.ParentHash() {
+	if state.ParentChainBlockHash != parentChainHeader.ParentHash {
 		return nil, nil, nil, fmt.Errorf(
 			"parent chain block hash in MEL state does not match incoming block's parent hash: expected %s, got %s",
 			state.ParentChainPreviousBlockHash.Hex(),
-			parentChainBlock.ParentHash().Hex(),
+			parentChainHeader.ParentHash.Hex(),
 		)
 	}
 	// Updates the fields in the state to corresponding to the
 	// incoming parent chain block.
-	state.ParentChainBlockHash = parentChainBlock.Hash()
-	state.ParentChainBlockNumber = parentChainBlock.NumberU64()
-	state.ParentChainPreviousBlockHash = parentChainBlock.ParentHash()
+	state.ParentChainBlockHash = parentChainHeader.Hash()
+	state.ParentChainBlockNumber = parentChainHeader.Number.Uint64()
+	state.ParentChainPreviousBlockHash = parentChainHeader.ParentHash
 	// Now, check for any logs emitted by the sequencer inbox by txs
 	// included in the parent chain block.
 	batches, batchTxs, batchTxIndices, err := lookupBatches(
 		ctx,
 		state,
-		parentChainBlock,
+		parentChainHeader,
+		txsFetcher,
 		receiptFetcher,
 		eventUnpacker,
 	)
@@ -110,9 +124,9 @@ func extractMessagesImpl(
 	delayedMessages, err := lookupDelayedMsgs(
 		ctx,
 		state,
-		parentChainBlock.Number(),
-		parentChainBlock.Transactions(),
+		parentChainHeader,
 		receiptFetcher,
+		txsFetcher,
 	)
 	if err != nil {
 		return nil, nil, nil, err
