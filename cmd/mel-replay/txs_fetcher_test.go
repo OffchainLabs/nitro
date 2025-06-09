@@ -1,11 +1,7 @@
-// Copyright 2025-2026, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-
 package main
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"math/big"
 	"testing"
@@ -18,35 +14,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFetchReceiptFromBlock_Multiple(t *testing.T) {
+func TestFetchTransactionsForBlockHeader(t *testing.T) {
 	ctx := context.Background()
-	// Creates a block with 42 transactions and receipts.
-	numReceipts := 42
-	receipts := createTestReceipts(numReceipts)
-	hasher := newRecordingHasher()
-	receiptsRoot := types.DeriveSha(types.Receipts(receipts), hasher)
-	header := &types.Header{}
-	txes := make([]*types.Transaction, numReceipts)
-	for i := 0; i < numReceipts; i++ {
+	total := 42
+	txes := make([]*types.Transaction, total)
+	for i := 0; i < total; i++ {
 		txes[i] = types.NewTransaction(uint64(i), common.Address{}, big.NewInt(0), 21000, big.NewInt(1), nil)
 	}
-	body := &types.Body{
-		Transactions: txes,
+	hasher := newRecordingHasher()
+	txsRoot := types.DeriveSha(types.Transactions(txes), hasher)
+	header := &types.Header{
+		TxHash: txsRoot,
 	}
-	blk := types.NewBlock(header, body, receipts, hasher)
-	require.Equal(t, blk.ReceiptHash(), receiptsRoot)
 	preimages := hasher.GetPreimages()
 	mockPreimageResolver := &mockPreimageResolver{
 		preimages: preimages,
 	}
-	receiptFetcher := &receiptFetcherForBlock{
-		header:           blk.Header(),
+	txsFetcher := &txsFetcherForBlock{
+		header:           header,
 		preimageResolver: mockPreimageResolver,
 	}
-	for i := 0; i < numReceipts; i++ {
-		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, uint(i))
-		require.NoError(t, err)
-		require.Equal(t, receipts[i].CumulativeGasUsed, receipt.CumulativeGasUsed)
+	fetched, err := txsFetcher.TransactionsByHeader(ctx, header.Hash())
+	require.NoError(t, err)
+	require.Len(t, fetched, total)
+	for i, tx := range fetched {
+		require.Equal(t, txes[i].Hash(), tx.Hash())
+		require.Equal(t, uint64(i), tx.Nonce())
 	}
 }
 
@@ -100,29 +93,4 @@ func (h *preimageRecordingHasher) Hash() common.Hash {
 
 func (h *preimageRecordingHasher) GetPreimages() map[common.Hash][]byte {
 	return h.preimages
-}
-
-func createTestReceipts(count int) types.Receipts {
-	receipts := make(types.Receipts, count)
-	for i := 0; i < count; i++ {
-		receipt := &types.Receipt{
-			Status:            1,
-			CumulativeGasUsed: 50_000 + uint64(i),
-			TxHash:            randomHash(),
-			ContractAddress:   common.Address{},
-			Logs:              []*types.Log{},
-			BlockHash:         common.BytesToHash([]byte("foobar")),
-			BlockNumber:       big.NewInt(100),
-			TransactionIndex:  uint(i),
-		}
-		receipt.Bloom = types.BytesToBloom(make([]byte, 256))
-		receipts[i] = receipt
-	}
-	return receipts
-}
-
-func randomHash() common.Hash {
-	var hash common.Hash
-	rand.Read(hash[:])
-	return hash
 }
