@@ -70,6 +70,7 @@ func TestRequestForwardingToArchiveNodes(t *testing.T) {
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfig})
 	defer cleanupB()
 
+	// Ensure that clientB has caught up by checking if it has the lastTx
 	_, err = testClientB.EnsureTxSucceeded(lastTx)
 	Require(t, err)
 
