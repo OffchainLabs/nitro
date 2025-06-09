@@ -97,9 +97,7 @@ func parseDelayedMessagesFromBlock(
 			{inboxMessageDeliveredID, inboxMessageFromOriginID}, // matches either of these IDs.
 			messageIds, // matches any of the message IDs.
 		}
-		_ = topics
-		// filteredInboxMessageLogs := filters.FilterLogs(receipt.Logs, nil, nil, inboxAddressList, topics)
-		filteredInboxMessageLogs := make([]*types.Log, 0, len(receipt.Logs))
+		filteredInboxMessageLogs := types.FilterLogs(receipt.Logs, nil, nil, inboxAddressList, topics)
 		for _, inboxMsgLog := range filteredInboxMessageLogs {
 			msgNum, msg, err := parseDelayedMessage(
 				inboxMsgLog,

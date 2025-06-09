@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -117,7 +116,7 @@ func TestBloom(t *testing.T) {
 
 	// Test that calling filters.FilterLogs is equivalent to calling ethclient's FilterLogs(ctx, filterQuery)
 	allLogs := getAllLogs(t, ctx, builder.L2)
-	haveLogs := filters.FilterLogs(allLogs, nil, nil, nil, [][]common.Hash{{simpleABI.Events["NullEvent"].ID}})
+	haveLogs := types.FilterLogs(allLogs, nil, nil, nil, [][]common.Hash{{simpleABI.Events["NullEvent"].ID}})
 	var haveLogs2 []types.Log
 	for _, log := range haveLogs {
 		haveLogs2 = append(haveLogs2, *log)
@@ -143,7 +142,7 @@ func TestBloom(t *testing.T) {
 		}
 	}
 
-	haveLogs = filters.FilterLogs(allLogs, nil, nil, nil, [][]common.Hash{{simpleABI.Events["CounterEvent"].ID}})
+	haveLogs = types.FilterLogs(allLogs, nil, nil, nil, [][]common.Hash{{simpleABI.Events["CounterEvent"].ID}})
 	haveLogs2 = []types.Log{}
 	for _, log := range haveLogs {
 		haveLogs2 = append(haveLogs2, *log)

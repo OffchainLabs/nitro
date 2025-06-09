@@ -324,7 +324,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	Require(t, err)
 
 	// Set reader and writer coordinators for redis
-	redisCoordinatorGetter, err := redisutil.NewRedisCoordinator(builderSeq.nodeConfig.SeqCoordinator.RedisUrl)
+	redisCoordinatorGetter, err := redisutil.NewRedisCoordinator(builderSeq.nodeConfig.SeqCoordinator.RedisUrl, builderSeq.nodeConfig.SeqCoordinator.RedisQuorumSize)
 	Require(t, err)
 	currentChosen, err := redisCoordinatorGetter.CurrentChosenSequencer(ctx)
 	Require(t, err)
