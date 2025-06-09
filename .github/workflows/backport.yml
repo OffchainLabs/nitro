@@ -5,6 +5,7 @@ on:
 permissions:
   contents: write # so it can comment
   pull-requests: write # so it can create pull requests
+  issues: write # so it can create issues
 jobs:
   backport:
     name: Backport pull request
@@ -14,4 +15,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Create backport pull requests
-        uses: korthout/backport-action@v2
+        id: backport
+        uses: korthout/backport-action@v3
+
+      - name: create issue if backport failed
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = github.event.pull_request;
+            const byTarget = '${{ steps.backport.outputs.was_successful_by_target }}'
+              .split(' ')
+              .map(item => item.split('='))
+              .filter(arr => arr.length === 2);
+            const failedTargets = byTarget.filter(([label, ok]) => ok === 'false').map(([label]) => label);
+            const successfulTargets = byTarget.filter(([label, ok]) => ok === 'true').map(([label]) => label);
+
+            const title = `Backport failed for PR #${pr.number} to: ${failedTargets.join(', ')}`;
+            const body = `\nBackport action failed for PR #${pr.number}.\n\n- **Original PR:** #${pr.number} (${pr.title})\n- **Failed targets:** ${failedTargets.length ? failedTargets.map(t => \\`\\${t}\\\`).join(', ') : 'None'}\n- **Successful targets:** ${successfulTargets.length ? successfulTargets.map(t => \\`\\${t}\\\`).join(', ') : 'None'}\n\nPlease manually backport to the failed targets above.\n            `;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['backport-failure'],
+              assignees: [pr.user.login]
+            });
