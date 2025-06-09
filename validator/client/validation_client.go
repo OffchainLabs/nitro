@@ -159,11 +159,10 @@ func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) 
 func (c *ExecutionClient) CreateExecutionRun(
 	wasmModuleRoot common.Hash,
 	input *validator.ValidationInput,
-	useBoldMachine bool,
 ) containers.PromiseInterface[validator.ExecutionRun] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input), useBoldMachine)
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input))
 		if err != nil {
 			return nil, err
 		}
@@ -193,7 +192,7 @@ func (b *BOLDExecutionClient) WasmModuleRoots() ([]common.Hash, error) {
 }
 
 func (b *BOLDExecutionClient) GetMachineHashesWithStepSize(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, machineStartIndex, stepSize, maxIterations uint64) ([]common.Hash, error) {
-	execRun, err := b.executionSpawner.CreateExecutionRun(wasmModuleRoot, input, true).Await(ctx)
+	execRun, err := b.executionSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +204,7 @@ func (b *BOLDExecutionClient) GetMachineHashesWithStepSize(ctx context.Context, 
 }
 
 func (b *BOLDExecutionClient) GetProofAt(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, position uint64) ([]byte, error) {
-	execRun, err := b.executionSpawner.CreateExecutionRun(wasmModuleRoot, input, true).Await(ctx)
+	execRun, err := b.executionSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
