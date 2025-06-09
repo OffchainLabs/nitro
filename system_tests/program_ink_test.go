@@ -35,7 +35,7 @@ func TestSimpleInkUsage(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	otherProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("storage"))
+	otherProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
 	matchSnake := regexp.MustCompile("_[a-z]")
 
 	for _, tc := range []struct {
@@ -70,7 +70,7 @@ func TestSimpleInkUsage(t *testing.T) {
 		{
 			hostio:      "account_code",
 			args:        []any{otherProgram},
-			expectedInk: 33153813,
+			expectedInk: 33160623,
 		},
 		{
 			hostio:      "account_code_size",
@@ -295,7 +295,7 @@ func TestCallInkUsage(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
-	otherStylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+	otherStylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, watFile("bf/cat"))
 	otherEvmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
 	otherData := encodeHostioTestCalldata(t, "msgValue", nil)
 
@@ -328,7 +328,7 @@ func TestCallInkUsage(t *testing.T) {
 		name = tc.hostio + "/stylusContract"
 		t.Run(name, func(t *testing.T) {
 			data := argsForMulticall(tc.opcode, otherStylusProgram, nil, otherData)
-			expectedInk := uint64(227355955)
+			expectedInk := uint64(129905955)
 			checkInkUsage(t, builder, stylusProgram, tc.hostio, name, data, nil, expectedInk)
 		})
 	}
