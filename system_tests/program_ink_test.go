@@ -226,18 +226,26 @@ func TestStorageInkCost(t *testing.T) {
 
 	testCase = "readTwice"
 	data = multicallEmptyArgs()
-	data = multicallAppendLoad(data, slot, false)
-	data = multicallAppendLoad(data, slot, false)
+	data = multicallAppendLoad(data, slot, emitLogs)
+	data = multicallAppendLoad(data, slot, emitLogs)
 	expectedInkValues := []uint64{21068480, 18480} // called twice
 	checkInkUsage(t, builder, stylusProgram, loadHostio, testCase, data, nil, expectedInkValues...)
 
 	testCase = "readTwiceWithFlushBetween"
 	flush = true
 	data = multicallEmptyArgs()
-	data = multicallAppendLoad(data, slot, false)
+	data = multicallAppendLoad(data, slot, emitLogs)
 	data = multicallAppendStore(data, slot, rander.GetHash(), emitLogs, !flush)
-	data = multicallAppendLoad(data, slot, false)
+	data = multicallAppendLoad(data, slot, emitLogs)
 	expectedInkValues = []uint64{21068480, 18480} // called twice
+	checkInkUsage(t, builder, stylusProgram, loadHostio, testCase, data, nil, expectedInkValues...)
+
+	testCase = "readTwiceWithClearBetween"
+	data = multicallEmptyArgs()
+	data = multicallAppendLoad(data, slot, emitLogs)
+	data = multicallAppendClearCache(data)
+	data = multicallAppendLoad(data, slot, emitLogs)
+	expectedInkValues = []uint64{21068480, 1068480} // called twice
 	checkInkUsage(t, builder, stylusProgram, loadHostio, testCase, data, nil, expectedInkValues...)
 
 	testCase = "writeNonZeroedSlot"
