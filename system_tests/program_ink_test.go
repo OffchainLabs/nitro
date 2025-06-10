@@ -204,37 +204,78 @@ func TestStorageInkCost(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
 
-	store_hostio := "storage_flush_cache"
-	load_hostio := "storage_load_bytes32"
+	storeHostio := "storage_flush_cache"
+	loadHostio := "storage_load_bytes32"
 
 	rander := testhelpers.NewPseudoRandomDataSource(t, 0)
 	slot := rander.GetHash()
+	emitLogs := false
 
-	writeRandAData := multicallEmptyArgs()
-	writeRandAData = multicallAppendStore(writeRandAData, slot, rander.GetHash(), false, false)
-	expectedInkValues := []uint64{221068073, 68073} // called twice
-	checkInkUsage(t, builder, stylusProgram, store_hostio, "initialWrite", writeRandAData, nil, expectedInkValues...)
+	testCase := "initialWrite"
+	flush := false
+	data := multicallEmptyArgs()
+	data = multicallAppendStore(data, slot, rander.GetHash(), emitLogs, !flush)
+	expectedInk := uint64(221068073)
+	checkInkUsage(t, builder, stylusProgram, storeHostio, testCase, data, nil, expectedInk)
 
-	readData := multicallEmptyArgs()
-	readData = multicallAppendLoad(readData, slot, false)
-	expectedInk := uint64(21068480)
-	checkInkUsage(t, builder, stylusProgram, load_hostio, "read", readData, nil, expectedInk)
-
-	writeRandBData := multicallEmptyArgs()
-	writeRandBData = multicallAppendStore(writeRandBData, slot, rander.GetHash(), false, false)
-	expectedInkValues = []uint64{50068073, 68073} // called twice
-	checkInkUsage(t, builder, stylusProgram, store_hostio, "writeAgain", writeRandBData, nil, expectedInkValues...)
-
-	writeZeroData := multicallEmptyArgs()
-	writeZeroData = multicallAppendStore(writeZeroData, slot, common.Hash{}, false, false)
-	expectedInkValues = []uint64{50068073, 68073} // called twice
-	checkInkUsage(t, builder, stylusProgram, store_hostio, "delete", writeZeroData, nil, expectedInkValues...)
-
+	testCase = "readOnce"
+	data = multicallEmptyArgs()
+	data = multicallAppendLoad(data, slot, emitLogs)
 	expectedInk = uint64(21068480)
-	checkInkUsage(t, builder, stylusProgram, load_hostio, "readZeros", readData, nil, expectedInk)
+	checkInkUsage(t, builder, stylusProgram, loadHostio, testCase, data, nil, expectedInk)
 
-	expectedInkValues = []uint64{221068073, 68073} // called twice
-	checkInkUsage(t, builder, stylusProgram, store_hostio, "writeAgainAgain", writeRandAData, nil, expectedInkValues...)
+	testCase = "readTwice"
+	data = multicallEmptyArgs()
+	data = multicallAppendLoad(data, slot, false)
+	data = multicallAppendLoad(data, slot, false)
+	expectedInkValues := []uint64{21068480, 18480} // called twice
+	checkInkUsage(t, builder, stylusProgram, loadHostio, testCase, data, nil, expectedInkValues...)
+
+	testCase = "readTwiceWithFlushBetween"
+	flush = true
+	data = multicallEmptyArgs()
+	data = multicallAppendLoad(data, slot, false)
+	data = multicallAppendStore(data, slot, rander.GetHash(), emitLogs, !flush)
+	data = multicallAppendLoad(data, slot, false)
+	expectedInkValues = []uint64{21068480, 18480} // called twice
+	checkInkUsage(t, builder, stylusProgram, loadHostio, testCase, data, nil, expectedInkValues...)
+
+	testCase = "writeNonZeroedSlot"
+	flush = false
+	data = multicallEmptyArgs()
+	data = multicallAppendStore(data, slot, rander.GetHash(), emitLogs, !flush)
+	expectedInk = uint64(50068073)
+	checkInkUsage(t, builder, stylusProgram, storeHostio, testCase, data, nil, expectedInk)
+
+	testCase = "writeTwiceWithFlushBetween"
+	data = multicallEmptyArgs()
+	flush = true
+	data = multicallAppendStore(data, slot, rander.GetHash(), emitLogs, !flush)
+	flush = false
+	data = multicallAppendStore(data, slot, rander.GetHash(), emitLogs, !flush)
+	expectedInkValues = []uint64{50068073, 1068073}
+	checkInkUsage(t, builder, stylusProgram, storeHostio, testCase, data, nil, expectedInkValues...)
+
+	testCase = "writeTwiceWithoutFlushBetween"
+	data = multicallEmptyArgs()
+	flush = false
+	data = multicallAppendStore(data, slot, rander.GetHash(), emitLogs, !flush)
+	data = multicallAppendStore(data, slot, rander.GetHash(), emitLogs, !flush)
+	expectedInkValues = []uint64{50068073}
+	checkInkUsage(t, builder, stylusProgram, storeHostio, testCase, data, nil, expectedInkValues...)
+
+	testCase = "writeZeroToNonZeroedSlot"
+	flush = false
+	data = multicallEmptyArgs()
+	data = multicallAppendStore(data, slot, common.Hash{}, emitLogs, !flush)
+	expectedInk = uint64(50068073)
+	checkInkUsage(t, builder, stylusProgram, storeHostio, testCase, data, nil, expectedInk)
+
+	testCase = "readZero"
+	data = multicallEmptyArgs()
+	data = multicallAppendLoad(data, slot, emitLogs)
+	expectedInk = uint64(21068480)
+	checkInkUsage(t, builder, stylusProgram, loadHostio, testCase, data, nil, expectedInk)
 }
 
 func TestLogInkUsage(t *testing.T) {
