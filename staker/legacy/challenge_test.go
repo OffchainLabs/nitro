@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/osp_legacy_gen"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -55,8 +55,8 @@ func CreateChallenge(
 	maxInboxMessage uint64,
 	asserter common.Address,
 	challenger common.Address,
-) (*mocks_legacy_gen.MockResultReceiver, common.Address) {
-	resultReceiverAddr, _, resultReceiver, err := mocks_legacy_gen.DeployMockResultReceiver(auth, client, common.Address{})
+) (*mocksgen.MockResultReceiver, common.Address) {
+	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client, common.Address{})
 	Require(t, err)
 
 	machine := inputMachine.CloneMachineInterface()
@@ -71,7 +71,7 @@ func CreateChallenge(
 	var endHashBytes [32]byte
 	copy(startHashBytes[:], startMachineHash[:])
 	copy(endHashBytes[:], endMachineHash[:])
-	challenge, _, _, err := mocks_legacy_gen.DeploySingleExecutionChallenge(
+	challenge, _, _, err := mocksgen.DeploySingleExecutionChallenge(
 		auth,
 		client,
 		ospEntry,

@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
-	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/osp_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -78,19 +78,19 @@ func CreateChallenge(
 	numBlocks uint64,
 	asserter common.Address,
 	challenger common.Address,
-) (*mocks_legacy_gen.MockResultReceiver, common.Address) {
+) (*mocksgen.MockResultReceiver, common.Address) {
 	challengeManagerLogic, tx, _, err := challenge_legacy_gen.DeployChallengeManager(auth, client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
-	challengeManagerAddr, tx, _, err := mocks_legacy_gen.DeploySimpleProxy(auth, client, challengeManagerLogic)
+	challengeManagerAddr, tx, _, err := mocksgen.DeploySimpleProxy(auth, client, challengeManagerLogic)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	challengeManager, err := challenge_legacy_gen.NewChallengeManager(challengeManagerAddr, client)
 	Require(t, err)
 
-	resultReceiverAddr, _, resultReceiver, err := mocks_legacy_gen.DeployMockResultReceiver(auth, client, challengeManagerAddr)
+	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client, challengeManagerAddr)
 	Require(t, err)
 	tx, err = challengeManager.Initialize(auth, resultReceiverAddr, sequencerInbox, delayedBridge, ospEntry)
 	Require(t, err)
@@ -103,7 +103,7 @@ func CreateChallenge(
 			legacystaker.StatusFinished,
 			legacystaker.StatusFinished,
 		},
-		[2]mocks_legacy_gen.GlobalState{
+		[2]mocksgen.GlobalState{
 			{
 				Bytes32Vals: [2][32]byte{startGlobalState.BlockHash, startGlobalState.SendRoot},
 				U64Vals:     [2]uint64{startGlobalState.Batch, startGlobalState.PosInBatch},
@@ -140,7 +140,7 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 
 const makeBatch_MsgsPerBatch = int64(5)
 
-func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocks_legacy_gen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
+func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
 	ctx := context.Background()
 
 	batchBuffer := bytes.NewBuffer([]byte{})
@@ -188,9 +188,9 @@ func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTes
 	}
 }
 
-func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, l1Client *ethclient.Client, chainConfig *params.ChainConfig) (common.Address, *mocks_legacy_gen.SequencerInboxStub, common.Address) {
+func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, l1Client *ethclient.Client, chainConfig *params.ChainConfig) (common.Address, *mocksgen.SequencerInboxStub, common.Address) {
 	txOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
-	bridgeAddr, tx, bridge, err := mocks_legacy_gen.DeployBridgeUnproxied(&txOpts, l1Client)
+	bridgeAddr, tx, bridge, err := mocksgen.DeployBridgeUnproxied(&txOpts, l1Client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
@@ -198,13 +198,13 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
-	timeBounds := mocks_legacy_gen.ISequencerInboxMaxTimeVariation{
+	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
 		DelayBlocks:   big.NewInt(10000),
 		FutureBlocks:  big.NewInt(10000),
 		DelaySeconds:  big.NewInt(10000),
 		FutureSeconds: big.NewInt(10000),
 	}
-	seqInboxAddr, tx, seqInbox, err := mocks_legacy_gen.DeploySequencerInboxStub(
+	seqInboxAddr, tx, seqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&txOpts,
 		l1Client,
 		bridgeAddr,
