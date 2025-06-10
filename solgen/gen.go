@@ -98,6 +98,11 @@ func main() {
 			continue
 		}
 
+		// remove all file in filePaths that contains "mocks"
+		if strings.Contains(path, "mocks") {
+			continue
+		}
+
 		dir, file := filepath.Split(path)
 		dir, _ = filepath.Split(dir[:len(dir)-1])
 		_, module := filepath.Split(dir[:len(dir)-1])
@@ -184,6 +189,34 @@ func main() {
 			log.Fatal("failed to parse contract", name, err)
 		}
 		gasDimensionsModInfo.addArtifact(HardHatArtifact{
+			ContractName: name,
+			Abi:          artifact.Abi,
+			Bytecode:     artifact.Bytecode.Object,
+		})
+	}
+
+	mocksFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "mocks", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	mocksModInfo := modules["mocksgen"]
+	if mocksModInfo == nil {
+		mocksModInfo = &moduleInfo{}
+		modules["mocksgen"] = mocksModInfo
+	}
+	for _, path := range mocksFilePaths {
+		_, file := filepath.Split(path)
+		name := file[:len(file)-5]
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal("could not read", path, "for contract", name, err)
+		}
+		artifact := FoundryArtifact{}
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			log.Fatal("failed to parse contract", name, err)
+		}
+		mocksModInfo.addArtifact(HardHatArtifact{
 			ContractName: name,
 			Abi:          artifact.Abi,
 			Bytecode:     artifact.Bytecode.Object,

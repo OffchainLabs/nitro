@@ -1,6 +1,6 @@
 [profile.default]
 src = 'src'
-out = 'out'
+out = 'out/mocks'
 libs = ['node_modules', 'lib']
 test = 'test'
 cache_path = 'forge-cache/sol'
@@ -11,14 +11,6 @@ evm_version = 'cancun'
 remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
               'forge-std/=lib/forge-std/src/']
 fs_permissions = [{ access = "read", path = "./"}]
-
-[profile.yul]
-src = 'yul'
-out = 'out/yul'
-libs = ['node_modules', 'lib']
-cache_path = 'forge-cache/yul'
-remappings = []
-auto_detect_remappings = false
 
 [profile.gas-dimensions]
 src = 'gas-dimensions/src'
