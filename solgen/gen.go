@@ -132,6 +132,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	yulFilePathsGasDimensions, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "gas-dimensions-yul", "*.yul", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	yulFilePaths = append(yulFilePaths, yulFilePathsGasDimensions...)
 	yulModInfo := modules["yulgen"]
 	if yulModInfo == nil {
 		yulModInfo = &moduleInfo{}
