@@ -53,6 +53,7 @@ import (
 )
 
 func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -142,6 +143,7 @@ func TestTimeboostAuctionResolutionDuringATieMultipleRuns(t *testing.T) {
 }
 
 func testAuctionResolutionDuringATie(t *testing.T, multiRuns bool) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -250,6 +252,7 @@ func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerC
 }
 
 func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -378,6 +381,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 }
 
 func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -418,6 +422,7 @@ func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
 }
 
 func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -518,6 +523,7 @@ func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
 }
 
 func TestTimeboostExpressLaneTransactionHandling(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -662,6 +668,7 @@ func dbKey(prefix []byte, pos uint64) []byte {
 }
 
 func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1130,6 +1137,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 // }
 
 func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1169,6 +1177,7 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t
 }
 
 func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrect(t *testing.T) {
+	t.Parallel()
 
 	logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
 	ctx, cancel := context.WithCancel(context.Background())
