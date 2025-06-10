@@ -68,11 +68,6 @@ func TestSimpleInkUsage(t *testing.T) {
 			expectedInk: HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000,
 		},
 		{
-			hostio:      "account_code",
-			args:        []any{otherProgram},
-			expectedInk: 33160623,
-		},
-		{
 			hostio:      "account_code_size",
 			args:        []any{otherProgram},
 			expectedInk: 33068073,
@@ -165,6 +160,33 @@ func TestSimpleInkUsage(t *testing.T) {
 			})
 			data := encodeHostioTestCalldata(t, solFunc, tc.args)
 			checkInkUsage(t, builder, stylusProgram, tc.hostio, tc.hostio, data, nil, tc.expectedInk)
+		})
+	}
+}
+
+func TestAccountCodeInkUsage(t *testing.T) {
+	t.Parallel()
+
+	builder := setupGasCostTest(t)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
+
+	hostio := "account_code"
+
+	for _, tc := range []struct {
+		watFile     string
+		expectedInk uint64
+	}{
+		{"add", 33075753},
+		{"memory", 33078333},
+		{"return-size", 33077523},
+		{"write-args", 33076203},
+	} {
+		testName := fmt.Sprintf("%v_%v", hostio, tc.watFile)
+		t.Run(testName, func(t *testing.T) {
+			otherProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, watFile(tc.watFile))
+			data := encodeHostioTestCalldata(t, "accountCode", []any{otherProgram})
+			checkInkUsage(t, builder, stylusProgram, hostio, testName, data, nil, tc.expectedInk)
 		})
 	}
 }
