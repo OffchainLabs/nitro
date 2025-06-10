@@ -16,7 +16,7 @@ services:
       - ESPRESSO_SEQUENCER_DATABASE_MAX_CONNECTIONS=25
       - ESPRESSO_DEV_NODE_EPOCH_HEIGHT
       - ESPRESSO_SEQUENCER_STORAGE_PATH=/data/espresso
-      - RUST_LOG=info
+      - RUST_LOG=WARN
       - RUST_LOG_FORMAT
     volumes:
       - espresso_storage:/data/espresso

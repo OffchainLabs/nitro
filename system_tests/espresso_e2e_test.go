@@ -59,7 +59,6 @@ func runEspresso() func() {
 
 	go func() {
 		if err := procees.Run(); err != nil {
-			log.Error(err.Error())
 			panic(err)
 		}
 	}()

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"time"
 
 	espressoTypes "github.com/EspressoSystems/espresso-network/sdks/go/types"
 	"github.com/ccoveille/go-safecast"
@@ -17,9 +18,10 @@ const LEN_SIZE int = 8
 const INDEX_SIZE int = 8
 
 type SubmittedEspressoTx struct {
-	Hash    string
-	Pos     []MessageIndex
-	Payload []byte
+	Hash        string
+	Pos         []MessageIndex
+	Payload     []byte
+	SubmittedAt time.Time
 }
 
 func BuildRawHotShotPayload(
