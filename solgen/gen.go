@@ -98,8 +98,8 @@ func main() {
 			continue
 		}
 
-		// remove all file in filePaths that contains "mocks"
-		if strings.Contains(path, "mocks") {
+		// remove all file in filePaths that contains "mocks" but not "contracts-legacy"
+		if strings.Contains(path, "mocks") && !strings.Contains(path, "contracts-legacy") {
 			continue
 		}
 
