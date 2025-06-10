@@ -102,7 +102,7 @@ func main() {
 
 	// In the end, we set the global state's MEL root to the hash of the post MEL state
 	// that is created by running extract messages over the blocks we processed.
-	melwavmio.SetMELStateHash(currentState.Hash())
+	melwavmio.SetEndMELRoot(currentState.Hash())
 	melwavmio.StubFinal()
 }
 

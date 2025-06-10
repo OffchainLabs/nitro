@@ -16,6 +16,10 @@ import (
 const INITIAL_CAPACITY = 128
 const QUERY_SIZE = 32
 
+const IDX_LAST_BLOCKHASH = 0
+const IDX_SEND_ROOT = 1
+const IDX_MEL_ROOT = 2
+
 func readBuffer(f func(uint32, unsafe.Pointer) uint32) []byte {
 	buf := make([]byte, 0, INITIAL_CAPACITY)
 	offset := 0
@@ -39,14 +43,20 @@ func StubFinal() {
 }
 
 func GetStartMELRoot() (hash common.Hash) {
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	getGlobalStateBytes32(IDX_MEL_ROOT, hashUnsafe)
 	return
 }
 
 func GetEndParentChainBlockHash() (hash common.Hash) {
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	getEndParentChainBlockHash(hashUnsafe)
 	return
 }
 
-func SetMELStateHash(hash common.Hash) {
+func SetEndMELRoot(hash common.Hash) {
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	setGlobalStateBytes32(IDX_MEL_ROOT, hashUnsafe)
 }
 
 func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {

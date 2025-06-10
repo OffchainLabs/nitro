@@ -10,3 +10,12 @@ import "unsafe"
 
 //go:wasmimport wavmio resolveTypedPreimage
 func resolveTypedPreimage(ty uint32, hash unsafe.Pointer, offset uint32, output unsafe.Pointer) uint32
+
+//go:wasmimport wavmio getGlobalStateBytes32
+func getGlobalStateBytes32(idx uint32, output unsafe.Pointer)
+
+//go:wasmimport wavmio setGlobalStateBytes32
+func setGlobalStateBytes32(idx uint32, val unsafe.Pointer)
+
+//go:wasmimport wavmio getEndParentChainBlockHash
+func getEndParentChainBlockHash(unsafe.Pointer)

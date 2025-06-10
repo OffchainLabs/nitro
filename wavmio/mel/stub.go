@@ -31,9 +31,7 @@ func GetEndParentChainBlockHash() (hash common.Hash) {
 	return
 }
 
-func SetMELStateHash(hash common.Hash) {
-	// This function is a stub and does not do anything in this context.
-	// In a real implementation, it would set the MEL state hash in the global state.
+func SetEndMELRoot(hash common.Hash) {
 }
 
 func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
