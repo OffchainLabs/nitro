@@ -157,7 +157,7 @@ func main() {
 		})
 	}
 
-	gasDimensionsFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "gas-dimensions", "*.sol", "*.json"))
+	gasDimensionsFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "gas-dimensions", "*.sol", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
