@@ -329,13 +329,26 @@ func TestReturnDataInkUsage(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
-	otherStylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	otherData := encodeHostioTestCalldata(t, "msgValue", nil)
+	otherStylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, watFile("write-args"))
 
 	hostio := "read_return_data"
-	data := argsForMulticall(vm.CALL, otherStylusProgram, nil, otherData)
-	expectedInk := uint64(73113)
-	checkInkUsage(t, builder, stylusProgram, hostio, hostio, data, nil, expectedInk)
+
+	for _, tc := range []struct {
+		dataSize    uint64
+		expectedInk uint64
+	}{
+		{10, 73113},
+		{100, 75153},
+		{1000, 102153},
+		{10000, 372153},
+	} {
+		name := fmt.Sprintf("%v_%v", hostio, tc.dataSize)
+		t.Run(name, func(t *testing.T) {
+			otherData := testhelpers.RandomSlice(tc.dataSize)
+			data := argsForMulticall(vm.CALL, otherStylusProgram, nil, otherData)
+			checkInkUsage(t, builder, stylusProgram, hostio, name, data, nil, tc.expectedInk)
+		})
+	}
 }
 
 func TestCallInkUsage(t *testing.T) {
