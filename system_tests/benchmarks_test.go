@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 )
 
 func TestBenchmarkGas(t *testing.T) {

@@ -37,6 +37,7 @@ import (
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/bold/solgen/go/localgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challengetesting "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/setup"

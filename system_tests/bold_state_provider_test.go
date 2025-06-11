@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
+	"github.com/offchainlabs/bold/solgen/go/localgen"
 	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 	mockmanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"

@@ -27,6 +27,7 @@ import (
 	modes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
+	"github.com/offchainlabs/bold/solgen/go/localgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/testing/setup"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"

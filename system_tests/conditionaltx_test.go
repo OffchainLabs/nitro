@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 )
 
 func getStorageRootHash(t *testing.T, execNode *gethexec.ExecutionNode, address common.Address) common.Hash {
