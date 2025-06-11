@@ -44,3 +44,6 @@
 [submodule "contracts-local/lib/openzeppelin-contracts"]
 	path = contracts-local/lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "contracts-local/src/precompiles"]
+	path = contracts-local/src/precompiles
+	url = https://github.com/OffchainLabs/nitro-precompile-interfaces.git
