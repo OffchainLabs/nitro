@@ -17,7 +17,7 @@
 [submodule "contracts"]
 	path = contracts
 	url = https://github.com/Layr-Labs/nitro-contracts.git
-	commit = 828cdfdc6e4751dce9c5d51a9c93814716bb18fd
+	commit = 67d9c912c40b92f2246cd057af25b3f3067f5c37
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/Layr-Labs/nitro-testnode.git
@@ -32,7 +32,7 @@
 [submodule "bold"]
 	path = bold
 	url = https://github.com/Layr-Labs/bold.git
-	commit = 6d8d8b74877e294131c2a44521ec1f8ef477a8fe
+	commit = 50df7f6da46b7ef8906ee9d5e20f01688af77d62
 [submodule "arbitrator/langs/rust"]
 	path = arbitrator/langs/rust
 	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
@@ -48,4 +48,4 @@
 [submodule "contracts-legacy"]
 	path = contracts-legacy
 	url = https://github.com/Layr-Labs/nitro-contracts.git
-	branch = eigenda-v2.1.3
+	commit = eabece3eedab92133db1095ae4f0b213ed61798f
