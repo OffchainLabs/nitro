@@ -37,7 +37,7 @@ import (
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	"github.com/offchainlabs/bold/solgen/go/localgen"
+	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challengetesting "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/setup"
@@ -281,7 +281,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
 	Require(t, err)
 
-	honestUpgradeExec, err := localgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
+	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
 	Require(t, err)
 	data, err := seqInboxABI.Pack(
 		"setIsBatchPoster",
@@ -293,7 +293,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	_, err = honestUpgradeExec.ExecuteCall(&honestRollupOwnerOpts, honestSeqInbox, data)
 	Require(t, err)
 
-	evilUpgradeExec, err := localgen.NewUpgradeExecutorMock(l1info.GetAddress("EvilUpgradeExecutor"), l1client)
+	evilUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("EvilUpgradeExecutor"), l1client)
 	Require(t, err)
 	data, err = seqInboxABI.Pack(
 		"setIsBatchPoster",
@@ -565,7 +565,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	stakeToken, tx, tokenBindings, err := localgen.DeployTestWETH9(
+	stakeToken, tx, tokenBindings, err := mocksgen.DeployTestWETH9(
 		&l1TransactionOpts,
 		l1client,
 		"Weth",
@@ -733,7 +733,7 @@ func deployContractsOnly(
 	if !ok {
 		t.Fatal(t, "could not set value")
 	}
-	tokenBindings, err := localgen.NewTestWETH9(stakeToken, backend)
+	tokenBindings, err := mocksgen.NewTestWETH9(stakeToken, backend)
 	Require(t, err)
 	tx, err := tokenBindings.TestWETH9Transactor.Transfer(&l1TransactionOpts, asserter.From, seed)
 	Require(t, err)

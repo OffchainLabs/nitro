@@ -27,7 +27,7 @@ import (
 	modes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
-	"github.com/offchainlabs/bold/solgen/go/localgen"
+	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/testing/setup"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -147,7 +147,7 @@ func TestOverflowAssertions(t *testing.T) {
 	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
 	Require(t, err)
 
-	honestUpgradeExec, err := localgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
+	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
 	Require(t, err)
 	data, err := seqInboxABI.Pack(
 		"setIsBatchPoster",
