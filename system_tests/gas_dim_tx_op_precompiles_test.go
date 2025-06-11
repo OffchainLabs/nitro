@@ -1,7 +1,6 @@
 package arbtest
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -14,7 +13,7 @@ import (
 )
 
 // this test calls the ArbBlockNumber function on the ArbSys precompile
-func TestDimTxOpArbSysBlockNumber(t *testing.T) {
+func TestDimTxOpArbSysBlockNumberForSload(t *testing.T) {
 	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cleanup()
@@ -30,9 +29,46 @@ func TestDimTxOpArbSysBlockNumber(t *testing.T) {
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
 }
 
+// this test calls a testActivateProgram function on a test contract
+// that in turn calls ActivateProgram on the ArbWasm precompile
+// this tests that the logic for counting gas works from a proxy contract
+func TestDimTxOpArbWasmActivateProgramForSstoreAndCallFromProxy(t *testing.T) {
+	builderOpts := []func(*NodeBuilder){
+		func(builder *NodeBuilder) {
+			// Match gasDimensionTestSetup settings
+			builder.execConfig.Caching.Archive = true
+			builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+			builder.execConfig.Sequencer.MaxRevertGasReject = 0
+			builder.WithArbOSVersion(params.MaxArbosVersionSupported)
+		},
+	}
+	builder, auth, cleanup := setupProgramTest(t, false, builderOpts...)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	filePath := rustFile("keccak")
+	wasm, _ := readWasmFile(t, filePath)
+	auth.GasLimit = 32000000 // skip gas estimation
+	program := deployContract(t, ctx, auth, l2client, wasm)
+
+	_, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
+	_, precompileTestContract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployPrecompile)
+
+	auth.Value = oneEth
+	tx, err := precompileTestContract.TestActivateProgram(&auth, program)
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	TxOpTraceAndCheck(t, ctx, builder, receipt)
+}
+
 // this test calls the ActivateProgram function on the ArbWasm precompile
 // which calls SSTORE and CALL inside the precompile, for this test
-func TestDimTxOpActivateProgram(t *testing.T) {
+func TestDimTxOpActivateProgramForSstoreAndCall(t *testing.T) {
 	builderOpts := []func(*NodeBuilder){
 		func(builder *NodeBuilder) {
 			// Match gasDimensionTestSetup settings
@@ -56,10 +92,8 @@ func TestDimTxOpActivateProgram(t *testing.T) {
 	Require(t, err)
 
 	auth.Value = oneEth
-	fmt.Println("transaction sender", auth.From)
 	tx, err := arbWasm.ActivateProgram(&auth, program)
 	Require(t, err)
-	fmt.Println("tx recipient", tx.To())
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
