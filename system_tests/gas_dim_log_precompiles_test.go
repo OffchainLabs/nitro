@@ -15,7 +15,7 @@ import (
 
 // This test calls the ArbBlockNumber function on the ArbSys precompile
 // which calls SLOAD inside the precompile, for this test
-func TestDimLogArbSysBlockNumber(t *testing.T) {
+func TestDimLogArbSysBlockNumberForSload(t *testing.T) {
 	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cleanup()
@@ -35,9 +35,9 @@ func TestDimLogArbSysBlockNumber(t *testing.T) {
 	sloadLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SLOAD")
 
 	expected := ExpectedGasCosts{
-		OneDimensionalGasCost: params.ColdSloadCostEIP2929,
-		Computation:           params.WarmStorageReadCostEIP2929,
-		StateAccess:           params.ColdSloadCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		OneDimensionalGasCost: 0,
+		Computation:           0,
+		StateAccess:           0,
 		StateGrowth:           0,
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
@@ -49,7 +49,7 @@ func TestDimLogArbSysBlockNumber(t *testing.T) {
 
 // this test calls the ActivateProgram function on the ArbWasm precompile
 // which calls SSTORE and CALL inside the precompile, for this test
-func TestDimLogActivateProgram(t *testing.T) {
+func TestDimLogActivateProgramForSstoreAndCall(t *testing.T) {
 	builderOpts := []func(*NodeBuilder){
 		func(builder *NodeBuilder) {
 			// Match gasDimensionTestSetup settings
@@ -85,5 +85,20 @@ func TestDimLogActivateProgram(t *testing.T) {
 	// We expect an SSTORE with 0 gas, which is the SSTORE fired inside the precompile
 	sstoreLog := getSpecificDimensionLogAtIndex(t, traceResult.DimensionLogs, "SSTORE", 4, 1)
 
-	fmt.Println(sstoreLog)
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: 0,
+		Computation:           0,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    0,
+	}
+	checkGasDimensionsMatch(t, expected, sstoreLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, sstoreLog)
+
+	// check the calls inside the precompile are free
+	callLog := getSpecificDimensionLogAtIndex(t, traceResult.DimensionLogs, "CALL", 2, 1)
+	checkGasDimensionsMatch(t, expected, callLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, callLog)
 }

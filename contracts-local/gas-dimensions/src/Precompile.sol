@@ -9,13 +9,23 @@ interface ArbSys {
     function arbBlockNumber() external view returns (uint256);
 }
 
+interface ArbWasm {
+    function activateProgram(address program) external payable;
+}
+
 contract Precompile {
 
     uint256 public n;
     address constant arbSysAddress = address(0x64);
+    address constant arbWasmAddress = address(0x71);
 
 
     function testArbSysArbBlockNumber() public {
         n = ArbSys(arbSysAddress).arbBlockNumber();
+    }
+
+    function testActivateProgram(address program) public payable {
+        n = 1;
+        ArbWasm(arbWasmAddress).activateProgram{value: msg.value}(program);
     }
 }
