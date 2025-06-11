@@ -1342,7 +1342,7 @@ func deployOnParentChain(
 	maxDataSize := big.NewInt(117964)
 	var addresses *chaininfo.RollupAddresses
 	if deployBold {
-		stakeToken, tx, _, err := boldlocalgen.DeployTestWETH9(
+		stakeToken, tx, _, err := localgen.DeployTestWETH9(
 			&parentChainTransactionOpts,
 			parentChainReader.Client(),
 			"Weth",
