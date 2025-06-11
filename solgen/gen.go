@@ -98,11 +98,6 @@ func main() {
 			continue
 		}
 
-		// remove all file in filePaths that contains "mocks" but not "contracts-legacy"
-		if strings.Contains(path, "mocks") && !strings.Contains(path, "contracts-legacy") {
-			continue
-		}
-
 		dir, file := filepath.Split(path)
 		dir, _ = filepath.Split(dir[:len(dir)-1])
 		_, module := filepath.Split(dir[:len(dir)-1])
@@ -195,16 +190,16 @@ func main() {
 		})
 	}
 
-	mocksFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "mocks", "*.sol", "*.json"))
+	localFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "src", "*.sol", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	mocksModInfo := modules["mocksgen"]
-	if mocksModInfo == nil {
-		mocksModInfo = &moduleInfo{}
-		modules["mocksgen"] = mocksModInfo
+	localModInfo := modules["localgen"]
+	if localModInfo == nil {
+		localModInfo = &moduleInfo{}
+		modules["localgen"] = localModInfo
 	}
-	for _, path := range mocksFilePaths {
+	for _, path := range localFilePaths {
 		_, file := filepath.Split(path)
 		name := file[:len(file)-5]
 
@@ -216,7 +211,7 @@ func main() {
 		if err := json.Unmarshal(data, &artifact); err != nil {
 			log.Fatal("failed to parse contract", name, err)
 		}
-		mocksModInfo.addArtifact(HardHatArtifact{
+		localModInfo.addArtifact(HardHatArtifact{
 			ContractName: name,
 			Abi:          artifact.Abi,
 			Bytecode:     artifact.Bytecode.Object,

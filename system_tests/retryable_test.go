@@ -31,7 +31,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -365,7 +364,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, simple := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
@@ -729,7 +728,7 @@ func TestRetryableExpiry(t *testing.T) {
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
@@ -796,7 +795,7 @@ func TestKeepaliveAndRetryableExpiry(t *testing.T) {
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
@@ -886,7 +885,7 @@ func TestKeepaliveAndCancelRetryable(t *testing.T) {
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
@@ -1188,7 +1187,7 @@ func TestArbitrumContractTx(t *testing.T) {
 
 	l2TxOpts := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	l2ContractAddr, _ := builder.L2.DeploySimple(t, l2TxOpts)
-	l2ContractABI, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
+	l2ContractABI, err := abi.JSON(strings.NewReader(localgen.SimpleABI))
 	if err != nil {
 		t.Fatalf("Error parsing contract ABI: %v", err)
 	}
@@ -1246,7 +1245,7 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 
 	l2TxOpts := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	contractAddr, _ := builder.L2.DeploySimple(t, l2TxOpts)
-	contractABI, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
+	contractABI, err := abi.JSON(strings.NewReader(localgen.SimpleABI))
 	if err != nil {
 		t.Fatalf("Error parsing contract ABI: %v", err)
 	}
@@ -1312,7 +1311,7 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	simpleAddr, simple := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	elevateL2Basefee(t, ctx, builder)
@@ -1491,7 +1490,7 @@ func TestRetryableRedeemBlockGasUsage(t *testing.T) {
 
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
 	simpleAddr, _ := deploySimple(t, ctx, ownerTxOpts, l2client)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")

@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
 func TestBlockHash(t *testing.T) {
@@ -23,7 +21,7 @@ func TestBlockHash(t *testing.T) {
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 
-	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
+	_, _, simple, err := localgen.DeploySimple(&auth, builder.L2.Client)
 	Require(t, err)
 
 	_, err = simple.CheckBlockHashes(&bind.CallOpts{Context: ctx})

@@ -1,6 +1,6 @@
 [profile.default]
 src = 'src'
-out = 'out/mocks'
+out = 'out/src'
 libs = ['node_modules', 'lib']
 test = 'test'
 cache_path = 'forge-cache/sol'

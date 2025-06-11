@@ -17,7 +17,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -380,7 +379,7 @@ func TestCallInkUsage(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
 	otherStylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, watFile("write-args"))
-	otherEvmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
+	otherEvmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
 	otherData := encodeHostioTestCalldata(t, "msgValue", nil)
 
 	for _, tc := range []struct {
@@ -432,7 +431,7 @@ func TestCreateInkUsage(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("create"))
-	deployCode := common.FromHex(mocksgen.ProgramTestMetaData.Bin)
+	deployCode := common.FromHex(localgen.ProgramTestMetaData.Bin)
 
 	hostio := "create1"
 	data := []byte{0x01}
@@ -643,7 +642,7 @@ func stylusHostiosInkUsage(ctx context.Context, rpcClient rpc.ClientInterface, t
 }
 
 func encodeHostioTestCalldata(t *testing.T, solFunc string, args []any) []byte {
-	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, solFunc)
+	packer, _ := util.NewCallParser(localgen.HostioTestABI, solFunc)
 	data, err := packer(args...)
 	Require(t, err)
 	return data

@@ -11,7 +11,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -63,7 +62,7 @@ func testProgramRecursiveCall(t *testing.T, builder *NodeBuilder, slotVals map[s
 		// send event from caller on sload
 		args[5] = args[5] | 0x8
 	}
-	multiCaller, err := mocksgen.NewMultiCallTest(builder.L2Info.GetAddress(recurse[len(recurse)-1].Name), builder.L2.Client)
+	multiCaller, err := localgen.NewMultiCallTest(builder.L2Info.GetAddress(recurse[len(recurse)-1].Name), builder.L2.Client)
 	Require(t, err)
 	ownerTransact := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	ownerTransact.GasLimit = 10000000
@@ -124,7 +123,7 @@ func testProgramResursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit boo
 	auth.GasLimit = 32000000 // skip gas estimation
 	multicallB := deployContract(t, ctx, auth, l2client, multiCallWasm)
 	builder.L2Info.SetContract("multicall-rust-b", multicallB)
-	multiAddr, tx, _, err := mocksgen.DeployMultiCallTest(&auth, builder.L2.Client)
+	multiAddr, tx, _, err := localgen.DeployMultiCallTest(&auth, builder.L2.Client)
 	builder.L2Info.SetContract("multicall-evm", multiAddr)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)

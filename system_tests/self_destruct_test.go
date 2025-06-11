@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/params"
-
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
 func TestSelfDestruct(t *testing.T) {
@@ -30,21 +28,21 @@ func TestSelfDestruct(t *testing.T) {
 
 	// Test self-destruct with recipient same as the contract (contract is created and destroyed in the same transaction)
 	auth.Value = big.NewInt(params.Ether)
-	_, tx, _, err := mocksgen.DeploySelfDestructInConstructorWithoutDestination(&auth, builder.L2.Client)
+	_, tx, _, err := localgen.DeploySelfDestructInConstructorWithoutDestination(&auth, builder.L2.Client)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// Test self-destruct with recipient different from the contract (contract is created and destroyed in the same transaction)
 	auth.Value = big.NewInt(params.Ether)
-	_, tx, _, err = mocksgen.DeploySelfDestructInConstructorWithDestination(&auth, builder.L2.Client, destination)
+	_, tx, _, err = localgen.DeploySelfDestructInConstructorWithDestination(&auth, builder.L2.Client, destination)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// Test self-destruct with recipient same as the contract (contract is created and destroyed in different transaction)
 	auth.Value = big.NewInt(params.Ether)
-	_, tx, selfDestructOutsideConstructor, err := mocksgen.DeploySelfDestructOutsideConstructor(&auth, builder.L2.Client)
+	_, tx, selfDestructOutsideConstructor, err := localgen.DeploySelfDestructOutsideConstructor(&auth, builder.L2.Client)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -56,7 +54,7 @@ func TestSelfDestruct(t *testing.T) {
 
 	// Test self-destruct with recipient same as the contract (contract is created and destroyed in the different transaction)
 	auth.Value = big.NewInt(params.Ether)
-	_, tx, selfDestructOutsideConstructor, err = mocksgen.DeploySelfDestructOutsideConstructor(&auth, builder.L2.Client)
+	_, tx, selfDestructOutsideConstructor, err = localgen.DeploySelfDestructOutsideConstructor(&auth, builder.L2.Client)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)

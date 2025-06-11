@@ -20,7 +20,6 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 )
 
@@ -87,7 +86,7 @@ func setupAuctionTest(t testing.TB, ctx context.Context) *auctionSetup {
 	if _, err = bind.WaitMined(ctx, backend.Client(), tx); err != nil {
 		t.Fatal(err)
 	}
-	proxyAddr, tx, _, err := mocksgen.DeploySimpleProxy(opts, backend.Client(), auctionContractAddr)
+	proxyAddr, tx, _, err := localgen.DeploySimpleProxy(opts, backend.Client(), auctionContractAddr)
 	require.NoError(t, err)
 	if _, err = bind.WaitMined(ctx, backend.Client(), tx); err != nil {
 		t.Fatal(err)

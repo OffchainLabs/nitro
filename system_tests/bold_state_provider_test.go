@@ -8,11 +8,12 @@ package arbtest
 import (
 	"context"
 	"errors"
-	"github.com/offchainlabs/nitro/validator/server_common"
 	"math/big"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -35,7 +36,6 @@ import (
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 	mockmanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
@@ -58,7 +58,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
 	Require(t, err)
 
-	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
+	honestUpgradeExec, err := localgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
 	Require(t, err)
 	data, err := seqInboxABI.Pack(
 		"setIsBatchPoster",
@@ -174,7 +174,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
 	Require(t, err)
 
-	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
+	honestUpgradeExec, err := localgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
 	Require(t, err)
 	data, err := seqInboxABI.Pack(
 		"setIsBatchPoster",

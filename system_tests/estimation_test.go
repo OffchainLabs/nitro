@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -100,7 +99,7 @@ func TestEstimate(t *testing.T) {
 	Require(t, err, "could not get balance")
 
 	// deploy a test contract
-	_, tx, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
+	_, tx, simple, err := localgen.DeploySimple(&auth, builder.L2.Client)
 	Require(t, err, "could not deploy contract")
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -143,7 +142,7 @@ func TestDifficultyForLatestArbOS(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	// deploy a test contract
-	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
+	_, _, simple, err := localgen.DeploySimple(&auth, builder.L2.Client)
 	Require(t, err, "could not deploy contract")
 
 	tx, err := simple.StoreDifficulty(&auth)
@@ -169,7 +168,7 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	// deploy a test contract
-	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
+	_, _, simple, err := localgen.DeploySimple(&auth, builder.L2.Client)
 	Require(t, err, "could not deploy contract")
 
 	tx, err := simple.StoreDifficulty(&auth)

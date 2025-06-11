@@ -25,7 +25,6 @@ import (
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/state-commitments/history"
 	butil "github.com/offchainlabs/bold/util"
@@ -232,7 +231,7 @@ func fundBoldStaker(t *testing.T, ctx context.Context, builder *NodeBuilder, nam
 	Require(t, err)
 	stakeToken, err := rollupUserLogic.StakeToken(&bind.CallOpts{Context: ctx})
 	Require(t, err)
-	stakeTokenWeth, err := mocksgen.NewTestWETH9(stakeToken, builder.L1.Client)
+	stakeTokenWeth, err := localgen.NewTestWETH9(stakeToken, builder.L1.Client)
 	Require(t, err)
 
 	txOpts := builder.L1Info.GetDefaultTransactOpts(name, ctx)

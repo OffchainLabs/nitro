@@ -23,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
 func getStorageRootHash(t *testing.T, execNode *gethexec.ExecutionNode, address common.Address) common.Hash {
@@ -319,7 +318,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	contractAddress, simple := builder.L2.DeploySimple(t, auth)
 
-	simpleContract, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
+	simpleContract, err := abi.JSON(strings.NewReader(localgen.SimpleABI))
 	Require(t, err)
 
 	numTxes := 200
