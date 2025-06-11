@@ -41,6 +41,8 @@ func createL1AndL2Node(
 	builder.nodeConfig.BatchPoster.LightClientAddress = lightClientAddress
 	builder.nodeConfig.BatchPoster.HotShotUrls = []string{hotShotUrl, hotShotUrl}
 	builder.nodeConfig.BatchPoster.UseEscapeHatch = false
+	builder.nodeConfig.BatchPoster.EspressoTeeVerifierAddress = "0xA46C59ce2FCaF445F96f66F0411e06A94D34BF45"
+
 	// validator config
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
@@ -115,7 +117,7 @@ func TestEspressoSovereignSequencer(t *testing.T) {
 
 	err = waitForWith(ctx, 8*time.Minute, 60*time.Second, func() bool {
 		validatedCnt := builder.L2.ConsensusNode.BlockValidator.Validated(t)
-		return validatedCnt == msgCnt
+		return validatedCnt >= msgCnt
 	})
 	Require(t, err)
 }

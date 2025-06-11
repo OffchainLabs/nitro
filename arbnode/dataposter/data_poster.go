@@ -432,7 +432,8 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context, thisWeight ui
 		if err := p.canPostWithNonce(ctx, nextNonce, thisWeight); err != nil {
 			return 0, nil, false, 0, err
 		}
-		return nextNonce, lastQueueItem.Meta, true, lastQueueItem.CumulativeWeight(), nil
+		value := len(lastQueueItem.Meta) > 0
+		return nextNonce, lastQueueItem.Meta, value, lastQueueItem.CumulativeWeight(), nil
 	}
 
 	if err := p.updateNonce(ctx); err != nil {

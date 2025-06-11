@@ -32,7 +32,7 @@ jobs:
       - name: Install cmake
         uses: jwlawson/actions-setup-cmake@v2
         with:
-          cmake-version: '3.31.6'
+          cmake-version: "3.31.6"
 
       - name: Install latest gotestsum
         uses: autero1/action-gotestsum@v2.0.0
@@ -68,6 +68,7 @@ jobs:
 
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
+        id: install-rust
         with:
           # TODO: remove pinning: https://github.com/EspressoSystems/nitro-espresso-integration/issues/257
           toolchain: "1.81.0"
@@ -132,6 +133,12 @@ jobs:
 
       - name: Install solidty dependencies
         run: cd contracts && yarn install && forge install
+      
+      - name: Check tool versions
+        run: |
+          go version
+          rustc --version
+          cargo --version
 
       - name: Build
         run: make build build-replay-env -j

@@ -70,6 +70,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/espressogen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
@@ -1380,7 +1381,7 @@ func deployOnParentChain(
 	maxDataSize := big.NewInt(117964)
 
 	//  Deploy a espressoTEEVerifierMock contract
-	espressoTEEVerifierAddress, tx, _, err := mocksgen.DeployEspressoTEEVerifierMock(&parentChainTransactionOpts, parentChainClient)
+	espressoTEEVerifierAddress, tx, _, err := espressogen.DeployEspressoTEEVerifierMock(&parentChainTransactionOpts, parentChainClient)
 	Require(t, err)
 
 	_, err = parentChainReader.WaitForTxApproval(ctx, tx)
@@ -1464,6 +1465,13 @@ func deployOnParentChain(
 			DeployedAt:             boldAddresses.DeployedAt,
 		}
 	} else {
+
+		//  Deploy a espressoTEEVerifierMock contract
+		espressoTEEVerifierAddress, tx, _, err := espressogen.DeployEspressoTEEVerifierMock(&parentChainTransactionOpts, parentChainClient)
+		Require(t, err)
+		_, err = parentChainReader.WaitForTxApproval(ctx, tx)
+		Require(t, err)
+
 		addresses, err = deploy.DeployOnParentChain(
 			ctx,
 			parentChainReader,
@@ -1476,8 +1484,8 @@ func deployOnParentChain(
 			maxDataSize,
 			chainSupportsBlobs,
 		)
+		Require(t, err)
 	}
-	Require(t, err)
 	parentChainInfo.SetContract("Bridge", addresses.Bridge)
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
 	parentChainInfo.SetContract("Inbox", addresses.Inbox)

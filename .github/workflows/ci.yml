@@ -110,7 +110,7 @@ jobs:
           toolchain: "1.81.0"
           targets: "wasm32-wasi, wasm32-unknown-unknown"
           components: "llvm-tools-preview, rustfmt, clippy"
-
+  
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
