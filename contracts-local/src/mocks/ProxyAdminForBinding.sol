@@ -4,6 +4,6 @@
 
 pragma solidity ^0.8.0;
 
-import "../../lib/openzeppelin-contracts/proxy/transparent/ProxyAdmin.sol";
+import "openzeppelin-contracts/proxy/transparent/ProxyAdmin.sol";
 
 contract ProxyAdminForBinding is ProxyAdmin {}
