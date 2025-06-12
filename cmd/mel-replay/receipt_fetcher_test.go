@@ -28,7 +28,7 @@ func TestFetchReceiptFromBlock_Multiple(t *testing.T) {
 	header := &types.Header{}
 	txes := make([]*types.Transaction, numReceipts)
 	for i := 0; i < numReceipts; i++ {
-		txes[i] = types.NewTransaction(uint64(i), common.Address{}, big.NewInt(0), 21000, big.NewInt(1), nil)
+		txes[i] = types.NewTransaction(uint64(i), common.Address{}, big.NewInt(0), 21000, big.NewInt(1), nil) // #nosec G115
 	}
 	body := &types.Body{
 		Transactions: txes,
@@ -44,7 +44,7 @@ func TestFetchReceiptFromBlock_Multiple(t *testing.T) {
 		preimageResolver: mockPreimageResolver,
 	}
 	for i := 0; i < numReceipts; i++ {
-		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, uint(i))
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, uint(i)) // #nosec G115
 		require.NoError(t, err)
 		require.Equal(t, receipts[i].CumulativeGasUsed, receipt.CumulativeGasUsed)
 	}
@@ -107,7 +107,7 @@ func createTestReceipts(count int) types.Receipts {
 	for i := 0; i < count; i++ {
 		receipt := &types.Receipt{
 			Status:            1,
-			CumulativeGasUsed: 50_000 + uint64(i),
+			CumulativeGasUsed: 50_000 + uint64(i), // #nosec G115
 			TxHash:            randomHash(),
 			ContractAddress:   common.Address{},
 			Logs:              []*types.Log{},

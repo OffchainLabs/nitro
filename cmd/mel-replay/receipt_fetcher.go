@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -88,13 +89,19 @@ func fetchReceiptFromBlock(
 				// Check that the keyPath matches the target nibbles,
 				// otherwise, the receipt does not exist in the trie.
 				leafKey := extractKeyNibbles(keyPath)
-				expectedPath := append(currentPath, leafKey...)
+				expectedPath := make([]byte, 0)
+				expectedPath = append(expectedPath, currentPath...)
+				expectedPath = append(expectedPath, leafKey...)
 				if !bytes.Equal(expectedPath, targetNibbles) {
 					return nil, fmt.Errorf("leaf key does not match target nibbles")
 				}
 
 				receipt := new(types.Receipt)
-				receiptData := bytes.NewBuffer(node[1].([]byte))
+				rawData, ok := node[1].([]byte)
+				if !ok {
+					return nil, fmt.Errorf("invalid receipt data in leaf node")
+				}
+				receiptData := bytes.NewBuffer(rawData)
 				if err = rlp.Decode(receiptData, &receipt); err != nil {
 					return nil, fmt.Errorf("failed to decode receipt: %w", err)
 				}
@@ -103,7 +110,9 @@ func fetchReceiptFromBlock(
 			// If the node is not a leaf node, it is an extension node.
 			// We extract the extension key path and append it to our current path.
 			extKey := extractKeyNibbles(keyPath)
-			newPath := append(currentPath, extKey...)
+			newPath := make([]byte, 0)
+			newPath = append(newPath, currentPath...)
+			newPath = append(newPath, extKey...)
 
 			// Check if our target key matches this extension path.
 			if len(newPath) > len(targetNibbles) || !bytes.Equal(newPath, targetNibbles[:len(newPath)]) {
