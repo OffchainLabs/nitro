@@ -6,20 +6,22 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
+
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/stretchr/testify/require"
 )
 
 func TestFetchTransactionsForBlockHeader(t *testing.T) {
 	ctx := context.Background()
-	total := 42
+	total := uint64(42)
 	txes := make([]*types.Transaction, total)
-	for i := 0; i < total; i++ {
-		txes[i] = types.NewTransaction(uint64(i), common.Address{}, big.NewInt(0), 21000, big.NewInt(1), nil)
+	for i := uint64(0); i < total; i++ {
+		txes[i] = types.NewTransaction(i, common.Address{}, big.NewInt(0), 21000, big.NewInt(1), nil)
 	}
 	hasher := newRecordingHasher()
 	txsRoot := types.DeriveSha(types.Transactions(txes), hasher)
@@ -36,7 +38,7 @@ func TestFetchTransactionsForBlockHeader(t *testing.T) {
 	}
 	fetched, err := txsFetcher.TransactionsByHeader(ctx, header.Hash())
 	require.NoError(t, err)
-	require.Len(t, fetched, total)
+	require.True(t, uint64(len(fetched)) == total) // #nosec G115
 	for i, tx := range fetched {
 		require.Equal(t, txes[i].Hash(), tx.Hash())
 		require.Equal(t, uint64(i), tx.Nonce())
