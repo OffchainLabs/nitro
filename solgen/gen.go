@@ -190,6 +190,34 @@ func main() {
 		})
 	}
 
+	localFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "src", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	localModInfo := modules["localgen"]
+	if localModInfo == nil {
+		localModInfo = &moduleInfo{}
+		modules["localgen"] = localModInfo
+	}
+	for _, path := range localFilePaths {
+		_, file := filepath.Split(path)
+		name := file[:len(file)-5]
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal("could not read", path, "for contract", name, err)
+		}
+		artifact := FoundryArtifact{}
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			log.Fatal("failed to parse contract", name, err)
+		}
+		localModInfo.addArtifact(HardHatArtifact{
+			ContractName: name,
+			Abi:          artifact.Abi,
+			Bytecode:     artifact.Bytecode.Object,
+		})
+	}
+
 	// add upgrade executor module which is not compiled locally, but imported from 'nitro-contracts' dependencies
 	upgExecutorPath := filepath.Join(parent, "contracts", "node_modules", "@offchainlabs", "upgrade-executor", "build", "contracts", "src", "UpgradeExecutor.sol", "UpgradeExecutor.json")
 	_, err = os.Stat(upgExecutorPath)

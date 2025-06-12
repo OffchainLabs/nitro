@@ -1,6 +1,6 @@
 [profile.default]
 src = 'src'
-out = 'out'
+out = 'out/src'
 libs = ['node_modules', 'lib']
 test = 'test'
 cache_path = 'forge-cache/sol'
@@ -9,16 +9,9 @@ optimizer_runs = 2000
 via_ir = false
 evm_version = 'cancun'
 remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
-              'forge-std/=lib/forge-std/src/']
+              'forge-std/=lib/forge-std/src/',
+              'openzeppelin-contracts/=lib/openzeppelin-contracts/contracts/']
 fs_permissions = [{ access = "read", path = "./"}]
-
-[profile.yul]
-src = 'yul'
-out = 'out/yul'
-libs = ['node_modules', 'lib']
-cache_path = 'forge-cache/yul'
-remappings = []
-auto_detect_remappings = false
 
 [profile.gas-dimensions]
 src = 'gas-dimensions/src'

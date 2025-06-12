@@ -606,15 +606,14 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	yarn --cwd contracts build:forge:yul
 	yarn --cwd contracts-legacy build
 	yarn --cwd contracts-legacy build:forge:yul
-	yarn --cwd contracts-local build:forge:gas-dimensions
-	yarn --cwd contracts-local build:forge:gas-dimensions-yul
+	make -C contracts-local build
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd safe-smart-account install
 	yarn --cwd contracts install
 	yarn --cwd contracts-legacy install
-	yarn --cwd contracts-local install
+	make -C contracts-local install
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
