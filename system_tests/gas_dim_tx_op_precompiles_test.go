@@ -33,16 +33,8 @@ func TestDimTxOpArbSysBlockNumberForSload(t *testing.T) {
 // that in turn calls ActivateProgram on the ArbWasm precompile
 // this tests that the logic for counting gas works from a proxy contract
 func TestDimTxOpArbWasmActivateProgramForSstoreAndCallFromProxy(t *testing.T) {
-	builderOpts := []func(*NodeBuilder){
-		func(builder *NodeBuilder) {
-			// Match gasDimensionTestSetup settings
-			builder.execConfig.Caching.Archive = true
-			builder.execConfig.Caching.StateScheme = rawdb.HashScheme
-			builder.execConfig.Sequencer.MaxRevertGasReject = 0
-			builder.WithArbOSVersion(params.MaxArbosVersionSupported)
-		},
-	}
-	builder, auth, cleanup := setupProgramTest(t, false, builderOpts...)
+	t.Parallel()
+	builder, auth, cleanup := setupProgramTest(t, false, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -69,16 +61,8 @@ func TestDimTxOpArbWasmActivateProgramForSstoreAndCallFromProxy(t *testing.T) {
 // this test calls the ActivateProgram function on the ArbWasm precompile
 // which calls SSTORE and CALL inside the precompile, for this test
 func TestDimTxOpActivateProgramForSstoreAndCall(t *testing.T) {
-	builderOpts := []func(*NodeBuilder){
-		func(builder *NodeBuilder) {
-			// Match gasDimensionTestSetup settings
-			builder.execConfig.Caching.Archive = true
-			builder.execConfig.Caching.StateScheme = rawdb.HashScheme
-			builder.execConfig.Sequencer.MaxRevertGasReject = 0
-			builder.WithArbOSVersion(params.MaxArbosVersionSupported)
-		},
-	}
-	builder, auth, cleanup := setupProgramTest(t, false, builderOpts...)
+	t.Parallel()
+	builder, auth, cleanup := setupProgramTest(t, false, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -98,4 +82,42 @@ func TestDimTxOpActivateProgramForSstoreAndCall(t *testing.T) {
 	Require(t, err)
 
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
+}
+
+// This test runs the tracer on a transaction that includes a call to a
+// stylus contract.
+func TestDimTxOpStylus(t *testing.T) {
+	t.Parallel()
+	builder, auth, cleanup := setupProgramTest(t, true, gasDimPrecompileBuilderOpts()...)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	program := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
+
+	preimage := []byte("hello world, ok")
+	keccakArgs := []byte{0x01} // keccak the preimage once
+	keccakArgs = append(keccakArgs, preimage...)
+
+	tx := builder.L2Info.PrepareTxTo("Owner", &program, 1000000, nil, keccakArgs)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	TxOpTraceAndCheck(t, ctx, builder, receipt)
+}
+
+// ******************************************************
+//                    HELPER FUNCTIONS
+// ******************************************************
+
+func gasDimPrecompileBuilderOpts() []func(*NodeBuilder) {
+	builderOpts := func(builder *NodeBuilder) {
+		// Match gasDimensionTestSetup settings
+		builder.execConfig.Caching.Archive = true
+		builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+		builder.execConfig.Sequencer.MaxRevertGasReject = 0
+		builder.WithArbOSVersion(params.MaxArbosVersionSupported)
+	}
+	return []func(*NodeBuilder){builderOpts}
 }
