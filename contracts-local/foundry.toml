@@ -13,6 +13,22 @@ remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
               'openzeppelin-contracts/=lib/openzeppelin-contracts/contracts/']
 fs_permissions = [{ access = "read", path = "./"}]
 
+[profile.static]
+src = 'src'
+out = 'out/src'
+libs = ['node_modules', 'lib']
+test = 'test'
+cache_path = 'forge-cache/sol'
+optimizer = true
+optimizer_runs = 100
+via_ir = false
+evm_version = 'cancun'
+remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
+              'forge-std/=lib/forge-std/src/',
+              'openzeppelin-contracts/=lib/openzeppelin-contracts/contracts/']
+fs_permissions = [{ access = "read", path = "./"}]
+solc = '0.8.24'
+
 [profile.gas-dimensions]
 src = 'gas-dimensions/src'
 test = 'gas-dimensions/test'

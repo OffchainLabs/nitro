@@ -9,7 +9,8 @@ build-forge: build-forge-sol build-forge-gas-dimensions build-forge-gas-dimensio
 
 build-forge-sol:
 	FOUNDRY_PROFILE=default forge build --skip *.yul && \
-	FOUNDRY_PROFILE=default forge build --evm-version paris src/mocks/Simple.sol
+	FOUNDRY_PROFILE=static forge build --evm-version paris src/mocks/Simple.sol && \
+	FOUNDRY_PROFILE=static forge build src/mocks/HostioTest.sol src/mocks/ArbOS11To32UpgradeTest.sol
 
 build-forge-gas-dimensions:
 	FOUNDRY_PROFILE=gas-dimensions forge build
