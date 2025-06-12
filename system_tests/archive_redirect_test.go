@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -34,8 +35,9 @@ func TestRequestForwardingToArchiveNodes(t *testing.T) {
 	// Generate at least 15 blocks so that archive fallback clients will be rerouted these requests to
 	builder.L2Info.GenerateAccount("User")
 	user := builder.L2Info.GetDefaultTransactOpts("User", ctx)
+	var lastTx *types.Transaction
 	for i := 0; i < 20; i++ {
-		builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+		lastTx, _ = builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
 	}
 	expectBalance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("Owner"), big.NewInt(16))
 	Require(t, err)
@@ -67,6 +69,10 @@ func TestRequestForwardingToArchiveNodes(t *testing.T) {
 	execConfig.RPC.BlockRedirects = archiveConfigs
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfig})
 	defer cleanupB()
+
+	// Ensure that clientB has caught up by checking if it has the lastTx
+	_, err = testClientB.EnsureTxSucceeded(lastTx)
+	Require(t, err)
 
 	// Only nodeA should receive this request
 	_, err = testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("Owner"), big.NewInt(2))
