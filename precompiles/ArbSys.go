@@ -5,7 +5,6 @@ package precompiles
 
 import (
 	"errors"
-	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -34,13 +33,11 @@ type ArbSys struct {
 
 // ArbBlockNumber gets the current L2 block number
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
-	fmt.Println("ArbBlockNumber")
 	return evm.Context.BlockNumber, nil
 }
 
 // ArbBlockHash gets the L2 block hash, if sufficiently recent
 func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes32, error) {
-	fmt.Println("ArbBlockHash")
 	if !arbBlockNumber.IsUint64() {
 		if c.State.ArbOSVersion() >= params.ArbosVersion_11 {
 			return bytes32{}, con.InvalidBlockNumberError(arbBlockNumber, evm.Context.BlockNumber)
@@ -62,38 +59,32 @@ func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes
 
 // ArbChainID gets the rollup's unique chain identifier
 func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
-	fmt.Println("ArbChainID")
 	return evm.ChainConfig().ChainID, nil
 }
 
 // ArbOSVersion gets the current ArbOS version
 func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
-	fmt.Println("ArbOSVersion")
 	version := new(big.Int).SetUint64(55 + c.State.ArbOSVersion()) // Nitro starts at version 56
 	return version, nil
 }
 
 // GetStorageGasAvailable returns 0 since Nitro has no concept of storage gas
 func (con *ArbSys) GetStorageGasAvailable(c ctx, evm mech) (huge, error) {
-	fmt.Println("GetStorageGasAvailable")
 	return big.NewInt(0), nil
 }
 
 // IsTopLevelCall checks if the call is top-level (deprecated)
 func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
-	fmt.Println("IsTopLevelCall")
 	return evm.Depth() <= 2, nil
 }
 
 // MapL1SenderContractAddressToL2Alias gets the contract's L2 alias
 func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest addr) (addr, error) {
-	fmt.Println("MapL1SenderContractAddressToL2Alias")
 	return util.RemapL1Address(sender), nil
 }
 
 // WasMyCallersAddressAliased checks if the caller's caller was aliased
 func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
-	fmt.Println("WasMyCallersAddressAliased")
 	topLevel := con.isTopLevel(c, evm)
 	if c.State.ArbOSVersion() < params.ArbosVersion_6 {
 		topLevel = evm.Depth() == 2
@@ -104,7 +95,6 @@ func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
 
 // MyCallersAddressWithoutAliasing gets the caller's caller without any potential aliasing
 func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
-	fmt.Println("MyCallersAddressWithoutAliasing")
 	address := addr{}
 
 	if evm.Depth() > 1 {
@@ -120,7 +110,6 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 
 // SendTxToL1 sends a transaction to L1, adding it to the outbox
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
-	fmt.Println("SendTxToL1")
 	l1BlockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})
 	if err != nil {
 		return nil, err
@@ -226,7 +215,6 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 
 // SendMerkleTreeState gets the root, size, and partials of the outbox Merkle tree state (caller must be the 0 address)
 func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, bytes32, []bytes32, error) {
-	fmt.Println("SendMerkleTreeState")
 	if c.caller != (addr{}) {
 		return nil, bytes32{}, nil, errors.New("method can only be called by address zero")
 	}
@@ -243,12 +231,10 @@ func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, bytes32, []bytes32
 
 // WithdrawEth send paid eth to the destination on L1
 func (con ArbSys) WithdrawEth(c ctx, evm mech, value huge, destination addr) (huge, error) {
-	fmt.Println("WithdrawEth")
 	return con.SendTxToL1(c, evm, value, destination, []byte{})
 }
 
 func (con ArbSys) isTopLevel(c ctx, evm mech) bool {
-	fmt.Println("isTopLevel")
 	depth := evm.Depth()
 	return depth < 2 || evm.Origin == c.txProcessor.Contracts[depth-2].Caller()
 }

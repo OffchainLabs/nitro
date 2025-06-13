@@ -98,10 +98,11 @@ func sumUpDimensionalGasCosts(
 	intrinsicGas uint64,
 	adjustedRefund uint64,
 	rootIsPrecompileAdjustment uint64,
+	rootIsStylusAdjustment uint64,
 ) (oneDimensionSum, allDimensionsSum uint64) {
 	t.Helper()
-	oneDimensionSum = intrinsicGas + rootIsPrecompileAdjustment
-	allDimensionsSum = intrinsicGas + rootIsPrecompileAdjustment
+	oneDimensionSum = intrinsicGas + rootIsPrecompileAdjustment + rootIsStylusAdjustment
+	allDimensionsSum = intrinsicGas + rootIsPrecompileAdjustment + rootIsStylusAdjustment
 	for _, gasByDimension := range gasesByDimension {
 		oneDimensionSum += gasByDimension.OneDimensionalGasCost
 		allDimensionsSum += gasByDimension.Computation + gasByDimension.StateAccess + gasByDimension.StateGrowth + gasByDimension.HistoryGrowth
@@ -131,7 +132,13 @@ func TxOpTraceAndCheck(t *testing.T, ctx context.Context, builder *NodeBuilder, 
 
 	expectedGasUsed := receipt.GasUsedForL2()
 	sumOneDimensionalGasCosts, sumAllGasCosts := sumUpDimensionalGasCosts(
-		t, traceResult.Dimensions, traceResult.IntrinsicGas, traceResult.AdjustedRefund, traceResult.RootIsPrecompileAdjustment)
+		t,
+		traceResult.Dimensions,
+		traceResult.IntrinsicGas,
+		traceResult.AdjustedRefund,
+		traceResult.RootIsPrecompileAdjustment,
+		traceResult.RootIsStylusAdjustment,
+	)
 
 	CheckEqual(t, expectedGasUsed, sumOneDimensionalGasCosts,
 		fmt.Sprintf("expected gas used: %d, one-dim used: %d\nDimensions:\n%v", expectedGasUsed, sumOneDimensionalGasCosts, traceResult.Dimensions))
