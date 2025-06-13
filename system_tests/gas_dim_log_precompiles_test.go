@@ -7,10 +7,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 
 	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 // This test calls the ArbBlockNumber function on the ArbSys precompile
