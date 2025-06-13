@@ -114,6 +114,10 @@ func (s *State) Clone() *State {
 		copy(clone[:], partial[:])
 		delayedMessageMerklePartials = append(delayedMessageMerklePartials, clone)
 	}
+	delayedMetaDequeue := NewDelayedMetaDeque()
+	if s.seenUnreadDelayedMetaDeque != nil {
+		delayedMetaDequeue = s.seenUnreadDelayedMetaDeque.Clone()
+	}
 	return &State{
 		Version:                            s.Version,
 		ParentChainId:                      s.ParentChainId,
@@ -128,7 +132,7 @@ func (s *State) Clone() *State {
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagedSeen:                s.DelayedMessagedSeen,
 		DelayedMessageMerklePartials:       delayedMessageMerklePartials,
-		seenUnreadDelayedMetaDeque:         s.seenUnreadDelayedMetaDeque.Clone(),
+		seenUnreadDelayedMetaDeque:         delayedMetaDequeue,
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
@@ -36,6 +37,7 @@ func main() {
 		log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LevelError)
 	log.SetDefault(log.NewLogger(glogger))
+
 	endParentChainBlockHash := melwavmio.GetEndParentChainBlockHash()
 	startMelRoot := melwavmio.GetStartMELRoot()
 	startStateBytes, err := melwavmio.ResolveTypedPreimage(
@@ -78,8 +80,6 @@ func main() {
 			header:           header,
 			preimageResolver: resolver,
 		}
-		_ = receiptFetcher
-		_ = txsFetcher
 		postState, _, _, err := extractionfunction.ExtractMessages(
 			ctx,
 			currentState,
@@ -97,7 +97,12 @@ func main() {
 
 	// In the end, we set the global state's MEL root to the hash of the post MEL state
 	// that is created by running extract messages over the blocks we processed.
-	melwavmio.SetEndMELRoot(currentState.Hash())
+	encodedFinalState, err := rlp.EncodeToBytes(currentState)
+	if err != nil {
+		panic(fmt.Errorf("error encoding final MEL state: %w", err))
+	}
+	endMelRoot := crypto.Keccak256Hash(encodedFinalState)
+	melwavmio.SetEndMELRoot(endMelRoot)
 	melwavmio.StubFinal()
 }
 

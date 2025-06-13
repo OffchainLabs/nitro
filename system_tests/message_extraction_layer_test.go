@@ -135,6 +135,14 @@ func TestMessageExtractionReplay_RecordPreimages(t *testing.T) {
 		txsRoot := types.DeriveSha(txes, hasher)
 		require.Equal(t, txsRoot, header.TxHash)
 
+		// Fill the actual tx preimages.
+		for i, tx := range txes {
+			enctx, err := rlp.EncodeToBytes(tx)
+			require.NoError(t, err)
+			fmt.Printf("Header %s Transaction %d %s: %s\n", curr.Hex(), i, tx.Hash().Hex(), hexutil.Encode(enctx))
+			hasher.preimages[tx.Hash()] = enctx
+		}
+
 		// Fetch all the receipts.
 		receipts := make([]*types.Receipt, len(txes))
 		for i, tx := range txes {
@@ -171,7 +179,7 @@ func TestMessageExtractionReplay_RecordPreimages(t *testing.T) {
 	t.Log("Wrote preimages file to /tmp/preimages.json")
 	t.Logf("Start mel state root %s\n", initialMelStateRoot.Hex())
 	t.Logf("Final mel state %+v\n", mockDB.lastState)
-	finalMelStateBytes, err := rlp.EncodeToBytes(melState)
+	finalMelStateBytes, err := rlp.EncodeToBytes(mockDB.lastState)
 	require.NoError(t, err)
 	finalMelStateRoot := crypto.Keccak256Hash(finalMelStateBytes)
 	t.Logf("Final mel state root: %s", finalMelStateRoot.Hex())

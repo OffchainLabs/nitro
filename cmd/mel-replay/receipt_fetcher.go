@@ -55,8 +55,7 @@ func fetchReceiptFromBlock(
 				if valueBytes, ok := node[16].([]byte); ok && len(valueBytes) > 0 {
 					// This branch node has the actual value as the last item, so we decode the receipt
 					receipt := new(types.Receipt)
-					receiptData := bytes.NewBuffer(valueBytes)
-					if err = rlp.Decode(receiptData, &receipt); err != nil {
+					if err = receipt.UnmarshalBinary(valueBytes); err != nil {
 						return nil, fmt.Errorf("failed to decode receipt: %w", err)
 					}
 					return receipt, nil
@@ -88,8 +87,7 @@ func fetchReceiptFromBlock(
 				}
 
 				receipt := new(types.Receipt)
-				receiptData := bytes.NewBuffer(node[1].([]byte))
-				if err = rlp.Decode(receiptData, &receipt); err != nil {
+				if err = receipt.UnmarshalBinary(node[1].([]byte)); err != nil {
 					return nil, fmt.Errorf("failed to decode receipt: %w", err)
 				}
 				return receipt, nil

@@ -13,6 +13,12 @@ type DelayedMetaDeque struct {
 	deque []*DelayedMeta
 }
 
+func NewDelayedMetaDeque() *DelayedMetaDeque {
+	return &DelayedMetaDeque{
+		deque: make([]*DelayedMeta, 0),
+	}
+}
+
 func (d *DelayedMetaDeque) Len() int                           { return len(d.deque) }   // Used for testing purposes
 func (d *DelayedMetaDeque) GetByPos(index uint64) *DelayedMeta { return d.deque[index] } // Used for testing purposes
 
