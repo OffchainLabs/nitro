@@ -25,6 +25,7 @@ type State struct {
 	DelayedMessagesSeenRoot            common.Hash
 	MessageAccumulator                 common.Hash
 	MsgCount                           uint64
+	BatchCount                         uint64
 	DelayedMessagesRead                uint64
 	DelayedMessagedSeen                uint64
 	DelayedMessageMerklePartials       []common.Hash `rlp:"optional"`
@@ -114,6 +115,10 @@ func (s *State) Clone() *State {
 		copy(clone[:], partial[:])
 		delayedMessageMerklePartials = append(delayedMessageMerklePartials, clone)
 	}
+	var seenUnreadDelayedMetaDeque *DelayedMetaDeque
+	if s.seenUnreadDelayedMetaDeque != nil {
+		seenUnreadDelayedMetaDeque = s.seenUnreadDelayedMetaDeque.Clone()
+	}
 	return &State{
 		Version:                            s.Version,
 		ParentChainId:                      s.ParentChainId,
@@ -125,10 +130,11 @@ func (s *State) Clone() *State {
 		DelayedMessagesSeenRoot:            delayedMsgAcc,
 		MessageAccumulator:                 msgAcc,
 		MsgCount:                           s.MsgCount,
+		BatchCount:                         s.BatchCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagedSeen:                s.DelayedMessagedSeen,
 		DelayedMessageMerklePartials:       delayedMessageMerklePartials,
-		seenUnreadDelayedMetaDeque:         s.seenUnreadDelayedMetaDeque.Clone(),
+		seenUnreadDelayedMetaDeque:         seenUnreadDelayedMetaDeque,
 	}
 }
 
@@ -159,6 +165,10 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 		MerkleRoot:                  merkleRoot,
 		MelStateParentChainBlockNum: s.ParentChainBlockNumber,
 	})
+	// Found init message
+	if s.DelayedMessagedSeen == 0 {
+		s.seenUnreadDelayedMetaDeque.SetInitMsg(msg)
+	}
 	return nil
 }
 

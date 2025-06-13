@@ -32,11 +32,14 @@ func parseBatchesFromBlock(
 		return nil, nil, nil, fmt.Errorf("failed to fetch transactions for parent chain block %v: %w", parentChainHeader.Hash(), err)
 	}
 	for i, tx := range parentChainBlockTxs {
-		if tx.To() == nil {
-			continue
-		}
-		if *tx.To() != melState.BatchPostingTargetAddress {
-			continue
+		// TODO: remove this temporary work around for handling init message, i.e skipping the check when msgCount==0
+		if melState.MsgCount != 0 {
+			if tx.To() == nil {
+				continue
+			}
+			if *tx.To() != melState.BatchPostingTargetAddress {
+				continue
+			}
 		}
 		// Fetch the receipts for the transaction to get the logs.
 		txIndex := uint(i) // #nosec G115

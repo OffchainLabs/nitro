@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/bold/containers/fsm"
 	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -47,6 +48,7 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type ParentChainReader interface {
+	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
 	BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error)
 	HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error)
@@ -61,7 +63,7 @@ type MessageExtractor struct {
 	parentChainReader         ParentChainReader
 	initialStateFetcher       meltypes.InitialStateFetcher
 	addrs                     *chaininfo.RollupAddresses
-	melDB                     meltypes.StateDatabase
+	melDB                     *Database
 	msgConsumer               meltypes.MessageConsumer
 	dataProviders             []daprovider.Reader
 	startParentChainBlockHash common.Hash
@@ -76,7 +78,7 @@ func NewMessageExtractor(
 	parentChainReader ParentChainReader,
 	rollupAddrs *chaininfo.RollupAddresses,
 	initialStateFetcher meltypes.InitialStateFetcher,
-	melDB meltypes.StateDatabase,
+	melDB *Database,
 	msgConsumer meltypes.MessageConsumer,
 	dataProviders []daprovider.Reader,
 	startParentChainBlockHash common.Hash,
@@ -175,8 +177,92 @@ func (m *MessageExtractor) CurrentFSMState() FSMState {
 	return m.fsm.Current().State
 }
 
+func (m *MessageExtractor) getStateByRPCBlockNum(ctx context.Context, blockNum rpc.BlockNumber) (*meltypes.State, error) {
+	blk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(blockNum.Int64()))
+	if err != nil {
+		return nil, err
+	}
+	headMelStateBlockNum, err := m.melDB.GetHeadMelStateBlockNum()
+	if err != nil {
+		return nil, err
+	}
+	state, err := m.melDB.State(ctx, min(headMelStateBlockNum, blk.Number.Uint64()))
+	if err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+func (m *MessageExtractor) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	state, err := m.getStateByRPCBlockNum(ctx, rpc.SafeBlockNumber)
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.MessageIndex(state.MsgCount), nil
+}
+
+func (m *MessageExtractor) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	state, err := m.getStateByRPCBlockNum(ctx, rpc.FinalizedBlockNumber)
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.MessageIndex(state.MsgCount), nil
+}
+
+func (m *MessageExtractor) GetMsgCount(ctx context.Context) (uint64, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return headState.MsgCount, nil
+}
+
+func (d *MessageExtractor) GetDelayedMessage(index uint64) (*meltypes.DelayedInboxMessage, error) {
+	return d.melDB.fetchDelayedMessage(index)
+}
+
+func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (uint64, error) {
+	var state *meltypes.State
+	var err error
+	if block == 0 {
+		state, err = m.melDB.GetHeadMelState(ctx)
+	} else {
+		state, err = m.melDB.State(ctx, block)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return state.DelayedMessagedSeen, nil
+}
+
+func (m *MessageExtractor) GetBatchMetadata(ctx context.Context, seqNum uint64) (meltypes.BatchMetadata, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
+	if err != nil {
+		return meltypes.BatchMetadata{}, err
+	}
+	if headState.BatchCount < seqNum+1 {
+		return meltypes.BatchMetadata{}, fmt.Errorf("mel hasn't caught up to the seq inbox batch count on chain. melBatchCount: %d, seqInboxBatchCount: %d", headState.BatchCount, seqNum+1)
+	}
+	if headState.BatchCount > seqNum+1 {
+		return meltypes.BatchMetadata{}, fmt.Errorf("mel batch count exceeds seq inbox batch count on chain, impossible situation. melBatchCount: %d, seqInboxBatchCount: %d", headState.BatchCount, seqNum+1)
+	}
+	return meltypes.BatchMetadata{
+		MessageCount:        arbutil.MessageIndex(headState.MsgCount),
+		DelayedMessageCount: headState.DelayedMessagesRead,
+	}, nil
+}
+
+func (m *MessageExtractor) GetBatchCount(ctx context.Context) (uint64, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return headState.BatchCount, nil
+}
+
 // Ticks the message extractor FSM and performs the action associated with the current state,
 // such as processing the next block, saving messages, or handling reorgs.
+// Question: do we want to make this private? System tests currently use it, but I believe this should only ever be called by start
 func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	current := m.fsm.Current()
 	switch current.State {
@@ -255,14 +341,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				melState: preState,
 			})
 		}
-		finalizedBlk, err := m.parentChainReader.BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+		finalizedBlk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 		if err != nil {
 			log.Error("Error fetching FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the SeenUnreadDelayedMetaDeque will be retried again later", "err", err)
 		}
-		if preState.ParentChainBlockNumber <= finalizedBlk.NumberU64() {
+		if preState.ParentChainBlockNumber <= finalizedBlk.Number.Uint64() {
 			preState.GetSeenUnreadDelayedMetaDeque().ClearReadAndFinalized(preState.DelayedMessagesRead)
 		} else {
-			if finalizedMelState, err := m.melDB.State(ctx, finalizedBlk.NumberU64()); err != nil {
+			if finalizedMelState, err := m.melDB.State(ctx, finalizedBlk.Number.Uint64()); err != nil {
 				log.Error("Error fetching melState corresponding to FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the SeenUnreadDelayedMetaDeque will be retried again later", "err", err)
 			} else {
 				preState.GetSeenUnreadDelayedMetaDeque().ClearReadAndFinalized(finalizedMelState.DelayedMessagesRead)
