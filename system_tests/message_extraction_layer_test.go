@@ -102,7 +102,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	for {
 		prevFSMState := extractor.CurrentFSMState()
 		_, err = extractor.Act(ctx)
-		fmt.Println("psdf ", prevFSMState.String())
 		Require(t, err)
 		newFSMState := extractor.CurrentFSMState()
 		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
