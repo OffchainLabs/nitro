@@ -72,6 +72,7 @@ pub enum Hostio {
     WavmSetGlobalStateBytes32,
     WavmGetGlobalStateU64,
     WavmSetGlobalStateU64,
+    WavmGetEndParentChainBlockHash,
     WavmReadKeccakPreimage,
     WavmReadSha256Preimage,
     WavmReadEthVersionedHashPreimage,
@@ -119,6 +120,7 @@ impl FromStr for Hostio {
             ("env", "wavm_set_globalstate_bytes32") => WavmSetGlobalStateBytes32,
             ("env", "wavm_get_globalstate_u64") => WavmGetGlobalStateU64,
             ("env", "wavm_set_globalstate_u64") => WavmSetGlobalStateU64,
+            ("env", "wavm_get_end_parent_chain_block_hash") => WavmGetEndParentChainBlockHash,
             ("env", "wavm_read_keccak_256_preimage") => WavmReadKeccakPreimage,
             ("env", "wavm_read_sha2_256_preimage") => WavmReadSha256Preimage,
             ("env", "wavm_read_eth_versioned_hash_preimage") => WavmReadEthVersionedHashPreimage,
@@ -180,6 +182,7 @@ impl Hostio {
             WavmSetGlobalStateBytes32        => func!([I32, I32]),
             WavmGetGlobalStateU64            => func!([I32], [I64]),
             WavmSetGlobalStateU64            => func!([I32, I64]),
+            WavmGetEndParentChainBlockHash   => func!([I32]),
             WavmReadKeccakPreimage           => func!([I32, I32], [I32]),
             WavmReadSha256Preimage           => func!([I32, I32], [I32]),
             WavmReadEthVersionedHashPreimage => func!([I32, I32], [I32]),
@@ -275,6 +278,10 @@ impl Hostio {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(SetGlobalStateU64);
+            }
+            WavmGetEndParentChainBlockHash => {
+                opcode!(LocalGet, 0);
+                opcode!(GetEndParentChainBlockHash);
             }
             WavmReadKeccakPreimage => {
                 opcode!(LocalGet, 0);

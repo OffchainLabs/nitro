@@ -988,6 +988,8 @@ pub struct Machine {
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
+    /// Part of the message extraction layer (MEL).
+    end_parent_chain_block_hash: Bytes32,
     /// Linkable Stylus modules in compressed form. Not part of the machine hash.
     stylus_modules: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
@@ -1558,6 +1560,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
+            end_parent_chain_block_hash: Bytes32::default(),
             context: 0,
             debug_info,
         };
@@ -1590,6 +1593,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(Arc::new(|_, _, _| None)),
             stylus_modules: Default::default(),
             initial_hash: Default::default(),
+            end_parent_chain_block_hash: Bytes32::default(),
             context: Default::default(),
             debug_info: Default::default(),
         }
@@ -1643,6 +1647,7 @@ impl Machine {
             first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             stylus_modules: HashMap::default(),
+            end_parent_chain_block_hash: Bytes32::default(),
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info: false,
@@ -2433,6 +2438,15 @@ impl Machine {
                         || !module
                             .memory
                             .store_slice_aligned(ptr.into(), &*self.global_state.bytes32_vals[idx])
+                    {
+                        error!();
+                    }
+                }
+                Opcode::GetEndParentChainBlockHash => {
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    if !module
+                        .memory
+                        .store_slice_aligned(ptr.into(), &*self.end_parent_chain_block_hash)
                     {
                         error!();
                     }
