@@ -613,8 +613,8 @@ github.com/vmihailenco/msgpack/v5 v5.3.5 h1:5gO0H1iULLWGhs2H5tbAHIZTV8/cYafcFOr9
 github.com/vmihailenco/msgpack/v5 v5.3.5/go.mod h1:7xyJ9e+0+9SaZT0Wt1RGleJXzli6Q/V5KbhBonMG9jc=
 github.com/vmihailenco/tagparser/v2 v2.0.0 h1:y09buUbR+b5aycVFQs/g70pqKVZNBmxwAhO7/IwNM9g=
 github.com/vmihailenco/tagparser/v2 v2.0.0/go.mod h1:Wri+At7QHww0WTrCBeu4J6bNtoV6mEfg5OIWRZA9qds=
-github.com/wealdtech/go-merkletree v1.0.1-0.20230205101955-ec7a95ea11ca h1:oK35INPN4CiubFw7ZPQkbxm2AsSU6Tjeb9YhciZnvIM=
-github.com/wealdtech/go-merkletree v1.0.1-0.20230205101955-ec7a95ea11ca/go.mod h1:bM9mDSjsti+gkjl8FjovMoUH3MPR5bwJ3+ucaYFY0Jk=
+github.com/wealdtech/go-merkletree v1.0.0 h1:DsF1xMzj5rK3pSQM6mPv8jlyJyHXhFxpnA2bwEjMMBY=
+github.com/wealdtech/go-merkletree v1.0.0/go.mod h1:cdil512d/8ZC7Kx3bfrDvGMQXB25NTKbsm0rFrmDax4=
 github.com/wealdtech/go-merkletree/v2 v2.6.0 h1:/Qz2blWf+yblxWiudjSXPm5h6sBMgoL67+9Rq2IhfTE=
 github.com/wealdtech/go-merkletree/v2 v2.6.0/go.mod h1:Ooz0/mhs/XF1iYfbowRawrkAI56YYZ+oUl5Dw2Tlnjk=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
