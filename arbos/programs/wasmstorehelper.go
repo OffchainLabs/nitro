@@ -45,8 +45,8 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 
 	targets := statedb.Database().WasmTargets()
 	// If already in wasm store then return early
-	_, err = statedb.TryGetActivatedAsmMap(targets, moduleHash)
-	if err == nil {
+	_, missingTargets, err := statedb.TryGetActivatedAsmMap(targets, moduleHash)
+	if err == nil && len(missingTargets) == 0 {
 		return nil
 	}
 
@@ -63,7 +63,8 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 	// We know program is activated, so it must be in correct version and not use too much memory
 	// Empty program address is supplied because we dont have access to this during rebuilding of wasm store
 	moduleActivationMandatory := false
-	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, targets, moduleActivationMandatory)
+	// recompile only missing targets
+	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory)
 	if err != nil {
 		log.Error("failed to reactivate program while rebuilding wasm store", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
