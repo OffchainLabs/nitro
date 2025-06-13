@@ -46,6 +46,7 @@ remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
 fs_permissions = [{ access = "read", path = "./"}]
 include_paths = ['gas-dimensions/src/', 'gas-dimensions/scripts']
 auto_detect_remappings = false
+solc = '0.8.30'
 
 [profile.gas-dimensions-yul]
 src = 'gas-dimensions/yul'
