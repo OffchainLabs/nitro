@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
+	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -38,6 +39,7 @@ type ConsensusExecutionSyncer struct {
 	config func() *ConsensusExecutionSyncerConfig
 
 	inboxReader    *InboxReader
+	msgExtractor   *mel.MessageExtractor
 	execClient     execution.ExecutionClient
 	blockValidator *staker.BlockValidator
 	txStreamer     *TransactionStreamer
@@ -46,6 +48,7 @@ type ConsensusExecutionSyncer struct {
 func NewConsensusExecutionSyncer(
 	config func() *ConsensusExecutionSyncerConfig,
 	inboxReader *InboxReader,
+	msgExtractor *mel.MessageExtractor,
 	execClient execution.ExecutionClient,
 	blockValidator *staker.BlockValidator,
 	txStreamer *TransactionStreamer,
@@ -53,6 +56,7 @@ func NewConsensusExecutionSyncer(
 	return &ConsensusExecutionSyncer{
 		config:         config,
 		inboxReader:    inboxReader,
+		msgExtractor:   msgExtractor,
 		execClient:     execClient,
 		blockValidator: blockValidator,
 		txStreamer:     txStreamer,
@@ -99,13 +103,25 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 }
 
 func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx context.Context) time.Duration {
-	safeMsgCount, err := c.inboxReader.GetSafeMsgCount(ctx)
+	var safeMsgCount arbutil.MessageIndex
+	var err error
+
+	if c.msgExtractor != nil {
+		safeMsgCount, err = c.msgExtractor.GetSafeMsgCount(ctx)
+	} else {
+		safeMsgCount, err = c.inboxReader.GetSafeMsgCount(ctx)
+	}
 	safeFinalityData, err := c.getFinalityData(ctx, safeMsgCount, err, "safe")
 	if err != nil {
 		return c.config().SyncInterval
 	}
 
-	finalizedMsgCount, err := c.inboxReader.GetFinalizedMsgCount(ctx)
+	var finalizedMsgCount arbutil.MessageIndex
+	if c.msgExtractor != nil {
+		finalizedMsgCount, err = c.msgExtractor.GetFinalizedMsgCount(ctx)
+	} else {
+		finalizedMsgCount, err = c.inboxReader.GetFinalizedMsgCount(ctx)
+	}
 	finalizedFinalityData, err := c.getFinalityData(ctx, finalizedMsgCount, err, "finalized")
 	if err != nil {
 		return c.config().SyncInterval

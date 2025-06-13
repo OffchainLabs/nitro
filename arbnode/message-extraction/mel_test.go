@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -21,7 +22,6 @@ import (
 )
 
 var _ ParentChainReader = (*mockParentChainReader)(nil)
-var _ meltypes.StateDatabase = (*mockMELDB)(nil)
 
 func TestMessageExtractor(t *testing.T) {
 	ctx := context.Background()
@@ -40,15 +40,14 @@ func TestMessageExtractor(t *testing.T) {
 	parentChainReader.blocks[common.BigToHash(common.Big2)] = emptyblk1
 	parentChainReader.blocks[common.BigToHash(common.Big3)] = emptyblk2
 	initialStateFetcher := &mockInitialStateFetcher{}
-	mockDB := &mockMELDB{
-		states: make(map[uint64]*meltypes.State),
-	}
+	arbDb := rawdb.NewMemoryDatabase()
+	melDb := NewDatabase(arbDb)
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		parentChainReader,
 		&chaininfo.RollupAddresses{},
 		initialStateFetcher,
-		mockDB,
+		melDb,
 		messageConsumer,
 		[]daprovider.Reader{},
 		common.Hash{},
@@ -77,7 +76,7 @@ func TestMessageExtractor(t *testing.T) {
 			Version:                42,
 			ParentChainBlockNumber: 1,
 		}
-		mockDB.states[1] = melState
+		require.NoError(t, melDb.SaveState(ctx, melState))
 		initialStateFetcher.returnErr = nil
 		initialStateFetcher.state = melState
 		_, err = extractor.Act(ctx)
@@ -118,7 +117,9 @@ func TestMessageExtractor(t *testing.T) {
 		parentChainReader.blocks[common.BigToHash(big.NewInt(1))] = types.NewBlock(
 			&types.Header{ParentHash: common.MaxHash}, nil, nil, nil,
 		)
-		require.True(t, mockDB.headMelStateBlockNum == 2)
+		headMelStateBlockNum, err := melDb.GetHeadMelStateBlockNum()
+		require.NoError(t, err)
+		require.True(t, headMelStateBlockNum == 2)
 
 		// Correctly transitions to the Reorging messages state.
 		parentChainReader.returnErr = nil
@@ -157,6 +158,14 @@ type mockParentChainReader struct {
 	blocks    map[common.Hash]*types.Block
 	headers   map[common.Hash]*types.Header
 	returnErr error
+}
+
+func (m *mockParentChainReader) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	blk, err := m.BlockByNumber(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	return blk.Header(), err
 }
 
 func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
@@ -216,43 +225,4 @@ func (m *mockParentChainReader) TransactionReceipt(ctx context.Context, txHash c
 	}
 	// Mock implementation, return a dummy receipt
 	return &types.Receipt{}, nil
-}
-
-type mockMELDB struct {
-	headMelStateBlockNum uint64
-	states               map[uint64]*meltypes.State
-}
-
-func (m *mockMELDB) State(
-	_ context.Context,
-	parentChainBlockNumber uint64,
-) (*meltypes.State, error) {
-	if state, ok := m.states[parentChainBlockNumber]; ok {
-		return state, nil
-	}
-	return nil, errors.New("doesn't exist")
-}
-
-func (m *mockMELDB) SaveState(
-	_ context.Context,
-	state *meltypes.State,
-) error {
-	m.states[state.ParentChainBlockNumber] = state
-	m.headMelStateBlockNum = state.ParentChainBlockNumber
-	return nil
-}
-
-func (m *mockMELDB) SaveDelayedMessages(
-	_ context.Context,
-	_ *meltypes.State,
-	_ []*meltypes.DelayedInboxMessage,
-) error {
-	return nil
-}
-func (m *mockMELDB) ReadDelayedMessage(
-	_ context.Context,
-	_ *meltypes.State,
-	_ uint64,
-) (*meltypes.DelayedInboxMessage, error) {
-	return nil, errors.New("unimplemented")
 }

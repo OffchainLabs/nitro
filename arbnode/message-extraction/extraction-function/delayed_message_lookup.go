@@ -78,12 +78,15 @@ func parseDelayedMessagesFromBlock(
 	}
 	messageData := make(map[common.Hash][]byte)
 	for i, tx := range parentChainBlockTxs {
-		if tx.To() == nil {
-			continue
-		}
-		_, ok := inboxAddressSet[*tx.To()]
-		if !ok {
-			continue
+		// TODO: remove this temporary work around for handling init message, i.e skipping the check when msgCount==0
+		if melState.MsgCount != 0 {
+			if tx.To() == nil {
+				continue
+			}
+			_, ok := inboxAddressSet[*tx.To()]
+			if !ok {
+				continue
+			}
 		}
 		txIndex := uint(i) // #nosec G115
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
@@ -137,7 +140,7 @@ func delayedMessageScaffoldsFromLogs(
 	// First, do a pass over the logs to extract message delivered events, which
 	// contain an inbox address and a message index.
 	for _, ethLog := range logs {
-		if ethLog == nil {
+		if ethLog == nil || len(ethLog.Topics) == 0 || ethLog.Topics[0] != iBridgeABI.Events["MessageDelivered"].ID {
 			continue
 		}
 		event := new(bridgegen.IBridgeMessageDelivered)

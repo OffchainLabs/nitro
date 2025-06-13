@@ -22,6 +22,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 	ctx := context.Background()
 	delayedMsgPostingAddr := common.BytesToAddress([]byte("deadbeef"))
 	melState := &meltypes.State{
+		MsgCount:                           1,
 		DelayedMessagePostingTargetAddress: delayedMsgPostingAddr,
 	}
 
@@ -556,15 +557,6 @@ func Test_parseMessageScaffoldsFromLogs(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, delayedMsgs)
 		require.Empty(t, events)
-	})
-	t.Run("log unpacking fails", func(t *testing.T) {
-		log := &types.Log{
-			Address: common.BytesToAddress([]byte("deadbeef")),
-			Data:    []byte("foobar"),
-			Topics:  []common.Hash{},
-		}
-		_, _, err := delayedMessageScaffoldsFromLogs(nil, []*types.Log{log})
-		require.ErrorContains(t, err, "no event signature")
 	})
 }
 

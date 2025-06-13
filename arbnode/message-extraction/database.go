@@ -69,6 +69,9 @@ func (d *Database) initializeSeenUnreadDelayedMetaDeque(ctx context.Context, sta
 		}
 		curr = prev
 	}
+	if prev == nil {
+		return nil
+	}
 	acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(
 		meltypes.ToPtrSlice(prev.DelayedMessageMerklePartials),
 	)
@@ -77,7 +80,7 @@ func (d *Database) initializeSeenUnreadDelayedMetaDeque(ctx context.Context, sta
 	}
 	// We then walk forward the merkleAccumulator till targetDelayedMessagesRead
 	for index := prev.DelayedMessagedSeen; index < targetDelayedMessagesRead; index++ {
-		msg, err := d.fetchDelayedMessage(ctx, index)
+		msg, err := d.fetchDelayedMessage(index)
 		if err != nil {
 			return err
 		}
@@ -89,7 +92,7 @@ func (d *Database) initializeSeenUnreadDelayedMetaDeque(ctx context.Context, sta
 	// Accumulator is now at the step we need, hence we start creating DelayedMeta for all the delayed messages that are seen but not read
 	seenUnreadDelayedMetaDeque := &meltypes.DelayedMetaDeque{}
 	for index := targetDelayedMessagesRead; index < state.DelayedMessagedSeen; index++ {
-		msg, err := d.fetchDelayedMessage(ctx, index)
+		msg, err := d.fetchDelayedMessage(index)
 		if err != nil {
 			return err
 		}
@@ -111,13 +114,17 @@ func (d *Database) initializeSeenUnreadDelayedMetaDeque(ctx context.Context, sta
 	return nil
 }
 
-// FetchInitialState method of the StateFetcher interface is implemented by the database as it would be used after the initial fetch
-func (d *Database) FetchInitialState(ctx context.Context, parentChainBlockHash common.Hash, finalizedBlock uint64) (*meltypes.State, error) {
+func (d *Database) GetHeadMelState(ctx context.Context) (*meltypes.State, error) {
 	headMelStateBlockNum, err := d.GetHeadMelStateBlockNum()
 	if err != nil {
 		return nil, fmt.Errorf("error getting HeadMelStateBlockNum from database: %w", err)
 	}
-	state, err := d.State(ctx, headMelStateBlockNum)
+	return d.State(ctx, headMelStateBlockNum)
+}
+
+// FetchInitialState method of the StateFetcher interface is implemented by the database as it would be used after the initial fetch
+func (d *Database) FetchInitialState(ctx context.Context, parentChainBlockHash common.Hash, finalizedBlock uint64) (*meltypes.State, error) {
+	state, err := d.GetHeadMelState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +237,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.
 			return false, err
 		}
 		for i := targetState.DelayedMessagedSeen; i < index; i++ {
-			delayed, err := d.fetchDelayedMessage(ctx, i)
+			delayed, err := d.fetchDelayedMessage(i)
 			if err != nil {
 				return false, err
 			}
@@ -252,7 +259,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *meltypes.
 	return merkleRoot == delayedMeta.MerkleRoot, nil
 }
 
-func (d *Database) fetchDelayedMessage(ctx context.Context, index uint64) (*meltypes.DelayedInboxMessage, error) {
+func (d *Database) fetchDelayedMessage(index uint64) (*meltypes.DelayedInboxMessage, error) {
 	key := dbKey(dbschema.MelDelayedMessagePrefix, index)
 	delayedBytes, err := d.db.Get(key)
 	if err != nil {
@@ -266,7 +273,11 @@ func (d *Database) fetchDelayedMessage(ctx context.Context, index uint64) (*melt
 }
 
 func (d *Database) ReadDelayedMessage(ctx context.Context, state *meltypes.State, index uint64) (*meltypes.DelayedInboxMessage, error) {
-	delayed, err := d.fetchDelayedMessage(ctx, index)
+	if index == 0 { // Init message
+		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in SeenUnreadDelayedMetaDeque
+		return state.GetSeenUnreadDelayedMetaDeque().GetInitMsg(), nil
+	}
+	delayed, err := d.fetchDelayedMessage(index)
 	if err != nil {
 		return nil, err
 	}

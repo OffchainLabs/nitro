@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
+	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -68,6 +69,7 @@ type TransactionStreamer struct {
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
 	inboxReader     *InboxReader
+	msgExtractor    *mel.MessageExtractor
 	delayedBridge   *DelayedBridge
 
 	trackBlockMetadataFrom arbutil.MessageIndex
@@ -194,6 +196,16 @@ func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedB
 	}
 	s.inboxReader = inboxReader
 	s.delayedBridge = delayedBridge
+}
+
+func (s *TransactionStreamer) SetMsgExtractor(msgExtractor *mel.MessageExtractor) {
+	if s.Started() {
+		panic("trying to set inbox reader after start")
+	}
+	if s.msgExtractor != nil {
+		panic("trying to set msgExtractor when already set")
+	}
+	s.msgExtractor = msgExtractor
 }
 
 func (s *TransactionStreamer) ChainConfig() *params.ChainConfig {
@@ -343,6 +355,11 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 				// This is the wrong position for the delayed message
 				continue
 			}
+			// TODO: make decision on whether to keep and resequence old delayed messages or to start anew
+			// This concerns delayedMessages 'Seen' and not 'Read' so I think just not including any delayed messages in resequencing is fair- since they will anyway be readded by MEL later on
+			if s.msgExtractor != nil {
+				continue
+			}
 			if s.inboxReader != nil {
 				// this is a delayed message. Should be resequenced if all 3 agree:
 				// oldMessage, accumulator stored in tracker, and the message re-read from l1
@@ -471,16 +488,18 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		return nil, err
 	}
 
-	err = message.Message.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
-		ctx, err := s.GetContextSafe()
+	if s.inboxReader != nil {
+		err = message.Message.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+			ctx, err := s.GetContextSafe()
+			if err != nil {
+				return nil, err
+			}
+			data, _, err := s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+			return data, err
+		})
 		if err != nil {
 			return nil, err
 		}
-		data, _, err := s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
-		return data, err
-	})
-	if err != nil {
-		return nil, err
 	}
 
 	return &message, nil

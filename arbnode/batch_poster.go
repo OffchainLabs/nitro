@@ -36,6 +36,8 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -96,6 +98,7 @@ type BatchPoster struct {
 	stopwaiter.StopWaiter
 	l1Reader           *headerreader.HeaderReader
 	inbox              *InboxTracker
+	msgExtractor       *mel.MessageExtractor
 	streamer           *TransactionStreamer
 	arbOSVersionGetter execution.ExecutionBatchPoster
 	config             BatchPosterConfigFetcher
@@ -321,6 +324,7 @@ type BatchPosterOpts struct {
 	DataPosterDB  ethdb.Database
 	L1Reader      *headerreader.HeaderReader
 	Inbox         *InboxTracker
+	MsgExtractor  *mel.MessageExtractor
 	Streamer      *TransactionStreamer
 	VersionGetter execution.ExecutionBatchPoster
 	SyncMonitor   *SyncMonitor
@@ -374,6 +378,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	b := &BatchPoster{
 		l1Reader:           opts.L1Reader,
 		inbox:              opts.Inbox,
+		msgExtractor:       opts.MsgExtractor,
 		streamer:           opts.Streamer,
 		arbOSVersionGetter: opts.VersionGetter,
 		syncMonitor:        opts.SyncMonitor,
@@ -846,10 +851,14 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 		return nil, fmt.Errorf("error getting latest batch count: %w", err)
 	}
 	inboxBatchCount := bigInboxBatchCount.Uint64()
-	var prevBatchMeta BatchMetadata
+	var prevBatchMeta meltypes.BatchMetadata
 	if inboxBatchCount > 0 {
 		var err error
-		prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
+		if b.msgExtractor != nil {
+			prevBatchMeta, err = b.msgExtractor.GetBatchMetadata(ctx, inboxBatchCount-1)
+		} else {
+			prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("error getting latest batch metadata: %w", err)
 		}
@@ -1351,7 +1360,12 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("decoding batch position: %w", err)
 	}
 
-	dbBatchCount, err := b.inbox.GetBatchCount()
+	var dbBatchCount uint64
+	if b.msgExtractor != nil {
+		dbBatchCount, err = b.msgExtractor.GetBatchCount(ctx)
+	} else {
+		dbBatchCount, err = b.inbox.GetBatchCount()
+	}
 	if err != nil {
 		return false, err
 	}
@@ -1719,7 +1733,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	delayProofNeeded := b.building.firstDelayedMsg != nil && delayBufferConfig != nil && delayBufferConfig.Enabled // checking if delayBufferConfig is non-nil isnt needed, but better to be safe
 	delayProofNeeded = delayProofNeeded && (config.DelayBufferAlwaysUpdatable || delayBufferConfig.isUpdatable(latestHeader.Number.Uint64()))
 	if delayProofNeeded {
-		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.inbox)
+		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.inbox) // TODO: how to replace inboxTracer with msgExtractor here?
 		if err != nil {
 			return false, fmt.Errorf("failed to generate delay proof: %w", err)
 		}
