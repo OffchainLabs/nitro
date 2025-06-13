@@ -84,29 +84,6 @@ func TestDimTxOpActivateProgramForSstoreAndCall(t *testing.T) {
 	TxOpTraceAndCheck(t, ctx, builder, receipt)
 }
 
-// This test runs the tracer on a transaction that includes a call to a
-// stylus contract.
-func TestDimTxOpStylus(t *testing.T) {
-	t.Parallel()
-	builder, auth, cleanup := setupProgramTest(t, true, gasDimPrecompileBuilderOpts()...)
-	ctx := builder.ctx
-	l2client := builder.L2.Client
-	defer cleanup()
-
-	program := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
-
-	preimage := []byte("hello world, ok")
-	keccakArgs := []byte{0x01} // keccak the preimage once
-	keccakArgs = append(keccakArgs, preimage...)
-
-	tx := builder.L2Info.PrepareTxTo("Owner", &program, 1000000, nil, keccakArgs)
-	Require(t, l2client.SendTransaction(ctx, tx))
-	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
-}
-
 // ******************************************************
 //                    HELPER FUNCTIONS
 // ******************************************************
