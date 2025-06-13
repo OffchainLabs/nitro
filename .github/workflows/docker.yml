@@ -31,7 +31,7 @@ jobs:
     needs: check-label
     # Run if it's not a PR or if it's a PR with the required label
     if: github.event_name != 'pull_request' || needs.check-label.outputs.should-run == 'true'
-    runs-on: ubuntu-32
+    runs-on: arbitrator-ci
     services:
       # local registry
       registry:

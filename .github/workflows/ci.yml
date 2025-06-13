@@ -13,7 +13,7 @@ on:
 jobs:
   test:
     name: Go Tests
-    runs-on: ubuntu-32
+    runs-on: arbitrator-ci
 
     # Creates a redis container for redis tests
     services:
