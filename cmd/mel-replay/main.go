@@ -52,12 +52,12 @@ func main() {
 		panic(fmt.Errorf("error decoding start MEL state: %w", err))
 	}
 
-	// Extract the relevant headers in the range from the
+	// Extract the relevant header hashes in the range from the
 	// block hash of the start MEL state to the end parent chain block hash.
 	// This is done by walking backwards from the end parent chain block hash
 	// until we reach the block hash of the start MEL state as blocks are
 	// only connected by parent linkages.
-	blockHeaders := walkBackwards(
+	blockHeaderHashes := walkBackwards(
 		startState.ParentChainBlockHash,
 		endParentChainBlockHash,
 	)
@@ -69,8 +69,9 @@ func main() {
 		preimageResolver: resolver,
 	}
 	ctx := context.Background()
-	for i := len(blockHeaders) - 1; i >= 0; i-- {
-		header := blockHeaders[i]
+	for i := len(blockHeaderHashes) - 1; i >= 0; i-- {
+		headerHash := blockHeaderHashes[i]
+		header := getHeaderByHash(headerHash)
 		log.Info("Extracting messages from block", "number", header.Number.Uint64(), "hash", header.Hash().Hex())
 		receiptFetcher := &receiptFetcherForBlock{
 			header:           header,
@@ -109,18 +110,18 @@ func main() {
 func walkBackwards(
 	startHash,
 	endHash common.Hash,
-) []*types.Header {
-	headers := make([]*types.Header, 0)
+) []common.Hash {
+	headerHashes := make([]common.Hash, 0)
 	curr := endHash
 	for {
 		header := getHeaderByHash(curr)
-		headers = append(headers, header)
+		headerHashes = append(headerHashes, curr)
 		curr = header.ParentHash
 		if curr == startHash {
 			break
 		}
 	}
-	return headers
+	return headerHashes
 }
 
 func getHeaderByHash(hash common.Hash) *types.Header {
