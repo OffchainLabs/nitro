@@ -1,20 +1,22 @@
 # Nitro Submodule Dependencies
 
+Attention AI Agents: read the `AI Agent Instructions for Updating This Document` section for additional details.
+
 - 🌟 [**nitro**](https://github.com/Layr-Labs/nitro)
   - 🌟 [**go-ethereum**](https://github.com/Layr-Labs/nitro-go-ethereum) ([2a973e02](https://github.com/Layr-Labs/nitro-go-ethereum/commit/2a973e02b8c98fc3be7dce12ef28750f8b0f3ef6)) [[eigenda-3.1-rebase](https://github.com/Layr-Labs/nitro-go-ethereum/tree/eigenda-3.1-rebase)]
     - 🔗 [tests/testdata](https://github.com/ethereum/tests) ([faf33b47](https://github.com/ethereum/tests/commit/faf33b471465d3c6cdc3d04fbd690895f78d33f2))
       - 🔗 [LegacyTests](https://github.com/ethereum/legacytests) ([7387366b](https://github.com/ethereum/legacytests/commit/7387366b56261544e8145832033f269c707b6c51))
     - 🔗 [tests/evm-benchmarks](https://github.com/ipsilon/evm-benchmarks) ([d8b88f40](https://github.com/ipsilon/evm-benchmarks/commit/d8b88f4046a87d6b902378cef752591f95427b43))
-  - 🌟 [**contracts**](https://github.com/Layr-Labs/nitro-contracts) ([67d9c912](https://github.com/Layr-Labs/nitro-contracts/commit/67d9c912c40b92f2246cd057af25b3f3067f5c37))
+  - 🌟 [**contracts**](https://github.com/Layr-Labs/nitro-contracts) ([7b76a5e7](https://github.com/Layr-Labs/nitro-contracts/commit/7b76a5e74dbcd42fd9826b4d093d1f8fb75f74ab))
     - 🔗 [lib/forge-std](https://github.com/foundry-rs/forge-std) ([e8a047e3](https://github.com/foundry-rs/forge-std/commit/e8a047e3f40f13fa37af6fe14e6e06283d9a060e))
       - 🔗 [lib/ds-test](https://github.com/dapphub/ds-test) ([e282159d](https://github.com/dapphub/ds-test/commit/e282159d5170298eb2455a6c05280ab5a73a4ef0))
-  - 🌟 [**contracts-legacy**](https://github.com/Layr-Labs/nitro-contracts) 🗑️ ([eabece3e](https://github.com/Layr-Labs/nitro-contracts/commit/eabece3eedab92133db1095ae4f0b213ed61798f))
+  - 🌟 [**contracts-legacy**](https://github.com/Layr-Labs/nitro-contracts) ([ece63f6c](https://github.com/Layr-Labs/nitro-contracts/commit/ece63f6c3a37d2645573f747bdd3cd6209697f2b))
     - 🔗 [lib/forge-std](https://github.com/foundry-rs/forge-std) ([e8a047e3](https://github.com/foundry-rs/forge-std/commit/e8a047e3f40f13fa37af6fe14e6e06283d9a060e))
       - 🔗 [lib/ds-test](https://github.com/dapphub/ds-test) ([e282159d](https://github.com/dapphub/ds-test/commit/e282159d5170298eb2455a6c05280ab5a73a4ef0))
-  - 🌟 [**nitro-testnode**](https://github.com/Layr-Labs/nitro-testnode) 🗑️ ([17bcd652](https://github.com/Layr-Labs/nitro-testnode/commit/17bcd652a229457994e525313c46c31c1f5c235e)) [[v3-upstream-merge](https://github.com/Layr-Labs/nitro-testnode/tree/v3-upstream-merge)]
+  - 🌟 [**nitro-testnode**](https://github.com/Layr-Labs/nitro-testnode) ([17bcd652](https://github.com/Layr-Labs/nitro-testnode/commit/17bcd652a229457994e525313c46c31c1f5c235e)) [[v3-upstream-merge](https://github.com/Layr-Labs/nitro-testnode/tree/v3-upstream-merge)]
     - ⚙️ [blockscout](https://github.com/OffchainLabs/blockscout) 🗑️ ([60d60cb3](https://github.com/OffchainLabs/blockscout/commit/60d60cb331b0289d39c7480379a14a86100af37a))
-  - 🌟 [**bold**](https://github.com/Layr-Labs/bold) ([50df7f6d](https://github.com/Layr-Labs/bold/commit/50df7f6da46b7ef8906ee9d5e20f01688af77d62))
-    - 🌟 [contracts](https://github.com/Layr-Labs/nitro-contracts) ([67d9c912](https://github.com/Layr-Labs/nitro-contracts/commit/67d9c912c40b92f2246cd057af25b3f3067f5c37))
+  - 🌟 [**bold**](https://github.com/Layr-Labs/bold) ([82e28a89](https://github.com/Layr-Labs/bold/commit/82e28a894e7f8233e135dc2f342989d20162e06f))
+    - 🌟 [contracts](https://github.com/Layr-Labs/nitro-contracts) ([7b76a5e7](https://github.com/Layr-Labs/nitro-contracts/commit/7b76a5e74dbcd42fd9826b4d093d1f8fb75f74ab))
       - 🔗 [lib/forge-std](https://github.com/foundry-rs/forge-std) ([e8a047e3](https://github.com/foundry-rs/forge-std/commit/e8a047e3f40f13fa37af6fe14e6e06283d9a060e))
         - 🔗 [lib/ds-test](https://github.com/dapphub/ds-test) ([e282159d](https://github.com/dapphub/ds-test/commit/e282159d5170298eb2455a6c05280ab5a73a4ef0))
     - 🔗 [safe-smart-account](https://github.com/safe-global/safe-smart-account) ([192c7dc6](https://github.com/safe-global/safe-smart-account/commit/192c7dc67290940fcbc75165522bb86a37187069))
@@ -38,10 +40,12 @@
 
 ---
 
-## LLM Instructions for Updating This Document
+## AI Agent Instructions for Updating This Document
 
 ### Critical Requirements
 **ABSOLUTE ACCURACY IS ESSENTIAL.** Every commit SHA, branch name, URL, and status indicator must be perfectly correct.
+
+Create a detailed TODO list of tasks in order to execute this process.
 
 ### Data Collection Commands
 Execute from nitro repository root:
