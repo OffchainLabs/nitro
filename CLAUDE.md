@@ -58,3 +58,7 @@ make clean                    # Clean build artifacts and test cache
 make wasm-ci-build           # Build WASM components for CI
 make stylus-benchmarks       # Run Stylus performance benchmarks
 ```
+
+## Git Submodules
+
+- `git-submodule-dependency-document.md`: Comprehensive submodule dependency mapping with AI agent maintenance instructions
