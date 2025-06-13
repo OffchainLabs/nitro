@@ -343,7 +343,7 @@ func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
 	Require(t, err)
 	escrowExists := state.Exist(escrowAccount)
 	if escrowExists != (arbosVersion < params.ArbosVersion_30) {
-		Fatal(t, "Escrow account existance", escrowExists, "doesn't correspond to ArbOS version", arbosVersion)
+		Fatal(t, "Escrow account existence", escrowExists, "doesn't correspond to ArbOS version", arbosVersion)
 	}
 }
 
@@ -656,7 +656,7 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 		Fatal(t, "The beneficiary shouldn't have received funds")
 	}
 
-	// the fee refund address should recieve the excess gas
+	// the fee refund address should receive the excess gas
 	colors.PrintBlue("Base Fee         ", l2BaseFee)
 	colors.PrintBlue("Excess Gas Price ", excessGasPrice)
 	colors.PrintBlue("Excess Gas       ", excessGasLimit)
@@ -1079,7 +1079,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fatal(t, "The beneficiary shouldn't have received funds")
 	}
 
-	// the fee refund address should recieve the excess gas
+	// the fee refund address should receive the excess gas
 	colors.PrintBlue("Base Fee         ", l2BaseFee)
 	colors.PrintBlue("Excess Gas Price ", excessGasPrice)
 	colors.PrintBlue("Excess Gas       ", excessGasLimit)
