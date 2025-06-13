@@ -243,6 +243,11 @@ test-go-redis: test-go-deps
 	gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/... -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
+.PHONY: test-go-gas-dimensions
+test-go-gas-dimensions: test-go-deps
+	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run "TestDim(Log|TxOp)" -tags gasdimensionstest
+	@printf $(done)
+
 .PHONY: test-gen-proofs
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
@@ -601,12 +606,14 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	yarn --cwd contracts build:forge:yul
 	yarn --cwd contracts-legacy build
 	yarn --cwd contracts-legacy build:forge:yul
+	make -C contracts-local build
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd safe-smart-account install
 	yarn --cwd contracts install
 	yarn --cwd contracts-legacy install
+	make -C contracts-local install
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make

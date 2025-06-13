@@ -27,7 +27,7 @@ import (
 	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/staker/bold"
 )
 
@@ -171,7 +171,7 @@ func fundL3Staker(t *testing.T, ctx context.Context, builder *NodeBuilder, l2Cli
 	Require(t, err)
 	stakeToken, err := rollupUserLogic.StakeToken(&bind.CallOpts{Context: ctx})
 	Require(t, err)
-	stakeTokenWeth, err := mocksgen.NewTestWETH9(stakeToken, l2Client)
+	stakeTokenWeth, err := localgen.NewTestWETH9(stakeToken, l2Client)
 	Require(t, err)
 
 	txOpts := builder.L2Info.GetDefaultTransactOpts(name, ctx)

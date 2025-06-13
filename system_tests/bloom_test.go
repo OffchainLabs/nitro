@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 )
 
 func TestBloom(t *testing.T) {
@@ -38,7 +38,7 @@ func TestBloom(t *testing.T) {
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	ownerTxOpts.Context = ctx
 	_, simple := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	countsNum := 800

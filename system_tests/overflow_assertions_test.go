@@ -8,12 +8,13 @@ package arbtest
 
 import (
 	"context"
-	"github.com/offchainlabs/nitro/validator/server_common"
 	"math/big"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ccoveille/go-safecast"
 	"github.com/ethereum/go-ethereum/accounts/abi"

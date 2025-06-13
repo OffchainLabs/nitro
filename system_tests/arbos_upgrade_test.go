@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -122,7 +122,7 @@ func TestArbos11To32UpgradeWithMcopy(t *testing.T) {
 	Require(t, err)
 
 	// deploys test contract
-	_, tx, contract, err := mocksgen.DeployArbOS11To32UpgradeTest(&auth, seqTestClient.Client)
+	_, tx, contract, err := localgen.DeployArbOS11To32UpgradeTest(&auth, seqTestClient.Client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, seqTestClient.Client, tx)
 	Require(t, err)

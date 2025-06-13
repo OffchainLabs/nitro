@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -31,7 +31,7 @@ func TestProgramSimpleCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
 	otherProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("storage"))
 	matchSnake := regexp.MustCompile("_[a-z]")
 
@@ -72,7 +72,7 @@ func TestProgramSimpleCost(t *testing.T) {
 			solFunc := matchSnake.ReplaceAllStringFunc(tc.hostio, func(s string) string {
 				return strings.ToUpper(strings.TrimPrefix(s, "_"))
 			})
-			packer, _ := util.NewCallParser(mocksgen.HostioTestABI, solFunc)
+			packer, _ := util.NewCallParser(localgen.HostioTestABI, solFunc)
 			data, err := packer(tc.params...)
 			Require(t, err)
 			compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, compareGasForEach, tc.maxDiff, compareGasPair{tc.opcode, tc.hostio})
@@ -84,8 +84,8 @@ func TestProgramPowCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
-	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "mathPow")
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
+	packer, _ := util.NewCallParser(localgen.HostioTestABI, "mathPow")
 
 	for _, exponentNumBytes := range []uint{1, 2, 10, 32} {
 		name := fmt.Sprintf("exponentNumBytes%v", exponentNumBytes)
@@ -110,7 +110,7 @@ func TestProgramStorageCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusMulticall := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
-	evmMulticall := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.MultiCallTestMetaData)
+	evmMulticall := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.MultiCallTestMetaData)
 
 	const numSlots = 42
 	rander := testhelpers.NewPseudoRandomDataSource(t, 0)
@@ -151,8 +151,8 @@ func TestProgramLogCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
-	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "emitLog")
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
+	packer, _ := util.NewCallParser(localgen.HostioTestABI, "emitLog")
 
 	for ntopics := int8(0); ntopics < 5; ntopics++ {
 		for _, dataSize := range []uint64{10, 100, 1000} {
@@ -179,10 +179,10 @@ func TestProgramCallCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusMulticall := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
-	evmMulticall := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.MultiCallTestMetaData)
+	evmMulticall := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.MultiCallTestMetaData)
 	otherStylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	otherEvmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
-	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "msgValue")
+	otherEvmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
+	packer, _ := util.NewCallParser(localgen.HostioTestABI, "msgValue")
 	otherData, err := packer()
 	Require(t, err)
 
@@ -232,8 +232,8 @@ func TestProgramCreateCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusCreate := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("create"))
-	evmCreate := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.CreateTestMetaData)
-	deployCode := common.FromHex(mocksgen.ProgramTestMetaData.Bin)
+	evmCreate := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.CreateTestMetaData)
+	deployCode := common.FromHex(localgen.ProgramTestMetaData.Bin)
 
 	t.Run("create1", func(t *testing.T) {
 		data := []byte{0x01}
@@ -255,8 +255,8 @@ func TestProgramKeccakCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
-	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "keccak")
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
+	packer, _ := util.NewCallParser(localgen.HostioTestABI, "keccak")
 
 	for i := 1; i < 5; i++ {
 		size := uint64(math.Pow10(i))
