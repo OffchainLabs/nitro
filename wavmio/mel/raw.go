@@ -17,5 +17,5 @@ func getGlobalStateBytes32(idx uint32, output unsafe.Pointer)
 //go:wasmimport wavmio setGlobalStateBytes32
 func setGlobalStateBytes32(idx uint32, val unsafe.Pointer)
 
-//go:wasmimport wavmio getEndParentChainBlockHash
-func getEndParentChainBlockHash(unsafe.Pointer)
+// //go:wasmimport wavmio getEndParentChainBlockHash
+// func getEndParentChainBlockHash(unsafe.Pointer)

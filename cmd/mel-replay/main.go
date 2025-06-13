@@ -49,8 +49,6 @@ func main() {
 	if err := rlp.Decode(bytes.NewBuffer(startStateBytes), &startState); err != nil {
 		panic(fmt.Errorf("error decoding start MEL state: %w", err))
 	}
-	_ = endParentChainBlockHash
-	ctx := context.Background()
 
 	// Extract the relevant headers in the range from the
 	// block hash of the start MEL state to the end parent chain block hash.
@@ -62,16 +60,13 @@ func main() {
 		endParentChainBlockHash,
 	)
 	currentState := startState
-	_ = blockHeaders
-	_ = currentState
-	_ = ctx
 
 	// Loops backwards over blocks, feeding them one by one into the extract messages function.
 	resolver := &wavmPreimageResolver{}
 	delayedMsgDatabase := &delayedMessageDatabase{
 		preimageResolver: resolver,
 	}
-	_ = delayedMsgDatabase
+	ctx := context.Background()
 	for i := len(blockHeaders) - 1; i >= 0; i-- {
 		header := blockHeaders[i]
 		log.Info("Extracting messages from block", "number", header.Number.Uint64(), "hash", header.Hash().Hex())

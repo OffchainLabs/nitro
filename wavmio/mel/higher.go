@@ -49,8 +49,8 @@ func GetStartMELRoot() (hash common.Hash) {
 }
 
 func GetEndParentChainBlockHash() (hash common.Hash) {
-	hashUnsafe := unsafe.Pointer(&hash[0])
-	getEndParentChainBlockHash(hashUnsafe)
+	// hashUnsafe := unsafe.Pointer(&hash[0])
+	// getEndParentChainBlockHash(hashUnsafe)
 	return
 }
 

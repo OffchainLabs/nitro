@@ -4,21 +4,27 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/trie"
 
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
@@ -35,6 +41,181 @@ import (
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
+
+func TestMessageExtractionReplay_RecordPreimages(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithBoldDeployment().
+		WithDelayBuffer(0)
+	builder.L2Info.GenerateAccount("User2")
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	melState := createInitialMELState(t, ctx, builder.addresses, builder.L1.Client)
+
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
+	l1Reader, err := headerreader.New(ctx, builder.L1.Client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
+	Require(t, err)
+	l1Reader.Start(ctx)
+	defer l1Reader.StopAndWait()
+
+	mockDB := &mockMELDB{
+		savedMsgs:        make([]*arbostypes.MessageWithMetadata, 0),
+		savedStates:      make(map[uint64]*meltypes.State),
+		savedDelayedMsgs: make([]*meltypes.DelayedInboxMessage, 0),
+	}
+	Require(t, mockDB.SaveState(ctx, melState))
+	extractor, err := mel.NewMessageExtractor(
+		l1Reader.Client(),
+		builder.addresses,
+		mockDB,
+		mockDB,
+		mockDB,
+		nil, // TODO: Provide da readers here.
+		melState.ParentChainBlockHash,
+		0,
+	)
+	Require(t, err)
+
+	// Create various L2 transactions and wait for them to be included in a batch
+	// as compressed messages submitted to the sequencer inbox.
+	sequencerTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
+	numMessages := 10
+	forceSequencerMessageBatchPosting(
+		t,
+		builder.L2.ConsensusNode,
+		builder.L2Info,
+		builder.L1.Client,
+		&sequencerTxOpts,
+		builder.addresses.SequencerInbox,
+		int64(numMessages),
+	)
+
+	// Run the extractor routine until it has caught up to the latest parent chain block.
+	for {
+		prevFSMState := extractor.CurrentFSMState()
+		_, err = extractor.Act(ctx)
+		Require(t, err)
+		newFSMState := extractor.CurrentFSMState()
+		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
+		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
+		// exit the loop here and assert information about MEL.
+		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.ProcessingNextBlock {
+			break
+		}
+	}
+
+	// Assert details about the extraction routine.
+	if len(mockDB.savedStates) == 0 {
+		t.Fatal("MEL did not save any states")
+	}
+
+	// Next, we extract all the parent chain headers since the first MEL state until the latest.
+	headersByHash := make(map[common.Hash]*types.Header)
+	startState := melState
+	endState := mockDB.lastState
+	curr := endState.ParentChainBlockHash
+	t.Logf("Final block hash: %s", curr.Hex())
+
+	hasher := newRecordingHasher()
+
+	for curr != startState.ParentChainBlockHash {
+		header, err := builder.L1.Client.HeaderByHash(ctx, curr)
+		require.NoError(t, err)
+
+		block, err := builder.L1.Client.BlockByHash(ctx, curr)
+		require.NoError(t, err)
+		// Now, populate the preimages for the block's transactions trie.
+		txes := block.Transactions()
+		txsRoot := types.DeriveSha(txes, hasher)
+		require.Equal(t, txsRoot, header.TxHash)
+
+		// Fetch all the receipts.
+		receipts := make([]*types.Receipt, len(txes))
+		for i, tx := range txes {
+			receipt, err := builder.L1.Client.TransactionReceipt(ctx, tx.Hash())
+			require.NoError(t, err)
+			receipts[i] = receipt
+		}
+		receiptsRoot := types.DeriveSha(types.Receipts(receipts), hasher)
+		require.Equal(t, receiptsRoot, header.ReceiptHash)
+
+		// Populate the header by hash preimages.
+		headersByHash[header.Hash()] = header
+		curr = header.ParentHash
+	}
+
+	preimages := hasher.preimages
+	for hash, header := range headersByHash {
+		rawBytes, err := rlp.EncodeToBytes(header)
+		require.NoError(t, err)
+		preimages[hash] = rawBytes
+	}
+
+	// Add the initial mel state as a preimage to the map.
+	initialMelStateBytes, err := rlp.EncodeToBytes(melState)
+	require.NoError(t, err)
+	initialMelStateRoot := crypto.Keccak256Hash(initialMelStateBytes)
+	preimages[initialMelStateRoot] = initialMelStateBytes
+
+	t.Log("Total preimages: ", len(preimages))
+	outputFile, err := os.Create("/tmp/preimages.json")
+	require.NoError(t, err)
+	defer outputFile.Close()
+	require.NoError(t, json.NewEncoder(outputFile).Encode(preimages))
+	t.Log("Wrote preimages file to /tmp/preimages.json")
+	t.Logf("Start mel state root %s\n", initialMelStateRoot.Hex())
+	t.Logf("Final mel state %+v\n", mockDB.lastState)
+	finalMelStateBytes, err := rlp.EncodeToBytes(melState)
+	require.NoError(t, err)
+	finalMelStateRoot := crypto.Keccak256Hash(finalMelStateBytes)
+	t.Logf("Final mel state root: %s", finalMelStateRoot.Hex())
+}
+
+type preimageRecordingHasher struct {
+	trie      *trie.StackTrie
+	preimages map[common.Hash][]byte
+}
+
+func newRecordingHasher() *preimageRecordingHasher {
+	h := &preimageRecordingHasher{
+		preimages: make(map[common.Hash][]byte),
+	}
+	// OnTrieNode callback captures all trie nodes.
+	onTrieNode := func(path []byte, hash common.Hash, blob []byte) {
+		// Deep copy the blob since the callback warns contents may change, so this is required.
+		h.preimages[hash] = common.CopyBytes(blob)
+	}
+
+	h.trie = trie.NewStackTrie(onTrieNode)
+	return h
+}
+
+func (h *preimageRecordingHasher) Reset() {
+	onTrieNode := func(path []byte, hash common.Hash, blob []byte) {
+		h.preimages[hash] = common.CopyBytes(blob)
+	}
+	h.trie = trie.NewStackTrie(onTrieNode)
+}
+
+func (h *preimageRecordingHasher) Update(key, value []byte) error {
+	valueHash := crypto.Keccak256Hash(value)
+	h.preimages[valueHash] = common.CopyBytes(value)
+	return h.trie.Update(key, value)
+}
+
+func (h *preimageRecordingHasher) Hash() common.Hash {
+	return h.trie.Hash()
+}
+
+func (h *preimageRecordingHasher) GetPreimages() map[common.Hash][]byte {
+	return h.preimages
+}
 
 func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
