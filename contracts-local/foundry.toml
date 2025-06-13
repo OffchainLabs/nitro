@@ -4,23 +4,22 @@ out = 'out/src'
 libs = ['node_modules', 'lib']
 test = 'test'
 cache_path = 'forge-cache/sol'
-optimizer = true
-optimizer_runs = 2000
 via_ir = false
 evm_version = 'cancun'
 remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
               'forge-std/=lib/forge-std/src/',
               'openzeppelin-contracts/=lib/openzeppelin-contracts/contracts/']
 fs_permissions = [{ access = "read", path = "./"}]
+solc = '0.8.17'
+optimizer = true
+optimizer_runs = 2000
 
-[profile.static]
+[profile.newsolc]
 src = 'src'
 out = 'out/src'
 libs = ['node_modules', 'lib']
 test = 'test'
 cache_path = 'forge-cache/sol'
-optimizer = true
-optimizer_runs = 100
 via_ir = false
 evm_version = 'cancun'
 remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
@@ -28,6 +27,8 @@ remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
               'openzeppelin-contracts/=lib/openzeppelin-contracts/contracts/']
 fs_permissions = [{ access = "read", path = "./"}]
 solc = '0.8.24'
+optimizer = true
+optimizer_runs = 100
 
 [profile.gas-dimensions]
 src = 'gas-dimensions/src'
