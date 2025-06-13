@@ -1876,6 +1876,14 @@ func multicallAppendLoad(args []byte, key common.Hash, emitLog bool) []byte {
 	return args
 }
 
+func multicallAppendClearCache(args []byte) []byte {
+	var action byte = 0x20
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1) // length
+	args = append(args, action)
+	return args
+}
+
 func assertStorageAt(
 	t *testing.T, ctx context.Context, l2client *ethclient.Client, contract common.Address, key, value common.Hash,
 ) {
