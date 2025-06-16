@@ -179,10 +179,6 @@ func (f *ReferenceDAFactory) ValidateConfig() error {
 	return nil
 }
 
-func (f *ReferenceDAFactory) initializeComponents() error {
-	return nil
-}
-
 func (f *ReferenceDAFactory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
 	reader := referenceda.NewReader()
 	return reader, nil, nil
