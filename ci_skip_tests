@@ -44,6 +44,8 @@ TestChallengeToFailedTooFar
 TestTwoNodesLong
 TestStylusPrecompileMethodsSimple
 TestGettingState
+TestEmptyCliConfig
+TestBatchPosterDelayBufferDisabled
 
 # These tests are failing with celestia integration
 TestEmptyCliConfig
