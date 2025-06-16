@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -343,7 +343,7 @@ func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
 	Require(t, err)
 	escrowExists := state.Exist(escrowAccount)
 	if escrowExists != (arbosVersion < params.ArbosVersion_30) {
-		Fatal(t, "Escrow account existance", escrowExists, "doesn't correspond to ArbOS version", arbosVersion)
+		Fatal(t, "Escrow account existence", escrowExists, "doesn't correspond to ArbOS version", arbosVersion)
 	}
 }
 
@@ -404,6 +404,19 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
 		Fatal(t, receipt.GasUsed)
+	}
+
+	l2FaucetTxOpts := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+	l2FaucetTxOpts.GasLimit = 0 // gas estimation
+	l2FaucetTxOpts.Value = big.NewInt(2)
+	l2FaucetTxOpts.NoSend = true
+	expectedErr := fmt.Errorf("retryable with ticketId: %v not found", ticketId)
+	_, err = simple.RedeemAllAndCreateAddresses(&l2FaucetTxOpts, [][32]byte{ticketId, ticketId}, []common.Address{testhelpers.RandomAddress(), testhelpers.RandomAddress()})
+	if err == nil {
+		t.Fatal("expected non-nil error for gas estimation of duplicate retryable redeems")
+	}
+	if err.Error() != expectedErr.Error() {
+		t.Fatalf("unexpected error for gas estimation of duplicate retryable redeems. Want: %v, Got: %v", expectedErr, err)
 	}
 
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
@@ -643,7 +656,7 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 		Fatal(t, "The beneficiary shouldn't have received funds")
 	}
 
-	// the fee refund address should recieve the excess gas
+	// the fee refund address should receive the excess gas
 	colors.PrintBlue("Base Fee         ", l2BaseFee)
 	colors.PrintBlue("Excess Gas Price ", excessGasPrice)
 	colors.PrintBlue("Excess Gas       ", excessGasLimit)
@@ -1066,7 +1079,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fatal(t, "The beneficiary shouldn't have received funds")
 	}
 
-	// the fee refund address should recieve the excess gas
+	// the fee refund address should receive the excess gas
 	colors.PrintBlue("Base Fee         ", l2BaseFee)
 	colors.PrintBlue("Excess Gas Price ", excessGasPrice)
 	colors.PrintBlue("Excess Gas       ", excessGasLimit)

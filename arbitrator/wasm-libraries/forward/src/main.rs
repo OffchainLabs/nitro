@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use eyre::Result;
 use std::{fs::File, io::Write, path::PathBuf};
@@ -84,7 +84,7 @@ fn forward(file: &mut File) -> Result<()> {
 
     wln!(
         ";; Copyright 2022-2023, Offchain Labs, Inc.\n\
-         ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE\n\
+         ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md\n\
          ;; This file is auto-generated.\n\
          \n\
          (module"
@@ -159,7 +159,7 @@ fn forward_stub(file: &mut File) -> Result<()> {
 
     wln!(
         ";; Copyright 2022-2023, Offchain Labs, Inc.\n\
-         ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE\n\
+         ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md\n\
          ;; This file is auto-generated.\n\
          \n\
          (module"

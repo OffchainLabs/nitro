@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package validatorwallet
 
@@ -17,14 +17,12 @@ import (
 
 // NoOp validator wallet is used for watchtower mode.
 type NoOp struct {
-	l1Client      *ethclient.Client
-	rollupAddress common.Address
+	l1Client *ethclient.Client
 }
 
-func NewNoOp(l1Client *ethclient.Client, rollupAddress common.Address) *NoOp {
+func NewNoOp(l1Client *ethclient.Client) *NoOp {
 	return &NoOp{
-		l1Client:      l1Client,
-		rollupAddress: rollupAddress,
+		l1Client: l1Client,
 	}
 }
 
@@ -42,15 +40,11 @@ func (*NoOp) ExecuteTransactions(context.Context, []*types.Transaction, common.A
 	return nil, errors.New("no op validator wallet cannot execute transactions")
 }
 
-func (*NoOp) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
+func (*NoOp) TimeoutChallenges(ctx context.Context, challenges []uint64, challengeManagerAddress common.Address) (*types.Transaction, error) {
 	return nil, errors.New("no op validator wallet cannot timeout challenges")
 }
 
 func (n *NoOp) L1Client() *ethclient.Client { return n.l1Client }
-
-func (n *NoOp) RollupAddress() common.Address { return n.rollupAddress }
-
-func (*NoOp) ChallengeManagerAddress() common.Address { return common.Address{} }
 
 func (*NoOp) TestTransactions(ctx context.Context, txs []*types.Transaction) error {
 	return nil

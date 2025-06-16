@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcastclients
 
@@ -44,13 +44,14 @@ type BroadcastClients struct {
 	primaryClients   []*broadcastclient.BroadcastClient
 	secondaryClients []*broadcastclient.BroadcastClient
 	secondaryURL     []string
-	makeClient       func(string, *Router) (*broadcastclient.BroadcastClient, error)
+	makeClient       func(string, *Router, arbutil.MessageIndex) (*broadcastclient.BroadcastClient, error)
 
 	primaryRouter   *Router
 	secondaryRouter *Router
 
 	// Use atomic access
-	connected atomic.Int32
+	connected         atomic.Int32
+	latestSequenceNum atomic.Uint64
 }
 
 func NewBroadcastClients(
@@ -81,12 +82,13 @@ func NewBroadcastClients(
 		secondaryClients: make([]*broadcastclient.BroadcastClient, 0, len(config.SecondaryURL)),
 		secondaryURL:     config.SecondaryURL,
 	}
-	clients.makeClient = func(url string, router *Router) (*broadcastclient.BroadcastClient, error) {
+	clients.latestSequenceNum.Store(uint64(currentMessageCount))
+	clients.makeClient = func(url string, router *Router, seqNum arbutil.MessageIndex) (*broadcastclient.BroadcastClient, error) {
 		return broadcastclient.NewBroadcastClient(
 			configFetcher,
 			url,
 			l2ChainId,
-			currentMessageCount,
+			seqNum,
 			router,
 			router.confirmedSequenceNumberChan,
 			fatalErrChan,
@@ -97,7 +99,7 @@ func NewBroadcastClients(
 
 	var lastClientErr error
 	for _, address := range config.URL {
-		client, err := clients.makeClient(address, clients.primaryRouter)
+		client, err := clients.makeClient(address, clients.primaryRouter, currentMessageCount)
 		if err != nil {
 			lastClientErr = err
 			log.Warn("init broadcast client failed", "address", address)
@@ -161,6 +163,17 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 				return nil
 			}
 			recentFeedItemsNew[msg.SequenceNumber] = time.Now()
+
+			// Update the latest sequence number seen from any feed
+			currentLatest := bcs.latestSequenceNum.Load()
+			msgSeqNum := uint64(msg.SequenceNumber)
+			for msgSeqNum > currentLatest {
+				if bcs.latestSequenceNum.CompareAndSwap(currentLatest, msgSeqNum) {
+					break
+				}
+				currentLatest = bcs.latestSequenceNum.Load()
+			}
+
 			if err := router.forwardTxStreamer.AddBroadcastMessages([]*m.BroadcastFeedMessage{&msg}); err != nil {
 				return err
 			}
@@ -247,7 +260,9 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 	pos := len(bcs.secondaryClients)
 	if pos < len(bcs.secondaryURL) {
 		url := bcs.secondaryURL[pos]
-		client, err := bcs.makeClient(url, bcs.secondaryRouter)
+
+		latestSeqNum := arbutil.MessageIndex(bcs.latestSequenceNum.Load())
+		client, err := bcs.makeClient(url, bcs.secondaryRouter, latestSeqNum)
 		if err != nil {
 			log.Warn("init broadcast secondary client failed", "address", url)
 			bcs.secondaryURL = append(bcs.secondaryURL[:pos], bcs.secondaryURL[pos+1:]...)
@@ -255,7 +270,7 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 		}
 		bcs.secondaryClients = append(bcs.secondaryClients, client)
 		client.Start(ctx)
-		log.Info("secondary feed started", "url", url)
+		log.Info("secondary feed started", "url", url, "startingFromSeq", latestSeqNum)
 	} else if len(bcs.secondaryURL) > 0 {
 		log.Warn("failed to start a new secondary feed all available secondary feeds were started")
 	}

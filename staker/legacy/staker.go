@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package legacystaker
 
@@ -287,12 +287,10 @@ type ValidatorWalletInterface interface {
 	// Address must be able to be called concurrently with other functions
 	AddressOrZero() common.Address
 	TxSenderAddress() *common.Address
-	RollupAddress() common.Address
-	ChallengeManagerAddress() common.Address
 	L1Client() *ethclient.Client
 	TestTransactions(context.Context, []*types.Transaction) error
 	ExecuteTransactions(context.Context, []*types.Transaction, common.Address) (*types.Transaction, error)
-	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
+	TimeoutChallenges(context.Context, []uint64, common.Address) (*types.Transaction, error)
 	CanBatchTxs() bool
 	AuthIfEoa() *bind.TransactOpts
 	Start(context.Context)
@@ -311,13 +309,14 @@ func NewStaker(
 	stakedNotifiers []LatestStakedNotifier,
 	confirmedNotifiers []LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
+	rollupAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
 	if err := config().Validate(); err != nil {
 		return nil, err
 	}
 	client := l1Reader.Client()
-	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, config().GasRefunder(), callOpts,
+	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, rollupAddress, config().GasRefunder(), callOpts,
 		statelessBlockValidator.InboxTracker(), statelessBlockValidator.InboxStreamer(), blockValidator)
 	if err != nil {
 		return nil, err
@@ -427,6 +426,7 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 		s.builder,
 		s.wallet,
 		s.l1Reader,
+		s.rollupAddress,
 	)
 	if err != nil {
 		// Unknown while loading the safe contract.
@@ -977,12 +977,16 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			return fmt.Errorf("error getting latest confirmed creation block: %w", err)
 		}
 
+		challengeManagerAddress, err := s.rollup.ChallengeManager(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			return fmt.Errorf("error getting challenge manager address: %w", err)
+		}
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
 			s.client,
 			s.builder.Auth(context.TODO()),
 			*s.builder.WalletAddress(),
-			s.wallet.ChallengeManagerAddress(),
+			challengeManagerAddress,
 			*info.CurrentChallenge,
 			s.statelessBlockValidator,
 			latestConfirmedCreated,

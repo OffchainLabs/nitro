@@ -40,13 +40,13 @@ type ExecutionClient interface {
 	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
 	BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex]
-	SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
+	SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 
 	Maintenance() containers.PromiseInterface[struct{}]
 
-	Start(ctx context.Context) containers.PromiseInterface[struct{}]
-	StopAndWait() containers.PromiseInterface[struct{}]
+	Start(ctx context.Context) error
+	StopAndWait()
 }
 
 // needed for validators / stakers

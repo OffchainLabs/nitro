@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
 // +build !wasm
@@ -275,7 +275,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		}
 	} else {
 		// program activated recently, possibly in this eth_call
-		// store it to statedb. It will be stored to database if statedb is commited
+		// store it to statedb. It will be stored to database if statedb is committed
 		statedb.ActivateWasm(moduleHash, asmMap)
 	}
 	asm, exists := asmMap[localTarget]

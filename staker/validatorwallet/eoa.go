@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package validatorwallet
 
@@ -14,44 +14,29 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
-	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 )
 
 // EOA is a ValidatorWallet that uses an Externally Owned Account to sign transactions.
 // An Ethereum Externally Owned Account is directly represented by a private key,
 // as opposed to a smart contract wallet where the smart contract authorizes transactions.
 type EOA struct {
-	auth                    *bind.TransactOpts
-	client                  *ethclient.Client
-	rollupAddress           common.Address
-	challengeManager        *challenge_legacy_gen.ChallengeManager
-	challengeManagerAddress common.Address
-	dataPoster              *dataposter.DataPoster
-	getExtraGas             func() uint64
+	auth        *bind.TransactOpts
+	client      *ethclient.Client
+	dataPoster  *dataposter.DataPoster
+	getExtraGas func() uint64
 }
 
-func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client *ethclient.Client, getExtraGas func() uint64) (*EOA, error) {
+func NewEOA(dataPoster *dataposter.DataPoster, l1Client *ethclient.Client, getExtraGas func() uint64) (*EOA, error) {
 	return &EOA{
-		auth:          dataPoster.Auth(),
-		client:        l1Client,
-		rollupAddress: rollupAddress,
-		dataPoster:    dataPoster,
-		getExtraGas:   getExtraGas,
+		auth:        dataPoster.Auth(),
+		client:      l1Client,
+		dataPoster:  dataPoster,
+		getExtraGas: getExtraGas,
 	}, nil
 }
 
 func (w *EOA) Initialize(ctx context.Context) error {
-	rollup, err := rollup_legacy_gen.NewRollupUserLogic(w.rollupAddress, w.client)
-	if err != nil {
-		return err
-	}
-	callOpts := &bind.CallOpts{Context: ctx}
-	w.challengeManagerAddress, err = rollup.ChallengeManager(callOpts)
-	if err != nil {
-		return err
-	}
-	w.challengeManager, err = challenge_legacy_gen.NewChallengeManager(w.challengeManagerAddress, w.client)
-	return err
+	return nil
 }
 
 func (w *EOA) Address() *common.Address {
@@ -68,14 +53,6 @@ func (w *EOA) TxSenderAddress() *common.Address {
 
 func (w *EOA) L1Client() *ethclient.Client {
 	return w.client
-}
-
-func (w *EOA) RollupAddress() common.Address {
-	return w.rollupAddress
-}
-
-func (w *EOA) ChallengeManagerAddress() common.Address {
-	return w.challengeManagerAddress
 }
 
 func (w *EOA) TestTransactions(context.Context, []*types.Transaction) error {
@@ -100,14 +77,18 @@ func (w *EOA) postTransaction(ctx context.Context, baseTx *types.Transaction) (*
 	return newTx, nil
 }
 
-func (w *EOA) TimeoutChallenges(ctx context.Context, timeouts []uint64) (*types.Transaction, error) {
+func (w *EOA) TimeoutChallenges(ctx context.Context, timeouts []uint64, challengeManagerAddress common.Address) (*types.Transaction, error) {
 	if len(timeouts) == 0 {
 		return nil, nil
 	}
 	auth := *w.auth
 	auth.Context = ctx
 	auth.NoSend = true
-	tx, err := w.challengeManager.Timeout(&auth, timeouts[0])
+	challengeManager, err := challenge_legacy_gen.NewChallengeManager(challengeManagerAddress, w.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create challenge manager: %w", err)
+	}
+	tx, err := challengeManager.Timeout(&auth, timeouts[0])
 	if err != nil {
 		return nil, err
 	}

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -40,10 +40,10 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -122,8 +122,10 @@ type BatchPoster struct {
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
 
-	accessList  func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
-	parentChain *parent.ParentChain
+	accessList   func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
+	parentChain  *parent.ParentChain
+	checkEip7623 bool
+	useEip7623   bool
 }
 
 type l1BlockBound int
@@ -177,6 +179,8 @@ type BatchPosterConfig struct {
 	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
 	MaxEmptyBatchDelay             time.Duration               `koanf:"max-empty-batch-delay"`
 	DelayBufferThresholdMargin     uint64                      `koanf:"delay-buffer-threshold-margin"`
+	DelayBufferAlwaysUpdatable     bool                        `koanf:"delay-buffer-always-updatable"`
+	ParentChainEip7623             string                      `koanf:"parent-chain-eip7623"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -237,6 +241,8 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
 	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed")
 	f.Uint64(prefix+".delay-buffer-threshold-margin", DefaultBatchPosterConfig.DelayBufferThresholdMargin, "the number of blocks to post the batch before reaching the delay buffer threshold")
+	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\")")
+	f.Bool(prefix+".delay-buffer-always-updatable", DefaultBatchPosterConfig.DelayBufferAlwaysUpdatable, "always treat delay buffer as updatable")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -273,6 +279,8 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	CheckBatchCorrectness:          true,
 	MaxEmptyBatchDelay:             3 * 24 * time.Hour,
 	DelayBufferThresholdMargin:     25, // 5 minutes considering 12-second blocks
+	DelayBufferAlwaysUpdatable:     true,
+	ParentChainEip7623:             "auto",
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -305,6 +313,8 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	CheckBatchCorrectness:          true,
 	DelayBufferThresholdMargin:     0,
+	DelayBufferAlwaysUpdatable:     true,
+	ParentChainEip7623:             "auto",
 }
 
 type BatchPosterOpts struct {
@@ -330,6 +340,19 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 
 	if err = opts.Config().Validate(); err != nil {
 		return nil, err
+	}
+	var checkEip7623 bool
+	var useEip7623 bool
+	switch opts.Config().ParentChainEip7623 {
+	case "no":
+		checkEip7623 = false
+		useEip7623 = false
+	case "yes":
+		checkEip7623 = false
+		useEip7623 = true
+	case "auto":
+		checkEip7623 = true
+		useEip7623 = false
 	}
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
@@ -364,6 +387,8 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		redisLock:          redisLock,
 		dapReaders:         opts.DAPReaders,
 		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
+		checkEip7623:       checkEip7623,
+		useEip7623:         useEip7623,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -575,9 +600,11 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 	// TOTAL_COST_FLOOR_PER_TOKEN * 4 * (length(calldata_tx_2) - length(calldata_tx_1)) =
 	// 40
 
+	if !b.checkEip7623 {
+		return b.useEip7623, nil
+	}
 	rpcClient := b.l1Reader.Client()
 	config := b.config()
-	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
 	to := b.dataPoster.Sender()
 
 	data := []byte{}
@@ -585,24 +612,33 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 		data = append(data, 1)
 	}
 
-	gas1, err := estimateGas(rpcClient.Client(), ctx, estimateGasParams{
-		From:         b.dataPoster.Sender(),
-		To:           &to,
-		Data:         data,
-		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
-	})
+	// Rather than checking the latest block, we're going to check a recent
+	// block (5 blocks back) to avoid reorgs.
+	targetBlockNumber := latestHeader.Number.Sub(latestHeader.Number, big.NewInt(5))
+	targetHeader, err := rpcClient.HeaderByNumber(ctx, targetBlockNumber)
 	if err != nil {
 		return false, err
 	}
+	maxFeePerGas := arbmath.BigMulByUBips(targetHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
+	blockHex := hexutil.Uint64(targetBlockNumber.Uint64()).String()
 
-	data = append(data, 1)
-	gas2, err := estimateGas(rpcClient.Client(), ctx, estimateGasParams{
+	gasParams := estimateGasParams{
 		From:         b.dataPoster.Sender(),
 		To:           &to,
 		Data:         data,
 		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
-	})
+	}
+
+	gas1, err := estimateGas(rpcClient.Client(), ctx, gasParams, blockHex)
 	if err != nil {
+		log.Warn("Failed to estimate gas for EIP-7623 check 1", "err", err)
+		return false, err
+	}
+
+	gasParams.Data = append(gasParams.Data, 1)
+	gas2, err := estimateGas(rpcClient.Client(), ctx, gasParams, blockHex)
+	if err != nil {
+		log.Warn("Failed to estimate gas for EIP-7623 check 2", "err", err)
 		return false, err
 	}
 
@@ -622,6 +658,11 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 		parentChainIsUsingEIP7623 = true
 	} else {
 		return false, fmt.Errorf("unexpected gas difference, gas1: %d, gas2: %d", gas1, gas2)
+	}
+	b.useEip7623 = parentChainIsUsingEIP7623
+	if parentChainIsUsingEIP7623 {
+		// Once the parent chain is using EIP-7623, we don't need to check it again.
+		b.checkEip7623 = false
 	}
 	return parentChainIsUsingEIP7623, nil
 }
@@ -1164,65 +1205,81 @@ type estimateGasParams struct {
 	BlobHashes   []common.Hash    `json:"blobVersionedHashes,omitempty"`
 }
 
-func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams) (uint64, error) {
+type OverrideAccount struct {
+	StateDiff map[common.Hash]common.Hash `json:"stateDiff"`
+}
+
+type StateOverride map[common.Address]OverrideAccount
+
+func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
 	var gas hexutil.Uint64
-	err := client.CallContext(ctx, &gas, "eth_estimateGas", params)
+	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, blockHex)
+	// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
+	if err != nil && headerreader.IsExecutionReverted(err) {
+		err = client.CallContext(ctx, nil, "eth_call", params, blockHex)
+	}
 	return uint64(gas), err
 }
 
-func (b *BatchPoster) estimateGas(
+func (b *BatchPoster) estimateGasSimple(
 	ctx context.Context,
-	sequencerMessage []byte,
-	delayedMessages uint64,
 	realData []byte,
 	realBlobs []kzg4844.Blob,
-	realNonce uint64,
 	realAccessList types.AccessList,
-	delayProof *bridgegen.DelayProof,
 ) (uint64, error) {
 
 	config := b.config()
 	rpcClient := b.l1Reader.Client()
 	rawRpcClient := rpcClient.Client()
-	useNormalEstimation := b.dataPoster.MaxMempoolTransactions() == 1
-	if !useNormalEstimation {
-		// Check if we can use normal estimation anyways because we're at the latest nonce
-		latestNonce, err := rpcClient.NonceAt(ctx, b.dataPoster.Sender(), nil)
-		if err != nil {
-			return 0, err
-		}
-		useNormalEstimation = latestNonce == realNonce
-	}
 	latestHeader, err := rpcClient.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
-	if useNormalEstimation {
-		_, realBlobHashes, err := blobs.ComputeCommitmentsAndHashes(realBlobs)
-		if err != nil {
-			return 0, fmt.Errorf("failed to compute real blob commitments: %w", err)
-		}
-		// If we're at the latest nonce, we can skip the special future tx estimate stuff
-		gas, err := estimateGas(rawRpcClient, ctx, estimateGasParams{
-			From:         b.dataPoster.Sender(),
-			To:           &b.seqInboxAddr,
-			Data:         realData,
-			MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
-			BlobHashes:   realBlobHashes,
-			AccessList:   realAccessList,
-		})
-		if err != nil {
-			return 0, fmt.Errorf("%w: %w", ErrNormalGasEstimationFailed, err)
-		}
-		return gas + config.ExtraBatchGas, nil
+	_, realBlobHashes, err := blobs.ComputeCommitmentsAndHashes(realBlobs)
+	if err != nil {
+		return 0, fmt.Errorf("failed to compute real blob commitments: %w", err)
 	}
+	// If we're at the latest nonce, we can skip the special future tx estimate stuff
+	gas, err := estimateGas(rawRpcClient, ctx, estimateGasParams{
+		From:         b.dataPoster.Sender(),
+		To:           &b.seqInboxAddr,
+		Data:         realData,
+		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
+		BlobHashes:   realBlobHashes,
+		AccessList:   realAccessList,
+	}, "latest")
+	if err != nil {
+		return 0, fmt.Errorf("%w: %w", ErrNormalGasEstimationFailed, err)
+	}
+	return gas + config.ExtraBatchGas, nil
+}
+
+// This estimates gas for a batch with future nonce
+// a prev. batch is already pending in the parent chain's mempool
+func (b *BatchPoster) estimateGasForFutureTx(
+	ctx context.Context,
+	sequencerMessage []byte,
+	delayedMessagesBefore uint64,
+	delayedMessagesAfter uint64,
+	realAccessList types.AccessList,
+	usingBlobs bool,
+	delayProof *bridgegen.DelayProof,
+) (uint64, error) {
+	config := b.config()
+	rpcClient := b.l1Reader.Client()
+	rawRpcClient := rpcClient.Client()
+	latestHeader, err := rpcClient.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
 
 	// Here we set seqNum to MaxUint256, and prevMsgNum to 0, because it disables the smart contracts' consistency checks.
 	// However, we set nextMsgNum to 1 because it is necessary for a correct estimation for the final to be non-zero.
 	// Because we're likely estimating against older state, this might not be the actual next message,
 	// but the gas used should be the same.
-	data, kzgBlobs, err := b.encodeAddBatch(abi.MaxUint256, 0, 1, sequencerMessage, delayedMessages, len(realBlobs) > 0, delayProof)
+	data, kzgBlobs, err := b.encodeAddBatch(abi.MaxUint256, 0, 1, sequencerMessage, delayedMessagesAfter, usingBlobs, delayProof)
 	if err != nil {
 		return 0, err
 	}
@@ -1230,7 +1287,7 @@ func (b *BatchPoster) estimateGas(
 	if err != nil {
 		return 0, fmt.Errorf("failed to compute blob commitments: %w", err)
 	}
-	gas, err := estimateGas(rawRpcClient, ctx, estimateGasParams{
+	gasParams := estimateGasParams{
 		From:         b.dataPoster.Sender(),
 		To:           &b.seqInboxAddr,
 		Data:         data,
@@ -1239,22 +1296,42 @@ func (b *BatchPoster) estimateGas(
 		// This isn't perfect because we're probably estimating the batch at a different sequence number,
 		// but it should overestimate rather than underestimate which is fine.
 		AccessList: realAccessList,
-	})
+	}
+	// slot 0 in the SequencerInbox smart contract holds totalDelayedMessagesRead -
+	// This is the number of delayed messages that sequencer knows were processed
+	// SequencerInbox checks this value to make sure delayed inbox isn't going backward,
+	// And it makes it know if a delayProof is needed
+	// Both are required for successful batch posting
+	stateOverride := StateOverride{
+		b.seqInboxAddr: {
+			StateDiff: map[common.Hash]common.Hash{
+				// slot 0
+				{}: common.Hash(arbmath.Uint64ToU256Bytes(delayedMessagesBefore)),
+			},
+		},
+	}
+	var gas hexutil.Uint64
+	err = rawRpcClient.CallContext(ctx, &gas, "eth_estimateGas", gasParams, rpc.PendingBlockNumber, stateOverride)
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage
 		if len(sequencerMessageHeader) > 33 {
 			sequencerMessageHeader = sequencerMessageHeader[:33]
 		}
+		// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
+		if headerreader.IsExecutionReverted(err) {
+			err = rawRpcClient.CallContext(ctx, nil, "eth_call", gasParams, rpc.PendingBlockNumber, stateOverride)
+		}
 		log.Warn(
 			"error estimating gas for batch",
 			"err", err,
-			"delayedMessages", delayedMessages,
+			"delayedMessagesBefore", delayedMessagesBefore,
+			"delayedMessagesAfter", delayedMessagesAfter,
 			"sequencerMessageHeader", hex.EncodeToString(sequencerMessageHeader),
 			"sequencerMessageLen", len(sequencerMessage),
 		)
 		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
-	return gas + config.ExtraBatchGas, nil
+	return uint64(gas) + config.ExtraBatchGas, nil
 }
 
 const ethPosBlockTime = 12 * time.Second
@@ -1366,11 +1443,6 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if msgCount <= batchPosition.MessageCount {
 		// There's nothing after the newest batch, therefore batch posting was not required
 		return false, nil
-	}
-
-	lastPotentialMsg, err := b.streamer.GetMessage(msgCount - 1)
-	if err != nil {
-		return false, err
 	}
 
 	config := b.config()
@@ -1524,24 +1596,27 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 
-	delayBuffer, err := GetDelayBufferConfig(ctx, b.seqInbox)
-	if err != nil {
-		return false, err
-	}
-	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil {
-		latestHeader, err := b.l1Reader.LastHeader(ctx)
+	var delayBufferConfig *DelayBufferConfig
+	if b.building.firstDelayedMsg != nil { // Only fetch delayBufferConfig config when needed
+		delayBufferConfig, err = GetDelayBufferConfig(ctx, b.seqInbox)
 		if err != nil {
 			return false, err
 		}
-		latestBlock := latestHeader.Number.Uint64()
-		firstDelayedMsgBlock := b.building.firstDelayedMsg.Message.Header.BlockNumber
-		threasholdLimit := firstDelayedMsgBlock + delayBuffer.Threshold - b.config().DelayBufferThresholdMargin
-		if latestBlock >= threasholdLimit {
-			log.Info("force post batch because of the delay buffer",
-				"firstDelayedMsgBlock", firstDelayedMsgBlock,
-				"threshold", delayBuffer.Threshold,
-				"latestBlock", latestBlock)
-			forcePostBatch = true
+		if delayBufferConfig.Enabled {
+			latestHeader, err := b.l1Reader.LastHeader(ctx)
+			if err != nil {
+				return false, err
+			}
+			latestBlock := latestHeader.Number.Uint64()
+			firstDelayedMsgBlock := b.building.firstDelayedMsg.Message.Header.BlockNumber
+			threasholdLimit := firstDelayedMsgBlock + delayBufferConfig.Threshold - b.config().DelayBufferThresholdMargin
+			if latestBlock >= threasholdLimit {
+				log.Info("force post batch because of the delay buffer",
+					"firstDelayedMsgBlock", firstDelayedMsgBlock,
+					"threshold", delayBufferConfig.Threshold,
+					"latestBlock", latestBlock)
+				forcePostBatch = true
+			}
 		}
 	}
 
@@ -1641,7 +1716,9 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if delayBuffer.Enabled && b.building.firstDelayedMsg != nil && delayBuffer.isUpdatable(latestHeader.Number.Uint64()) {
+	delayProofNeeded := b.building.firstDelayedMsg != nil && delayBufferConfig != nil && delayBufferConfig.Enabled // checking if delayBufferConfig is non-nil isnt needed, but better to be safe
+	delayProofNeeded = delayProofNeeded && (config.DelayBufferAlwaysUpdatable || delayBufferConfig.isUpdatable(latestHeader.Number.Uint64()))
+	if delayProofNeeded {
 		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.inbox)
 		if err != nil {
 			return false, fmt.Errorf("failed to generate delay proof: %w", err)
@@ -1664,21 +1741,36 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 	accessList := b.accessList(batchPosition.NextSeqNum, b.building.segments.delayedMsg)
-	// On restart, we may be trying to estimate gas for a batch whose successor has
-	// already made it into pending state, if not latest state.
-	// In that case, we might get a revert with `DelayedBackwards()`.
-	// To avoid that, we artificially increase the delayed messages to `lastPotentialMsg.DelayedMessagesRead`.
-	// In theory, this might reduce gas usage, but only by a factor that's already
-	// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
-	// posts a new delayed message that we didn't see while gas estimating.
 	var gasLimit uint64
 	if b.config().Dangerous.FixedGasLimit != 0 {
 		gasLimit = b.config().Dangerous.FixedGasLimit
 	} else {
-		gasLimit, err = b.estimateGas(ctx, sequencerMsg, lastPotentialMsg.DelayedMessagesRead, data, kzgBlobs, nonce, accessList, delayProof)
-		if err != nil {
-			return false, err
+		useSimpleEstimation := b.dataPoster.MaxMempoolTransactions() == 1
+		if !useSimpleEstimation {
+			// Check if we can use normal estimation anyways because we're at the latest nonce
+			latestNonce, err := b.l1Reader.Client().NonceAt(ctx, b.dataPoster.Sender(), nil)
+			if err != nil {
+				return false, err
+			}
+			useSimpleEstimation = latestNonce == nonce
 		}
+
+		if useSimpleEstimation {
+			gasLimit, err = b.estimateGasSimple(ctx, data, kzgBlobs, accessList)
+		} else {
+			// When there are previous batches queued up in the dataPoster, we override the delayed message count in the sequencer inbox
+			// so it accepts the corresponding delay proof. Otherwise, the gas estimation would revert.
+			var delayedMsgBefore uint64
+			if b.building.firstDelayedMsg != nil {
+				delayedMsgBefore = b.building.firstDelayedMsg.DelayedMessagesRead - 1
+			} else if b.building.firstNonDelayedMsg != nil {
+				delayedMsgBefore = b.building.firstNonDelayedMsg.DelayedMessagesRead
+			}
+			gasLimit, err = b.estimateGasForFutureTx(ctx, sequencerMsg, delayedMsgBefore, b.building.segments.delayedMsg, accessList, len(kzgBlobs) > 0, delayProof)
+		}
+	}
+	if err != nil {
+		return false, err
 	}
 	newMeta, err := rlp.EncodeToBytes(batchPosterPosition{
 		MessageCount:        b.building.msgCount,

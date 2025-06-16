@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 #![no_main]
 
@@ -113,6 +113,9 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
                 console!("slot: {}, data: {}, write {write}", slot, data);
                 evm::log(Storage { slot: slot.into(), data: data.into(), write })
             }
+        } else if kind & 0xf0 == 0x20 {
+            console!("clearing cache");
+            StorageCache::clear();
         } else {
             panic!("unknown action {kind}")
         }

@@ -1,5 +1,5 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 #![allow(clippy::needless_lifetimes)]
 
 use crate::{
@@ -16,7 +16,7 @@ use arbutil::{
         api::{Gas, Ink},
     },
     operator::OperatorInfo,
-    Bytes32,
+    pricing, Bytes32,
 };
 use derivative::Derivative;
 use eyre::Result;
@@ -285,35 +285,22 @@ pub trait MeteredMachine {
 
     /// Pays for a write into the client.
     fn pay_for_write(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(Ink(sat_add_mul(5040, 30, bytes.saturating_sub(32))))
+        self.buy_ink(pricing::write_price(bytes))
     }
 
     /// Pays for a read into the host.
     fn pay_for_read(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(Ink(sat_add_mul(16381, 55, bytes.saturating_sub(32))))
+        self.buy_ink(pricing::read_price(bytes))
     }
 
     /// Pays for both I/O and keccak.
     fn pay_for_keccak(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        let words = evm::evm_words(bytes).saturating_sub(2);
-        self.buy_ink(Ink(sat_add_mul(121800, 21000, words)))
-    }
-
-    /// Pays for copying bytes from geth.
-    fn pay_for_geth_bytes(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.pay_for_read(bytes) // TODO: determine value
+        self.buy_ink(pricing::keccak_price(bytes))
     }
 
     /// Pays for the variable costs of exponentiation.
     fn pay_for_pow(&mut self, exponent: &Bytes32) -> Result<(), OutOfInkError> {
-        let mut exp = 33;
-        for byte in exponent.iter() {
-            match *byte == 0 {
-                true => exp -= 1, // reduce cost for each big-endian 0 byte
-                false => break,
-            }
-        }
-        self.buy_ink(Ink(3000 + exp * 17500))
+        self.buy_ink(pricing::pow_price(exponent))
     }
 }
 
@@ -344,10 +331,6 @@ pub trait GasMeteredMachine: MeteredMachine {
         let cost = cost.saturating_add(data_len as u64 * evm::LOG_DATA_GAS);
         self.buy_gas(cost)
     }
-}
-
-fn sat_add_mul(base: u64, per: u64, count: u32) -> u64 {
-    base.saturating_add(per.saturating_mul(count.into()))
 }
 
 impl MeteredMachine for Machine {

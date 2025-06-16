@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -98,10 +98,6 @@ func NewArbitratorSpawner(locator *server_common.MachineLocator, config Arbitrat
 func (s *ArbitratorSpawner) Start(ctx_in context.Context) error {
 	s.StopWaiter.Start(ctx_in, s)
 	return nil
-}
-
-func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return containers.NewReadyPromise(s.locator.LatestWasmModuleRoot(), nil)
 }
 
 func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
@@ -225,7 +221,7 @@ func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot 
 func (v *ArbitratorSpawner) Room() int {
 	avail := v.config().Workers
 	if avail == 0 {
-		avail = runtime.NumCPU()
+		avail = util.GoMaxProcs()
 	}
 	return avail
 }

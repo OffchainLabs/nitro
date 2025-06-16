@@ -78,8 +78,10 @@ for package in $packages; do
   fi
 
   if [ "$test_state_scheme" != "" ]; then
-      cmd="$cmd -args -- --test_state_scheme=$test_state_scheme"
-    fi
+      cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
+  else
+      cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
+  fi
 
   cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
 

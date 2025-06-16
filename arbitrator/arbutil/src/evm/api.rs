@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
 use eyre::Result;
@@ -128,6 +128,10 @@ macro_rules! derive_math {
             /// Equivalent to the Sub trait, but const.
             pub const fn sub(self, rhs: Self) -> Self {
                 Self(self.0 - rhs.0)
+            }
+
+            pub const fn mul(self, rhs: u64) -> Self {
+                Self(self.0 * rhs)
             }
 
             pub const fn saturating_add(self, rhs: Self) -> Self {

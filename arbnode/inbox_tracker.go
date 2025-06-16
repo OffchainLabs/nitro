@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -21,10 +21,10 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -760,7 +760,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
-	currentpos := prevbatchmeta.MessageCount + 1
+	currentPos := prevbatchmeta.MessageCount + 1
 	for {
 		if len(backend.batches) == 0 {
 			break
@@ -771,8 +771,8 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 			return err
 		}
 		messages = append(messages, *msg)
-		batchMessageCounts[batchSeqNum] = currentpos
-		currentpos += 1
+		batchMessageCounts[batchSeqNum] = currentPos
+		currentPos += 1
 	}
 
 	lastBatchMeta := prevbatchmeta

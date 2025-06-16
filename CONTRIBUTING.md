@@ -127,7 +127,7 @@ Save and close the file, then a commit command will appear in the terminal that 
 **17. Update your pull request with the following command.**
 
 ```
-$ git push mynitrorepo feature-in-progress-branch -f
+$ git push mynitrorepo feature-in-progress-branch
 ```
 
 **18.  Finally, again leave a comment to the Core Contributors on the pull request to let them know that the pull request has been updated.**

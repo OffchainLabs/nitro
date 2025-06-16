@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/nitro/blob/main/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package bold
 
 import (
@@ -271,7 +271,7 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 			}
 			latestStaked = latestConfirmed
 		}
-		assertion, err := readBoldAssertionCreationInfo(
+		assertion, err := ReadBoldAssertionCreationInfo(
 			ctx,
 			rollupUserLogic,
 			b.client,
@@ -565,10 +565,10 @@ func newBOLDChallengeManager(
 
 // Read the creation info for an assertion by looking up its creation
 // event from the rollup contracts.
-func readBoldAssertionCreationInfo(
+func ReadBoldAssertionCreationInfo(
 	ctx context.Context,
 	rollup *boldrollup.RollupUserLogic,
-	client protocol.ChainBackend,
+	client bind.ContractBackend,
 	rollupAddress common.Address,
 	assertionHash common.Hash,
 ) (*protocol.AssertionCreatedInfo, error) {

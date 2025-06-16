@@ -8,6 +8,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/nitro/validator/server_common"
 	"math/big"
 	"os"
 	"strings"
@@ -69,6 +70,7 @@ func TestOverflowAssertions(t *testing.T) {
 		UseMockBridge:          false,
 		UseMockOneStepProver:   false,
 		MinimumAssertionPeriod: minAssertionBlocks,
+		UseBlobs:               true,
 	}
 
 	_, l2node, _, _, l1info, _, l1client, l1stack, assertionChain, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info)
@@ -90,6 +92,8 @@ func TestOverflowAssertions(t *testing.T) {
 	_, valStack := createTestValidationNode(t, ctx, &valCfg)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
+	Require(t, err)
 	stateless, err := staker.NewStatelessBlockValidator(
 		l2node.InboxReader,
 		l2node.InboxTracker,
@@ -99,6 +103,7 @@ func TestOverflowAssertions(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = stateless.Start(ctx)

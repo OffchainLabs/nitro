@@ -1,5 +1,5 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
@@ -16,7 +16,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // ArbOwner precompile provides owners with tools for managing the rollup.
@@ -29,8 +28,12 @@ type ArbOwner struct {
 	OwnerActsGasCost func(bytes4, addr, []byte) (uint64, error)
 }
 
+const NativeTokenEnableDelay = 7 * 24 * 60 * 60
+
 var (
-	ErrOutOfBounds = errors.New("value out of bounds")
+	ErrOutOfBounds         = errors.New("value out of bounds")
+	ErrNativeTokenDelay    = errors.New("native token feature must be enabled at least 7 days in the future")
+	ErrNativeTokenBackward = errors.New("native token feature cannot be updated to a time earlier than the current time at which it is scheduled to be enabled")
 )
 
 // AddChainOwner adds account as a chain owner
@@ -57,6 +60,67 @@ func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error)
 	return c.State.ChainOwners().AllMembers(65536)
 }
 
+// SetNativeTokenManagementFrom sets a time in epoch seconds when the native token
+// management becomes enabled. Setting it to 0 disables the feature.
+// If the feature is disabled, then the time must be at least 7 days in the
+// future.
+func (con ArbOwner) SetNativeTokenManagementFrom(c ctx, evm mech, timestamp uint64) error {
+	if timestamp == 0 {
+		return c.State.SetNativeTokenManagementFromTime(0)
+	}
+	stored, err := c.State.NativeTokenManagementFromTime()
+	if err != nil {
+		return err
+	}
+	now := evm.Context.Time
+	// If the feature is disabled, then the time must be at least 7 days in the
+	// future.
+	// If the feature is scheduled to be enabled more than 7 days in the future,
+	// and the new time is also in the future, then it must be at least 7 days
+	// in the future.
+	if (stored == 0 && timestamp < now+NativeTokenEnableDelay) ||
+		(stored > now+NativeTokenEnableDelay && timestamp < now+NativeTokenEnableDelay) {
+		return ErrNativeTokenDelay
+	}
+	// If the feature is scheduled to be enabled earlier than the minimum delay,
+	// then the new time to enable it must be only further in the future.
+	if stored > now && stored <= now+NativeTokenEnableDelay && timestamp < stored {
+		return ErrNativeTokenBackward
+	}
+	return c.State.SetNativeTokenManagementFromTime(timestamp)
+}
+
+// AddNativeTokenOwner adds account as a native token owner
+func (con ArbOwner) AddNativeTokenOwner(c ctx, evm mech, newOwner addr) error {
+	enabledTime, err := c.State.NativeTokenManagementFromTime()
+	if err != nil {
+		return err
+	}
+	if enabledTime == 0 || enabledTime > evm.Context.Time {
+		return errors.New("native token feature is not enabled yet")
+	}
+	return c.State.NativeTokenOwners().Add(newOwner)
+}
+
+// RemoveNativeTokenOwner removes account from the list of native token owners
+func (con ArbOwner) RemoveNativeTokenOwner(c ctx, evm mech, addr addr) error {
+	member, _ := con.IsNativeTokenOwner(c, evm, addr)
+	if !member {
+		return errors.New("tried to remove non native token owner")
+	}
+	return c.State.NativeTokenOwners().Remove(addr, c.State.ArbOSVersion())
+}
+
+// IsNativeTokenOwner checks if the account is a native token owner
+func (con ArbOwner) IsNativeTokenOwner(c ctx, evm mech, addr addr) (bool, error) {
+	return c.State.NativeTokenOwners().IsMember(addr)
+}
+
+// GetAllNativeTokenOwners retrieves the list of native token owners
+func (con ArbOwner) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, error) {
+	return c.State.NativeTokenOwners().AllMembers(65536)
+}
+
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64) error {
 	return c.State.L1PricingState().SetInertia(inertia)
@@ -77,6 +141,9 @@ func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error 
 
 // SetSpeedLimit sets the computational speed limit for the chain
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
+	if limit == 0 {
+		return errors.New("speed limit must be nonzero")
+	}
 	return c.State.L2PricingState().SetSpeedLimitPerSecond(limit)
 }
 
@@ -87,6 +154,9 @@ func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
 
 // SetL2GasPricingInertia sets the L2 gas pricing inertia
 func (con ArbOwner) SetL2GasPricingInertia(c ctx, evm mech, sec uint64) error {
+	if sec == 0 {
+		return errors.New("price inertia must be nonzero")
+	}
 	return c.State.L2PricingState().SetPricingInertia(sec)
 }
 
@@ -242,8 +312,8 @@ func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas, cached uint64) error {
 	if err != nil {
 		return err
 	}
-	params.MinInitGas = am.SaturatingUUCast[uint8](am.DivCeil(gas, programs.MinInitGasUnits))
-	params.MinCachedInitGas = am.SaturatingUUCast[uint8](am.DivCeil(cached, programs.MinCachedGasUnits))
+	params.MinInitGas = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(gas, programs.MinInitGasUnits))
+	params.MinCachedInitGas = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(cached, programs.MinCachedGasUnits))
 	return params.Save()
 }
 
@@ -253,7 +323,7 @@ func (con ArbOwner) SetWasmInitCostScalar(c ctx, _ mech, percent uint64) error {
 	if err != nil {
 		return err
 	}
-	params.InitCostScalar = am.SaturatingUUCast[uint8](am.DivCeil(percent, programs.CostScalarPercent))
+	params.InitCostScalar = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(percent, programs.CostScalarPercent))
 	return params.Save()
 }
 

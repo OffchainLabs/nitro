@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -394,6 +394,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 	// Advance L1 to force a batch given the delay buffer threshold
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(threshold)) // #nosec G115
 	initialBatchCount := GetBatchCount(t, builder)
+	builder.L2.ConsensusNode.BatchPoster.StopAndWait() // stop batchposter loop so we can manually call MaybePostBatch instead
 	for batch := uint64(0); batch < numBatches; batch++ {
 		txs := make(types.Transactions, messagesPerBatch)
 		for i := range txs {
@@ -401,11 +402,17 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 		}
 		SendSignedTxesInBatchViaL1(t, ctx, builder.L1Info, builder.L1.Client, builder.L2.Client, txs)
 
-		// Check batch wasn't sent
-		_, err := WaitForTx(ctx, testClientB.Client, txs[0].Hash(), 100*time.Millisecond)
+		// batch poster loop, should do nothing
+		_, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+		Require(t, err)
+
+		// Check messages did't appear in 2nd node
+		_, err = WaitForTx(ctx, testClientB.Client, txs[0].Hash(), 100*time.Millisecond)
 		if err == nil || !errors.Is(err, context.DeadlineExceeded) {
 			Fatal(t, "expected context-deadline exceeded error, but got:", err)
 		}
+
+		// check batch was not posted
 		CheckBatchCount(t, builder, initialBatchCount+batch)
 
 		// Advance L1 to force a batch given the delay buffer threshold
@@ -415,6 +422,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 			CheckBatchCount(t, builder, initialBatchCount+batch)
 			builder.nodeConfig.BatchPoster.MaxDelay = 0
 		}
+		// Run batch poster loop again, this one should post a batch
 		_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 		Require(t, err)
 		for _, tx := range txs {
@@ -465,8 +473,11 @@ func TestBatchPosterDelayBufferDontForceNonDelayedMessages(t *testing.T) {
 	// Even advancing the L1, the batch won't be posted because it doesn't contain a delayed message
 	CheckBatchCount(t, builder, initialBatchCount)
 
+	builder.L2.ConsensusNode.BatchPoster.StopAndWait() // allow us to modify config and call loop at will
 	// Set delay to zero to force non-delayed messages
 	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	_, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	Require(t, err)
 	for _, tx := range txs {
 		_, err := testClientB.EnsureTxSucceeded(tx)
 		Require(t, err, "tx not found on second node")
@@ -507,4 +518,56 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	if isUsingEIP7623 {
 		t.Fatal("L3's parent chain should not be using EIP-7623")
 	}
+}
+
+func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const threshold = 10
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithBoldDeployment().
+		WithDelayBuffer(threshold).
+		WithL1ClientWrapper(t)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	initialBatchCount := GetBatchCount(t, builder)
+
+	// Filter batch poster transactions using the L1 client wrapper
+	batchPosterAddress := builder.L1Info.GetAddress("Sequencer")
+	batchPosterTxsChan := make(chan *types.Transaction, 100)
+	batchPosterTxs := []*types.Transaction{}
+	builder.L1.ClientWrapper.EnableRawTransactionFilter(batchPosterAddress, batchPosterTxsChan)
+
+	builder.L2Info.GenerateAccount("User2")
+	delayedTx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
+
+	const numBatches = 3
+	for i := 0; i < numBatches; i++ {
+		// Send transactions using the bridge to generate delay proofs
+		SendSignedTxViaL1(t, ctx, builder.L1Info, builder.L1.Client, builder.L2.Client, delayedTx)
+		// Capture the batch poster transaction, ensuring the batch was closed. If it was not
+		// closed, the select will time out and the test will fail.
+		select {
+		case tx := <-batchPosterTxsChan:
+			batchPosterTxs = append(batchPosterTxs, tx)
+		case <-time.After(1 * time.Second):
+			Fatal(t, "Timed out waiting for batch poster tx")
+		}
+	}
+	select {
+	case <-batchPosterTxsChan:
+		Fatal(t, "Unexpected batch poster transaction")
+	default:
+	}
+
+	// Check that the batch poster txs didn't arrive in L1
+	CheckBatchCount(t, builder, initialBatchCount)
+
+	// Disable the filter and send the batch poster transactions
+	builder.L1.ClientWrapper.DisableRawTransactionFilter()
+	builder.L1.SendWaitTestTransactions(t, batchPosterTxs)
+	CheckBatchCount(t, builder, initialBatchCount+numBatches)
 }

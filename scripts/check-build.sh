@@ -98,10 +98,10 @@ else
 fi
 
 # Step 7a: Check Rust version
-if command_exists rustc && rustc --version | grep -q "1.80.1"; then
-    echo -e "${GREEN}Rust version 1.80.1 is installed.${NC}"
+if command_exists rustc && rustc --version | grep -q "1.83.0"; then
+    echo -e "${GREEN}Rust version 1.83.0 is installed.${NC}"
 else
-    echo -e "${RED}Rust version 1.80.1 not installed.${NC}"
+    echo -e "${RED}Rust version 1.83.0 is not installed.${NC}"
     EXIT_CODE=1
 fi
 

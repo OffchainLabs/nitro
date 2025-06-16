@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -1873,6 +1873,14 @@ func multicallAppendLoad(args []byte, key common.Hash, emitLog bool) []byte {
 	args = binary.BigEndian.AppendUint32(args, 1+32) // length
 	args = append(args, action)
 	args = append(args, key.Bytes()...)
+	return args
+}
+
+func multicallAppendClearCache(args []byte) []byte {
+	var action byte = 0x20
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1) // length
+	args = append(args, action)
 	return args
 }
 

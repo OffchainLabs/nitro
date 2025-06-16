@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -223,10 +223,13 @@ func (mr *MaintenanceRunner) attemptMaintenance(ctx context.Context) error {
 		return mr.runMaintenance()
 	}
 
-	if !mr.lock.AttemptLock(ctx) {
+	release := make(chan struct{})
+	if !mr.lock.AttemptLockAndPeriodicallyRefreshIt(ctx, release) {
 		return errors.New("did not catch maintenance lock")
 	}
-	defer mr.lock.Release(ctx)
+	defer func() {
+		release <- struct{}{}
+	}()
 
 	res := errors.New("maintenance failed to hand-off chosen one")
 
