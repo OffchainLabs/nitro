@@ -73,12 +73,11 @@ func activateProgram(
 	runCtx *core.MessageRunContext,
 ) (*activationInfo, error) {
 	moduleActivationMandatory := true
-	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, burner.GasLeft(), runCtx, moduleActivationMandatory)
+	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, burner.GasLeft(), runCtx.WasmTargets(), moduleActivationMandatory)
 	if err != nil {
 		return nil, err
 	}
-	db.ActivateWasm(info.moduleHash, asmMap)
-	return info, nil
+	return info, db.ActivateWasm(info.moduleHash, asmMap)
 }
 
 func activateModule(
@@ -159,10 +158,9 @@ func activateProgramInternal(
 	arbosVersionForGas uint64,
 	debug bool,
 	gasLeft *uint64,
-	runCtx *core.MessageRunContext,
+	targets []rawdb.WasmTarget,
 	moduleActivationMandatory bool,
 ) (*activationInfo, map[rawdb.WasmTarget][]byte, error) {
-	targets := runCtx.WasmTargets()
 	var wavmFound bool
 	var nativeTargets []rawdb.WasmTarget
 	for _, target := range targets {
@@ -233,11 +231,27 @@ func activateProgramInternal(
 	return info, asmMap, err
 }
 
+// getLocalAsm gets asm for local target and recompiles it if not found.
+// Existence of asms for other configured targets is checked and also recompiled if not found (other targets are needed for multi-target recording).
 func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) ([]byte, error) {
 	localTarget := rawdb.LocalTarget()
-	localAsm, err := statedb.TryGetActivatedAsm(localTarget, moduleHash)
-	if err == nil && len(localAsm) > 0 {
-		return localAsm, nil
+	targets := runCtx.WasmTargets()
+	// even though we need only asm for local target, make sure that all configured targets are available as they are needed during multi-target recording of a program call
+	asmMap, missingTargets, err := statedb.TryGetActivatedAsmMap(targets, moduleHash)
+	if err != nil {
+		// exit early in case of an unexpected error:
+		// those can be either database errors other then "not found" error (not recoverable),
+		// or an error caused by inconsistent recent activations stored in statedb (not yet committedactivation that doesn't contain asms for all targets)
+		return nil, err
+	}
+	if len(missingTargets) == 0 {
+		if localAsm, ok := asmMap[localTarget]; ok {
+			return localAsm, nil
+		} else {
+			// shouldn't happen as the targets should always include local target, try to recover either way
+			log.Warn("missing entry for local target in asm map read", "targets", targets, "localTarget", localTarget)
+			missingTargets = append(missingTargets, localTarget)
+		}
 	}
 
 	// addressForLogging may be empty or may not correspond to the code, so we need to be careful to use the code passed in separately
@@ -253,7 +267,8 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 
 	// we know program is activated, so it must be in correct version and not use too much memory
 	moduleActivationMandatory := false
-	info, asmMap, err := activateProgramInternal(addressForLogging, codehash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas, runCtx, moduleActivationMandatory)
+	// compile only missing targets
+	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -269,16 +284,32 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		// stylus program is active on-chain, and was activated in the past
 		// so we store it directly to database
 		batch := statedb.Database().WasmStore().NewBatch()
-		rawdb.WriteActivation(batch, moduleHash, asmMap)
+		// rawdb.WriteActivation iterates over the recently activated wasms map and writes each entry separately to wasmdb, so the writes for the same module hash can be incremental
+		rawdb.WriteActivation(batch, moduleHash, newlyBuilt)
 		if err := batch.Write(); err != nil {
 			log.Error("failed writing re-activation to state", "address", addressForLogging, "err", err)
 		}
 	} else {
+		// It is safe to pass only newlyBuilt part of full asm map here as:
+		// 1. If there wasn't any new activation of the moduleHash then:
+		//   - the missingTargets for which we have the newlyBuilt map were the only targets not found in wasmdb
+		//   - in this case, statedb.ActivateWasm stages the asm map for commit
+		//   - during statedb commit rawdb.WriteActivation iterates over the recently activated wasms map and writes each entry to wasmdb separately, so the writes for the same module hash can be incremental
+		// 2. If there was a previous new activation of the moduleHash and there were some targets missing then statedb.TryGetActivatedAsmMap would have returned an error as that would indicate inconsistency of target lists and we would have exited early
+		// 3. Otherwise, if there was a previous new activation of the moduleHash but there were no targets missing then we would have also exited early (nothing to be recompiled)
+
 		// program activated recently, possibly in this eth_call
 		// store it to statedb. It will be stored to database if statedb is committed
-		statedb.ActivateWasm(moduleHash, asmMap)
+		if err := statedb.ActivateWasm(moduleHash, newlyBuilt); err != nil {
+			log.Error("Failed to store recent activation of wasm in statedb", "err", err)
+			return nil, err
+		}
 	}
+	// first check in map of previously available targets, as we might have already had the asm but still needed to compile the program for some other targets
 	asm, exists := asmMap[localTarget]
+	if !exists {
+		asm, exists = newlyBuilt[localTarget]
+	}
 	if !exists {
 		var availableTargets []rawdb.WasmTarget
 		for target := range asmMap {
