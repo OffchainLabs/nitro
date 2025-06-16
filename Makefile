@@ -296,6 +296,7 @@ clean:
 	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -rf contracts-legacy/build contracts-legacy/cache
+	@rm -rf contracts-local/out contracts-local/forge-cache
 	@rm -f .make/*
 
 .PHONY: docker
@@ -600,7 +601,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	go run solgen/gen.go
 	@touch $@
 
-.make/solidity: $(DEP_PREDICATE) safe-smart-account/contracts/*/*.sol safe-smart-account/contracts/*.sol contracts/src/*/*.sol contracts-legacy/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
+.make/solidity: $(DEP_PREDICATE) safe-smart-account/contracts/*/*.sol safe-smart-account/contracts/*.sol contracts/src/*/*.sol contracts-legacy/src/*/*.sol contracts-local/src/*/*.sol contracts-local/gas-dimensions/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd safe-smart-account build
 	yarn --cwd contracts build
 	yarn --cwd contracts build:forge:yul
