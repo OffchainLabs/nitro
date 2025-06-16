@@ -3123,8 +3123,12 @@ impl Machine {
                                     .expect("Failed to generate KZG preimage proof");
                             }
                             PreimageType::CustomDA => {
-                                // The proofs for these preimage types are just the raw preimages.
-                                data.extend(preimage);
+                                // For CustomDA preimages, no proof data is included here. CustomDA preimages
+                                // can be arbitrarily large and require implementation-specific proofs. The
+                                // Nitro validator will detect that this proof involves CustomDA operations
+                                // and will call the custom DA server's GenerateProof method to append the
+                                // appropriate proof data. This separation allows any DA system to integrate
+                                // without modifying the core arbitrator code.
                             }
                         }
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
@@ -3185,6 +3189,16 @@ impl Machine {
                 }
                 prove_pop!(self.get_data_stacks(), hash_value_stack);
                 prove_pop!(self.get_frame_stacks(), hash_stack_frame_stack);
+            }
+            ValidatePreimage => {
+                // ValidatePreimage reads a hash from memory, so we need to prove that memory access
+                let ptr = value_stack.get(value_stack.len() - 1).unwrap().assume_u32();
+                if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
+                    // Prove the leaf this index is in
+                    idx /= Memory::LEAF_SIZE;
+                    out!(module.memory.get_leaf_data(idx));
+                    out!(mem_merkle.prove(idx).unwrap_or_default());
+                }
             }
             _ => {}
         }

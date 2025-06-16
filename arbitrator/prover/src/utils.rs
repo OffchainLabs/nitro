@@ -205,8 +205,12 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
             Ok(commitment_hash)
         }
         PreimageType::CustomDA => {
-            // TODO This is probably wrong
-            Ok(Sha256::digest(preimage).into())
+            // There is no way for us to compute the hash of the preimage for CustomDA.
+            // For CustomDA, this is only ever called on the flat file initialization path.
+            // TODO We need to include the hash in the flat file too and not compute it here.
+            // For the JSON (production) path the hash from the JSON is used, not this.
+            let b = Default::default();
+            Ok(b)
         }
     }
 }
