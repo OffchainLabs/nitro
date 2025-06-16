@@ -14,7 +14,7 @@ optimizer = true
 optimizer_runs = 2000
 evm_version = 'paris'
 
-[profile.newsolc]
+[profile.solc824]
 src = 'src'
 out = 'out/src'
 libs = ['node_modules', 'lib']
