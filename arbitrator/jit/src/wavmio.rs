@@ -178,6 +178,7 @@ pub fn resolve_preimage_impl(
             PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
             PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
             PreimageType::EthVersionedHash => *hash,
+            PreimageType::CustomDA => *hash, // Can't verify CustomDA hash, just accept it
         };
         if calculated_hash != *hash {
             error!(
