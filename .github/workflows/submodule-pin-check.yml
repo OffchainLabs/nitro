@@ -36,7 +36,7 @@ jobs:
             [bold]=origin/main
             [arbitrator/langs/c]=origin/vm-storage-cache
             [arbitrator/tools/wasmer]=origin/stylus
-            [contracts-local/lib/openzeppelin-contracts]=origin/v4.7.3
+            [contracts-local/lib/openzeppelin-contracts]=origin/release-v4.7
           )
           divergent=0
           for mod in `git submodule --quiet foreach 'echo $name'`; do
