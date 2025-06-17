@@ -880,7 +880,10 @@ func getStatelessBlockValidator(
 		err = errors.New("no validator url specified")
 	}
 	if err != nil {
-		if config.Staker.Enable { // TODO: Replace this with original config.ValidatorRequired(), as staker shouldn't depend on statelessBlockValidator for things other than validation
+		// TODO(NIT-3444): Staker shoudn't depend on statelessBlockValidator except for validation.
+		// Switch back to:
+		// if config.ValidatorRequired() {
+		if config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
 		}
 		log.Warn("validation not supported", "err", err)
@@ -1396,7 +1399,10 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.StatelessBlockValidator != nil {
 		err = n.StatelessBlockValidator.Start(ctx)
 		if err != nil {
-			if n.configFetcher.Get().Staker.Enable { // TODO: Replace this with original n.configFetcher.Get().ValidatorRequired(), as staker shouldn't depend on statelessBlockValidator for things other than validation
+			// TODO(NIT-3444): Staker shoudn't depend on statelessBlockValidator except for validation.
+			// Switch back to:
+			// if n.configFetcher.Get().ValidatorRequired() {
+			if n.configFetcher.Get().Staker.Enable {
 				return fmt.Errorf("error initializing stateless block validator: %w", err)
 			}
 			log.Info("validation not set up", "err", err)

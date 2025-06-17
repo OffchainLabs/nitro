@@ -532,7 +532,10 @@ func mainImpl() int {
 		return 1
 	}
 	var wasmModuleRoot common.Hash
-	if liveNodeConfig.Get().Node.ValidatorRequired() {
+	// TODO(NIT-3444): Staker shoudn't depend on statelessBlockValidator except for validation.
+	// Switch back to:
+	// if liveNodeConfig.Get().Node.ValidatorRequired() {
+	if liveNodeConfig.Get().Node.Staker.Enable {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
 		if err != nil {
 			log.Error("failed to create machine locator: %w", err)
