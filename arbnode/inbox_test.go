@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"math/big"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,8 +44,8 @@ func (w *execClientWrapper) Activate() { w.t.Error("not supported") }
 
 func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
 
-func (w *execClientWrapper) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
-	return w.ExecutionEngine.SequenceDelayedMessage(message, delayedSeqNum)
+func (w *execClientWrapper) EnqueueDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) {
+	w.t.Error("not supported")
 }
 
 func (w *execClientWrapper) NextDelayedMessageNumber() (uint64, error) {
@@ -84,8 +85,12 @@ func (w *execClientWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbosty
 	return containers.NewReadyPromise(w.ExecutionEngine.DigestMessage(num, msg, msgForPrefetch))
 }
 
-func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
-	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages, oldMessages))
+func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages))
+}
+
+func (w *execClientWrapper) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, error) {
+	return w.ExecutionEngine.ResequenceReorgedMessage(msg)
 }
 
 func (w *execClientWrapper) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
@@ -145,7 +150,8 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 		Fail(t, err)
 	}
 	execSeq := &execClientWrapper{execEngine, t}
-	inbox, err := NewTransactionStreamer(ctx, arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
+	insertionMutex := &sync.Mutex{}
+	inbox, err := NewTransactionStreamer(ctx, arbDb, bc.Config(), execSeq, nil, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig, insertionMutex)
 	if err != nil {
 		Fail(t, err)
 	}

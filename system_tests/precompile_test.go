@@ -23,7 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -211,8 +210,7 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 	defer cleanup()
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
-	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
-	Require(t, err)
+	_, simple := builder.L2.DeploySimple(t, auth)
 
 	assertNotAllGasConsumed := func(to common.Address, input []byte) {
 		gas, err := simple.CheckGasUsed(&bind.CallOpts{Context: ctx}, to, input)
