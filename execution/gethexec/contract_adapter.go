@@ -85,8 +85,8 @@ func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMs
 		AccessList:       call.AccessList,
 		SkipNonceChecks:  true,
 		SkipFromEOACheck: true,
-		TxRunMode:        core.MessageEthcallMode, // Indicate this is an eth_call
-		SkipL1Charging:   true,                    // Skip L1 data fees
+		TxRunContext:     core.NewMessageEthcallContext(), // Indicate this is an eth_call
+		SkipL1Charging:   true,                            // Skip L1 data fees
 	}
 
 	evm := a.apiBackend.GetEVM(ctx, state, header, &vm.Config{NoBaseFee: true}, nil)

@@ -2191,14 +2191,14 @@ func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
 	return modules
 }
 
-func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []ethdb.WasmTarget, numModules int) {
+func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []rawdb.WasmTarget, numModules int) {
 	t.Helper()
 	modules := readModuleHashes(t, wasmDb)
 	if len(modules) != numModules {
 		t.Fatalf("Unexpected number of module hashes found in wasm store, want: %d, have: %d", numModules, len(modules))
 	}
 	readAsm := func(module common.Hash, target string) []byte {
-		wasmTarget := ethdb.WasmTarget(target)
+		wasmTarget := rawdb.WasmTarget(target)
 		if !rawdb.IsSupportedWasmTarget(wasmTarget) {
 			t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
 		}
@@ -2216,7 +2216,7 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTar
 		for _, target := range allWasmTargets {
 			var expected bool
 			for _, expectedTarget := range expectedTargets {
-				if ethdb.WasmTarget(target) == expectedTarget {
+				if rawdb.WasmTarget(target) == expectedTarget {
 					expected = true
 					break
 				}
@@ -2271,6 +2271,8 @@ func deployWasmAndGetEntrySizeEstimateBytes(
 	return programAddress, entrySizeEstimateBytes
 }
 
+// TestWasmLruCache shouldn't be run in parallel as it targets global Wasm LRU Cache,
+// programs.ClearWasmLruCache is called in the test.
 func TestWasmLruCache(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
@@ -2367,10 +2369,10 @@ func checkLruCacheMetrics(t *testing.T, expected programs.WasmLruCacheMetrics) {
 	}
 }
 
+// TestWasmLongTermCache shouldn't be run in parallel as it targets global Wasm Long Term Cache,
+// programs.ClearWasmLongTermCache is called in the test.
 func TestWasmLongTermCache(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
-		builder.WithStylusLongTermCache(true)
-	})
+	builder, ownerAuth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2505,10 +2507,10 @@ func TestWasmLongTermCache(t *testing.T) {
 	})
 }
 
+// TestRepopulateWasmLongTermCacheFromLru shouldn't be run in parallel as it targets global Wasm Long Term Cache and Wasm LRU Cache,
+// programs.ClearWasmLongTermCache and programs.ClearWasmLruCache are called in the test.o
 func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
-		builder.WithStylusLongTermCache(true)
-	})
+	builder, ownerAuth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client

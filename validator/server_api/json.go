@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -63,7 +63,7 @@ type InputJSON struct {
 	BatchInfo       []BatchInfoJson
 	DelayedMsgB64   string
 	StartState      validator.GoGlobalState
-	UserWasms       map[ethdb.WasmTarget]map[common.Hash]string
+	UserWasms       map[rawdb.WasmTarget]map[common.Hash]string
 	DebugChain      bool
 	MaxUserWasmSize uint64 `json:"max-user-wasmSize,omitempty"`
 }
@@ -90,7 +90,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
 		PreimagesB64:  jsonPreimagesMap,
-		UserWasms:     make(map[ethdb.WasmTarget]map[common.Hash]string),
+		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash]string),
 		DebugChain:    entry.DebugChain,
 	}
 	for _, binfo := range entry.BatchInfo {
@@ -127,7 +127,7 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
 		Preimages:     preimages,
-		UserWasms:     make(map[ethdb.WasmTarget]map[common.Hash][]byte),
+		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash][]byte),
 		DebugChain:    entry.DebugChain,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
