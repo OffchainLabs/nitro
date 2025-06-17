@@ -3123,12 +3123,16 @@ impl Machine {
                                     .expect("Failed to generate KZG preimage proof");
                             }
                             PreimageType::CustomDA => {
-                                // For CustomDA preimages, no proof data is included here. CustomDA preimages
-                                // can be arbitrarily large and require implementation-specific proofs. The
-                                // Nitro validator will detect that this proof involves CustomDA operations
-                                // and will call the custom DA server's GenerateProof method to append the
-                                // appropriate proof data. This separation allows any DA system to integrate
-                                // without modifying the core arbitrator code.
+                                // For CustomDA preimages, signal that this proof needs enhancement
+                                // Set the enhancement flag (0x80) on the machine status byte
+                                data[0] |= 0x80;
+
+                                // Append hash and offset for the enhancer to use
+                                data.extend(hash.0);
+                                data.extend((offset as u64).to_be_bytes());
+
+                                // Append marker to identify this as CustomDA ReadPreimage
+                                data.push(0xDA);
                             }
                         }
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {

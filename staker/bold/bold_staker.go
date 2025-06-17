@@ -499,6 +499,7 @@ func newBOLDChallengeManager(
 		blockChallengeLeafHeight,
 		&config.StateProviderConfig,
 		machineHashesPath,
+		nil, // TODO: Wire up proof enhancer for CustomDA
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create state manager: %w", err)

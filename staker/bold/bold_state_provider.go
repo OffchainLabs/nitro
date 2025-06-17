@@ -41,6 +41,7 @@ type BOLDStateProvider struct {
 	historyCache             challengecache.HistoryCommitmentCacher
 	blockChallengeLeafHeight l2stateprovider.Height
 	stateProviderConfig      *StateProviderConfig
+	proofEnhancer            server_arb.ProofEnhancer
 	sync.RWMutex
 }
 
@@ -50,6 +51,7 @@ func NewBOLDStateProvider(
 	blockChallengeLeafHeight l2stateprovider.Height,
 	stateProviderConfig *StateProviderConfig,
 	machineHashesCachePath string,
+	proofEnhancer server_arb.ProofEnhancer,
 ) (*BOLDStateProvider, error) {
 	historyCache, err := challengecache.New(machineHashesCachePath)
 	if err != nil {
@@ -61,6 +63,7 @@ func NewBOLDStateProvider(
 		historyCache:             historyCache,
 		blockChallengeLeafHeight: blockChallengeLeafHeight,
 		stateProviderConfig:      stateProviderConfig,
+		proofEnhancer:            proofEnhancer,
 	}
 	return sp, nil
 }
@@ -495,10 +498,20 @@ func (s *BOLDStateProvider) CollectProof(
 		"machineIndex", machineIndex,
 		"startState", fmt.Sprintf("%+v", input.StartState),
 	)
-	return s.statelessValidator.BOLDExecutionSpawners()[0].GetProofAt(
+	baseProof, err := s.statelessValidator.BOLDExecutionSpawners()[0].GetProofAt(
 		ctx,
 		assertionMetadata.WasmModuleRoot,
 		input,
 		uint64(machineIndex),
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply proof enhancement if configured
+	if s.proofEnhancer != nil {
+		return s.proofEnhancer.EnhanceProof(ctx, baseProof)
+	}
+
+	return baseProof, nil
 }
