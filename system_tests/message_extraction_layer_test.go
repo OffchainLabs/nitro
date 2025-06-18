@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
@@ -35,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
@@ -427,6 +429,115 @@ func TestMessageExtractionLayer_RunningNode(t *testing.T) {
 	}
 	if got := new(big.Int); got.Sub(newBalance, oldBalanceClientB).Cmp(txOpts.Value) != 0 {
 		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
+	}
+}
+
+func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlInfo)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	threshold := uint64(0)
+	messagesPerBatch := uint64(3)
+
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithBoldDeployment().
+		WithDelayBuffer(threshold)
+
+	builder.nodeConfig.MessageExtraction.Enable = true
+	builder.nodeConfig.MessageExtraction.RetryInterval = 100 * time.Millisecond
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User2")
+
+	nodeConfig2 := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfig2.MessageExtraction.Enable = true
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2})
+	defer cleanupB()
+	forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
+
+	// Test plan:
+	// 		* Send a delayed message in L1 by making a eth deposit
+	// 		* Reorg L1 to a block before the eth deposit was made
+	// 		* Advance L1 to the previous head block number at the least so that MEL detects reorg
+	// 		* We verify that MEL detected reorg
+	// 		* Geth would still include the eth deposit tx as a block in the new chain
+	// 		* Post a batch with L2 txs- this would include delayed message read corresponding to the index containing
+	// 		  eth deposit tx- as that delayed message was sequenced
+	// 		* MEL will add the right delayed message at the corresponding index and send those txs to txStreamer
+	// 		* TxStreamer would detect a reorg as the previous delayed message's bytes wont match the new one's
+	// 		* We verify that TxStreamer detected reorg
+	// 		* Later we verify that the balance is as expected since the eth deposit tx should be successful
+
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	Require(t, err)
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+	Require(t, err)
+	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
+
+	builder.L1Info.GenerateAccount("UserX")
+	builder.L1.TransferBalance(t, "Faucet", "UserX", big.NewInt(1e18), builder.L1Info)
+	txOpts := builder.L1Info.GetDefaultTransactOpts("UserX", ctx)
+	txOpts.Value = big.NewInt(13)
+	oldBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+	if err != nil {
+		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+	}
+
+	// Find latest L1 block, so that we can later reorg to it
+	reorgToBlock, err := builder.L1.Client.BlockByNumber(ctx, nil)
+	Require(t, err)
+
+	// Verify that ethDeposit works as intended on the sequence node's side
+	testDepositETH(t, ctx, builder, delayedInbox, lookupL2Tx, txOpts) // this also checks if balance increment is seen on L2
+
+	// Reorg L1 and advance it so that MEl can pick up the reorg
+	currHead, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+	Require(t, builder.L1.L1Backend.BlockChain().ReorgToOldBlock(reorgToBlock))
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(currHead-reorgToBlock.NumberU64()+5)) // we need to advance L1 blocks up until the current head so that reorg is detected
+
+	// Wait until mel can detect reorg and rewind head state
+	time.Sleep(5 * time.Second)
+
+	// Post a batch so that mel can send up-to-date L2 messages to txStreamer
+	initialBatchCount := GetBatchCount(t, builder)
+	var txs types.Transactions
+	for i := 0; i < 10; i++ {
+		tx, _ := builder.L2.TransferBalance(t, "Faucet", "User2", big.NewInt(1e12), builder.L2Info)
+		txs = append(txs, tx)
+	}
+	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	Require(t, err)
+	for _, tx := range txs {
+		_, err := testClientB.EnsureTxSucceeded(tx)
+		Require(t, err, "tx not found on second node")
+	}
+	CheckBatchCount(t, builder, initialBatchCount+1)
+
+	// Wait until mel can read the posted batch, send correct L2 messages to txStreamer and txStreamer is able to detect the Reorg and handle correct execution of L2 messages
+	time.Sleep(time.Second)
+
+	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+	if err != nil {
+		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+	}
+	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
+		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
+	}
+
+	// Verify that both MEL and TxStreamer detected the reorg
+	if !logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
+		t.Fatal("reorg was not detected by TransactionStreamer")
+	}
+	if !logHandler.WasLogged("MEL detected L1 reorg") {
+		t.Fatal("reorg was not detected by MEL")
 	}
 }
 

@@ -336,7 +336,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			}
 		}
 		if parentChainBlock.ParentHash() != preState.ParentChainBlockHash {
-			// Reorg detected
+			log.Info("MEL detected L1 reorg", "block", preState.ParentChainBlockNumber) // Log level is Info because L1 reorgs are a common occurance
 			return 0, m.fsm.Do(reorgToOldBlock{
 				melState: preState,
 			})

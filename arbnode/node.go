@@ -13,7 +13,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -733,7 +732,7 @@ func getMessageExtractor(
 		txStreamer,
 		nil, // TODO: Pass in da readers.
 		initialState.ParentChainBlockHash,
-		time.Second,
+		config.MessageExtraction.RetryInterval,
 	)
 	if err != nil {
 		return nil, err

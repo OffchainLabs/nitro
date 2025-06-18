@@ -345,21 +345,23 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 		header := oldMessage.Message.Header
 
 		if header.RequestId != nil {
-			// This is a delayed message
+			// When using MEL:
+			// This is a delayed message and concerns delayedMessages 'Seen' and not 'Read' so not including any delayed messages in
+			// resequencing is fair- since they will anyway be re-added by MEL later and the corresponding merkle partials would have changed
 			delayedMsgIdx := header.RequestId.Big().Uint64()
 			if delayedMsgIdx+1 != oldMessage.DelayedMessagesRead {
 				log.Error("delayed message header RequestId doesn't match database DelayedMessagesRead", "header", oldMessage.Message.Header, "delayedMessagesRead", oldMessage.DelayedMessagesRead)
 				continue
 			}
+			if s.msgExtractor != nil {
+				continue
+			}
+
 			if delayedMsgIdx != lastDelayedMsgIdx {
 				// This is the wrong position for the delayed message
 				continue
 			}
-			// TODO: make decision on whether to keep and resequence old delayed messages or to start anew
-			// This concerns delayedMessages 'Seen' and not 'Read' so I think just not including any delayed messages in resequencing is fair- since they will anyway be readded by MEL later on
-			if s.msgExtractor != nil {
-				continue
-			}
+
 			if s.inboxReader != nil {
 				// this is a delayed message. Should be resequenced if all 3 agree:
 				// oldMessage, accumulator stored in tracker, and the message re-read from l1
