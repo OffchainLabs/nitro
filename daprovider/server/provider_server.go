@@ -168,13 +168,6 @@ func (s *Server) Store(
 	return &daclient.StoreResult{SerializedDACert: serializedDACert}, nil
 }
 
-func (s *Server) RecordPreimages(ctx context.Context, batch hexutil.Bytes) ([]daprovider.PreimageWithType, error) {
-	if s.validator == nil {
-		return nil, errors.New("validator not available")
-	}
-	return s.validator.RecordPreimages(ctx, batch)
-}
-
 func (s *Server) GenerateProof(ctx context.Context, preimageType uint8, hash common.Hash, offset hexutil.Uint64) (hexutil.Bytes, error) {
 	if s.validator == nil {
 		return nil, errors.New("validator not available")

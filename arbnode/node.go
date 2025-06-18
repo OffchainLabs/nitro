@@ -568,7 +568,7 @@ func getDelayedBridgeAndSequencerInbox(
 	return delayedBridge, sequencerInbox, nil
 }
 
-func getDAS(
+func getDAProvider(
 	ctx context.Context,
 	config *Config,
 	l2Config *params.ChainConfig,
@@ -579,17 +579,17 @@ func getDAS(
 	dataSigner signature.DataSignerFunc,
 	l1client *ethclient.Client,
 	stack *node.Node,
-) (daprovider.Writer, func(), []daprovider.Reader, error) {
+) (daprovider.Writer, func(), []daprovider.Reader, daprovider.Validator, error) {
 	// Validate DA configuration
 	if config.DA.Mode == "external" {
 		if !config.DA.ExternalProvider.Enable {
-			return nil, nil, nil, errors.New("--node.da.external-provider.enable must be true when mode=external")
+			return nil, nil, nil, nil, errors.New("--node.da.external-provider.enable must be true when mode=external")
 		}
 		if config.DataAvailability.Enable {
-			return nil, nil, nil, errors.New("cannot use external DA provider with embedded data-availability")
+			return nil, nil, nil, nil, errors.New("cannot use external DA provider with embedded data-availability")
 		}
 		if config.DA.ReferenceDA.Enable {
-			return nil, nil, nil, errors.New("cannot use external DA provider with embedded referenceda")
+			return nil, nil, nil, nil, errors.New("cannot use external DA provider with embedded referenceda")
 		}
 	}
 
@@ -597,19 +597,21 @@ func getDAS(
 	var daClient *daclient.Client
 	var withDAWriter bool
 	var providerServerCloseFn func()
+	var validator daprovider.Validator
 
 	if config.DA.Mode == "external" {
 		// External DA provider mode
 		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DA.ExternalProvider.RPC })
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
+		validator = daClient
 		// Only allow dawriter if batchposter is enabled
 		withDAWriter = config.DA.ExternalProvider.WithWriter && config.BatchPoster.Enable
 	} else if config.DataAvailability.Enable || config.DA.Mode != "" {
 		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
-			return nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
 		}
 		log.Info("Generated ephemeral JWT secret for dasserver", "jwtPath", jwtPath)
 		// JWTSecret is no longer needed, cleanup when returning
@@ -633,23 +635,23 @@ func getDAS(
 		switch config.DA.Mode {
 		case "referenceda":
 			if !config.DA.ReferenceDA.Enable {
-				return nil, nil, nil, errors.New("--node.da.referenceda.enable must be true when using referenceda mode")
+				return nil, nil, nil, nil, errors.New("--node.da.referenceda.enable must be true when using referenceda mode")
 			}
 			effectiveMode = factory.ModeReferenceDA
 			referencedaConfig = &config.DA.ReferenceDA
 
 		case "anytrust", "": // Default to anytrust for backwards compatibility
 			if !config.DataAvailability.Enable {
-				return nil, nil, nil, errors.New("--node.data-availability.enable must be true when using anytrust mode")
+				return nil, nil, nil, nil, errors.New("--node.data-availability.enable must be true when using anytrust mode")
 			}
 			effectiveMode = factory.ModeAnyTrust
 			anytrustConfig = &config.DataAvailability
 
 		case "external":
-			return nil, nil, nil, errors.New("external mode should not reach factory creation - this is a bug")
+			return nil, nil, nil, nil, errors.New("external mode should not reach factory creation - this is a bug")
 
 		default:
-			return nil, nil, nil, fmt.Errorf("unsupported embedded DA mode: %s (supported: anytrust, referenceda)", config.DA.Mode)
+			return nil, nil, nil, nil, fmt.Errorf("unsupported embedded DA mode: %s (supported: anytrust, referenceda)", config.DA.Mode)
 		}
 
 		// Create factory with appropriate config
@@ -664,17 +666,17 @@ func getDAS(
 			config.BatchPoster.Enable,
 		)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		if err := daFactory.ValidateConfig(); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		var cleanupFuncs []func()
 		reader, readerCleanup, err := daFactory.CreateReader(ctx)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		if readerCleanup != nil {
 			cleanupFuncs = append(cleanupFuncs, readerCleanup)
@@ -685,7 +687,7 @@ func getDAS(
 			var writerCleanup func()
 			writer, writerCleanup, err = daFactory.CreateWriter(ctx)
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, nil, err
 			}
 			if writerCleanup != nil {
 				cleanupFuncs = append(cleanupFuncs, writerCleanup)
@@ -693,9 +695,10 @@ func getDAS(
 		}
 
 		// Create validator (may be nil for AnyTrust mode)
-		validator, validatorCleanup, err := daFactory.CreateValidator(ctx)
+		var validatorCleanup func()
+		validator, validatorCleanup, err = daFactory.CreateValidator(ctx)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		if validatorCleanup != nil {
 			cleanupFuncs = append(cleanupFuncs, validatorCleanup)
@@ -710,14 +713,14 @@ func getDAS(
 			}
 		}
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		clientConfig := rpcclient.DefaultClientConfig
 		clientConfig.URL = providerServer.Addr
 		clientConfig.JWTSecret = jwtPath
 		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &clientConfig })
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		providerServerCloseFn = func() {
 			_ = providerServer.Shutdown(ctx)
@@ -726,12 +729,12 @@ func getDAS(
 			}
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
-		return nil, nil, nil, errors.New("a data availability service is required for this chain, but it was not configured")
+		return nil, nil, nil, nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daClient == nil {
-		return nil, nil, nil, errors.New("data availability service required but unconfigured")
+		return nil, nil, nil, nil, errors.New("data availability service required but unconfigured")
 	}
 	var dapReaders []daprovider.Reader
 	if daClient != nil {
@@ -741,9 +744,9 @@ func getDAS(
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
 	}
 	if withDAWriter {
-		return daClient, providerServerCloseFn, dapReaders, nil
+		return daClient, providerServerCloseFn, dapReaders, validator, nil
 	}
-	return nil, providerServerCloseFn, dapReaders, nil
+	return nil, providerServerCloseFn, dapReaders, validator, nil
 }
 
 func getInboxTrackerAndReader(
@@ -841,6 +844,7 @@ func getStaker(
 	fatalErrChan chan error,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	blockValidator *staker.BlockValidator,
+	dapValidator daprovider.Validator,
 ) (*multiprotocolstaker.MultiProtocolStaker, *MessagePruner, common.Address, error) {
 	var stakerObj *multiprotocolstaker.MultiProtocolStaker
 	var messagePruner *MessagePruner
@@ -896,7 +900,7 @@ func getStaker(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan, dapValidator)
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
@@ -1197,7 +1201,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	dapWriter, providerServerCloseFn, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
+	dapWriter, providerServerCloseFn, dapReaders, dapValidator, err := getDAProvider(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
 	if err != nil {
 		return nil, err
 	}
@@ -1217,7 +1221,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, stack, fatalErrChan, statelessBlockValidator, blockValidator)
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapValidator)
 	if err != nil {
 		return nil, err
 	}

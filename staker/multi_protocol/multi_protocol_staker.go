@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/staker"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
@@ -49,6 +50,7 @@ type MultiProtocolStaker struct {
 	boldConfig              *boldstaker.BoldConfig
 	stakeTokenAddress       common.Address
 	stack                   *node.Node
+	dapValidator            daprovider.Validator
 }
 
 func NewMultiProtocolStaker(
@@ -66,6 +68,7 @@ func NewMultiProtocolStaker(
 	validatorUtilsAddress common.Address,
 	bridgeAddress common.Address,
 	fatalErr chan<- error,
+	dapValidator daprovider.Validator,
 ) (*MultiProtocolStaker, error) {
 	if err := legacyConfig().Validate(); err != nil {
 		return nil, err
@@ -107,6 +110,7 @@ func NewMultiProtocolStaker(
 		boldConfig:              boldConfig,
 		stakeTokenAddress:       stakeTokenAddress,
 		stack:                   stack,
+		dapValidator:            dapValidator,
 	}, nil
 }
 
@@ -245,6 +249,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		m.wallet,
 		m.stakedNotifiers,
 		m.confirmedNotifiers,
+		m.dapValidator,
 	)
 	if err != nil {
 		return err

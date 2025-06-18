@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/daprovider"
 )
 
 type Validator struct {
@@ -22,11 +21,6 @@ func NewValidator() *Validator {
 	return &Validator{
 		storage: GetInMemoryStorage(),
 	}
-}
-
-func (v *Validator) RecordPreimages(ctx context.Context, batch []byte) ([]daprovider.PreimageWithType, error) {
-	// TODO I don't think this method will be needed, can probably delete from interface
-	panic("not implemented yet")
 }
 
 // GenerateProof creates a proof for ReferenceDA

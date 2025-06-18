@@ -29,11 +29,13 @@ import (
 	"github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
 var assertionCreatedId common.Hash
@@ -217,12 +219,25 @@ func NewBOLDStaker(
 	wallet legacystaker.ValidatorWalletInterface,
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
+	dapValidator daprovider.Validator,
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
+
+	// Create proof enhancer if validator is available
+	var proofEnhancer server_arb.ProofEnhancer
+	if dapValidator != nil {
+		enhancerManager := server_arb.NewProofEnhancementManager()
+		enhancerManager.RegisterEnhancer(
+			server_arb.MarkerCustomDARead,
+			server_arb.NewCustomDAProofEnhancer(dapValidator),
+		)
+		proofEnhancer = enhancerManager
+	}
+
 	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
-	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster)
+	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster, proofEnhancer)
 	if err != nil {
 		return nil, err
 	}
@@ -409,6 +424,7 @@ func newBOLDChallengeManager(
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	config *BoldConfig,
 	dataPoster *dataposter.DataPoster,
+	proofEnhancer server_arb.ProofEnhancer,
 ) (*challengemanager.Manager, error) {
 	// Initializes the BOLD contract bindings and the assertion chain abstraction.
 	rollupBindings, err := boldrollup.NewRollupUserLogic(rollupAddress, client)
@@ -499,7 +515,7 @@ func newBOLDChallengeManager(
 		blockChallengeLeafHeight,
 		&config.StateProviderConfig,
 		machineHashesPath,
-		nil, // TODO: Wire up proof enhancer for CustomDA
+		proofEnhancer,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create state manager: %w", err)

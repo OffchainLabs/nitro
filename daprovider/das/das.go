@@ -34,6 +34,7 @@ type DataAvailabilityServiceHealthChecker interface {
 	HealthCheck(ctx context.Context) error
 }
 
+// This specifically refers to AnyTrust DA Config and will be moved/renamed in future.
 type DataAvailabilityConfig struct {
 	Enable bool `koanf:"enable"`
 

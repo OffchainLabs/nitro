@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
@@ -103,4 +104,24 @@ func (c *Client) Store(
 		return nil, fmt.Errorf("error returned from daprovider_store rpc method, err: %w", err)
 	}
 	return storeResult.SerializedDACert, nil
+}
+
+// GenerateProofResult is the result struct that data availability providers should use to respond with a proof for a specific preimage
+type GenerateProofResult struct {
+	Proof hexutil.Bytes `json:"proof,omitempty"`
+}
+
+// GenerateProof generates a proof for a specific preimage at a given offset
+// This method calls the external DA provider's RPC endpoint to generate the proof
+func (c *Client) GenerateProof(
+	ctx context.Context,
+	preimageType arbutil.PreimageType,
+	hash common.Hash,
+	offset uint64,
+) ([]byte, error) {
+	var generateProofResult GenerateProofResult
+	if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateProof", hexutil.Uint64(preimageType), hash, hexutil.Uint64(offset)); err != nil {
+		return nil, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
+	}
+	return generateProofResult.Proof, nil
 }
