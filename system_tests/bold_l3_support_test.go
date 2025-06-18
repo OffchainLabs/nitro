@@ -214,6 +214,9 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 			CheckBatchFinality:     false,
 		},
 		cacheDir,
+		node.ConsensusNode.InboxTracker,
+		node.ConsensusNode.TxStreamer,
+		node.ConsensusNode.InboxReader,
 	)
 	Require(t, err)
 
