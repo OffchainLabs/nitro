@@ -13,6 +13,7 @@ pub mod memory;
 pub mod merkle;
 pub mod parse_input;
 pub mod prepare;
+pub mod prepare_mel;
 mod print;
 pub mod programs;
 mod reinterpret;

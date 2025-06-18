@@ -1,16 +1,18 @@
 use arbutil::{Bytes32, PreimageType};
+use rayon::str::Bytes;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::machine::{argument_data_to_inbox, GlobalState, Machine};
+use crate::machine::{GlobalState, Machine};
 use crate::parse_input::*;
 use crate::utils::CBytes;
 
-pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Machine> {
-    let file = File::open(preimages)?;
+pub fn prepare_machine(validation_entry_file: PathBuf, machines: PathBuf) -> eyre::Result<Machine> {
+    // Load the preimages file from disk.
+    let file = File::open(validation_entry_file)?;
     let reader = BufReader::new(file);
 
     let data = FileData::from_reader(reader)?;
@@ -19,6 +21,9 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
         .into_iter()
         .flat_map(|preimage| preimage.1.into_iter())
         .collect::<HashMap<Bytes32, Vec<u8>>>();
+
+    // Create a preimage resolver which is a function
+    // that simply retrieves preimages by hash from a hashmap.
     let preimage_resolver = move |_: u64, _: PreimageType, hash: Bytes32| -> Option<CBytes> {
         preimages
             .get(&hash)
@@ -33,33 +38,18 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
     let block_hash: Bytes32 = block_hash.into();
     let send_root: [u8; 32] = data.start_state.send_root.try_into().unwrap();
     let send_root: Bytes32 = send_root.into();
-    let bytes32_vals: [Bytes32; 3] = [block_hash, send_root, Bytes32::default()];
+    let start_mel_root: [u8; 32] = data.start_state.mel_root.try_into().unwrap();
+    let start_mel_root: Bytes32 = start_mel_root.into();
+    let bytes32_vals: [Bytes32; 3] = [block_hash, send_root, start_mel_root];
     let u64_vals: [u64; 2] = [data.start_state.batch, data.start_state.pos_in_batch];
     let start_state = GlobalState {
         bytes32_vals,
         u64_vals,
     };
 
-    for (arch, wasm) in data.user_wasms.iter() {
-        if arch != "wavm" {
-            continue;
-        }
-        for (id, wasm) in wasm.iter() {
-            mach.add_stylus_module(*id, wasm.as_vec());
-        }
-    }
-
-    mach.set_global_state(start_state);
-
+    let end_mel_root = Bytes32::try_from(data.end_mel_root)?;
     mach.set_preimage_resolver(preimage_resolver);
-
-    let identifier = argument_data_to_inbox(0).unwrap();
-    for batch_info in data.batch_info.iter() {
-        mach.add_inbox_msg(identifier, batch_info.number, batch_info.data_b64.clone());
-    }
-
-    let identifier = argument_data_to_inbox(1).unwrap();
-    mach.add_inbox_msg(identifier, data.delayed_msg_nr, data.delayed_msg_b64);
-
+    mach.set_global_state(start_state);
+    mach.set_end_mel_root(end_mel_root);
     Ok(mach)
 }

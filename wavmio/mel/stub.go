@@ -18,18 +18,17 @@ import (
 )
 
 var (
-	preimages     = make(map[common.Hash][]byte)
-	lastBlockHash = common.Hash{}
-	startMelRoot  = common.Hash{}
-	endMelRoot    = common.Hash{} // This is set by the stubbed SetEndMELRoot function
+	preimages    = make(map[common.Hash][]byte)
+	startMelRoot = common.Hash{}
+	endMelRoot   = common.Hash{} // This is set by the stubbed SetEndMELRoot function
 )
 
 func StubInit() {
-	lastBlockFlag := flag.String("last-block-hash", "0000000000000000000000000000000000000000000000000000000000000000", "lastBlockHash")
+	endMelRootFlag := flag.String("end-mel-root", "0000000000000000000000000000000000000000000000000000000000000000", "endMelRoot")
 	startMelRootFlag := flag.String("start-mel-root", "0000000000000000000000000000000000000000000000000000000000000000", "startMelRoot")
 	preimagesPath := flag.String("preimages", "", "file to load preimages from")
 	flag.Parse()
-	lastBlockHash = common.HexToHash(*lastBlockFlag)
+	endMelRoot = common.HexToHash(*endMelRootFlag)
 	startMelRoot = common.HexToHash(*startMelRootFlag)
 	fileBytes, err := os.ReadFile(*preimagesPath)
 	if err != nil {
@@ -49,8 +48,8 @@ func GetStartMELRoot() (hash common.Hash) {
 	return
 }
 
-func GetEndParentChainBlockHash() (hash common.Hash) {
-	hash = lastBlockHash
+func GetEndMELRoot() (hash common.Hash) {
+	hash = endMelRoot
 	return
 }
 

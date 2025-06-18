@@ -156,15 +156,15 @@ fn main() -> Result<()> {
     }
 
     if let Some(output_path) = opts.generate_binaries {
-        let mut module_root_file = File::create(output_path.join("module-root.txt"))?;
+        let mut module_root_file = File::create(output_path.join("mel-module-root.txt"))?;
         writeln!(module_root_file, "0x{}", mach.get_modules_root())?;
         module_root_file.flush()?;
 
-        mach.serialize_binary(output_path.join("machine.wavm.br"))?;
+        mach.serialize_binary(output_path.join("mel_machine.wavm.br"))?;
         while !mach.next_instruction_is_host_io() {
             mach.step_n(1)?;
         }
-        mach.serialize_state(output_path.join("until-host-io-state.bin"))?;
+        mach.serialize_state(output_path.join("mel-until-host-io-state.bin"))?;
 
         return Ok(());
     }
@@ -547,7 +547,7 @@ fn initialize_machine(opts: &Opts) -> eyre::Result<Machine> {
 
         let global_state = GlobalState {
             u64_vals: [opts.inbox_position, opts.position_within_message],
-            bytes32_vals: [last_block_hash, last_send_root],
+            bytes32_vals: [last_block_hash, last_send_root, Bytes32::default()],
         };
 
         Machine::from_paths(

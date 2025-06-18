@@ -159,8 +159,8 @@ pub enum Opcode {
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset
     ReadInboxMessage,
-    /// Reads the end parent chain block hash for MEL into the pointer on the stack at an offset.
-    GetEndParentChainBlockHash,
+    /// Reads the end MEL root into the pointer on the stack at an offset.
+    GetEndMELRoot,
     /// Dynamically adds a module to the replay machine
     LinkModule,
     /// Dynamically removes the last module to the replay machine
@@ -290,7 +290,7 @@ impl Opcode {
             Opcode::NewCoThread => 0x8030,
             Opcode::PopCoThread => 0x8031,
             Opcode::SwitchThread => 0x8032,
-            Opcode::GetEndParentChainBlockHash => 0x8033,
+            Opcode::GetEndMELRoot => 0x8033,
         }
     }
 
@@ -303,7 +303,7 @@ impl Opcode {
                 | Opcode::SetGlobalStateU64
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
-                | Opcode::GetEndParentChainBlockHash
+                | Opcode::GetEndMELRoot
         )
     }
 }

@@ -40,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/jsonapi"
 )
 
 func TestMessageExtractionReplay_RecordPreimages(t *testing.T) {
@@ -120,7 +121,6 @@ func TestMessageExtractionReplay_RecordPreimages(t *testing.T) {
 	startState := melState
 	endState := mockDB.lastState
 	curr := endState.ParentChainBlockHash
-	t.Logf("Final block hash: %s", curr.Hex())
 
 	hasher := newRecordingHasher()
 
@@ -171,18 +171,38 @@ func TestMessageExtractionReplay_RecordPreimages(t *testing.T) {
 	initialMelStateRoot := crypto.Keccak256Hash(initialMelStateBytes)
 	preimages[initialMelStateRoot] = initialMelStateBytes
 
-	t.Log("Total preimages: ", len(preimages))
-	outputFile, err := os.Create("/tmp/preimages.json")
-	require.NoError(t, err)
-	defer outputFile.Close()
-	require.NoError(t, json.NewEncoder(outputFile).Encode(preimages))
-	t.Log("Wrote preimages file to /tmp/preimages.json")
-	t.Logf("Start mel state root %s\n", initialMelStateRoot.Hex())
-	t.Logf("Final mel state %+v\n", mockDB.lastState)
+	// TODO: Add the final mel state as a preimage.
+
 	finalMelStateBytes, err := rlp.EncodeToBytes(mockDB.lastState)
 	require.NoError(t, err)
 	finalMelStateRoot := crypto.Keccak256Hash(finalMelStateBytes)
-	t.Logf("Final mel state root: %s", finalMelStateRoot.Hex())
+	// TODO: Only keep the parent chain hash in this mel state we provide as a preimage.
+	preimages[finalMelStateRoot] = finalMelStateBytes
+
+	outputFile, err := os.Create("/tmp/preimages.json")
+	require.NoError(t, err)
+	defer outputFile.Close()
+
+	preimagesFullFile := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
+	preimagesFullFile[arbutil.Keccak256PreimageType] = jsonapi.NewPreimagesMapJson(preimages)
+
+	validationEntryJson := make(map[string]any)
+	validationEntryJson["Id"] = 0
+	validationEntryJson["HasDelayedMsg"] = false
+	validationEntryJson["DelayedMsgNr"] = 0
+	validationEntryJson["BatchInfo"] = []any{}
+	validationEntryJson["DelayedMsgB64"] = ""
+	validationEntryJson["UserWasms"] = make(map[int]int)
+	startStateJson := make(map[string]any)
+	startStateJson["BlockHash"] = (common.Hash{}).Hex()
+	startStateJson["SendRoot"] = (common.Hash{}).Hex()
+	startStateJson["MelRoot"] = initialMelStateRoot.Hex()
+	startStateJson["Batch"] = 1
+	startStateJson["PosInBatch"] = 0
+	validationEntryJson["StartState"] = startStateJson
+	validationEntryJson["EndMelRoot"] = finalMelStateRoot.Hex()
+	validationEntryJson["PreimagesB64"] = preimagesFullFile
+	require.NoError(t, json.NewEncoder(outputFile).Encode(validationEntryJson))
 }
 
 type preimageRecordingHasher struct {
