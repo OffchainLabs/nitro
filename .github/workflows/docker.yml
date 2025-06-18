@@ -3,34 +3,10 @@ run-name: Docker build CI triggered from @${{ github.actor }} of ${{ github.head
 on:
   workflow_dispatch:
   pull_request:
-    types: [labeled]
+    types: [opened, synchronize, reopened]
 jobs:
-  # Only runs Docker build jobs if a PR has received a final "design approved" label as a final check
-  check-label:
-    name: Check for required label
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    outputs:
-      should-run: ${{ steps.check-label.outputs.has-label }}
-    steps:
-      - id: check-label
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number
-            });
-            const hasLabel = labels.some(label => label.name === 'design-approved');
-            core.setOutput('has-label', hasLabel);
-            console.log(`PR has 'design-approved' label: ${hasLabel}`);
-
   docker:
     name: Docker build
-    needs: check-label
-    # Run if it's not a PR or if it's a PR with the required label
-    if: github.event_name != 'pull_request' || needs.check-label.outputs.should-run == 'true'
     runs-on: arbitrator-ci
     services:
       # local registry
