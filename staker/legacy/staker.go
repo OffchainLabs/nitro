@@ -125,9 +125,10 @@ func (c *L1ValidatorConfig) ValidatorRequired() bool {
 	if c.Dangerous.WithoutBlockValidator {
 		return false
 	}
-	if c.strategy == WatchtowerStrategy && !c.EnableFastConfirmation {
-		return false
-	}
+	// TODO: until BOLD is fixed to allow working without a stateless validator
+	// if c.strategy == WatchtowerStrategy && !c.EnableFastConfirmation {
+	// 	return false
+	// }
 	return true
 }
 
