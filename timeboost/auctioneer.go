@@ -105,9 +105,7 @@ var TestAuctioneerServerConfig = AuctioneerServerConfig{
 func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAuctioneerServerConfig.Enable, "enable auctioneer server")
 	f.String(prefix+".redis-url", DefaultAuctioneerServerConfig.RedisURL, "url of redis server to receive bids from bid validators")
-	// Use auctioneer-specific defaults for consumer config
-	f.Duration(prefix+".consumer-config.response-entry-timeout", DefaultAuctioneerConsumerConfig.ResponseEntryTimeout, "timeout for response entry")
-	f.Duration(prefix+".consumer-config.idletime-to-autoclaim", DefaultAuctioneerConsumerConfig.IdletimeToAutoclaim, "After a message spends this amount of time in PEL (Pending Entries List i.e claimed by another consumer but not Acknowledged) it will be allowed to be autoclaimed by other consumers")
+	pubsub.ConsumerConfigAddOptionsWithDefaults(prefix+".consumer-config", f, DefaultAuctioneerConsumerConfig)
 	f.Duration(prefix+".stream-timeout", DefaultAuctioneerServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet for auctioneer server")
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
