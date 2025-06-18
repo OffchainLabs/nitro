@@ -1,7 +1,8 @@
 .PHONY: build build-forge build-forge-sol build-forge-gas-dimensions build-forge-gas-dimensions-yul
 
 install: 
-	forge install
+	forge install --no-git
+	foundryup
 
 build: build-forge
 
