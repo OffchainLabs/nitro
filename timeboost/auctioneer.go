@@ -344,9 +344,15 @@ func (a *AuctioneerServer) updateCoordination(ctx context.Context) time.Duration
 			elapsed := time.Now().UnixMilli() - storedTimestamp
 			if elapsed > a.auctioneerLivenessTimeout.Milliseconds() {
 				log.Trace("Lock is stale, deleting and trying to acquire", "id", a.myId, "storedId", storedId, "elapsedMs", elapsed)
-				// Delete the stale lock
-				deleted := a.redisClient.Del(ctx, AUCTIONEER_CHOSEN_KEY).Val()
-				if deleted > 0 {
+				if delErr := a.redisClient.Del(ctx, AUCTIONEER_CHOSEN_KEY).Err(); delErr != nil {
+					log.Error("Error deleting stale lock key",
+						"id", a.myId,
+						"key", AUCTIONEER_CHOSEN_KEY,
+						"error", delErr,
+						"storedId", storedId,
+						"storedTimestamp", storedTimestamp,
+						"elapsedMs", elapsed)
+				} else {
 					// Try to acquire with SetNX
 					success = a.redisClient.SetNX(ctx, AUCTIONEER_CHOSEN_KEY, candidateValue, a.auctioneerLivenessTimeout).Val()
 					if success {
