@@ -2,7 +2,6 @@
 
 install: 
 	forge install --no-git
-	foundryup
 
 build: build-forge
 
