@@ -500,6 +500,7 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	currHead, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
 	Require(t, builder.L1.L1Backend.BlockChain().ReorgToOldBlock(reorgToBlock))
+	// #nosec G115
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(currHead-reorgToBlock.NumberU64()+5)) // we need to advance L1 blocks up until the current head so that reorg is detected
 
 	// Wait until mel can detect reorg and rewind head state
