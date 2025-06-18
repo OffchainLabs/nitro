@@ -131,6 +131,9 @@ func TestOverflowAssertions(t *testing.T) {
 			CheckBatchFinality:     false,
 		},
 		goodDir,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		l2node.InboxReader,
 	)
 	Require(t, err)
 
