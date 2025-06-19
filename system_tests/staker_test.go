@@ -171,7 +171,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfigA.ExtraGas })
+	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfigA.ExtraGas })
 	Require(t, err)
 	if honestStakerInactive {
 		valConfigA.Strategy = "Defensive"
@@ -224,6 +224,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		l2nodeA.DeployInfo.Rollup,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -250,7 +254,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
+	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
 	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.Strategy = "MakeNodes"
@@ -278,6 +282,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
+		l2nodeB.DeployInfo.Rollup,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		l2nodeB.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -287,7 +295,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		err = valWalletB.Initialize(ctx)
 		Require(t, err)
 	}
-	valWalletC := validatorwallet.NewNoOp(builder.L1.Client, l2nodeA.DeployInfo.Rollup)
+	valWalletC := validatorwallet.NewNoOp(builder.L1.Client)
 	valConfigC := legacystaker.TestL1ValidatorConfig
 	valConfigC.Strategy = "Watchtower"
 	stakerC, err := legacystaker.NewStaker(
@@ -300,6 +308,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		l2nodeA.DeployInfo.Rollup,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -374,7 +386,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 					_, err = builder.L1.EnsureTxSucceeded(tx)
 					Require(t, err)
 
-					managerAddr := valWalletA.ChallengeManagerAddress()
+					managerAddr, err := stakerA.Rollup().ChallengeManager(&bind.CallOpts{Context: ctx})
+					Require(t, err)
 					// 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103
 					proxyAdminSlot := common.BigToHash(arbmath.BigSub(crypto.Keccak256Hash([]byte("eip1967.proxy.admin")).Big(), common.Big1))
 					proxyAdminBytes, err := builder.L1.Client.StorageAt(ctx, managerAddr, proxyAdminSlot, nil)

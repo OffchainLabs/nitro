@@ -93,6 +93,8 @@ func NewChallengeManager(
 	val *staker.StatelessBlockValidator,
 	startL1Block uint64,
 	confirmationBlocks int64,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxStreamer staker.TransactionStreamerInterface,
 ) (*ChallengeManager, error) {
 	con, err := challenge_legacy_gen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
@@ -130,8 +132,8 @@ func NewChallengeManager(
 	backend, err := NewBlockChallengeBackend(
 		parsedLog,
 		challengeInfo.MaxInboxMessages,
-		val.InboxStreamer(),
-		val.InboxTracker(),
+		inboxStreamer,
+		inboxTracker,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating block challenge backend for challenge %v: %w", challengeIndex, err)
