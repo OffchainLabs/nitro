@@ -16,7 +16,7 @@ jobs:
   # Only run on schedule AND main branch
   tests-scheduled:
     name: Scheduled tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
 
     services:
       redis:
@@ -192,7 +192,7 @@ jobs:
   # Only run this job if files in bold/legacy/ are modified
   tests-pr:
     name: PR modified files tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
     if: github.event_name == 'pull_request'
     
     permissions:
