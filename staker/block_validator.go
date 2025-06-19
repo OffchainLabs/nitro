@@ -33,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/inputs"
+	"github.com/offchainlabs/nitro/validator/retry_wrapper"
 )
 
 var (
@@ -109,22 +110,23 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable                      bool                          `koanf:"enable"`
-	RedisValidationClientConfig redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
-	ValidationServer            rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
-	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
-	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
-	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
-	RecordingIterLimit          uint64                        `koanf:"recording-iter-limit"`
-	ValidationSentLimit         uint64                        `koanf:"validation-sent-limit"`
-	ForwardBlocks               uint64                        `koanf:"forward-blocks" reload:"hot"`
-	BatchCacheLimit             uint32                        `koanf:"batch-cache-limit"`
-	CurrentModuleRoot           string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
-	PendingUpgradeModuleRoot    string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
-	FailureIsFatal              bool                          `koanf:"failure-is-fatal" reload:"hot"`
-	Dangerous                   BlockValidatorDangerousConfig `koanf:"dangerous"`
-	MemoryFreeLimit             string                        `koanf:"memory-free-limit" reload:"hot"`
-	ValidationServerConfigsList string                        `koanf:"validation-server-configs-list"`
+	Enable                            bool                          `koanf:"enable"`
+	RedisValidationClientConfig       redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
+	ValidationServer                  rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
+	ValidationServerConfigs           []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
+	ValidationPoll                    time.Duration                 `koanf:"validation-poll" reload:"hot"`
+	PrerecordedBlocks                 uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
+	RecordingIterLimit                uint64                        `koanf:"recording-iter-limit"`
+	ValidationSentLimit               uint64                        `koanf:"validation-sent-limit"`
+	ForwardBlocks                     uint64                        `koanf:"forward-blocks" reload:"hot"`
+	BatchCacheLimit                   uint32                        `koanf:"batch-cache-limit"`
+	CurrentModuleRoot                 string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
+	PendingUpgradeModuleRoot          string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
+	FailureIsFatal                    bool                          `koanf:"failure-is-fatal" reload:"hot"`
+	Dangerous                         BlockValidatorDangerousConfig `koanf:"dangerous"`
+	MemoryFreeLimit                   string                        `koanf:"memory-free-limit" reload:"hot"`
+	ValidationServerConfigsList       string                        `koanf:"validation-server-configs-list"`
+	ValidationSpawningAllowedAttempts uint64                        `koanf:"validation-spawning-allowed-attempts" reload:"hot"`
 	// The directory to which the BlockValidator will write the
 	// block_inputs_<id>.json files when WriteToFile() is called.
 	BlockInputsFilePath string `koanf:"block-inputs-file-path"`
@@ -207,6 +209,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 	f.String(prefix+".block-inputs-file-path", DefaultBlockValidatorConfig.BlockInputsFilePath, "directory to write block validation inputs files")
+	f.Uint64(prefix+".validation-spawning-allowed-attempts", DefaultBlockValidatorConfig.ValidationSpawningAllowedAttempts, "number of attempts allowed when trying to spawn a validation before erroring out")
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -221,41 +224,43 @@ func RevalidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	Enable:                      false,
-	ValidationServerConfigsList: "default",
-	ValidationServer:            rpcclient.DefaultClientConfig,
-	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
-	ValidationPoll:              time.Second,
-	ForwardBlocks:               128,
-	PrerecordedBlocks:           uint64(2 * util.GoMaxProcs()),
-	BatchCacheLimit:             20,
-	CurrentModuleRoot:           "current",
-	PendingUpgradeModuleRoot:    "latest",
-	FailureIsFatal:              true,
-	Dangerous:                   DefaultBlockValidatorDangerousConfig,
-	BlockInputsFilePath:         "./target/validation_inputs",
-	MemoryFreeLimit:             "default",
-	RecordingIterLimit:          20,
-	ValidationSentLimit:         1024,
+	Enable:                            false,
+	ValidationServerConfigsList:       "default",
+	ValidationServer:                  rpcclient.DefaultClientConfig,
+	RedisValidationClientConfig:       redis.DefaultValidationClientConfig,
+	ValidationPoll:                    time.Second,
+	ForwardBlocks:                     128,
+	PrerecordedBlocks:                 uint64(2 * util.GoMaxProcs()),
+	BatchCacheLimit:                   20,
+	CurrentModuleRoot:                 "current",
+	PendingUpgradeModuleRoot:          "latest",
+	FailureIsFatal:                    true,
+	Dangerous:                         DefaultBlockValidatorDangerousConfig,
+	BlockInputsFilePath:               "./target/validation_inputs",
+	MemoryFreeLimit:                   "default",
+	RecordingIterLimit:                20,
+	ValidationSentLimit:               1024,
+	ValidationSpawningAllowedAttempts: 1,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
-	Enable:                      false,
-	ValidationServer:            rpcclient.TestClientConfig,
-	ValidationServerConfigs:     []rpcclient.ClientConfig{rpcclient.TestClientConfig},
-	RedisValidationClientConfig: redis.TestValidationClientConfig,
-	ValidationPoll:              100 * time.Millisecond,
-	ForwardBlocks:               128,
-	BatchCacheLimit:             20,
-	PrerecordedBlocks:           uint64(2 * util.GoMaxProcs()),
-	RecordingIterLimit:          20,
-	ValidationSentLimit:         1024,
-	CurrentModuleRoot:           "latest",
-	PendingUpgradeModuleRoot:    "latest",
-	FailureIsFatal:              true,
-	Dangerous:                   DefaultBlockValidatorDangerousConfig,
-	BlockInputsFilePath:         "./target/validation_inputs",
-	MemoryFreeLimit:             "default",
+	Enable:                            false,
+	ValidationServer:                  rpcclient.TestClientConfig,
+	ValidationServerConfigs:           []rpcclient.ClientConfig{rpcclient.TestClientConfig},
+	RedisValidationClientConfig:       redis.TestValidationClientConfig,
+	ValidationPoll:                    100 * time.Millisecond,
+	ForwardBlocks:                     128,
+	BatchCacheLimit:                   20,
+	PrerecordedBlocks:                 uint64(2 * util.GoMaxProcs()),
+	RecordingIterLimit:                20,
+	ValidationSentLimit:               1024,
+	CurrentModuleRoot:                 "latest",
+	PendingUpgradeModuleRoot:          "latest",
+	FailureIsFatal:                    true,
+	Dangerous:                         DefaultBlockValidatorDangerousConfig,
+	BlockInputsFilePath:               "./target/validation_inputs",
+	MemoryFreeLimit:                   "default",
+	ValidationSpawningAllowedAttempts: 1,
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
@@ -972,7 +977,8 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		validatorPendingValidationsGauge.Inc(1)
 		var runs []validator.ValidationRun
 		for _, moduleRoot := range wasmRoots {
-			spawner := v.chosenValidator[moduleRoot]
+			spawner := retry_wrapper.NewValidationSpawnerRetryWrapper(v.chosenValidator[moduleRoot])
+			spawner.StopWaiter.Start(ctx, v)
 			input, err := validationStatus.Entry.ToInput(spawner.StylusArchs())
 			if err != nil && ctx.Err() == nil {
 				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
@@ -981,7 +987,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			run := spawner.Launch(input, moduleRoot)
+			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts)
 			log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 			runs = append(runs, run)
 		}

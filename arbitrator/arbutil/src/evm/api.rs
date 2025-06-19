@@ -130,6 +130,10 @@ macro_rules! derive_math {
                 Self(self.0 - rhs.0)
             }
 
+            pub const fn mul(self, rhs: u64) -> Self {
+                Self(self.0 * rhs)
+            }
+
             pub const fn saturating_add(self, rhs: Self) -> Self {
                 Self(self.0.saturating_add(rhs.0))
             }
