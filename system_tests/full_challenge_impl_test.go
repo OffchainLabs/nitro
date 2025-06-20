@@ -236,7 +236,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
 	l1Info := builder.L1Info
 	l1Info.GenerateGenesisAccount("deployer", initialBalance)

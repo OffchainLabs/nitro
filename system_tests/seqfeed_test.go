@@ -50,20 +50,19 @@ func newBroadcastClientConfigTest(port int) *broadcastclient.Config {
 }
 
 func TestSequencerFeed(t *testing.T) {
-	t.Skip("Double node builders used")
 	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	cleanupSeq := builderSeq.Build(t)
 	defer cleanupSeq()
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
 	port := testhelpers.AddrTCPPort(seqNode.BroadcastServer.ListenerAddr(), t)
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	builder.takeOwnership = false
 	cleanup := builder.Build(t)
@@ -94,11 +93,10 @@ func TestSequencerFeed(t *testing.T) {
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {
-	t.Skip("Double node builders used")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	cleanupSeq := builderSeq.Build(t)
 	defer cleanupSeq()
@@ -121,7 +119,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	defer currentRelay.StopAndWait()
 
 	port = testhelpers.AddrTCPPort(currentRelay.GetListenerAddr(), t)
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	builder.takeOwnership = false
 	cleanup := builder.Build(t)

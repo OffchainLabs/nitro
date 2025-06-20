@@ -24,17 +24,16 @@ import (
 )
 
 func TestSequencerRejection(t *testing.T) {
-	t.Skip("Double t.Parallel")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	feedErrChan := make(chan error, 10)
-	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	cleanupSeq := builderSeq.Build(t)
 	defer cleanupSeq()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.takeOwnership = false
 	port := testhelpers.AddrTCPPort(builderSeq.L2.ConsensusNode.BroadcastServer.ListenerAddr(), t)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
