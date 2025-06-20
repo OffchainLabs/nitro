@@ -28,7 +28,7 @@ func TestSnapSync(t *testing.T) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	// 1st node with sequencer, stays up all the time.
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
