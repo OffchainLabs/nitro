@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -66,4 +67,11 @@ func (m *DelayedInboxMessage) Hash() common.Hash {
 		crypto.Keccak256(m.Message.L2msg),
 	)
 	return crypto.Keccak256Hash(hash)
+}
+
+type BatchMetadata struct {
+	Accumulator         common.Hash
+	MessageCount        arbutil.MessageIndex
+	DelayedMessageCount uint64
+	ParentChainBlock    uint64
 }

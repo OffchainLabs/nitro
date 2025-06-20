@@ -3,6 +3,7 @@ package extractionfunction
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -137,7 +138,7 @@ func extractMessagesImpl(
 		// If this message is a batch posting report, we save it for later
 		// use in this function once we extract messages from batches and
 		// need to fill in their batch posting report.
-		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
+		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport || delayed.Message.Header.Kind == arbostypes.L1MessageType_Initialize { // Lets consider the init message as a batch posting report, since its seen as a batch as well, we can later ignore filling its batchGasCost anyway
 			batchPostingReports = append(batchPostingReports, delayed)
 		}
 		if err = state.AccumulateDelayedMessage(delayed); err != nil {
@@ -178,23 +179,27 @@ func extractMessagesImpl(
 		}
 
 		batchPostReport := batchPostingReports[i]
-		_, _, batchHash, _, _, _, err := parseBatchPostingReport(bytes.NewReader(batchPostReport.Message.L2msg))
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
-		}
-		gotHash := crypto.Keccak256Hash(serialized)
-		if gotHash != batchHash {
-			return nil, nil, nil, fmt.Errorf(
-				"batch data hash incorrect %v (wanted %v for batch %v)",
-				gotHash,
-				batchHash,
-				batch.SequenceNumber,
-			)
-		}
-		gas := arbostypes.ComputeBatchGasCost(serialized)
+		if batchPostReport.Message.Header.Kind != arbostypes.L1MessageType_Initialize {
+			_, _, batchHash, _, _, _, err := parseBatchPostingReport(bytes.NewReader(batchPostReport.Message.L2msg))
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
+			}
+			gotHash := crypto.Keccak256Hash(serialized)
+			if gotHash != batchHash {
+				return nil, nil, nil, fmt.Errorf(
+					"batch data hash incorrect %v (wanted %v for batch %v)",
+					gotHash,
+					batchHash,
+					batch.SequenceNumber,
+				)
+			}
+			gas := arbostypes.ComputeBatchGasCost(serialized)
 
-		// Fill in the batch gas cost into the batch posting report.
-		batchPostReport.Message.BatchGasCost = &gas
+			// Fill in the batch gas cost into the batch posting report.
+			batchPostReport.Message.BatchGasCost = &gas
+		} else if !(inputState.DelayedMessagedSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
+			return nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
+		}
 
 		rawSequencerMsg, err := parseSequencerMessage(
 			ctx,
@@ -221,6 +226,7 @@ func extractMessagesImpl(
 			state.MsgCount += 1
 			state = state.AccumulateMessage(msg)
 		}
+		state.BatchCount += 1
 	}
 	return state, messages, delayedMessages, nil
 }

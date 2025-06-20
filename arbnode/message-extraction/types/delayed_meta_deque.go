@@ -10,15 +10,20 @@ type DelayedMeta struct {
 }
 
 type DelayedMetaDeque struct {
-	deque []*DelayedMeta
+	deque   []*DelayedMeta
+	initMsg *DelayedInboxMessage
 }
 
-func (d *DelayedMetaDeque) Len() int                           { return len(d.deque) }   // Used for testing purposes
+func (d *DelayedMetaDeque) Len() int                           { return len(d.deque) }
 func (d *DelayedMetaDeque) GetByPos(index uint64) *DelayedMeta { return d.deque[index] } // Used for testing purposes
 
 func (d *DelayedMetaDeque) Add(item *DelayedMeta) {
 	d.deque = append(d.deque, item)
 }
+
+// Used exclusively while reading the init message
+func (d *DelayedMetaDeque) SetInitMsg(msg *DelayedInboxMessage) { d.initMsg = msg }
+func (d *DelayedMetaDeque) GetInitMsg() *DelayedInboxMessage    { return d.initMsg }
 
 func (d *DelayedMetaDeque) GetByIndex(index uint64) *DelayedMeta {
 	pos := index - d.deque[0].Index
@@ -36,7 +41,7 @@ func (d *DelayedMetaDeque) Clone() *DelayedMetaDeque {
 			MelStateParentChainBlockNum: item.MelStateParentChainBlockNum,
 		})
 	}
-	return &DelayedMetaDeque{deque}
+	return &DelayedMetaDeque{deque, nil} // Init msg should only be read once, no need to persist it
 }
 
 func (d *DelayedMetaDeque) ClearReorged(newDelayedMessagedSeen uint64) {
