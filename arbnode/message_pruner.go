@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -121,12 +122,12 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 
 func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCount arbutil.MessageIndex, delayedMessageCount uint64) error {
 	if m.cachedPrunedMessages == 0 {
-		m.cachedPrunedMessages = fetchLastPrunedKey(m.transactionStreamer.db, lastPrunedMessageKey)
+		m.cachedPrunedMessages = fetchLastPrunedKey(m.transactionStreamer.db, dbschema.LastPrunedMessageKey)
 	}
 	if m.cachedPrunedDelayedMessages == 0 {
-		m.cachedPrunedDelayedMessages = fetchLastPrunedKey(m.inboxTracker.db, lastPrunedDelayedMessageKey)
+		m.cachedPrunedDelayedMessages = fetchLastPrunedKey(m.inboxTracker.db, dbschema.LastPrunedDelayedMessageKey)
 	}
-	prunedKeysRange, _, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messageResultPrefix, m.cachedPrunedMessages, uint64(messageCount))
+	prunedKeysRange, _, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, dbschema.MessageResultPrefix, m.cachedPrunedMessages, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting message results: %w", err)
 	}
@@ -134,7 +135,7 @@ func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCoun
 		log.Info("Pruned message results:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 
-	prunedKeysRange, _, err = deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, blockHashInputFeedPrefix, m.cachedPrunedMessages, uint64(messageCount))
+	prunedKeysRange, _, err = deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, dbschema.BlockHashInputFeedPrefix, m.cachedPrunedMessages, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting expected block hashes: %w", err)
 	}
@@ -142,24 +143,24 @@ func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCoun
 		log.Info("Pruned expected block hashes:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 
-	prunedKeysRange, lastPrunedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messagePrefix, m.cachedPrunedMessages, uint64(messageCount))
+	prunedKeysRange, lastPrunedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, dbschema.MessagePrefix, m.cachedPrunedMessages, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting last batch messages: %w", err)
 	}
 	if len(prunedKeysRange) > 0 {
 		log.Info("Pruned last batch messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
-	insertLastPrunedKey(m.transactionStreamer.db, lastPrunedMessageKey, lastPrunedMessage)
+	insertLastPrunedKey(m.transactionStreamer.db, dbschema.LastPrunedMessageKey, lastPrunedMessage)
 	m.cachedPrunedMessages = lastPrunedMessage
 
-	prunedKeysRange, lastPrunedDelayedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.inboxTracker.db, rlpDelayedMessagePrefix, m.cachedPrunedDelayedMessages, delayedMessageCount)
+	prunedKeysRange, lastPrunedDelayedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.inboxTracker.db, dbschema.RlpDelayedMessagePrefix, m.cachedPrunedDelayedMessages, delayedMessageCount)
 	if err != nil {
 		return fmt.Errorf("error deleting last batch delayed messages: %w", err)
 	}
 	if len(prunedKeysRange) > 0 {
 		log.Info("Pruned last batch delayed messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
-	insertLastPrunedKey(m.inboxTracker.db, lastPrunedDelayedMessageKey, lastPrunedDelayedMessage)
+	insertLastPrunedKey(m.inboxTracker.db, dbschema.LastPrunedDelayedMessageKey, lastPrunedDelayedMessage)
 	m.cachedPrunedDelayedMessages = lastPrunedDelayedMessage
 	return nil
 }

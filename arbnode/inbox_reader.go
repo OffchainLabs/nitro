@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -477,7 +478,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				if len(sequencerBatches) > 0 && batchNum >= sequencerBatches[0].SequenceNumber {
 					idx := batchNum - sequencerBatches[0].SequenceNumber
 					if idx < uint64(len(sequencerBatches)) {
-						return sequencerBatches[idx].Serialize(ctx, r.l1Reader.Client())
+						return SerializeSequencerInboxBatch(ctx, sequencerBatches[idx], r.l1Reader.Client())
 					}
 					log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
 				}
@@ -632,7 +633,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	}
 }
 
-func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
+func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*meltypes.SequencerInboxBatch, delayedMessages []*meltypes.DelayedInboxMessage) (bool, error) {
 	err := r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
@@ -689,7 +690,7 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 	var seenBatches []uint64
 	for _, batch := range seqBatches {
 		if batch.SequenceNumber == seqNum {
-			data, err := batch.Serialize(ctx, r.client)
+			data, err := SerializeSequencerInboxBatch(ctx, batch, r.client)
 			return data, batch.BlockHash, err
 		}
 		seenBatches = append(seenBatches, batch.SequenceNumber)

@@ -176,7 +176,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	messagesPerRound := arbutil.MessageIndex(10)
 	currentSequencer := 0
-	sequencedMesssages := arbutil.MessageIndex(1) // we start with 1 so messageCountKey will be written
+	sequencedMesssages := arbutil.MessageIndex(1) // we start with 1 so dbschema.MessageCountKey will be written
 
 	t.Log("Starting node 0")
 	// give node 0 room to set himself primary
