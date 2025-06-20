@@ -712,6 +712,7 @@ func getMessageExtractor(
 	deployInfo *chaininfo.RollupAddresses,
 	arbDb ethdb.Database,
 	txStreamer *TransactionStreamer,
+	dapReaders []daprovider.Reader,
 ) (*mel.MessageExtractor, error) {
 	if !config.MessageExtraction.Enable {
 		return nil, nil
@@ -730,7 +731,7 @@ func getMessageExtractor(
 		melDB, // MEL db can also act as the initial state fetcher.
 		melDB,
 		txStreamer,
-		nil, // TODO: Pass in da readers.
+		dapReaders,
 		initialState.ParentChainBlockHash,
 		config.MessageExtraction.RetryInterval,
 	)
@@ -1188,7 +1189,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	messageExtractor, err := getMessageExtractor(ctx, config, l1client, deployInfo, arbDb, txStreamer)
+	messageExtractor, err := getMessageExtractor(ctx, config, l1client, deployInfo, arbDb, txStreamer, dapReaders)
 	if err != nil {
 		return nil, err
 	}
