@@ -101,6 +101,7 @@ type Config struct {
 	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
 	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
 	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
 
 	forwardingTarget string
 }
@@ -126,6 +127,9 @@ func (c *Config) Validate() error {
 	if err := c.StylusTarget.Validate(); err != nil {
 		return err
 	}
+	if err := c.RPC.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -145,6 +149,22 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
+	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
+}
+
+type LiveTracingConfig struct {
+	TracerName string `koanf:"tracer-name"`
+	JSONConfig string `koanf:"json-config"`
+}
+
+var DefaultLiveTracingConfig = LiveTracingConfig{
+	TracerName: "",
+	JSONConfig: "{}",
+}
+
+func LiveTracingConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".tracer-name", DefaultLiveTracingConfig.TracerName, "(experimental) Name of tracer which should record internal VM operations (costly)")
+	f.String(prefix+".json-config", DefaultLiveTracingConfig.JSONConfig, "(experimental) Tracer configuration in JSON format")
 }
 
 var ConfigDefault = Config{
@@ -162,6 +182,7 @@ var ConfigDefault = Config{
 	StylusTarget:                DefaultStylusTargetConfig,
 	BlockMetadataApiCacheSize:   100 * 1024 * 1024,
 	BlockMetadataApiBlocksLimit: 100,
+	VmTrace:                     DefaultLiveTracingConfig,
 }
 
 type ConfigFetcher func() *Config
@@ -371,9 +392,9 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 }
 
 // not thread safe
-func (n *ExecutionNode) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
+func (n *ExecutionNode) Start(ctx context.Context) error {
 	if n.started.Swap(true) {
-		return containers.NewReadyPromise(struct{}{}, errors.New("already started"))
+		return errors.New("already started")
 	}
 	// TODO after separation
 	// err := n.Stack.Start()
@@ -383,18 +404,18 @@ func (n *ExecutionNode) Start(ctx context.Context) containers.PromiseInterface[s
 	n.ExecEngine.Start(ctx)
 	err := n.TxPublisher.Start(ctx)
 	if err != nil {
-		return containers.NewReadyPromise(struct{}{}, fmt.Errorf("error starting transaction puiblisher: %w", err))
+		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
 	if n.ParentChainReader != nil {
 		n.ParentChainReader.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
-	return containers.NewReadyPromise(struct{}{}, nil)
+	return nil
 }
 
-func (n *ExecutionNode) StopAndWait() containers.PromiseInterface[struct{}] {
+func (n *ExecutionNode) StopAndWait() {
 	if !n.started.Load() {
-		return containers.NewReadyPromise(struct{}{}, nil)
+		return
 	}
 	n.bulkBlockMetadataFetcher.StopAndWait()
 	// TODO after separation
@@ -417,8 +438,6 @@ func (n *ExecutionNode) StopAndWait() containers.PromiseInterface[struct{}] {
 	// if err := n.Stack.Close(); err != nil {
 	// 	log.Error("error on stak close", "err", err)
 	// }
-
-	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {

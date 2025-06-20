@@ -13,7 +13,7 @@ on:
 jobs:
   test:
     name: Go Tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
 
     # Creates a redis container for redis tests
     services:
@@ -37,14 +37,14 @@ jobs:
         run: sudo apt update && sudo apt install -y wabt gotestsum
 
       - name: Setup nodejs
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 1.23.x
 
@@ -85,7 +85,7 @@ jobs:
         run: cargo install --force cbindgen
 
       - name: Cache Build Products
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/go-build
@@ -93,7 +93,7 @@ jobs:
           restore-keys: ${{ runner.os }}-go-${{ matrix.test-mode }}-
 
       - name: Cache Rust Build Products
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/
@@ -106,7 +106,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-
 
       - name: Cache cbrotli
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: cache-cbrotli
         with:
           path: |
@@ -126,16 +126,17 @@ jobs:
         run: ./scripts/build-brotli.sh -w -d
 
       - name: Build
-        run: make build test-go-deps -j
+        run: make build test-go-deps -j8
 
       - name: Build all lint dependencies
-        run: make -j build-node-deps
+        run: make -j8 build-node-deps
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
-          skip-pkg-cache: true
+          skip-cache: true
+          skip-save-cache: true
       - name: Custom Lint
         run: |
           go run ./linters ./...

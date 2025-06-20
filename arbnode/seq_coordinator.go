@@ -69,6 +69,7 @@ type SeqCoordinatorConfig struct {
 	ChosenHealthcheckAddr string        `koanf:"chosen-healthcheck-addr"`
 	RedisUrl              string        `koanf:"redis-url"`
 	NewRedisUrl           string        `koanf:"new-redis-url"`
+	RedisQuorumSize       uint64        `koanf:"redis-quorum-size"`
 	LockoutDuration       time.Duration `koanf:"lockout-duration"`
 	LockoutSpare          time.Duration `koanf:"lockout-spare"`
 	SeqNumDuration        time.Duration `koanf:"seq-num-duration"`
@@ -96,13 +97,14 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
 	f.String(prefix+".redis-url", DefaultSeqCoordinatorConfig.RedisUrl, "the Redis URL to coordinate via")
 	f.String(prefix+".new-redis-url", DefaultSeqCoordinatorConfig.NewRedisUrl, "switch to the new Redis URL to coordinate via")
+	f.Uint64(prefix+".redis-quorum-size", DefaultSeqCoordinatorConfig.RedisQuorumSize, "the quorum size needed to qualify a redis GET as valid")
 	f.String(prefix+".chosen-healthcheck-addr", DefaultSeqCoordinatorConfig.ChosenHealthcheckAddr, "if non-empty, launch an HTTP service binding to this address that returns status code 200 when chosen and 503 otherwise")
-	f.Duration(prefix+".lockout-duration", DefaultSeqCoordinatorConfig.LockoutDuration, "")
-	f.Duration(prefix+".lockout-spare", DefaultSeqCoordinatorConfig.LockoutSpare, "")
-	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "")
-	f.Duration(prefix+".block-metadata-duration", DefaultSeqCoordinatorConfig.BlockMetadataDuration, "")
-	f.Duration(prefix+".update-interval", DefaultSeqCoordinatorConfig.UpdateInterval, "")
-	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
+	f.Duration(prefix+".lockout-duration", DefaultSeqCoordinatorConfig.LockoutDuration, "duration to hold the sequencer lockout after acquiring it")
+	f.Duration(prefix+".lockout-spare", DefaultSeqCoordinatorConfig.LockoutSpare, "time to subtract from lockout duration to ensure timely renewal")
+	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "expiration duration for message count keys in Redis")
+	f.Duration(prefix+".block-metadata-duration", DefaultSeqCoordinatorConfig.BlockMetadataDuration, "expiration duration for block metadata keys in Redis")
+	f.Duration(prefix+".update-interval", DefaultSeqCoordinatorConfig.UpdateInterval, "interval between sequencer coordinator update attempts")
+	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "interval to wait before retrying after an error")
 	f.Duration(prefix+".handoff-timeout", DefaultSeqCoordinatorConfig.HandoffTimeout, "the maximum amount of time to spend waiting for another sequencer to accept the lockout when handing it off on shutdown or db compaction")
 	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delay after transferring control")
 	f.Int(prefix+".release-retries", DefaultSeqCoordinatorConfig.ReleaseRetries, "the number of times to retry releasing the wants lockout and chosen one status on shutdown")
@@ -117,6 +119,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	ChosenHealthcheckAddr: "",
 	RedisUrl:              "",
 	NewRedisUrl:           "",
+	RedisQuorumSize:       1,
 	LockoutDuration:       time.Minute,
 	LockoutSpare:          30 * time.Second,
 	SeqNumDuration:        10 * 24 * time.Hour,
@@ -136,6 +139,7 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Enable:                false,
 	RedisUrl:              "",
 	NewRedisUrl:           "",
+	RedisQuorumSize:       1,
 	LockoutDuration:       time.Second * 2,
 	LockoutSpare:          time.Millisecond * 10,
 	SeqNumDuration:        time.Minute * 10,
@@ -159,7 +163,7 @@ func NewSeqCoordinator(
 	sync *SyncMonitor,
 	config SeqCoordinatorConfig,
 ) (*SeqCoordinator, error) {
-	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
+	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
 	if err != nil {
 		return nil, err
 	}
@@ -426,6 +430,14 @@ func (c *SeqCoordinator) wantsLockoutUpdateWithMutex(ctx context.Context, client
 	return nil
 }
 
+func (c *SeqCoordinator) CurrentChosenSequencer(ctx context.Context) (string, error) {
+	current, err := c.RedisCoordinator().Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", nil
+	}
+	return current, err
+}
+
 func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 	atomicTimeWrite(&c.lockoutUntil, time.Time{})
 	isActiveSequencer.Update(0)
@@ -452,10 +464,7 @@ func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 		return nil
 	}
 	// got error - was it still released?
-	current, readErr := c.RedisCoordinator().Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
-	if errors.Is(readErr, redis.Nil) {
-		return nil
-	}
+	current, _ := c.CurrentChosenSequencer(ctx) //nolint:errcheck
 	if current != c.config.Url() {
 		return nil
 	}
@@ -605,7 +614,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 }
 
 func (c *SeqCoordinator) blockMetadataAt(ctx context.Context, pos arbutil.MessageIndex) (common.BlockMetadata, error) {
-	blockMetadataStr, err := c.RedisCoordinator().Client.Get(ctx, redisutil.BlockMetadataKeyFor(pos)).Result()
+	blockMetadataStr, err := c.RedisCoordinator().GetIfInQuorum(ctx, redisutil.BlockMetadataKeyFor(pos))
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return nil, nil
@@ -668,12 +677,12 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 		return c.retryAfterRedisError(), nil
 	}
 	readUntil := min(localMsgCount+c.config.MsgPerPoll, remoteMsgCount)
-	client := c.RedisCoordinator().Client
+	redisCoordinator := c.RedisCoordinator()
 	// If we have a previous redis coordinator,
 	// we can read from it until the local message count catches up to the prev coordinator's message count
 	if c.prevRedisMessageCount > localMsgCount {
 		readUntil = min(readUntil, c.prevRedisMessageCount)
-		client = c.prevRedisCoordinator.Client
+		redisCoordinator = c.prevRedisCoordinator
 	}
 	if c.prevRedisMessageCount != 0 && localMsgCount >= c.prevRedisMessageCount {
 		log.Info("coordinator caught up to prev redis coordinator", "msgcount", localMsgCount, "prevMsgCount", c.prevRedisMessageCount)
@@ -684,7 +693,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	var msgReadErr error
 	for msgToRead < readUntil && localMsgCount >= remoteFinalizedMsgCount {
 		var resString string
-		resString, msgReadErr = client.Get(ctx, redisutil.MessageKeyFor(msgToRead)).Result()
+		resString, msgReadErr = redisCoordinator.GetIfInQuorum(ctx, redisutil.MessageKeyFor(msgToRead))
 		if msgReadErr != nil && c.sequencer.Synced(ctx) {
 			log.Warn("coordinator failed reading message", "pos", msgToRead, "err", msgReadErr)
 			break
@@ -693,7 +702,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 		var sigString string
 		var sigBytes []byte
 		sigSeparateKey := true
-		sigString, msgReadErr = client.Get(ctx, redisutil.MessageSigKeyFor(msgToRead)).Result()
+		sigString, msgReadErr = redisCoordinator.GetIfInQuorum(ctx, redisutil.MessageSigKeyFor(msgToRead))
 		if errors.Is(msgReadErr, redis.Nil) {
 			// no separate signature. Try reading old-style sig
 			if len(rsBytes) < 32 {
@@ -895,7 +904,7 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	var newRedisCoordinator *redisutil.RedisCoordinator
 	if c.config.NewRedisUrl != "" {
 		var err error
-		newRedisCoordinator, err = redisutil.NewRedisCoordinator(c.config.NewRedisUrl)
+		newRedisCoordinator, err = redisutil.NewRedisCoordinator(c.config.NewRedisUrl, c.config.RedisQuorumSize)
 		if err != nil {
 			log.Warn("failed to create new redis coordinator", "err",
 				err, "newRedisUrl", c.config.NewRedisUrl)
@@ -966,18 +975,13 @@ func (c *SeqCoordinator) trySwitchingRedis(ctx context.Context, newRedisCoordina
 	if err != nil {
 		return err
 	}
-	current, err := c.RedisCoordinator().Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
-	var wasEmpty bool
-	if errors.Is(err, redis.Nil) {
-		wasEmpty = true
-		err = nil
-	}
+	current, err := c.CurrentChosenSequencer(ctx)
 	if err != nil {
 		log.Warn("failed to get current chosen sequencer", "err", err)
 		return err
 	}
 	// If the chosen key is set to switch, we need to switch to the new redis coordinator.
-	if !wasEmpty && (current == redisutil.SWITCHED_REDIS) {
+	if current == redisutil.SWITCHED_REDIS {
 		err = c.wantsLockoutUpdate(ctx, c.RedisCoordinator().Client)
 		if err != nil {
 			return err
@@ -1076,7 +1080,17 @@ func (c *SeqCoordinator) TryToHandoffChosenOne(ctx context.Context) bool {
 	if c.CurrentlyChosen() {
 		log.Info("waiting for another sequencer to become chosen...", "timeout", c.config.HandoffTimeout, "myUrl", c.config.Url())
 		success := c.waitFor(ctx, func() bool {
-			return !c.CurrentlyChosen()
+			current, err := c.CurrentChosenSequencer(ctx)
+			if err != nil {
+				return false
+			}
+			if current == "" {
+				return false
+			}
+			if current == c.config.Url() {
+				return false
+			}
+			return true
 		})
 		if success {
 			wantsLockout, err := c.RedisCoordinator().RecommendSequencerWantingLockout(ctx)

@@ -31,7 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -340,7 +340,7 @@ func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
 	Require(t, err)
 	escrowExists := state.Exist(escrowAccount)
 	if escrowExists != (arbosVersion < params.ArbosVersion_30) {
-		Fatal(t, "Escrow account existance", escrowExists, "doesn't correspond to ArbOS version", arbosVersion)
+		Fatal(t, "Escrow account existence", escrowExists, "doesn't correspond to ArbOS version", arbosVersion)
 	}
 }
 
@@ -361,7 +361,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, simple := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
@@ -651,7 +651,7 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 		Fatal(t, "The beneficiary shouldn't have received funds")
 	}
 
-	// the fee refund address should recieve the excess gas
+	// the fee refund address should receive the excess gas
 	colors.PrintBlue("Base Fee         ", l2BaseFee)
 	colors.PrintBlue("Excess Gas Price ", excessGasPrice)
 	colors.PrintBlue("Excess Gas       ", excessGasLimit)
@@ -721,7 +721,7 @@ func TestRetryableExpiry(t *testing.T) {
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
@@ -787,7 +787,7 @@ func TestKeepaliveAndRetryableExpiry(t *testing.T) {
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
@@ -876,7 +876,7 @@ func TestKeepaliveAndCancelRetryable(t *testing.T) {
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
@@ -1068,7 +1068,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fatal(t, "The beneficiary shouldn't have received funds")
 	}
 
-	// the fee refund address should recieve the excess gas
+	// the fee refund address should receive the excess gas
 	colors.PrintBlue("Base Fee         ", l2BaseFee)
 	colors.PrintBlue("Excess Gas Price ", excessGasPrice)
 	colors.PrintBlue("Excess Gas       ", excessGasLimit)
@@ -1176,7 +1176,7 @@ func TestArbitrumContractTx(t *testing.T) {
 
 	l2TxOpts := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	l2ContractAddr, _ := builder.L2.DeploySimple(t, l2TxOpts)
-	l2ContractABI, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
+	l2ContractABI, err := abi.JSON(strings.NewReader(localgen.SimpleABI))
 	if err != nil {
 		t.Fatalf("Error parsing contract ABI: %v", err)
 	}
@@ -1233,7 +1233,7 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 
 	l2TxOpts := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	contractAddr, _ := builder.L2.DeploySimple(t, l2TxOpts)
-	contractABI, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
+	contractABI, err := abi.JSON(strings.NewReader(localgen.SimpleABI))
 	if err != nil {
 		t.Fatalf("Error parsing contract ABI: %v", err)
 	}
@@ -1299,7 +1299,7 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	simpleAddr, simple := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	elevateL2Basefee(t, ctx, builder)
@@ -1478,7 +1478,7 @@ func TestRetryableRedeemBlockGasUsage(t *testing.T) {
 
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
 	simpleAddr, _ := deploySimple(t, ctx, ownerTxOpts, l2client)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")

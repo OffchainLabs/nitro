@@ -2,7 +2,6 @@ package arbtest
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -15,169 +14,24 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-const HOSTIO_INK = 8400
-
-func checkInkUsage(
-	t *testing.T,
-	builder *NodeBuilder,
-	stylusProgram common.Address,
-	hostio string,
-	signature string,
-	params []uint32,
-	expectedInk uint64,
-) {
-	toU256ByteSlice := func(i uint32) []byte {
-		arr := make([]byte, 32)
-		binary.BigEndian.PutUint32(arr[28:32], i)
-		return arr
-	}
-
-	testName := fmt.Sprintf("%v_%v", signature, params)
-
-	data := crypto.Keccak256([]byte(signature))[:4]
-	for _, p := range params {
-		data = append(data, toU256ByteSlice(p)...)
-	}
-
-	const txGas uint64 = 32_000_000
-	tx := builder.L2Info.PrepareTxTo("Owner", &stylusProgram, txGas, nil, data)
-
-	err := builder.L2.Client.SendTransaction(builder.ctx, tx)
-	Require(t, err, "testName", testName)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err, "testName", testName)
-
-	stylusGasUsage, err := stylusHostiosGasUsage(builder.ctx, builder.L2.Client.Client(), tx)
-	Require(t, err, "testName", testName)
-
-	_, ok := stylusGasUsage[hostio]
-	if !ok {
-		Fatal(t, "hostio not found in gas usage", "hostio", hostio, "stylusGasUsage", stylusGasUsage, "testName", testName)
-	}
-
-	if len(stylusGasUsage[hostio]) != 1 {
-		Fatal(t, "unexpected number of gas usage", "hostio", hostio, "stylusGasUsage", stylusGasUsage, "testName", testName)
-	}
-
-	expectedGas := float64(expectedInk) / 10000
-	returnedGas := stylusGasUsage[hostio][0]
-	if math.Abs(expectedGas-returnedGas) > 1e-9 {
-		Fatal(t, "unexpected gas usage", "hostio", hostio, "expected", expectedGas, "returned", returnedGas, "testName", testName)
-	}
-}
-
-func TestWriteResultGasUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
-	hostio := "write_result"
-
-	// writeResultEmpty doesn't return any value
-	signature := "writeResultEmpty()"
-	expectedInk := HOSTIO_INK + 16381*2
-	// #nosec G115
-	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
-
-	// writeResult(uint256) returns an array of uint256
-	signature = "writeResult(uint256)"
-	numberOfElementsInReturnedArray := 10000
-	arrayOverhead := 32 + 32 // 32 bytes for the array length and 32 bytes for the array offset
-	expectedInk = HOSTIO_INK + (16381+55*(32*numberOfElementsInReturnedArray+arrayOverhead-32))*2
-	// #nosec G115
-	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{uint32(numberOfElementsInReturnedArray)}, uint64(expectedInk))
-
-	signature = "writeResult(uint256)"
-	numberOfElementsInReturnedArray = 0
-	expectedInk = HOSTIO_INK + (16381+55*(arrayOverhead-32))*2
-	// #nosec G115
-	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{uint32(numberOfElementsInReturnedArray)}, uint64(expectedInk))
-}
-
-func TestReadArgsGasUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
-	hostio := "read_args"
-
-	signature := "readArgsNoArgs()"
-	expectedInk := HOSTIO_INK + 5040
-	// #nosec G115
-	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
-
-	signature = "readArgsOneArg(uint256)"
-	signatureOverhead := 4
-	expectedInk = HOSTIO_INK + 5040 + 30*(32+signatureOverhead-32)
-	// #nosec G115
-	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{1}, uint64(expectedInk))
-
-	signature = "readArgsThreeArgs(uint256,uint256,uint256)"
-	expectedInk = HOSTIO_INK + 5040 + 30*(3*32+signatureOverhead-32)
-	// #nosec G115
-	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{1, 1, 1}, uint64(expectedInk))
-}
-
-func TestMsgReentrantGasUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
-	hostio := "msg_reentrant"
-
-	signature := "writeResultEmpty()"
-	expectedInk := HOSTIO_INK
-	// #nosec G115
-	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
-}
-
-func TestStorageCacheBytes32GasUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
-	hostio := "storage_cache_bytes32"
-
-	signature := "storageCacheBytes32()"
-	expectedInk := HOSTIO_INK + (13440-HOSTIO_INK)*2
-	// #nosec G115
-	checkInkUsage(t, builder, stylusProgram, hostio, signature, nil, uint64(expectedInk))
-}
-
-func TestPayForMemoryGrowGasUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
-	hostio := "pay_for_memory_grow"
-	signature := "payForMemoryGrow(uint256)"
-
-	expectedInk := 9320660000
-	// #nosec G115
-	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{100}, uint64(expectedInk))
-
-	expectedInk = HOSTIO_INK
-	// #nosec G115
-	checkInkUsage(t, builder, stylusProgram, hostio, signature, []uint32{0}, uint64(expectedInk))
-}
+// This file compares each HostIO ink usage with the equivalent EVM opcode gas usage.
+// It makes rough comparisons with a resonable (but not zero) error marging.
 
 func TestProgramSimpleCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
 	otherProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("storage"))
 	matchSnake := regexp.MustCompile("_[a-z]")
 
@@ -218,7 +72,7 @@ func TestProgramSimpleCost(t *testing.T) {
 			solFunc := matchSnake.ReplaceAllStringFunc(tc.hostio, func(s string) string {
 				return strings.ToUpper(strings.TrimPrefix(s, "_"))
 			})
-			packer, _ := util.NewCallParser(mocksgen.HostioTestABI, solFunc)
+			packer, _ := util.NewCallParser(localgen.HostioTestABI, solFunc)
 			data, err := packer(tc.params...)
 			Require(t, err)
 			compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, compareGasForEach, tc.maxDiff, compareGasPair{tc.opcode, tc.hostio})
@@ -230,8 +84,8 @@ func TestProgramPowCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
-	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "mathPow")
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
+	packer, _ := util.NewCallParser(localgen.HostioTestABI, "mathPow")
 
 	for _, exponentNumBytes := range []uint{1, 2, 10, 32} {
 		name := fmt.Sprintf("exponentNumBytes%v", exponentNumBytes)
@@ -256,7 +110,7 @@ func TestProgramStorageCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusMulticall := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
-	evmMulticall := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.MultiCallTestMetaData)
+	evmMulticall := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.MultiCallTestMetaData)
 
 	const numSlots = 42
 	rander := testhelpers.NewPseudoRandomDataSource(t, 0)
@@ -297,8 +151,8 @@ func TestProgramLogCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
-	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "emitLog")
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
+	packer, _ := util.NewCallParser(localgen.HostioTestABI, "emitLog")
 
 	for ntopics := int8(0); ntopics < 5; ntopics++ {
 		for _, dataSize := range []uint64{10, 100, 1000} {
@@ -325,10 +179,10 @@ func TestProgramCallCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusMulticall := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
-	evmMulticall := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.MultiCallTestMetaData)
+	evmMulticall := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.MultiCallTestMetaData)
 	otherStylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	otherEvmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
-	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "msgValue")
+	otherEvmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
+	packer, _ := util.NewCallParser(localgen.HostioTestABI, "msgValue")
 	otherData, err := packer()
 	Require(t, err)
 
@@ -378,8 +232,8 @@ func TestProgramCreateCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusCreate := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("create"))
-	evmCreate := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.CreateTestMetaData)
-	deployCode := common.FromHex(mocksgen.ProgramTestMetaData.Bin)
+	evmCreate := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.CreateTestMetaData)
+	deployCode := common.FromHex(localgen.ProgramTestMetaData.Bin)
 
 	t.Run("create1", func(t *testing.T) {
 		data := []byte{0x01}
@@ -401,8 +255,8 @@ func TestProgramKeccakCost(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, mocksgen.HostioTestMetaData)
-	packer, _ := util.NewCallParser(mocksgen.HostioTestABI, "keccak")
+	evmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
+	packer, _ := util.NewCallParser(localgen.HostioTestABI, "keccak")
 
 	for i := 1; i < 5; i++ {
 		size := uint64(math.Pow10(i))
@@ -460,8 +314,9 @@ func measureGasUsage(
 	Require(t, err)
 
 	stylusGas := receipts[1].GasUsedForL2()
-	stylusGasUsage, err := stylusHostiosGasUsage(builder.ctx, builder.L2.Client.Client(), txs[1])
+	stylusInkUsage, err := stylusHostiosInkUsage(builder.ctx, builder.L2.Client.Client(), txs[1])
 	Require(t, err)
+	stylusGasUsage := inkToGasMap(stylusInkUsage)
 
 	t.Logf("evm total usage: %v - stylus total usage: %v", evmGas, stylusGas)
 
@@ -588,27 +443,17 @@ func evmOpcodesGasUsage(ctx context.Context, rpcClient rpc.ClientInterface, tx *
 	return gasUsage, nil
 }
 
-func stylusHostiosGasUsage(ctx context.Context, rpcClient rpc.ClientInterface, tx *types.Transaction) (
-	map[string][]float64, error) {
-
-	traceOpts := struct {
-		Tracer string `json:"tracer"`
-	}{
-		Tracer: "stylusTracer",
-	}
-	var result []gethexec.HostioTraceInfo
-	err := rpcClient.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), traceOpts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to trace stylus call: %w", err)
-	}
-
+func inkToGasMap(inkUsage map[string][]uint64) map[string][]float64 {
 	const InkPerGas = 10000
 	gasUsage := map[string][]float64{}
-	for _, hostioLog := range result {
-		gasCost := float64(hostioLog.StartInk-hostioLog.EndInk) / InkPerGas
-		gasUsage[hostioLog.Name] = append(gasUsage[hostioLog.Name], gasCost)
+	for hostio, inkArr := range inkUsage {
+		gasArr := make([]float64, len(inkArr))
+		for i, ink := range inkArr {
+			gasArr[i] = float64(ink) / InkPerGas
+		}
+		gasUsage[hostio] = gasArr
 	}
-	return gasUsage, nil
+	return gasUsage
 }
 
 // checkPercentDiff checks whether the two values are close enough.

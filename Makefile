@@ -169,7 +169,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver autonomous-auctioneer bidder-client datool mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -243,6 +243,11 @@ test-go-redis: test-go-deps
 	gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/... -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
+.PHONY: test-go-gas-dimensions
+test-go-gas-dimensions: test-go-deps
+	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run "TestDim(Log|TxOp)" -tags gasdimensionstest
+	@printf $(done)
+
 .PHONY: test-gen-proofs
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
@@ -291,6 +296,7 @@ clean:
 	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -rf contracts-legacy/build contracts-legacy/cache
+	@rm -rf contracts-local/out contracts-local/forge-cache
 	@rm -f .make/*
 
 .PHONY: docker
@@ -309,6 +315,9 @@ $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/relay"
+
+$(output_root)/bin/daprovider: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/daprovider"
 
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/daserver"
@@ -592,18 +601,20 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	go run solgen/gen.go
 	@touch $@
 
-.make/solidity: $(DEP_PREDICATE) safe-smart-account/contracts/*/*.sol safe-smart-account/contracts/*.sol contracts/src/*/*.sol contracts-legacy/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
+.make/solidity: $(DEP_PREDICATE) safe-smart-account/contracts/*/*.sol safe-smart-account/contracts/*.sol contracts/src/*/*.sol contracts-legacy/src/*/*.sol contracts-local/src/*/*.sol contracts-local/gas-dimensions/src/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd safe-smart-account build
 	yarn --cwd contracts build
 	yarn --cwd contracts build:forge:yul
 	yarn --cwd contracts-legacy build
 	yarn --cwd contracts-legacy build:forge:yul
+	make -C contracts-local build
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd safe-smart-account install
 	yarn --cwd contracts install
 	yarn --cwd contracts-legacy install
+	make -C contracts-local install
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make

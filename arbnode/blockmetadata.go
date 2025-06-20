@@ -23,25 +23,27 @@ import (
 )
 
 type BlockMetadataFetcherConfig struct {
-	Enable         bool                   `koanf:"enable"`
-	Source         rpcclient.ClientConfig `koanf:"source" reload:"hot"`
-	SyncInterval   time.Duration          `koanf:"sync-interval"`
-	APIBlocksLimit uint64                 `koanf:"api-blocks-limit"`
+	Enable          bool                   `koanf:"enable"`
+	Source          rpcclient.ClientConfig `koanf:"source" reload:"hot"`
+	SyncInterval    time.Duration          `koanf:"sync-interval"`
+	MaxSyncInterval time.Duration          `koanf:"max-sync-interval"`
+	APIBlocksLimit  uint64                 `koanf:"api-blocks-limit"`
 }
 
 var DefaultBlockMetadataFetcherConfig = BlockMetadataFetcherConfig{
-	Enable:         false,
-	Source:         rpcclient.DefaultClientConfig,
-	SyncInterval:   time.Minute * 5,
-	APIBlocksLimit: 100,
+	Enable:          false,
+	Source:          rpcclient.DefaultClientConfig,
+	SyncInterval:    time.Minute * 1,
+	MaxSyncInterval: time.Minute * 32,
+	APIBlocksLimit:  100,
 }
 
 func BlockMetadataFetcherConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBlockMetadataFetcherConfig.Enable, "enable syncing blockMetadata using a bulk blockMetadata api. If the source doesn't have the missing blockMetadata, we keep retyring in every sync-interval (default=5mins) duration")
+	f.Bool(prefix+".enable", DefaultBlockMetadataFetcherConfig.Enable, "enable syncing blockMetadata using a bulk blockMetadata api")
 	rpcclient.RPCClientAddOptions(prefix+".source", f, &DefaultBlockMetadataFetcherConfig.Source)
-	f.Duration(prefix+".sync-interval", DefaultBlockMetadataFetcherConfig.SyncInterval, "interval at which blockMetadata are synced regularly")
-	f.Uint64(prefix+".api-blocks-limit", DefaultBlockMetadataFetcherConfig.APIBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query.\n"+
-		"This should be set lesser than or equal to the limit on the api provider side")
+	f.Duration(prefix+".sync-interval", DefaultBlockMetadataFetcherConfig.SyncInterval, "minimum time between blockMetadata requests")
+	f.Duration(prefix+".max-sync-interval", DefaultBlockMetadataFetcherConfig.MaxSyncInterval, "maximum time between blockMetadata requests")
+	f.Uint64(prefix+".api-blocks-limit", DefaultBlockMetadataFetcherConfig.APIBlocksLimit, "maximum number of blocks per arb_getRawBlockMetadata query")
 }
 
 var wrongChainIdErr = errors.New("wrong chain id")
@@ -72,7 +74,9 @@ type BlockMetadataFetcher struct {
 	trackBlockMetadataFrom arbutil.MessageIndex
 	expectedChainId        uint64
 
-	chainIdChecked bool
+	chainIdChecked      bool
+	currentSyncInterval time.Duration
+	lastRequestTime     time.Time
 }
 
 func NewBlockMetadataFetcher(
@@ -113,14 +117,30 @@ func NewBlockMetadataFetcher(
 		trackBlockMetadataFrom: trackBlockMetadataFrom,
 		expectedChainId:        expectedChainId,
 		chainIdChecked:         chainIdChecked,
+		currentSyncInterval:    c.SyncInterval,
 	}
 	return fetcher, nil
 }
 
 func (b *BlockMetadataFetcher) fetch(ctx context.Context, fromBlock, toBlock uint64) ([]gethexec.NumberAndBlockMetadata, error) {
+	// Rate limit: 1 request per second
+	now := time.Now()
+	if !b.lastRequestTime.IsZero() {
+		waitTime := time.Second - now.Sub(b.lastRequestTime)
+		if waitTime > 0 {
+			select {
+			case <-time.After(waitTime):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+
 	var result []gethexec.NumberAndBlockMetadata
 	// #nosec G115
 	err := b.client.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(fromBlock), rpc.BlockNumber(toBlock))
+	b.lastRequestTime = time.Now()
+
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +226,17 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 				end -= 1
 			}
 			if success := handleQuery(query[:end+1]); !success {
-				return b.config.SyncInterval
+				b.currentSyncInterval *= 2
+				if b.currentSyncInterval > b.config.MaxSyncInterval {
+					b.currentSyncInterval = b.config.MaxSyncInterval
+				}
+				return b.currentSyncInterval
+			}
+			if b.currentSyncInterval > b.config.SyncInterval {
+				b.currentSyncInterval /= 2
+				if b.currentSyncInterval < b.config.SyncInterval {
+					b.currentSyncInterval = b.config.SyncInterval
+				}
 			}
 			query = query[end+1:]
 		}

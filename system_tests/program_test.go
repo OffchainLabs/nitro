@@ -37,7 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -153,7 +153,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	}
 
 	// do a mutating call for proving's sake
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 	ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
@@ -236,12 +236,12 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 	// mechanisms for creating calldata
 	activateProgram, _ := util.NewCallParser(pgen.ArbWasmABI, "activateProgram")
 	legacyError, _ := util.NewCallParser(pgen.ArbDebugABI, "legacyError")
-	callKeccak, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callKeccak")
+	callKeccak, _ := util.NewCallParser(localgen.ProgramTestABI, "callKeccak")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
 	}
-	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	mockAddr, tx, _, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	// Successfully activate, but then revert
@@ -523,7 +523,7 @@ func fastMathTest(t *testing.T, jit bool) {
 
 	program := deployWasm(t, ctx, auth, l2client, rustFile("math"))
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	ensure(mock.MathTest(&auth, program))
 
@@ -583,7 +583,7 @@ func testCalls(t *testing.T, jit bool) {
 
 	storeAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
-	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	mockAddr, tx, _, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	colors.PrintGrey("multicall.wasm ", callsAddr)
@@ -679,7 +679,7 @@ func testCalls(t *testing.T, jit bool) {
 	burnArbGas, _ := util.NewCallParser(pgen.ArbosTestABI, "burnArbGas")
 	customRevert, _ := util.NewCallParser(pgen.ArbDebugABI, "customRevert")
 	legacyError, _ := util.NewCallParser(pgen.ArbDebugABI, "legacyError")
-	callKeccak, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callKeccak")
+	callKeccak, _ := util.NewCallParser(localgen.ProgramTestABI, "callKeccak")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
@@ -993,7 +993,7 @@ func testCreate(t *testing.T, jit bool) {
 	revertArgs = append(revertArgs, common.BigToHash(startValue).Bytes()...)
 	revertArgs = append(revertArgs, deployContractInitCode(revertData, true)...)
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	auth.Value = startValue
 	ensure(mock.CheckRevertData(&auth, createAddr, revertArgs, revertData))
@@ -1246,7 +1246,7 @@ func testSdkStorage(t *testing.T, jit bool) {
 		return receipt
 	}
 
-	solidity, tx, mock, err := mocksgen.DeploySdkStorage(&auth, l2client)
+	solidity, tx, mock, err := localgen.DeploySdkStorage(&auth, l2client)
 	ensure(tx, err)
 	tx, err = mock.Populate(&auth)
 	receipt := ensure(tx, err)
@@ -1479,7 +1479,7 @@ func testEarlyExit(t *testing.T, jit bool) {
 		Require(t, err)
 	}
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	// revert with the following data
@@ -1552,7 +1552,7 @@ func TestProgramCacheManager(t *testing.T) {
 	codehash := crypto.Keccak256Hash(wasm)
 
 	// try to manage the cache without authorization
-	manager, tx, mock, err := mocksgen.DeploySimpleCacheManager(&ownerAuth, l2client)
+	manager, tx, mock, err := localgen.DeploySimpleCacheManager(&ownerAuth, l2client)
 	ensure(tx, err)
 	denytx(mock.CacheProgram(&userAuth, program))
 	denytx(mock.EvictProgram(&userAuth, program))
@@ -1862,6 +1862,14 @@ func multicallAppendLoad(args []byte, key common.Hash, emitLog bool) []byte {
 	args = binary.BigEndian.AppendUint32(args, 1+32) // length
 	args = append(args, action)
 	args = append(args, key.Bytes()...)
+	return args
+}
+
+func multicallAppendClearCache(args []byte) []byte {
+	var action byte = 0x20
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1) // length
+	args = append(args, action)
 	return args
 }
 

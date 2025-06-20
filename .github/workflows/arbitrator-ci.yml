@@ -28,7 +28,7 @@ env:
 jobs:
   arbitrator:
     name: Run Arbitrator tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
     steps:
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
@@ -60,7 +60,7 @@ jobs:
           go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup nodejs
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
@@ -90,7 +90,7 @@ jobs:
         run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
 
       - name: Cache Rust intermediate build products
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -106,7 +106,7 @@ jobs:
 
       - name: Cache wabt build
         id: cache-wabt
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/wabt-prefix
           key: ${{ runner.os }}-wabt-${{ env.WABT_VERSION }}
@@ -129,7 +129,7 @@ jobs:
           cache: false
 
       - name: Cache cbrotli
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: cache-cbrotli
         with:
           path: |

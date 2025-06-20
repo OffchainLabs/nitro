@@ -16,7 +16,7 @@ jobs:
   # Only run on schedule AND main branch
   tests-scheduled:
     name: Scheduled tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
 
     services:
       redis:
@@ -41,14 +41,14 @@ jobs:
         run: sudo apt update && sudo apt install -y wabt gotestsum
 
       - name: Setup nodejs
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 1.23.x
 
@@ -134,10 +134,11 @@ jobs:
         run: make -j build-node-deps
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
-          skip-pkg-cache: true
+          skip-cache: true
+          skip-save-cache: true
           
       - name: Custom Lint
         run: |
@@ -191,7 +192,7 @@ jobs:
   # Only run this job if files in bold/legacy/ are modified
   tests-pr:
     name: PR modified files tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
     if: github.event_name == 'pull_request'
     
     permissions:
@@ -223,7 +224,7 @@ jobs:
 
       - name: Setup nodejs
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
@@ -231,7 +232,7 @@ jobs:
 
       - name: Install go
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 1.23.x
 
@@ -333,10 +334,11 @@ jobs:
 
       - name: Lint
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
-          skip-pkg-cache: true
+          skip-cache: true
+          skip-save-cache: true
           
       - name: Custom Lint
         if: steps.changed-files.outputs.any_changed == 'true'

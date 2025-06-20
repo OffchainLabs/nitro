@@ -76,6 +76,9 @@ func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
 }
 
 func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
+	if msg == nil {
+		return errors.New("missing required parameter")
+	}
 	goMsg, err := timeboost.JsonSubmissionToGo(msg)
 	if err != nil {
 		return err
@@ -356,7 +359,7 @@ func (api *ArbTraceForwarderAPI) getFallbackClient() (types.FallbackClient, erro
 	if api.initialized.Load() {
 		return api.fallbackClient, nil
 	}
-	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout)
+	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout, false)
 	if err != nil {
 		return nil, err
 	}

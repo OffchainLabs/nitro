@@ -157,6 +157,8 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	_, valStack := createTestValidationNode(t, ctx, &valCfg)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
+	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
@@ -166,7 +168,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
-		valCfg.Wasm.RootPath,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -182,7 +184,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStackB,
-		valCfg.Wasm.RootPath,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)
@@ -220,6 +222,9 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 			CheckBatchFinality:     false,
 		},
 		goodDir,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.InboxReader,
 	)
 	Require(t, err)
 
@@ -233,6 +238,9 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 			CheckBatchFinality:     false,
 		},
 		evilDir,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		l2nodeB.InboxReader,
 	)
 	Require(t, err)
 
@@ -600,7 +608,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	execConfig.Caching.StateScheme = rawdb.HashScheme
 	useWasmCache := uint32(1)
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, nil, execConfig, useWasmCache, true)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, nil, initMessage, nil, execConfig, useWasmCache, true)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -622,11 +630,13 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	parentChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
 	currentNode, err = arbnode.CreateNodeFullExecutionClient(
 		ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
 		nil, // Blob reader.
-		"",  // Wasm root path.
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 
@@ -825,7 +835,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, execConfig.Validate())
 	execConfig.Caching.StateScheme = rawdb.HashScheme
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, execConfig.TxLookupLimit, 0)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, execConfig.TxLookupLimit, 0)
 	Require(t, err)
 
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
@@ -833,7 +843,9 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, "" /* wasm root path */)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack)
