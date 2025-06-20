@@ -41,7 +41,6 @@ func TestPruning(t *testing.T) {
 }
 
 func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
