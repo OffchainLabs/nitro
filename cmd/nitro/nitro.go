@@ -1106,7 +1106,7 @@ func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.Wa
 		for _, root := range allowedWasmModuleRoots {
 			bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
 			if err == nil {
-				if common.HexToHash(root) == common.BytesToHash(bytes) {
+				if common.BytesToHash(bytes) == moduleRoot {
 					moduleRootMatched = true
 					break
 				}

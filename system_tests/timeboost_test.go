@@ -41,7 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -1606,7 +1606,7 @@ func setupExpressLaneAuction(
 		t.Fatal(err)
 	}
 
-	proxyAddr, tx, _, err := mocksgen.DeploySimpleProxy(&ownerOpts, seqClient, auctionContractAddr)
+	proxyAddr, tx, _, err := localgen.DeploySimpleProxy(&ownerOpts, seqClient, auctionContractAddr)
 	Require(t, err)
 	if _, err = bind.WaitMined(ctx, seqClient, tx); err != nil {
 		t.Fatal(err)
