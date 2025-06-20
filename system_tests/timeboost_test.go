@@ -1489,7 +1489,7 @@ func setupExpressLaneAuction(
 	var cleanupExtraNode func()
 	switch extraNodeTy {
 	case withForwardingSeq:
-		extraNodebuilder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+		extraNodebuilder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 		extraNodebuilder.isSequencer = true
 		extraNodebuilder.takeOwnership = false
 		extraNodebuilder.l2StackConfig.HTTPHost = "localhost"
@@ -1517,7 +1517,7 @@ func setupExpressLaneAuction(
 			t.Fatalf("failed to cast listener address to *net.TCPAddr")
 		}
 		port := tcpAddr.Port
-		extraNodebuilder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+		extraNodebuilder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 		extraNodebuilder.takeOwnership = false
 		extraNodebuilder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 		extraNodebuilder.nodeConfig.Feed.Input.Timeout = broadcastclient.DefaultConfig.Timeout
