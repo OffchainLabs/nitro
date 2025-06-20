@@ -275,7 +275,7 @@ func TestProgramKeccakCost(t *testing.T) {
 func setupGasCostTest(t *testing.T) *NodeBuilder {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	t.Cleanup(cleanup)
 	return builder
