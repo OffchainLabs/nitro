@@ -220,8 +220,6 @@ func TestPowInkUsage(t *testing.T) {
 }
 
 func TestStorageInkCost(t *testing.T) {
-	t.Parallel()
-
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
 	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))

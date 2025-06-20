@@ -24,7 +24,7 @@ func TestDelayInboxLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
