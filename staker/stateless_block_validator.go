@@ -296,18 +296,6 @@ func (v *StatelessBlockValidator) readPostedBatch(ctx context.Context, batchNum 
 	return postedData, err
 }
 
-func (v *StatelessBlockValidator) InboxTracker() InboxTrackerInterface {
-	return v.inboxTracker
-}
-
-func (v *StatelessBlockValidator) InboxReader() InboxReaderInterface {
-	return v.inboxReader
-}
-
-func (v *StatelessBlockValidator) InboxStreamer() TransactionStreamerInterface {
-	return v.streamer
-}
-
 func (v *StatelessBlockValidator) ExecutionSpawners() []validator.ExecutionSpawner {
 	return v.execSpawners
 }
