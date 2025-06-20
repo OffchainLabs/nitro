@@ -417,6 +417,9 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 			CheckBatchFinality:     false,
 		},
 		dir,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		l2node.InboxReader,
 	)
 	Require(t, err)
 

@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/abigen"
 )
 
 type HardHatArtifact struct {
@@ -241,13 +241,12 @@ func main() {
 
 	for module, info := range modules {
 
-		code, err := bind.Bind(
+		code, err := abigen.Bind(
 			info.contractNames,
 			info.abis,
 			info.bytecodes,
 			nil,
 			module,
-			bind.LangGo,
 			nil,
 			nil,
 		)
