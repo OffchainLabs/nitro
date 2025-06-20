@@ -90,7 +90,7 @@ func gasDimensionTestSetup(t *testing.T, expectRevert bool) (
 ) {
 	t.Helper()
 	ctx, cancel = context.WithCancel(context.Background())
-	builder = NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder = NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.execConfig.Caching.Archive = true
 	// For now Archive node should use HashScheme
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
