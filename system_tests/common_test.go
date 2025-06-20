@@ -1992,22 +1992,6 @@ func initDefaultTestLog() {
 func TestMain(m *testing.M) {
 	initDefaultTestLog()
 	initTestCollection()
-	go func() {
-		for {
-			<-time.After(time.Second)
-			running, waiting := CurrentlyRunning()
-			print := "["
-			for test, count := range running {
-				print += fmt.Sprintf("%s[%d],", test, count)
-			}
-			print += "]    Q{"
-			for test, count := range waiting {
-				print += fmt.Sprintf("%s[%d],", test, count)
-			}
-			print += "}"
-			fmt.Printf("\n------ room: %d, %s\n", globalCollection.room.Load(), print)
-		}
-	}()
 	code := m.Run()
 	os.Exit(code)
 }
