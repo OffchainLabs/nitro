@@ -30,12 +30,7 @@ func TestDatabaseConversion(t *testing.T) {
 	}
 	cleanup := builder.Build(t)
 	dataDir := builder.dataDir
-	cleanupDone := false
-	defer func() { // TODO we should be able to call cleanup twice, rn it gets stuck then
-		if !cleanupDone {
-			cleanup()
-		}
-	}()
+	defer cleanup()
 	builder.L2Info.GenerateAccount("User2")
 	var txs []*types.Transaction
 	for i := uint64(0); i < 200; i++ {
@@ -53,8 +48,7 @@ func TestDatabaseConversion(t *testing.T) {
 	user2Balance := builder.L2.GetBalance(t, builder.L2Info.GetAddress("User2"))
 	ownerBalance := builder.L2.GetBalance(t, builder.L2Info.GetAddress("Owner"))
 
-	cleanup()
-	cleanupDone = true
+	builder.L2.cleanup()
 	t.Log("stopped first node")
 
 	instanceDir := filepath.Join(dataDir, builder.l2StackConfig.Name)
