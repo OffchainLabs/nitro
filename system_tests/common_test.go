@@ -64,6 +64,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/deploy"
@@ -111,6 +112,7 @@ type TestClient struct {
 	ConsensusNode *arbnode.Node
 	ExecNode      *gethexec.ExecutionNode
 	ClientWrapper *ClientWrapper
+	blobReader    daprovider.BlobReader
 
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
@@ -252,6 +254,7 @@ type NodeBuilder struct {
 	delayBufferThreshold        uint64
 	useFreezer                  bool
 	withL1ClientWrapper         bool
+	withBlobReader              bool
 
 	// Created nodes
 	L1 *TestClient
@@ -429,7 +432,10 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
+	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.blobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
+	if !b.withBlobReader {
+		b.L1.blobReader = nil
+	}
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	b.addresses, b.initMessage = deployOnParentChain(
@@ -472,6 +478,8 @@ func buildOnParentChain(
 
 	wasmCacheTag uint32,
 	useFreezer bool,
+
+	blobReader daprovider.BlobReader,
 ) *TestClient {
 	if parentChainTestClient == nil {
 		t.Fatal("must build parent chain before building chain")
@@ -517,7 +525,7 @@ func buildOnParentChain(
 	Require(t, err)
 	chainTestClient.ConsensusNode, err = arbnode.CreateNodeFullExecutionClient(
 		ctx, chainTestClient.Stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainTestClient.Client,
-		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil, locator.LatestWasmModuleRoot())
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, blobReader, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	err = chainTestClient.ConsensusNode.Start(ctx)
@@ -579,6 +587,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 		b.wasmCacheTag,
 		b.useFreezer,
+		nil,
 	)
 
 	return func() {
@@ -611,6 +620,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		b.wasmCacheTag,
 		b.useFreezer,
+		b.L1.blobReader,
 	)
 
 	return func() {
@@ -731,6 +741,7 @@ func build2ndNode(
 
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
+	blobReader daprovider.BlobReader,
 ) (*TestClient, func()) {
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -765,7 +776,7 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.wasmCacheTag, params.useExecutionClientOnly)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.wasmCacheTag, params.useExecutionClientOnly, blobReader)
 	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
 	return testClient, func() { testClient.cleanup() }
@@ -777,6 +788,10 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 	}
 	if b.withL1 && b.L1 == nil {
 		t.Fatal("builder did not previously built an L1 Node")
+	}
+	var blobReader daprovider.BlobReader
+	if b.L1 != nil {
+		blobReader = b.L1.blobReader
 	}
 	return build2ndNode(
 		t,
@@ -796,6 +811,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 
 		b.addresses,
 		b.initMessage,
+		blobReader,
 	)
 }
 
@@ -821,6 +837,7 @@ func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (
 
 		b.l3Addresses,
 		b.l3InitMessage,
+		nil,
 	)
 }
 
@@ -1218,7 +1235,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	configByValidationNode(nodeConfig, valStack)
 }
 
-func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper) {
+func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
@@ -1280,7 +1297,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 
 	l1Client := ethclient.NewClient(rpcClient)
 
-	return l1info, l1Client, l1backend, stack, clientWrapper
+	return l1info, l1Client, l1backend, stack, clientWrapper, simBeacon
 }
 
 func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
@@ -1541,6 +1558,7 @@ func Create2ndNodeWithConfig(
 	initMessage *arbostypes.ParsedInitMessage,
 	wasmCacheTag uint32,
 	useExecutionClientOnly bool,
+	blobReader daprovider.BlobReader,
 ) (*ethclient.Client, *arbnode.Node) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1597,9 +1615,9 @@ func Create2ndNodeWithConfig(
 	locator, err := server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	if useExecutionClientOnly {
-		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
 	} else {
-		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
 	}
 
 	Require(t, err)
