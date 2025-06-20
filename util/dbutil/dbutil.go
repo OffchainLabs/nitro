@@ -9,13 +9,8 @@ import (
 	"io/fs"
 	"regexp"
 
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 )
-
-func IsErrNotFound(err error) bool {
-	return rawdb.IsDbErrNotFound(err)
-}
 
 var pebbleNotExistErrorRegex = regexp.MustCompile("pebble: database .* does not exist")
 
