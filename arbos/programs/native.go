@@ -237,11 +237,11 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 	localTarget := rawdb.LocalTarget()
 	targets := runCtx.WasmTargets()
 	// even though we need only asm for local target, make sure that all configured targets are available as they are needed during multi-target recording of a program call
-	asmMap, missingTargets, err := statedb.TryGetActivatedAsmMap(targets, moduleHash)
+	asmMap, missingTargets, err := statedb.ActivatedAsmMap(targets, moduleHash)
 	if err != nil {
-		// exit early in case of an unexpected error:
-		// those can be either database errors other then "not found" error (not recoverable),
-		// or an error caused by inconsistent recent activations stored in statedb (not yet committedactivation that doesn't contain asms for all targets)
+		// exit early in case of an unexpected error
+		// e.g. caused by inconsistent recent activations stored in statedb (not yet committed activation that doesn't contain asms for all targets)
+		log.Error("unexpected error reading asm map", "err", err)
 		return nil, err
 	}
 	if len(missingTargets) == 0 {
@@ -295,7 +295,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		//   - the missingTargets for which we have the newlyBuilt map were the only targets not found in wasmdb
 		//   - in this case, statedb.ActivateWasm stages the asm map for commit
 		//   - during statedb commit rawdb.WriteActivation iterates over the recently activated wasms map and writes each entry to wasmdb separately, so the writes for the same module hash can be incremental
-		// 2. If there was a previous new activation of the moduleHash and there were some targets missing then statedb.TryGetActivatedAsmMap would have returned an error as that would indicate inconsistency of target lists and we would have exited early
+		// 2. If there was a previous new activation of the moduleHash and there were some targets missing then statedb.ActivatedAsmMap would have returned an error as that would indicate inconsistency of target lists and we would have exited early
 		// 3. Otherwise, if there was a previous new activation of the moduleHash but there were no targets missing then we would have also exited early (nothing to be recompiled)
 
 		// program activated recently, possibly in this eth_call

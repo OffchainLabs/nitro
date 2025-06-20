@@ -43,9 +43,12 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return err
 	}
 
+	_, missingTargets, err := statedb.ActivatedAsmMap(targets, moduleHash)
+	if err != nil {
+		return err
+	}
 	// If already in wasm store then return early
-	_, missingTargets, err := statedb.TryGetActivatedAsmMap(targets, moduleHash)
-	if err == nil && len(missingTargets) == 0 {
+	if len(missingTargets) == 0 {
 		return nil
 	}
 

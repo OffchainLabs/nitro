@@ -2260,8 +2260,10 @@ func deployWasmAndGetEntrySizeEstimateBytes(
 	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
 	Require(t, err, ", wasmName:", wasmName)
 
-	module, err := statedb.TryGetActivatedAsm(rawdb.LocalTarget(), log.ModuleHash)
-	Require(t, err, ", wasmName:", wasmName)
+	module := statedb.ActivatedAsm(rawdb.LocalTarget(), log.ModuleHash)
+	if len(module) == 0 {
+		Fatal(t, "missing asm for local target, wasmName:", wasmName)
+	}
 
 	entrySizeEstimateBytes := programs.GetEntrySizeEstimateBytes(module, log.Version, true)
 	// just a sanity check
