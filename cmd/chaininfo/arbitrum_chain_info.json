@@ -37,6 +37,18 @@
         "InitialArbOSVersion": 6,
         "InitialChainOwner": "0xd345e41ae2cb00311956aa7109fc801ae8c81a52",
         "GenesisBlockNum": 0
+      },
+      "blobSchedule": {
+       "cancun": {
+        "target": 3,
+         "max": 6,
+         "baseFeeUpdateFraction": 3338477
+       },
+        "prague": {
+          "target": 6,
+          "max": 9,
+          "baseFeeUpdateFraction": 5007716
+        }
       }
     },
     "rollup": {
@@ -86,6 +98,18 @@
         "InitialArbOSVersion": 1,
         "InitialChainOwner": "0x9c040726f2a657226ed95712245dee84b650a1b5",
         "GenesisBlockNum": 0
+      },
+      "blobSchedule": {
+        "cancun": {
+          "target": 3,
+          "max": 6,
+          "baseFeeUpdateFraction": 3338477
+        },
+        "prague": {
+          "target": 6,
+          "max": 9,
+          "baseFeeUpdateFraction": 5007716
+        }
       }
     },
     "rollup": {
@@ -132,6 +156,18 @@
         "InitialArbOSVersion": 2,
         "InitialChainOwner": "0x186b56023d42b2b4e7616589a5c62eef5fca21dd",
         "GenesisBlockNum": 0
+      },
+      "blobSchedule": {
+        "cancun": {
+          "target": 3,
+          "max": 6,
+          "baseFeeUpdateFraction": 3338477
+        },
+        "prague": {
+          "target": 6,
+          "max": 9,
+          "baseFeeUpdateFraction": 5007716
+        }
       }
     },
     "rollup": {
@@ -173,6 +209,18 @@
         "InitialArbOSVersion": 40,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
         "GenesisBlockNum": 0
+      },
+      "blobSchedule": {
+        "cancun": {
+          "target": 3,
+          "max": 6,
+          "baseFeeUpdateFraction": 3338477
+        },
+        "prague": {
+          "target": 6,
+          "max": 9,
+          "baseFeeUpdateFraction": 5007716
+        }
       }
     }
   },
@@ -205,6 +253,18 @@
         "InitialArbOSVersion": 32,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
         "GenesisBlockNum": 0
+      },
+      "blobSchedule": {
+        "cancun": {
+          "target": 3,
+          "max": 6,
+          "baseFeeUpdateFraction": 3338477
+        },
+        "prague": {
+          "target": 6,
+          "max": 9,
+          "baseFeeUpdateFraction": 5007716
+        }
       }
     }
   },
@@ -244,6 +304,18 @@
         "InitialArbOSVersion": 10,
         "InitialChainOwner": "0x71B61c2E250AFa05dFc36304D6c91501bE0965D8",
         "GenesisBlockNum": 0
+      },
+      "blobSchedule": {
+        "cancun": {
+          "target": 3,
+          "max": 6,
+          "baseFeeUpdateFraction": 3338477
+        },
+        "prague": {
+          "target": 6,
+          "max": 9,
+          "baseFeeUpdateFraction": 5007716
+        }
       }
     },
     "rollup": {
@@ -293,6 +365,18 @@
         "InitialArbOSVersion": 10,
         "InitialChainOwner": "0x35c8d15334Eaf0e4b82417Fe10e28deEa0c5C32B",
         "GenesisBlockNum": 0
+      },
+      "blobSchedule": {
+        "cancun": {
+          "target": 3,
+          "max": 6,
+          "baseFeeUpdateFraction": 3338477
+        },
+        "prague": {
+          "target": 6,
+          "max": 9,
+          "baseFeeUpdateFraction": 5007716
+        }
       }
     },
     "rollup":
