@@ -208,7 +208,6 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 }
 
 func TestBatchPosterLargeTx(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -281,7 +280,6 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 }
 
 func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, enabled bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -486,8 +484,6 @@ func TestBatchPosterDelayBufferDontForceNonDelayedMessages(t *testing.T) {
 }
 
 func TestParentChainNonEIP7623(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

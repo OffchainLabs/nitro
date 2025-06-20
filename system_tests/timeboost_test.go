@@ -53,7 +53,6 @@ import (
 )
 
 func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -143,7 +142,6 @@ func TestTimeboostAuctionResolutionDuringATieMultipleRuns(t *testing.T) {
 }
 
 func testAuctionResolutionDuringATie(t *testing.T, multiRuns bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -252,7 +250,6 @@ func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerC
 }
 
 func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -381,7 +378,6 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 }
 
 func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -422,7 +418,6 @@ func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
 }
 
 func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -523,7 +518,6 @@ func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
 }
 
 func TestTimeboostExpressLaneTransactionHandling(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -668,8 +662,6 @@ func dbKey(prefix []byte, pos uint64) []byte {
 }
 
 func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -930,7 +922,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	builder.execConfig.BlockMetadataApiCacheSize = 0 // Caching is disabled
 	cleanup := builder.Build(t)
@@ -1137,7 +1129,6 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 // }
 
 func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1177,8 +1168,6 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t
 }
 
 func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrect(t *testing.T) {
-	t.Parallel()
-
 	logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1472,7 +1461,7 @@ func setupExpressLaneAuction(
 	expressLaneRedisURL := redisutil.CreateTestRedis(ctx, t)
 	initRedisForTest(t, ctx, expressLaneRedisURL, nodeNames)
 
-	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builderSeq.isSequencer = true
 	builderSeq.l2StackConfig.HTTPHost = "localhost"
 	builderSeq.l2StackConfig.HTTPPort = seqPort
@@ -1500,7 +1489,7 @@ func setupExpressLaneAuction(
 	var cleanupExtraNode func()
 	switch extraNodeTy {
 	case withForwardingSeq:
-		extraNodebuilder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+		extraNodebuilder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 		extraNodebuilder.isSequencer = true
 		extraNodebuilder.takeOwnership = false
 		extraNodebuilder.l2StackConfig.HTTPHost = "localhost"
@@ -1528,7 +1517,7 @@ func setupExpressLaneAuction(
 			t.Fatalf("failed to cast listener address to *net.TCPAddr")
 		}
 		port := tcpAddr.Port
-		extraNodebuilder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+		extraNodebuilder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 		extraNodebuilder.takeOwnership = false
 		extraNodebuilder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 		extraNodebuilder.nodeConfig.Feed.Input.Timeout = broadcastclient.DefaultConfig.Timeout

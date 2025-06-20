@@ -134,11 +134,10 @@ func deployGasRefunder(ctx context.Context, t *testing.T, builder *NodeBuilder) 
 }
 
 func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	if validator {
 		builder.nodeConfig.BlockValidator.Enable = true
 	}

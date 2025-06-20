@@ -33,7 +33,6 @@ import (
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a cold, no-code address, no memory expansion.
 func TestDimTxOpDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -50,7 +49,6 @@ func TestDimTxOpDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a warm, no-code address, no memory expansion.
 func TestDimTxOpDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -67,7 +65,6 @@ func TestDimTxOpDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a cold contract address, no memory expansion.
 func TestDimTxOpDelegateCallColdContractMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -84,7 +81,6 @@ func TestDimTxOpDelegateCallColdContractMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a warm contract address, no memory expansion.
 func TestDimTxOpDelegateCallWarmContractMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -102,7 +98,6 @@ func TestDimTxOpDelegateCallWarmContractMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a cold, no-code address, with memory expansion.
 func TestDimTxOpDelegateCallColdNoCodeMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -119,7 +114,6 @@ func TestDimTxOpDelegateCallColdNoCodeMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a warm, no-code address, with memory expansion.
 func TestDimTxOpDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -136,7 +130,6 @@ func TestDimTxOpDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a cold contract address, with memory expansion.
 func TestDimTxOpDelegateCallColdContractMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -153,7 +146,6 @@ func TestDimTxOpDelegateCallColdContractMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a warm contract address, with memory expansion.
 func TestDimTxOpDelegateCallWarmContractMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -170,7 +162,6 @@ func TestDimTxOpDelegateCallWarmContractMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a cold, no-code address, no memory expansion.
 func TestDimTxOpStaticCallColdNoCodeMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -187,7 +178,6 @@ func TestDimTxOpStaticCallColdNoCodeMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a warm, no-code address, no memory expansion.
 func TestDimTxOpStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -204,7 +194,6 @@ func TestDimTxOpStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a cold contract address, no memory expansion.
 func TestDimTxOpStaticCallColdContractMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -220,7 +209,6 @@ func TestDimTxOpStaticCallColdContractMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a warm contract address, no memory expansion.
 func TestDimTxOpStaticCallWarmContractMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -236,7 +224,6 @@ func TestDimTxOpStaticCallWarmContractMemUnchanged(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a cold, no-code address, with memory expansion.
 func TestDimTxOpStaticCallColdNoCodeMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -253,7 +240,6 @@ func TestDimTxOpStaticCallColdNoCodeMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a warm, no-code address, with memory expansion.
 func TestDimTxOpStaticCallWarmNoCodeMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -270,7 +256,6 @@ func TestDimTxOpStaticCallWarmNoCodeMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a cold contract address, with memory expansion.
 func TestDimTxOpStaticCallColdContractMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -286,7 +271,6 @@ func TestDimTxOpStaticCallColdContractMemExpansion(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a warm contract address, with memory expansion.
 func TestDimTxOpStaticCallWarmContractMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

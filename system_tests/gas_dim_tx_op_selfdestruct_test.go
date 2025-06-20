@@ -36,7 +36,6 @@ import (
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a cold, virgin address, no value transfer.
 func TestDimTxOpSelfdestructColdNoTransferVirgin(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -54,7 +53,6 @@ func TestDimTxOpSelfdestructColdNoTransferVirgin(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a cold, funded address, no value transfer.
 func TestDimTxOpSelfdestructColdNoTransferFunded(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -76,7 +74,6 @@ func TestDimTxOpSelfdestructColdNoTransferFunded(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a cold, virgin address with value transfer.
 func TestDimTxOpSelfdestructColdPayingVirgin(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -97,7 +94,6 @@ func TestDimTxOpSelfdestructColdPayingVirgin(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a cold, funded address with value transfer.
 func TestDimTxOpSelfdestructColdPayingFunded(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -119,7 +115,6 @@ func TestDimTxOpSelfdestructColdPayingFunded(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a warm, virgin address, no value transfer.
 func TestDimTxOpSelfdestructWarmNoTransferVirgin(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -137,7 +132,6 @@ func TestDimTxOpSelfdestructWarmNoTransferVirgin(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a warm, funded address, no value transfer.
 func TestDimTxOpSelfdestructWarmNoTransferFunded(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -159,7 +153,6 @@ func TestDimTxOpSelfdestructWarmNoTransferFunded(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a warm, virgin address with value transfer.
 func TestDimTxOpSelfdestructWarmPayingVirgin(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -180,7 +173,6 @@ func TestDimTxOpSelfdestructWarmPayingVirgin(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a warm, funded address with value transfer.
 func TestDimTxOpSelfdestructWarmPayingFunded(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

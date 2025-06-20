@@ -40,7 +40,6 @@ const (
 // containing only the computation-only opcodes and that the gas in the computation
 // only opcodes is equal to the OneDimensionalGasCost.
 func TestDimLogComputationOnlyOpcodes(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -91,7 +90,7 @@ func gasDimensionTestSetup(t *testing.T, expectRevert bool) (
 ) {
 	t.Helper()
 	ctx, cancel = context.WithCancel(context.Background())
-	builder = NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder = NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.execConfig.Caching.Archive = true
 	// For now Archive node should use HashScheme
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme

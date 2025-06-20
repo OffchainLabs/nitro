@@ -33,7 +33,6 @@ const ColdSloadCost = params.ColdSloadCostEIP2929
 // and the state access to be 2500 (for the cold access cost of the address)
 // and all other gas dimensions to be 0
 func TestDimLogBalanceCold(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -66,7 +65,6 @@ func TestDimLogBalanceCold(t *testing.T) {
 // the computation to be 100 (for the warm access cost of the address)
 // and all other gas dimensions to be 0
 func TestDimLogBalanceWarm(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -104,7 +102,6 @@ func TestDimLogBalanceWarm(t *testing.T) {
 // and the state access to be 2500 (for the cold access cost of the address)
 // and all other gas dimensions to be 0
 func TestDimLogExtCodeSizeCold(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -137,7 +134,6 @@ func TestDimLogExtCodeSizeCold(t *testing.T) {
 // the computation to be 100 (for the warm access cost of the address)
 // and all other gas dimensions to be 0
 func TestDimLogExtCodeSizeWarm(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -175,7 +171,6 @@ func TestDimLogExtCodeSizeWarm(t *testing.T) {
 // and the state access to be 2500 (for the cold access cost of the address)
 // and all other gas dimensions to be 0
 func TestDimLogExtCodeHashCold(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -208,7 +203,6 @@ func TestDimLogExtCodeHashCold(t *testing.T) {
 // the computation to be 100 (for the warm access cost of the address)
 // and all other gas dimensions to be 0
 func TestDimLogExtCodeHashWarm(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -249,7 +243,6 @@ func TestDimLogExtCodeHashWarm(t *testing.T) {
 // the state access to be 2000 (for the cold sload cost)
 // all others zero
 func TestDimLogSloadCold(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -283,7 +276,6 @@ func TestDimLogSloadCold(t *testing.T) {
 // the computation to be 100 (for the warm base access cost)
 // all others zero
 func TestDimLogSloadWarm(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

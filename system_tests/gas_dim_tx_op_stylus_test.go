@@ -9,7 +9,6 @@ import (
 // This test runs the tracer on a transaction that includes a call to a
 // stylus contract.
 func TestDimTxOpStylus(t *testing.T) {
-	t.Parallel()
 	builder, auth, cleanup := setupProgramTest(t, true, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -33,7 +32,6 @@ func TestDimTxOpStylus(t *testing.T) {
 // a proxy solidity contract in the EVM, testing the
 // flow from non-stylus to stylus
 func TestDimTxOpStylusKeccakForSloadFromProxy(t *testing.T) {
-	t.Parallel()
 	builder, auth, cleanup := setupProgramTest(t, true, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client

@@ -52,7 +52,6 @@ func TestP256VerifyEnabled(t *testing.T) {
 }
 
 func TestOutboxProofs(t *testing.T) {
-	t.Parallel()
 	gethhook.RequireHookedGeth()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

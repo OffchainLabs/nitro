@@ -16,7 +16,6 @@ import (
 // This test calls the ArbBlockNumber function on the ArbSys precompile
 // which calls SLOAD inside the precompile, for this test
 func TestDimLogArbSysBlockNumberForSload(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cleanup()
 	defer cancel()
