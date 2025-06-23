@@ -8,7 +8,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth/filters"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -85,6 +84,8 @@ func getSequencerBatchData(
 	case arbnode.BatchDataSeparateEvent:
 		sequencerBatchDataABI := seqInboxABI.Events["SequencerBatchData"].ID
 		var numberAsHash common.Hash
+		// we want to convert a batch sequencer number which is a uint64 into a big-endian byte slice of size 32,
+		// so the last 8 bytes of that slice will contain the serialized batch.SequenceNumber
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
 		if err != nil {
@@ -94,7 +95,7 @@ func getSequencerBatchData(
 			return nil, errors.New("no logs found in transaction receipt")
 		}
 		topics := [][]common.Hash{{sequencerBatchDataABI}, {numberAsHash}}
-		filteredLogs := filters.FilterLogs(receipt.Logs, nil, nil, []common.Address{batch.BridgeAddress}, topics)
+		filteredLogs := types.FilterLogs(receipt.Logs, nil, nil, []common.Address{batch.BridgeAddress}, topics)
 		if len(filteredLogs) == 0 {
 			return nil, errors.New("expected to find sequencer batch data")
 		}
