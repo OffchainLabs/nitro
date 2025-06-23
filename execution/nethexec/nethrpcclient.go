@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -81,6 +82,18 @@ func (c *NethRpcClient) DigestMessage(ctx context.Context, num arbutil.MessageIn
 }
 
 func (c *NethRpcClient) DigestInitMessage(ctx context.Context, initialL1BaseFee *big.Int, serializedChainConfig []byte) *execution.MessageResult {
+	useExternalExecution, err := strconv.ParseBool(os.Getenv("PR_USE_EXTERNAL_EXECUTION"))
+	if err != nil {
+		log.Warn("Wasn't able to read PR_USE_EXTERNAL_EXECUTION, setting to false")
+		useExternalExecution = false
+	}
+
+	var result execution.MessageResult
+
+	if !useExternalExecution {
+		return &result
+	}
+
 	params := InitializeMessageParams{
 		InitialL1BaseFee:      initialL1BaseFee,
 		SerializedChainConfig: serializedChainConfig,
@@ -91,8 +104,7 @@ func (c *NethRpcClient) DigestInitMessage(ctx context.Context, initialL1BaseFee 
 		"initialL1BaseFee", initialL1BaseFee,
 		"len(serializedChainConfig)", len(serializedChainConfig))
 
-	var result execution.MessageResult
-	err := c.client.CallContext(ctx, &result, "DigestInitMessage", params)
+	err = c.client.CallContext(ctx, &result, "DigestInitMessage", params)
 	if err != nil {
 		panic(fmt.Sprintf("failed to call DigestInitMessage: %v", err))
 	}
