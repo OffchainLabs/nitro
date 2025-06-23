@@ -9,12 +9,14 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
+
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/stretchr/testify/require"
 )
 
 func TestFetchReceiptFromBlock_Multiple(t *testing.T) {
@@ -112,7 +114,7 @@ func createTestReceipts(count int) types.Receipts {
 			Logs:              []*types.Log{},
 			BlockHash:         common.BytesToHash([]byte("foobar")),
 			BlockNumber:       big.NewInt(100),
-			TransactionIndex:  uint(i),
+			TransactionIndex:  uint(i), // #nosec G115
 		}
 		receipt.Bloom = types.BytesToBloom(make([]byte, 256))
 		receipts[i] = receipt
