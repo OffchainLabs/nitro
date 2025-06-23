@@ -48,7 +48,7 @@ func TestFetchTransactionsForBlockHeader_DynamicFeeTxs(t *testing.T) {
 	require.True(t, uint64(len(fetched)) == total) // #nosec G115
 	for i, tx := range fetched {
 		require.Equal(t, txes[i].Hash(), tx.Hash())
-		require.Equal(t, uint64(i), tx.Nonce())
+		require.Equal(t, uint64(i), tx.Nonce()) // #nosec G115
 	}
 }
 
@@ -77,7 +77,7 @@ func TestFetchTransactionsForBlockHeader_LegacyTxs(t *testing.T) {
 	require.True(t, uint64(len(fetched)) == total) // #nosec G115
 	for i, tx := range fetched {
 		require.Equal(t, txes[i].Hash(), tx.Hash())
-		require.Equal(t, uint64(i), tx.Nonce())
+		require.Equal(t, uint64(i), tx.Nonce()) // #nosec G115
 	}
 }
 
