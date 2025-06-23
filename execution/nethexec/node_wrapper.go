@@ -23,8 +23,9 @@ var digestedMsgCounter uint64
 type NodeWrapper struct {
 	*gethexec.ExecutionNode
 
-	rpcClient       *NethRpcClient
-	maxMsgsToDigest uint64
+	useExternalExecution bool
+	rpcClient            *NethRpcClient
+	maxMsgsToDigest      uint64
 }
 
 func NewNodeWrapper(node *gethexec.ExecutionNode, rpcClient *NethRpcClient) *NodeWrapper {
@@ -34,10 +35,17 @@ func NewNodeWrapper(node *gethexec.ExecutionNode, rpcClient *NethRpcClient) *Nod
 		maxMsgsToDigest = math.MaxUint64
 	}
 
+	useExternalExecution, err := strconv.ParseBool(os.Getenv("PR_USE_EXTERNAL_EXECUTION"))
+	if err != nil {
+		log.Warn("Wasn't able to read PR_USE_EXTERNAL_EXECUTION, setting to false")
+		useExternalExecution = false
+	}
+
 	return &NodeWrapper{
-		ExecutionNode:   node,
-		rpcClient:       rpcClient,
-		maxMsgsToDigest: maxMsgsToDigest,
+		ExecutionNode:        node,
+		useExternalExecution: useExternalExecution,
+		rpcClient:            rpcClient,
+		maxMsgsToDigest:      maxMsgsToDigest,
 	}
 }
 
@@ -47,16 +55,18 @@ func (w *NodeWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.Me
 	start := time.Now()
 	log.Info("NodeWrapper: DigestMessage", "num", num)
 
-	alreadyDigestedMsgs := atomic.LoadUint64(&digestedMsgCounter)
-	if alreadyDigestedMsgs >= w.maxMsgsToDigest {
-		log.Info("NodeWrapper: Nethermind DigestMessage is skipped. Existing...", "maxMsgsToDigest", w.maxMsgsToDigest, "alreadyDigestedMsgs", alreadyDigestedMsgs)
-		os.Exit(0)
+	if w.useExternalExecution {
+		alreadyDigestedMsgs := atomic.LoadUint64(&digestedMsgCounter)
+		if alreadyDigestedMsgs >= w.maxMsgsToDigest {
+			log.Info("NodeWrapper: Nethermind DigestMessage is skipped. Existing...", "maxMsgsToDigest", w.maxMsgsToDigest, "alreadyDigestedMsgs", alreadyDigestedMsgs)
+			os.Exit(0)
+		}
+
+		atomic.AddUint64(&digestedMsgCounter, 1)
+
+		_ = w.rpcClient.DigestMessage(context.Background(), num, msg, msgForPrefetch)
+		log.Info("NodeWrapper: DigestMessage via JSON-RPC completed", "num", num, "elapsed", time.Since(start))
 	}
-
-	atomic.AddUint64(&digestedMsgCounter, 1)
-
-	_ = w.rpcClient.DigestMessage(context.Background(), num, msg, msgForPrefetch)
-	log.Info("NodeWrapper: DigestMessage via JSON-RPC completed", "num", num, "elapsed", time.Since(start))
 
 	result := w.ExecutionNode.DigestMessage(num, msg, msgForPrefetch)
 	log.Info("NodeWrapper: DigestMessage via direct call completed", "num", num, "elapsed", time.Since(start))
