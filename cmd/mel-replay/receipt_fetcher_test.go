@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"math/big"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/testutil"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/stretchr/testify/require"
 )
@@ -108,7 +108,7 @@ func createTestReceipts(count int) types.Receipts {
 		receipt := &types.Receipt{
 			Status:            1,
 			CumulativeGasUsed: 50_000 + uint64(i), // #nosec G115
-			TxHash:            randomHash(),
+			TxHash:            testutil.RandomHash(),
 			ContractAddress:   common.Address{},
 			Logs:              []*types.Log{},
 			BlockHash:         common.BytesToHash([]byte("foobar")),
@@ -119,10 +119,4 @@ func createTestReceipts(count int) types.Receipts {
 		receipts[i] = receipt
 	}
 	return receipts
-}
-
-func randomHash() common.Hash {
-	var hash common.Hash
-	rand.Read(hash[:])
-	return hash
 }

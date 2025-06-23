@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -57,16 +58,11 @@ func fetchReceiptFromBlock(
 		switch len(node) {
 		case 17:
 			// We hit a branch node, which has 16 children and a value.
-			if len(currentPath) >= len(targetNibbles) {
+			if len(currentPath) == len(targetNibbles) {
 				// A branch node's 17th item could be the value, so we check if it contains the receipt.
 				if valueBytes, ok := node[16].([]byte); ok && len(valueBytes) > 0 {
 					// This branch node has the actual value as the last item, so we decode the receipt
-					receipt := new(types.Receipt)
-					receiptData := bytes.NewBuffer(valueBytes)
-					if err = rlp.Decode(receiptData, &receipt); err != nil {
-						return nil, fmt.Errorf("failed to decode receipt: %w", err)
-					}
-					return receipt, nil
+					return decodeReceipt(valueBytes)
 				}
 				return nil, fmt.Errorf("no receipt found at target key")
 			}
@@ -85,37 +81,30 @@ func fetchReceiptFromBlock(
 				return nil, fmt.Errorf("invalid key path in node")
 			}
 			// Check if it is a leaf or extension node.
-			if isLeaf(keyPath) {
+			leafKey := extractKeyNibbles(keyPath)
+			expectedPath := make([]byte, 0)
+			expectedPath = append(expectedPath, currentPath...)
+			expectedPath = append(expectedPath, leafKey...)
+
+			leaf, err := isLeaf(keyPath)
+			if err != nil {
+				return nil, err
+			}
+			if leaf {
 				// Check that the keyPath matches the target nibbles,
 				// otherwise, the receipt does not exist in the trie.
-				leafKey := extractKeyNibbles(keyPath)
-				expectedPath := make([]byte, 0)
-				expectedPath = append(expectedPath, currentPath...)
-				expectedPath = append(expectedPath, leafKey...)
 				if !bytes.Equal(expectedPath, targetNibbles) {
 					return nil, fmt.Errorf("leaf key does not match target nibbles")
 				}
-
-				receipt := new(types.Receipt)
 				rawData, ok := node[1].([]byte)
 				if !ok {
 					return nil, fmt.Errorf("invalid receipt data in leaf node")
 				}
-				receiptData := bytes.NewBuffer(rawData)
-				if err = rlp.Decode(receiptData, &receipt); err != nil {
-					return nil, fmt.Errorf("failed to decode receipt: %w", err)
-				}
-				return receipt, nil
+				return decodeReceipt(rawData)
 			}
 			// If the node is not a leaf node, it is an extension node.
-			// We extract the extension key path and append it to our current path.
-			extKey := extractKeyNibbles(keyPath)
-			newPath := make([]byte, 0)
-			newPath = append(newPath, currentPath...)
-			newPath = append(newPath, extKey...)
-
 			// Check if our target key matches this extension path.
-			if len(newPath) > len(targetNibbles) || !bytes.Equal(newPath, targetNibbles[:len(newPath)]) {
+			if len(expectedPath) > len(targetNibbles) || !bytes.Equal(expectedPath, targetNibbles[:len(expectedPath)]) {
 				return nil, fmt.Errorf("extension path mismatch")
 			}
 			nextNodeBytes, ok := node[1].([]byte)
@@ -124,7 +113,7 @@ func fetchReceiptFromBlock(
 			}
 			// We navigate to the next node in the trie.
 			currentNodeHash = common.BytesToHash(nextNodeBytes)
-			currentPath = newPath
+			currentPath = expectedPath
 		default:
 			return nil, fmt.Errorf("invalid node structure: unexpected length %d", len(node))
 		}
@@ -132,6 +121,7 @@ func fetchReceiptFromBlock(
 }
 
 // Converts a byte slice key into a slice of nibbles (4-bit values).
+// Keys are encoded in big endian format, which is required by Ethereum MPTs.
 func keyToNibbles(key []byte) []byte {
 	nibbles := make([]byte, len(key)*2)
 	for i, b := range key {
@@ -146,30 +136,30 @@ func extractKeyNibbles(keyPath []byte) []byte {
 	if len(keyPath) == 0 {
 		return nil
 	}
-
-	firstByte := keyPath[0]
-	isOdd := (firstByte & 0x10) != 0
-
-	var nibbles []byte
-	if isOdd {
-		// Odd length: first nibble is in the first byte.
-		nibbles = append(nibbles, firstByte&0x0f)
-		keyPath = keyPath[1:]
-	} else {
-		keyPath = keyPath[1:]
+	nibbles := keyToNibbles(keyPath)
+	if nibbles[0]&1 != 0 {
+		return nibbles[1:]
 	}
-	// Convert remaining bytes to nibbles.
-	for _, b := range keyPath {
-		nibbles = append(nibbles, b>>4)
-		nibbles = append(nibbles, b&0x0f)
-	}
-
-	return nibbles
+	return nibbles[2:]
 }
 
-func isLeaf(keyPath []byte) bool {
+func isLeaf(keyPath []byte) (bool, error) {
 	firstByte := keyPath[0]
 	firstNibble := firstByte >> 4
 	// 2 or 3 indicates leaf, while 0 or 1 indicates extension nodes in the Ethereum MPT specification.
-	return firstNibble >= 2
+	if firstNibble > 3 {
+		return false, errors.New("first nibble cannot be greater than 3")
+	}
+	return firstNibble >= 2, nil
+}
+
+func decodeReceipt(data []byte) (*types.Receipt, error) {
+	if len(data) == 0 {
+		return nil, errors.New("empty data cannot be decoded into receipt")
+	}
+	rpt := new(types.Receipt)
+	if err := rpt.UnmarshalBinary(data); err != nil {
+		return nil, err
+	}
+	return rpt, nil
 }
