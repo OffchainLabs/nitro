@@ -49,6 +49,9 @@ type MultiProtocolStaker struct {
 	boldConfig              *boldstaker.BoldConfig
 	stakeTokenAddress       common.Address
 	stack                   *node.Node
+	inboxTracker            staker.InboxTrackerInterface
+	inboxStreamer           staker.TransactionStreamerInterface
+	inboxReader             staker.InboxReaderInterface
 }
 
 func NewMultiProtocolStaker(
@@ -62,9 +65,13 @@ func NewMultiProtocolStaker(
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
 	stakeTokenAddress common.Address,
+	rollupAddress common.Address,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
 	bridgeAddress common.Address,
+	inboxStreamer staker.TransactionStreamerInterface,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxReader staker.InboxReaderInterface,
 	fatalErr chan<- error,
 ) (*MultiProtocolStaker, error) {
 	if err := legacyConfig().Validate(); err != nil {
@@ -83,6 +90,10 @@ func NewMultiProtocolStaker(
 		stakedNotifiers,
 		confirmedNotifiers,
 		validatorUtilsAddress,
+		rollupAddress,
+		inboxTracker,
+		inboxStreamer,
+		inboxReader,
 		fatalErr,
 	)
 	if err != nil {
@@ -107,6 +118,9 @@ func NewMultiProtocolStaker(
 		boldConfig:              boldConfig,
 		stakeTokenAddress:       stakeTokenAddress,
 		stack:                   stack,
+		inboxTracker:            inboxTracker,
+		inboxStreamer:           inboxStreamer,
+		inboxReader:             inboxReader,
 	}, nil
 }
 
@@ -245,6 +259,9 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		m.wallet,
 		m.stakedNotifiers,
 		m.confirmedNotifiers,
+		m.inboxTracker,
+		m.inboxStreamer,
+		m.inboxReader,
 	)
 	if err != nil {
 		return err

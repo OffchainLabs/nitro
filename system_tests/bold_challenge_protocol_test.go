@@ -222,6 +222,9 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 			CheckBatchFinality:     false,
 		},
 		goodDir,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.InboxReader,
 	)
 	Require(t, err)
 
@@ -235,6 +238,9 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 			CheckBatchFinality:     false,
 		},
 		evilDir,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		l2nodeB.InboxReader,
 	)
 	Require(t, err)
 
