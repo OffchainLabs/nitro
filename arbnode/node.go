@@ -13,7 +13,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -28,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
@@ -714,6 +712,7 @@ func getMessageExtractor(
 	deployInfo *chaininfo.RollupAddresses,
 	arbDb ethdb.Database,
 	txStreamer *TransactionStreamer,
+	dapReaders []daprovider.Reader,
 ) (*mel.MessageExtractor, error) {
 	if !config.MessageExtraction.Enable {
 		return nil, nil
@@ -726,43 +725,30 @@ func getMessageExtractor(
 	if err = melDB.SaveState(ctx, initialState); err != nil {
 		return nil, fmt.Errorf("failed to save initial mel state: %w", err)
 	}
-	return mel.NewMessageExtractor(
+	msgExtractor, err := mel.NewMessageExtractor(
 		l1client,
 		deployInfo,
 		melDB, // MEL db can also act as the initial state fetcher.
 		melDB,
 		txStreamer,
-		nil, // TODO: Pass in da readers.
+		dapReaders,
 		initialState.ParentChainBlockHash,
-		time.Second,
+		config.MessageExtraction.RetryInterval,
 	)
+	if err != nil {
+		return nil, err
+	}
+	txStreamer.SetMsgExtractor(msgExtractor)
+	return msgExtractor, nil
 }
 
 func createInitialMELState(
 	ctx context.Context,
-	addrs *chaininfo.RollupAddresses,
+	deployInfo *chaininfo.RollupAddresses,
 	client *ethclient.Client,
 ) (*meltypes.State, error) {
 	// Create an initial MEL state from the latest confirmed assertion.
-	rollup, err := rollupgen.NewRollupUserLogic(addrs.Rollup, client)
-	if err != nil {
-		return nil, err
-	}
-	confirmedHash, err := rollup.LatestConfirmed(&bind.CallOpts{})
-	if err != nil {
-		return nil, err
-	}
-	latestConfirmedAssertion, err := boldstaker.ReadBoldAssertionCreationInfo(
-		ctx,
-		rollup,
-		client,
-		addrs.Rollup,
-		confirmedHash,
-	)
-	if err != nil {
-		return nil, err
-	}
-	startBlock, err := client.BlockByNumber(ctx, new(big.Int).SetUint64(latestConfirmedAssertion.CreationL1Block))
+	startBlock, err := client.BlockByNumber(ctx, new(big.Int).SetUint64(deployInfo.DeployedAt-1))
 	if err != nil {
 		return nil, err
 	}
@@ -772,17 +758,18 @@ func createInitialMELState(
 	}
 	return &meltypes.State{
 		Version:                            0,
-		BatchPostingTargetAddress:          addrs.SequencerInbox,
-		DelayedMessagePostingTargetAddress: addrs.Bridge,
+		BatchPostingTargetAddress:          deployInfo.SequencerInbox,
+		DelayedMessagePostingTargetAddress: deployInfo.Bridge,
 		ParentChainId:                      chainId.Uint64(),
 		ParentChainBlockNumber:             startBlock.NumberU64(),
 		ParentChainBlockHash:               startBlock.Hash(),
 		ParentChainPreviousBlockHash:       startBlock.ParentHash(),
 		MessageAccumulator:                 common.Hash{},
-		DelayedMessagedSeen:                1,
-		DelayedMessagesRead:                1, // Assumes we have read the init message.
+		DelayedMessagedSeen:                0,
+		DelayedMessagesRead:                0,
 		DelayedMessageMerklePartials:       make([]common.Hash, 0),
-		MsgCount:                           1,
+		MsgCount:                           0,
+		BatchCount:                         0,
 	}, nil
 }
 
@@ -993,6 +980,7 @@ func getBatchPoster(
 	dapWriter daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
 	inboxTracker *InboxTracker,
+	msgExtractor *mel.MessageExtractor,
 	txStreamer *TransactionStreamer,
 	exec execution.ExecutionBatchPoster,
 	arbDb ethdb.Database,
@@ -1019,6 +1007,7 @@ func getBatchPoster(
 			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
 			L1Reader:      l1Reader,
 			Inbox:         inboxTracker,
+			MsgExtractor:  msgExtractor,
 			Streamer:      txStreamer,
 			VersionGetter: exec,
 			SyncMonitor:   syncMonitor,
@@ -1045,11 +1034,13 @@ func getBatchPoster(
 func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
 	inboxReader *InboxReader,
+	msgExtractor *mel.MessageExtractor,
+	delayedBridge *DelayedBridge,
 	exec execution.ExecutionSequencer,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
-	if inboxReader == nil {
+	if inboxReader == nil && msgExtractor == nil {
 		return nil, nil
 	}
 	if exec == nil {
@@ -1057,7 +1048,7 @@ func getDelayedSequencer(
 	}
 
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, msgExtractor, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 	if err != nil {
 		return nil, err
 	}
@@ -1198,7 +1189,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	messageExtractor, err := getMessageExtractor(ctx, config, l1client, deployInfo, arbDb, txStreamer)
+	messageExtractor, err := getMessageExtractor(ctx, config, l1client, deployInfo, arbDb, txStreamer, dapReaders)
 	if err != nil {
 		return nil, err
 	}
@@ -1218,12 +1209,12 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, messageExtractor, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, executionSequencer, configFetcher, coordinator)
+	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
 	if err != nil {
 		return nil, err
 	}
@@ -1231,7 +1222,7 @@ func createNodeImpl(
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
 		return &configFetcher.Get().ConsensusExecutionSyncer
 	}
-	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, executionClient, blockValidator, txStreamer)
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, messageExtractor, executionClient, blockValidator, txStreamer)
 
 	return &Node{
 		ArbDB:                    arbDb,

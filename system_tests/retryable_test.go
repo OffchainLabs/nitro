@@ -40,6 +40,43 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
+func getLookupL2Tx(t *testing.T, ctx context.Context, delayedBridge *arbnode.DelayedBridge) func(*types.Receipt) *types.Transaction {
+	return func(l1Receipt *types.Receipt) *types.Transaction {
+		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
+		Require(t, err)
+		if len(messages) == 0 {
+			Fatal(t, "didn't find message for submission")
+		}
+		var submissionTxs []*types.Transaction
+		msgTypes := map[uint8]bool{
+			arbostypes.L1MessageType_SubmitRetryable: true,
+			arbostypes.L1MessageType_EthDeposit:      true,
+			arbostypes.L1MessageType_L2Message:       true,
+		}
+		txTypes := map[uint8]bool{
+			types.ArbitrumSubmitRetryableTxType: true,
+			types.ArbitrumDepositTxType:         true,
+			types.ArbitrumContractTxType:        true,
+		}
+		for _, message := range messages {
+			if !msgTypes[message.Message.Header.Kind] {
+				continue
+			}
+			txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID)
+			Require(t, err)
+			for _, tx := range txs {
+				if txTypes[tx.Type()] {
+					submissionTxs = append(submissionTxs, tx)
+				}
+			}
+		}
+		if len(submissionTxs) != 1 {
+			Fatal(t, "expected 1 tx from submission, found", len(submissionTxs))
+		}
+		return submissionTxs[0]
+	}
+}
+
 func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 	*NodeBuilder,
 	*bridgegen.Inbox,
@@ -80,41 +117,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
 	Require(t, err)
 
-	lookupL2Tx := func(l1Receipt *types.Receipt) *types.Transaction {
-		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
-		Require(t, err)
-		if len(messages) == 0 {
-			Fatal(t, "didn't find message for submission")
-		}
-		var submissionTxs []*types.Transaction
-		msgTypes := map[uint8]bool{
-			arbostypes.L1MessageType_SubmitRetryable: true,
-			arbostypes.L1MessageType_EthDeposit:      true,
-			arbostypes.L1MessageType_L2Message:       true,
-		}
-		txTypes := map[uint8]bool{
-			types.ArbitrumSubmitRetryableTxType: true,
-			types.ArbitrumDepositTxType:         true,
-			types.ArbitrumContractTxType:        true,
-		}
-		for _, message := range messages {
-			if !msgTypes[message.Message.Header.Kind] {
-				continue
-			}
-			txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID)
-			Require(t, err)
-			for _, tx := range txs {
-				if txTypes[tx.Type()] {
-					submissionTxs = append(submissionTxs, tx)
-				}
-			}
-		}
-		if len(submissionTxs) != 1 {
-			Fatal(t, "expected 1 tx from submission, found", len(submissionTxs))
-		}
-		return submissionTxs[0]
-	}
-
+	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
 	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
 	discard := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 	builder.L2.TransferBalance(t, "Faucet", "Burn", discard, builder.L2Info)
@@ -1142,15 +1145,18 @@ func TestDepositETH(t *testing.T) {
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
-	faucetAddr := builder.L1Info.GetAddress("Faucet")
-
-	oldBalance, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, nil)
-	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", faucetAddr, err)
-	}
-
 	txOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	txOpts.Value = big.NewInt(13)
+
+	testDepositETH(t, ctx, builder, delayedInbox, lookupL2Tx, txOpts)
+	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
+}
+
+func testDepositETH(t *testing.T, ctx context.Context, builder *NodeBuilder, delayedInbox *bridgegen.Inbox, lookupL2Tx func(*types.Receipt) *types.Transaction, txOpts bind.TransactOpts) *types.Receipt {
+	oldBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+	if err != nil {
+		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+	}
 
 	l1tx, err := delayedInbox.DepositEth439370b1(&txOpts)
 	if err != nil {
@@ -1170,14 +1176,14 @@ func TestDepositETH(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded unexpected error: %v", err)
 	}
-	newBalance, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, l2Receipt.BlockNumber)
+	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, l2Receipt.BlockNumber)
 	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", faucetAddr, err)
+		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
 	}
 	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
 		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
 	}
-	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
+	return l2Receipt
 }
 
 func TestArbitrumContractTx(t *testing.T) {

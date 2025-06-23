@@ -70,7 +70,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		)
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
-			nil,
+			&meltypes.State{MsgCount: 1},
 			block.Header(),
 			txsFetcher,
 			nil,
@@ -108,6 +108,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		)
 		melState := &meltypes.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
+			MsgCount:                  1,
 		}
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
