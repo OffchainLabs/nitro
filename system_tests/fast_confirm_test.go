@@ -294,6 +294,9 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		nil,
 		l2node.DeployInfo.ValidatorUtils,
 		l2node.DeployInfo.Rollup,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		l2node.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -486,6 +489,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
 		l2nodeA.DeployInfo.Rollup,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -540,6 +546,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
 		l2nodeB.DeployInfo.Rollup,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		l2nodeB.InboxReader,
 		nil,
 	)
 	Require(t, err)

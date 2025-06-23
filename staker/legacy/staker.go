@@ -310,6 +310,9 @@ func NewStaker(
 	confirmedNotifiers []LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
 	rollupAddress common.Address,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxStreamer staker.TransactionStreamerInterface,
+	inboxReader staker.InboxReaderInterface,
 	fatalErr chan<- error,
 ) (*Staker, error) {
 	if err := config().Validate(); err != nil {
@@ -317,7 +320,7 @@ func NewStaker(
 	}
 	client := l1Reader.Client()
 	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, rollupAddress, config().GasRefunder(), callOpts,
-		statelessBlockValidator.InboxTracker(), statelessBlockValidator.InboxStreamer(), blockValidator)
+		inboxTracker, inboxStreamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +337,7 @@ func NewStaker(
 		config:                  config,
 		highGasBlocksBuffer:     big.NewInt(config().PostingStrategy.HighGasDelayBlocks),
 		lastActCalledBlock:      nil,
-		inboxReader:             statelessBlockValidator.InboxReader(),
+		inboxReader:             inboxReader,
 		statelessBlockValidator: statelessBlockValidator,
 		fatalErr:                fatalErr,
 		inactiveValidatedNodes:  inactiveValidatedNodes,
@@ -991,6 +994,8 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.statelessBlockValidator,
 			latestConfirmedCreated,
 			s.config().ConfirmationBlocks,
+			s.inboxTracker,
+			s.txStreamer,
 		)
 		if err != nil {
 			return fmt.Errorf("error creating challenge manager: %w", err)
