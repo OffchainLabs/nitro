@@ -833,7 +833,19 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	feedErrChan := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
-	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+	var sequencerTxOpts *bind.TransactOpts
+	var validatorTxOpts *bind.TransactOpts
+	var dataSigner signature.DataSignerFunc
+	var l1Client *ethclient.Client
+	if b.withL1 {
+		sequencerTxOptsNP := b.L1Info.GetDefaultTransactOpts("Sequencer", b.ctx)
+		sequencerTxOpts = &sequencerTxOptsNP
+		validatorTxOptsNP := b.L1Info.GetDefaultTransactOpts("Validator", b.ctx)
+		validatorTxOpts = &validatorTxOptsNP
+		dataSigner = signature.DataSignerFromPrivateKey(b.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+		l1Client = b.L1.Client
+	}
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	Require(t, currentNode.Start(b.ctx))
