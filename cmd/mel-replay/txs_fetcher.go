@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 
@@ -82,8 +81,7 @@ func (btr *txsFetcherForBlock) decodeTransactionData(encodedData []hexutil.Bytes
 	transactionList := make(types.Transactions, 0, len(encodedData))
 	for _, encodedTx := range encodedData {
 		decodedTx := new(types.Transaction)
-		dataReader := bytes.NewBuffer(encodedTx)
-		if decodeErr := rlp.Decode(dataReader, &decodedTx); decodeErr != nil {
+		if decodeErr := decodedTx.UnmarshalBinary(encodedTx); decodeErr != nil {
 			return nil, fmt.Errorf("transaction decoding failed: %w", decodeErr)
 		}
 		transactionList = append(transactionList, decodedTx)
