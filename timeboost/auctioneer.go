@@ -105,7 +105,7 @@ var TestAuctioneerServerConfig = AuctioneerServerConfig{
 func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAuctioneerServerConfig.Enable, "enable auctioneer server")
 	f.String(prefix+".redis-url", DefaultAuctioneerServerConfig.RedisURL, "url of redis server to receive bids from bid validators")
-	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
+	pubsub.ConsumerConfigAddOptionsWithDefaults(prefix+".consumer-config", f, DefaultAuctioneerConsumerConfig)
 	f.Duration(prefix+".stream-timeout", DefaultAuctioneerServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet for auctioneer server")
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
@@ -344,9 +344,15 @@ func (a *AuctioneerServer) updateCoordination(ctx context.Context) time.Duration
 			elapsed := time.Now().UnixMilli() - storedTimestamp
 			if elapsed > a.auctioneerLivenessTimeout.Milliseconds() {
 				log.Trace("Lock is stale, deleting and trying to acquire", "id", a.myId, "storedId", storedId, "elapsedMs", elapsed)
-				// Delete the stale lock
-				deleted := a.redisClient.Del(ctx, AUCTIONEER_CHOSEN_KEY).Val()
-				if deleted > 0 {
+				if delErr := a.redisClient.Del(ctx, AUCTIONEER_CHOSEN_KEY).Err(); delErr != nil {
+					log.Error("Error deleting stale lock key",
+						"id", a.myId,
+						"key", AUCTIONEER_CHOSEN_KEY,
+						"error", delErr,
+						"storedId", storedId,
+						"storedTimestamp", storedTimestamp,
+						"elapsedMs", elapsed)
+				} else {
 					// Try to acquire with SetNX
 					success = a.redisClient.SetNX(ctx, AUCTIONEER_CHOSEN_KEY, candidateValue, a.auctioneerLivenessTimeout).Val()
 					if success {
