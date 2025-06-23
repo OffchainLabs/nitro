@@ -212,6 +212,6 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(
 		}
 		return true, nil
 	}
-	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", safeTxHash)
+	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]).Hex())
 	return false, nil
 }
