@@ -1997,9 +1997,6 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
 
-	//wasmDb = nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	//checkWasmStoreContent(t, wasmDb, nodeBExecConfigAfter.StylusTarget.WasmTargets(), numModules)
-
 	// send new tx (requires wasm) and check nodeB sees it as well
 	Require(t, l2client.SendTransaction(ctx, loadTx))
 
