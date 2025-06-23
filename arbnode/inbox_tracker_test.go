@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
+	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -14,14 +15,14 @@ func TestDeleteBatchMetadata(t *testing.T) {
 
 	tracker := &InboxTracker{
 		db:        rawdb.NewMemoryDatabase(),
-		batchMeta: containers.NewLruCache[uint64, BatchMetadata](100),
+		batchMeta: containers.NewLruCache[uint64, meltypes.BatchMetadata](100),
 	}
 
 	for i := uint64(0); i < 30; i += 1 {
 		err := tracker.db.Put(dbKey(dbschema.SequencerBatchMetaPrefix, i), testBytes)
 		Require(t, err)
 		if i%5 != 0 {
-			tracker.batchMeta.Add(i, BatchMetadata{})
+			tracker.batchMeta.Add(i, meltypes.BatchMetadata{})
 		}
 	}
 
