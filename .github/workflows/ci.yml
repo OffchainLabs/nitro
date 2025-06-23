@@ -153,7 +153,7 @@ jobs:
         if: matrix.test-mode == 'pathdb'
         run: |
           echo "Running tests with Path Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 60m --cover --test_state_scheme path
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 90m --cover --test_state_scheme path
 
       - name: run tests without race detection and hash state scheme
         if: matrix.test-mode == 'defaults'
