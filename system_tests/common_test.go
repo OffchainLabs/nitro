@@ -125,42 +125,52 @@ func NewTestClient(ctx context.Context) *TestClient {
 }
 
 func (tc *TestClient) SendSignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction, lInfo info) *types.Receipt {
+	t.Helper()
 	return SendSignedTxViaL1(t, tc.ctx, lInfo, tc.Client, l2Client, transaction)
 }
 
 func (tc *TestClient) SendUnsignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction, lInfo info) *types.Receipt {
+	t.Helper()
 	return SendUnsignedTxViaL1(t, tc.ctx, lInfo, tc.Client, l2Client, transaction)
 }
 
 func (tc *TestClient) TransferBalance(t *testing.T, from string, to string, amount *big.Int, lInfo info) (*types.Transaction, *types.Receipt) {
+	t.Helper()
 	return TransferBalanceTo(t, from, lInfo.GetAddress(to), amount, lInfo, tc.Client, tc.ctx)
 }
 
 func (tc *TestClient) TransferBalanceTo(t *testing.T, from string, to common.Address, amount *big.Int, lInfo info) (*types.Transaction, *types.Receipt) {
+	t.Helper()
 	return TransferBalanceTo(t, from, to, amount, lInfo, tc.Client, tc.ctx)
 }
 
 func (tc *TestClient) GetBalance(t *testing.T, account common.Address) *big.Int {
+	t.Helper()
 	return GetBalance(t, tc.ctx, tc.Client, account)
 }
 
 func (tc *TestClient) GetBaseFee(t *testing.T) *big.Int {
+	t.Helper()
 	return GetBaseFee(t, tc.Client, tc.ctx)
 }
 
 func (tc *TestClient) GetBaseFeeAt(t *testing.T, blockNum *big.Int) *big.Int {
+	t.Helper()
 	return GetBaseFeeAt(t, tc.Client, tc.ctx, blockNum)
 }
 
 func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transaction) []*types.Receipt {
+	t.Helper()
 	return SendWaitTestTransactions(t, tc.ctx, tc.Client, txs)
 }
 
 func (tc *TestClient) DeployBigMap(t *testing.T, auth bind.TransactOpts) (common.Address, *localgen.BigMap) {
+	t.Helper()
 	return deployBigMap(t, tc.ctx, auth, tc.Client)
 }
 
 func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *localgen.Simple) {
+	t.Helper()
 	return deploySimple(t, tc.ctx, auth, tc.Client)
 }
 
