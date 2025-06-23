@@ -39,8 +39,12 @@ var TestConsumerConfig = ConsumerConfig{
 var ErrAlreadySet = errors.New("redis key already set")
 
 func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Duration(prefix+".response-entry-timeout", DefaultConsumerConfig.ResponseEntryTimeout, "timeout for response entry")
-	f.Duration(prefix+".idletime-to-autoclaim", DefaultConsumerConfig.IdletimeToAutoclaim, "After a message spends this amount of time in PEL (Pending Entries List i.e claimed by another consumer but not Acknowledged) it will be allowed to be autoclaimed by other consumers")
+	ConsumerConfigAddOptionsWithDefaults(prefix, f, DefaultConsumerConfig)
+}
+
+func ConsumerConfigAddOptionsWithDefaults(prefix string, f *pflag.FlagSet, defaultConfig ConsumerConfig) {
+	f.Duration(prefix+".response-entry-timeout", defaultConfig.ResponseEntryTimeout, "timeout for response entry")
+	f.Duration(prefix+".idletime-to-autoclaim", defaultConfig.IdletimeToAutoclaim, "After a message spends this amount of time in PEL (Pending Entries List i.e claimed by another consumer but not Acknowledged) it will be allowed to be autoclaimed by other consumers")
 }
 
 // Consumer implements a consumer for redis stream provides heartbeat to
