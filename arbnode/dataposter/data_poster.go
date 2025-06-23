@@ -327,6 +327,14 @@ func (p *DataPoster) Sender() common.Address {
 	return p.auth.From
 }
 
+func (p *DataPoster) BaseFee() (*big.Int, error) {
+	header, err := p.headerReader.LastHeader(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return header.BaseFee, nil
+}
+
 func (p *DataPoster) MaxMempoolTransactions() uint64 {
 	if p.usingNoOpStorage {
 		return 1

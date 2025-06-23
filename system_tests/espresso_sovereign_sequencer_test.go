@@ -42,6 +42,7 @@ func createL1AndL2Node(
 	builder.nodeConfig.BatchPoster.HotShotUrls = []string{hotShotUrl, hotShotUrl}
 	builder.nodeConfig.BatchPoster.UseEscapeHatch = false
 	builder.nodeConfig.BatchPoster.EspressoTeeVerifierAddress = "0xA46C59ce2FCaF445F96f66F0411e06A94D34BF45"
+	builder.nodeConfig.BatchPoster.EspressoRegisterSignerConfig.MaxBaseFee = 10000000000 // 100 GWEI for tests
 
 	// validator config
 	builder.nodeConfig.BlockValidator.Enable = true
