@@ -10,8 +10,8 @@ import (
 func CreateStackConfigForTest(dataDir string) *node.Config {
 	stackConf := node.DefaultConfig
 	// stackConf.Name is used when creating data path used by the node
-	// if stackConf not set, program binary name is used instead,
-	// hardcode it so as it's possible to run the tests that need to know the path also from different test binary name,
+	// if stackConf is not set, program binary name is used instead
+	// We hardcode it to enable running the tests that need to know the path also when test binary name is different then default,
 	// eg. when debugging with dlv test the debug binary name differs from normal test build
 	stackConf.Name = "test-stack-name"
 	stackConf.DataDir = dataDir
