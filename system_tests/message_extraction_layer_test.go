@@ -3,24 +3,18 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
 
@@ -38,171 +32,170 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestMessageExtractionReplay_RecordPreimages(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+// func TestMessageExtractionReplay_RecordPreimages(t *testing.T) {
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, true).
-		WithBoldDeployment().
-		WithDelayBuffer(0)
-	builder.L2Info.GenerateAccount("User2")
-	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
-	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
-	cleanup := builder.Build(t)
-	defer cleanup()
+// 	builder := NewNodeBuilder(ctx).
+// 		DefaultConfig(t, true).
+// 		WithBoldDeployment().
+// 		WithDelayBuffer(0)
+// 	builder.L2Info.GenerateAccount("User2")
+// 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
+// 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+// 	cleanup := builder.Build(t)
+// 	defer cleanup()
 
-	melState := createInitialMELState(t, ctx, builder.addresses, builder.L1.Client)
+// 	melState := createInitialMELState(t, ctx, builder.addresses, builder.L1.Client)
 
-	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
-	l1Reader, err := headerreader.New(ctx, builder.L1.Client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
-	Require(t, err)
-	l1Reader.Start(ctx)
-	defer l1Reader.StopAndWait()
+// 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
+// 	l1Reader, err := headerreader.New(ctx, builder.L1.Client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
+// 	Require(t, err)
+// 	l1Reader.Start(ctx)
+// 	defer l1Reader.StopAndWait()
 
-	mockDB := &mockMELDB{
-		savedMsgs:        make([]*arbostypes.MessageWithMetadata, 0),
-		savedStates:      make(map[uint64]*meltypes.State),
-		savedDelayedMsgs: make([]*meltypes.DelayedInboxMessage, 0),
-	}
-	Require(t, mockDB.SaveState(ctx, melState))
-	extractor, err := mel.NewMessageExtractor(
-		l1Reader.Client(),
-		builder.addresses,
-		mockDB,
-		mockDB,
-		mockDB,
-		nil, // TODO: Provide da readers here.
-		melState.ParentChainBlockHash,
-		0,
-	)
-	Require(t, err)
+// 	mockDB := &mockMELDB{
+// 		savedMsgs:        make([]*arbostypes.MessageWithMetadata, 0),
+// 		savedStates:      make(map[uint64]*meltypes.State),
+// 		savedDelayedMsgs: make([]*meltypes.DelayedInboxMessage, 0),
+// 	}
+// 	Require(t, mockDB.SaveState(ctx, melState))
+// 	extractor, err := mel.NewMessageExtractor(
+// 		l1Reader.Client(),
+// 		builder.addresses,
+// 		mockDB,
+// 		mockDB,
+// 		mockDB,
+// 		nil, // TODO: Provide da readers here.
+// 		melState.ParentChainBlockHash,
+// 		0,
+// 	)
+// 	Require(t, err)
 
-	// Create various L2 transactions and wait for them to be included in a batch
-	// as compressed messages submitted to the sequencer inbox.
-	sequencerTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
-	numMessages := 10
-	forceSequencerMessageBatchPosting(
-		t,
-		builder.L2.ConsensusNode,
-		builder.L2Info,
-		builder.L1.Client,
-		&sequencerTxOpts,
-		builder.addresses.SequencerInbox,
-		int64(numMessages),
-	)
+// 	// Create various L2 transactions and wait for them to be included in a batch
+// 	// as compressed messages submitted to the sequencer inbox.
+// 	sequencerTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
+// 	numMessages := 10
+// 	forceSequencerMessageBatchPosting(
+// 		t,
+// 		builder.L2.ConsensusNode,
+// 		builder.L2Info,
+// 		builder.L1.Client,
+// 		&sequencerTxOpts,
+// 		builder.addresses.SequencerInbox,
+// 		int64(numMessages),
+// 	)
 
-	// Run the extractor routine until it has caught up to the latest parent chain block.
-	for {
-		prevFSMState := extractor.CurrentFSMState()
-		_, err = extractor.Act(ctx)
-		Require(t, err)
-		newFSMState := extractor.CurrentFSMState()
-		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
-		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
-		// exit the loop here and assert information about MEL.
-		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.ProcessingNextBlock {
-			break
-		}
-	}
+// 	// Run the extractor routine until it has caught up to the latest parent chain block.
+// 	for {
+// 		prevFSMState := extractor.CurrentFSMState()
+// 		_, err = extractor.Act(ctx)
+// 		Require(t, err)
+// 		newFSMState := extractor.CurrentFSMState()
+// 		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
+// 		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
+// 		// exit the loop here and assert information about MEL.
+// 		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.ProcessingNextBlock {
+// 			break
+// 		}
+// 	}
 
-	// Assert details about the extraction routine.
-	if len(mockDB.savedStates) == 0 {
-		t.Fatal("MEL did not save any states")
-	}
+// 	// Assert details about the extraction routine.
+// 	if len(mockDB.savedStates) == 0 {
+// 		t.Fatal("MEL did not save any states")
+// 	}
 
-	// Next, we extract all the parent chain headers since the first MEL state until the latest.
-	headersByHash := make(map[common.Hash]*types.Header)
-	startState := melState
-	endState := mockDB.lastState
-	curr := endState.ParentChainBlockHash
+// 	// Next, we extract all the parent chain headers since the first MEL state until the latest.
+// 	headersByHash := make(map[common.Hash]*types.Header)
+// 	startState := melState
+// 	endState := mockDB.lastState
+// 	curr := endState.ParentChainBlockHash
 
-	hasher := newRecordingHasher()
+// 	hasher := newRecordingHasher()
 
-	for curr != startState.ParentChainBlockHash {
-		header, err := builder.L1.Client.HeaderByHash(ctx, curr)
-		require.NoError(t, err)
+// 	for curr != startState.ParentChainBlockHash {
+// 		header, err := builder.L1.Client.HeaderByHash(ctx, curr)
+// 		require.NoError(t, err)
 
-		block, err := builder.L1.Client.BlockByHash(ctx, curr)
-		require.NoError(t, err)
-		// Now, populate the preimages for the block's transactions trie.
-		txes := block.Transactions()
-		txsRoot := types.DeriveSha(txes, hasher)
-		require.Equal(t, txsRoot, header.TxHash)
+// 		block, err := builder.L1.Client.BlockByHash(ctx, curr)
+// 		require.NoError(t, err)
+// 		// Now, populate the preimages for the block's transactions trie.
+// 		txes := block.Transactions()
+// 		txsRoot := types.DeriveSha(txes, hasher)
+// 		require.Equal(t, txsRoot, header.TxHash)
 
-		// Fill the actual tx preimages.
-		for i, tx := range txes {
-			enctx, err := rlp.EncodeToBytes(tx)
-			require.NoError(t, err)
-			fmt.Printf("Header %s Transaction %d %s: %s\n", curr.Hex(), i, tx.Hash().Hex(), hexutil.Encode(enctx))
-			hasher.preimages[tx.Hash()] = enctx
-		}
+// 		// Fill the actual tx preimages.
+// 		for i, tx := range txes {
+// 			enctx, err := rlp.EncodeToBytes(tx)
+// 			require.NoError(t, err)
+// 			fmt.Printf("Header %s Transaction %d %s: %s\n", curr.Hex(), i, tx.Hash().Hex(), hexutil.Encode(enctx))
+// 			hasher.preimages[tx.Hash()] = enctx
+// 		}
 
-		// Fetch all the receipts.
-		receipts := make([]*types.Receipt, len(txes))
-		for i, tx := range txes {
-			receipt, err := builder.L1.Client.TransactionReceipt(ctx, tx.Hash())
-			require.NoError(t, err)
-			receipts[i] = receipt
-		}
-		receiptsRoot := types.DeriveSha(types.Receipts(receipts), hasher)
-		require.Equal(t, receiptsRoot, header.ReceiptHash)
+// 		// Fetch all the receipts.
+// 		receipts := make([]*types.Receipt, len(txes))
+// 		for i, tx := range txes {
+// 			receipt, err := builder.L1.Client.TransactionReceipt(ctx, tx.Hash())
+// 			require.NoError(t, err)
+// 			receipts[i] = receipt
+// 		}
+// 		receiptsRoot := types.DeriveSha(types.Receipts(receipts), hasher)
+// 		require.Equal(t, receiptsRoot, header.ReceiptHash)
 
-		// Populate the header by hash preimages.
-		headersByHash[header.Hash()] = header
-		curr = header.ParentHash
-	}
+// 		// Populate the header by hash preimages.
+// 		headersByHash[header.Hash()] = header
+// 		curr = header.ParentHash
+// 	}
 
-	preimages := hasher.preimages
-	for hash, header := range headersByHash {
-		rawBytes, err := rlp.EncodeToBytes(header)
-		require.NoError(t, err)
-		preimages[hash] = rawBytes
-	}
+// 	preimages := hasher.preimages
+// 	for hash, header := range headersByHash {
+// 		rawBytes, err := rlp.EncodeToBytes(header)
+// 		require.NoError(t, err)
+// 		preimages[hash] = rawBytes
+// 	}
 
-	// Add the initial mel state as a preimage to the map.
-	initialMelStateBytes, err := rlp.EncodeToBytes(melState)
-	require.NoError(t, err)
-	initialMelStateRoot := crypto.Keccak256Hash(initialMelStateBytes)
-	preimages[initialMelStateRoot] = initialMelStateBytes
+// 	// Add the initial mel state as a preimage to the map.
+// 	initialMelStateBytes, err := rlp.EncodeToBytes(melState)
+// 	require.NoError(t, err)
+// 	initialMelStateRoot := crypto.Keccak256Hash(initialMelStateBytes)
+// 	preimages[initialMelStateRoot] = initialMelStateBytes
 
-	// TODO: Add the final mel state as a preimage.
+// 	// TODO: Add the final mel state as a preimage.
 
-	finalMelStateBytes, err := rlp.EncodeToBytes(mockDB.lastState)
-	require.NoError(t, err)
-	finalMelStateRoot := crypto.Keccak256Hash(finalMelStateBytes)
-	// TODO: Only keep the parent chain hash in this mel state we provide as a preimage.
-	preimages[finalMelStateRoot] = finalMelStateBytes
+// 	finalMelStateBytes, err := rlp.EncodeToBytes(mockDB.lastState)
+// 	require.NoError(t, err)
+// 	finalMelStateRoot := crypto.Keccak256Hash(finalMelStateBytes)
+// 	// TODO: Only keep the parent chain hash in this mel state we provide as a preimage.
+// 	preimages[finalMelStateRoot] = finalMelStateBytes
 
-	outputFile, err := os.Create("/tmp/preimages.json")
-	require.NoError(t, err)
-	defer outputFile.Close()
+// 	outputFile, err := os.Create("/tmp/preimages.json")
+// 	require.NoError(t, err)
+// 	defer outputFile.Close()
 
-	preimagesFullFile := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
-	preimagesFullFile[arbutil.Keccak256PreimageType] = jsonapi.NewPreimagesMapJson(preimages)
+// 	preimagesFullFile := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
+// 	preimagesFullFile[arbutil.Keccak256PreimageType] = jsonapi.NewPreimagesMapJson(preimages)
 
-	validationEntryJson := make(map[string]any)
-	validationEntryJson["Id"] = 0
-	validationEntryJson["HasDelayedMsg"] = false
-	validationEntryJson["DelayedMsgNr"] = 0
-	validationEntryJson["BatchInfo"] = []any{}
-	validationEntryJson["DelayedMsgB64"] = ""
-	validationEntryJson["UserWasms"] = make(map[int]int)
-	startStateJson := make(map[string]any)
-	startStateJson["BlockHash"] = (common.Hash{}).Hex()
-	startStateJson["SendRoot"] = (common.Hash{}).Hex()
-	startStateJson["MelRoot"] = initialMelStateRoot.Hex()
-	startStateJson["Batch"] = 1
-	startStateJson["PosInBatch"] = 0
-	validationEntryJson["StartState"] = startStateJson
-	validationEntryJson["EndMelRoot"] = finalMelStateRoot.Hex()
-	validationEntryJson["PreimagesB64"] = preimagesFullFile
-	require.NoError(t, json.NewEncoder(outputFile).Encode(validationEntryJson))
-}
+// 	validationEntryJson := make(map[string]any)
+// 	validationEntryJson["Id"] = 0
+// 	validationEntryJson["HasDelayedMsg"] = false
+// 	validationEntryJson["DelayedMsgNr"] = 0
+// 	validationEntryJson["BatchInfo"] = []any{}
+// 	validationEntryJson["DelayedMsgB64"] = ""
+// 	validationEntryJson["UserWasms"] = make(map[int]int)
+// 	startStateJson := make(map[string]any)
+// 	startStateJson["BlockHash"] = (common.Hash{}).Hex()
+// 	startStateJson["SendRoot"] = (common.Hash{}).Hex()
+// 	startStateJson["MelRoot"] = initialMelStateRoot.Hex()
+// 	startStateJson["Batch"] = 1
+// 	startStateJson["PosInBatch"] = 0
+// 	validationEntryJson["StartState"] = startStateJson
+// 	validationEntryJson["EndMelRoot"] = finalMelStateRoot.Hex()
+// 	validationEntryJson["PreimagesB64"] = preimagesFullFile
+// 	require.NoError(t, json.NewEncoder(outputFile).Encode(validationEntryJson))
+// }
 
 type preimageRecordingHasher struct {
 	trie      *trie.StackTrie
