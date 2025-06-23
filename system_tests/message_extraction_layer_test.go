@@ -3,20 +3,15 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
-	"github.com/holiman/uint256"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -30,11 +25,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -170,21 +164,36 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 }
 
 func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testing.T) {
-	t.Skip("Failing due to blob txs not being mined")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	threshold := uint64(0)
+	messagesPerBatch := uint64(3)
+
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithBoldDeployment()
+		WithBoldDeployment().
+		WithDelayBuffer(threshold)
 	builder.L2Info.GenerateAccount("User2")
+	builder.nodeConfig.BatchPoster.Post4844Blobs = true
+	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
+	builder.withBlobReader = true
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
+
+	// Force a batch to be posted as a delayed message and ensure it is reflected in the onchain contracts.
+	forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
+
+	// Create an initial MEL state from the latest confirmed assertion.
 	melState := createInitialMELState(t, ctx, builder.addresses, builder.L1.Client)
 
+	// Construct a new MEL service and provide with an initial MEL state
+	// to begin extracting messages from the parent chain.
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)
 	l1Reader, err := headerreader.New(ctx, builder.L1.Client, func() *headerreader.Config { return &headerreader.TestConfig }, arbSys)
 	Require(t, err)
@@ -200,30 +209,28 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		melDB,
 		melDB,
 		mockMsgConsumer,
-		nil, // TODO: Provide da readers here.
+		[]daprovider.Reader{daprovider.NewReaderForBlobReader(builder.L1.blobReader)},
 		melState.ParentChainBlockHash,
 		0,
 	)
 	Require(t, err)
 
-	// Create various L2 transactions and wait for them to be included in a batch
-	// as compressed messages submitted to the sequencer inbox.
-	sequencerTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
-	seqPrivKey := builder.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey
-	numMessages := 10
-	forceBlobSequencerMessageBatchPosting(
-		t,
-		builder.L1Info,
-		builder.L2.ConsensusNode,
-		builder.L2Info,
-		builder.L1.Client,
-		&sequencerTxOpts,
-		seqPrivKey,
-		builder.addresses.SequencerInbox,
-		int64(numMessages),
-	)
+	// Post a blob batch with a bunch of txs
+	initialBatchCount := GetBatchCount(t, builder)
+	var txs types.Transactions
+	for i := 0; i < 20; i++ {
+		tx, _ := builder.L2.TransferBalance(t, "Faucet", "User2", big.NewInt(1e12), builder.L2Info)
+		txs = append(txs, tx)
+	}
+	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	Require(t, err)
+	for _, tx := range txs {
+		_, err := testClientB.EnsureTxSucceeded(tx)
+		Require(t, err, "tx not found on second node")
+	}
+	CheckBatchCount(t, builder, initialBatchCount+1)
 
-	// Run the extractor routine until it has caught up to the latest parent chain block.
 	for {
 		prevFSMState := extractor.CurrentFSMState()
 		_, err = extractor.Act(ctx)
@@ -237,10 +244,67 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		}
 	}
 
-	// // Assert details about the extraction routine.
-	// if len(mockDB.savedStates) == 0 {
-	// 	t.Fatal("MEL did not save any states")
-	// }
+	numDelayedMessages, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
+	Require(t, err)
+	lastState, err := melDB.GetHeadMelState(ctx)
+	Require(t, err)
+	inboxStreamer := builder.L2.ConsensusNode.TxStreamer
+	trackerMsgCount, err := inboxStreamer.GetMessageCount()
+	Require(t, err)
+	if lastState.MsgCount != uint64(trackerMsgCount) {
+		t.Fatalf(
+			"MEL batch message count %d does not match inbox tracker %d",
+			lastState.MsgCount,
+			trackerMsgCount,
+		)
+	}
+
+	// Check that MEL extracted the same number of sequencer batch messages the inbox tracker has seen.
+	// Start from 1 to skip the init message.
+	inboxTrackerMessages := make([]*arbostypes.MessageWithMetadata, 0)
+	for i := uint64(1); i < uint64(trackerMsgCount); i++ {
+		msg, err := inboxStreamer.GetMessage(arbutil.MessageIndex(i))
+		Require(t, err)
+		inboxTrackerMessages = append(inboxTrackerMessages, msg)
+	}
+	melMessages := mockMsgConsumer.savedMsgs
+	if len(melMessages) != len(inboxTrackerMessages) {
+		t.Fatalf("MEL and inbox tracker message count do not match %d != %d", len(melMessages), len(inboxTrackerMessages))
+	}
+	for i, msg := range melMessages {
+		fromInboxTracker := inboxTrackerMessages[i]
+		if !fromInboxTracker.Message.Equals(msg.Message) {
+			t.Fatal("Messages from MEL and inbox tracker do not match")
+		}
+	}
+
+	// Check that MEL extracted the same number of delayed messages the inbox tracker has seen.
+	if lastState.DelayedMessagedSeen != numDelayedMessages {
+		t.Fatalf(
+			"MEL delayed message count %d does not match inbox tracker %d",
+			lastState.DelayedMessagedSeen,
+			numDelayedMessages,
+		)
+	}
+	// Start from 1 to ignore the init message.
+	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
+	Require(t, err)
+	readHelperState := &meltypes.State{DelayedMessagedSeen: 1}
+	readHelperState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+	readHelperState.SetReadDelayedMsgsAcc(readAcc)
+	for i := uint64(1); i < numDelayedMessages; i++ {
+		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
+		Require(t, err)
+		Require(t, readHelperState.AccumulateDelayedMessage(&meltypes.DelayedInboxMessage{Message: fromInboxTracker}))
+		readHelperState.DelayedMessagedSeen++
+		fromMelDB, err := melDB.ReadDelayedMessage(ctx, readHelperState, i)
+		Require(t, err)
+		// Check the messages we extracted from MEL and the inbox tracker are the same.
+		if !fromInboxTracker.Equals(fromMelDB.Message) {
+			t.Fatal("Messages from MEL and inbox tracker do not match")
+		}
+	}
+
 }
 
 func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
@@ -833,136 +897,4 @@ func forceSequencerMessageBatchPosting(
 	}
 	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
 	Require(t, err)
-}
-
-func forceBlobSequencerMessageBatchPosting(
-	t *testing.T,
-	l1Info *BlockchainTestInfo,
-	l2Node *arbnode.Node,
-	l2Info *BlockchainTestInfo,
-	backend *ethclient.Client,
-	sequencer *bind.TransactOpts,
-	seqPrivKey *ecdsa.PrivateKey,
-	seqInboxAddr common.Address,
-	numMessages int64,
-) {
-	ctx := context.Background()
-	batchBuffer := bytes.NewBuffer([]byte{})
-	for i := int64(0); i < numMessages; i++ {
-		value := i
-		err := writeTxToBatch(batchBuffer, l2Info.PrepareTx("Owner", "User2", l2Info.TransferGas, big.NewInt(value), []byte{}))
-		Require(t, err)
-	}
-	compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
-	Require(t, err)
-	batchMessageData := append([]byte{0}, compressed...)
-	kzgBlobs, err := blobs.EncodeBlobs(batchMessageData)
-	Require(t, err)
-
-	seqNum := new(big.Int).Lsh(common.Big1, 256)
-	seqNum.Sub(seqNum, common.Big1)
-
-	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
-	Require(t, err)
-	method, ok := seqInboxABI.Methods["addSequencerL2BatchFromBlobs"]
-	if !ok {
-		t.Fatal("Method not found in ABI")
-	}
-	var args []any
-	args = append(args, seqNum)
-	args = append(args, new(big.Int).SetUint64(1)) // num delayed messages.
-	args = append(args, common.Address{})
-	args = append(args, new(big.Int).SetUint64(uint64(0))) // prev msg num.
-	args = append(args, new(big.Int).SetUint64(uint64(0))) // new msg num.
-	calldata, err := method.Inputs.Pack(args...)
-	Require(t, err)
-	fullCalldata := append([]byte{}, method.ID...)
-	fullCalldata = append(fullCalldata, calldata...)
-
-	// Prepare a blob transaction to submit to the sequencer inbox.
-	commitments, blobHashes, err := blobs.ComputeCommitmentsAndHashes(kzgBlobs)
-	Require(t, err)
-	proofs, err := blobs.ComputeBlobProofs(kzgBlobs, commitments)
-	Require(t, err)
-	nonce, err := backend.NonceAt(ctx, sequencer.From, nil)
-	Require(t, err)
-	chainId, err := backend.ChainID(ctx)
-	Require(t, err)
-	inner := &types.BlobTx{
-		Nonce: nonce,
-		Gas:   1_000_000,
-		To:    seqInboxAddr,
-		Value: uint256.MustFromBig(big.NewInt(0)),
-		Data:  fullCalldata,
-		Sidecar: &types.BlobTxSidecar{
-			Blobs:       kzgBlobs,
-			Commitments: commitments,
-			Proofs:      proofs,
-		},
-		BlobHashes: blobHashes,
-		ChainID:    uint256.MustFromBig(chainId),
-	}
-
-	gas := estimateGasSimple(
-		t,
-		ctx,
-		sequencer.From,
-		seqInboxAddr,
-		backend,
-		fullCalldata,
-		kzgBlobs,
-		types.AccessList{},
-	)
-	inner.Gas = gas
-
-	fullTx := l1Info.SignTxAs("Sequencer", inner)
-	Require(t, backend.SendTransaction(ctx, fullTx))
-
-	receipt, err := bind.WaitMined(ctx, backend, fullTx)
-	Require(t, err)
-	_ = receipt
-}
-
-type estimateGasParams struct {
-	From         common.Address   `json:"from"`
-	To           *common.Address  `json:"to"`
-	Data         hexutil.Bytes    `json:"data"`
-	MaxFeePerGas *hexutil.Big     `json:"maxFeePerGas"`
-	AccessList   types.AccessList `json:"accessList"`
-	BlobHashes   []common.Hash    `json:"blobVersionedHashes,omitempty"`
-}
-
-func estimateGasSimple(
-	t *testing.T,
-	ctx context.Context,
-	from common.Address,
-	to common.Address,
-	rpcClient *ethclient.Client,
-	realData []byte,
-	realBlobs []kzg4844.Blob,
-	realAccessList types.AccessList,
-) uint64 {
-	rawRpcClient := rpcClient.Client()
-	latestHeader, err := rpcClient.HeaderByNumber(ctx, nil)
-	Require(t, err)
-	maxFeePerGas := arbmath.BigMulByUBips(latestHeader.BaseFee, arbmath.OneInUBips*3/2)
-	_, realBlobHashes, err := blobs.ComputeCommitmentsAndHashes(realBlobs)
-	Require(t, err)
-	// If we're at the latest nonce, we can skip the special future tx estimate stuff
-	gas, err := estimateGas(rawRpcClient, ctx, estimateGasParams{
-		From:         from,
-		To:           &to,
-		Data:         realData,
-		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
-		BlobHashes:   realBlobHashes,
-		AccessList:   realAccessList,
-	})
-	Require(t, err)
-	return gas
-}
-
-func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams) (uint64, error) {
-	var gas hexutil.Uint64
-	err := client.CallContext(ctx, &gas, "eth_estimateGas", params)
-	return uint64(gas), err
 }
