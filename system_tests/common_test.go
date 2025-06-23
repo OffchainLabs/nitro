@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,7 +61,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/util"
+	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -78,6 +77,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -444,7 +444,7 @@ func initTestCollection() {
 	}
 	globalCollection = &testCollection{}
 	globalCollection.cond = sync.NewCond(&sync.Mutex{})
-	room := int64(runtime.NumCPU())
+	room := int64(util.GoMaxProcs())
 	if room < 2 {
 		room = 2
 	}
@@ -1159,7 +1159,7 @@ func SendUnsignedTxViaL1(
 	Require(t, err)
 
 	usertxopts := l1info.GetDefaultTransactOpts("User", ctx)
-	remapped := util.RemapL1Address(usertxopts.From)
+	remapped := arbosutil.RemapL1Address(usertxopts.From)
 	nonce, err := l2client.NonceAt(ctx, remapped, nil)
 	Require(t, err)
 
@@ -1342,6 +1342,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
+	DontWaitAndRun(ctx, 2, t.Name())
 	// Enable redis streams when URL is specified
 	if redisURL != "" {
 		conf.Arbitrator.RedisValidationServerConfig = rediscons.TestValidationServerConfig
@@ -2016,7 +2017,7 @@ func getExecNode(t *testing.T, node *arbnode.Node) *gethexec.ExecutionNode {
 }
 
 func logParser[T any](t *testing.T, source string, name string) func(*types.Log) *T {
-	parser := util.NewLogParser[T](source, name)
+	parser := arbosutil.NewLogParser[T](source, name)
 	return func(log *types.Log) *T {
 		t.Helper()
 		event, err := parser(log)
