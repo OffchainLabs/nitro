@@ -606,9 +606,8 @@ func createTestNodeOnL1ForBoldProtocol(
 	execConfig := ExecConfigDefaultNonSequencerTest(t)
 	Require(t, execConfig.Validate())
 	execConfig.Caching.StateScheme = rawdb.HashScheme
-	useWasmCache := uint32(1)
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, nil, initMessage, nil, execConfig, useWasmCache, true)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, nil, initMessage, nil, execConfig, true)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
