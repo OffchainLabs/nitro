@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/ethereum/go-ethereum/trie/testutil"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/stretchr/testify/require"
 )
@@ -108,7 +107,7 @@ func createTestReceipts(count int) types.Receipts {
 		receipt := &types.Receipt{
 			Status:            1,
 			CumulativeGasUsed: 50_000 + uint64(i), // #nosec G115
-			TxHash:            testutil.RandomHash(),
+			TxHash:            common.Hash{},
 			ContractAddress:   common.Address{},
 			Logs:              []*types.Log{},
 			BlockHash:         common.BytesToHash([]byte("foobar")),
