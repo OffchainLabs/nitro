@@ -52,7 +52,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	boldMocksgen "github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/testing/setup"
 	butil "github.com/offchainlabs/bold/util"
@@ -71,7 +70,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -153,11 +152,11 @@ func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transa
 	return SendWaitTestTransactions(t, tc.ctx, tc.Client, txs)
 }
 
-func (tc *TestClient) DeployBigMap(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.BigMap) {
+func (tc *TestClient) DeployBigMap(t *testing.T, auth bind.TransactOpts) (common.Address, *localgen.BigMap) {
 	return deployBigMap(t, tc.ctx, auth, tc.Client)
 }
 
-func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *mocksgen.Simple) {
+func (tc *TestClient) DeploySimple(t *testing.T, auth bind.TransactOpts) (common.Address, *localgen.Simple) {
 	return deploySimple(t, tc.ctx, auth, tc.Client)
 }
 
@@ -1249,7 +1248,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 	l1backend, err := eth.New(stack, &nodeConf)
 	Require(t, err)
 
-	simBeacon, err := catalyst.NewSimulatedBeacon(0, l1backend)
+	simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
 	Require(t, err)
 	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
 	stack.RegisterLifecycle(simBeacon)
@@ -1343,7 +1342,7 @@ func deployOnParentChain(
 	maxDataSize := big.NewInt(117964)
 	var addresses *chaininfo.RollupAddresses
 	if deployBold {
-		stakeToken, tx, _, err := boldMocksgen.DeployTestWETH9(
+		stakeToken, tx, _, err := localgen.DeployTestWETH9(
 			&parentChainTransactionOpts,
 			parentChainReader.Client(),
 			"Weth",
@@ -1757,8 +1756,8 @@ func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duratio
 }
 
 func deployBigMap(t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client,
-) (common.Address, *mocksgen.BigMap) {
-	addr, tx, bigMap, err := mocksgen.DeployBigMap(&auth, client)
+) (common.Address, *localgen.BigMap) {
+	addr, tx, bigMap, err := localgen.DeployBigMap(&auth, client)
 	Require(t, err, "could not deploy BigMap.sol contract")
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
@@ -1767,8 +1766,8 @@ func deployBigMap(t *testing.T, ctx context.Context, auth bind.TransactOpts, cli
 
 func deploySimple(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client,
-) (common.Address, *mocksgen.Simple) {
-	addr, tx, simple, err := mocksgen.DeploySimple(&auth, client)
+) (common.Address, *localgen.Simple) {
+	addr, tx, simple, err := localgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy Simple.sol contract")
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
