@@ -279,37 +279,29 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		return nil, fmt.Errorf("failed to reactivate program. address: %v, expected ModuleHash: %v", addressForLogging, moduleHash)
 	}
 
+	// merge in the newly built asms
+	for target, asm := range newlyBuilt {
+		asmMap[target] = asm
+	}
 	currentHoursSince := hoursSinceArbitrum(time)
 	if currentHoursSince > program.activatedAt {
 		// stylus program is active on-chain, and was activated in the past
 		// so we store it directly to database
 		batch := statedb.Database().WasmStore().NewBatch()
-		// rawdb.WriteActivation iterates over the recently activated wasms map and writes each entry separately to wasmdb, so the writes for the same module hash can be incremental
+		// rawdb.WriteActivation iterates over the asms map and writes each entry separately to wasmdb, so the writes for the same module hash can be incremental
+		// we know that all targets for which asms were found initially, were read from disk as oppose to from newly activated asms from memory, as otherwise statedb.ActivatedAsmMap would have failed with an error because of missing targets within newly activated asms
 		rawdb.WriteActivation(batch, moduleHash, newlyBuilt)
 		if err := batch.Write(); err != nil {
 			log.Error("failed writing re-activation to state", "address", addressForLogging, "err", err)
 		}
 	} else {
-		// It is safe to pass only newlyBuilt part of full asm map here as:
-		// 1. If there wasn't any new activation of the moduleHash then:
-		//   - the missingTargets for which we have the newlyBuilt map were the only targets not found in wasmdb
-		//   - in this case, statedb.ActivateWasm stages the asm map for commit
-		//   - during statedb commit rawdb.WriteActivation iterates over the recently activated wasms map and writes each entry to wasmdb separately, so the writes for the same module hash can be incremental
-		// 2. If there was a previous new activation of the moduleHash and there were some targets missing then statedb.ActivatedAsmMap would have returned an error as that would indicate inconsistency of target lists and we would have exited early
-		// 3. Otherwise, if there was a previous new activation of the moduleHash but there were no targets missing then we would have also exited early (nothing to be recompiled)
-
-		// program activated recently, possibly in this eth_call
-		// store it to statedb. It will be stored to database if statedb is committed
-		if err := statedb.ActivateWasm(moduleHash, newlyBuilt); err != nil {
+		// we need to add asms for all targets to the newly activated targets (not only the newly built) to maintain consistency the newly activated targets map
+		if err := statedb.ActivateWasm(moduleHash, asmMap); err != nil {
 			log.Error("Failed to store recent activation of wasm in statedb", "err", err)
 			return nil, err
 		}
 	}
-	// first check in map of previously available targets, as we might have already had the asm but still needed to compile the program for some other targets
 	asm, exists := asmMap[localTarget]
-	if !exists {
-		asm, exists = newlyBuilt[localTarget]
-	}
 	if !exists {
 		var availableTargets []rawdb.WasmTarget
 		for target := range asmMap {
