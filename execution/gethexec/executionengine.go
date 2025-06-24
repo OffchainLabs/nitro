@@ -772,7 +772,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 
 	var runCtx *core.MessageRunContext
 	if isMsgForPrefetch {
-		runCtx = core.NewMessagePrefetchContext(s.wasmTargets)
+		runCtx = core.NewMessagePrefetchContext()
 	} else {
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
