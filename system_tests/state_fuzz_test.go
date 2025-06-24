@@ -136,7 +136,7 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 }
 
 func FuzzStateTransition(f *testing.F) {
-	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, runCtxSeed uint8) {
+	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, targetsSeed uint8, runCtxSeed uint8) {
 		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
 			return
 		}
@@ -198,20 +198,39 @@ func FuzzStateTransition(f *testing.F) {
 			positionWithinMessage: 0,
 			delayedMessages:       delayedMessages,
 		}
-		runCtxNumber := runCtxSeed % 5
+
+		localTarget := rawdb.LocalTarget()
+		targets := []rawdb.WasmTarget{localTarget}
+		if targetsSeed&1 != 0 {
+			targets = append(targets, rawdb.TargetWavm)
+		}
+		if targetsSeed&2 != 0 && localTarget != rawdb.TargetArm64 {
+			targets = append(targets, rawdb.TargetArm64)
+		}
+		if targetsSeed&4 != 0 && localTarget != rawdb.TargetAmd64 {
+			targets = append(targets, rawdb.TargetAmd64)
+		}
+		if targetsSeed&8 != 0 && localTarget != rawdb.TargetHost {
+			targets = append(targets, rawdb.TargetHost)
+		}
+
+		runCtxNumber := runCtxSeed % 6
 		var runCtx *core.MessageRunContext
 		switch runCtxNumber {
 		case 0:
-			runCtx = core.NewMessageCommitContext(nil)
+			runCtx = core.NewMessageCommitContext(targets)
 		case 1:
-			runCtx = core.NewMessageReplayContext(nil)
+			runCtx = core.NewMessageReplayContext()
 		case 2:
-			runCtx = core.NewMessagePrefetchContext(nil)
+			runCtx = core.NewMessageRecordingContext(targets)
 		case 3:
-			runCtx = core.NewMessageEthcallContext()
+			runCtx = core.NewMessagePrefetchContext()
 		case 4:
+			runCtx = core.NewMessageEthcallContext()
+		case 5:
 			runCtx = core.NewMessageGasEstimationContext()
 		}
+
 		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: chaininfo.ArbitrumDevTestChainConfig()}, inbox, seqBatch, runCtx)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
