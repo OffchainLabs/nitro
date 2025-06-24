@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/offchainlabs/nitro/execution/nethexec"
 	"math/big"
 	"os"
 	"path"
@@ -44,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das/dasserver"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/nethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -1307,8 +1307,8 @@ func CreateNodeFullExecutionClient(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	//execClient, ok := n.ExecutionClient.(*gethexec.ExecutionNode)
-	//if !ok {
+	// execClient, ok := n.ExecutionClient.(*gethexec.ExecutionNode)
+	// if !ok {
 	//	execClient = nil
 	//}
 	var execClient *gethexec.ExecutionNode

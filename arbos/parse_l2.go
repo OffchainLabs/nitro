@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/offchainlabs/nitro/callstack"
 	"io"
 	"math/big"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/callstack"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 

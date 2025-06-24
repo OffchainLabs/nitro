@@ -5,7 +5,6 @@ package gethhook
 
 import (
 	"errors"
-	"github.com/offchainlabs/nitro/callstack"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core"
@@ -14,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/callstack"
 	"github.com/offchainlabs/nitro/precompiles"
 )
 

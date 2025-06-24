@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"sort"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/triedb"
@@ -202,11 +202,11 @@ func (td *TrieDumper) dumpNode(output *strings.Builder, node *NodeInfo, tree map
 		}
 
 		keyStr := td.formatKey(node.Key)
-		output.WriteString(fmt.Sprintf("%s %s  %s -> %s\n",
+		fmt.Fprintf(output, "%s %s  %s -> %s\n",
 			indent,
 			nodeType,
 			keyStr,
-			node.Hash.Hex()[2:]))
+			node.Hash.Hex()[2:])
 
 		// Add pre-hash for modified nodes (if available)
 		// This would require tracking node modifications
@@ -221,15 +221,18 @@ func (td *TrieDumper) dumpNode(output *strings.Builder, node *NodeInfo, tree map
 				value = common.BytesToHash(node.Value)
 			} else {
 				// RLP decode for smaller values
-				rlp.DecodeBytes(node.Value, &value)
+				err := rlp.DecodeBytes(node.Value, &value)
+				if err != nil {
+					panic(err)
+				}
 			}
-			output.WriteString(fmt.Sprintf("%s VALUE: %s\n", indent, value.Hex()))
+			fmt.Fprintf(output, "%s VALUE: %s\n", indent, value.Hex())
 		}
 	} else {
 		// Branch or Extension node
 		if len(node.Children) > 1 || (len(node.Children) == 1 && node.Children[16] != nil) {
 			// Branch node
-			output.WriteString(fmt.Sprintf("%s BRANCH | -> %s\n", indent, node.Hash.Hex()[2:]))
+			fmt.Fprintf(output, "%s BRANCH | -> %s\n", indent, node.Hash.Hex()[2:])
 
 			// Sort children for consistent output
 			var indices []byte
@@ -248,7 +251,7 @@ func (td *TrieDumper) dumpNode(output *strings.Builder, node *NodeInfo, tree map
 		} else {
 			// Extension node
 			// Extract the extension key from path difference
-			output.WriteString(fmt.Sprintf("%s EXTENSION -> %s\n", indent, node.Hash.Hex()[2:]))
+			fmt.Fprintf(output, "%s EXTENSION -> %s\n", indent, node.Hash.Hex()[2:])
 
 			// Sort children for consistent output
 			var indices []byte
@@ -283,24 +286,24 @@ func (td *TrieDumper) formatKey(key []byte) string {
 func (td *TrieDumper) decodeAccountData(output *strings.Builder, node *NodeInfo, indent string) {
 	acc := new(types.StateAccount)
 	if err := rlp.DecodeBytes(node.Value, &acc); err != nil {
-		output.WriteString(fmt.Sprintf("%s  [Failed to decode account: %v]\n", indent, err))
+		fmt.Fprintf(output, "%s  [Failed to decode account: %v]\n", indent, err)
 		return
 	}
 
-	output.WriteString(fmt.Sprintf("%s  NONCE: %d\n", indent, acc.Nonce))
-	output.WriteString(fmt.Sprintf("%s  BALANCE: %s\n", indent, acc.Balance.String()))
+	fmt.Fprintf(output, "%s  NONCE: %d\n", indent, acc.Nonce)
+	fmt.Fprintf(output, "%s  BALANCE: %s\n", indent, acc.Balance.String())
 
 	emptyCodeHash := crypto.Keccak256(nil)
 	isContract := !bytes.Equal(acc.CodeHash, emptyCodeHash)
-	output.WriteString(fmt.Sprintf("%s  IS_CONTRACT: %t\n", indent, isContract))
-	output.WriteString(fmt.Sprintf("%s  CODE_HASH: %s\n", indent, common.BytesToHash(acc.CodeHash).Hex()))
-	output.WriteString(fmt.Sprintf("%s  STORAGE_ROOT: %s\n", indent, acc.Root.Hex()))
+	fmt.Fprintf(output, "%s  IS_CONTRACT: %t\n", indent, isContract)
+	fmt.Fprintf(output, "%s  CODE_HASH: %s\n", indent, common.BytesToHash(acc.CodeHash).Hex())
+	fmt.Fprintf(output, "%s  STORAGE_ROOT: %s\n", indent, acc.Root.Hex())
 
 	if acc.Root != types.EmptyRootHash && acc.Root != (common.Hash{}) {
 		keyHash := common.BytesToHash(node.Key)
 		storageDump, err := td.DumpTrie(acc.Root, keyHash, true, indent+"++")
 		if err != nil {
-			output.WriteString(fmt.Sprintf("[Failed to dump storage: %v]\n", err))
+			fmt.Fprintf(output, "[Failed to dump storage: %v]\n", err)
 		} else {
 			output.WriteString(storageDump)
 		}
