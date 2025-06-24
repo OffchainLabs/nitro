@@ -18,11 +18,11 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -49,7 +49,7 @@ type ArbSysInterface interface {
 type HeaderReader struct {
 	stopwaiter.StopWaiter
 	config                ConfigFetcher
-	client                *ethclient.Client
+	client                chainifaces.EthereumReadWriter
 	isParentChainArbitrum bool
 	arbSys                ArbSysInterface
 
@@ -136,7 +136,7 @@ var TestConfig = Config{
 	},
 }
 
-func New(ctx context.Context, client *ethclient.Client, config ConfigFetcher, arbSysPrecompile ArbSysInterface) (*HeaderReader, error) {
+func New(ctx context.Context, client chainifaces.EthereumReadWriter, config ConfigFetcher, arbSysPrecompile ArbSysInterface) (*HeaderReader, error) {
 	isParentChainArbitrum := false
 	var arbSys ArbSysInterface
 	if arbSysPrecompile != nil {
@@ -538,7 +538,7 @@ func (s *HeaderReader) LatestFinalizedBlockNr(ctx context.Context) (uint64, erro
 	return header.Number.Uint64(), nil
 }
 
-func (s *HeaderReader) Client() *ethclient.Client {
+func (s *HeaderReader) Client() chainifaces.EthereumReadWriter {
 	return s.client
 }
 

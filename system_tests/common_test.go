@@ -77,6 +77,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -106,7 +107,7 @@ type SecondNodeParams struct {
 
 type TestClient struct {
 	ctx           context.Context
-	Client        EthereumWriter
+	Client        chainifaces.EthereumReadWriter
 	L1Backend     *simulated.Backend
 	Stack         *node.Node
 	ConsensusNode *arbnode.Node
@@ -117,28 +118,16 @@ type TestClient struct {
 	cleanup func()
 }
 
-type EthereumReader interface {
-	ethereum.ChainReader
-	ethereum.ChainStateReader
-	ethereum.TransactionReader
-}
-
-type EthereumWriter interface {
-	EthereumReader
-	ethereum.TransactionSender
-	bind.ContractBackend
-}
-
 func NewTestClient(ctx context.Context) *TestClient {
 	return &TestClient{ctx: ctx}
 }
 
-func (tc *TestClient) SendSignedTx(t *testing.T, l2Client EthereumWriter, transaction *types.Transaction, lInfo info) *types.Receipt {
+func (tc *TestClient) SendSignedTx(t *testing.T, l2Client chainifaces.EthereumReadWriter, transaction *types.Transaction, lInfo info) *types.Receipt {
 	t.Helper()
 	return SendSignedTxViaL1(t, tc.ctx, lInfo, tc.Client, l2Client, transaction)
 }
 
-func (tc *TestClient) SendUnsignedTx(t *testing.T, l2Client EthereumWriter, transaction *types.Transaction, lInfo info) *types.Receipt {
+func (tc *TestClient) SendUnsignedTx(t *testing.T, l2Client chainifaces.EthereumReadWriter, transaction *types.Transaction, lInfo info) *types.Receipt {
 	t.Helper()
 	return SendUnsignedTxViaL1(t, tc.ctx, lInfo, tc.Client, l2Client, transaction)
 }
@@ -978,7 +967,7 @@ func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.In
 	return BridgeBalance(t, account, amount, b.L1Info, b.L2Info, b.L1.Client, b.L2.Client, b.ctx)
 }
 
-func SendWaitTestTransactions(t *testing.T, ctx context.Context, client EthereumWriter, txs []*types.Transaction) []*types.Receipt {
+func SendWaitTestTransactions(t *testing.T, ctx context.Context, client chainifaces.EthereumReadWriter, txs []*types.Transaction) []*types.Receipt {
 	t.Helper()
 	receipts := make([]*types.Receipt, len(txs))
 	for _, tx := range txs {
@@ -994,14 +983,14 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client Ethereum
 }
 
 func TransferBalance(
-	t *testing.T, from, to string, amount *big.Int, l2info info, client EthereumWriter, ctx context.Context,
+	t *testing.T, from, to string, amount *big.Int, l2info info, client chainifaces.EthereumReadWriter, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
 }
 
 func TransferBalanceTo(
-	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client EthereumWriter, ctx context.Context,
+	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client chainifaces.EthereumReadWriter, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 	tx := l2info.PrepareTxTo(from, &to, l2info.TransferGas, amount, nil)
@@ -1014,7 +1003,7 @@ func TransferBalanceTo(
 
 // if l2client is not nil - will wait until balance appears in l2
 func BridgeBalance(
-	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client EthereumWriter, l2client EthereumWriter, ctx context.Context,
+	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client chainifaces.EthereumReadWriter, l2client chainifaces.EthereumReadWriter, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 
@@ -1074,7 +1063,7 @@ func BridgeBalance(
 func AdvanceL1(
 	t *testing.T,
 	ctx context.Context,
-	l1client EthereumWriter,
+	l1client chainifaces.EthereumReadWriter,
 	l1info *BlockchainTestInfo,
 	numBlocks int,
 ) {
@@ -1089,8 +1078,8 @@ func SendSignedTxesInBatchViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client *ethclient.Client,
-	l2client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
+	l2client chainifaces.EthereumReadWriter,
 	delayedTxes types.Transactions,
 ) types.Receipts {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -1135,8 +1124,8 @@ func SendSignedTxViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client EthereumWriter,
-	l2client EthereumWriter,
+	l1client chainifaces.EthereumReadWriter,
+	l2client chainifaces.EthereumReadWriter,
 	delayedTx *types.Transaction,
 ) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -1161,8 +1150,8 @@ func SendUnsignedTxViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client EthereumWriter,
-	l2client EthereumWriter,
+	l1client chainifaces.EthereumReadWriter,
+	l2client chainifaces.EthereumReadWriter,
 	templateTx *types.Transaction,
 ) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -1203,13 +1192,13 @@ func SendUnsignedTxViaL1(
 	return receipt
 }
 
-func GetBaseFee(t *testing.T, client EthereumReader, ctx context.Context) *big.Int {
+func GetBaseFee(t *testing.T, client chainifaces.EthereumReadWriter, ctx context.Context) *big.Int {
 	header, err := client.HeaderByNumber(ctx, nil)
 	Require(t, err)
 	return header.BaseFee
 }
 
-func GetBaseFeeAt(t *testing.T, client EthereumReader, ctx context.Context, blockNum *big.Int) *big.Int {
+func GetBaseFeeAt(t *testing.T, client chainifaces.EthereumReadWriter, ctx context.Context, blockNum *big.Int) *big.Int {
 	header, err := client.HeaderByNumber(ctx, blockNum)
 	Require(t, err)
 	return header.BaseFee
@@ -1441,7 +1430,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 	return l1info, l1backend.Client(), l1backend, clientWrapper
 }
 
-func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
+func getInitMessage(ctx context.Context, t *testing.T, parentChainClient chainifaces.EthereumReadWriter, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
 	bridge, err := arbnode.NewDelayedBridge(parentChainClient, addresses.Bridge, addresses.DeployedAt)
 	Require(t, err)
 	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
@@ -1466,7 +1455,7 @@ func deployOnParentChain(
 	t *testing.T,
 	ctx context.Context,
 	parentChainInfo info,
-	parentChainClient EthereumWriter,
+	parentChainClient chainifaces.EthereumReadWriter,
 	parentChainReaderConfig *headerreader.Config,
 	chainConfig *params.ChainConfig,
 	wasmModuleRoot common.Hash,
@@ -1648,7 +1637,7 @@ func createNonL1BlockChainWithStackConfig(
 	return info, stack, chainDb, arbDb, blockchain
 }
 
-func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
+func ClientForStack(t *testing.T, backend *node.Node) chainifaces.EthereumReadWriter {
 	rpcClient := backend.Attach()
 	return ethclient.NewClient(rpcClient)
 }
@@ -1771,7 +1760,7 @@ func Create2ndNodeWithConfig(
 	return chainClient, currentNode
 }
 
-func GetBalance(t *testing.T, ctx context.Context, client EthereumReader, account common.Address) *big.Int {
+func GetBalance(t *testing.T, ctx context.Context, client chainifaces.EthereumReadWriter, account common.Address) *big.Int {
 	t.Helper()
 	balance, err := client.BalanceAt(ctx, account, nil)
 	Require(t, err, "could not get balance")
@@ -1913,7 +1902,7 @@ func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duratio
 	return timeout
 }
 
-func deployBigMap(t *testing.T, ctx context.Context, auth bind.TransactOpts, client EthereumWriter,
+func deployBigMap(t *testing.T, ctx context.Context, auth bind.TransactOpts, client chainifaces.EthereumReadWriter,
 ) (common.Address, *localgen.BigMap) {
 	addr, tx, bigMap, err := localgen.DeployBigMap(&auth, client)
 	Require(t, err, "could not deploy BigMap.sol contract")
@@ -1923,7 +1912,7 @@ func deployBigMap(t *testing.T, ctx context.Context, auth bind.TransactOpts, cli
 }
 
 func deploySimple(
-	t *testing.T, ctx context.Context, auth bind.TransactOpts, client EthereumWriter,
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client chainifaces.EthereumReadWriter,
 ) (common.Address, *localgen.Simple) {
 	addr, tx, simple, err := localgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy Simple.sol contract")
@@ -1954,7 +1943,7 @@ func deployContractInitCode(code []byte, revert bool) []byte {
 }
 
 func deployContract(
-	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client chainifaces.EthereumReadWriter, code []byte,
 ) common.Address {
 	deploy := deployContractInitCode(code, false)
 	basefee := arbmath.BigMulByFrac(GetBaseFee(t, client, ctx), 6, 5) // current*1.2

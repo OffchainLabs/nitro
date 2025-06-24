@@ -19,12 +19,12 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
 var messageDeliveredID common.Hash
@@ -59,11 +59,11 @@ type DelayedBridge struct {
 	con              *bridgegen.IBridge
 	address          common.Address
 	fromBlock        uint64
-	client           *ethclient.Client
+	client           chainifaces.EthereumReadWriter
 	messageProviders map[common.Address]*bridgegen.IDelayedMessageProvider
 }
 
-func NewDelayedBridge(client *ethclient.Client, addr common.Address, fromBlock uint64) (*DelayedBridge, error) {
+func NewDelayedBridge(client chainifaces.EthereumReadWriter, addr common.Address, fromBlock uint64) (*DelayedBridge, error) {
 	con, err := bridgegen.NewIBridge(addr, client)
 	if err != nil {
 		return nil, err

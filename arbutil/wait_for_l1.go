@@ -14,9 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethclient"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
-func SendTxAsCall(ctx context.Context, client *ethclient.Client, tx *types.Transaction, from common.Address, blockNum *big.Int, unlimitedGas bool) ([]byte, error) {
+func SendTxAsCall(ctx context.Context, client chainifaces.EthereumReader, tx *types.Transaction, from common.Address, blockNum *big.Int, unlimitedGas bool) ([]byte, error) {
 	var gas uint64
 	if unlimitedGas {
 		gas = 0
@@ -36,7 +37,7 @@ func SendTxAsCall(ctx context.Context, client *ethclient.Client, tx *types.Trans
 	return client.CallContract(ctx, callMsg, blockNum)
 }
 
-func GetPendingCallBlockNumber(ctx context.Context, client *ethclient.Client) (*big.Int, error) {
+func GetPendingCallBlockNumber(ctx context.Context, client chainifaces.EthereumReadWriter) (*big.Int, error) {
 	msg := ethereum.CallMsg{
 		// Pretend to be a contract deployment to execute EVM code without calling a contract.
 		To: nil,
@@ -56,7 +57,7 @@ func GetPendingCallBlockNumber(ctx context.Context, client *ethclient.Client) (*
 	return new(big.Int).SetBytes(callRes), nil
 }
 
-func DetailTxError(ctx context.Context, client *ethclient.Client, tx *types.Transaction, txRes *types.Receipt) error {
+func DetailTxError(ctx context.Context, client chainifaces.EthereumReadWriter, tx *types.Transaction, txRes *types.Receipt) error {
 	// Re-execute the transaction as a call to get a better error
 	if ctx.Err() != nil {
 		return ctx.Err()
