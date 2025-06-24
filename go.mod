@@ -12,7 +12,7 @@ require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible
-	github.com/Layr-Labs/eigenda v0.9.0-rc.4
+	github.com/Layr-Labs/eigenda v0.9.1
 	github.com/Layr-Labs/eigenda-proxy/clients v0.2.0
 	github.com/Shopify/toxiproxy v2.1.4+incompatible
 	github.com/alicebob/miniredis/v2 v2.32.1
