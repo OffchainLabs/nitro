@@ -565,8 +565,6 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.execConfig.RPC.MaxRecreateStateDepth = 0
 	cleanup := builder.Build(t)
 	defer cleanup()
