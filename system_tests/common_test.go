@@ -195,7 +195,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	Enable:                       true,
 	MaxBlockSpeed:                time.Millisecond * 10,
 	MaxRevertGasReject:           params.TxGas + 10000,
-	MaxAcceptableTimestampDelta:  time.Hour,
+	MaxAcceptableTimestampDelta:  time.Hour * 24,
 	SenderWhitelist:              []string{},
 	Forwarder:                    DefaultTestForwarderConfig,
 	QueueSize:                    128,
