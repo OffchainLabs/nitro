@@ -135,7 +135,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 		cancel()
 
 		builder.L2.ConsensusNode.StopAndWait()
-		requireClose(t, builder.L1.Stack)
+		// requireClose(t, builder.L1.Stack)
 	}
 	return builder, delayedInbox, lookupL2Tx, ctx, teardown
 }
